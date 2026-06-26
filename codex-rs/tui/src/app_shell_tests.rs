@@ -54,6 +54,26 @@ fn renders_narrow_shell_snapshot() {
 }
 
 #[test]
+fn renders_workspace_roots_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.runtime_workspace_roots = vec![
+        AbsolutePathBuf::from_absolute_path_checked("/workspace/better-codex")
+            .expect("absolute path should be valid"),
+        AbsolutePathBuf::from_absolute_path_checked("/workspace/better-codex/codex-rs")
+            .expect("absolute path should be valid"),
+        AbsolutePathBuf::from_absolute_path_checked("/tmp/codex-cache")
+            .expect("absolute path should be valid"),
+        AbsolutePathBuf::from_absolute_path_checked("/opt/extra-worktree")
+            .expect("absolute path should be valid"),
+    ];
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 42,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn renders_markdown_transcript_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();

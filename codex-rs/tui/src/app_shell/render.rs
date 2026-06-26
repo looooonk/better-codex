@@ -10,6 +10,8 @@ use crate::terminal_hyperlinks::visible_lines;
 use crate::text_formatting::truncate_text;
 use crate::tui;
 use codex_app_server_protocol::TurnPlanStepStatus;
+use codex_protocol::models::ManagedFileSystemPermissions;
+use codex_protocol::models::PermissionProfile;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
@@ -221,8 +223,54 @@ impl ShellView<'_> {
 
         lines.push(Line::from(""));
         lines.push(Line::from("Workspace".bold()));
-        lines.push(Line::from(self.shell.cwd.clone()));
-        lines.push(Line::from(format!("{:?}", self.shell.permission_profile)));
+        lines.push(Line::from(vec![
+            "cwd ".dim(),
+            compact_dashboard_text(&self.shell.cwd).into(),
+        ]));
+        match &self.shell.permission_profile {
+            PermissionProfile::Managed {
+                file_system,
+                network,
+            } => {
+                let file_system_label = match file_system {
+                    ManagedFileSystemPermissions::Restricted { .. } => "restricted",
+                    ManagedFileSystemPermissions::Unrestricted => "unrestricted",
+                };
+                lines.push(Line::from(vec!["profile ".dim(), "managed".into()]));
+                lines.push(Line::from(format!(
+                    "files {file_system_label}, net {network}"
+                )));
+            }
+            PermissionProfile::Disabled => {
+                lines.push(Line::from(vec!["profile ".dim(), "full access".into()]));
+            }
+            PermissionProfile::External { network } => {
+                lines.push(Line::from(vec!["profile ".dim(), "external".into()]));
+                lines.push(Line::from(format!("net {network}")));
+            }
+        }
+        if self.shell.runtime_workspace_roots.is_empty() {
+            lines.push(Line::from("roots none selected".dim()));
+        } else {
+            const WORKSPACE_ROOT_PREVIEW_LIMIT: usize = 3;
+            let root_count = self.shell.runtime_workspace_roots.len();
+            lines.push(Line::from(format!("roots {root_count} writable")));
+            for root in self
+                .shell
+                .runtime_workspace_roots
+                .iter()
+                .take(WORKSPACE_ROOT_PREVIEW_LIMIT)
+            {
+                lines.push(Line::from(vec![
+                    "  ".dim(),
+                    compact_dashboard_text(&root.display().to_string()).dim(),
+                ]));
+            }
+            let hidden = root_count.saturating_sub(WORKSPACE_ROOT_PREVIEW_LIMIT);
+            if hidden > 0 {
+                lines.push(Line::from(format!("  +{hidden} more").dim()));
+            }
+        }
         lines.push(Line::from(""));
         lines.push(Line::from("Keys".bold()));
         lines.push(Line::from("Enter send"));
