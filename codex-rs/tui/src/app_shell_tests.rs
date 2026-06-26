@@ -146,6 +146,17 @@ fn renders_file_change_detail_snapshot() {
 }
 
 #[test]
+fn renders_tool_progress_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.push_tool("mcp progress: indexed 42 files\npreparing search results");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn transcript_scroll_clamps_to_last_rendered_range() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript_scroll_max.set(10);

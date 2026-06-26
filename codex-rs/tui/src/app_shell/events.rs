@@ -148,11 +148,12 @@ impl ShellState {
             }
             ServerNotification::McpToolCallProgress(progress) => {
                 if progress.thread_id == self.thread_id.to_string() {
-                    self.upsert_tool(
-                        progress.item_id,
-                        format!("mcp progress: {}", progress.message),
-                        "in progress".to_string(),
-                    );
+                    let title = format!("mcp progress: {}", progress.message);
+                    let transcript = super::compact_multiline(title.clone());
+                    self.upsert_tool(progress.item_id, title, "in progress".to_string());
+                    if let Some(transcript) = transcript {
+                        self.push_tool(transcript);
+                    }
                 }
             }
             ServerNotification::ServerRequestResolved(resolved) => {
