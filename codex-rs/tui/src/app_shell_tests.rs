@@ -87,6 +87,24 @@ fn renders_model_runtime_details_snapshot() {
 }
 
 #[test]
+fn renders_context_pressure_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.token_usage = TokenUsage {
+        input_tokens: 150_000,
+        cached_input_tokens: 20_000,
+        output_tokens: 40_000,
+        reasoning_output_tokens: 12_000,
+        total_tokens: 190_000,
+    };
+    shell.model_context_window = Some(200_000);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn renders_markdown_transcript_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -208,6 +226,38 @@ fn transcript_scroll_clamps_to_last_rendered_range() {
 
     shell.scroll_transcript_to_bottom();
     assert_eq!(shell.transcript_scroll, 0);
+}
+
+#[test]
+fn context_used_percent_handles_unknown_and_baseline_usage() {
+    assert_eq!(
+        render::context_used_percent(&TokenUsage::default(), None),
+        None
+    );
+    assert_eq!(
+        render::context_used_percent(
+            &TokenUsage {
+                total_tokens: 12_000,
+                ..TokenUsage::default()
+            },
+            Some(200_000),
+        ),
+        Some(0)
+    );
+}
+
+#[test]
+fn context_used_percent_accounts_for_baseline_reserved_tokens() {
+    assert_eq!(
+        render::context_used_percent(
+            &TokenUsage {
+                total_tokens: 190_000,
+                ..TokenUsage::default()
+            },
+            Some(200_000),
+        ),
+        Some(95)
+    );
 }
 
 #[test]

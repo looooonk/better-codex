@@ -202,6 +202,20 @@ impl ShellView<'_> {
             Line::from(format!("output {}", self.shell.token_usage.output_tokens)),
             Line::from(format!("context {context_window}")),
         ]);
+        if let Some(context_used_percent) =
+            context_used_percent(&self.shell.token_usage, self.shell.model_context_window)
+                .filter(|percent| *percent >= 50)
+        {
+            let line = format!("context {context_used_percent}% used");
+            let line = if context_used_percent >= 90 {
+                line.red()
+            } else if context_used_percent >= 75 {
+                line.magenta()
+            } else {
+                line.cyan()
+            };
+            lines.push(Line::from(line));
+        }
 
         lines.push(Line::from(""));
         lines.push(Line::from("Diff".bold()));
@@ -449,6 +463,14 @@ fn compact_dashboard_text(text: &str) -> String {
     let mut compact = text.chars().take(MAX_CHARS).collect::<String>();
     compact.push_str("...");
     compact
+}
+
+pub(super) fn context_used_percent(
+    usage: &crate::token_usage::TokenUsage,
+    model_context_window: Option<i64>,
+) -> Option<i64> {
+    let context_window = model_context_window.filter(|window| *window > 0)?;
+    Some(100 - usage.percent_of_context_window_remaining(context_window))
 }
 
 fn composer_lines(text: &str, cursor: usize, is_empty: bool) -> Vec<Line<'static>> {
