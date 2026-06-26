@@ -30,9 +30,7 @@ just fmt
 just test -p codex-tui
 ```
 
-Follow `AGENTS.md` for repository-specific rules. In particular, new work should
-prefer clear backend/UI boundaries, focused crates or modules, and local
-development workflows over inherited upstream CI assumptions.
+Follow `AGENTS.md` for repository-specific rules.
 
 ## License
 
