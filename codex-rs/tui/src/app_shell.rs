@@ -184,6 +184,7 @@ enum TranscriptKind {
     Diff,
     Output,
     Status,
+    Audit,
     Error,
 }
 
@@ -500,7 +501,7 @@ impl ShellState {
             ApprovalChoice::Approve => "approved",
             ApprovalChoice::Deny => "denied",
         };
-        self.push_status(format!("{decision}: {title}"));
+        self.push_decision_audit("approval", decision, &title);
         Ok(())
     }
 
@@ -598,7 +599,7 @@ impl ShellState {
             Ok(UserInputAdvance::Next) => {
                 self.pending_user_input = Some(next_pending);
                 self.composer.clear();
-                self.push_status(format!("answered: {title}"));
+                self.push_decision_audit("tool input", "answered", &title);
             }
             Ok(UserInputAdvance::Complete { request_id, result }) => {
                 app_server
@@ -607,7 +608,7 @@ impl ShellState {
                     .wrap_err("failed to resolve app-server tool input request")?;
                 self.pending_user_input = None;
                 self.composer.clear();
-                self.push_status(format!("submitted: {title}"));
+                self.push_decision_audit("tool input", "submitted", &title);
             }
             Err(message) => {
                 self.push_error(message);
@@ -643,7 +644,7 @@ impl ShellState {
             ElicitationChoice::Decline => "declined",
             ElicitationChoice::Cancel => "cancelled",
         };
-        self.push_status(format!("{decision}: {title}"));
+        self.push_decision_audit("elicitation", decision, &title);
         Ok(())
     }
 
@@ -878,6 +879,13 @@ impl ShellState {
 
     fn push_status(&mut self, text: impl Into<String>) {
         self.push_line(TranscriptLine::new(TranscriptKind::Status, text));
+    }
+
+    fn push_decision_audit(&mut self, category: &str, decision: &str, title: &str) {
+        self.push_line(TranscriptLine::new(
+            TranscriptKind::Audit,
+            format!("{category} {decision}: {title}"),
+        ));
     }
 
     fn push_error(&mut self, text: impl Into<String>) {

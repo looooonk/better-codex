@@ -122,6 +122,19 @@ fn renders_pending_mcp_elicitation_snapshot() {
 }
 
 #[test]
+fn renders_decision_audit_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.push_decision_audit("approval", "approved", "Command: cargo test -p codex-tui");
+    shell.push_decision_audit("elicitation", "declined", "MCP github: URL request");
+    shell.push_decision_audit("tool input", "submitted", "Tool input: environment");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn transcript_scroll_clamps_to_last_rendered_range() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript_scroll_max.set(10);

@@ -249,6 +249,7 @@ fn transcript_lines(
         TranscriptKind::Diff => ("diff", LineStyle::Green),
         TranscriptKind::Output => ("output", LineStyle::Dim),
         TranscriptKind::Status => ("status", LineStyle::Dim),
+        TranscriptKind::Audit => ("audit", LineStyle::Cyan),
         TranscriptKind::Error => ("error", LineStyle::Red),
     };
 
