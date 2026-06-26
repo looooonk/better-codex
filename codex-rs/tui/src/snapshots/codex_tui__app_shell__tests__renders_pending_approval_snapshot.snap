@@ -28,4 +28,4 @@ expression: "render_shell(&shell, area)"
  Approval                                                              in slices.
  ? Run command: cargo test -p codex-tui                                x Shell frame
    Needs network access - /workspace/better-codex                      > Transcript model
-   a approve  d deny                                                   - Approvals
+   a approve  d deny  e edit  ? explain                                - Approvals

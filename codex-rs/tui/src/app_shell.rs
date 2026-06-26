@@ -45,6 +45,7 @@ mod events;
 mod render;
 mod user_input;
 mod workspace;
+use approval::ApprovalAction;
 use approval::ApprovalChoice;
 use approval::PendingApproval;
 use command_palette::CommandPaletteAction;
@@ -389,9 +390,10 @@ impl ShellState {
             return Ok(false);
         }
         if self.pending_approval.is_some()
-            && let Some(choice) = approval_choice_from_key(key)
+            && let Some(action) = approval_action_from_key(key)
         {
-            self.resolve_pending_approval(app_server, choice).await?;
+            self.handle_pending_approval_action(app_server, action)
+                .await?;
             return Ok(false);
         }
         if self.pending_elicitation.is_some()
@@ -951,6 +953,53 @@ impl ShellState {
         };
         self.push_decision_audit("approval", decision, &title);
         Ok(())
+    }
+
+    async fn handle_pending_approval_action(
+        &mut self,
+        app_server: &mut AppServerSession,
+        action: ApprovalAction,
+    ) -> Result<()> {
+        match action {
+            ApprovalAction::Choose(choice) => {
+                self.resolve_pending_approval(app_server, choice).await
+            }
+            ApprovalAction::Edit => self.edit_pending_approval(app_server).await,
+            ApprovalAction::Explain => {
+                self.explain_pending_approval();
+                Ok(())
+            }
+        }
+    }
+
+    async fn edit_pending_approval(&mut self, app_server: &mut AppServerSession) -> Result<()> {
+        let Some(pending) = self.pending_approval.as_ref() else {
+            return Ok(());
+        };
+        let title = pending.title().to_string();
+        let edit_prompt = pending.edit_prompt().to_string();
+        self.resolve_pending_approval(app_server, ApprovalChoice::Deny)
+            .await?;
+        self.seed_composer_with_edit_prompt(edit_prompt);
+        self.push_decision_audit("approval", "edit", &title);
+        Ok(())
+    }
+
+    fn explain_pending_approval(&mut self) {
+        let Some(pending) = self.pending_approval.as_ref() else {
+            return;
+        };
+        self.push_decision_audit("approval", "explained", &pending.explanation());
+    }
+
+    fn seed_composer_with_edit_prompt(&mut self, edit_prompt: String) {
+        let composer_text = self.composer.text().trim();
+        if composer_text.is_empty() {
+            self.composer.set_text(edit_prompt);
+        } else {
+            self.composer
+                .set_text(format!("{composer_text}\n\n{edit_prompt}"));
+        }
     }
 
     async fn handle_user_input_key(
@@ -1599,13 +1648,19 @@ fn compact_multiline(text: String) -> Option<String> {
     Some(compact)
 }
 
-fn approval_choice_from_key(key: KeyEvent) -> Option<ApprovalChoice> {
+fn approval_action_from_key(key: KeyEvent) -> Option<ApprovalAction> {
     if !key.modifiers.is_empty() && key.modifiers != KeyModifiers::SHIFT {
         return None;
     }
     match key.code {
-        KeyCode::Char('a') | KeyCode::Char('A') => Some(ApprovalChoice::Approve),
-        KeyCode::Char('d') | KeyCode::Char('D') => Some(ApprovalChoice::Deny),
+        KeyCode::Char('a') | KeyCode::Char('A') => {
+            Some(ApprovalAction::Choose(ApprovalChoice::Approve))
+        }
+        KeyCode::Char('d') | KeyCode::Char('D') => {
+            Some(ApprovalAction::Choose(ApprovalChoice::Deny))
+        }
+        KeyCode::Char('e') | KeyCode::Char('E') => Some(ApprovalAction::Edit),
+        KeyCode::Char('?') => Some(ApprovalAction::Explain),
         _ => None,
     }
 }

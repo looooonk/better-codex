@@ -439,6 +439,60 @@ fn renders_pending_approval_snapshot() {
 }
 
 #[test]
+fn approval_action_keys_cover_full_keyboard_flow() {
+    assert_eq!(
+        approval_action_from_key(key_char('a')),
+        Some(ApprovalAction::Choose(ApprovalChoice::Approve))
+    );
+    assert_eq!(
+        approval_action_from_key(key_char('d')),
+        Some(ApprovalAction::Choose(ApprovalChoice::Deny))
+    );
+    assert_eq!(
+        approval_action_from_key(key_char('e')),
+        Some(ApprovalAction::Edit)
+    );
+    assert_eq!(
+        approval_action_from_key(key_char('?')),
+        Some(ApprovalAction::Explain)
+    );
+    assert_eq!(
+        approval_action_from_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
+        None
+    );
+}
+
+#[test]
+fn approval_explain_keeps_request_pending_and_writes_audit() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
+        .expect("approval request should be valid");
+
+    shell.explain_pending_approval();
+
+    assert!(shell.pending_approval.is_some());
+    assert_eq!(
+        shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Audit,
+            "approval explained: Run command: cargo test -p codex-tui - Needs network access - /workspace/better-codex",
+        ))
+    );
+}
+
+#[test]
+fn approval_edit_prompt_preserves_existing_composer_draft() {
+    let mut shell = ShellState::snapshot_fixture();
+
+    shell.seed_composer_with_edit_prompt("Revise and retry this command:\njust test".to_string());
+
+    assert_eq!(
+        shell.composer.text(),
+        "Summarize the new shell architecture\n\nRevise and retry this command:\njust test"
+    );
+}
+
+#[test]
 fn renders_pending_user_input_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
@@ -640,6 +694,22 @@ fn permissions_approval_serializes_grant_and_empty_deny() {
 }
 
 #[test]
+fn command_approval_exposes_edit_prompt_and_explanation() {
+    let pending = PendingApproval::from_request(&command_approval_request())
+        .expect("approval request should be valid")
+        .expect("request should be supported");
+
+    assert_eq!(
+        (pending.edit_prompt().to_string(), pending.explanation(),),
+        (
+            "Revise and retry this command:\ncargo test -p codex-tui".to_string(),
+            "Run command: cargo test -p codex-tui - Needs network access - /workspace/better-codex"
+                .to_string(),
+        )
+    );
+}
+
+#[test]
 fn user_input_serializes_free_form_answer() {
     let mut pending = PendingUserInput::from_request(&tool_free_form_user_input_request())
         .expect("request should be supported");
@@ -768,6 +838,10 @@ fn render_shell(shell: &ShellState, area: Rect) -> String {
     let mut buf = Buffer::empty(area);
     ShellView { shell }.render(area, &mut buf);
     buffer_contents(&buf, area)
+}
+
+fn key_char(ch: char) -> KeyEvent {
+    KeyEvent::new(KeyCode::Char(ch), KeyModifiers::empty())
 }
 
 fn command_approval_request() -> ServerRequest {

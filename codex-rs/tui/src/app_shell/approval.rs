@@ -17,11 +17,19 @@ pub(super) enum ApprovalChoice {
     Deny,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ApprovalAction {
+    Choose(ApprovalChoice),
+    Edit,
+    Explain,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct PendingApproval {
     request_id: RequestId,
     title: String,
     detail: String,
+    edit_prompt: String,
     kind: PendingApprovalKind,
 }
 
@@ -41,6 +49,7 @@ impl PendingApproval {
                     request_id: request_id.clone(),
                     title: format!("Run command: {command}"),
                     detail,
+                    edit_prompt: format!("Revise and retry this command:\n{command}"),
                     kind: PendingApprovalKind::Command,
                 }))
             }
@@ -56,6 +65,10 @@ impl PendingApproval {
                     request_id: request_id.clone(),
                     title: format!("Apply file changes: {}", params.item_id),
                     detail,
+                    edit_prompt: format!(
+                        "Revise the requested file changes before trying again: {}",
+                        params.item_id
+                    ),
                     kind: PendingApprovalKind::FileChange,
                 }))
             }
@@ -75,6 +88,10 @@ impl PendingApproval {
                         permission_summary(&params.permissions)
                     ),
                     detail,
+                    edit_prompt: format!(
+                        "Revise the requested permissions before trying again: {}",
+                        permission_summary(&params.permissions)
+                    ),
                     kind: PendingApprovalKind::Permissions {
                         approved: granted_permission_profile_from_request(requested_permissions),
                     },
@@ -101,6 +118,14 @@ impl PendingApproval {
 
     pub(super) fn detail(&self) -> &str {
         &self.detail
+    }
+
+    pub(super) fn explanation(&self) -> String {
+        format!("{} - {}", self.title, self.detail)
+    }
+
+    pub(super) fn edit_prompt(&self) -> &str {
+        &self.edit_prompt
     }
 
     pub(super) fn result(&self, choice: ApprovalChoice) -> serde_json::Result<Value> {

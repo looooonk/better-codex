@@ -39,7 +39,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 - [x] Implement approval dialogs for command execution, file changes, permission escalation, MCP elicitation, and tool user-input requests.
 - [x] Show command output, file patches, and tool progress as structured transcript blocks.
-- [ ] Add keyboard-first approve, deny, edit, and explain flows.
+- [x] Add keyboard-first approve, deny, edit, and explain flows.
 - [x] Preserve a clear audit trail in the transcript after each decision.
 - [ ] Add integration tests for approval request handling through app-server events.
 

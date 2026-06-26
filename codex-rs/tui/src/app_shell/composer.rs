@@ -44,7 +44,6 @@ impl ComposerState {
         self.clear_history_recall();
     }
 
-    #[cfg(test)]
     pub(super) fn set_text(&mut self, text: impl Into<String>) {
         self.text = text.into();
         self.cursor = self.text.len();

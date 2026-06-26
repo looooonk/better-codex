@@ -869,7 +869,11 @@ fn approval_lines(pending: &super::PendingApproval) -> Vec<Line<'static>> {
             "a".green().bold(),
             " approve  ".dim(),
             "d".red().bold(),
-            " deny".dim(),
+            " deny  ".dim(),
+            "e".cyan().bold(),
+            " edit  ".dim(),
+            "?".bold(),
+            " explain".dim(),
         ]),
     ]
 }
