@@ -86,3 +86,5 @@ Agents may continuously work through this plan until every unchecked item is com
 
 - [x] User and agent text in the conversation bar is duplicated.
 - [x] Remove the status next to the "Better Codex" headline, that says "ready". Just leave "Better Codex".
+- [ ] Add a bit of spacing between user messages and codex messages in the conversation pane.
+- [ ] Add a little bit of padding for all sides for all panes, like the side dashboard and the text input pane.
