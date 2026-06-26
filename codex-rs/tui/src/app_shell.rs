@@ -27,6 +27,7 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
+use std::cell::Cell;
 use std::collections::VecDeque;
 use tokio::select;
 use tokio_stream::StreamExt;
@@ -36,6 +37,8 @@ mod render;
 use render::draw_shell;
 
 const MAX_TRANSCRIPT_LINES: usize = 400;
+const TRANSCRIPT_LINE_SCROLL_STEP: usize = 1;
+const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
 
 pub(crate) async fn run(
     tui: &mut tui::Tui,
@@ -203,6 +206,8 @@ struct ShellState {
     collaboration_mode: Option<Box<codex_protocol::config_types::CollaborationMode>>,
     personality: Option<codex_protocol::config_types::Personality>,
     transcript: VecDeque<TranscriptLine>,
+    transcript_scroll: usize,
+    transcript_scroll_max: Cell<usize>,
     input: String,
     active_turn_id: Option<String>,
     streaming_assistant: String,
@@ -237,6 +242,8 @@ impl ShellState {
             collaboration_mode: session.collaboration_mode,
             personality: session.personality,
             transcript: VecDeque::new(),
+            transcript_scroll: 0,
+            transcript_scroll_max: Cell::new(0),
             input: String::new(),
             active_turn_id: None,
             streaming_assistant: String::new(),
@@ -294,6 +301,30 @@ impl ShellState {
                 self.input.pop();
                 Ok(false)
             }
+            KeyCode::Up => {
+                self.scroll_transcript_up(TRANSCRIPT_LINE_SCROLL_STEP);
+                Ok(false)
+            }
+            KeyCode::Down => {
+                self.scroll_transcript_down(TRANSCRIPT_LINE_SCROLL_STEP);
+                Ok(false)
+            }
+            KeyCode::PageUp => {
+                self.scroll_transcript_up(TRANSCRIPT_PAGE_SCROLL_STEP);
+                Ok(false)
+            }
+            KeyCode::PageDown => {
+                self.scroll_transcript_down(TRANSCRIPT_PAGE_SCROLL_STEP);
+                Ok(false)
+            }
+            KeyCode::Home => {
+                self.scroll_transcript_to_top();
+                Ok(false)
+            }
+            KeyCode::End => {
+                self.scroll_transcript_to_bottom();
+                Ok(false)
+            }
             KeyCode::Char(ch) => {
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
                     self.input.push(ch);
@@ -307,12 +338,6 @@ impl ShellState {
             KeyCode::BackTab => Ok(false),
             KeyCode::Left
             | KeyCode::Right
-            | KeyCode::Up
-            | KeyCode::Down
-            | KeyCode::Home
-            | KeyCode::End
-            | KeyCode::PageUp
-            | KeyCode::PageDown
             | KeyCode::Delete
             | KeyCode::Insert
             | KeyCode::F(_)
@@ -333,6 +358,32 @@ impl ShellState {
         self.input.push_str(text);
     }
 
+    fn scroll_transcript_up(&mut self, rows: usize) {
+        let scroll = self.transcript_scroll.saturating_add(rows);
+        self.transcript_scroll = self.clamp_transcript_scroll(scroll);
+    }
+
+    fn scroll_transcript_down(&mut self, rows: usize) {
+        self.transcript_scroll = self.transcript_scroll.saturating_sub(rows);
+    }
+
+    fn scroll_transcript_to_top(&mut self) {
+        self.transcript_scroll = self.transcript_scroll_max.get();
+    }
+
+    fn scroll_transcript_to_bottom(&mut self) {
+        self.transcript_scroll = 0;
+    }
+
+    fn clamp_transcript_scroll(&self, scroll: usize) -> usize {
+        let max_scroll = self.transcript_scroll_max.get();
+        if max_scroll == 0 {
+            scroll
+        } else {
+            scroll.min(max_scroll)
+        }
+    }
+
     async fn submit_prompt(
         &mut self,
         app_server: &mut AppServerSession,
@@ -343,6 +394,7 @@ impl ShellState {
             return Ok(());
         }
 
+        self.scroll_transcript_to_bottom();
         self.push_user(prompt.clone());
         self.status = "thinking".to_string();
         self.streaming_assistant.clear();
@@ -641,6 +693,8 @@ impl ShellState {
             collaboration_mode: None,
             personality: None,
             transcript: VecDeque::new(),
+            transcript_scroll: 0,
+            transcript_scroll_max: Cell::new(0),
             input: "Summarize the new shell architecture".to_string(),
             active_turn_id: None,
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),

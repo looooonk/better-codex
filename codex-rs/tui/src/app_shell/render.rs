@@ -85,9 +85,17 @@ impl ShellView<'_> {
             ));
         }
         let visible_count = area.height.saturating_sub(2) as usize;
-        let visible_from = lines.len().saturating_sub(visible_count);
+        let max_scroll = lines.len().saturating_sub(visible_count);
+        self.shell.transcript_scroll_max.set(max_scroll);
+        let scroll = self.shell.transcript_scroll.min(max_scroll);
+        let visible_from = lines.len().saturating_sub(visible_count + scroll);
+        let title = if scroll == 0 {
+            "Conversation".to_string()
+        } else {
+            format!("Conversation +{scroll}")
+        };
         Paragraph::new(lines.into_iter().skip(visible_from).collect::<Vec<_>>())
-            .block(Block::default().borders(Borders::ALL).title("Conversation"))
+            .block(Block::default().borders(Borders::ALL).title(title))
             .wrap(Wrap { trim: false })
             .render(area, buf);
     }
@@ -195,12 +203,17 @@ fn transcript_lines(line: &TranscriptLine, width: usize) -> Vec<Line<'static>> {
         .subsequent_indent(&subsequent_indent);
     textwrap::wrap(&line.text, options)
         .into_iter()
-        .map(|wrapped| {
-            Line::from(vec![
-                style.label(label),
-                ": ".dim(),
-                style.text(wrapped.into_owned()),
-            ])
+        .enumerate()
+        .map(|(index, wrapped)| {
+            if index == 0 {
+                Line::from(vec![
+                    style.label(label),
+                    ": ".dim(),
+                    style.text(wrapped.into_owned()),
+                ])
+            } else {
+                Line::from(style.text(wrapped.into_owned()))
+            }
         })
         .collect()
 }

@@ -10,11 +10,60 @@ fn renders_first_stage_shell_snapshot() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_scrolled_transcript_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.push_status("first checkpoint");
+    shell.push_status("second checkpoint");
+    shell.push_status("third checkpoint");
+    shell.push_status("fourth checkpoint");
+    shell.scroll_transcript_up(4);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 16,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_narrow_shell_snapshot() {
+    let shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn transcript_scroll_clamps_to_last_rendered_range() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript_scroll_max.set(10);
+
+    shell.scroll_transcript_up(TRANSCRIPT_PAGE_SCROLL_STEP);
+    assert_eq!(shell.transcript_scroll, 8);
+
+    shell.scroll_transcript_up(TRANSCRIPT_PAGE_SCROLL_STEP);
+    assert_eq!(shell.transcript_scroll, 10);
+
+    shell.scroll_transcript_down(3);
+    assert_eq!(shell.transcript_scroll, 7);
+
+    shell.scroll_transcript_to_top();
+    assert_eq!(shell.transcript_scroll, 10);
+
+    shell.scroll_transcript_to_bottom();
+    assert_eq!(shell.transcript_scroll, 0);
+}
+
+fn render_shell(shell: &ShellState, area: Rect) -> String {
     let mut buf = Buffer::empty(area);
-
-    ShellView { shell: &shell }.render(area, &mut buf);
-
-    insta::assert_snapshot!(buffer_contents(&buf, area));
+    ShellView { shell }.render(area, &mut buf);
+    buffer_contents(&buf, area)
 }
 
 fn buffer_contents(buf: &Buffer, area: Rect) -> String {
