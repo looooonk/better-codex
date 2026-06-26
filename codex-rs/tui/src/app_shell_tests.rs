@@ -116,6 +116,17 @@ fn renders_active_turn_status_snapshot() {
 }
 
 #[test]
+fn renders_active_turn_key_hints_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-active-1234567890".to_string());
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 44,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn renders_markdown_transcript_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();

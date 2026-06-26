@@ -302,6 +302,10 @@ impl ShellState {
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
+            if self.active_turn_id.is_some() {
+                self.interrupt_active_turn(app_server).await?;
+                return Ok(false);
+            }
             return Ok(true);
         }
         if self.pending_approval.is_some()
@@ -327,7 +331,11 @@ impl ShellState {
                 } else {
                     let prompt = self.composer.submission_text();
                     if !prompt.is_empty() {
-                        self.submit_prompt(app_server, prompt).await?;
+                        if self.active_turn_id.is_some() {
+                            self.steer_active_turn(app_server, prompt).await?;
+                        } else {
+                            self.submit_prompt(app_server, prompt).await?;
+                        }
                     }
                 }
                 Ok(false)
@@ -478,6 +486,50 @@ impl ShellState {
         self.composer.remember_submission(&prompt);
         self.composer.clear();
         self.active_turn_id = Some(response.turn.id);
+        Ok(())
+    }
+
+    async fn interrupt_active_turn(&mut self, app_server: &mut AppServerSession) -> Result<()> {
+        let Some(turn_id) = self.active_turn_id.clone() else {
+            self.push_status("no active turn to interrupt");
+            return Ok(());
+        };
+        app_server
+            .turn_interrupt(self.thread_id, turn_id.clone())
+            .await
+            .wrap_err("failed to interrupt active turn")?;
+        self.status = "interrupted".to_string();
+        self.push_decision_audit("turn", "interrupted", &turn_id);
+        Ok(())
+    }
+
+    async fn steer_active_turn(
+        &mut self,
+        app_server: &mut AppServerSession,
+        prompt: String,
+    ) -> Result<()> {
+        let Some(turn_id) = self.active_turn_id.clone() else {
+            self.submit_prompt(app_server, prompt).await?;
+            return Ok(());
+        };
+        app_server
+            .turn_steer(
+                self.thread_id,
+                turn_id,
+                vec![UserInput::Text {
+                    text: prompt.clone(),
+                    text_elements: Vec::new(),
+                }],
+            )
+            .await
+            .wrap_err("failed to steer active turn")?;
+        self.scroll_transcript_to_bottom();
+        self.push_user(prompt.clone());
+        let audit_title = compact_multiline(prompt.clone()).unwrap_or_else(|| prompt.clone());
+        self.push_decision_audit("turn", "steered", &audit_title);
+        self.composer.remember_submission(&prompt);
+        self.composer.clear();
+        self.status = "thinking".to_string();
         Ok(())
     }
 

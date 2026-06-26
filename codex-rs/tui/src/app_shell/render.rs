@@ -308,7 +308,13 @@ impl ShellView<'_> {
         }
         lines.push(Line::from(""));
         lines.push(Line::from("Keys".bold()));
-        lines.push(Line::from("Enter send"));
+        if self.shell.active_turn_id.is_some() {
+            lines.push(Line::from("Enter steer"));
+            lines.push(Line::from("Ctrl+C interrupt"));
+        } else {
+            lines.push(Line::from("Enter send"));
+            lines.push(Line::from("Ctrl+C exit"));
+        }
         lines.push(Line::from("Esc exit"));
         Paragraph::new(lines)
             .block(Block::default().borders(Borders::LEFT).title("Dashboard"))
