@@ -262,6 +262,23 @@ impl ShellView<'_> {
             "cwd ".dim(),
             compact_dashboard_text(&self.shell.cwd).into(),
         ]));
+        if let Some(git_status) = &self.shell.workspace_git_status {
+            if let Some(branch) = &git_status.branch {
+                lines.push(Line::from(vec![
+                    "branch ".dim(),
+                    truncate_text(branch, /*max_chars*/ 16).cyan(),
+                ]));
+            }
+            if git_status.is_dirty() {
+                lines.push(Line::from(format!(
+                    "changes {} files",
+                    git_status.changes.total()
+                )));
+                lines.extend(workspace_change_lines(&git_status.changes));
+            } else {
+                lines.push(Line::from("tree clean".green()));
+            }
+        }
         match &self.shell.permission_profile {
             PermissionProfile::Managed {
                 file_system,
@@ -457,6 +474,23 @@ fn tool_activity_line(activity: &ToolActivity) -> Line<'static> {
         " ".dim(),
         compact_dashboard_text(&activity.title).into(),
     ])
+}
+
+fn workspace_change_lines(
+    changes: &super::workspace::WorkspaceChangeSummary,
+) -> Vec<Line<'static>> {
+    [
+        ("added", changes.added),
+        ("modified", changes.modified),
+        ("deleted", changes.deleted),
+        ("renamed", changes.renamed),
+        ("conflicted", changes.conflicted),
+        ("untracked", changes.untracked),
+    ]
+    .into_iter()
+    .filter(|(_label, count)| *count > 0)
+    .map(|(label, count)| Line::from(format!("  {label} {count}").dim()))
+    .collect()
 }
 
 fn short_id(id: &str) -> String {

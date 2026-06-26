@@ -14,6 +14,7 @@ use crate::session_state::ThreadSessionState;
 use crate::token_usage::TokenUsage;
 use crate::tui;
 use crate::tui::TuiEvent;
+use crate::workspace_command::AppServerWorkspaceCommandRunner;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::PatchChangeKind;
 use codex_app_server_protocol::ThreadItem;
@@ -29,6 +30,7 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use std::cell::Cell;
 use std::collections::VecDeque;
+use std::sync::Arc;
 use tokio::select;
 use tokio_stream::StreamExt;
 
@@ -38,6 +40,7 @@ mod elicitation;
 mod events;
 mod render;
 mod user_input;
+mod workspace;
 use approval::ApprovalChoice;
 use approval::PendingApproval;
 use composer::ComposerState;
@@ -46,6 +49,7 @@ use elicitation::PendingElicitation;
 use render::draw_shell;
 use user_input::PendingUserInput;
 use user_input::UserInputAdvance;
+use workspace::WorkspaceGitStatus;
 
 const MAX_TRANSCRIPT_LINES: usize = 400;
 const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
@@ -67,9 +71,16 @@ pub(crate) async fn run(
         None => app_server.bootstrap(&config).await?,
     };
 
+    let workspace_command_runner = Arc::new(AppServerWorkspaceCommandRunner::new(
+        app_server.request_handle(),
+    ));
+
     let started = start_selected_session(&mut app_server, &config, session_selection).await?;
     let mut shell = ShellState::new(started.session, bootstrap.default_model);
     shell.ingest_turn_history(started.turns);
+    shell
+        .refresh_workspace_status(workspace_command_runner.as_ref())
+        .await;
 
     if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
         shell.submit_prompt(&mut app_server, prompt).await?;
@@ -102,7 +113,13 @@ pub(crate) async fn run(
             event = app_server.next_event() => {
                 match event {
                     Some(event) => {
-                        shell.handle_app_server_event(&mut app_server, event).await?;
+                        shell
+                            .handle_app_server_event(
+                                &mut app_server,
+                                workspace_command_runner.as_ref(),
+                                event,
+                            )
+                            .await?;
                         tui.frame_requester().schedule_frame();
                     }
                     None => {
@@ -230,6 +247,8 @@ struct ShellState {
     plan_steps: Vec<TurnPlanStep>,
     tool_activity: VecDeque<ToolActivity>,
     latest_diff: Option<DiffSummary>,
+    workspace_git_status: Option<WorkspaceGitStatus>,
+    workspace_status_refresh_due: bool,
     status: String,
     token_usage: TokenUsage,
     model_context_window: Option<i64>,
@@ -269,6 +288,8 @@ impl ShellState {
             plan_steps: Vec::new(),
             tool_activity: VecDeque::new(),
             latest_diff: None,
+            workspace_git_status: None,
+            workspace_status_refresh_due: false,
             status: "ready".to_string(),
             token_usage: TokenUsage::default(),
             model_context_window: None,
@@ -415,6 +436,15 @@ impl ShellState {
             | KeyCode::Media(_)
             | KeyCode::Modifier(_) => Ok(false),
         }
+    }
+
+    async fn refresh_workspace_status(
+        &mut self,
+        runner: &dyn crate::workspace_command::WorkspaceCommandExecutor,
+    ) {
+        self.workspace_git_status =
+            workspace::load_git_status(runner, std::path::Path::new(&self.cwd)).await;
+        self.workspace_status_refresh_due = false;
     }
 
     fn insert_text(&mut self, text: &str) {
@@ -1021,6 +1051,8 @@ impl ShellState {
                 additions: 128,
                 removals: 24,
             }),
+            workspace_git_status: None,
+            workspace_status_refresh_due: false,
             status: "thinking".to_string(),
             token_usage: TokenUsage {
                 input_tokens: 1200,

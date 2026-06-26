@@ -1,6 +1,7 @@
 use super::ShellState;
 use crate::app_server_session::AppServerSession;
 use crate::token_usage::TokenUsage;
+use crate::workspace_command::WorkspaceCommandExecutor;
 use base64::Engine;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_protocol::JSONRPCErrorError;
@@ -17,6 +18,7 @@ impl ShellState {
     pub(super) async fn handle_app_server_event(
         &mut self,
         app_server: &mut AppServerSession,
+        workspace_command_runner: &dyn WorkspaceCommandExecutor,
         event: AppServerEvent,
     ) -> Result<()> {
         match event {
@@ -33,6 +35,10 @@ impl ShellState {
                 self.status = "disconnected".to_string();
                 self.push_error(message);
             }
+        }
+        if self.workspace_status_refresh_due {
+            self.refresh_workspace_status(workspace_command_runner)
+                .await;
         }
         Ok(())
     }
@@ -70,6 +76,7 @@ impl ShellState {
                     self.finish_streaming_plan();
                     self.finish_streaming_assistant();
                     self.active_turn_id = None;
+                    self.workspace_status_refresh_due = true;
                     self.status = match completed.turn.status {
                         TurnStatus::Completed => "ready".to_string(),
                         TurnStatus::Failed => "failed".to_string(),
@@ -92,6 +99,7 @@ impl ShellState {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.model = updated.thread_settings.model;
                     self.cwd = updated.thread_settings.cwd.to_string_lossy().to_string();
+                    self.workspace_status_refresh_due = true;
                     self.approval_policy = updated.thread_settings.approval_policy;
                     self.approvals_reviewer =
                         approvals_reviewer_from_api(updated.thread_settings.approvals_reviewer);
@@ -105,6 +113,7 @@ impl ShellState {
             ServerNotification::TurnDiffUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.latest_diff = Some(super::diff_summary_from_unified_diff(&updated.diff));
+                    self.workspace_status_refresh_due = true;
                     if let Some(summary) = &self.latest_diff {
                         self.push_diff(format!(
                             "diff {} files +{} -{}",
@@ -141,6 +150,7 @@ impl ShellState {
             ServerNotification::FileChangePatchUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.latest_diff = Some(super::diff_summary_from_changes(&updated.changes));
+                    self.workspace_status_refresh_due = true;
                     let summary = super::file_change_summary(&updated.changes);
                     self.upsert_tool(updated.item_id, summary, "in progress".to_string());
                     self.push_diff(super::file_change_detail(&updated.changes));

@@ -75,6 +75,27 @@ fn renders_workspace_roots_snapshot() {
 }
 
 #[test]
+fn renders_workspace_git_status_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.workspace_git_status = Some(WorkspaceGitStatus {
+        branch: Some("feature/app-shell-dashboard".to_string()),
+        changes: workspace::WorkspaceChangeSummary {
+            added: 2,
+            modified: 5,
+            deleted: 1,
+            renamed: 1,
+            conflicted: 1,
+            untracked: 3,
+        },
+    });
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 48,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn renders_model_runtime_details_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.reasoning_effort = Some(ReasoningEffort::High);
