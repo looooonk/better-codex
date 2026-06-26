@@ -29,13 +29,13 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
 
-const MOCHA_BASE: Color = Color::Black;
-const MOCHA_MANTLE: Color = Color::DarkGray;
-const MOCHA_SURFACE0: Color = Color::Gray;
-const MOCHA_SURFACE1: Color = Color::DarkGray;
-const MOCHA_TEXT: Color = Color::Reset;
-const MOCHA_SUBTEXT0: Color = Color::Gray;
-const MOCHA_OVERLAY0: Color = Color::DarkGray;
+const MOCHA_BASE: Color = Color::Rgb(30, 30, 46);
+const MOCHA_MANTLE: Color = Color::Rgb(24, 24, 37);
+const MOCHA_SURFACE0: Color = Color::Rgb(49, 50, 68);
+const MOCHA_SURFACE1: Color = Color::Rgb(69, 71, 90);
+const MOCHA_TEXT: Color = Color::Rgb(205, 214, 244);
+const MOCHA_SUBTEXT0: Color = Color::Rgb(166, 173, 200);
+const MOCHA_OVERLAY0: Color = Color::Rgb(108, 112, 134);
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
