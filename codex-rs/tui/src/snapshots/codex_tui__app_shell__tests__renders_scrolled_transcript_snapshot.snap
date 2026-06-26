@@ -2,19 +2,18 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-Better Codex                                                          Dashboard x1 x2 >3 >4 >5
 
-Conversation +4                                                       Status
-system: Better Codex app shell                                        thinking
-you: Create a divergent standalone TUI.
-codex: Started a fullscreen app shell backed by app-server turns.     Model
-plan: 1. Build shell                                                  gpt-5-codex
-      2. Wire transcript
-      3. Render dashboard                                             Thread
-tool: exec just test -p codex-tui                                     01900000...
-diff: diff 3 files +128 -24
-status: first checkpoint                                              Tokens
-Composer ready 1:37                                                   total 1440
-> Summarize the new shell architecture                                input 1200
-                                                                      output 240
-                                                                      context 200000
+ Better Codex                                                          Dashboard x1 x2 >3 >4 >5
+
+                                                                       Status
+ Conversation +4                                                       thinking
+ tool: exec just test -p codex-tui
+ diff: diff 3 files +128 -24                                           Model
+ status: first checkpoint                                              gpt-5-codex
+ status: second checkpoint
+                                                                       Thread
+                                                                       01900000...
+ Composer ready 1:37
+ > Summarize the new shell architecture                                Tokens
+                                                                       total 1440
+                                                                       input 1200

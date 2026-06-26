@@ -37,6 +37,7 @@ const MOCHA_TEXT: Color = Color::Rgb(205, 214, 244);
 const MOCHA_SUBTEXT0: Color = Color::Rgb(166, 173, 200);
 const MOCHA_OVERLAY0: Color = Color::Rgb(108, 112, 134);
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
+const PANE_PADDING: u16 = 1;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
     let height = tui.terminal.size()?.height;
@@ -61,13 +62,13 @@ impl ShellView<'_> {
                 .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
                 .split(area)
         };
-        let header_height = if dashboard_collapsed { 3 } else { 2 };
+        let header_height = if dashboard_collapsed { 4 } else { 3 };
         let main = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(header_height),
                 Constraint::Min(5),
-                Constraint::Length(4),
+                Constraint::Length(6),
             ])
             .split(horizontal[0]);
 
@@ -82,47 +83,58 @@ impl ShellView<'_> {
 
     fn render_header(&self, area: Rect, dashboard_collapsed: bool, buf: &mut Buffer) {
         fill_rect(buf, area, MOCHA_MANTLE);
+        let content = pane_content_rect(area);
         let mut lines = vec![Line::from("Better Codex".magenta().bold())];
         if dashboard_collapsed {
             lines.push(compact_dashboard_summary(self.shell));
         }
         Paragraph::new(lines)
             .style(pane_style(MOCHA_MANTLE))
-            .render(area, buf);
+            .render(content, buf);
     }
 
     fn render_transcript(&self, area: Rect, buf: &mut Buffer) {
         fill_rect(buf, area, MOCHA_BASE);
+        let content = pane_content_rect(area);
+        let body = body_rect_after_title(content);
         let mut lines = Vec::new();
         let cwd = std::path::Path::new(&self.shell.cwd);
+        let transcript_width = body.width;
+        let mut previous_kind = None;
         for (index, line) in self.shell.transcript.iter().enumerate() {
-            lines.extend(transcript_lines(
+            push_transcript_lines(
+                &mut lines,
+                &mut previous_kind,
                 line,
-                area.width.saturating_sub(1),
+                transcript_width,
                 cwd,
                 self.shell.transcript_selection == Some(index),
-            ));
+            );
         }
         if !self.shell.streaming_plan.is_empty() {
-            lines.extend(transcript_lines(
+            push_transcript_lines(
+                &mut lines,
+                &mut previous_kind,
                 &TranscriptLine::new(TranscriptKind::Plan, self.shell.streaming_plan.clone()),
-                area.width.saturating_sub(1),
+                transcript_width,
                 cwd,
                 /*selected*/ false,
-            ));
+            );
         }
         if !self.shell.streaming_assistant.is_empty() {
-            lines.extend(transcript_lines(
+            push_transcript_lines(
+                &mut lines,
+                &mut previous_kind,
                 &TranscriptLine::new(
                     TranscriptKind::Assistant,
                     self.shell.streaming_assistant.clone(),
                 ),
-                area.width.saturating_sub(1),
+                transcript_width,
                 cwd,
                 /*selected*/ false,
-            ));
+            );
         }
-        let visible_count = area.height.saturating_sub(1) as usize;
+        let visible_count = usize::from(body.height);
         let max_scroll = lines.len().saturating_sub(visible_count);
         self.shell.transcript_scroll_max.set(max_scroll);
         let scroll = self.shell.transcript_scroll.min(max_scroll);
@@ -142,8 +154,7 @@ impl ShellView<'_> {
         let visible_lines = visible_lines(visible_hyperlink_lines.clone());
         Paragraph::new(Line::from(title.bold()))
             .style(pane_style(MOCHA_BASE))
-            .render(title_rect(area), buf);
-        let body = body_rect_after_title(area);
+            .render(title_rect(content), buf);
         Paragraph::new(visible_lines)
             .style(pane_style(MOCHA_BASE))
             .wrap(Wrap { trim: false })
@@ -209,6 +220,7 @@ impl ShellView<'_> {
 
     fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
         fill_rect(buf, area, MOCHA_MANTLE);
+        let content = pane_content_rect(area);
         let context_window = self
             .shell
             .model_context_window
@@ -406,7 +418,7 @@ impl ShellView<'_> {
         Paragraph::new(lines)
             .style(pane_style(MOCHA_MANTLE))
             .wrap(Wrap { trim: false })
-            .render(area, buf);
+            .render(content, buf);
     }
 
     fn render_titled_panel(
@@ -417,13 +429,14 @@ impl ShellView<'_> {
         background: Color,
         buf: &mut Buffer,
     ) {
+        let content = pane_content_rect(area);
         Paragraph::new(Line::from(title.to_string().bold()))
             .style(pane_style(background))
-            .render(title_rect(area), buf);
+            .render(title_rect(content), buf);
         Paragraph::new(lines)
             .style(pane_style(background))
             .wrap(Wrap { trim: false })
-            .render(body_rect_after_title(area), buf);
+            .render(body_rect_after_title(content), buf);
     }
 
     fn render_command_palette(&self, area: Rect, buf: &mut Buffer) {
@@ -431,7 +444,8 @@ impl ShellView<'_> {
             return;
         };
         let entries = self.shell.command_palette_entries();
-        let palette_area = centered_band_rect(area, /*height*/ 15);
+        let palette_area = centered_band_rect(area, /*height*/ 17);
+        let content = pane_content_rect(palette_area);
         Clear.render(palette_area, buf);
 
         let mut lines = Vec::new();
@@ -466,8 +480,36 @@ impl ShellView<'_> {
         Paragraph::new(palette_lines)
             .style(pane_style(MOCHA_SURFACE0))
             .wrap(Wrap { trim: true })
-            .render(palette_area, buf);
+            .render(content, buf);
     }
+}
+
+fn push_transcript_lines(
+    lines: &mut Vec<HyperlinkLine>,
+    previous_kind: &mut Option<TranscriptKind>,
+    line: &TranscriptLine,
+    width: u16,
+    cwd: &std::path::Path,
+    selected: bool,
+) {
+    if should_separate_transcript_item(*previous_kind, line.kind) {
+        lines.push(HyperlinkLine::new(Line::default()));
+    }
+    lines.extend(transcript_lines(line, width, cwd, selected));
+    *previous_kind = Some(line.kind);
+}
+
+fn should_separate_transcript_item(
+    previous_kind: Option<TranscriptKind>,
+    current_kind: TranscriptKind,
+) -> bool {
+    previous_kind.is_some_and(|previous_kind| {
+        previous_kind != TranscriptKind::System
+            && matches!(
+                current_kind,
+                TranscriptKind::User | TranscriptKind::Assistant
+            )
+    })
 }
 
 fn fill_rect(buf: &mut Buffer, area: Rect, color: Color) {
@@ -481,6 +523,23 @@ fn fill_rect(buf: &mut Buffer, area: Rect, color: Color) {
 
 fn pane_style(color: Color) -> Style {
     Style::new().fg(MOCHA_TEXT).bg(color)
+}
+
+fn pane_content_rect(area: Rect) -> Rect {
+    let horizontal_padding = inset_for(area.width, PANE_PADDING);
+    let vertical_padding = inset_for(area.height, PANE_PADDING);
+    Rect::new(
+        area.x.saturating_add(horizontal_padding),
+        area.y.saturating_add(vertical_padding),
+        area.width
+            .saturating_sub(horizontal_padding.saturating_mul(2)),
+        area.height
+            .saturating_sub(vertical_padding.saturating_mul(2)),
+    )
+}
+
+fn inset_for(size: u16, padding: u16) -> u16 {
+    padding.min(size.saturating_sub(1) / 2)
 }
 
 fn title_rect(area: Rect) -> Rect {

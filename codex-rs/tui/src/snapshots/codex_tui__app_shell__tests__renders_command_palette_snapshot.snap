@@ -2,33 +2,32 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-Better Codex                                                          Dashboard x1 x2 >3 >4 >5
 
-Conversation                                                          Status
-system: Better Codex app shell                                        thinking
-you: Create a divergent standalone TUI.
-codex: Started a fullscreen app shell backed by app-server turns.     Model
-plan: 1. Build shell                                                  gpt-5-codex
-Command Palette
+ Better Codex                                                          Dashboard x1 x2 >3 >4 >5
 
-> Copy transcript item - Copy selection or latest ...
-Clear visible transcript
-Select latest transcript item
-Jump transcript to top
-Jump transcript to bottom
-Interrupt active turn
-Switch model
-Change permissions
-Resume thread
-Fork thread
-Compact context
+                                                                       Status
+ Conversation                                                          thinking
+ system: Better Codex app shell
+
+ Command Palette
+
+ > Copy transcript item - Copy selection or latest ...
+ Clear visible transcript
+ Select latest transcript item
+ Jump transcript to top
+ Jump transcript to bottom
+ Interrupt active turn
+ Switch model
+ Change permissions
+ Resume thread
+ Fork thread
+ Compact context
 
 
-                                                                      slices.
-                                                                      x Shell frame
-                                                                      > Transcript model
-                                                                      - Approvals
-Composer ready 1:37
-> Summarize the new shell architecture                                Tools
-                                                                      in progress exec just test -p
-                                                                      codex-...
+
+                                                                       in slices.
+                                                                       x Shell frame
+ Composer ready 1:37                                                   > Transcript model
+ > Summarize the new shell architecture                                - Approvals
+
+                                                                       Tools
