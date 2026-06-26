@@ -40,6 +40,39 @@ fn renders_narrow_shell_snapshot() {
 }
 
 #[test]
+fn renders_markdown_transcript_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.input.clear();
+    shell.streaming_assistant.clear();
+    shell.push_assistant(
+        "# Result\n\
+        - Render `assistant` text as markdown.\n\
+        - Preserve local links like [render.rs](/workspace/better-codex/codex-rs/tui/src/app_shell/render.rs:1).\n\
+        \n\
+        ```rust\n\
+        fn transcript() -> &'static str {\n\
+            \"markdown\"\n\
+        }\n\
+        ```\n\
+        \n\
+        | Area | Status |\n\
+        | --- | --- |\n\
+        | code | done |\n\
+        | table | done |",
+    );
+    shell.push_plan(
+        "1. Keep transcript rendering width-aware.\n\
+        2. Leave selection and copy mode for the next slice.",
+    );
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 112, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn transcript_scroll_clamps_to_last_rendered_range() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript_scroll_max.set(10);

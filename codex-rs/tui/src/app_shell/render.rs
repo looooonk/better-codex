@@ -2,6 +2,11 @@ use super::ShellState;
 use super::ToolActivity;
 use super::TranscriptKind;
 use super::TranscriptLine;
+use crate::markdown;
+use crate::terminal_hyperlinks::HyperlinkLine;
+use crate::terminal_hyperlinks::mark_buffer_hyperlinks;
+use crate::terminal_hyperlinks::prefix_hyperlink_lines;
+use crate::terminal_hyperlinks::visible_lines;
 use crate::tui;
 use codex_app_server_protocol::TurnPlanStepStatus;
 use ratatui::buffer::Buffer;
@@ -9,6 +14,7 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
+use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -63,16 +69,15 @@ impl ShellView<'_> {
 
     fn render_transcript(&self, area: Rect, buf: &mut Buffer) {
         let mut lines = Vec::new();
+        let cwd = std::path::Path::new(&self.shell.cwd);
         for line in &self.shell.transcript {
-            lines.extend(transcript_lines(
-                line,
-                area.width.saturating_sub(2) as usize,
-            ));
+            lines.extend(transcript_lines(line, area.width.saturating_sub(2), cwd));
         }
         if !self.shell.streaming_plan.is_empty() {
             lines.extend(transcript_lines(
                 &TranscriptLine::new(TranscriptKind::Plan, self.shell.streaming_plan.clone()),
-                area.width.saturating_sub(2) as usize,
+                area.width.saturating_sub(2),
+                cwd,
             ));
         }
         if !self.shell.streaming_assistant.is_empty() {
@@ -81,7 +86,8 @@ impl ShellView<'_> {
                     TranscriptKind::Assistant,
                     self.shell.streaming_assistant.clone(),
                 ),
-                area.width.saturating_sub(2) as usize,
+                area.width.saturating_sub(2),
+                cwd,
             ));
         }
         let visible_count = area.height.saturating_sub(2) as usize;
@@ -94,10 +100,18 @@ impl ShellView<'_> {
         } else {
             format!("Conversation +{scroll}")
         };
-        Paragraph::new(lines.into_iter().skip(visible_from).collect::<Vec<_>>())
+        let visible_hyperlink_lines = lines.into_iter().skip(visible_from).collect::<Vec<_>>();
+        let visible_lines = visible_lines(visible_hyperlink_lines.clone());
+        Paragraph::new(visible_lines)
             .block(Block::default().borders(Borders::ALL).title(title))
             .wrap(Wrap { trim: false })
             .render(area, buf);
+        mark_buffer_hyperlinks(
+            buf,
+            inner_rect(area),
+            &visible_hyperlink_lines,
+            /*scroll_rows*/ 0,
+        );
     }
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
@@ -184,8 +198,12 @@ impl ShellView<'_> {
     }
 }
 
-fn transcript_lines(line: &TranscriptLine, width: usize) -> Vec<Line<'static>> {
-    let width = width.max(12);
+fn transcript_lines(
+    line: &TranscriptLine,
+    width: u16,
+    cwd: &std::path::Path,
+) -> Vec<HyperlinkLine> {
+    let width = usize::from(width).max(12);
     let (label, style): (&str, LineStyle) = match line.kind {
         TranscriptKind::System => ("system", LineStyle::Dim),
         TranscriptKind::User => ("you", LineStyle::Cyan),
@@ -197,25 +215,45 @@ fn transcript_lines(line: &TranscriptLine, width: usize) -> Vec<Line<'static>> {
         TranscriptKind::Status => ("status", LineStyle::Dim),
         TranscriptKind::Error => ("error", LineStyle::Red),
     };
-    let subsequent_indent = " ".repeat(label.len() + 2);
-    let options = textwrap::Options::new(width)
-        .initial_indent("")
-        .subsequent_indent(&subsequent_indent);
-    textwrap::wrap(&line.text, options)
+
+    let prefix_width = label.len() + 2;
+    let body_width = width.saturating_sub(prefix_width).max(1);
+    let initial_prefix = style.label_prefix(label);
+    let subsequent_prefix = " ".repeat(prefix_width).into();
+
+    if matches!(line.kind, TranscriptKind::Assistant | TranscriptKind::Plan) {
+        let rendered: Vec<HyperlinkLine> = markdown::render_markdown_agent_with_links_and_cwd(
+            &line.text,
+            Some(body_width),
+            Some(cwd),
+        )
         .into_iter()
-        .enumerate()
-        .map(|(index, wrapped)| {
-            if index == 0 {
-                Line::from(vec![
-                    style.label(label),
-                    ": ".dim(),
-                    style.text(wrapped.into_owned()),
-                ])
-            } else {
-                Line::from(style.text(wrapped.into_owned()))
-            }
+        .map(|line| line.style(style.line_style()))
+        .collect();
+        return prefix_hyperlink_lines(rendered, initial_prefix, subsequent_prefix);
+    }
+
+    let options = textwrap::Options::new(body_width);
+    let wrapped_lines: Vec<HyperlinkLine> = textwrap::wrap(&line.text, options)
+        .into_iter()
+        .map(|wrapped| {
+            HyperlinkLine::new(
+                Line::from(style.text(wrapped.into_owned())).style(style.line_style()),
+            )
         })
-        .collect()
+        .collect();
+    prefix_hyperlink_lines(wrapped_lines, initial_prefix, subsequent_prefix)
+}
+
+fn inner_rect(area: Rect) -> Rect {
+    let width = area.width.saturating_sub(2);
+    let height = area.height.saturating_sub(2);
+    Rect::new(
+        area.x.saturating_add(1),
+        area.y.saturating_add(1),
+        width,
+        height,
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -228,13 +266,17 @@ enum LineStyle {
 }
 
 impl LineStyle {
-    fn label(self, text: &str) -> Span<'static> {
+    fn label_prefix(self, text: &str) -> Span<'static> {
+        self.label(format!("{text}: "))
+    }
+
+    fn label(self, text: String) -> Span<'static> {
         match self {
-            Self::Cyan => text.to_string().cyan().bold(),
-            Self::Dim => text.to_string().dim().bold(),
-            Self::Green => text.to_string().green().bold(),
-            Self::Magenta => text.to_string().magenta().bold(),
-            Self::Red => text.to_string().red().bold(),
+            Self::Cyan => text.cyan().bold(),
+            Self::Dim => text.dim().bold(),
+            Self::Green => text.green().bold(),
+            Self::Magenta => text.magenta().bold(),
+            Self::Red => text.red().bold(),
         }
     }
 
@@ -245,6 +287,15 @@ impl LineStyle {
             Self::Green => text.green(),
             Self::Magenta => text.into(),
             Self::Red => text.red(),
+        }
+    }
+
+    fn line_style(self) -> Style {
+        match self {
+            Self::Cyan | Self::Magenta => Style::new(),
+            Self::Dim => Style::new().dim(),
+            Self::Green => Style::new().green(),
+            Self::Red => Style::new().red(),
         }
     }
 }
