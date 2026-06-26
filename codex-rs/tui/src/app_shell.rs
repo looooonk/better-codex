@@ -36,10 +36,13 @@ mod approval;
 mod composer;
 mod events;
 mod render;
+mod user_input;
 use approval::ApprovalChoice;
 use approval::PendingApproval;
 use composer::ComposerState;
 use render::draw_shell;
+use user_input::PendingUserInput;
+use user_input::UserInputAdvance;
 
 const MAX_TRANSCRIPT_LINES: usize = 400;
 const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
@@ -215,6 +218,7 @@ struct ShellState {
     composer: ComposerState,
     active_turn_id: Option<String>,
     pending_approval: Option<PendingApproval>,
+    pending_user_input: Option<PendingUserInput>,
     streaming_assistant: String,
     streaming_plan: String,
     plan_explanation: Option<String>,
@@ -252,6 +256,7 @@ impl ShellState {
             composer: ComposerState::default(),
             active_turn_id: None,
             pending_approval: None,
+            pending_user_input: None,
             streaming_assistant: String::new(),
             streaming_plan: String::new(),
             plan_explanation: None,
@@ -298,6 +303,9 @@ impl ShellState {
         {
             self.resolve_pending_approval(app_server, choice).await?;
             return Ok(false);
+        }
+        if self.pending_user_input.is_some() {
+            return self.handle_user_input_key(key, app_server).await;
         }
         match key.code {
             KeyCode::Esc => Ok(true),
@@ -482,6 +490,118 @@ impl ShellState {
             ApprovalChoice::Deny => "denied",
         };
         self.push_status(format!("{decision}: {title}"));
+        Ok(())
+    }
+
+    async fn handle_user_input_key(
+        &mut self,
+        key: KeyEvent,
+        app_server: &mut AppServerSession,
+    ) -> Result<bool> {
+        match key.code {
+            KeyCode::Esc => Ok(true),
+            KeyCode::Enter => {
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    self.composer.insert_newline();
+                } else {
+                    self.resolve_pending_user_input(app_server).await?;
+                }
+                Ok(false)
+            }
+            KeyCode::Backspace => {
+                self.composer.backspace();
+                Ok(false)
+            }
+            KeyCode::Up => {
+                self.composer.move_up_or_recall_history();
+                Ok(false)
+            }
+            KeyCode::Down => {
+                self.composer.move_down_or_recall_history();
+                Ok(false)
+            }
+            KeyCode::Home => {
+                self.composer.move_to_line_start();
+                Ok(false)
+            }
+            KeyCode::End => {
+                self.composer.move_to_line_end();
+                Ok(false)
+            }
+            KeyCode::Char(ch) => {
+                if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
+                    self.composer.insert_char(ch);
+                }
+                Ok(false)
+            }
+            KeyCode::Tab | KeyCode::BackTab => {
+                self.composer.insert_str("    ");
+                Ok(false)
+            }
+            KeyCode::Left => {
+                self.composer.move_left();
+                Ok(false)
+            }
+            KeyCode::Right => {
+                self.composer.move_right();
+                Ok(false)
+            }
+            KeyCode::Delete => {
+                self.composer.delete();
+                Ok(false)
+            }
+            KeyCode::PageUp => {
+                self.scroll_transcript_up(TRANSCRIPT_PAGE_SCROLL_STEP);
+                Ok(false)
+            }
+            KeyCode::PageDown => {
+                self.scroll_transcript_down(TRANSCRIPT_PAGE_SCROLL_STEP);
+                Ok(false)
+            }
+            KeyCode::Insert
+            | KeyCode::F(_)
+            | KeyCode::Null
+            | KeyCode::CapsLock
+            | KeyCode::ScrollLock
+            | KeyCode::NumLock
+            | KeyCode::PrintScreen
+            | KeyCode::Pause
+            | KeyCode::Menu
+            | KeyCode::KeypadBegin
+            | KeyCode::Media(_)
+            | KeyCode::Modifier(_) => Ok(false),
+        }
+    }
+
+    async fn resolve_pending_user_input(
+        &mut self,
+        app_server: &mut AppServerSession,
+    ) -> Result<()> {
+        let answer = self.composer.submission_text();
+        let Some(pending) = self.pending_user_input.as_ref() else {
+            return Ok(());
+        };
+        let mut next_pending = pending.clone();
+        let title = pending.title().to_string();
+        match next_pending.answer_current(answer) {
+            Ok(UserInputAdvance::Next) => {
+                self.pending_user_input = Some(next_pending);
+                self.composer.clear();
+                self.push_status(format!("answered: {title}"));
+            }
+            Ok(UserInputAdvance::Complete { request_id, result }) => {
+                app_server
+                    .resolve_server_request(request_id, result)
+                    .await
+                    .wrap_err("failed to resolve app-server tool input request")?;
+                self.pending_user_input = None;
+                self.composer.clear();
+                self.push_status(format!("submitted: {title}"));
+            }
+            Err(message) => {
+                self.push_error(message);
+            }
+        }
         Ok(())
     }
 
@@ -763,6 +883,7 @@ impl ShellState {
             },
             active_turn_id: None,
             pending_approval: None,
+            pending_user_input: None,
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
             streaming_plan: String::new(),
             plan_explanation: Some("Build the standalone shell in slices.".to_string()),

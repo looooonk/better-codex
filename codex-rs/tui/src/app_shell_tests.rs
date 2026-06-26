@@ -5,6 +5,9 @@ use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::PermissionsRequestApprovalParams;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::ToolRequestUserInputOption;
+use codex_app_server_protocol::ToolRequestUserInputParams;
+use codex_app_server_protocol::ToolRequestUserInputQuestion;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
 use pretty_assertions::assert_eq;
@@ -86,6 +89,18 @@ fn renders_pending_approval_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.pending_approval = PendingApproval::from_request(&command_approval_request())
         .expect("approval request should be valid");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_pending_user_input_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    shell.composer.set_text("2");
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -204,6 +219,50 @@ fn permissions_approval_serializes_grant_and_empty_deny() {
     );
 }
 
+#[test]
+fn user_input_serializes_free_form_answer() {
+    let mut pending = PendingUserInput::from_request(&tool_free_form_user_input_request())
+        .expect("request should be supported");
+
+    assert_eq!(
+        pending
+            .answer_current("Use my staging API key".to_string())
+            .expect("answer should serialize"),
+        UserInputAdvance::Complete {
+            request_id: RequestId::Integer(44),
+            result: json!({
+                "answers": {
+                    "api_key": {
+                        "answers": ["user_note: Use my staging API key"]
+                    }
+                }
+            })
+        }
+    );
+}
+
+#[test]
+fn user_input_serializes_option_selection() {
+    let mut pending = PendingUserInput::from_request(&tool_user_input_request())
+        .expect("request should be supported");
+
+    assert_eq!(
+        pending
+            .answer_current("2".to_string())
+            .expect("answer should serialize"),
+        UserInputAdvance::Complete {
+            request_id: RequestId::Integer(43),
+            result: json!({
+                "answers": {
+                    "environment": {
+                        "answers": ["Staging"]
+                    }
+                }
+            })
+        }
+    );
+}
+
 fn render_shell(shell: &ShellState, area: Rect) -> String {
     let mut buf = Buffer::empty(area);
     ShellView { shell }.render(area, &mut buf);
@@ -252,6 +311,55 @@ fn permissions_approval_request() -> ServerRequest {
                 }),
                 file_system: None,
             },
+        },
+    }
+}
+
+fn tool_user_input_request() -> ServerRequest {
+    ServerRequest::ToolRequestUserInput {
+        request_id: RequestId::Integer(43),
+        params: ToolRequestUserInputParams {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "tool-input-1".to_string(),
+            questions: vec![ToolRequestUserInputQuestion {
+                id: "environment".to_string(),
+                header: "Environment".to_string(),
+                question: "Which environment should the tool use?".to_string(),
+                is_other: false,
+                is_secret: false,
+                options: Some(vec![
+                    ToolRequestUserInputOption {
+                        label: "Production".to_string(),
+                        description: "Use the live service".to_string(),
+                    },
+                    ToolRequestUserInputOption {
+                        label: "Staging".to_string(),
+                        description: "Use the staging service".to_string(),
+                    },
+                ]),
+            }],
+            auto_resolution_ms: None,
+        },
+    }
+}
+
+fn tool_free_form_user_input_request() -> ServerRequest {
+    ServerRequest::ToolRequestUserInput {
+        request_id: RequestId::Integer(44),
+        params: ToolRequestUserInputParams {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "tool-input-2".to_string(),
+            questions: vec![ToolRequestUserInputQuestion {
+                id: "api_key".to_string(),
+                header: "API key".to_string(),
+                question: "Which API key should be used?".to_string(),
+                is_other: false,
+                is_secret: true,
+                options: None,
+            }],
+            auto_resolution_ms: None,
         },
     }
 }

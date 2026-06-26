@@ -261,7 +261,7 @@ impl ShellState {
         match super::PendingApproval::from_request(&request) {
             Ok(Some(pending)) => {
                 let title = pending.title().to_string();
-                if self.pending_approval.is_some() {
+                if self.has_pending_interactive_request() {
                     self.reject_request_with_message(
                         app_server,
                         request.id().clone(),
@@ -274,7 +274,25 @@ impl ShellState {
                 self.push_status(format!("approval requested: {title}"));
                 Ok(())
             }
-            Ok(None) => self.reject_unsupported_request(app_server, request).await,
+            Ok(None) => {
+                if let Some(pending) = super::PendingUserInput::from_request(&request) {
+                    let title = pending.title().to_string();
+                    if self.has_pending_interactive_request() {
+                        self.reject_request_with_message(
+                            app_server,
+                            request.id().clone(),
+                            format!("interactive request already pending: {title}"),
+                        )
+                        .await?;
+                        return Ok(());
+                    }
+                    self.pending_user_input = Some(pending);
+                    self.push_status(format!("input requested: {title}"));
+                    Ok(())
+                } else {
+                    self.reject_unsupported_request(app_server, request).await
+                }
+            }
             Err(message) => {
                 self.reject_request_with_message(app_server, request.id().clone(), message)
                     .await
@@ -325,6 +343,10 @@ impl ShellState {
             total_tokens: usage.total.total_tokens,
         };
         self.model_context_window = usage.model_context_window;
+    }
+
+    fn has_pending_interactive_request(&self) -> bool {
+        self.pending_approval.is_some() || self.pending_user_input.is_some()
     }
 }
 

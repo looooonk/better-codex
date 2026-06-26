@@ -122,6 +122,17 @@ impl ShellView<'_> {
                 .render(area, buf);
             return;
         }
+        if let Some(pending) = &self.shell.pending_user_input {
+            Paragraph::new(user_input_lines(
+                pending,
+                self.shell.composer.text(),
+                self.shell.composer.is_empty(),
+            ))
+            .block(Block::default().borders(Borders::TOP).title("Tool Input"))
+            .wrap(Wrap { trim: false })
+            .render(area, buf);
+            return;
+        }
 
         let (line, column) = self.shell.composer.cursor_position();
         let title = if self.shell.active_turn_id.is_some() {
@@ -400,6 +411,60 @@ fn approval_lines(pending: &super::PendingApproval) -> Vec<Line<'static>> {
             " deny".dim(),
         ]),
     ]
+}
+
+fn user_input_lines(
+    pending: &super::PendingUserInput,
+    composer_text: &str,
+    is_empty: bool,
+) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let (current, total) = pending.question_position();
+    lines.push(Line::from(vec![
+        "? ".cyan().bold(),
+        format!("{} ({current}/{total})", pending.title()).bold(),
+    ]));
+
+    if let Some(question) = pending.current_question() {
+        lines.push(Line::from(vec![
+            "  ".into(),
+            question.header.clone().bold(),
+            ": ".dim(),
+            question.question.clone().into(),
+        ]));
+    }
+
+    let secret = pending
+        .current_question()
+        .is_some_and(|question| question.is_secret);
+    let answer = if is_empty {
+        "answer".dim()
+    } else if secret {
+        "[hidden]".dim()
+    } else {
+        composer_text.to_string().into()
+    };
+    let mut answer_line = vec!["> ".cyan().bold(), answer];
+    if let Some(question) = pending.current_question()
+        && let Some(options) = question.options.as_ref()
+    {
+        answer_line.push("  ".dim());
+        answer_line.extend(
+            options
+                .iter()
+                .take(3)
+                .enumerate()
+                .flat_map(|(index, option)| {
+                    vec![
+                        format!("{} ", index + 1).green().bold(),
+                        option.label.clone().dim(),
+                        "  ".dim(),
+                    ]
+                }),
+        );
+    }
+    lines.push(Line::from(answer_line));
+    lines
 }
 
 fn composer_line_spans(
