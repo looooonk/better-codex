@@ -9,24 +9,24 @@ Better Codex  thinking                                                │Dashboa
 │system: Better Codex app shell                                      ││Model
 │you: Create a divergent standalone TUI.                             ││gpt-5-codex
 │codex: Started a fullscreen app shell backed by app-server turns.   ││
-│codex: The new shell owns the fullscreen surface.                   ││Thread
-│                                                                    ││01900000-0000-7000-8000-00000
-│                                                                    ││0000001
-│                                                                    ││
-│                                                                    ││Tokens
-│                                                                    ││total 1440
-│                                                                    ││input 1200
+│plan: 1. Build shell                                                ││Thread
+│plan:       2. Wire transcript                                      ││01900000...
+│plan:       3. Render dashboard                                     ││
+│tool: exec just test -p codex-tui                                   ││Tokens
+│diff: diff 3 files +128 -24                                         ││total 1440
+│codex: The new shell owns the fullscreen surface.                   ││input 1200
 │                                                                    ││output 240
 │                                                                    ││context 200000
 │                                                                    ││
-│                                                                    ││Permissions
-│                                                                    ││Managed { file_system:
-│                                                                    ││Restricted { entries: [],
-│                                                                    ││glob_scan_max_depth: None },
-│                                                                    ││network: Restricted }
+│                                                                    ││Diff
+│                                                                    ││3 files +128 -24
 │                                                                    ││
-└────────────────────────────────────────────────────────────────────┘│Plan
-Composer──────────────────────────────────────────────────────────────│stage 1 shell
-> Summarize the new shell architecture                                │dashboard pending
-                                                                      │
-                                                                      │Keys
+│                                                                    ││Plan
+│                                                                    ││Build the standalone shell in
+│                                                                    ││slices.
+│                                                                    ││x Shell frame
+└────────────────────────────────────────────────────────────────────┘│> Transcript model
+Composer──────────────────────────────────────────────────────────────│- Approvals
+> Summarize the new shell architecture                                │
+                                                                      │Tools
+                                                                      │in progress exec just test -p

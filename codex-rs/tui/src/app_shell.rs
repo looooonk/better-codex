@@ -14,6 +14,11 @@ use crate::session_state::ThreadSessionState;
 use crate::token_usage::TokenUsage;
 use crate::tui;
 use crate::tui::TuiEvent;
+use codex_app_server_protocol::FileUpdateChange;
+use codex_app_server_protocol::PatchChangeKind;
+use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnPlanStep;
 use codex_app_server_protocol::UserInput;
 use codex_protocol::ThreadId;
 use color_eyre::Result;
@@ -51,9 +56,7 @@ pub(crate) async fn run(
 
     let started = start_selected_session(&mut app_server, &config, session_selection).await?;
     let mut shell = ShellState::new(started.session, bootstrap.default_model);
-    for turn in started.turns {
-        shell.push_system(format!("loaded previous turn {}", turn.id));
-    }
+    shell.ingest_turn_history(started.turns);
 
     if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
         shell.submit_prompt(&mut app_server, prompt).await?;
@@ -144,12 +147,45 @@ async fn start_selected_session(
 }
 
 #[derive(Debug, Clone)]
-enum TranscriptLine {
-    System(String),
-    User(String),
-    Assistant(String),
-    Status(String),
-    Error(String),
+struct TranscriptLine {
+    kind: TranscriptKind,
+    text: String,
+}
+
+impl TranscriptLine {
+    fn new(kind: TranscriptKind, text: impl Into<String>) -> Self {
+        Self {
+            kind,
+            text: text.into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TranscriptKind {
+    System,
+    User,
+    Assistant,
+    Plan,
+    Tool,
+    Diff,
+    Output,
+    Status,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+struct ToolActivity {
+    id: String,
+    title: String,
+    status: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct DiffSummary {
+    files: usize,
+    additions: usize,
+    removals: usize,
 }
 
 #[derive(Debug)]
@@ -170,6 +206,11 @@ struct ShellState {
     input: String,
     active_turn_id: Option<String>,
     streaming_assistant: String,
+    streaming_plan: String,
+    plan_explanation: Option<String>,
+    plan_steps: Vec<TurnPlanStep>,
+    tool_activity: VecDeque<ToolActivity>,
+    latest_diff: Option<DiffSummary>,
     status: String,
     token_usage: TokenUsage,
     model_context_window: Option<i64>,
@@ -199,12 +240,33 @@ impl ShellState {
             input: String::new(),
             active_turn_id: None,
             streaming_assistant: String::new(),
+            streaming_plan: String::new(),
+            plan_explanation: None,
+            plan_steps: Vec::new(),
+            tool_activity: VecDeque::new(),
+            latest_diff: None,
             status: "ready".to_string(),
             token_usage: TokenUsage::default(),
             model_context_window: None,
         };
         shell.push_system("Better Codex app shell");
         shell
+    }
+
+    fn ingest_turn_history(&mut self, turns: Vec<Turn>) {
+        if turns.is_empty() {
+            return;
+        }
+
+        self.push_system(format!("loaded {} previous turns", turns.len()));
+        for turn in turns {
+            for item in turn.items {
+                self.ingest_completed_item(item);
+            }
+            if let Some(error) = turn.error {
+                self.push_error(error.message);
+            }
+        }
     }
 
     async fn handle_key(
@@ -284,6 +346,7 @@ impl ShellState {
         self.push_user(prompt.clone());
         self.status = "thinking".to_string();
         self.streaming_assistant.clear();
+        self.streaming_plan.clear();
         let response = app_server
             .turn_start(
                 self.thread_id,
@@ -317,24 +380,233 @@ impl ShellState {
         self.push_assistant(message);
     }
 
+    fn finish_streaming_plan(&mut self) {
+        if self.streaming_plan.trim().is_empty() {
+            return;
+        }
+        let plan = std::mem::take(&mut self.streaming_plan);
+        self.push_plan(plan);
+    }
+
+    fn ingest_completed_item(&mut self, item: ThreadItem) {
+        match item {
+            ThreadItem::UserMessage { content, .. } => {
+                let text = format_user_inputs(&content);
+                if !text.is_empty() {
+                    self.push_user(text);
+                }
+            }
+            ThreadItem::HookPrompt { fragments, .. } => {
+                let text = fragments
+                    .into_iter()
+                    .map(|fragment| fragment.text)
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if !text.is_empty() {
+                    self.push_status(format!("hook prompt: {text}"));
+                }
+            }
+            ThreadItem::AgentMessage { text, .. } => {
+                if !text.is_empty() {
+                    self.push_assistant(text);
+                }
+            }
+            ThreadItem::Plan { text, .. } => {
+                if !text.is_empty() {
+                    self.push_plan(text);
+                }
+            }
+            ThreadItem::Reasoning {
+                summary, content, ..
+            } => {
+                let text = summary
+                    .into_iter()
+                    .chain(content)
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if !text.is_empty() {
+                    self.push_status(format!("reasoning: {text}"));
+                }
+            }
+            ThreadItem::CommandExecution {
+                id,
+                command,
+                status,
+                aggregated_output,
+                exit_code,
+                duration_ms,
+                ..
+            } => {
+                let title = command_summary(&command, exit_code, duration_ms);
+                self.upsert_tool(id, title.clone(), format!("{status:?}").to_lowercase());
+                self.push_tool(title);
+                if let Some(output) = aggregated_output.and_then(compact_multiline) {
+                    self.push_output(output);
+                }
+            }
+            ThreadItem::FileChange {
+                id,
+                changes,
+                status,
+            } => {
+                let summary = file_change_summary(&changes);
+                self.latest_diff = Some(diff_summary_from_changes(&changes));
+                self.upsert_tool(id, summary.clone(), format!("{status:?}").to_lowercase());
+                self.push_diff(summary);
+            }
+            ThreadItem::McpToolCall {
+                id,
+                server,
+                tool,
+                status,
+                error,
+                duration_ms,
+                ..
+            } => {
+                let mut title = format!("mcp {server}/{tool}");
+                if let Some(duration_ms) = duration_ms {
+                    title.push_str(&format!(" ({duration_ms}ms)"));
+                }
+                self.upsert_tool(id, title.clone(), format!("{status:?}").to_lowercase());
+                self.push_tool(title);
+                if let Some(error) = error {
+                    self.push_error(format!("mcp error: {}", error.message));
+                }
+            }
+            ThreadItem::DynamicToolCall {
+                id,
+                namespace,
+                tool,
+                status,
+                success,
+                duration_ms,
+                ..
+            } => {
+                let prefix = namespace
+                    .map(|namespace| format!("{namespace}/{tool}"))
+                    .unwrap_or(tool);
+                let result = success
+                    .map(|success| if success { "ok" } else { "failed" })
+                    .unwrap_or("pending");
+                let mut title = format!("tool {prefix}: {result}");
+                if let Some(duration_ms) = duration_ms {
+                    title.push_str(&format!(" ({duration_ms}ms)"));
+                }
+                self.upsert_tool(id, title.clone(), format!("{status:?}").to_lowercase());
+                self.push_tool(title);
+            }
+            ThreadItem::CollabAgentToolCall {
+                id,
+                tool,
+                status,
+                receiver_thread_ids,
+                ..
+            } => {
+                let title = format!("agent {tool:?}: {} targets", receiver_thread_ids.len());
+                self.upsert_tool(id, title.clone(), format!("{status:?}").to_lowercase());
+                self.push_tool(title);
+            }
+            ThreadItem::SubAgentActivity {
+                id,
+                kind,
+                agent_path,
+                ..
+            } => {
+                let title = format!("subagent {kind:?}: {agent_path}");
+                self.upsert_tool(id, title.clone(), "active".to_string());
+                self.push_tool(title);
+            }
+            ThreadItem::WebSearch { id, query, action } => {
+                let title = format!("web search: {query}");
+                self.upsert_tool(id, title.clone(), format!("{action:?}"));
+                self.push_tool(title);
+            }
+            ThreadItem::ImageView { id, path } => {
+                let title = format!("view image: {path}");
+                self.upsert_tool(id, title.clone(), "completed".to_string());
+                self.push_tool(title);
+            }
+            ThreadItem::Sleep { id, duration_ms } => {
+                let title = format!("sleep {duration_ms}ms");
+                self.upsert_tool(id, title.clone(), "completed".to_string());
+                self.push_tool(title);
+            }
+            ThreadItem::ImageGeneration {
+                id,
+                status,
+                saved_path,
+                ..
+            } => {
+                let title = saved_path
+                    .map(|path| format!("image generation: {}", path.as_path().display()))
+                    .unwrap_or_else(|| "image generation".to_string());
+                self.upsert_tool(id, title.clone(), status);
+                self.push_tool(title);
+            }
+            ThreadItem::EnteredReviewMode { review, .. } => {
+                self.push_status(format!("entered review mode: {review}"));
+            }
+            ThreadItem::ExitedReviewMode { review, .. } => {
+                self.push_status(format!("exited review mode: {review}"));
+            }
+            ThreadItem::ContextCompaction { .. } => {
+                self.push_status("context compacted");
+            }
+        }
+    }
+
+    fn upsert_tool(&mut self, id: String, title: String, status: String) {
+        if let Some(existing) = self
+            .tool_activity
+            .iter_mut()
+            .find(|activity| activity.id == id)
+        {
+            existing.title = title;
+            existing.status = status;
+            return;
+        }
+
+        self.tool_activity
+            .push_back(ToolActivity { id, title, status });
+        while self.tool_activity.len() > 8 {
+            self.tool_activity.pop_front();
+        }
+    }
+
     fn push_system(&mut self, text: impl Into<String>) {
-        self.push_line(TranscriptLine::System(text.into()));
+        self.push_line(TranscriptLine::new(TranscriptKind::System, text));
     }
 
     fn push_user(&mut self, text: impl Into<String>) {
-        self.push_line(TranscriptLine::User(text.into()));
+        self.push_line(TranscriptLine::new(TranscriptKind::User, text));
     }
 
     fn push_assistant(&mut self, text: impl Into<String>) {
-        self.push_line(TranscriptLine::Assistant(text.into()));
+        self.push_line(TranscriptLine::new(TranscriptKind::Assistant, text));
+    }
+
+    fn push_plan(&mut self, text: impl Into<String>) {
+        self.push_line(TranscriptLine::new(TranscriptKind::Plan, text));
+    }
+
+    fn push_tool(&mut self, text: impl Into<String>) {
+        self.push_line(TranscriptLine::new(TranscriptKind::Tool, text));
+    }
+
+    fn push_diff(&mut self, text: impl Into<String>) {
+        self.push_line(TranscriptLine::new(TranscriptKind::Diff, text));
+    }
+
+    fn push_output(&mut self, text: impl Into<String>) {
+        self.push_line(TranscriptLine::new(TranscriptKind::Output, text));
     }
 
     fn push_status(&mut self, text: impl Into<String>) {
-        self.push_line(TranscriptLine::Status(text.into()));
+        self.push_line(TranscriptLine::new(TranscriptKind::Status, text));
     }
 
     fn push_error(&mut self, text: impl Into<String>) {
-        self.push_line(TranscriptLine::Error(text.into()));
+        self.push_line(TranscriptLine::new(TranscriptKind::Error, text));
     }
 
     fn push_line(&mut self, line: TranscriptLine) {
@@ -372,6 +644,39 @@ impl ShellState {
             input: "Summarize the new shell architecture".to_string(),
             active_turn_id: None,
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
+            streaming_plan: String::new(),
+            plan_explanation: Some("Build the standalone shell in slices.".to_string()),
+            plan_steps: vec![
+                TurnPlanStep {
+                    step: "Shell frame".to_string(),
+                    status: codex_app_server_protocol::TurnPlanStepStatus::Completed,
+                },
+                TurnPlanStep {
+                    step: "Transcript model".to_string(),
+                    status: codex_app_server_protocol::TurnPlanStepStatus::InProgress,
+                },
+                TurnPlanStep {
+                    step: "Approvals".to_string(),
+                    status: codex_app_server_protocol::TurnPlanStepStatus::Pending,
+                },
+            ],
+            tool_activity: VecDeque::from([
+                ToolActivity {
+                    id: "tool-1".to_string(),
+                    title: "exec just test -p codex-tui".to_string(),
+                    status: "in progress".to_string(),
+                },
+                ToolActivity {
+                    id: "tool-2".to_string(),
+                    title: "file changes in app_shell".to_string(),
+                    status: "completed".to_string(),
+                },
+            ]),
+            latest_diff: Some(DiffSummary {
+                files: 3,
+                additions: 128,
+                removals: 24,
+            }),
             status: "thinking".to_string(),
             token_usage: TokenUsage {
                 input_tokens: 1200,
@@ -385,8 +690,103 @@ impl ShellState {
         shell.push_system("Better Codex app shell");
         shell.push_user("Create a divergent standalone TUI.");
         shell.push_assistant("Started a fullscreen app shell backed by app-server turns.");
+        shell.push_plan("1. Build shell\n2. Wire transcript\n3. Render dashboard");
+        shell.push_tool("exec just test -p codex-tui");
+        shell.push_diff("diff 3 files +128 -24");
         shell
     }
+}
+
+fn format_user_inputs(content: &[UserInput]) -> String {
+    content
+        .iter()
+        .map(|input| match input {
+            UserInput::Text { text, .. } => text.clone(),
+            UserInput::Image { url, .. } => format!("[image {url}]"),
+            UserInput::LocalImage { path, .. } => format!("[image {}]", path.display()),
+            UserInput::Skill { name, path } => format!("[skill {name} {}]", path.display()),
+            UserInput::Mention { name, path } => format!("[mention {name} {path}]"),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn command_summary(command: &str, exit_code: Option<i32>, duration_ms: Option<i64>) -> String {
+    let mut summary = format!("exec {command}");
+    if let Some(exit_code) = exit_code {
+        summary.push_str(&format!(" exit {exit_code}"));
+    }
+    if let Some(duration_ms) = duration_ms {
+        summary.push_str(&format!(" {duration_ms}ms"));
+    }
+    summary
+}
+
+fn file_change_summary(changes: &[FileUpdateChange]) -> String {
+    let summary = diff_summary_from_changes(changes);
+    format!(
+        "diff {} files +{} -{}",
+        summary.files, summary.additions, summary.removals
+    )
+}
+
+fn diff_summary_from_changes(changes: &[FileUpdateChange]) -> DiffSummary {
+    let mut summary = DiffSummary {
+        files: changes.len(),
+        ..DiffSummary::default()
+    };
+    for change in changes {
+        let (additions, removals) = count_diff_lines(&change.diff);
+        summary.additions += additions;
+        summary.removals += removals;
+        if matches!(&change.kind, PatchChangeKind::Update { move_path: Some(_) }) {
+            summary.files += 1;
+        }
+    }
+    summary
+}
+
+fn diff_summary_from_unified_diff(diff: &str) -> DiffSummary {
+    let files = diff
+        .lines()
+        .filter(|line| line.starts_with("diff --git "))
+        .count();
+    let (additions, removals) = count_diff_lines(diff);
+    DiffSummary {
+        files,
+        additions,
+        removals,
+    }
+}
+
+fn count_diff_lines(diff: &str) -> (usize, usize) {
+    let mut additions = 0;
+    let mut removals = 0;
+    for line in diff.lines() {
+        if line.starts_with("+++") || line.starts_with("---") {
+            continue;
+        }
+        if line.starts_with('+') {
+            additions += 1;
+        } else if line.starts_with('-') {
+            removals += 1;
+        }
+    }
+    (additions, removals)
+}
+
+fn compact_multiline(text: String) -> Option<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    const MAX_CHARS: usize = 500;
+    if text.chars().count() <= MAX_CHARS {
+        return Some(text.to_string());
+    }
+    let mut compact = text.chars().take(MAX_CHARS).collect::<String>();
+    compact.push_str("...");
+    Some(compact)
 }
 
 #[cfg(test)]

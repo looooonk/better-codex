@@ -1,6 +1,7 @@
 use super::ShellState;
 use crate::app_server_session::AppServerSession;
 use crate::token_usage::TokenUsage;
+use base64::Engine;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ServerNotification;
@@ -45,7 +46,7 @@ impl ShellState {
             }
             ServerNotification::PlanDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
-                    self.push_status(format!("plan: {}", delta.delta.trim()));
+                    self.streaming_plan.push_str(&delta.delta);
                 }
             }
             ServerNotification::ReasoningSummaryTextDelta(delta) => {
@@ -66,6 +67,7 @@ impl ShellState {
             }
             ServerNotification::TurnCompleted(completed) => {
                 if completed.thread_id == self.thread_id.to_string() {
+                    self.finish_streaming_plan();
                     self.finish_streaming_assistant();
                     self.active_turn_id = None;
                     self.status = match completed.turn.status {
@@ -98,6 +100,71 @@ impl ShellState {
                     self.collaboration_mode =
                         Some(Box::new(updated.thread_settings.collaboration_mode));
                     self.personality = updated.thread_settings.personality;
+                }
+            }
+            ServerNotification::TurnDiffUpdated(updated) => {
+                if updated.thread_id == self.thread_id.to_string() {
+                    self.latest_diff = Some(super::diff_summary_from_unified_diff(&updated.diff));
+                    if let Some(summary) = &self.latest_diff {
+                        self.push_diff(format!(
+                            "diff {} files +{} -{}",
+                            summary.files, summary.additions, summary.removals
+                        ));
+                    }
+                }
+            }
+            ServerNotification::TurnPlanUpdated(updated) => {
+                if updated.thread_id == self.thread_id.to_string() {
+                    self.plan_explanation = updated.explanation;
+                    self.plan_steps = updated.plan;
+                }
+            }
+            ServerNotification::ItemStarted(started) => {
+                if started.thread_id == self.thread_id.to_string() {
+                    let id = started.item.id().to_string();
+                    let title = item_activity_title(&started.item);
+                    self.upsert_tool(id, title, "in progress".to_string());
+                }
+            }
+            ServerNotification::ItemCompleted(completed) => {
+                if completed.thread_id == self.thread_id.to_string() {
+                    self.ingest_completed_item(completed.item);
+                }
+            }
+            ServerNotification::CommandExecutionOutputDelta(delta) => {
+                if delta.thread_id == self.thread_id.to_string()
+                    && let Some(output) = super::compact_multiline(delta.delta)
+                {
+                    self.push_output(output);
+                }
+            }
+            ServerNotification::FileChangePatchUpdated(updated) => {
+                if updated.thread_id == self.thread_id.to_string() {
+                    self.latest_diff = Some(super::diff_summary_from_changes(&updated.changes));
+                }
+            }
+            ServerNotification::McpToolCallProgress(progress) => {
+                if progress.thread_id == self.thread_id.to_string() {
+                    self.upsert_tool(
+                        progress.item_id,
+                        format!("mcp progress: {}", progress.message),
+                        "in progress".to_string(),
+                    );
+                }
+            }
+            ServerNotification::ServerRequestResolved(resolved) => {
+                if resolved.thread_id == self.thread_id.to_string() {
+                    self.push_status(format!("request resolved: {}", resolved.request_id));
+                }
+            }
+            ServerNotification::CommandExecOutputDelta(delta) => {
+                let output = base64::engine::general_purpose::STANDARD
+                    .decode(delta.delta_base64)
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes).ok())
+                    .and_then(super::compact_multiline);
+                if let Some(output) = output {
+                    self.push_output(output);
                 }
             }
             ServerNotification::Error(error) => {
@@ -138,18 +205,9 @@ impl ShellState {
                     self.push_status("model verification updated");
                 }
             }
-            ServerNotification::ItemCompleted(_)
-            | ServerNotification::ItemStarted(_)
-            | ServerNotification::CommandExecOutputDelta(_)
-            | ServerNotification::ProcessOutputDelta(_)
+            ServerNotification::ProcessOutputDelta(_)
             | ServerNotification::ProcessExited(_)
-            | ServerNotification::CommandExecutionOutputDelta(_)
             | ServerNotification::FileChangeOutputDelta(_)
-            | ServerNotification::FileChangePatchUpdated(_)
-            | ServerNotification::McpToolCallProgress(_)
-            | ServerNotification::ServerRequestResolved(_)
-            | ServerNotification::TurnDiffUpdated(_)
-            | ServerNotification::TurnPlanUpdated(_)
             | ServerNotification::HookStarted(_)
             | ServerNotification::HookCompleted(_)
             | ServerNotification::ThreadStarted(_)
@@ -202,7 +260,8 @@ impl ShellState {
     ) -> Result<()> {
         let request_id = request.id().clone();
         self.push_error(format!(
-            "unsupported interactive backend request: {request:?}"
+            "unsupported interactive request: {}",
+            request_name(&request)
         ));
         app_server
             .reject_server_request(
@@ -228,6 +287,76 @@ impl ShellState {
             total_tokens: usage.total.total_tokens,
         };
         self.model_context_window = usage.model_context_window;
+    }
+}
+
+fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) -> String {
+    match item {
+        codex_app_server_protocol::ThreadItem::UserMessage { .. } => "user message".to_string(),
+        codex_app_server_protocol::ThreadItem::HookPrompt { .. } => "hook prompt".to_string(),
+        codex_app_server_protocol::ThreadItem::AgentMessage { .. } => {
+            "assistant message".to_string()
+        }
+        codex_app_server_protocol::ThreadItem::Plan { .. } => "plan update".to_string(),
+        codex_app_server_protocol::ThreadItem::Reasoning { .. } => "reasoning".to_string(),
+        codex_app_server_protocol::ThreadItem::CommandExecution { command, .. } => {
+            format!("exec {command}")
+        }
+        codex_app_server_protocol::ThreadItem::FileChange { changes, .. } => {
+            super::file_change_summary(changes)
+        }
+        codex_app_server_protocol::ThreadItem::McpToolCall { server, tool, .. } => {
+            format!("mcp {server}/{tool}")
+        }
+        codex_app_server_protocol::ThreadItem::DynamicToolCall {
+            namespace, tool, ..
+        } => namespace
+            .as_ref()
+            .map(|namespace| format!("tool {namespace}/{tool}"))
+            .unwrap_or_else(|| format!("tool {tool}")),
+        codex_app_server_protocol::ThreadItem::CollabAgentToolCall { tool, .. } => {
+            format!("agent {tool:?}")
+        }
+        codex_app_server_protocol::ThreadItem::SubAgentActivity {
+            kind, agent_path, ..
+        } => format!("subagent {kind:?}: {agent_path}"),
+        codex_app_server_protocol::ThreadItem::WebSearch { query, .. } => {
+            format!("web search: {query}")
+        }
+        codex_app_server_protocol::ThreadItem::ImageView { path, .. } => {
+            format!("view image: {path}")
+        }
+        codex_app_server_protocol::ThreadItem::Sleep { duration_ms, .. } => {
+            format!("sleep {duration_ms}ms")
+        }
+        codex_app_server_protocol::ThreadItem::ImageGeneration { .. } => {
+            "image generation".to_string()
+        }
+        codex_app_server_protocol::ThreadItem::EnteredReviewMode { review, .. } => {
+            format!("entered review mode: {review}")
+        }
+        codex_app_server_protocol::ThreadItem::ExitedReviewMode { review, .. } => {
+            format!("exited review mode: {review}")
+        }
+        codex_app_server_protocol::ThreadItem::ContextCompaction { .. } => {
+            "context compaction".to_string()
+        }
+    }
+}
+
+fn request_name(request: &ServerRequest) -> &'static str {
+    match request {
+        ServerRequest::ExecCommandApproval { .. } => "command approval",
+        ServerRequest::CommandExecutionRequestApproval { .. } => "command execution approval",
+        ServerRequest::FileChangeRequestApproval { .. } => "file change approval",
+        ServerRequest::ApplyPatchApproval { .. } => "apply patch approval",
+        ServerRequest::PermissionsRequestApproval { .. } => "permissions approval",
+        ServerRequest::ToolRequestUserInput { .. } => "tool user input",
+        ServerRequest::DynamicToolCall { .. } => "dynamic tool call",
+        ServerRequest::McpServerElicitationRequest { .. } => "mcp elicitation",
+        ServerRequest::ChatgptAuthTokensRefresh { .. } => "chatgpt auth refresh",
+        ServerRequest::CurrentTimeRead { .. } => "current time read",
+        ServerRequest::AttestationGenerate { .. } => "attestation generation",
     }
 }
 
