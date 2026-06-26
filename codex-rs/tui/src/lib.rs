@@ -53,8 +53,6 @@ use codex_protocol::ThreadId;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::config_types::AltScreenMode;
 use codex_protocol::config_types::SandboxMode;
-#[cfg(target_os = "windows")]
-use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_rollout::StateDbHandle;
 use codex_rollout::state_db;
 use codex_state::log_db;
@@ -73,7 +71,6 @@ use std::fs::OpenOptions;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
 pub use token_usage::TokenUsage;
 use tracing::error;
 use tracing::warn;
@@ -94,6 +91,7 @@ mod app_event_sender;
 mod app_info;
 mod app_server_approval_conversions;
 mod app_server_session;
+mod app_shell;
 mod approval_events;
 mod ascii_animation;
 mod bottom_pane;
@@ -478,6 +476,7 @@ async fn start_app_server(
     }
 }
 
+#[allow(dead_code)]
 pub(crate) async fn start_app_server_for_picker(
     config: &Config,
     target: &AppServerTarget,
@@ -1384,8 +1383,6 @@ async fn run_ratatui_app(
 
     let should_show_trust_screen_flag =
         !uses_remote_workspace && should_show_trust_screen(&initial_config);
-    #[cfg(target_os = "windows")]
-    let mut trust_decision_was_made = false;
     let login_status = if initial_config.model_provider.requires_openai_auth {
         let Some(app_server) = app_server.as_mut() else {
             unreachable!("app server should exist when auth is required");
@@ -1429,10 +1426,6 @@ async fn run_ratatui_app(
                 update_action: None,
                 exit_reason: ExitReason::UserRequested,
             });
-        }
-        #[cfg(target_os = "windows")]
-        {
-            trust_decision_was_made = onboarding_result.directory_trust_persisted;
         }
         // If this onboarding run included the login step, always refresh the cloud config bundle
         // and rebuild config. This avoids missing newly available cloud-managed policy due to login
@@ -1692,33 +1685,11 @@ async fn run_ratatui_app(
     }
 
     set_default_client_residency_requirement(config.enforce_residency.value());
-    let should_show_trust_screen = should_show_trust_screen(&config);
-    #[cfg(target_os = "windows")]
-    let windows_sandbox_level = crate::windows_sandbox::level_from_config(&config);
-    #[cfg(target_os = "windows")]
-    let required_elevated_sandbox_needs_setup = windows_sandbox_level
-        == WindowsSandboxLevel::Elevated
-        && config
-            .config_layer_stack
-            .requirements()
-            .windows_sandbox_mode
-            .source
-            .is_some()
-        && !crate::windows_sandbox::sandbox_setup_is_complete(config.codex_home.as_path());
-    #[cfg(target_os = "windows")]
-    let should_prompt_windows_sandbox_nux_at_startup = (trust_decision_was_made
-        && windows_sandbox_level == WindowsSandboxLevel::Disabled)
-        || required_elevated_sandbox_needs_setup;
-    #[cfg(not(target_os = "windows"))]
-    let should_prompt_windows_sandbox_nux_at_startup = false;
-
     let Cli {
         prompt,
-        shared,
         no_alt_screen,
         ..
     } = cli;
-    let images = shared.into_inner().images;
 
     let use_alt_screen = determine_alt_screen_mode(no_alt_screen, config.tui_alternate_screen);
     tui.set_alt_screen_enabled(use_alt_screen);
@@ -1761,14 +1732,12 @@ async fn run_ratatui_app(
     let bypass_hook_trust_for_startup_review = config.bypass_hook_trust && !is_persistent_resume;
     let hooks_request_handle = app_server.request_handle();
     let hooks_cwd = config.cwd.to_path_buf();
-    let startup_prefetch_started_at = Instant::now();
     let (startup_bootstrap, startup_hooks_entry) = tokio::join!(
         app_server.bootstrap(&config),
         load_startup_hooks_review_entry(hooks_request_handle, hooks_cwd),
     );
     let startup_bootstrap = Some(startup_bootstrap?);
-    let startup_elapsed_before_app = startup_prefetch_started_at.elapsed();
-    let startup_hooks_browser = match maybe_run_startup_hooks_review(
+    let _startup_hooks_browser = match maybe_run_startup_hooks_review(
         &mut app_server,
         &mut tui,
         &config,
@@ -1780,27 +1749,15 @@ async fn run_ratatui_app(
         StartupHooksReviewOutcome::Continue => None,
         StartupHooksReviewOutcome::OpenHooksBrowser(data) => Some(data),
     };
+    let _legacy_app_run = App::run;
 
-    let app_result = App::run(
+    let app_result = app_shell::run(
         &mut tui,
         app_server,
         config,
-        cli_kv_overrides.clone(),
-        overrides.clone(),
-        loader_overrides.clone(),
-        cloud_config_bundle,
         prompt,
-        images,
         session_selection,
-        feedback,
-        should_show_trust_screen, // Proxy to: is it a first run in this directory?
-        should_prompt_windows_sandbox_nux_at_startup,
-        app_server_target,
-        state_db,
-        environment_manager,
-        startup_elapsed_before_app,
         startup_bootstrap,
-        startup_hooks_browser,
     )
     .await;
 
