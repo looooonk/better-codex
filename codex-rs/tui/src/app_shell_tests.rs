@@ -382,6 +382,51 @@ fn copies_latest_assistant_without_selection() {
 }
 
 #[test]
+fn duplicate_completed_user_message_is_suppressed() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.push_user("hello from user");
+
+    shell.ingest_completed_item(ThreadItem::UserMessage {
+        id: "user-1".to_string(),
+        client_id: None,
+        content: vec![UserInput::Text {
+            text: "hello from user".to_string(),
+            text_elements: Vec::new(),
+        }],
+    });
+
+    assert_eq!(
+        shell.transcript.iter().cloned().collect::<Vec<_>>(),
+        vec![TranscriptLine::new(TranscriptKind::User, "hello from user")]
+    );
+}
+
+#[test]
+fn completed_agent_message_replaces_matching_stream() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant = "hello from codex".to_string();
+
+    shell.ingest_completed_item(ThreadItem::AgentMessage {
+        id: "agent-1".to_string(),
+        text: "hello from codex".to_string(),
+        phase: None,
+        memory_citation: None,
+    });
+    shell.finish_streaming_assistant();
+
+    assert_eq!(shell.streaming_assistant, "");
+    assert_eq!(
+        shell.transcript.iter().cloned().collect::<Vec<_>>(),
+        vec![TranscriptLine::new(
+            TranscriptKind::Assistant,
+            "hello from codex"
+        )]
+    );
+}
+
+#[test]
 fn renders_pending_approval_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.pending_approval = PendingApproval::from_request(&command_approval_request())

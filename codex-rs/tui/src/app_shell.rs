@@ -1132,11 +1132,17 @@ impl ShellState {
             }
             ThreadItem::AgentMessage { text, .. } => {
                 if !text.is_empty() {
+                    if self.streaming_assistant == text {
+                        self.streaming_assistant.clear();
+                    }
                     self.push_assistant(text);
                 }
             }
             ThreadItem::Plan { text, .. } => {
                 if !text.is_empty() {
+                    if self.streaming_plan == text {
+                        self.streaming_plan.clear();
+                    }
                     self.push_plan(text);
                 }
             }
@@ -1341,6 +1347,9 @@ impl ShellState {
     }
 
     fn push_line(&mut self, line: TranscriptLine) {
+        if self.transcript.back() == Some(&line) {
+            return;
+        }
         self.transcript.push_back(line);
         while self.transcript.len() > MAX_TRANSCRIPT_LINES {
             self.transcript.pop_front();

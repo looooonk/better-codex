@@ -2,27 +2,25 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-Better Codex  thinking                          │Dashboard
-                                                │Status
-────────────────────────────────────────────────│thinking
-┌Conversation──────────────────────────────────┐│
-│system: Better Codex app shell                ││Model
-│you: Create a divergent standalone TUI.       ││gpt-5-codex
-│codex: Started a fullscreen app shell backed  ││
-│       by app-server turns.                   ││Thread
-│plan: 1. Build shell                          ││01900000...
-│      2. Wire transcript                      ││
-│      3. Render dashboard                     ││Tokens
-│tool: exec just test -p codex-tui             ││total 1440
-│diff: diff 3 files +128 -24                   ││input 1200
-│codex: The new shell owns the fullscreen      ││output 240
-│       surface.                               ││context 200000
-│                                              ││
-│                                              ││Diff
-│                                              ││3 files +128 -24
-│                                              ││
-└──────────────────────────────────────────────┘│Plan
-Composer ready 1:37─────────────────────────────│Build the standalone shell in
-> Summarize the new shell architecture          │slices.
-                                                │x Shell frame
-                                                │> Transcript model
+Better Codex
+Dashboard thinking · gpt-5-codex · 1440 tokens
+
+Conversation
+system: Better Codex app shell
+you: Create a divergent standalone TUI.
+codex: Started a fullscreen app shell backed by app-server turns.
+plan: 1. Build shell
+      2. Wire transcript
+      3. Render dashboard
+tool: exec just test -p codex-tui
+diff: diff 3 files +128 -24
+codex: The new shell owns the fullscreen surface.
+
+
+
+
+
+
+
+Composer ready 1:37
+> Summarize the new shell architecture

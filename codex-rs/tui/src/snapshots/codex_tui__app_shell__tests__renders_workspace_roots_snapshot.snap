@@ -2,45 +2,45 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-Better Codex  thinking                                                │Dashboard
-                                                                      │Status
-──────────────────────────────────────────────────────────────────────│thinking
-┌Conversation────────────────────────────────────────────────────────┐│
-│system: Better Codex app shell                                      ││Model
-│you: Create a divergent standalone TUI.                             ││gpt-5-codex
-│codex: Started a fullscreen app shell backed by app-server turns.   ││
-│plan: 1. Build shell                                                ││Thread
-│      2. Wire transcript                                            ││01900000...
-│      3. Render dashboard                                           ││
-│tool: exec just test -p codex-tui                                   ││Tokens
-│diff: diff 3 files +128 -24                                         ││total 1440
-│codex: The new shell owns the fullscreen surface.                   ││input 1200
-│                                                                    ││output 240
-│                                                                    ││context 200000
-│                                                                    ││
-│                                                                    ││Diff
-│                                                                    ││3 files +128 -24
-│                                                                    ││
-│                                                                    ││Plan
-│                                                                    ││Build the standalone shell in
-│                                                                    ││slices.
-│                                                                    ││x Shell frame
-│                                                                    ││> Transcript model
-│                                                                    ││- Approvals
-│                                                                    ││
-│                                                                    ││Tools
-│                                                                    ││in progress exec just test -p
-│                                                                    ││codex-...
-│                                                                    ││completed file changes in
-│                                                                    ││app_shel...
-│                                                                    ││
-│                                                                    ││Workspace
-│                                                                    ││cwd /workspace/better-codex
-│                                                                    ││profile managed
-│                                                                    ││files restricted, net
-│                                                                    ││restricted
-└────────────────────────────────────────────────────────────────────┘│roots 4 writable
-Composer ready 1:37───────────────────────────────────────────────────│  /workspace/better-codex
-> Summarize the new shell architecture                                │  /workspace/better-codex/...
-                                                                      │  /tmp/codex-cache
-                                                                      │  +1 more
+Better Codex                                                          Dashboard
+
+Conversation                                                          Status
+system: Better Codex app shell                                        thinking
+you: Create a divergent standalone TUI.
+codex: Started a fullscreen app shell backed by app-server turns.     Model
+plan: 1. Build shell                                                  gpt-5-codex
+      2. Wire transcript
+      3. Render dashboard                                             Thread
+tool: exec just test -p codex-tui                                     01900000...
+diff: diff 3 files +128 -24
+codex: The new shell owns the fullscreen surface.                     Tokens
+                                                                      total 1440
+                                                                      input 1200
+                                                                      output 240
+                                                                      context 200000
+
+                                                                      Diff
+                                                                      3 files +128 -24
+
+                                                                      Plan
+                                                                      Build the standalone shell in
+                                                                      slices.
+                                                                      x Shell frame
+                                                                      > Transcript model
+                                                                      - Approvals
+
+                                                                      Tools
+                                                                      in progress exec just test -p
+                                                                      codex-...
+                                                                      completed file changes in
+                                                                      app_shel...
+
+                                                                      Workspace
+                                                                      cwd /workspace/better-codex
+                                                                      profile managed
+                                                                      files restricted, net
+                                                                      restricted
+Composer ready 1:37                                                   roots 4 writable
+> Summarize the new shell architecture                                  /workspace/better-codex
+                                                                        /workspace/better-codex/...
+                                                                        /tmp/codex-cache

@@ -24,12 +24,19 @@ use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
-use ratatui::widgets::Block;
-use ratatui::widgets::Borders;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
+
+const MOCHA_BASE: Color = Color::Black;
+const MOCHA_MANTLE: Color = Color::DarkGray;
+const MOCHA_SURFACE0: Color = Color::Gray;
+const MOCHA_SURFACE1: Color = Color::DarkGray;
+const MOCHA_TEXT: Color = Color::Reset;
+const MOCHA_SUBTEXT0: Color = Color::Gray;
+const MOCHA_OVERLAY0: Color = Color::DarkGray;
+const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
     let height = tui.terminal.size()?.height;
@@ -44,44 +51,54 @@ pub(super) struct ShellView<'a> {
 
 impl ShellView<'_> {
     pub(super) fn render(&self, area: Rect, buf: &mut Buffer) {
-        let horizontal = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Min(48), Constraint::Length(30)])
-            .split(area);
+        fill_rect(buf, area, MOCHA_BASE);
+        let dashboard_collapsed = area.width < DASHBOARD_COLLAPSE_WIDTH;
+        let horizontal = if dashboard_collapsed {
+            vec![area].into()
+        } else {
+            Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+                .split(area)
+        };
+        let header_height = if dashboard_collapsed { 3 } else { 2 };
         let main = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),
+                Constraint::Length(header_height),
                 Constraint::Min(5),
                 Constraint::Length(4),
             ])
             .split(horizontal[0]);
 
-        self.render_header(main[0], buf);
+        self.render_header(main[0], dashboard_collapsed, buf);
         self.render_transcript(main[1], buf);
         self.render_input(main[2], buf);
-        self.render_dashboard(horizontal[1], buf);
+        if !dashboard_collapsed {
+            self.render_dashboard(horizontal[1], buf);
+        }
         self.render_command_palette(area, buf);
     }
 
-    fn render_header(&self, area: Rect, buf: &mut Buffer) {
-        let title = vec![
-            "Better Codex".magenta().bold(),
-            "  ".into(),
-            self.shell.status.clone().cyan(),
-        ];
-        Paragraph::new(Line::from(title))
-            .block(Block::default().borders(Borders::BOTTOM))
+    fn render_header(&self, area: Rect, dashboard_collapsed: bool, buf: &mut Buffer) {
+        fill_rect(buf, area, MOCHA_MANTLE);
+        let mut lines = vec![Line::from("Better Codex".magenta().bold())];
+        if dashboard_collapsed {
+            lines.push(compact_dashboard_summary(self.shell));
+        }
+        Paragraph::new(lines)
+            .style(pane_style(MOCHA_MANTLE))
             .render(area, buf);
     }
 
     fn render_transcript(&self, area: Rect, buf: &mut Buffer) {
+        fill_rect(buf, area, MOCHA_BASE);
         let mut lines = Vec::new();
         let cwd = std::path::Path::new(&self.shell.cwd);
         for (index, line) in self.shell.transcript.iter().enumerate() {
             lines.extend(transcript_lines(
                 line,
-                area.width.saturating_sub(2),
+                area.width.saturating_sub(1),
                 cwd,
                 self.shell.transcript_selection == Some(index),
             ));
@@ -89,7 +106,7 @@ impl ShellView<'_> {
         if !self.shell.streaming_plan.is_empty() {
             lines.extend(transcript_lines(
                 &TranscriptLine::new(TranscriptKind::Plan, self.shell.streaming_plan.clone()),
-                area.width.saturating_sub(2),
+                area.width.saturating_sub(1),
                 cwd,
                 /*selected*/ false,
             ));
@@ -100,12 +117,12 @@ impl ShellView<'_> {
                     TranscriptKind::Assistant,
                     self.shell.streaming_assistant.clone(),
                 ),
-                area.width.saturating_sub(2),
+                area.width.saturating_sub(1),
                 cwd,
                 /*selected*/ false,
             ));
         }
-        let visible_count = area.height.saturating_sub(2) as usize;
+        let visible_count = area.height.saturating_sub(1) as usize;
         let max_scroll = lines.len().saturating_sub(visible_count);
         self.shell.transcript_scroll_max.set(max_scroll);
         let scroll = self.shell.transcript_scroll.min(max_scroll);
@@ -123,46 +140,51 @@ impl ShellView<'_> {
         };
         let visible_hyperlink_lines = lines.into_iter().skip(visible_from).collect::<Vec<_>>();
         let visible_lines = visible_lines(visible_hyperlink_lines.clone());
+        Paragraph::new(Line::from(title.bold()))
+            .style(pane_style(MOCHA_BASE))
+            .render(title_rect(area), buf);
+        let body = body_rect_after_title(area);
         Paragraph::new(visible_lines)
-            .block(Block::default().borders(Borders::ALL).title(title))
+            .style(pane_style(MOCHA_BASE))
             .wrap(Wrap { trim: false })
-            .render(area, buf);
-        mark_buffer_hyperlinks(
-            buf,
-            inner_rect(area),
-            &visible_hyperlink_lines,
-            /*scroll_rows*/ 0,
-        );
+            .render(body, buf);
+        mark_buffer_hyperlinks(buf, body, &visible_hyperlink_lines, /*scroll_rows*/ 0);
     }
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
+        fill_rect(buf, area, MOCHA_SURFACE0);
         if let Some(pending) = &self.shell.pending_approval {
-            Paragraph::new(approval_lines(pending))
-                .block(Block::default().borders(Borders::TOP).title("Approval"))
-                .wrap(Wrap { trim: false })
-                .render(area, buf);
+            self.render_titled_panel(
+                area,
+                "Approval",
+                approval_lines(pending),
+                MOCHA_SURFACE0,
+                buf,
+            );
             return;
         }
         if let Some(pending) = &self.shell.pending_elicitation {
-            Paragraph::new(elicitation_lines(pending))
-                .block(
-                    Block::default()
-                        .borders(Borders::TOP)
-                        .title("MCP Elicitation"),
-                )
-                .wrap(Wrap { trim: false })
-                .render(area, buf);
+            self.render_titled_panel(
+                area,
+                "MCP Elicitation",
+                elicitation_lines(pending),
+                MOCHA_SURFACE0,
+                buf,
+            );
             return;
         }
         if let Some(pending) = &self.shell.pending_user_input {
-            Paragraph::new(user_input_lines(
-                pending,
-                self.shell.composer.text(),
-                self.shell.composer.is_empty(),
-            ))
-            .block(Block::default().borders(Borders::TOP).title("Tool Input"))
-            .wrap(Wrap { trim: false })
-            .render(area, buf);
+            self.render_titled_panel(
+                area,
+                "Tool Input",
+                user_input_lines(
+                    pending,
+                    self.shell.composer.text(),
+                    self.shell.composer.is_empty(),
+                ),
+                MOCHA_SURFACE0,
+                buf,
+            );
             return;
         }
 
@@ -172,23 +194,32 @@ impl ShellView<'_> {
         } else {
             format!("Composer ready {}:{}", line + 1, column + 1)
         };
-        Paragraph::new(composer_lines(
-            self.shell.composer.text(),
-            self.shell.composer.cursor(),
-            self.shell.composer.is_empty(),
-        ))
-        .block(Block::default().borders(Borders::TOP).title(title))
-        .wrap(Wrap { trim: false })
-        .render(area, buf);
+        self.render_titled_panel(
+            area,
+            &title,
+            composer_lines(
+                self.shell.composer.text(),
+                self.shell.composer.cursor(),
+                self.shell.composer.is_empty(),
+            ),
+            MOCHA_SURFACE0,
+            buf,
+        );
     }
 
     fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
+        fill_rect(buf, area, MOCHA_MANTLE);
         let context_window = self
             .shell
             .model_context_window
             .map(|window| window.to_string())
             .unwrap_or_else(|| "unknown".to_string());
-        let mut lines = vec![Line::from("Status".bold()), status_line(&self.shell.status)];
+        let mut lines = vec![
+            Line::from("Dashboard".bold()),
+            Line::from(""),
+            Line::from("Status".bold()),
+            status_line(&self.shell.status),
+        ];
         if let Some(active_turn_id) = &self.shell.active_turn_id {
             lines.push(Line::from(vec![
                 "turn ".dim(),
@@ -373,9 +404,26 @@ impl ShellView<'_> {
             lines.push(Line::from("Alt+Up select, Ctrl+O copy"));
         }
         Paragraph::new(lines)
-            .block(Block::default().borders(Borders::LEFT).title("Dashboard"))
+            .style(pane_style(MOCHA_MANTLE))
             .wrap(Wrap { trim: false })
             .render(area, buf);
+    }
+
+    fn render_titled_panel(
+        &self,
+        area: Rect,
+        title: &str,
+        lines: Vec<Line<'static>>,
+        background: Color,
+        buf: &mut Buffer,
+    ) {
+        Paragraph::new(Line::from(title.to_string().bold()))
+            .style(pane_style(background))
+            .render(title_rect(area), buf);
+        Paragraph::new(lines)
+            .style(pane_style(background))
+            .wrap(Wrap { trim: false })
+            .render(body_rect_after_title(area), buf);
     }
 
     fn render_command_palette(&self, area: Rect, buf: &mut Buffer) {
@@ -383,7 +431,7 @@ impl ShellView<'_> {
             return;
         };
         let entries = self.shell.command_palette_entries();
-        let palette_area = centered_rect(area, /*width*/ 64, /*height*/ 15);
+        let palette_area = centered_band_rect(area, /*height*/ 15);
         Clear.render(palette_area, buf);
 
         let mut lines = Vec::new();
@@ -406,31 +454,65 @@ impl ShellView<'_> {
             };
             let line = Line::from(vec![marker, " ".dim(), title, detail]);
             if selected {
-                lines.push(line.style(Style::new().bg(Color::DarkGray)));
+                lines.push(line.style(Style::new().bg(MOCHA_SURFACE1)));
             } else {
                 lines.push(line);
             }
         }
 
-        Paragraph::new(lines)
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .title("Command Palette"),
-            )
+        fill_rect(buf, palette_area, MOCHA_SURFACE0);
+        let mut palette_lines = vec![Line::from("Command Palette".bold()), Line::from("")];
+        palette_lines.extend(lines);
+        Paragraph::new(palette_lines)
+            .style(pane_style(MOCHA_SURFACE0))
             .wrap(Wrap { trim: true })
             .render(palette_area, buf);
     }
 }
 
-fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
-    let available_width = area.width.saturating_sub(4);
+fn fill_rect(buf: &mut Buffer, area: Rect, color: Color) {
+    let style = pane_style(color);
+    for y in area.y..area.y.saturating_add(area.height) {
+        for x in area.x..area.x.saturating_add(area.width) {
+            buf[(x, y)].set_symbol(" ").set_style(style);
+        }
+    }
+}
+
+fn pane_style(color: Color) -> Style {
+    Style::new().fg(MOCHA_TEXT).bg(color)
+}
+
+fn title_rect(area: Rect) -> Rect {
+    Rect::new(area.x, area.y, area.width, area.height.min(1))
+}
+
+fn body_rect_after_title(area: Rect) -> Rect {
+    Rect::new(
+        area.x,
+        area.y.saturating_add(1),
+        area.width,
+        area.height.saturating_sub(1),
+    )
+}
+
+fn compact_dashboard_summary(shell: &ShellState) -> Line<'static> {
+    let token_total = shell.token_usage.total_tokens;
+    Line::from(vec![
+        "Dashboard ".cyan().bold(),
+        status_span(&shell.status),
+        " · ".fg(MOCHA_OVERLAY0),
+        compact_dashboard_text(&shell.model).into(),
+        " · ".fg(MOCHA_OVERLAY0),
+        format!("{token_total} tokens").fg(MOCHA_SUBTEXT0),
+    ])
+}
+
+fn centered_band_rect(area: Rect, height: u16) -> Rect {
     let available_height = area.height.saturating_sub(4);
-    let width = width.min(available_width).max(available_width.min(20));
     let height = height.min(available_height).max(available_height.min(5));
-    let x = area.x + area.width.saturating_sub(width) / 2;
     let y = area.y + area.height.saturating_sub(height) / 2;
-    Rect::new(x, y, width, height)
+    Rect::new(area.x, y, area.width, height)
 }
 
 fn transcript_lines(
@@ -493,17 +575,6 @@ fn transcript_lines(
     rendered_lines
 }
 
-fn inner_rect(area: Rect) -> Rect {
-    let width = area.width.saturating_sub(2);
-    let height = area.height.saturating_sub(2);
-    Rect::new(
-        area.x.saturating_add(1),
-        area.y.saturating_add(1),
-        width,
-        height,
-    )
-}
-
 #[derive(Debug, Clone, Copy)]
 enum LineStyle {
     Cyan,
@@ -553,12 +624,16 @@ impl LineStyle {
 }
 
 fn status_line(status: &str) -> Line<'static> {
+    Line::from(status_span(status))
+}
+
+fn status_span(status: &str) -> Span<'static> {
     match status {
-        "ready" => Line::from(status.to_string().green()),
-        "failed" | "error" | "disconnected" => Line::from(status.to_string().red()),
-        "thinking" | "reasoning" | "retrying" => Line::from(status.to_string().cyan()),
-        "interrupted" => Line::from(status.to_string().magenta()),
-        _ => Line::from(status.to_string()),
+        "ready" => status.to_string().green(),
+        "failed" | "error" | "disconnected" => status.to_string().red(),
+        "thinking" | "reasoning" | "retrying" => status.to_string().cyan(),
+        "interrupted" => status.to_string().magenta(),
+        _ => status.to_string().into(),
     }
 }
 

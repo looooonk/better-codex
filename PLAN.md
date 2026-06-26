@@ -84,5 +84,5 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 Agents may continuously work through this plan until every unchecked item is complete. While an agent loop is running, the user may run the program and update this section with fixes, regressions, or feature requests discovered during live use. Treat these entries as user-supplied implementation tasks: triage them against the staged plan, keep them as checkboxes, and mark them complete only after the requested behavior has been implemented and verified.
 
-- [ ] User and agent text in the conversation bar is duplicated.
-- [ ] Remove the status next to the "Better Codex" headline, that says "ready". Just leave "Better Codex".
+- [x] User and agent text in the conversation bar is duplicated.
+- [x] Remove the status next to the "Better Codex" headline, that says "ready". Just leave "Better Codex".

@@ -2,31 +2,31 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-Better Codex  thinking                                                            │Dashboard
-                                                                                  │Status
-──────────────────────────────────────────────────────────────────────────────────│thinking
-┌Conversation────────────────────────────────────────────────────────────────────┐│
-│codex: # Result                                                                 ││Model
-│                                                                                ││gpt-5-codex
-│                                                                                ││
-│       - Render assistant text as markdown.                                     ││Thread
-│       - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.      ││01900000...
-│                                                                                ││
-│                                                                                ││Tokens
-│       fn transcript() -> &'static str {                                        ││total 1440
-│       "markdown"                                                               ││input 1200
-│       }                                                                        ││output 240
-│                                                                                ││context 200000
-│                                                                                ││
-│        Area     Status                                                         ││Diff
-│       ━━━━━━━  ━━━━━━━━                                                        ││3 files +128 -24
-│        code     done                                                           ││
-│       ───────  ────────                                                        ││Plan
-│        table    done                                                           ││Build the standalone shell in
-│plan: 1. Keep transcript rendering width-aware.                                 ││slices.
-│      2. Leave selection and copy mode for the next slice.                      ││x Shell frame
-└────────────────────────────────────────────────────────────────────────────────┘│> Transcript model
-Composer ready 1:1────────────────────────────────────────────────────────────────│- Approvals
-> Type a message, Shift+Enter for newline                                         │
-                                                                                  │Tools
-                                                                                  │in progress exec just test -p
+Better Codex                                                                  Dashboard
+
+Conversation                                                                  Status
+codex: # Result                                                               thinking
+
+                                                                              Model
+       - Render assistant text as markdown.                                   gpt-5-codex
+       - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.
+                                                                              Thread
+                                                                              01900000...
+       fn transcript() -> &'static str {
+       "markdown"                                                             Tokens
+       }                                                                      total 1440
+                                                                              input 1200
+                                                                              output 240
+        Area     Status                                                       context 200000
+       ━━━━━━━  ━━━━━━━━
+        code     done                                                         Diff
+       ───────  ────────                                                      3 files +128 -24
+        table    done
+plan: 1. Keep transcript rendering width-aware.                               Plan
+      2. Leave selection and copy mode for the next slice.                    Build the standalone shell in
+                                                                              slices.
+                                                                              x Shell frame
+Composer ready 1:1                                                            > Transcript model
+> Type a message, Shift+Enter for newline                                     - Approvals
+
+                                                                              Tools
