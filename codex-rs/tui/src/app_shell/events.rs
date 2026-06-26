@@ -141,6 +141,9 @@ impl ShellState {
             ServerNotification::FileChangePatchUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.latest_diff = Some(super::diff_summary_from_changes(&updated.changes));
+                    let summary = super::file_change_summary(&updated.changes);
+                    self.upsert_tool(updated.item_id, summary, "in progress".to_string());
+                    self.push_diff(super::file_change_detail(&updated.changes));
                 }
             }
             ServerNotification::McpToolCallProgress(progress) => {

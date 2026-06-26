@@ -727,8 +727,8 @@ impl ShellState {
             } => {
                 let summary = file_change_summary(&changes);
                 self.latest_diff = Some(diff_summary_from_changes(&changes));
-                self.upsert_tool(id, summary.clone(), format!("{status:?}").to_lowercase());
-                self.push_diff(summary);
+                self.upsert_tool(id, summary, format!("{status:?}").to_lowercase());
+                self.push_diff(file_change_detail(&changes));
             }
             ThreadItem::McpToolCall {
                 id,
@@ -1020,6 +1020,26 @@ fn file_change_summary(changes: &[FileUpdateChange]) -> String {
         "diff {} files +{} -{}",
         summary.files, summary.additions, summary.removals
     )
+}
+
+fn file_change_detail(changes: &[FileUpdateChange]) -> String {
+    let mut lines = vec![file_change_summary(changes)];
+    for change in changes.iter().take(8) {
+        let line = match &change.kind {
+            PatchChangeKind::Add => format!("  A {}", change.path),
+            PatchChangeKind::Delete => format!("  D {}", change.path),
+            PatchChangeKind::Update { move_path: None } => format!("  M {}", change.path),
+            PatchChangeKind::Update {
+                move_path: Some(move_path),
+            } => format!("  R {} -> {}", change.path, move_path.display()),
+        };
+        lines.push(line);
+    }
+    let hidden = changes.len().saturating_sub(8);
+    if hidden > 0 {
+        lines.push(format!("  ... {hidden} more"));
+    }
+    lines.join("\n")
 }
 
 fn diff_summary_from_changes(changes: &[FileUpdateChange]) -> DiffSummary {

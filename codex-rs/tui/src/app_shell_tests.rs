@@ -135,6 +135,17 @@ fn renders_decision_audit_snapshot() {
 }
 
 #[test]
+fn renders_file_change_detail_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.push_diff(file_change_detail(&sample_file_changes()));
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn transcript_scroll_clamps_to_last_rendered_range() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript_scroll_max.set(10);
@@ -344,6 +355,32 @@ fn mcp_elicitation_rejects_rich_form_accept_without_content() {
     );
 }
 
+#[test]
+fn file_change_detail_caps_file_rows() {
+    let changes = (0..10)
+        .map(|index| FileUpdateChange {
+            path: format!("src/file{index}.rs"),
+            kind: PatchChangeKind::Add,
+            diff: "+line\n".to_string(),
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        file_change_detail(&changes),
+        "\
+diff 10 files +10 -0
+  A src/file0.rs
+  A src/file1.rs
+  A src/file2.rs
+  A src/file3.rs
+  A src/file4.rs
+  A src/file5.rs
+  A src/file6.rs
+  A src/file7.rs
+  ... 2 more"
+    );
+}
+
 fn render_shell(shell: &ShellState, area: Rect) -> String {
     let mut buf = Buffer::empty(area);
     ShellView { shell }.render(area, &mut buf);
@@ -481,6 +518,33 @@ fn mcp_rich_elicitation_request() -> ServerRequest {
             },
         },
     }
+}
+
+fn sample_file_changes() -> Vec<FileUpdateChange> {
+    vec![
+        FileUpdateChange {
+            path: "src/app.rs".to_string(),
+            kind: PatchChangeKind::Update { move_path: None },
+            diff: "@@\n-old\n+new\n+extra\n".to_string(),
+        },
+        FileUpdateChange {
+            path: "src/new.rs".to_string(),
+            kind: PatchChangeKind::Add,
+            diff: "+created\n".to_string(),
+        },
+        FileUpdateChange {
+            path: "src/old.rs".to_string(),
+            kind: PatchChangeKind::Delete,
+            diff: "-removed\n".to_string(),
+        },
+        FileUpdateChange {
+            path: "src/from.rs".to_string(),
+            kind: PatchChangeKind::Update {
+                move_path: Some(PathBuf::from("src/to.rs")),
+            },
+            diff: "@@\n-left\n+right\n".to_string(),
+        },
+    ]
 }
 
 fn test_absolute_path(tail: &str) -> AbsolutePathBuf {
