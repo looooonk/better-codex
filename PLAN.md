@@ -84,7 +84,8 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 Agents may continuously work through this plan until every unchecked item is complete. While an agent loop is running, the user may run the program and update this section with fixes, regressions, or feature requests discovered during live use. Treat these entries as user-supplied implementation tasks: triage them against the staged plan, keep them as checkboxes, and mark them complete only after the requested behavior has been implemented and verified.
 
-- [x] User and agent text in the conversation bar is duplicated.
-- [x] Remove the status next to the "Better Codex" headline, that says "ready". Just leave "Better Codex".
 - [x] Add a bit of spacing between user messages and codex messages in the conversation pane.
 - [x] Add a little bit of padding for all sides for all panes, like the side dashboard and the text input pane.
+- [ ] Newlines in Codex's response and command outputs seem to be rendered twice
+- [ ] Items in the dashboard are prematurely cutoff even when the horizontal space allows for more text to be rendered
+- [ ] Numbers in the dashboard like token count or time should be rendered with commas as delimiters (i.e. 1,000,000 over 1000000).
