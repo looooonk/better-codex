@@ -7,6 +7,7 @@ use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::mark_buffer_hyperlinks;
 use crate::terminal_hyperlinks::prefix_hyperlink_lines;
 use crate::terminal_hyperlinks::visible_lines;
+use crate::text_formatting::truncate_text;
 use crate::tui;
 use codex_app_server_protocol::TurnPlanStepStatus;
 use ratatui::buffer::Buffer;
@@ -118,6 +119,17 @@ impl ShellView<'_> {
         if let Some(pending) = &self.shell.pending_approval {
             Paragraph::new(approval_lines(pending))
                 .block(Block::default().borders(Borders::TOP).title("Approval"))
+                .wrap(Wrap { trim: false })
+                .render(area, buf);
+            return;
+        }
+        if let Some(pending) = &self.shell.pending_elicitation {
+            Paragraph::new(elicitation_lines(pending))
+                .block(
+                    Block::default()
+                        .borders(Borders::TOP)
+                        .title("MCP Elicitation"),
+                )
                 .wrap(Wrap { trim: false })
                 .render(area, buf);
             return;
@@ -465,6 +477,25 @@ fn user_input_lines(
     }
     lines.push(Line::from(answer_line));
     lines
+}
+
+fn elicitation_lines(pending: &super::PendingElicitation) -> Vec<Line<'static>> {
+    let mut action_line = vec!["  ".into()];
+    if pending.can_accept() {
+        action_line.extend(["a".green().bold(), " accept  ".dim()]);
+    }
+    action_line.extend([
+        "d".red().bold(),
+        " decline  ".dim(),
+        "c".bold(),
+        " cancel".dim(),
+    ]);
+
+    vec![
+        Line::from(vec!["? ".cyan().bold(), pending.title().to_string().bold()]),
+        Line::from(vec!["  ".into(), truncate_text(pending.detail(), 62).dim()]),
+        Line::from(action_line),
+    ]
 }
 
 fn composer_line_spans(

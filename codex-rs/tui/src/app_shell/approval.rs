@@ -84,10 +84,10 @@ impl PendingApproval {
             | ServerRequest::ApplyPatchApproval { .. }
             | ServerRequest::ToolRequestUserInput { .. }
             | ServerRequest::DynamicToolCall { .. }
-            | ServerRequest::McpServerElicitationRequest { .. }
             | ServerRequest::ChatgptAuthTokensRefresh { .. }
             | ServerRequest::CurrentTimeRead { .. }
-            | ServerRequest::AttestationGenerate { .. } => Ok(None),
+            | ServerRequest::AttestationGenerate { .. }
+            | ServerRequest::McpServerElicitationRequest { .. } => Ok(None),
         }
     }
 

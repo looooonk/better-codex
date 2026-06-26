@@ -34,12 +34,15 @@ use tokio_stream::StreamExt;
 
 mod approval;
 mod composer;
+mod elicitation;
 mod events;
 mod render;
 mod user_input;
 use approval::ApprovalChoice;
 use approval::PendingApproval;
 use composer::ComposerState;
+use elicitation::ElicitationChoice;
+use elicitation::PendingElicitation;
 use render::draw_shell;
 use user_input::PendingUserInput;
 use user_input::UserInputAdvance;
@@ -218,6 +221,7 @@ struct ShellState {
     composer: ComposerState,
     active_turn_id: Option<String>,
     pending_approval: Option<PendingApproval>,
+    pending_elicitation: Option<PendingElicitation>,
     pending_user_input: Option<PendingUserInput>,
     streaming_assistant: String,
     streaming_plan: String,
@@ -256,6 +260,7 @@ impl ShellState {
             composer: ComposerState::default(),
             active_turn_id: None,
             pending_approval: None,
+            pending_elicitation: None,
             pending_user_input: None,
             streaming_assistant: String::new(),
             streaming_plan: String::new(),
@@ -302,6 +307,12 @@ impl ShellState {
             && let Some(choice) = approval_choice_from_key(key)
         {
             self.resolve_pending_approval(app_server, choice).await?;
+            return Ok(false);
+        }
+        if self.pending_elicitation.is_some()
+            && let Some(choice) = elicitation_choice_from_key(key)
+        {
+            self.resolve_pending_elicitation(app_server, choice).await?;
             return Ok(false);
         }
         if self.pending_user_input.is_some() {
@@ -605,6 +616,37 @@ impl ShellState {
         Ok(())
     }
 
+    async fn resolve_pending_elicitation(
+        &mut self,
+        app_server: &mut AppServerSession,
+        choice: ElicitationChoice,
+    ) -> Result<()> {
+        let Some(pending) = self.pending_elicitation.as_ref() else {
+            return Ok(());
+        };
+        let request_id = pending.request_id();
+        let title = pending.title().to_string();
+        let result = match pending.result(choice) {
+            Ok(result) => result,
+            Err(message) => {
+                self.push_error(message);
+                return Ok(());
+            }
+        };
+        app_server
+            .resolve_server_request(request_id, result)
+            .await
+            .wrap_err("failed to resolve app-server MCP elicitation request")?;
+        self.pending_elicitation = None;
+        let decision = match choice {
+            ElicitationChoice::Accept => "accepted",
+            ElicitationChoice::Decline => "declined",
+            ElicitationChoice::Cancel => "cancelled",
+        };
+        self.push_status(format!("{decision}: {title}"));
+        Ok(())
+    }
+
     fn finish_streaming_assistant(&mut self) {
         if self.streaming_assistant.trim().is_empty() {
             return;
@@ -883,6 +925,7 @@ impl ShellState {
             },
             active_turn_id: None,
             pending_approval: None,
+            pending_elicitation: None,
             pending_user_input: None,
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
             streaming_plan: String::new(),
@@ -1037,6 +1080,18 @@ fn approval_choice_from_key(key: KeyEvent) -> Option<ApprovalChoice> {
     match key.code {
         KeyCode::Char('a') | KeyCode::Char('A') => Some(ApprovalChoice::Approve),
         KeyCode::Char('d') | KeyCode::Char('D') => Some(ApprovalChoice::Deny),
+        _ => None,
+    }
+}
+
+fn elicitation_choice_from_key(key: KeyEvent) -> Option<ElicitationChoice> {
+    if !key.modifiers.is_empty() && key.modifiers != KeyModifiers::SHIFT {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char('a') | KeyCode::Char('A') => Some(ElicitationChoice::Accept),
+        KeyCode::Char('d') | KeyCode::Char('D') => Some(ElicitationChoice::Decline),
+        KeyCode::Char('c') | KeyCode::Char('C') => Some(ElicitationChoice::Cancel),
         _ => None,
     }
 }

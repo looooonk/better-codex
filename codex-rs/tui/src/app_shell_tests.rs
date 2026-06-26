@@ -2,6 +2,8 @@ use super::render::ShellView;
 use super::*;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
+use codex_app_server_protocol::McpServerElicitationRequest;
+use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_app_server_protocol::PermissionsRequestApprovalParams;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerRequest;
@@ -101,6 +103,17 @@ fn renders_pending_user_input_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
     shell.composer.set_text("2");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_pending_mcp_elicitation_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_elicitation = PendingElicitation::from_request(&mcp_url_elicitation_request());
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -263,6 +276,61 @@ fn user_input_serializes_option_selection() {
     );
 }
 
+#[test]
+fn mcp_elicitation_serializes_accept_decline_and_cancel() {
+    let pending = PendingElicitation::from_request(&mcp_url_elicitation_request())
+        .expect("request should be supported");
+
+    assert_eq!(
+        pending
+            .result(ElicitationChoice::Accept)
+            .expect("accept should serialize"),
+        json!({
+            "action": "accept",
+            "content": null,
+            "_meta": null
+        })
+    );
+    assert_eq!(
+        pending
+            .result(ElicitationChoice::Decline)
+            .expect("decline should serialize"),
+        json!({
+            "action": "decline",
+            "content": null,
+            "_meta": null
+        })
+    );
+    assert_eq!(
+        pending
+            .result(ElicitationChoice::Cancel)
+            .expect("cancel should serialize"),
+        json!({
+            "action": "cancel",
+            "content": null,
+            "_meta": null
+        })
+    );
+}
+
+#[test]
+fn mcp_elicitation_rejects_rich_form_accept_without_content() {
+    let pending = PendingElicitation::from_request(&mcp_rich_elicitation_request())
+        .expect("request should be supported");
+
+    assert!(pending.result(ElicitationChoice::Accept).is_err());
+    assert_eq!(
+        pending
+            .result(ElicitationChoice::Decline)
+            .expect("decline should serialize"),
+        json!({
+            "action": "decline",
+            "content": null,
+            "_meta": null
+        })
+    );
+}
+
 fn render_shell(shell: &ShellState, area: Rect) -> String {
     let mut buf = Buffer::empty(area);
     ShellView { shell }.render(area, &mut buf);
@@ -360,6 +428,44 @@ fn tool_free_form_user_input_request() -> ServerRequest {
                 options: None,
             }],
             auto_resolution_ms: None,
+        },
+    }
+}
+
+fn mcp_url_elicitation_request() -> ServerRequest {
+    ServerRequest::McpServerElicitationRequest {
+        request_id: RequestId::Integer(45),
+        params: McpServerElicitationRequestParams {
+            thread_id: "thread-1".to_string(),
+            turn_id: Some("turn-1".to_string()),
+            server_name: "github".to_string(),
+            request: McpServerElicitationRequest::Url {
+                meta: None,
+                message: "Open the GitHub authorization page?".to_string(),
+                url: "https://github.com/login/device".to_string(),
+                elicitation_id: "auth-1".to_string(),
+            },
+        },
+    }
+}
+
+fn mcp_rich_elicitation_request() -> ServerRequest {
+    ServerRequest::McpServerElicitationRequest {
+        request_id: RequestId::Integer(46),
+        params: McpServerElicitationRequestParams {
+            thread_id: "thread-1".to_string(),
+            turn_id: Some("turn-1".to_string()),
+            server_name: "payments".to_string(),
+            request: McpServerElicitationRequest::OpenAiForm {
+                meta: None,
+                message: "Collect billing contact details.".to_string(),
+                requested_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "email": { "type": "string" }
+                    }
+                }),
+            },
         },
     }
 }

@@ -275,7 +275,21 @@ impl ShellState {
                 Ok(())
             }
             Ok(None) => {
-                if let Some(pending) = super::PendingUserInput::from_request(&request) {
+                if let Some(pending) = super::PendingElicitation::from_request(&request) {
+                    let title = pending.title().to_string();
+                    if self.has_pending_interactive_request() {
+                        self.reject_request_with_message(
+                            app_server,
+                            request.id().clone(),
+                            format!("interactive request already pending: {title}"),
+                        )
+                        .await?;
+                        return Ok(());
+                    }
+                    self.pending_elicitation = Some(pending);
+                    self.push_status(format!("elicitation requested: {title}"));
+                    Ok(())
+                } else if let Some(pending) = super::PendingUserInput::from_request(&request) {
                     let title = pending.title().to_string();
                     if self.has_pending_interactive_request() {
                         self.reject_request_with_message(
@@ -346,7 +360,9 @@ impl ShellState {
     }
 
     fn has_pending_interactive_request(&self) -> bool {
-        self.pending_approval.is_some() || self.pending_user_input.is_some()
+        self.pending_approval.is_some()
+            || self.pending_elicitation.is_some()
+            || self.pending_user_input.is_some()
     }
 }
 
