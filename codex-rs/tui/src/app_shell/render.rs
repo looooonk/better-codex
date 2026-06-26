@@ -9,6 +9,8 @@ use crate::terminal_hyperlinks::prefix_hyperlink_lines;
 use crate::terminal_hyperlinks::visible_lines;
 use crate::text_formatting::truncate_text;
 use crate::tui;
+use codex_app_server_protocol::RateLimitSnapshot;
+use codex_app_server_protocol::RateLimitWindow;
 use codex_app_server_protocol::TurnPlanStepStatus;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
@@ -220,6 +222,22 @@ impl ShellView<'_> {
                 line.cyan()
             };
             lines.push(Line::from(line));
+        }
+
+        if !self.shell.rate_limits.is_empty() || self.shell.rate_limit_reset_credits.is_some() {
+            lines.push(Line::from(""));
+            lines.push(Line::from("Rate Limits".bold()));
+            for limit in self.shell.rate_limits.iter().take(2) {
+                lines.extend(rate_limit_lines(limit));
+            }
+            if self.shell.rate_limits.len() > 2 {
+                lines.push(Line::from(
+                    format!("+{} more", self.shell.rate_limits.len() - 2).dim(),
+                ));
+            }
+            if let Some(credits) = self.shell.rate_limit_reset_credits {
+                lines.push(Line::from(format!("reset credits {credits}").dim()));
+            }
         }
 
         lines.push(Line::from(""));
@@ -474,6 +492,65 @@ fn tool_activity_line(activity: &ToolActivity) -> Line<'static> {
         " ".dim(),
         compact_dashboard_text(&activity.title).into(),
     ])
+}
+
+fn rate_limit_lines(limit: &RateLimitSnapshot) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let label = rate_limit_label(limit);
+    if let Some(primary) = &limit.primary {
+        lines.push(rate_limit_window_line(&label, primary));
+    } else {
+        lines.push(Line::from(label));
+    }
+    if let Some(secondary) = &limit.secondary {
+        lines.push(rate_limit_window_line("  secondary", secondary));
+    }
+    if let Some(reached) = limit.rate_limit_reached_type {
+        lines.push(Line::from(format!("limited {reached:?}").red()));
+    }
+    if let Some(credits) = &limit.credits {
+        if credits.unlimited {
+            lines.push(Line::from("credits unlimited".green()));
+        } else if let Some(balance) = &credits.balance {
+            lines.push(Line::from(format!("credits {balance}").dim()));
+        } else if !credits.has_credits {
+            lines.push(Line::from("credits depleted".red()));
+        }
+    }
+    if let Some(individual_limit) = &limit.individual_limit {
+        lines.push(Line::from(format!(
+            "spend {}% left",
+            individual_limit.remaining_percent
+        )));
+    }
+    lines
+}
+
+fn rate_limit_label(limit: &RateLimitSnapshot) -> String {
+    limit
+        .limit_name
+        .as_deref()
+        .or(limit.limit_id.as_deref())
+        .map(|label| truncate_text(label, /*max_chars*/ 12))
+        .unwrap_or_else(|| "account".to_string())
+}
+
+fn rate_limit_window_line(label: &str, window: &RateLimitWindow) -> Line<'static> {
+    let percent = format!("{}%", window.used_percent);
+    let percent = if window.used_percent >= 90 {
+        percent.red()
+    } else if window.used_percent >= 75 {
+        percent.magenta()
+    } else if window.used_percent >= 50 {
+        percent.cyan()
+    } else {
+        percent.green()
+    };
+    let mut spans = vec![label.to_string().into(), " ".dim(), percent];
+    if let Some(duration) = window.window_duration_mins {
+        spans.extend([" ".dim(), format!("{duration}m").dim()]);
+    }
+    Line::from(spans)
 }
 
 fn workspace_change_lines(

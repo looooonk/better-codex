@@ -8,6 +8,7 @@ use crate::app::ExitReason;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
+use crate::app_server_session::app_server_rate_limit_snapshots;
 use crate::legacy_core::config::Config;
 use crate::resume_picker::SessionSelection;
 use crate::session_state::ThreadSessionState;
@@ -17,6 +18,7 @@ use crate::tui::TuiEvent;
 use crate::workspace_command::AppServerWorkspaceCommandRunner;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::PatchChangeKind;
+use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnPlanStep;
@@ -81,6 +83,7 @@ pub(crate) async fn run(
     shell
         .refresh_workspace_status(workspace_command_runner.as_ref())
         .await;
+    shell.refresh_rate_limits(&mut app_server).await;
 
     if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
         shell.submit_prompt(&mut app_server, prompt).await?;
@@ -249,6 +252,8 @@ struct ShellState {
     latest_diff: Option<DiffSummary>,
     workspace_git_status: Option<WorkspaceGitStatus>,
     workspace_status_refresh_due: bool,
+    rate_limits: Vec<RateLimitSnapshot>,
+    rate_limit_reset_credits: Option<i64>,
     status: String,
     token_usage: TokenUsage,
     model_context_window: Option<i64>,
@@ -290,6 +295,8 @@ impl ShellState {
             latest_diff: None,
             workspace_git_status: None,
             workspace_status_refresh_due: false,
+            rate_limits: Vec::new(),
+            rate_limit_reset_credits: None,
             status: "ready".to_string(),
             token_usage: TokenUsage::default(),
             model_context_window: None,
@@ -445,6 +452,38 @@ impl ShellState {
         self.workspace_git_status =
             workspace::load_git_status(runner, std::path::Path::new(&self.cwd)).await;
         self.workspace_status_refresh_due = false;
+    }
+
+    async fn refresh_rate_limits(&mut self, app_server: &mut AppServerSession) {
+        let Ok(response) = app_server.account_rate_limits().await else {
+            return;
+        };
+        self.rate_limit_reset_credits = response
+            .rate_limit_reset_credits
+            .as_ref()
+            .map(|credits| credits.available_count);
+        self.rate_limits = app_server_rate_limit_snapshots(response);
+    }
+
+    fn apply_rate_limit_update(&mut self, snapshot: RateLimitSnapshot) {
+        let Some(limit_id) = snapshot.limit_id.as_deref() else {
+            if self.rate_limits.is_empty() {
+                self.rate_limits.push(snapshot);
+            } else {
+                self.rate_limits[0] =
+                    merge_rate_limit_snapshot(self.rate_limits[0].clone(), snapshot);
+            }
+            return;
+        };
+        if let Some(existing) = self
+            .rate_limits
+            .iter_mut()
+            .find(|existing| existing.limit_id.as_deref() == Some(limit_id))
+        {
+            *existing = merge_rate_limit_snapshot(existing.clone(), snapshot);
+        } else {
+            self.rate_limits.push(snapshot);
+        }
     }
 
     fn insert_text(&mut self, text: &str) {
@@ -1053,6 +1092,8 @@ impl ShellState {
             }),
             workspace_git_status: None,
             workspace_status_refresh_due: false,
+            rate_limits: Vec::new(),
+            rate_limit_reset_credits: None,
             status: "thinking".to_string(),
             token_usage: TokenUsage {
                 input_tokens: 1200,
@@ -1169,6 +1210,37 @@ fn count_diff_lines(diff: &str) -> (usize, usize) {
         }
     }
     (additions, removals)
+}
+
+fn merge_rate_limit_snapshot(
+    mut base: RateLimitSnapshot,
+    update: RateLimitSnapshot,
+) -> RateLimitSnapshot {
+    if update.limit_id.is_some() {
+        base.limit_id = update.limit_id;
+    }
+    if update.limit_name.is_some() {
+        base.limit_name = update.limit_name;
+    }
+    if update.primary.is_some() {
+        base.primary = update.primary;
+    }
+    if update.secondary.is_some() {
+        base.secondary = update.secondary;
+    }
+    if update.credits.is_some() {
+        base.credits = update.credits;
+    }
+    if update.individual_limit.is_some() {
+        base.individual_limit = update.individual_limit;
+    }
+    if update.plan_type.is_some() {
+        base.plan_type = update.plan_type;
+    }
+    if update.rate_limit_reached_type.is_some() {
+        base.rate_limit_reached_type = update.rate_limit_reached_type;
+    }
+    base
 }
 
 fn compact_multiline(text: String) -> Option<String> {

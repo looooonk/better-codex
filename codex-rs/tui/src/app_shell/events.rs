@@ -219,6 +219,9 @@ impl ShellState {
                     self.push_status("model verification updated");
                 }
             }
+            ServerNotification::AccountRateLimitsUpdated(updated) => {
+                self.apply_rate_limit_update(updated.rate_limits);
+            }
             ServerNotification::ProcessOutputDelta(_)
             | ServerNotification::ProcessExited(_)
             | ServerNotification::FileChangeOutputDelta(_)
@@ -240,7 +243,6 @@ impl ShellState {
             | ServerNotification::McpServerOauthLoginCompleted(_)
             | ServerNotification::McpServerStatusUpdated(_)
             | ServerNotification::AccountUpdated(_)
-            | ServerNotification::AccountRateLimitsUpdated(_)
             | ServerNotification::AppListUpdated(_)
             | ServerNotification::RemoteControlStatusChanged(_)
             | ServerNotification::ExternalAgentConfigImportProgress(_)

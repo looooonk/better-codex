@@ -108,6 +108,62 @@ fn renders_model_runtime_details_snapshot() {
 }
 
 #[test]
+fn renders_rate_limits_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.rate_limits = vec![
+        codex_app_server_protocol::RateLimitSnapshot {
+            limit_id: Some("codex".to_string()),
+            limit_name: Some("Codex".to_string()),
+            primary: Some(codex_app_server_protocol::RateLimitWindow {
+                used_percent: 82,
+                window_duration_mins: Some(300),
+                resets_at: Some(1_900_000_000),
+            }),
+            secondary: Some(codex_app_server_protocol::RateLimitWindow {
+                used_percent: 18,
+                window_duration_mins: Some(10_080),
+                resets_at: None,
+            }),
+            credits: Some(codex_app_server_protocol::CreditsSnapshot {
+                has_credits: true,
+                unlimited: false,
+                balance: Some("$12.34".to_string()),
+            }),
+            individual_limit: Some(codex_app_server_protocol::SpendControlLimitSnapshot {
+                limit: "$100.00".to_string(),
+                used: "$25.00".to_string(),
+                remaining_percent: 75,
+                resets_at: 1_900_000_000,
+            }),
+            plan_type: None,
+            rate_limit_reached_type: None,
+        },
+        codex_app_server_protocol::RateLimitSnapshot {
+            limit_id: Some("secondary".to_string()),
+            limit_name: Some("Background".to_string()),
+            primary: Some(codex_app_server_protocol::RateLimitWindow {
+                used_percent: 95,
+                window_duration_mins: Some(60),
+                resets_at: None,
+            }),
+            secondary: None,
+            credits: None,
+            individual_limit: None,
+            plan_type: None,
+            rate_limit_reached_type: Some(
+                codex_app_server_protocol::RateLimitReachedType::RateLimitReached,
+            ),
+        },
+    ];
+    shell.rate_limit_reset_credits = Some(2);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 42,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn renders_context_pressure_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.token_usage = TokenUsage {

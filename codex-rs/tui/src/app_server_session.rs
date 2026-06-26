@@ -367,6 +367,17 @@ impl AppServerSession {
             .map_err(|err| bootstrap_request_error("account/read failed during TUI bootstrap", err))
     }
 
+    pub(crate) async fn account_rate_limits(&mut self) -> Result<GetAccountRateLimitsResponse> {
+        let request_id = self.next_request_id();
+        self.client
+            .request_typed(ClientRequest::GetAccountRateLimits {
+                request_id,
+                params: None,
+            })
+            .await
+            .wrap_err("account/rateLimits/read failed")
+    }
+
     pub(crate) async fn external_agent_config_detect(
         &mut self,
         params: ExternalAgentConfigDetectParams,
