@@ -115,6 +115,14 @@ impl ShellView<'_> {
     }
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
+        if let Some(pending) = &self.shell.pending_approval {
+            Paragraph::new(approval_lines(pending))
+                .block(Block::default().borders(Borders::TOP).title("Approval"))
+                .wrap(Wrap { trim: false })
+                .render(area, buf);
+            return;
+        }
+
         let (line, column) = self.shell.composer.cursor_position();
         let title = if self.shell.active_turn_id.is_some() {
             format!("Composer busy {}:{}", line + 1, column + 1)
@@ -378,6 +386,20 @@ fn composer_lines(text: &str, cursor: usize, is_empty: bool) -> Vec<Line<'static
         offset = end + 1;
     }
     lines
+}
+
+fn approval_lines(pending: &super::PendingApproval) -> Vec<Line<'static>> {
+    vec![
+        Line::from(vec!["? ".cyan().bold(), pending.title().to_string().bold()]),
+        Line::from(vec!["  ".into(), pending.detail().to_string().dim()]),
+        Line::from(vec![
+            "  ".into(),
+            "a".green().bold(),
+            " approve  ".dim(),
+            "d".red().bold(),
+            " deny".dim(),
+        ]),
+    ]
 }
 
 fn composer_line_spans(

@@ -1,8 +1,17 @@
 use super::render::ShellView;
 use super::*;
+use codex_app_server_protocol::AdditionalNetworkPermissions;
+use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
+use codex_app_server_protocol::PermissionsRequestApprovalParams;
+use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::ServerRequest;
+use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_path_uri::LegacyAppPathString;
 use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use serde_json::json;
+use std::path::PathBuf;
 
 #[test]
 fn renders_first_stage_shell_snapshot() {
@@ -73,6 +82,18 @@ fn renders_markdown_transcript_snapshot() {
 }
 
 #[test]
+fn renders_pending_approval_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
+        .expect("approval request should be valid");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn transcript_scroll_clamps_to_last_rendered_range() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript_scroll_max.set(10);
@@ -135,10 +156,113 @@ fn composer_recalls_submission_history_from_draft() {
     assert_eq!(composer.text(), "draft");
 }
 
+#[test]
+fn command_approval_serializes_accept_and_deny() {
+    let pending = PendingApproval::from_request(&command_approval_request())
+        .expect("approval request should be valid")
+        .expect("request should be supported");
+
+    assert_eq!(
+        pending
+            .result(ApprovalChoice::Approve)
+            .expect("approval should serialize"),
+        json!({ "decision": "accept" })
+    );
+    assert_eq!(
+        pending
+            .result(ApprovalChoice::Deny)
+            .expect("denial should serialize"),
+        json!({ "decision": "decline" })
+    );
+}
+
+#[test]
+fn permissions_approval_serializes_grant_and_empty_deny() {
+    let pending = PendingApproval::from_request(&permissions_approval_request())
+        .expect("approval request should be valid")
+        .expect("request should be supported");
+
+    assert_eq!(
+        pending
+            .result(ApprovalChoice::Approve)
+            .expect("approval should serialize"),
+        json!({
+            "permissions": {
+                "network": { "enabled": true }
+            },
+            "scope": "turn"
+        })
+    );
+    assert_eq!(
+        pending
+            .result(ApprovalChoice::Deny)
+            .expect("denial should serialize"),
+        json!({
+            "permissions": {},
+            "scope": "turn"
+        })
+    );
+}
+
 fn render_shell(shell: &ShellState, area: Rect) -> String {
     let mut buf = Buffer::empty(area);
     ShellView { shell }.render(area, &mut buf);
     buffer_contents(&buf, area)
+}
+
+fn command_approval_request() -> ServerRequest {
+    ServerRequest::CommandExecutionRequestApproval {
+        request_id: RequestId::Integer(41),
+        params: CommandExecutionRequestApprovalParams {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "exec-1".to_string(),
+            started_at_ms: 0,
+            approval_id: None,
+            environment_id: None,
+            reason: Some("Needs network access".to_string()),
+            network_approval_context: None,
+            command: Some("cargo test -p codex-tui".to_string()),
+            cwd: Some(LegacyAppPathString::from_abs_path(&test_absolute_path(
+                "workspace/better-codex",
+            ))),
+            command_actions: None,
+            additional_permissions: None,
+            proposed_execpolicy_amendment: None,
+            proposed_network_policy_amendments: None,
+            available_decisions: None,
+        },
+    }
+}
+
+fn permissions_approval_request() -> ServerRequest {
+    ServerRequest::PermissionsRequestApproval {
+        request_id: RequestId::Integer(42),
+        params: PermissionsRequestApprovalParams {
+            thread_id: "thread-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "permissions-1".to_string(),
+            environment_id: None,
+            started_at_ms: 0,
+            cwd: test_absolute_path("workspace/better-codex"),
+            reason: Some("Need package registry access".to_string()),
+            permissions: codex_app_server_protocol::RequestPermissionProfile {
+                network: Some(AdditionalNetworkPermissions {
+                    enabled: Some(true),
+                }),
+                file_system: None,
+            },
+        },
+    }
+}
+
+fn test_absolute_path(tail: &str) -> AbsolutePathBuf {
+    let path = if cfg!(windows) {
+        PathBuf::from(format!(r"C:\{tail}"))
+    } else {
+        PathBuf::from(format!("/{tail}"))
+    };
+    AbsolutePathBuf::try_from(path).expect("test path should be absolute")
 }
 
 fn buffer_contents(buf: &Buffer, area: Rect) -> String {

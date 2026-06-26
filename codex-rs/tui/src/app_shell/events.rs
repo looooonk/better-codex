@@ -27,7 +27,7 @@ impl ShellState {
                 self.handle_notification(notification);
             }
             AppServerEvent::ServerRequest(request) => {
-                self.reject_unsupported_request(app_server, request).await?;
+                self.handle_server_request(app_server, request).await?;
             }
             AppServerEvent::Disconnected { message } => {
                 self.status = "disconnected".to_string();
@@ -253,25 +253,63 @@ impl ShellState {
         }
     }
 
+    async fn handle_server_request(
+        &mut self,
+        app_server: &mut AppServerSession,
+        request: ServerRequest,
+    ) -> Result<()> {
+        match super::PendingApproval::from_request(&request) {
+            Ok(Some(pending)) => {
+                let title = pending.title().to_string();
+                if self.pending_approval.is_some() {
+                    self.reject_request_with_message(
+                        app_server,
+                        request.id().clone(),
+                        format!("approval already pending: {title}"),
+                    )
+                    .await?;
+                    return Ok(());
+                }
+                self.pending_approval = Some(pending);
+                self.push_status(format!("approval requested: {title}"));
+                Ok(())
+            }
+            Ok(None) => self.reject_unsupported_request(app_server, request).await,
+            Err(message) => {
+                self.reject_request_with_message(app_server, request.id().clone(), message)
+                    .await
+            }
+        }
+    }
+
     async fn reject_unsupported_request(
         &mut self,
         app_server: &mut AppServerSession,
         request: ServerRequest,
     ) -> Result<()> {
         let request_id = request.id().clone();
-        self.push_error(format!(
+        let message = format!(
             "unsupported interactive request: {}",
             request_name(&request)
-        ));
+        );
+        self.reject_request_with_message(app_server, request_id, message)
+            .await
+    }
+
+    async fn reject_request_with_message(
+        &mut self,
+        app_server: &mut AppServerSession,
+        request_id: codex_app_server_protocol::RequestId,
+        message: String,
+    ) -> Result<()> {
+        self.push_error(message.clone());
         app_server
             .reject_server_request(
                 request_id,
                 JSONRPCErrorError {
                     code: UNSUPPORTED_REQUEST_ERROR,
                     data: None,
-                    message:
-                        "the first-stage app shell does not implement this interactive request yet"
-                            .to_string(),
+                    message,
                 },
             )
             .await

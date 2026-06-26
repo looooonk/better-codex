@@ -32,9 +32,12 @@ use std::collections::VecDeque;
 use tokio::select;
 use tokio_stream::StreamExt;
 
+mod approval;
 mod composer;
 mod events;
 mod render;
+use approval::ApprovalChoice;
+use approval::PendingApproval;
 use composer::ComposerState;
 use render::draw_shell;
 
@@ -211,6 +214,7 @@ struct ShellState {
     transcript_scroll_max: Cell<usize>,
     composer: ComposerState,
     active_turn_id: Option<String>,
+    pending_approval: Option<PendingApproval>,
     streaming_assistant: String,
     streaming_plan: String,
     plan_explanation: Option<String>,
@@ -247,6 +251,7 @@ impl ShellState {
             transcript_scroll_max: Cell::new(0),
             composer: ComposerState::default(),
             active_turn_id: None,
+            pending_approval: None,
             streaming_assistant: String::new(),
             streaming_plan: String::new(),
             plan_explanation: None,
@@ -287,6 +292,12 @@ impl ShellState {
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
             return Ok(true);
+        }
+        if self.pending_approval.is_some()
+            && let Some(choice) = approval_choice_from_key(key)
+        {
+            self.resolve_pending_approval(app_server, choice).await?;
+            return Ok(false);
         }
         match key.code {
             KeyCode::Esc => Ok(true),
@@ -447,6 +458,30 @@ impl ShellState {
         self.composer.remember_submission(&prompt);
         self.composer.clear();
         self.active_turn_id = Some(response.turn.id);
+        Ok(())
+    }
+
+    async fn resolve_pending_approval(
+        &mut self,
+        app_server: &mut AppServerSession,
+        choice: ApprovalChoice,
+    ) -> Result<()> {
+        let Some(pending) = self.pending_approval.as_ref() else {
+            return Ok(());
+        };
+        let request_id = pending.request_id();
+        let title = pending.title().to_string();
+        let result = pending.result(choice)?;
+        app_server
+            .resolve_server_request(request_id, result)
+            .await
+            .wrap_err("failed to resolve app-server approval request")?;
+        self.pending_approval = None;
+        let decision = match choice {
+            ApprovalChoice::Approve => "approved",
+            ApprovalChoice::Deny => "denied",
+        };
+        self.push_status(format!("{decision}: {title}"));
         Ok(())
     }
 
@@ -727,6 +762,7 @@ impl ShellState {
                 composer
             },
             active_turn_id: None,
+            pending_approval: None,
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
             streaming_plan: String::new(),
             plan_explanation: Some("Build the standalone shell in slices.".to_string()),
@@ -871,6 +907,17 @@ fn compact_multiline(text: String) -> Option<String> {
     let mut compact = text.chars().take(MAX_CHARS).collect::<String>();
     compact.push_str("...");
     Some(compact)
+}
+
+fn approval_choice_from_key(key: KeyEvent) -> Option<ApprovalChoice> {
+    if !key.modifiers.is_empty() && key.modifiers != KeyModifiers::SHIFT {
+        return None;
+    }
+    match key.code {
+        KeyCode::Char('a') | KeyCode::Char('A') => Some(ApprovalChoice::Approve),
+        KeyCode::Char('d') | KeyCode::Char('D') => Some(ApprovalChoice::Deny),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
