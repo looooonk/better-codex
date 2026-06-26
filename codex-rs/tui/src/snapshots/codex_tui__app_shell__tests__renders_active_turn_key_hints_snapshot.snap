@@ -44,5 +44,5 @@ Better Codex  thinking                                                │Dashboa
 └────────────────────────────────────────────────────────────────────┘│
 Composer busy 1:37────────────────────────────────────────────────────│Keys
 > Summarize the new shell architecture                                │Enter steer
-                                                                      │Ctrl+C interrupt
-                                                                      │Esc exit
+                                                                      │Ctrl+C interrupt, Esc exit
+                                                                      │Alt+Up select, Ctrl+O copy

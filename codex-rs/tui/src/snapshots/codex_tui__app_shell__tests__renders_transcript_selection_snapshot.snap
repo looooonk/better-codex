@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+Better Codex  thinking                                                │Dashboard
+                                                                      │Status
+──────────────────────────────────────────────────────────────────────│thinking
+┌Conversation select 3/6─────────────────────────────────────────────┐│
+│system: Better Codex app shell                                      ││Model
+│you: Create a divergent standalone TUI.                             ││gpt-5-codex
+│> codex: Started a fullscreen app shell backed by app-server turns. ││
+│plan: 1. Build shell                                                ││Thread
+│      2. Wire transcript                                            ││01900000...
+│      3. Render dashboard                                           ││
+│tool: exec just test -p codex-tui                                   ││Tokens
+│diff: diff 3 files +128 -24                                         ││total 1440
+│codex: The new shell owns the fullscreen surface.                   ││input 1200
+│                                                                    ││output 240
+│                                                                    ││context 200000
+│                                                                    ││
+│                                                                    ││Diff
+│                                                                    ││3 files +128 -24
+│                                                                    ││
+│                                                                    ││Plan
+│                                                                    ││Build the standalone shell in
+│                                                                    ││slices.
+│                                                                    ││x Shell frame
+└────────────────────────────────────────────────────────────────────┘│> Transcript model
+Composer ready 1:37───────────────────────────────────────────────────│- Approvals
+> Summarize the new shell architecture                                │
+                                                                      │Tools
+                                                                      │in progress exec just test -p

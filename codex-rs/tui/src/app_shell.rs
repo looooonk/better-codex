@@ -9,6 +9,7 @@ use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::app_server_session::app_server_rate_limit_snapshots;
+use crate::clipboard_copy::ClipboardLease;
 use crate::legacy_core::config::Config;
 use crate::resume_picker::SessionSelection;
 use crate::session_state::ThreadSessionState;
@@ -55,6 +56,7 @@ use workspace::WorkspaceGitStatus;
 
 const MAX_TRANSCRIPT_LINES: usize = 400;
 const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
+const TRANSCRIPT_SELECTION_STEP: usize = 1;
 
 pub(crate) async fn run(
     tui: &mut tui::Tui,
@@ -179,7 +181,7 @@ async fn start_selected_session(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct TranscriptLine {
     kind: TranscriptKind,
     text: String,
@@ -208,6 +210,23 @@ enum TranscriptKind {
     Error,
 }
 
+impl TranscriptKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::System => "system",
+            Self::User => "you",
+            Self::Assistant => "codex",
+            Self::Plan => "plan",
+            Self::Tool => "tool",
+            Self::Diff => "diff",
+            Self::Output => "output",
+            Self::Status => "status",
+            Self::Audit => "audit",
+            Self::Error => "error",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 struct ToolActivity {
     id: String,
@@ -222,7 +241,6 @@ struct DiffSummary {
     removals: usize,
 }
 
-#[derive(Debug)]
 struct ShellState {
     thread_id: ThreadId,
     thread_name: Option<String>,
@@ -239,7 +257,9 @@ struct ShellState {
     transcript: VecDeque<TranscriptLine>,
     transcript_scroll: usize,
     transcript_scroll_max: Cell<usize>,
+    transcript_selection: Option<usize>,
     composer: ComposerState,
+    clipboard_lease: Option<ClipboardLease>,
     active_turn_id: Option<String>,
     pending_approval: Option<PendingApproval>,
     pending_elicitation: Option<PendingElicitation>,
@@ -282,7 +302,9 @@ impl ShellState {
             transcript: VecDeque::new(),
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
+            transcript_selection: None,
             composer: ComposerState::default(),
+            clipboard_lease: None,
             active_turn_id: None,
             pending_approval: None,
             pending_elicitation: None,
@@ -335,6 +357,24 @@ impl ShellState {
                 return Ok(false);
             }
             return Ok(true);
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('o')) {
+            self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+            return Ok(false);
+        }
+        if self.transcript_selection.is_some()
+            && let Some(handled) = self.handle_transcript_selection_key(key)
+        {
+            return Ok(handled);
+        }
+        if key.modifiers.contains(KeyModifiers::ALT)
+            && matches!(key.code, KeyCode::Up | KeyCode::Down)
+        {
+            self.select_latest_transcript_item();
+            if matches!(key.code, KeyCode::Up) {
+                self.move_transcript_selection_up(TRANSCRIPT_SELECTION_STEP);
+            }
+            return Ok(false);
         }
         if self.pending_approval.is_some()
             && let Some(choice) = approval_choice_from_key(key)
@@ -487,7 +527,68 @@ impl ShellState {
     }
 
     fn insert_text(&mut self, text: &str) {
+        self.clear_transcript_selection();
         self.composer.insert_str(text);
+    }
+
+    fn handle_transcript_selection_key(&mut self, key: KeyEvent) -> Option<bool> {
+        match key.code {
+            KeyCode::Esc => {
+                self.clear_transcript_selection();
+                Some(false)
+            }
+            KeyCode::Enter => {
+                self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+                Some(false)
+            }
+            KeyCode::Up => {
+                self.move_transcript_selection_up(TRANSCRIPT_SELECTION_STEP);
+                Some(false)
+            }
+            KeyCode::Down => {
+                self.move_transcript_selection_down(TRANSCRIPT_SELECTION_STEP);
+                Some(false)
+            }
+            KeyCode::PageUp => {
+                self.move_transcript_selection_up(TRANSCRIPT_PAGE_SCROLL_STEP);
+                Some(false)
+            }
+            KeyCode::PageDown => {
+                self.move_transcript_selection_down(TRANSCRIPT_PAGE_SCROLL_STEP);
+                Some(false)
+            }
+            KeyCode::Home => {
+                self.select_first_transcript_item();
+                Some(false)
+            }
+            KeyCode::End => {
+                self.select_latest_transcript_item();
+                Some(false)
+            }
+            KeyCode::Char('c') => {
+                self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+                Some(false)
+            }
+            KeyCode::Backspace
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Delete
+            | KeyCode::Insert
+            | KeyCode::F(_)
+            | KeyCode::Char(_)
+            | KeyCode::Null
+            | KeyCode::CapsLock
+            | KeyCode::ScrollLock
+            | KeyCode::NumLock
+            | KeyCode::PrintScreen
+            | KeyCode::Pause
+            | KeyCode::Menu
+            | KeyCode::KeypadBegin
+            | KeyCode::Media(_)
+            | KeyCode::Modifier(_)
+            | KeyCode::Tab
+            | KeyCode::BackTab => Some(false),
+        }
     }
 
     fn scroll_transcript_up(&mut self, rows: usize) {
@@ -514,6 +615,79 @@ impl ShellState {
         } else {
             scroll.min(max_scroll)
         }
+    }
+
+    fn select_latest_transcript_item(&mut self) {
+        self.transcript_selection = self.transcript.len().checked_sub(1);
+        self.scroll_transcript_to_bottom();
+    }
+
+    fn select_first_transcript_item(&mut self) {
+        self.transcript_selection = (!self.transcript.is_empty()).then_some(0);
+        self.scroll_transcript_to_top();
+    }
+
+    fn clear_transcript_selection(&mut self) {
+        self.transcript_selection = None;
+    }
+
+    fn move_transcript_selection_up(&mut self, rows: usize) {
+        let selected = self
+            .transcript_selection
+            .unwrap_or_else(|| self.transcript.len().saturating_sub(1));
+        self.transcript_selection = Some(selected.saturating_sub(rows));
+        self.scroll_transcript_up(rows);
+    }
+
+    fn move_transcript_selection_down(&mut self, rows: usize) {
+        let Some(selected) = self.transcript_selection else {
+            self.select_latest_transcript_item();
+            return;
+        };
+        let Some(max_index) = self.transcript.len().checked_sub(1) else {
+            self.clear_transcript_selection();
+            return;
+        };
+        self.transcript_selection = Some(selected.saturating_add(rows).min(max_index));
+        self.scroll_transcript_down(rows);
+    }
+
+    fn copy_selected_transcript_with(
+        &mut self,
+        copy_fn: impl FnOnce(&str) -> Result<Option<ClipboardLease>, String>,
+    ) {
+        let Some((kind, text)) = self.transcript_copy_text() else {
+            self.push_error("No assistant transcript item to copy");
+            return;
+        };
+        let kind = kind.label();
+        let text = text.to_string();
+        match copy_fn(&text) {
+            Ok(lease) => {
+                self.clipboard_lease = lease;
+                self.push_status(format!("copied {kind} transcript item"));
+            }
+            Err(error) => {
+                self.push_error(format!("Copy failed: {error}"));
+            }
+        }
+    }
+
+    fn selected_transcript_copy_text(&self) -> Option<(TranscriptKind, &str)> {
+        let selected = self.transcript_selection?;
+        self.transcript
+            .get(selected)
+            .map(|line| (line.kind, line.text.as_str()))
+    }
+
+    fn transcript_copy_text(&self) -> Option<(TranscriptKind, &str)> {
+        self.selected_transcript_copy_text().or_else(|| {
+            self.transcript
+                .iter()
+                .rev()
+                .find(|line| line.kind == TranscriptKind::Assistant)
+                .map(|line| (line.kind, line.text.as_str()))
+        })
     }
 
     async fn submit_prompt(
@@ -1017,6 +1191,9 @@ impl ShellState {
         self.transcript.push_back(line);
         while self.transcript.len() > MAX_TRANSCRIPT_LINES {
             self.transcript.pop_front();
+            if let Some(selected) = self.transcript_selection {
+                self.transcript_selection = Some(selected.saturating_sub(1));
+            }
         }
     }
 
@@ -1047,11 +1224,13 @@ impl ShellState {
             transcript: VecDeque::new(),
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
+            transcript_selection: None,
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Summarize the new shell architecture");
                 composer
             },
+            clipboard_lease: None,
             active_turn_id: None,
             pending_approval: None,
             pending_elicitation: None,

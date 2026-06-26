@@ -237,6 +237,92 @@ fn renders_markdown_transcript_snapshot() {
 }
 
 #[test]
+fn renders_transcript_selection_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript_selection = Some(2);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn transcript_selection_moves_between_items() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.select_latest_transcript_item();
+
+    assert_eq!(
+        shell.selected_transcript_copy_text(),
+        Some((TranscriptKind::Diff, "diff 3 files +128 -24"))
+    );
+
+    shell.move_transcript_selection_up(2);
+
+    assert_eq!(
+        shell.selected_transcript_copy_text(),
+        Some((
+            TranscriptKind::Plan,
+            "1. Build shell\n2. Wire transcript\n3. Render dashboard"
+        ))
+    );
+
+    shell.move_transcript_selection_down(1);
+
+    assert_eq!(
+        shell.selected_transcript_copy_text(),
+        Some((TranscriptKind::Tool, "exec just test -p codex-tui"))
+    );
+}
+
+#[test]
+fn copies_selected_transcript_item() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript_selection = Some(1);
+    let mut copied = None;
+
+    shell.copy_selected_transcript_with(|text| {
+        copied = Some(text.to_string());
+        Ok(None)
+    });
+
+    assert_eq!(
+        copied,
+        Some("Create a divergent standalone TUI.".to_string())
+    );
+    assert_eq!(
+        shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Status,
+            "copied you transcript item"
+        ))
+    );
+}
+
+#[test]
+fn copies_latest_assistant_without_selection() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut copied = None;
+
+    shell.copy_selected_transcript_with(|text| {
+        copied = Some(text.to_string());
+        Ok(None)
+    });
+
+    assert_eq!(
+        copied,
+        Some("Started a fullscreen app shell backed by app-server turns.".to_string())
+    );
+    assert_eq!(
+        shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Status,
+            "copied codex transcript item"
+        ))
+    );
+}
+
+#[test]
 fn renders_pending_approval_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.pending_approval = PendingApproval::from_request(&command_approval_request())

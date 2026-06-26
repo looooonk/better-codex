@@ -19,6 +19,7 @@ use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -75,14 +76,20 @@ impl ShellView<'_> {
     fn render_transcript(&self, area: Rect, buf: &mut Buffer) {
         let mut lines = Vec::new();
         let cwd = std::path::Path::new(&self.shell.cwd);
-        for line in &self.shell.transcript {
-            lines.extend(transcript_lines(line, area.width.saturating_sub(2), cwd));
+        for (index, line) in self.shell.transcript.iter().enumerate() {
+            lines.extend(transcript_lines(
+                line,
+                area.width.saturating_sub(2),
+                cwd,
+                self.shell.transcript_selection == Some(index),
+            ));
         }
         if !self.shell.streaming_plan.is_empty() {
             lines.extend(transcript_lines(
                 &TranscriptLine::new(TranscriptKind::Plan, self.shell.streaming_plan.clone()),
                 area.width.saturating_sub(2),
                 cwd,
+                /*selected*/ false,
             ));
         }
         if !self.shell.streaming_assistant.is_empty() {
@@ -93,6 +100,7 @@ impl ShellView<'_> {
                 ),
                 area.width.saturating_sub(2),
                 cwd,
+                /*selected*/ false,
             ));
         }
         let visible_count = area.height.saturating_sub(2) as usize;
@@ -100,7 +108,13 @@ impl ShellView<'_> {
         self.shell.transcript_scroll_max.set(max_scroll);
         let scroll = self.shell.transcript_scroll.min(max_scroll);
         let visible_from = lines.len().saturating_sub(visible_count + scroll);
-        let title = if scroll == 0 {
+        let title = if let Some(selected) = self.shell.transcript_selection {
+            format!(
+                "Conversation select {}/{}",
+                selected.saturating_add(1),
+                self.shell.transcript.len()
+            )
+        } else if scroll == 0 {
             "Conversation".to_string()
         } else {
             format!("Conversation +{scroll}")
@@ -343,14 +357,19 @@ impl ShellView<'_> {
         }
         lines.push(Line::from(""));
         lines.push(Line::from("Keys".bold()));
-        if self.shell.active_turn_id.is_some() {
+        if self.shell.transcript_selection.is_some() {
+            lines.push(Line::from("Up/Down select"));
+            lines.push(Line::from("Enter copy"));
+            lines.push(Line::from("Esc composer"));
+        } else if self.shell.active_turn_id.is_some() {
             lines.push(Line::from("Enter steer"));
-            lines.push(Line::from("Ctrl+C interrupt"));
+            lines.push(Line::from("Ctrl+C interrupt, Esc exit"));
+            lines.push(Line::from("Alt+Up select, Ctrl+O copy"));
         } else {
             lines.push(Line::from("Enter send"));
-            lines.push(Line::from("Ctrl+C exit"));
+            lines.push(Line::from("Ctrl+C/Esc exit"));
+            lines.push(Line::from("Alt+Up select, Ctrl+O copy"));
         }
-        lines.push(Line::from("Esc exit"));
         Paragraph::new(lines)
             .block(Block::default().borders(Borders::LEFT).title("Dashboard"))
             .wrap(Wrap { trim: false })
@@ -362,48 +381,60 @@ fn transcript_lines(
     line: &TranscriptLine,
     width: u16,
     cwd: &std::path::Path,
+    selected: bool,
 ) -> Vec<HyperlinkLine> {
     let width = usize::from(width).max(12);
-    let (label, style): (&str, LineStyle) = match line.kind {
-        TranscriptKind::System => ("system", LineStyle::Dim),
-        TranscriptKind::User => ("you", LineStyle::Cyan),
-        TranscriptKind::Assistant => ("codex", LineStyle::Magenta),
-        TranscriptKind::Plan => ("plan", LineStyle::Green),
-        TranscriptKind::Tool => ("tool", LineStyle::Cyan),
-        TranscriptKind::Diff => ("diff", LineStyle::Green),
-        TranscriptKind::Output => ("output", LineStyle::Dim),
-        TranscriptKind::Status => ("status", LineStyle::Dim),
-        TranscriptKind::Audit => ("audit", LineStyle::Cyan),
-        TranscriptKind::Error => ("error", LineStyle::Red),
+    let label = line.kind.label();
+    let style = match line.kind {
+        TranscriptKind::System => LineStyle::Dim,
+        TranscriptKind::User => LineStyle::Cyan,
+        TranscriptKind::Assistant => LineStyle::Magenta,
+        TranscriptKind::Plan => LineStyle::Green,
+        TranscriptKind::Tool => LineStyle::Cyan,
+        TranscriptKind::Diff => LineStyle::Green,
+        TranscriptKind::Output => LineStyle::Dim,
+        TranscriptKind::Status => LineStyle::Dim,
+        TranscriptKind::Audit => LineStyle::Cyan,
+        TranscriptKind::Error => LineStyle::Red,
     };
 
-    let prefix_width = label.len() + 2;
+    let prefix_width = label.len() + if selected { 4 } else { 2 };
     let body_width = width.saturating_sub(prefix_width).max(1);
-    let initial_prefix = style.label_prefix(label);
+    let initial_prefix = style.label_prefix(label, selected);
     let subsequent_prefix = " ".repeat(prefix_width).into();
 
-    if matches!(line.kind, TranscriptKind::Assistant | TranscriptKind::Plan) {
-        let rendered: Vec<HyperlinkLine> = markdown::render_markdown_agent_with_links_and_cwd(
-            &line.text,
-            Some(body_width),
-            Some(cwd),
-        )
-        .into_iter()
-        .map(|line| line.style(style.line_style()))
-        .collect();
-        return prefix_hyperlink_lines(rendered, initial_prefix, subsequent_prefix);
-    }
-
-    let options = textwrap::Options::new(body_width);
-    let wrapped_lines: Vec<HyperlinkLine> = textwrap::wrap(&line.text, options)
-        .into_iter()
-        .map(|wrapped| {
-            HyperlinkLine::new(
-                Line::from(style.text(wrapped.into_owned())).style(style.line_style()),
+    let mut rendered_lines =
+        if matches!(line.kind, TranscriptKind::Assistant | TranscriptKind::Plan) {
+            let rendered = markdown::render_markdown_agent_with_links_and_cwd(
+                &line.text,
+                Some(body_width),
+                Some(cwd),
             )
-        })
-        .collect();
-    prefix_hyperlink_lines(wrapped_lines, initial_prefix, subsequent_prefix)
+            .into_iter()
+            .map(|line| line.style(style.line_style()))
+            .collect();
+            prefix_hyperlink_lines(rendered, initial_prefix, subsequent_prefix)
+        } else {
+            let options = textwrap::Options::new(body_width);
+            let wrapped_lines: Vec<HyperlinkLine> = textwrap::wrap(&line.text, options)
+                .into_iter()
+                .map(|wrapped| {
+                    HyperlinkLine::new(
+                        Line::from(style.text(wrapped.into_owned())).style(style.line_style()),
+                    )
+                })
+                .collect();
+            prefix_hyperlink_lines(wrapped_lines, initial_prefix, subsequent_prefix)
+        };
+
+    if selected {
+        let selection_style = Style::new().bg(Color::DarkGray);
+        rendered_lines = rendered_lines
+            .into_iter()
+            .map(|line| line.style(selection_style))
+            .collect();
+    }
+    rendered_lines
 }
 
 fn inner_rect(area: Rect) -> Rect {
@@ -427,8 +458,12 @@ enum LineStyle {
 }
 
 impl LineStyle {
-    fn label_prefix(self, text: &str) -> Span<'static> {
-        self.label(format!("{text}: "))
+    fn label_prefix(self, text: &str, selected: bool) -> Span<'static> {
+        if selected {
+            self.label(format!("> {text}: "))
+        } else {
+            self.label(format!("{text}: "))
+        }
     }
 
     fn label(self, text: String) -> Span<'static> {
