@@ -1,0 +1,34 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+Better Codex  thinking                                                │Dashboard
+                                                                      │Status
+──────────────────────────────────────────────────────────────────────│thinking
+┌Conversation────────────────────────────────────────────────────────┐│
+│system: Better Codex app shell                                      ││Model
+│you: Create a divergent standalone TUI.                             ││gpt-5-codex
+│codex: Started a fullscreen app shell backed by app-server turns.   ││
+│plan: 1. Build sh┌Command Palette───────────────────────────────────────────────┐
+│      2. Wire tra│> Copy transcript item - Copy selection or latest ...         │
+│      3. Render d│Clear visible transcript                                      │
+│tool: exec just t│Select latest transcript item                                 │
+│diff: diff 3 file│Jump transcript to top                                        │
+│codex: The new sh│Jump transcript to bottom                                     │
+│                 │Interrupt active turn                                         │
+│                 │Switch model                                                  │000
+│                 │Change permissions                                            │
+│                 │Resume thread                                                 │
+│                 │Fork thread                                                   │8 -24
+│                 │Compact context                                               │
+│                 │                                                              │
+│                 │                                                              │tandalone shell in
+│                 └──────────────────────────────────────────────────────────────┘
+│                                                                    ││x Shell frame
+│                                                                    ││> Transcript model
+│                                                                    ││- Approvals
+└────────────────────────────────────────────────────────────────────┘│
+Composer ready 1:37───────────────────────────────────────────────────│Tools
+> Summarize the new shell architecture                                │in progress exec just test -p
+                                                                      │codex-...
+                                                                      │completed file changes in

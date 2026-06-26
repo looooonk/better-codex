@@ -26,6 +26,7 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Block;
 use ratatui::widgets::Borders;
+use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
@@ -60,6 +61,7 @@ impl ShellView<'_> {
         self.render_transcript(main[1], buf);
         self.render_input(main[2], buf);
         self.render_dashboard(horizontal[1], buf);
+        self.render_command_palette(area, buf);
     }
 
     fn render_header(&self, area: Rect, buf: &mut Buffer) {
@@ -375,6 +377,60 @@ impl ShellView<'_> {
             .wrap(Wrap { trim: false })
             .render(area, buf);
     }
+
+    fn render_command_palette(&self, area: Rect, buf: &mut Buffer) {
+        let Some(palette) = &self.shell.command_palette else {
+            return;
+        };
+        let entries = self.shell.command_palette_entries();
+        let palette_area = centered_rect(area, /*width*/ 64, /*height*/ 15);
+        Clear.render(palette_area, buf);
+
+        let mut lines = Vec::new();
+        for (index, entry) in entries.iter().take(11).enumerate() {
+            let selected = index == palette.selected();
+            let marker = if selected {
+                ">".cyan().bold()
+            } else {
+                " ".into()
+            };
+            let title = if entry.enabled {
+                entry.title.to_string().into()
+            } else {
+                entry.title.to_string().dim()
+            };
+            let detail = if selected {
+                format!(" - {}", truncate_text(entry.detail, /*max_chars*/ 28)).dim()
+            } else {
+                String::new().into()
+            };
+            let line = Line::from(vec![marker, " ".dim(), title, detail]);
+            if selected {
+                lines.push(line.style(Style::new().bg(Color::DarkGray)));
+            } else {
+                lines.push(line);
+            }
+        }
+
+        Paragraph::new(lines)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title("Command Palette"),
+            )
+            .wrap(Wrap { trim: true })
+            .render(palette_area, buf);
+    }
+}
+
+fn centered_rect(area: Rect, width: u16, height: u16) -> Rect {
+    let available_width = area.width.saturating_sub(4);
+    let available_height = area.height.saturating_sub(4);
+    let width = width.min(available_width).max(available_width.min(20));
+    let height = height.min(available_height).max(available_height.min(5));
+    let x = area.x + area.width.saturating_sub(width) / 2;
+    let y = area.y + area.height.saturating_sub(height) / 2;
+    Rect::new(x, y, width, height)
 }
 
 fn transcript_lines(

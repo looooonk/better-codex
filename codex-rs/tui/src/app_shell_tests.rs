@@ -248,6 +248,65 @@ fn renders_transcript_selection_snapshot() {
 }
 
 #[test]
+fn renders_command_palette_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.open_command_palette();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 30,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn command_palette_lists_common_actions() {
+    let shell = ShellState::snapshot_fixture();
+    let entries = shell.command_palette_entries();
+
+    assert_eq!(
+        entries
+            .iter()
+            .map(|entry| (entry.action, entry.enabled))
+            .collect::<Vec<_>>(),
+        vec![
+            (CommandPaletteAction::CopyTranscript, true),
+            (CommandPaletteAction::ClearTranscript, true),
+            (CommandPaletteAction::SelectLatestTranscript, true),
+            (CommandPaletteAction::ScrollTranscriptTop, true),
+            (CommandPaletteAction::ScrollTranscriptBottom, true),
+            (CommandPaletteAction::InterruptTurn, false),
+            (CommandPaletteAction::SwitchModel, false),
+            (CommandPaletteAction::ChangePermissions, false),
+            (CommandPaletteAction::ResumeThread, false),
+            (CommandPaletteAction::ForkThread, false),
+            (CommandPaletteAction::CompactContext, false),
+        ]
+    );
+}
+
+#[test]
+fn command_palette_clear_resets_visible_transcript() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.streaming_assistant = "streaming".to_string();
+    shell.streaming_plan = "plan".to_string();
+    shell.select_latest_transcript_item();
+
+    shell.clear_visible_transcript();
+
+    assert_eq!(
+        shell.transcript.iter().cloned().collect::<Vec<_>>(),
+        vec![TranscriptLine::new(
+            TranscriptKind::System,
+            "visible transcript cleared"
+        )]
+    );
+    assert_eq!(shell.streaming_assistant, "");
+    assert_eq!(shell.streaming_plan, "");
+    assert_eq!(shell.transcript_scroll, 0);
+    assert_eq!(shell.transcript_selection, None);
+}
+
+#[test]
 fn transcript_selection_moves_between_items() {
     let mut shell = ShellState::snapshot_fixture();
     shell.select_latest_transcript_item();

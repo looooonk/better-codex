@@ -38,6 +38,7 @@ use tokio::select;
 use tokio_stream::StreamExt;
 
 mod approval;
+mod command_palette;
 mod composer;
 mod elicitation;
 mod events;
@@ -46,6 +47,11 @@ mod user_input;
 mod workspace;
 use approval::ApprovalChoice;
 use approval::PendingApproval;
+use command_palette::CommandPaletteAction;
+use command_palette::CommandPaletteContext;
+use command_palette::CommandPaletteEntry;
+use command_palette::CommandPaletteState;
+use command_palette::command_palette_entries;
 use composer::ComposerState;
 use elicitation::ElicitationChoice;
 use elicitation::PendingElicitation;
@@ -258,6 +264,7 @@ struct ShellState {
     transcript_scroll: usize,
     transcript_scroll_max: Cell<usize>,
     transcript_selection: Option<usize>,
+    command_palette: Option<CommandPaletteState>,
     composer: ComposerState,
     clipboard_lease: Option<ClipboardLease>,
     active_turn_id: Option<String>,
@@ -303,6 +310,7 @@ impl ShellState {
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
+            command_palette: None,
             composer: ComposerState::default(),
             clipboard_lease: None,
             active_turn_id: None,
@@ -358,6 +366,10 @@ impl ShellState {
             }
             return Ok(true);
         }
+        if self.command_palette.is_some() {
+            self.handle_command_palette_key(key, app_server).await?;
+            return Ok(false);
+        }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('o')) {
             self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
             return Ok(false);
@@ -390,6 +402,10 @@ impl ShellState {
         }
         if self.pending_user_input.is_some() {
             return self.handle_user_input_key(key, app_server).await;
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('p')) {
+            self.open_command_palette();
+            return Ok(false);
         }
         match key.code {
             KeyCode::Esc => Ok(true),
@@ -528,7 +544,135 @@ impl ShellState {
 
     fn insert_text(&mut self, text: &str) {
         self.clear_transcript_selection();
+        self.close_command_palette();
         self.composer.insert_str(text);
+    }
+
+    async fn handle_command_palette_key(
+        &mut self,
+        key: KeyEvent,
+        app_server: &mut AppServerSession,
+    ) -> Result<()> {
+        match key.code {
+            KeyCode::Esc => {
+                self.close_command_palette();
+            }
+            KeyCode::Enter => {
+                self.execute_selected_command_palette_action(app_server)
+                    .await?;
+            }
+            KeyCode::Up => {
+                let entries = self.command_palette_entries();
+                if let Some(palette) = &mut self.command_palette {
+                    palette.move_up(&entries);
+                }
+            }
+            KeyCode::Down => {
+                let entries = self.command_palette_entries();
+                if let Some(palette) = &mut self.command_palette {
+                    palette.move_down(&entries);
+                }
+            }
+            KeyCode::Home => {
+                self.command_palette = Some(CommandPaletteState::default());
+            }
+            KeyCode::End => {
+                let entries = self.command_palette_entries();
+                if let Some(palette) = &mut self.command_palette {
+                    palette.select_last(&entries);
+                }
+            }
+            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                self.close_command_palette();
+            }
+            KeyCode::Char(_)
+            | KeyCode::Backspace
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Delete
+            | KeyCode::Insert
+            | KeyCode::F(_)
+            | KeyCode::Null
+            | KeyCode::CapsLock
+            | KeyCode::ScrollLock
+            | KeyCode::NumLock
+            | KeyCode::PrintScreen
+            | KeyCode::Pause
+            | KeyCode::Menu
+            | KeyCode::KeypadBegin
+            | KeyCode::Media(_)
+            | KeyCode::Modifier(_)
+            | KeyCode::Tab
+            | KeyCode::BackTab
+            | KeyCode::PageUp
+            | KeyCode::PageDown => {}
+        }
+        Ok(())
+    }
+
+    async fn execute_selected_command_palette_action(
+        &mut self,
+        app_server: &mut AppServerSession,
+    ) -> Result<()> {
+        let Some(palette) = &self.command_palette else {
+            return Ok(());
+        };
+        let entries = self.command_palette_entries();
+        let Some(entry) = entries.get(palette.selected()) else {
+            self.close_command_palette();
+            return Ok(());
+        };
+        if !entry.enabled {
+            self.push_status(format!("{}: {}", entry.title, entry.detail));
+            return Ok(());
+        }
+        let Some(action) = palette.selected_action(&entries) else {
+            return Ok(());
+        };
+        self.close_command_palette();
+        match action {
+            CommandPaletteAction::CopyTranscript => {
+                self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+            }
+            CommandPaletteAction::ClearTranscript => {
+                self.clear_visible_transcript();
+            }
+            CommandPaletteAction::SelectLatestTranscript => {
+                self.select_latest_transcript_item();
+            }
+            CommandPaletteAction::ScrollTranscriptTop => {
+                self.scroll_transcript_to_top();
+            }
+            CommandPaletteAction::ScrollTranscriptBottom => {
+                self.scroll_transcript_to_bottom();
+            }
+            CommandPaletteAction::InterruptTurn => {
+                self.interrupt_active_turn(app_server).await?;
+            }
+            CommandPaletteAction::SwitchModel
+            | CommandPaletteAction::ChangePermissions
+            | CommandPaletteAction::ResumeThread
+            | CommandPaletteAction::ForkThread
+            | CommandPaletteAction::CompactContext => {}
+        }
+        Ok(())
+    }
+
+    fn open_command_palette(&mut self) {
+        self.command_palette = Some(CommandPaletteState::default());
+        self.clear_transcript_selection();
+    }
+
+    fn close_command_palette(&mut self) {
+        self.command_palette = None;
+    }
+
+    fn command_palette_entries(&self) -> Vec<CommandPaletteEntry> {
+        command_palette_entries(CommandPaletteContext {
+            active_turn: self.active_turn_id.is_some(),
+            can_copy_transcript: self.transcript_copy_text().is_some(),
+            has_transcript: !self.transcript.is_empty(),
+        })
     }
 
     fn handle_transcript_selection_key(&mut self, key: KeyEvent) -> Option<bool> {
@@ -629,6 +773,15 @@ impl ShellState {
 
     fn clear_transcript_selection(&mut self) {
         self.transcript_selection = None;
+    }
+
+    fn clear_visible_transcript(&mut self) {
+        self.transcript.clear();
+        self.streaming_assistant.clear();
+        self.streaming_plan.clear();
+        self.transcript_scroll = 0;
+        self.transcript_selection = None;
+        self.push_system("visible transcript cleared");
     }
 
     fn move_transcript_selection_up(&mut self, rows: usize) {
@@ -1225,6 +1378,7 @@ impl ShellState {
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
+            command_palette: None,
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Summarize the new shell architecture");
