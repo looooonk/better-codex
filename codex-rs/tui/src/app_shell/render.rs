@@ -215,7 +215,7 @@ impl ShellView<'_> {
             .map(|window| window.to_string())
             .unwrap_or_else(|| "unknown".to_string());
         let mut lines = vec![
-            Line::from("Dashboard".bold()),
+            dashboard_title_line(),
             Line::from(""),
             Line::from("Status".bold()),
             status_line(&self.shell.status),
@@ -717,6 +717,22 @@ fn rate_limit_window_line(label: &str, window: &RateLimitWindow) -> Line<'static
         spans.extend([" ".dim(), format!("{duration}m").dim()]);
     }
     Line::from(spans)
+}
+
+fn dashboard_title_line() -> Line<'static> {
+    Line::from(vec![
+        "Dashboard".bold(),
+        " ".dim(),
+        "x1".green(),
+        " ".dim(),
+        "x2".green(),
+        " ".dim(),
+        ">3".cyan().bold(),
+        " ".dim(),
+        ">4".cyan().bold(),
+        " ".dim(),
+        ">5".cyan().bold(),
+    ])
 }
 
 fn workspace_change_lines(

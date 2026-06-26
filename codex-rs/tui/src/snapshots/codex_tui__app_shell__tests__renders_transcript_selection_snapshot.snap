@@ -2,7 +2,7 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-Better Codex                                                          Dashboard
+Better Codex                                                          Dashboard x1 x2 >3 >4 >5
 
 Conversation select 3/6                                               Status
 system: Better Codex app shell                                        thinking

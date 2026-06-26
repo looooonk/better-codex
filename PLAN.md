@@ -16,7 +16,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 - [x] Replace the inherited inline chat-first experience with a fullscreen terminal app entry point.
 - [x] Keep Codex's agent harness behind the app-server protocol boundary.
 - [x] Support the smallest useful conversation loop: start or resume a thread, submit text turns, stream assistant text, and exit back to the terminal.
-- [ ] Add a right dashboard that owns every non-conversation surface, takes roughly 30% of the horizontal space, and starts with session status, model, thread id, token totals, and stage markers.
+- [x] Add a right dashboard that owns every non-conversation surface, takes roughly 30% of the horizontal space, and starts with session status, model, thread id, token totals, and stage markers.
 - [x] Reject unsupported interactive requests clearly so the backend does not hang while approval UI is still missing.
 
 ## Stage 2: Conversation Surface
