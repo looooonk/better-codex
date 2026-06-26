@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+Better Codex  thinking                                                │Dashboard
+                                                                      │Status
+──────────────────────────────────────────────────────────────────────│thinking
+┌Conversation────────────────────────────────────────────────────────┐│turn turn-act...
+│system: Better Codex app shell                                      ││
+│you: Create a divergent standalone TUI.                             ││Model
+│codex: Started a fullscreen app shell backed by app-server turns.   ││gpt-5-codex
+│plan: 1. Build shell                                                ││
+│      2. Wire transcript                                            ││Thread
+│      3. Render dashboard                                           ││01900000...
+│tool: exec just test -p codex-tui                                   ││
+│diff: diff 3 files +128 -24                                         ││Tokens
+│codex: The new shell owns the fullscreen surface.                   ││total 1440
+│                                                                    ││input 1200
+│                                                                    ││output 240
+│                                                                    ││context 200000
+│                                                                    ││
+│                                                                    ││Diff
+│                                                                    ││3 files +128 -24
+│                                                                    ││
+│                                                                    ││Plan
+│                                                                    ││Build the standalone shell in
+│                                                                    ││slices.
+└────────────────────────────────────────────────────────────────────┘│x Shell frame
+Composer busy 1:37────────────────────────────────────────────────────│> Transcript model
+> Summarize the new shell architecture                                │- Approvals
+                                                                      │
+                                                                      │Tools

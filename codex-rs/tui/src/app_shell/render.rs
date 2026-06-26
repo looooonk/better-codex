@@ -170,13 +170,18 @@ impl ShellView<'_> {
             .model_context_window
             .map(|window| window.to_string())
             .unwrap_or_else(|| "unknown".to_string());
-        let mut lines = vec![
-            Line::from("Status".bold()),
-            status_line(&self.shell.status),
+        let mut lines = vec![Line::from("Status".bold()), status_line(&self.shell.status)];
+        if let Some(active_turn_id) = &self.shell.active_turn_id {
+            lines.push(Line::from(vec![
+                "turn ".dim(),
+                short_id(active_turn_id).cyan(),
+            ]));
+        }
+        lines.extend([
             Line::from(""),
             Line::from("Model".bold()),
             Line::from(self.shell.model.clone()),
-        ];
+        ]);
         if let Some(reasoning_effort) = &self.shell.reasoning_effort {
             lines.push(Line::from(format!("reasoning {reasoning_effort}").dim()));
         }
@@ -194,7 +199,7 @@ impl ShellView<'_> {
         lines.extend([
             Line::from(""),
             Line::from("Thread".bold()),
-            Line::from(short_thread_id(&self.shell.thread_id.to_string())),
+            Line::from(short_id(&self.shell.thread_id.to_string())),
             Line::from(""),
             Line::from("Tokens".bold()),
             Line::from(format!("total {}", self.shell.token_usage.total_tokens)),
@@ -448,11 +453,10 @@ fn tool_activity_line(activity: &ToolActivity) -> Line<'static> {
     ])
 }
 
-fn short_thread_id(thread_id: &str) -> String {
-    thread_id
-        .get(..8)
+fn short_id(id: &str) -> String {
+    id.get(..8)
         .map(|prefix| format!("{prefix}..."))
-        .unwrap_or_else(|| thread_id.to_string())
+        .unwrap_or_else(|| id.to_string())
 }
 
 fn compact_dashboard_text(text: &str) -> String {
