@@ -43,7 +43,7 @@ fn renders_narrow_shell_snapshot() {
 fn renders_markdown_transcript_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
-    shell.input.clear();
+    shell.composer.clear();
     shell.streaming_assistant.clear();
     shell.push_assistant(
         "# Result\n\
@@ -91,6 +91,48 @@ fn transcript_scroll_clamps_to_last_rendered_range() {
 
     shell.scroll_transcript_to_bottom();
     assert_eq!(shell.transcript_scroll, 0);
+}
+
+#[test]
+fn composer_edits_multiline_text_at_cursor() {
+    let mut composer = ComposerState::default();
+    composer.insert_str("alpha\nbeta");
+    composer.move_left();
+    composer.move_left();
+    composer.insert_char('X');
+
+    assert_eq!(
+        (composer.text().to_string(), composer.cursor_position()),
+        ("alpha\nbeXta".to_string(), (1, 3))
+    );
+
+    composer.move_up_or_recall_history();
+    composer.insert_newline();
+
+    assert_eq!(
+        (composer.text().to_string(), composer.cursor_position()),
+        ("alp\nha\nbeXta".to_string(), (1, 0))
+    );
+}
+
+#[test]
+fn composer_recalls_submission_history_from_draft() {
+    let mut composer = ComposerState::default();
+    composer.remember_submission("first");
+    composer.remember_submission("second");
+    composer.set_text("draft");
+
+    composer.move_up_or_recall_history();
+    assert_eq!(composer.text(), "second");
+
+    composer.move_up_or_recall_history();
+    assert_eq!(composer.text(), "first");
+
+    composer.move_down_or_recall_history();
+    assert_eq!(composer.text(), "second");
+
+    composer.move_down_or_recall_history();
+    assert_eq!(composer.text(), "draft");
 }
 
 fn render_shell(shell: &ShellState, area: Rect) -> String {

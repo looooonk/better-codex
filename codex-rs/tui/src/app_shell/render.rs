@@ -115,15 +115,20 @@ impl ShellView<'_> {
     }
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
-        let text = if self.shell.input.is_empty() {
-            "Type a message and press Enter".dim()
+        let (line, column) = self.shell.composer.cursor_position();
+        let title = if self.shell.active_turn_id.is_some() {
+            format!("Composer busy {}:{}", line + 1, column + 1)
         } else {
-            self.shell.input.clone().into()
+            format!("Composer ready {}:{}", line + 1, column + 1)
         };
-        Paragraph::new(Line::from(vec!["> ".cyan(), text]))
-            .block(Block::default().borders(Borders::TOP).title("Composer"))
-            .wrap(Wrap { trim: false })
-            .render(area, buf);
+        Paragraph::new(composer_lines(
+            self.shell.composer.text(),
+            self.shell.composer.cursor(),
+            self.shell.composer.is_empty(),
+        ))
+        .block(Block::default().borders(Borders::TOP).title(title))
+        .wrap(Wrap { trim: false })
+        .render(area, buf);
     }
 
     fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
@@ -348,4 +353,60 @@ fn compact_dashboard_text(text: &str) -> String {
     let mut compact = text.chars().take(MAX_CHARS).collect::<String>();
     compact.push_str("...");
     compact
+}
+
+fn composer_lines(text: &str, cursor: usize, is_empty: bool) -> Vec<Line<'static>> {
+    if is_empty {
+        return vec![Line::from(vec![
+            "> ".cyan(),
+            "Type a message, Shift+Enter for newline".dim(),
+        ])];
+    }
+
+    let mut lines = Vec::new();
+    let mut offset = 0usize;
+    for (index, logical_line) in text.split('\n').enumerate() {
+        let end = offset + logical_line.len();
+        let prefix = if index == 0 { "> ".cyan() } else { "  ".dim() };
+        lines.push(Line::from(composer_line_spans(
+            prefix,
+            logical_line,
+            cursor,
+            offset,
+            end,
+        )));
+        offset = end + 1;
+    }
+    lines
+}
+
+fn composer_line_spans(
+    prefix: Span<'static>,
+    text: &str,
+    cursor: usize,
+    start: usize,
+    end: usize,
+) -> Vec<Span<'static>> {
+    let mut spans = vec![prefix];
+    if !(start..=end).contains(&cursor) {
+        spans.push(text.to_string().into());
+        return spans;
+    }
+
+    let cursor_offset = cursor.saturating_sub(start);
+    let before = &text[..cursor_offset.min(text.len())];
+    let after = &text[cursor_offset.min(text.len())..];
+    if !before.is_empty() {
+        spans.push(before.to_string().into());
+    }
+    if let Some(ch) = after.chars().next() {
+        spans.push(ch.to_string().reversed());
+        let rest_start = ch.len_utf8();
+        if rest_start < after.len() {
+            spans.push(after[rest_start..].to_string().into());
+        }
+    } else {
+        spans.push(" ".to_string().reversed());
+    }
+    spans
 }

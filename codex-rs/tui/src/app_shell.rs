@@ -32,12 +32,13 @@ use std::collections::VecDeque;
 use tokio::select;
 use tokio_stream::StreamExt;
 
+mod composer;
 mod events;
 mod render;
+use composer::ComposerState;
 use render::draw_shell;
 
 const MAX_TRANSCRIPT_LINES: usize = 400;
-const TRANSCRIPT_LINE_SCROLL_STEP: usize = 1;
 const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
 
 pub(crate) async fn run(
@@ -208,7 +209,7 @@ struct ShellState {
     transcript: VecDeque<TranscriptLine>,
     transcript_scroll: usize,
     transcript_scroll_max: Cell<usize>,
-    input: String,
+    composer: ComposerState,
     active_turn_id: Option<String>,
     streaming_assistant: String,
     streaming_plan: String,
@@ -244,7 +245,7 @@ impl ShellState {
             transcript: VecDeque::new(),
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
-            input: String::new(),
+            composer: ComposerState::default(),
             active_turn_id: None,
             streaming_assistant: String::new(),
             streaming_plan: String::new(),
@@ -290,23 +291,26 @@ impl ShellState {
         match key.code {
             KeyCode::Esc => Ok(true),
             KeyCode::Enter => {
-                let prompt = self.input.trim().to_string();
-                self.input.clear();
-                if !prompt.is_empty() {
-                    self.submit_prompt(app_server, prompt).await?;
+                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                    self.composer.insert_newline();
+                } else {
+                    let prompt = self.composer.submission_text();
+                    if !prompt.is_empty() {
+                        self.submit_prompt(app_server, prompt).await?;
+                    }
                 }
                 Ok(false)
             }
             KeyCode::Backspace => {
-                self.input.pop();
+                self.composer.backspace();
                 Ok(false)
             }
             KeyCode::Up => {
-                self.scroll_transcript_up(TRANSCRIPT_LINE_SCROLL_STEP);
+                self.composer.move_up_or_recall_history();
                 Ok(false)
             }
             KeyCode::Down => {
-                self.scroll_transcript_down(TRANSCRIPT_LINE_SCROLL_STEP);
+                self.composer.move_down_or_recall_history();
                 Ok(false)
             }
             KeyCode::PageUp => {
@@ -318,28 +322,48 @@ impl ShellState {
                 Ok(false)
             }
             KeyCode::Home => {
-                self.scroll_transcript_to_top();
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.scroll_transcript_to_top();
+                } else {
+                    self.composer.move_to_line_start();
+                }
                 Ok(false)
             }
             KeyCode::End => {
-                self.scroll_transcript_to_bottom();
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    self.scroll_transcript_to_bottom();
+                } else {
+                    self.composer.move_to_line_end();
+                }
                 Ok(false)
             }
             KeyCode::Char(ch) => {
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
-                    self.input.push(ch);
+                    self.composer.insert_char(ch);
                 }
                 Ok(false)
             }
             KeyCode::Tab => {
-                self.input.push_str("    ");
+                self.composer.insert_str("    ");
                 Ok(false)
             }
-            KeyCode::BackTab => Ok(false),
-            KeyCode::Left
-            | KeyCode::Right
-            | KeyCode::Delete
-            | KeyCode::Insert
+            KeyCode::BackTab => {
+                self.composer.insert_str("    ");
+                Ok(false)
+            }
+            KeyCode::Left => {
+                self.composer.move_left();
+                Ok(false)
+            }
+            KeyCode::Right => {
+                self.composer.move_right();
+                Ok(false)
+            }
+            KeyCode::Delete => {
+                self.composer.delete();
+                Ok(false)
+            }
+            KeyCode::Insert
             | KeyCode::F(_)
             | KeyCode::Null
             | KeyCode::CapsLock
@@ -355,7 +379,7 @@ impl ShellState {
     }
 
     fn insert_text(&mut self, text: &str) {
-        self.input.push_str(text);
+        self.composer.insert_str(text);
     }
 
     fn scroll_transcript_up(&mut self, rows: usize) {
@@ -403,7 +427,7 @@ impl ShellState {
             .turn_start(
                 self.thread_id,
                 vec![UserInput::Text {
-                    text: prompt,
+                    text: prompt.clone(),
                     text_elements: Vec::new(),
                 }],
                 self.cwd.clone().into(),
@@ -420,6 +444,8 @@ impl ShellState {
                 None,
             )
             .await?;
+        self.composer.remember_submission(&prompt);
+        self.composer.clear();
         self.active_turn_id = Some(response.turn.id);
         Ok(())
     }
@@ -695,7 +721,11 @@ impl ShellState {
             transcript: VecDeque::new(),
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
-            input: "Summarize the new shell architecture".to_string(),
+            composer: {
+                let mut composer = ComposerState::default();
+                composer.set_text("Summarize the new shell architecture");
+                composer
+            },
             active_turn_id: None,
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
             streaming_plan: String::new(),
