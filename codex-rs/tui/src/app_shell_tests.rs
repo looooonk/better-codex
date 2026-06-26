@@ -10,6 +10,7 @@ use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
 use pretty_assertions::assert_eq;
@@ -68,6 +69,18 @@ fn renders_workspace_roots_snapshot() {
     ];
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 42,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_model_runtime_details_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.reasoning_effort = Some(ReasoningEffort::High);
+    shell.service_tier = Some("flex".to_string());
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));

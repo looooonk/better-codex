@@ -176,6 +176,22 @@ impl ShellView<'_> {
             Line::from(""),
             Line::from("Model".bold()),
             Line::from(self.shell.model.clone()),
+        ];
+        if let Some(reasoning_effort) = &self.shell.reasoning_effort {
+            lines.push(Line::from(format!("reasoning {reasoning_effort}").dim()));
+        }
+        if let Some(service_tier) = self
+            .shell
+            .service_tier
+            .as_deref()
+            .filter(|service_tier| !service_tier.trim().is_empty())
+        {
+            lines.push(Line::from(vec![
+                "tier ".dim(),
+                compact_dashboard_text(service_tier).into(),
+            ]));
+        }
+        lines.extend([
             Line::from(""),
             Line::from("Thread".bold()),
             Line::from(short_thread_id(&self.shell.thread_id.to_string())),
@@ -185,7 +201,7 @@ impl ShellView<'_> {
             Line::from(format!("input {}", self.shell.token_usage.input_tokens)),
             Line::from(format!("output {}", self.shell.token_usage.output_tokens)),
             Line::from(format!("context {context_window}")),
-        ];
+        ]);
 
         lines.push(Line::from(""));
         lines.push(Line::from("Diff".bold()));
