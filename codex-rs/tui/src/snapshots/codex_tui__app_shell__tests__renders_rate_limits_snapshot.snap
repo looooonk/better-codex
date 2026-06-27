@@ -15,14 +15,14 @@ expression: "render_shell(&shell, area)"
        2. Wire transcript                                              01900000...
        3. Render dashboard
  tool: exec just test -p codex-tui                                     Tokens
- diff: diff 3 files +128 -24                                           total 1440
-                                                                       input 1200
+ diff: diff 3 files +128 -24                                           total 1,440
+                                                                       input 1,200
  codex: The new shell owns the fullscreen surface.                     output 240
-                                                                       context 200000
+                                                                       context 200,000
 
                                                                        Rate Limits
                                                                        Codex 82% 300m
-                                                                         secondary 18% 10080m
+                                                                         secondary 18% 10,080m
                                                                        credits $12.34
                                                                        spend 75% left
                                                                        Background 95% 60m

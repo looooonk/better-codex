@@ -15,10 +15,10 @@ expression: "render_shell(&shell, area)"
         fn transcript() -> &'static str {                                      01900000...
         "markdown"
         }                                                                      Tokens
-                                                                               total 1440
-         Area     Status                                                       input 1200
+                                                                               total 1,440
+         Area     Status                                                       input 1,200
         ━━━━━━━  ━━━━━━━━                                                      output 240
-         code     done                                                         context 200000
+         code     done                                                         context 200,000
         ───────  ────────
          table    done                                                         Diff
  plan: 1. Keep transcript rendering width-aware.                               3 files +128 -24

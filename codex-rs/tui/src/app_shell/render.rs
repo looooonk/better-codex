@@ -224,7 +224,7 @@ impl ShellView<'_> {
         let context_window = self
             .shell
             .model_context_window
-            .map(|window| window.to_string())
+            .map(format_i64)
             .unwrap_or_else(|| "unknown".to_string());
         let mut lines = vec![
             dashboard_title_line(),
@@ -267,9 +267,18 @@ impl ShellView<'_> {
             Line::from(short_id(&self.shell.thread_id.to_string())),
             Line::from(""),
             Line::from("Tokens".bold()),
-            Line::from(format!("total {}", self.shell.token_usage.total_tokens)),
-            Line::from(format!("input {}", self.shell.token_usage.input_tokens)),
-            Line::from(format!("output {}", self.shell.token_usage.output_tokens)),
+            Line::from(format!(
+                "total {}",
+                format_i64(self.shell.token_usage.total_tokens)
+            )),
+            Line::from(format!(
+                "input {}",
+                format_i64(self.shell.token_usage.input_tokens)
+            )),
+            Line::from(format!(
+                "output {}",
+                format_i64(self.shell.token_usage.output_tokens)
+            )),
             Line::from(format!("context {context_window}")),
         ]);
         if let Some(context_used_percent) =
@@ -295,11 +304,13 @@ impl ShellView<'_> {
             }
             if self.shell.rate_limits.len() > 2 {
                 lines.push(Line::from(
-                    format!("+{} more", self.shell.rate_limits.len() - 2).dim(),
+                    format!("+{} more", format_usize(self.shell.rate_limits.len() - 2)).dim(),
                 ));
             }
             if let Some(credits) = self.shell.rate_limit_reset_credits {
-                lines.push(Line::from(format!("reset credits {credits}").dim()));
+                lines.push(Line::from(
+                    format!("reset credits {}", format_i64(credits)).dim(),
+                ));
             }
         }
 
@@ -308,7 +319,9 @@ impl ShellView<'_> {
         if let Some(diff) = &self.shell.latest_diff {
             lines.push(Line::from(format!(
                 "{} files +{} -{}",
-                diff.files, diff.additions, diff.removals
+                format_usize(diff.files),
+                format_usize(diff.additions),
+                format_usize(diff.removals)
             )));
         } else {
             lines.push(Line::from("no changes".dim()));
@@ -353,7 +366,7 @@ impl ShellView<'_> {
             if git_status.is_dirty() {
                 lines.push(Line::from(format!(
                     "changes {} files",
-                    git_status.changes.total()
+                    format_usize(git_status.changes.total())
                 )));
                 lines.extend(workspace_change_lines(&git_status.changes));
             } else {
@@ -387,7 +400,10 @@ impl ShellView<'_> {
         } else {
             const WORKSPACE_ROOT_PREVIEW_LIMIT: usize = 3;
             let root_count = self.shell.runtime_workspace_roots.len();
-            lines.push(Line::from(format!("roots {root_count} writable")));
+            lines.push(Line::from(format!(
+                "roots {} writable",
+                format_usize(root_count)
+            )));
             for root in self
                 .shell
                 .runtime_workspace_roots
@@ -401,7 +417,9 @@ impl ShellView<'_> {
             }
             let hidden = root_count.saturating_sub(WORKSPACE_ROOT_PREVIEW_LIMIT);
             if hidden > 0 {
-                lines.push(Line::from(format!("  +{hidden} more").dim()));
+                lines.push(Line::from(
+                    format!("  +{} more", format_usize(hidden)).dim(),
+                ));
             }
         }
         lines.push(Line::from(""));
@@ -560,7 +578,6 @@ fn body_rect_after_title(area: Rect) -> Rect {
 }
 
 fn compact_dashboard_summary(shell: &ShellState) -> Line<'static> {
-    let token_total = shell.token_usage.total_tokens;
     Line::from(vec![
         "Dashboard ".cyan().bold(),
         status_span(&shell.status),
@@ -572,7 +589,7 @@ fn compact_dashboard_summary(shell: &ShellState) -> Line<'static> {
         )
         .into(),
         " · ".fg(MOCHA_OVERLAY0),
-        format!("{token_total} tokens").fg(MOCHA_SUBTEXT0),
+        format!("{} tokens", format_i64(shell.token_usage.total_tokens)).fg(MOCHA_SUBTEXT0),
     ])
 }
 
@@ -783,7 +800,7 @@ fn rate_limit_window_line(label: &str, window: &RateLimitWindow) -> Line<'static
     };
     let mut spans = vec![label.to_string().into(), " ".dim(), percent];
     if let Some(duration) = window.window_duration_mins {
-        spans.extend([" ".dim(), format!("{duration}m").dim()]);
+        spans.extend([" ".dim(), format!("{}m", format_i64(duration)).dim()]);
     }
     Line::from(spans)
 }
@@ -817,7 +834,7 @@ fn workspace_change_lines(
     ]
     .into_iter()
     .filter(|(_label, count)| *count > 0)
-    .map(|(label, count)| Line::from(format!("  {label} {count}").dim()))
+    .map(|(label, count)| Line::from(format!("  {label} {}", format_usize(count)).dim()))
     .collect()
 }
 
@@ -830,6 +847,30 @@ fn short_id(id: &str) -> String {
 fn dashboard_value(text: &str, line_width: usize, prefix_width: usize) -> String {
     let max_chars = line_width.saturating_sub(prefix_width).max(1);
     truncate_text(text, max_chars)
+}
+
+fn format_i64(value: i64) -> String {
+    if value < 0 {
+        format!("-{}", format_u64(value.unsigned_abs()))
+    } else {
+        format_u64(value as u64)
+    }
+}
+
+fn format_usize(value: usize) -> String {
+    format_u64(value as u64)
+}
+
+fn format_u64(value: u64) -> String {
+    let text = value.to_string();
+    let mut grouped = String::with_capacity(text.len() + text.len() / 3);
+    for (index, ch) in text.chars().rev().enumerate() {
+        if index > 0 && index % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(ch);
+    }
+    grouped.chars().rev().collect()
 }
 
 pub(super) fn context_used_percent(

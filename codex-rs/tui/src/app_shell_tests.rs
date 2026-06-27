@@ -596,6 +596,49 @@ fn dashboard_uses_available_width_for_long_values() {
 }
 
 #[test]
+fn dashboard_renders_large_numbers_with_commas() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.token_usage = TokenUsage {
+        input_tokens: 1_234_567,
+        cached_input_tokens: 100_000,
+        output_tokens: 234_567,
+        reasoning_output_tokens: 12_345,
+        total_tokens: 1_469_134,
+    };
+    shell.model_context_window = Some(2_000_000);
+    shell.latest_diff = Some(DiffSummary {
+        files: 1_234,
+        additions: 56_789,
+        removals: 10_011,
+    });
+    shell.workspace_git_status = Some(WorkspaceGitStatus {
+        branch: Some("numbers".to_string()),
+        changes: workspace::WorkspaceChangeSummary {
+            added: 1_000,
+            modified: 2_000,
+            deleted: 3_000,
+            renamed: 4_000,
+            conflicted: 5_000,
+            untracked: 6_000,
+        },
+    });
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 130, /*height*/ 48,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(rendered.contains("total 1,469,134"));
+    assert!(rendered.contains("input 1,234,567"));
+    assert!(rendered.contains("output 234,567"));
+    assert!(rendered.contains("context 2,000,000"));
+    assert!(rendered.contains("1,234 files +56,789 -10,011"));
+    assert!(rendered.contains("changes 21,000 files"));
+    assert!(rendered.contains("added 1,000"));
+    assert!(rendered.contains("untracked 6,000"));
+}
+
+#[test]
 fn transcript_scroll_clamps_to_last_rendered_range() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript_scroll_max.set(10);
@@ -613,6 +656,27 @@ fn transcript_scroll_clamps_to_last_rendered_range() {
     assert_eq!(shell.transcript_scroll, 10);
 
     shell.scroll_transcript_to_bottom();
+    assert_eq!(shell.transcript_scroll, 0);
+}
+
+#[test]
+fn transcript_selection_page_keys_scroll_without_changing_selection() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript_selection = Some(3);
+    shell.transcript_scroll_max.set(20);
+
+    assert_eq!(
+        shell.handle_transcript_selection_key(KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE)),
+        Some(false)
+    );
+    assert_eq!(shell.transcript_selection, Some(3));
+    assert_eq!(shell.transcript_scroll, TRANSCRIPT_PAGE_SCROLL_STEP);
+
+    assert_eq!(
+        shell.handle_transcript_selection_key(KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE)),
+        Some(false)
+    );
+    assert_eq!(shell.transcript_selection, Some(3));
     assert_eq!(shell.transcript_scroll, 0);
 }
 

@@ -15,10 +15,10 @@ expression: "render_shell(&shell, area)"
        2. Wire transcript                                              01900000...
        3. Render dashboard
  tool: exec just test -p codex-tui                                     Tokens
- diff: diff 3 files +128 -24                                           total 1440
- audit: approval approved: Command: cargo test -p codex-tui            input 1200
+ diff: diff 3 files +128 -24                                           total 1,440
+ audit: approval approved: Command: cargo test -p codex-tui            input 1,200
  audit: elicitation declined: MCP github: URL request                  output 240
- audit: tool input submitted: Tool input: environment                  context 200000
+ audit: tool input submitted: Tool input: environment                  context 200,000
 
  codex: The new shell owns the fullscreen surface.                     Diff
                                                                        3 files +128 -24

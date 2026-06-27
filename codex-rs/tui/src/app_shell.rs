@@ -696,11 +696,11 @@ impl ShellState {
                 Some(false)
             }
             KeyCode::PageUp => {
-                self.move_transcript_selection_up(TRANSCRIPT_PAGE_SCROLL_STEP);
+                self.scroll_transcript_up(TRANSCRIPT_PAGE_SCROLL_STEP);
                 Some(false)
             }
             KeyCode::PageDown => {
-                self.move_transcript_selection_down(TRANSCRIPT_PAGE_SCROLL_STEP);
+                self.scroll_transcript_down(TRANSCRIPT_PAGE_SCROLL_STEP);
                 Some(false)
             }
             KeyCode::Home => {

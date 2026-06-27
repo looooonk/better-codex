@@ -15,5 +15,5 @@ expression: "render_shell(&shell, area)"
                                                                        01900000...
  Composer ready 1:37
  > Summarize the new shell architecture                                Tokens
-                                                                       total 1440
-                                                                       input 1200
+                                                                       total 1,440
+                                                                       input 1,200

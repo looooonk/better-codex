@@ -17,10 +17,10 @@ expression: "render_shell(&shell, area)"
  tool: exec just test -p codex-tui                                     01900000...
  diff: diff 3 files +128 -24
                                                                        Tokens
- codex: The new shell owns the fullscreen surface.                     total 1440
-                                                                       input 1200
+ codex: The new shell owns the fullscreen surface.                     total 1,440
+                                                                       input 1,200
                                                                        output 240
-                                                                       context 200000
+                                                                       context 200,000
 
                                                                        Diff
                                                                        3 files +128 -24

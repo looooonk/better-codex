@@ -15,10 +15,10 @@ expression: "render_shell(&shell, area)"
        2. Wire transcript                                              01900000...
        3. Render dashboard
  tool: exec just test -p codex-tui                                     Tokens
- diff: diff 3 files +128 -24                                           total 1440
- tool: mcp progress: indexed 42 files                                  input 1200
+ diff: diff 3 files +128 -24                                           total 1,440
+ tool: mcp progress: indexed 42 files                                  input 1,200
        preparing search results                                        output 240
-                                                                       context 200000
+                                                                       context 200,000
  codex: The new shell owns the fullscreen surface.
                                                                        Diff
                                                                        3 files +128 -24

@@ -15,10 +15,10 @@ expression: "render_shell(&shell, area)"
        2. Wire transcript                                              01900000...
        3. Render dashboard
  tool: exec just test -p codex-tui                                     Tokens
- diff: diff 3 files +128 -24                                           total 1440
- diff: diff 5 files +4 -3                                              input 1200
+ diff: diff 3 files +128 -24                                           total 1,440
+ diff: diff 5 files +4 -3                                              input 1,200
          M src/app.rs                                                  output 240
-         A src/new.rs                                                  context 200000
+         A src/new.rs                                                  context 200,000
          D src/old.rs
          R src/from.rs -> src/to.rs                                    Diff
                                                                        3 files +128 -24

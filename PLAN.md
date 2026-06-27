@@ -88,5 +88,5 @@ Agents may continuously work through this plan until every unchecked item is com
 - [x] Add a little bit of padding for all sides for all panes, like the side dashboard and the text input pane.
 - [x] Newlines in Codex's response and command outputs seem to be rendered twice
 - [x] Items in the dashboard are prematurely cutoff even when the horizontal space allows for more text to be rendered
-- [ ] Numbers in the dashboard like token count or time should be rendered with commas as delimiters (i.e. 1,000,000 over 1000000).
-- [ ] Scrolling does not work for the conversation log; scrolling just acts identical to the up and down arrows where it selects previous messages.
+- [x] Numbers in the dashboard like token count or time should be rendered with commas as delimiters (i.e. 1,000,000 over 1000000).
+- [x] Scrolling does not work for the conversation log; scrolling just acts identical to the up and down arrows where it selects previous messages.
