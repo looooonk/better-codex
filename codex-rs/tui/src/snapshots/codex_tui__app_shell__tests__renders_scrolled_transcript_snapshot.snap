@@ -3,17 +3,17 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Dashboard x1 x2 >3 >4 >5
+ Better Codex                                                          Status
+                                                                       thinking
 
-                                                                       Status
- Conversation +4                                                       thinking
- tool: exec just test -p codex-tui
- diff: diff 3 files +128 -24                                           Model
- status: first checkpoint                                              gpt-5-codex
- status: second checkpoint
-                                                                       Thread
-                                                                       01900000...
- Composer ready 1:37
- > Summarize the new shell architecture                                Tokens
-                                                                       total 1,440
+ Conversation +4                                                       Model
+ tool: exec just test -p codex-tui                                     gpt-5-codex
+ diff: diff 3 files +128 -24
+ status: first checkpoint                                              Tokens
+ status: second checkpoint                                             total 1,440
                                                                        input 1,200
+                                                                       output 240
+ Composer ready 1:37                                                   context 200,000
+ > Summarize the new shell architecture
+                                                                       Diff
+                                                                       3 files +128 -24

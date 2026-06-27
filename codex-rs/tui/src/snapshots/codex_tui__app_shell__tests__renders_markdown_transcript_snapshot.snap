@@ -3,29 +3,29 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                                  Dashboard x1 x2 >3 >4 >5
+ Better Codex                                                                  Status
+                                                                               thinking
 
-                                                                               Status
- Conversation                                                                  thinking
- codex: # Result
-                                                                               Model
-        - Render assistant text as markdown.                                   gpt-5-codex
-        - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.
-                                                                               Thread
-        fn transcript() -> &'static str {                                      01900000...
-        "markdown"
-        }                                                                      Tokens
-                                                                               total 1,440
-         Area     Status                                                       input 1,200
-        ━━━━━━━  ━━━━━━━━                                                      output 240
-         code     done                                                         context 200,000
-        ───────  ────────
-         table    done                                                         Diff
- plan: 1. Keep transcript rendering width-aware.                               3 files +128 -24
-       2. Leave selection and copy mode for the next slice.
-                                                                               Plan
-                                                                               Build the standalone shell in
- Composer ready 1:1                                                            slices.
- > Type a message, Shift+Enter for newline                                     x Shell frame
-                                                                               > Transcript model
-                                                                               - Approvals
+ Conversation                                                                  Model
+ codex: # Result                                                               gpt-5-codex
+
+        - Render assistant text as markdown.                                   Tokens
+        - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.    total 1,440
+                                                                               input 1,200
+        fn transcript() -> &'static str {                                      output 240
+        "markdown"                                                             context 200,000
+        }
+                                                                               Diff
+         Area     Status                                                       3 files +128 -24
+        ━━━━━━━  ━━━━━━━━
+         code     done                                                         Plan
+        ───────  ────────                                                      Build the standalone shell in
+         table    done                                                         slices.
+ plan: 1. Keep transcript rendering width-aware.                               x Shell frame
+       2. Leave selection and copy mode for the next slice.                    > Transcript model
+
+                                                                               Tools
+ Composer ready 1:1                                                            in progress exec just test -p...
+ > Type a message, Shift+Enter for newline                                     completed file changes in app...
+
+                                                                               Workspace

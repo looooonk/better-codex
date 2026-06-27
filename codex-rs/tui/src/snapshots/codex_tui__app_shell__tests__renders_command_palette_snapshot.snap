@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Dashboard x1 x2 >3 >4 >5
+ Better Codex                                                          Status
+                                                                       thinking
 
-                                                                       Status
- Conversation                                                          thinking
- system: Better Codex app shell
+ Conversation                                                          Model
+ system: Better Codex app shell                                        gpt-5-codex
 
  Command Palette
 
@@ -25,9 +25,9 @@ expression: "render_shell(&shell, area)"
 
 
 
-                                                                       in slices.
-                                                                       x Shell frame
- Composer ready 1:37                                                   > Transcript model
- > Summarize the new shell architecture                                - Approvals
-
-                                                                       Tools
+                                                                       in progress exec just tes...
+                                                                       completed file changes in...
+ Composer ready 1:37
+ > Summarize the new shell architecture                                Workspace
+                                                                       cwd /workspace/better-codex
+                                                                       profile managed

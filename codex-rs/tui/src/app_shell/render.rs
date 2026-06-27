@@ -38,6 +38,7 @@ const MOCHA_SUBTEXT0: Color = Color::Rgb(166, 173, 200);
 const MOCHA_OVERLAY0: Color = Color::Rgb(108, 112, 134);
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
 const PANE_PADDING: u16 = 1;
+const DASHBOARD_PANEL_GAP: u16 = 1;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
     let height = tui.terminal.size()?.height;
@@ -226,29 +227,23 @@ impl ShellView<'_> {
             .model_context_window
             .map(format_i64)
             .unwrap_or_else(|| "unknown".to_string());
-        let mut lines = vec![
-            dashboard_title_line(),
-            Line::from(""),
-            Line::from("Status".bold()),
-            status_line(&self.shell.status),
-        ];
+        let mut panels = vec![DashboardPanel::new(
+            "Status",
+            vec![status_line(&self.shell.status)],
+        )];
         if let Some(active_turn_id) = &self.shell.active_turn_id {
-            lines.push(Line::from(vec![
+            panels[0].lines.push(Line::from(vec![
                 "turn ".dim(),
                 short_id(active_turn_id).cyan(),
             ]));
         }
-        lines.extend([
-            Line::from(""),
-            Line::from("Model".bold()),
-            Line::from(dashboard_value(
-                &self.shell.model,
-                width,
-                /*prefix_width*/ 0,
-            )),
-        ]);
+        let mut model_lines = vec![Line::from(dashboard_value(
+            &self.shell.model,
+            width,
+            /*prefix_width*/ 0,
+        ))];
         if let Some(reasoning_effort) = &self.shell.reasoning_effort {
-            lines.push(Line::from(format!("reasoning {reasoning_effort}").dim()));
+            model_lines.push(Line::from(format!("reasoning {reasoning_effort}").dim()));
         }
         if let Some(service_tier) = self
             .shell
@@ -256,17 +251,13 @@ impl ShellView<'_> {
             .as_deref()
             .filter(|service_tier| !service_tier.trim().is_empty())
         {
-            lines.push(Line::from(vec![
+            model_lines.push(Line::from(vec![
                 "tier ".dim(),
                 dashboard_value(service_tier, width, /*prefix_width*/ 5).into(),
             ]));
         }
-        lines.extend([
-            Line::from(""),
-            Line::from("Thread".bold()),
-            Line::from(short_id(&self.shell.thread_id.to_string())),
-            Line::from(""),
-            Line::from("Tokens".bold()),
+        panels.push(DashboardPanel::new("Model", model_lines));
+        let mut token_lines = vec![
             Line::from(format!(
                 "total {}",
                 format_i64(self.shell.token_usage.total_tokens)
@@ -280,7 +271,7 @@ impl ShellView<'_> {
                 format_i64(self.shell.token_usage.output_tokens)
             )),
             Line::from(format!("context {context_window}")),
-        ]);
+        ];
         if let Some(context_used_percent) =
             context_used_percent(&self.shell.token_usage, self.shell.model_context_window)
                 .filter(|percent| *percent >= 50)
@@ -293,84 +284,86 @@ impl ShellView<'_> {
             } else {
                 line.cyan()
             };
-            lines.push(Line::from(line));
+            token_lines.push(Line::from(line));
         }
+        panels.push(DashboardPanel::new("Tokens", token_lines));
 
         if !self.shell.rate_limits.is_empty() || self.shell.rate_limit_reset_credits.is_some() {
-            lines.push(Line::from(""));
-            lines.push(Line::from("Rate Limits".bold()));
+            let mut limit_lines = Vec::new();
             for limit in self.shell.rate_limits.iter().take(2) {
-                lines.extend(rate_limit_lines(limit, width));
+                limit_lines.extend(rate_limit_lines(limit, width));
             }
             if self.shell.rate_limits.len() > 2 {
-                lines.push(Line::from(
+                limit_lines.push(Line::from(
                     format!("+{} more", format_usize(self.shell.rate_limits.len() - 2)).dim(),
                 ));
             }
             if let Some(credits) = self.shell.rate_limit_reset_credits {
-                lines.push(Line::from(
+                limit_lines.push(Line::from(
                     format!("reset credits {}", format_i64(credits)).dim(),
                 ));
             }
+            panels.push(DashboardPanel::new("Rate Limits", limit_lines));
         }
 
-        lines.push(Line::from(""));
-        lines.push(Line::from("Diff".bold()));
-        if let Some(diff) = &self.shell.latest_diff {
-            lines.push(Line::from(format!(
+        let diff_lines = if let Some(diff) = &self.shell.latest_diff {
+            vec![Line::from(format!(
                 "{} files +{} -{}",
                 format_usize(diff.files),
                 format_usize(diff.additions),
                 format_usize(diff.removals)
-            )));
+            ))]
         } else {
-            lines.push(Line::from("no changes".dim()));
-        }
+            vec![Line::from("no changes".dim())]
+        };
+        panels.push(DashboardPanel::new("Diff", diff_lines));
 
-        lines.push(Line::from(""));
-        lines.push(Line::from("Plan".bold()));
+        let mut plan_lines = Vec::new();
         if let Some(explanation) = &self.shell.plan_explanation {
-            lines.push(Line::from(explanation.clone().dim()));
+            plan_lines.push(Line::from(explanation.clone().dim()));
         }
         if self.shell.plan_steps.is_empty() {
-            lines.push(Line::from("no active plan".dim()));
+            plan_lines.push(Line::from("no active plan".dim()));
         } else {
             for step in self.shell.plan_steps.iter().take(5) {
-                lines.push(plan_step_line(step.status, &step.step));
+                plan_lines.push(plan_step_line(step.status, &step.step));
             }
         }
+        panels.push(DashboardPanel::new("Plan", plan_lines));
 
-        lines.push(Line::from(""));
-        lines.push(Line::from("Tools".bold()));
-        if self.shell.tool_activity.is_empty() {
-            lines.push(Line::from("idle".dim()));
+        let tool_lines = if self.shell.tool_activity.is_empty() {
+            vec![Line::from("idle".dim())]
         } else {
-            for activity in self.shell.tool_activity.iter().rev().take(4).rev() {
-                lines.push(tool_activity_line(activity, width));
-            }
-        }
+            self.shell
+                .tool_activity
+                .iter()
+                .rev()
+                .take(4)
+                .rev()
+                .map(|activity| tool_activity_line(activity, width))
+                .collect()
+        };
+        panels.push(DashboardPanel::new("Tools", tool_lines));
 
-        lines.push(Line::from(""));
-        lines.push(Line::from("Workspace".bold()));
-        lines.push(Line::from(vec![
+        let mut workspace_lines = vec![Line::from(vec![
             "cwd ".dim(),
             dashboard_value(&self.shell.cwd, width, /*prefix_width*/ 4).into(),
-        ]));
+        ])];
         if let Some(git_status) = &self.shell.workspace_git_status {
             if let Some(branch) = &git_status.branch {
-                lines.push(Line::from(vec![
+                workspace_lines.push(Line::from(vec![
                     "branch ".dim(),
                     dashboard_value(branch, width, /*prefix_width*/ 7).cyan(),
                 ]));
             }
             if git_status.is_dirty() {
-                lines.push(Line::from(format!(
+                workspace_lines.push(Line::from(format!(
                     "changes {} files",
                     format_usize(git_status.changes.total())
                 )));
-                lines.extend(workspace_change_lines(&git_status.changes));
+                workspace_lines.extend(workspace_change_lines(&git_status.changes));
             } else {
-                lines.push(Line::from("tree clean".green()));
+                workspace_lines.push(Line::from("tree clean".green()));
             }
         }
         match &self.shell.permission_profile {
@@ -382,25 +375,25 @@ impl ShellView<'_> {
                     ManagedFileSystemPermissions::Restricted { .. } => "restricted",
                     ManagedFileSystemPermissions::Unrestricted => "unrestricted",
                 };
-                lines.push(Line::from(vec!["profile ".dim(), "managed".into()]));
-                lines.push(Line::from(format!(
+                workspace_lines.push(Line::from(vec!["profile ".dim(), "managed".into()]));
+                workspace_lines.push(Line::from(format!(
                     "files {file_system_label}, net {network}"
                 )));
             }
             PermissionProfile::Disabled => {
-                lines.push(Line::from(vec!["profile ".dim(), "full access".into()]));
+                workspace_lines.push(Line::from(vec!["profile ".dim(), "full access".into()]));
             }
             PermissionProfile::External { network } => {
-                lines.push(Line::from(vec!["profile ".dim(), "external".into()]));
-                lines.push(Line::from(format!("net {network}")));
+                workspace_lines.push(Line::from(vec!["profile ".dim(), "external".into()]));
+                workspace_lines.push(Line::from(format!("net {network}")));
             }
         }
         if self.shell.runtime_workspace_roots.is_empty() {
-            lines.push(Line::from("roots none selected".dim()));
+            workspace_lines.push(Line::from("roots none selected".dim()));
         } else {
             const WORKSPACE_ROOT_PREVIEW_LIMIT: usize = 3;
             let root_count = self.shell.runtime_workspace_roots.len();
-            lines.push(Line::from(format!(
+            workspace_lines.push(Line::from(format!(
                 "roots {} writable",
                 format_usize(root_count)
             )));
@@ -410,37 +403,66 @@ impl ShellView<'_> {
                 .iter()
                 .take(WORKSPACE_ROOT_PREVIEW_LIMIT)
             {
-                lines.push(Line::from(vec![
+                workspace_lines.push(Line::from(vec![
                     "  ".dim(),
                     dashboard_value(&root.display().to_string(), width, /*prefix_width*/ 2).dim(),
                 ]));
             }
             let hidden = root_count.saturating_sub(WORKSPACE_ROOT_PREVIEW_LIMIT);
             if hidden > 0 {
-                lines.push(Line::from(
+                workspace_lines.push(Line::from(
                     format!("  +{} more", format_usize(hidden)).dim(),
                 ));
             }
         }
-        lines.push(Line::from(""));
-        lines.push(Line::from("Keys".bold()));
-        if self.shell.transcript_selection.is_some() {
-            lines.push(Line::from("Up/Down select"));
-            lines.push(Line::from("Enter copy"));
-            lines.push(Line::from("Esc composer"));
+        panels.push(DashboardPanel::new("Workspace", workspace_lines));
+
+        let key_lines = if self.shell.transcript_selection.is_some() {
+            vec![
+                Line::from("Up/Down select"),
+                Line::from("Enter copy"),
+                Line::from("Esc composer"),
+            ]
         } else if self.shell.active_turn_id.is_some() {
-            lines.push(Line::from("Enter steer"));
-            lines.push(Line::from("Ctrl+C interrupt, Esc exit"));
-            lines.push(Line::from("Alt+Up select, Ctrl+O copy"));
+            vec![
+                Line::from("Enter steer"),
+                Line::from("Ctrl+C interrupt, Esc exit"),
+                Line::from("Alt+Up select, Ctrl+O copy"),
+            ]
         } else {
-            lines.push(Line::from("Enter send"));
-            lines.push(Line::from("Ctrl+C/Esc exit"));
-            lines.push(Line::from("Alt+Up select, Ctrl+O copy"));
+            vec![
+                Line::from("Enter send"),
+                Line::from("Ctrl+C/Esc exit"),
+                Line::from("Alt+Up select, Ctrl+O copy"),
+            ]
+        };
+        panels.push(DashboardPanel::new("Keys", key_lines));
+
+        self.render_dashboard_panels(content, &panels, buf);
+    }
+
+    fn render_dashboard_panels(&self, area: Rect, panels: &[DashboardPanel], buf: &mut Buffer) {
+        let mut y = area.y;
+        for (index, panel) in panels.iter().enumerate() {
+            if y >= area.bottom() {
+                break;
+            }
+            let desired_height = panel.height();
+            let available_height = area.bottom().saturating_sub(y);
+            let height = desired_height.min(available_height);
+            if height == 0 {
+                break;
+            }
+            let panel_area = Rect::new(area.x, y, area.width, height);
+            fill_rect(buf, panel_area, panel.background(index));
+            let mut lines = vec![Line::from(panel.title.clone().bold())];
+            lines.extend(panel.lines.clone());
+            Paragraph::new(lines)
+                .style(pane_style(panel.background(index)))
+                .wrap(Wrap { trim: false })
+                .render(panel_area, buf);
+            y = y.saturating_add(height).saturating_add(DASHBOARD_PANEL_GAP);
         }
-        Paragraph::new(lines)
-            .style(pane_style(MOCHA_MANTLE))
-            .wrap(Wrap { trim: false })
-            .render(content, buf);
     }
 
     fn render_titled_panel(
@@ -503,6 +525,32 @@ impl ShellView<'_> {
             .style(pane_style(MOCHA_SURFACE0))
             .wrap(Wrap { trim: true })
             .render(content, buf);
+    }
+}
+
+struct DashboardPanel {
+    title: String,
+    lines: Vec<Line<'static>>,
+}
+
+impl DashboardPanel {
+    fn new(title: impl Into<String>, lines: Vec<Line<'static>>) -> Self {
+        Self {
+            title: title.into(),
+            lines,
+        }
+    }
+
+    fn height(&self) -> u16 {
+        u16::try_from(self.lines.len().saturating_add(1)).unwrap_or(u16::MAX)
+    }
+
+    fn background(&self, index: usize) -> Color {
+        if index.is_multiple_of(2) {
+            MOCHA_SURFACE0
+        } else {
+            MOCHA_MANTLE
+        }
     }
 }
 
@@ -803,22 +851,6 @@ fn rate_limit_window_line(label: &str, window: &RateLimitWindow) -> Line<'static
         spans.extend([" ".dim(), format!("{}m", format_i64(duration)).dim()]);
     }
     Line::from(spans)
-}
-
-fn dashboard_title_line() -> Line<'static> {
-    Line::from(vec![
-        "Dashboard".bold(),
-        " ".dim(),
-        "x1".green(),
-        " ".dim(),
-        "x2".green(),
-        " ".dim(),
-        ">3".cyan().bold(),
-        " ".dim(),
-        ">4".cyan().bold(),
-        " ".dim(),
-        ">5".cyan().bold(),
-    ])
 }
 
 fn workspace_change_lines(

@@ -3,33 +3,27 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Dashboard x1 x2 >3 >4 >5
+ Better Codex                                                          Status
+                                                                       thinking
+                                                                       turn turn-act...
+ Conversation
+ system: Better Codex app shell                                        Model
+ you: Create a divergent standalone TUI.                               gpt-5-codex
 
-                                                                       Status
- Conversation                                                          thinking
- system: Better Codex app shell                                        turn turn-act...
- you: Create a divergent standalone TUI.
-                                                                       Model
- codex: Started a fullscreen app shell backed by app-server turns.     gpt-5-codex
- plan: 1. Build shell
-       2. Wire transcript                                              Thread
-       3. Render dashboard                                             01900000...
- tool: exec just test -p codex-tui
- diff: diff 3 files +128 -24                                           Tokens
-                                                                       total 1,440
- codex: The new shell owns the fullscreen surface.                     input 1,200
-                                                                       output 240
-                                                                       context 200,000
-
+ codex: Started a fullscreen app shell backed by app-server turns.     Tokens
+ plan: 1. Build shell                                                  total 1,440
+       2. Wire transcript                                              input 1,200
+       3. Render dashboard                                             output 240
+ tool: exec just test -p codex-tui                                     context 200,000
+ diff: diff 3 files +128 -24
                                                                        Diff
-                                                                       3 files +128 -24
+ codex: The new shell owns the fullscreen surface.                     3 files +128 -24
 
                                                                        Plan
                                                                        Build the standalone shell
                                                                        in slices.
                                                                        x Shell frame
                                                                        > Transcript model
-                                                                       - Approvals
 
                                                                        Tools
                                                                        in progress exec just tes...
@@ -40,8 +34,12 @@ expression: "render_shell(&shell, area)"
                                                                        profile managed
                                                                        files restricted, net
                                                                        restricted
-                                                                       roots none selected
- Composer busy 1:37
- > Summarize the new shell architecture                                Keys
+
+                                                                       Keys
                                                                        Enter steer
                                                                        Ctrl+C interrupt, Esc exit
+                                                                       Alt+Up select, Ctrl+O copy
+
+
+ Composer busy 1:37
+ > Summarize the new shell architecture
