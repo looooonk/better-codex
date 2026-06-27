@@ -157,7 +157,6 @@ impl ShellView<'_> {
             .render(title_rect(content), buf);
         Paragraph::new(visible_lines)
             .style(pane_style(MOCHA_BASE))
-            .wrap(Wrap { trim: false })
             .render(body, buf);
         mark_buffer_hyperlinks(buf, body, &visible_hyperlink_lines, /*scroll_rows*/ 0);
     }
@@ -221,6 +220,7 @@ impl ShellView<'_> {
     fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
         fill_rect(buf, area, MOCHA_MANTLE);
         let content = pane_content_rect(area);
+        let width = usize::from(content.width);
         let context_window = self
             .shell
             .model_context_window
@@ -241,7 +241,11 @@ impl ShellView<'_> {
         lines.extend([
             Line::from(""),
             Line::from("Model".bold()),
-            Line::from(self.shell.model.clone()),
+            Line::from(dashboard_value(
+                &self.shell.model,
+                width,
+                /*prefix_width*/ 0,
+            )),
         ]);
         if let Some(reasoning_effort) = &self.shell.reasoning_effort {
             lines.push(Line::from(format!("reasoning {reasoning_effort}").dim()));
@@ -254,7 +258,7 @@ impl ShellView<'_> {
         {
             lines.push(Line::from(vec![
                 "tier ".dim(),
-                compact_dashboard_text(service_tier).into(),
+                dashboard_value(service_tier, width, /*prefix_width*/ 5).into(),
             ]));
         }
         lines.extend([
@@ -287,7 +291,7 @@ impl ShellView<'_> {
             lines.push(Line::from(""));
             lines.push(Line::from("Rate Limits".bold()));
             for limit in self.shell.rate_limits.iter().take(2) {
-                lines.extend(rate_limit_lines(limit));
+                lines.extend(rate_limit_lines(limit, width));
             }
             if self.shell.rate_limits.len() > 2 {
                 lines.push(Line::from(
@@ -329,7 +333,7 @@ impl ShellView<'_> {
             lines.push(Line::from("idle".dim()));
         } else {
             for activity in self.shell.tool_activity.iter().rev().take(4).rev() {
-                lines.push(tool_activity_line(activity));
+                lines.push(tool_activity_line(activity, width));
             }
         }
 
@@ -337,13 +341,13 @@ impl ShellView<'_> {
         lines.push(Line::from("Workspace".bold()));
         lines.push(Line::from(vec![
             "cwd ".dim(),
-            compact_dashboard_text(&self.shell.cwd).into(),
+            dashboard_value(&self.shell.cwd, width, /*prefix_width*/ 4).into(),
         ]));
         if let Some(git_status) = &self.shell.workspace_git_status {
             if let Some(branch) = &git_status.branch {
                 lines.push(Line::from(vec![
                     "branch ".dim(),
-                    truncate_text(branch, /*max_chars*/ 16).cyan(),
+                    dashboard_value(branch, width, /*prefix_width*/ 7).cyan(),
                 ]));
             }
             if git_status.is_dirty() {
@@ -392,7 +396,7 @@ impl ShellView<'_> {
             {
                 lines.push(Line::from(vec![
                     "  ".dim(),
-                    compact_dashboard_text(&root.display().to_string()).dim(),
+                    dashboard_value(&root.display().to_string(), width, /*prefix_width*/ 2).dim(),
                 ]));
             }
             let hidden = root_count.saturating_sub(WORKSPACE_ROOT_PREVIEW_LIMIT);
@@ -561,7 +565,12 @@ fn compact_dashboard_summary(shell: &ShellState) -> Line<'static> {
         "Dashboard ".cyan().bold(),
         status_span(&shell.status),
         " · ".fg(MOCHA_OVERLAY0),
-        compact_dashboard_text(&shell.model).into(),
+        dashboard_value(
+            &shell.model,
+            /*line_width*/ 24,
+            /*prefix_width*/ 0,
+        )
+        .into(),
         " · ".fg(MOCHA_OVERLAY0),
         format!("{token_total} tokens").fg(MOCHA_SUBTEXT0),
     ])
@@ -705,23 +714,24 @@ fn plan_step_line(status: TurnPlanStepStatus, step: &str) -> Line<'static> {
     Line::from(vec![marker, " ".dim(), step.to_string().into()])
 }
 
-fn tool_activity_line(activity: &ToolActivity) -> Line<'static> {
+fn tool_activity_line(activity: &ToolActivity, width: usize) -> Line<'static> {
     let status = match activity.status.as_str() {
         "completed" => activity.status.clone().green(),
         "failed" | "declined" => activity.status.clone().red(),
         "in progress" | "inprogress" => activity.status.clone().cyan(),
         _ => activity.status.clone().dim(),
     };
+    let prefix_width = activity.status.chars().count() + 1;
     Line::from(vec![
         status,
         " ".dim(),
-        compact_dashboard_text(&activity.title).into(),
+        dashboard_value(&activity.title, width, prefix_width).into(),
     ])
 }
 
-fn rate_limit_lines(limit: &RateLimitSnapshot) -> Vec<Line<'static>> {
+fn rate_limit_lines(limit: &RateLimitSnapshot, width: usize) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
-    let label = rate_limit_label(limit);
+    let label = rate_limit_label(limit, width);
     if let Some(primary) = &limit.primary {
         lines.push(rate_limit_window_line(&label, primary));
     } else {
@@ -751,12 +761,12 @@ fn rate_limit_lines(limit: &RateLimitSnapshot) -> Vec<Line<'static>> {
     lines
 }
 
-fn rate_limit_label(limit: &RateLimitSnapshot) -> String {
+fn rate_limit_label(limit: &RateLimitSnapshot, width: usize) -> String {
     limit
         .limit_name
         .as_deref()
         .or(limit.limit_id.as_deref())
-        .map(|label| truncate_text(label, /*max_chars*/ 12))
+        .map(|label| dashboard_value(label, width, /*prefix_width*/ 10))
         .unwrap_or_else(|| "account".to_string())
 }
 
@@ -817,14 +827,9 @@ fn short_id(id: &str) -> String {
         .unwrap_or_else(|| id.to_string())
 }
 
-fn compact_dashboard_text(text: &str) -> String {
-    const MAX_CHARS: usize = 24;
-    if text.chars().count() <= MAX_CHARS {
-        return text.to_string();
-    }
-    let mut compact = text.chars().take(MAX_CHARS).collect::<String>();
-    compact.push_str("...");
-    compact
+fn dashboard_value(text: &str, line_width: usize, prefix_width: usize) -> String {
+    let max_chars = line_width.saturating_sub(prefix_width).max(1);
+    truncate_text(text, max_chars)
 }
 
 pub(super) fn context_used_percent(

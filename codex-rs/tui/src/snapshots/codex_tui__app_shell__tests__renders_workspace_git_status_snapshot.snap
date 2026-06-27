@@ -31,21 +31,20 @@ expression: "render_shell(&shell, area)"
                                                                        - Approvals
 
                                                                        Tools
-                                                                       in progress exec just test
-                                                                       -p codex-...
-                                                                       completed file changes in
-                                                                       app_shel...
+                                                                       in progress exec just tes...
+                                                                       completed file changes in...
 
                                                                        Workspace
                                                                        cwd /workspace/better-codex
-                                                                       branch feature/app-s...
+                                                                       branch feature/app-shell-...
                                                                        changes 13 files
                                                                          added 2
                                                                          modified 5
                                                                          deleted 1
                                                                          renamed 1
                                                                          conflicted 1
- Composer ready 1:37                                                     untracked 3
- > Summarize the new shell architecture                                profile managed
-                                                                       files restricted, net
-                                                                       restricted
+                                                                         untracked 3
+                                                                       profile managed
+ Composer ready 1:37                                                   files restricted, net
+ > Summarize the new shell architecture                                restricted
+                                                                       roots none selected

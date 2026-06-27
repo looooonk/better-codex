@@ -32,16 +32,16 @@ expression: "render_shell(&shell, area)"
                                                                        - Approvals
 
                                                                        Tools
-                                                                       in progress exec just test
-                                                                       -p codex-...
-                                                                       completed file changes in
-                                                                       app_shel...
+                                                                       in progress exec just tes...
+                                                                       completed file changes in...
 
                                                                        Workspace
                                                                        cwd /workspace/better-codex
                                                                        profile managed
                                                                        files restricted, net
- Composer busy 1:37                                                    restricted
- > Summarize the new shell architecture                                roots none selected
-
-                                                                       Keys
+                                                                       restricted
+                                                                       roots none selected
+ Composer busy 1:37
+ > Summarize the new shell architecture                                Keys
+                                                                       Enter steer
+                                                                       Ctrl+C interrupt, Esc exit

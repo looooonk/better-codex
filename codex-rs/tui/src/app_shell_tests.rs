@@ -551,6 +551,51 @@ fn renders_tool_progress_snapshot() {
 }
 
 #[test]
+fn transcript_newlines_render_as_single_row_breaks() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.composer.clear();
+    shell.streaming_assistant.clear();
+    shell.push_assistant("- first result\n- second result");
+    shell.push_output("line one\nline two\nline three");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 24,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert_adjacent_rows(&rendered, "first result", "second result");
+    assert_adjacent_rows(&rendered, "line one", "line two");
+    assert_adjacent_rows(&rendered, "line two", "line three");
+}
+
+#[test]
+fn dashboard_uses_available_width_for_long_values() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.model = "gpt-5-codex-dashboard-detail".to_string();
+    shell.cwd = "/workspace/better-codex/codex-rs/tui".to_string();
+    shell.workspace_git_status = Some(WorkspaceGitStatus {
+        branch: Some("feature/dashboard-width-budget".to_string()),
+        changes: workspace::WorkspaceChangeSummary::default(),
+    });
+    shell.tool_activity = VecDeque::from([ToolActivity {
+        id: "tool-long".to_string(),
+        title: "exec just test -p codex-tui app_shell_tests".to_string(),
+        status: "completed".to_string(),
+    }]);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 190, /*height*/ 36,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(rendered.contains("gpt-5-codex-dashboard-detail"));
+    assert!(rendered.contains("/workspace/better-codex/codex-rs/tui"));
+    assert!(rendered.contains("feature/dashboard-width-budget"));
+    assert!(rendered.contains("exec just test -p codex-tui app_shell_tests"));
+}
+
+#[test]
 fn transcript_scroll_clamps_to_last_rendered_range() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript_scroll_max.set(10);
@@ -838,6 +883,20 @@ fn render_shell(shell: &ShellState, area: Rect) -> String {
     let mut buf = Buffer::empty(area);
     ShellView { shell }.render(area, &mut buf);
     buffer_contents(&buf, area)
+}
+
+fn assert_adjacent_rows(rendered: &str, first: &str, second: &str) {
+    let rows = rendered.lines().collect::<Vec<_>>();
+    let first_index = rows
+        .iter()
+        .position(|row| row.contains(first))
+        .unwrap_or_else(|| panic!("missing rendered row containing {first:?}"));
+    let second_index = rows
+        .iter()
+        .position(|row| row.contains(second))
+        .unwrap_or_else(|| panic!("missing rendered row containing {second:?}"));
+
+    assert_eq!(second_index, first_index + 1);
 }
 
 fn key_char(ch: char) -> KeyEvent {

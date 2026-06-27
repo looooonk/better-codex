@@ -31,15 +31,15 @@ expression: "render_shell(&shell, area)"
                                                                        - Approvals
 
                                                                        Tools
-                                                                       in progress exec just test
-                                                                       -p codex-...
-                                                                       completed file changes in
-                                                                       app_shel...
+                                                                       in progress exec just tes...
+                                                                       completed file changes in...
 
                                                                        Workspace
                                                                        cwd /workspace/better-codex
                                                                        profile managed
- Composer ready 1:37                                                   files restricted, net
- > Summarize the new shell architecture                                restricted
-                                                                       roots 4 writable
-                                                                         /workspace/better-codex
+                                                                       files restricted, net
+                                                                       restricted
+ Composer ready 1:37                                                   roots 4 writable
+ > Summarize the new shell architecture                                  /workspace/better-codex
+                                                                         /workspace/better-codex...
+                                                                         /tmp/codex-cache

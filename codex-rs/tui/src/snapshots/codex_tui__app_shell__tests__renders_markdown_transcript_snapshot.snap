@@ -9,20 +9,20 @@ expression: "render_shell(&shell, area)"
  Conversation                                                                  thinking
  codex: # Result
                                                                                Model
-                                                                               gpt-5-codex
-        - Render assistant text as markdown.
-        - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.    Thread
-                                                                               01900000...
-
-        fn transcript() -> &'static str {                                      Tokens
-        "markdown"                                                             total 1440
-        }                                                                      input 1200
-                                                                               output 240
-                                                                               context 200000
-         Area     Status
-        ━━━━━━━  ━━━━━━━━                                                      Diff
-         code     done                                                         3 files +128 -24
+        - Render assistant text as markdown.                                   gpt-5-codex
+        - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.
+                                                                               Thread
+        fn transcript() -> &'static str {                                      01900000...
+        "markdown"
+        }                                                                      Tokens
+                                                                               total 1440
+         Area     Status                                                       input 1200
+        ━━━━━━━  ━━━━━━━━                                                      output 240
+         code     done                                                         context 200000
         ───────  ────────
+         table    done                                                         Diff
+ plan: 1. Keep transcript rendering width-aware.                               3 files +128 -24
+       2. Leave selection and copy mode for the next slice.
                                                                                Plan
                                                                                Build the standalone shell in
  Composer ready 1:1                                                            slices.
