@@ -4128,6 +4128,7 @@ dependencies = [
  "derive_more 2.1.1",
  "diffy",
  "dirs",
+ "divan",
  "dunce",
  "image",
  "insta",

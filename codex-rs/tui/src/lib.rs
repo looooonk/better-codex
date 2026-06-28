@@ -92,6 +92,8 @@ mod app_info;
 mod app_server_approval_conversions;
 mod app_server_session;
 mod app_shell;
+#[doc(hidden)]
+pub use app_shell::bench_support as app_shell_bench_support;
 mod approval_events;
 mod ascii_animation;
 mod bottom_pane;

@@ -1525,6 +1525,145 @@ impl ShellState {
     }
 }
 
+#[doc(hidden)]
+pub mod bench_support {
+    use super::render::ShellView;
+    use super::*;
+    use ratatui::buffer::Buffer;
+    use ratatui::layout::Rect;
+
+    const BENCH_AREA: Rect = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 120, /*height*/ 40,
+    );
+
+    pub fn render_large_transcript() -> String {
+        let mut shell = bench_fixture();
+        shell.transcript.clear();
+        shell.streaming_assistant.clear();
+
+        for index in 0..2_000 {
+            shell.push_user(format!(
+                "large transcript user turn {index}: inspect the shell layout and dashboard state"
+            ));
+            shell.push_assistant(format!(
+                "large transcript assistant turn {index}: rendered transcript item with enough text to wrap on a desktop viewport"
+            ));
+            if index % 10 == 0 {
+                shell.push_tool(format!("exec benchmark-step-{index} completed"));
+            }
+        }
+
+        render_to_string(&shell)
+    }
+
+    pub fn render_long_streaming_turn() -> String {
+        let mut shell = bench_fixture();
+        shell.transcript.clear();
+        shell.streaming_assistant = (0..1_000)
+            .map(|index| {
+                format!(
+                    "streaming chunk {index} keeps markdown wrapping and dashboard layout stable"
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        render_to_string(&shell)
+    }
+
+    fn bench_fixture() -> ShellState {
+        let mut shell = ShellState {
+            thread_id: ThreadId::new(),
+            thread_name: Some("bench".to_string()),
+            model: "gpt-5-codex".to_string(),
+            cwd: "/workspace/better-codex".to_string(),
+            approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+            approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
+            permission_profile: codex_protocol::models::PermissionProfile::default(),
+            runtime_workspace_roots: Vec::new(),
+            reasoning_effort: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+            transcript: VecDeque::new(),
+            transcript_scroll: 0,
+            transcript_scroll_max: Cell::new(0),
+            transcript_selection: None,
+            command_palette: None,
+            composer: {
+                let mut composer = ComposerState::default();
+                composer.set_text("Benchmark the app shell render path");
+                composer
+            },
+            clipboard_lease: None,
+            active_turn_id: Some("turn-bench-1234567890".to_string()),
+            pending_approval: None,
+            pending_elicitation: None,
+            pending_user_input: None,
+            streaming_assistant: String::new(),
+            streaming_plan: String::new(),
+            plan_explanation: Some("Keep render performance bounded.".to_string()),
+            plan_steps: vec![
+                TurnPlanStep {
+                    step: "Large transcript".to_string(),
+                    status: codex_app_server_protocol::TurnPlanStepStatus::InProgress,
+                },
+                TurnPlanStep {
+                    step: "Long streaming turn".to_string(),
+                    status: codex_app_server_protocol::TurnPlanStepStatus::Pending,
+                },
+            ],
+            active_goal: None,
+            tool_activity: VecDeque::from([ToolActivity {
+                id: "tool-bench".to_string(),
+                title: "render benchmark".to_string(),
+                status: "running".to_string(),
+            }]),
+            subagent_activity: VecDeque::new(),
+            latest_diff: Some(DiffSummary {
+                files: 4,
+                additions: 320,
+                removals: 12,
+            }),
+            workspace_git_status: None,
+            workspace_status_refresh_due: false,
+            rate_limits: Vec::new(),
+            rate_limit_reset_credits: None,
+            status: "benchmarking".to_string(),
+            token_usage: TokenUsage {
+                input_tokens: 120_000,
+                cached_input_tokens: 30_000,
+                output_tokens: 35_000,
+                reasoning_output_tokens: 8_000,
+                total_tokens: 155_000,
+            },
+            model_context_window: Some(200_000),
+        };
+        shell.push_system("Better Codex app shell benchmark");
+        shell
+    }
+
+    fn render_to_string(shell: &ShellState) -> String {
+        let mut buf = Buffer::empty(BENCH_AREA);
+        ShellView { shell }.render(BENCH_AREA, &mut buf);
+        buffer_contents(&buf, BENCH_AREA)
+    }
+
+    fn buffer_contents(buf: &Buffer, area: Rect) -> String {
+        let mut rows = Vec::new();
+        for y in area.y..area.bottom() {
+            let mut row = String::new();
+            for x in area.x..area.right() {
+                if let Some(cell) = buf.cell((x, y)) {
+                    row.push_str(cell.symbol());
+                }
+            }
+            rows.push(row.trim_end().to_string());
+        }
+        rows.join("\n")
+    }
+}
+
 fn upsert_activity(
     activities: &mut VecDeque<ToolActivity>,
     id: String,
