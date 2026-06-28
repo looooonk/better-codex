@@ -55,7 +55,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 - [ ] Add an app-native thread list with search, archive/unarchive, delete, resume, fork, and rename inside the dashboard/navigation surface.
 - [ ] Add dashboard-native navigation for sessions, workspace, settings, and help instead of a separate left rail.
-- [ ] Support subagent navigation as first-class app state instead of a chat command.
+- [x] Support subagent navigation as first-class app state instead of a chat command.
 - [ ] Add persistent route state so the app can reopen to the last active view.
 
 ## Stage 7: Settings And Onboarding
