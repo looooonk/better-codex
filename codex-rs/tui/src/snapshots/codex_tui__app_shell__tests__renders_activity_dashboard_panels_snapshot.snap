@@ -3,28 +3,32 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                                        Status
+ Better Codex                                                                        Navigation
+                                                                                     1S  2W  3Set  4Help
+
+ Conversation                                                                        Approvals
+ system: Better Codex app shell                                                      approval Run command: cargo tes...
+ you: Create a divergent standalone TUI.                                             input Tool input: tool-input-1
+
+ codex: Started a fullscreen app shell backed by app-server turns.                   Background
+ plan: 1. Build shell                                                                workspace refresh queued
+       2. Wire transcript
+       3. Render dashboard                                                           Tools
+ tool: exec just test -p codex-tui                                                   in progress exec just test -p c...
+ diff: diff 3 files +128 -24                                                         completed file changes in app_s...
+ plan: 1. Route activity into dashboard panels
+                                                                                     Subagents
+ codex: The new shell owns the fullscreen surface.                                   in progress agent SpawnAgent: 1...
+                                                                                     active subagent Started: review...
+
+                                                                                     Thread
+                                                                                     stage-one
+                                                                                     id 01900000-0000-7000-8000-0000...
+                                                                                     resume, fork, archive, delete in
+
+                                                                                     Status
                                                                                      thinking
                                                                                      turn turn-bac...
- Conversation
- system: Better Codex app shell                                                      Model
- you: Create a divergent standalone TUI.                                             gpt-5-codex
-
- codex: Started a fullscreen app shell backed by app-server turns.                   Tokens
- plan: 1. Build shell                                                                total 1,440
-       2. Wire transcript                                                            input 1,200
-       3. Render dashboard                                                           output 240
- tool: exec just test -p codex-tui                                                   context 200,000
- diff: diff 3 files +128 -24
- plan: 1. Route activity into dashboard panels                                       Approvals
-                                                                                     approval Run command: cargo tes...
- codex: The new shell owns the fullscreen surface.                                   input Tool input: tool-input-1
-
-                                                                                     Background
-                                                                                     workspace refresh queued
-
-                                                                                     Diff
-                                                                                     3 files +128 -24
 
                                                                                      Plan
                                                                                      Build the standalone shell in
@@ -32,24 +36,20 @@ expression: "render_shell(&shell, area)"
                                                                                      x Shell frame
                                                                                      > Transcript model
 
-                                                                                     Tools
-                                                                                     in progress exec just test -p c...
-                                                                                     completed file changes in app_s...
-
-                                                                                     Subagents
-                                                                                     in progress agent SpawnAgent: 1...
-                                                                                     active subagent Started: review...
-
-                                                                                     Workspace
-                                                                                     cwd /workspace/better-codex
-                                                                                     profile managed
-                                                                                     files restricted, net restricted
-                                                                                     roots none selected
-
                                                                                      Keys
                                                                                      Enter steer
                                                                                      Ctrl+C interrupt, Esc exit
                                                                                      Alt+Up select, Ctrl+O copy
+
+
+
+
+
+
+
+
+
+
 
  Approval
  ? Run command: cargo test -p codex-tui

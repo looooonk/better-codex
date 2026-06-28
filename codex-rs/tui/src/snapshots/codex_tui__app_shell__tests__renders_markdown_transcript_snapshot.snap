@@ -3,20 +3,20 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                                  Status
-                                                                               thinking
+ Better Codex                                                                  Navigation
+                                                                               1S  2W  3Set  4Help
 
- Conversation                                                                  Model
- codex: # Result                                                               gpt-5-codex
-
-        - Render assistant text as markdown.                                   Tokens
-        - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.    total 1,440
-                                                                               input 1,200
-        fn transcript() -> &'static str {                                      output 240
-        "markdown"                                                             context 200,000
+ Conversation                                                                  Tools
+ codex: # Result                                                               in progress exec just test -p...
+                                                                               completed file changes in app...
+        - Render assistant text as markdown.
+        - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.    Thread
+                                                                               stage-one
+        fn transcript() -> &'static str {                                      id 01900000-0000-7000-8000-00...
+        "markdown"                                                             resume, fork, archive, delete in
         }
-                                                                               Diff
-         Area     Status                                                       3 files +128 -24
+                                                                               Status
+         Area     Status                                                       thinking
         ━━━━━━━  ━━━━━━━━
          code     done                                                         Plan
         ───────  ────────                                                      Build the standalone shell in
@@ -24,8 +24,7 @@ expression: "render_shell(&shell, area)"
  plan: 1. Keep transcript rendering width-aware.                               x Shell frame
        2. Leave selection and copy mode for the next slice.                    > Transcript model
 
-                                                                               Tools
- Composer ready 1:1                                                            in progress exec just test -p...
- > Type a message, Shift+Enter for newline                                     completed file changes in app...
-
-                                                                               Workspace
+                                                                               Keys
+ Composer ready 1:1                                                            Enter send
+ > Type a message, Shift+Enter for newline                                     Ctrl+C/Esc exit
+                                                                               Alt+Up select, Ctrl+O copy

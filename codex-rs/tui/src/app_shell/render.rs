@@ -2,6 +2,7 @@ use super::ShellState;
 use super::ToolActivity;
 use super::TranscriptKind;
 use super::TranscriptLine;
+use super::navigation::DashboardRoute;
 use crate::goal_display::format_goal_elapsed_seconds;
 use crate::goal_display::goal_status_label;
 use crate::markdown;
@@ -268,6 +269,8 @@ impl ShellView<'_> {
         )];
         let available_panel_lines = usize::from(body.height.saturating_sub(1));
         for title in [
+            "Navigation",
+            "Thread",
             "Approvals",
             "Background",
             "Tools",
@@ -320,16 +323,40 @@ impl ShellView<'_> {
             .model_context_window
             .map(format_i64)
             .unwrap_or_else(|| "unknown".to_string());
-        let mut panels = vec![DashboardPanel::new(
-            "Status",
-            vec![status_line(&self.shell.status)],
-        )];
+        let mut panels = vec![dashboard_navigation_panel(self.shell.dashboard_route)];
+        let mut status_lines = vec![status_line(&self.shell.status)];
         if let Some(active_turn_id) = &self.shell.active_turn_id {
-            panels[0].lines.push(Line::from(vec![
+            status_lines.push(Line::from(vec![
                 "turn ".dim(),
                 short_id(active_turn_id).cyan(),
             ]));
         }
+        panels.push(DashboardPanel::new("Status", status_lines));
+        let thread_label = self
+            .shell
+            .thread_name
+            .as_deref()
+            .unwrap_or("untitled thread");
+        panels.push(DashboardPanel::new(
+            "Thread",
+            vec![
+                Line::from(dashboard_value(
+                    thread_label,
+                    width,
+                    /*prefix_width*/ 0,
+                )),
+                Line::from(vec![
+                    "id ".dim(),
+                    dashboard_value(
+                        &self.shell.thread_id.to_string(),
+                        width,
+                        /*prefix_width*/ 3,
+                    )
+                    .cyan(),
+                ]),
+                Line::from("resume, fork, archive, delete in session list".dim()),
+            ],
+        ));
         let mut model_lines = vec![Line::from(dashboard_value(
             &self.shell.model,
             width,
@@ -567,7 +594,52 @@ impl ShellView<'_> {
         };
         panels.push(DashboardPanel::new("Keys", key_lines));
 
-        panels
+        self.route_dashboard_panels(panels)
+    }
+
+    fn route_dashboard_panels(&self, panels: Vec<DashboardPanel>) -> Vec<DashboardPanel> {
+        let titles: &[&str] = match self.shell.dashboard_route {
+            DashboardRoute::Sessions => &[
+                "Navigation",
+                "Approvals",
+                "Background",
+                "Tools",
+                "Subagents",
+                "Thread",
+                "Status",
+                "Plan",
+                "Keys",
+            ],
+            DashboardRoute::Workspace => &["Navigation", "Workspace", "Diff", "Tools", "Keys"],
+            DashboardRoute::Settings => &[
+                "Navigation",
+                "Model",
+                "Tokens",
+                "Rate Limits",
+                "Workspace",
+                "Keys",
+            ],
+            DashboardRoute::Help => &[
+                "Navigation",
+                "Keys",
+                "Status",
+                "Approvals",
+                "Background",
+                "Tools",
+                "Subagents",
+            ],
+        };
+
+        let mut panels = panels;
+        titles
+            .iter()
+            .filter_map(|title| {
+                let index = panels
+                    .iter()
+                    .position(|panel| panel.title.as_str() == *title)?;
+                Some(panels.remove(index))
+            })
+            .collect()
     }
 
     fn render_dashboard_panels(&self, area: Rect, panels: &[DashboardPanel], buf: &mut Buffer) {
@@ -681,6 +753,25 @@ impl DashboardPanel {
             MOCHA_MANTLE
         }
     }
+}
+
+fn dashboard_navigation_panel(active_route: DashboardRoute) -> DashboardPanel {
+    let mut spans = Vec::new();
+    for (index, route) in DashboardRoute::ALL.into_iter().enumerate() {
+        if index > 0 {
+            spans.push("  ".dim());
+        }
+        let label = format!("{}{}", index + 1, route.short_label());
+        if route == active_route {
+            spans.push(label.cyan().bold());
+        } else {
+            spans.push(label.dim());
+        }
+    }
+    spans.push("  ".dim());
+    spans.push("Alt+Left/Right".dim());
+
+    DashboardPanel::new("Navigation", vec![Line::from(spans)])
 }
 
 fn push_transcript_lines(

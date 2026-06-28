@@ -3,17 +3,17 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Status
-                                                                       thinking
+ Better Codex                                                          Navigation
+                                                                       1S  2W  3Set  4Help
 
- Conversation +4                                                       Model
- tool: exec just test -p codex-tui                                     gpt-5-codex
- diff: diff 3 files +128 -24
- status: first checkpoint                                              Tokens
- status: second checkpoint                                             total 1,440
-                                                                       input 1,200
-                                                                       output 240
- Composer ready 1:37                                                   context 200,000
+ Conversation +4                                                       Tools
+ tool: exec just test -p codex-tui                                     in progress exec just tes...
+ diff: diff 3 files +128 -24                                           completed file changes in...
+ status: first checkpoint
+ status: second checkpoint                                             Thread
+                                                                       stage-one
+                                                                       id 01900000-0000-7000-800...
+ Composer ready 1:37                                                   resume, fork, archive,
  > Summarize the new shell architecture
-                                                                       Diff
-                                                                       3 files +128 -24
+                                                                       Status
+                                                                       thinking

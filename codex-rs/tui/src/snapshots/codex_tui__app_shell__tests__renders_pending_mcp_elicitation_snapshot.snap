@@ -3,23 +3,23 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Status
-                                                                       thinking
+ Better Codex                                                          Navigation
+                                                                       1S  2W  3Set  4Help
 
- Conversation                                                          Model
- system: Better Codex app shell                                        gpt-5-codex
+ Conversation                                                          Approvals
+ system: Better Codex app shell                                        mcp MCP github: URL request
  you: Create a divergent standalone TUI.
-                                                                       Tokens
- codex: Started a fullscreen app shell backed by app-server turns.     total 1,440
- plan: 1. Build shell                                                  input 1,200
-       2. Wire transcript                                              output 240
-       3. Render dashboard                                             context 200,000
- tool: exec just test -p codex-tui
- diff: diff 3 files +128 -24                                           Approvals
-                                                                       mcp MCP github: URL request
+                                                                       Tools
+ codex: Started a fullscreen app shell backed by app-server turns.     in progress exec just tes...
+ plan: 1. Build shell                                                  completed file changes in...
+       2. Wire transcript
+       3. Render dashboard                                             Thread
+ tool: exec just test -p codex-tui                                     stage-one
+ diff: diff 3 files +128 -24                                           id 01900000-0000-7000-800...
+                                                                       resume, fork, archive,
  codex: The new shell owns the fullscreen surface.
-                                                                       Diff
-                                                                       3 files +128 -24
+                                                                       Status
+                                                                       thinking
 
                                                                        Plan
                                                                        Build the standalone shell
@@ -27,5 +27,5 @@ expression: "render_shell(&shell, area)"
                                                                        x Shell frame
  MCP Elicitation                                                       > Transcript model
  ? MCP github: URL request
-   Open the GitHub authorization page? - https://github.com/lo...      Tools
-   a accept  d decline  c cancel                                       in progress exec just tes...
+   Open the GitHub authorization page? - https://github.com/lo...      Keys
+   a accept  d decline  c cancel                                       Enter send

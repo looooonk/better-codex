@@ -7,10 +7,10 @@ expression: "render_shell(&shell, area)"
 
 
  Dashboard
- Status  Model  Tokens  Diff  Plan  Tools  +2 more
+ Navigation  Tools  Thread  Status  Plan  Keys
+ Navigation 1S  2W  3Set  4Help  Alt+Left/Right
+ Thread stage-one
  Tools in progress exec just test -p codex-tui
- Status thinking
- Model gpt-5-codex
 
 
  Conversation

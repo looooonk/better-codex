@@ -75,6 +75,7 @@ fn renders_short_shell_snapshot() {
 #[test]
 fn renders_workspace_roots_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Workspace;
     shell.runtime_workspace_roots = vec![
         AbsolutePathBuf::from_absolute_path_checked("/workspace/better-codex")
             .expect("absolute path should be valid"),
@@ -95,6 +96,7 @@ fn renders_workspace_roots_snapshot() {
 #[test]
 fn renders_workspace_git_status_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Workspace;
     shell.workspace_git_status = Some(WorkspaceGitStatus {
         branch: Some("feature/app-shell-dashboard".to_string()),
         changes: workspace::WorkspaceChangeSummary {
@@ -114,8 +116,31 @@ fn renders_workspace_git_status_snapshot() {
 }
 
 #[test]
+fn renders_workspace_route_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Workspace;
+    shell.workspace_git_status = Some(WorkspaceGitStatus {
+        branch: Some("feature/app-shell-dashboard".to_string()),
+        changes: workspace::WorkspaceChangeSummary {
+            added: 2,
+            modified: 5,
+            deleted: 1,
+            renamed: 1,
+            conflicted: 1,
+            untracked: 3,
+        },
+    });
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 34,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn renders_model_runtime_details_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.reasoning_effort = Some(ReasoningEffort::High);
     shell.service_tier = Some("flex".to_string());
     let area = Rect::new(
@@ -128,6 +153,7 @@ fn renders_model_runtime_details_snapshot() {
 #[test]
 fn renders_rate_limits_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.rate_limits = vec![
         codex_app_server_protocol::RateLimitSnapshot {
             limit_id: Some("codex".to_string()),
@@ -184,6 +210,7 @@ fn renders_rate_limits_snapshot() {
 #[test]
 fn renders_context_pressure_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
     shell.token_usage = TokenUsage {
         input_tokens: 150_000,
         cached_input_tokens: 20_000,
@@ -337,6 +364,45 @@ fn command_palette_clear_resets_visible_transcript() {
     assert_eq!(shell.streaming_plan, "");
     assert_eq!(shell.transcript_scroll, 0);
     assert_eq!(shell.transcript_selection, None);
+}
+
+#[test]
+fn dashboard_route_key_mapping_covers_native_routes() {
+    assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL)),
+        Some(DashboardRoute::Sessions)
+    );
+    assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL)),
+        Some(DashboardRoute::Workspace)
+    );
+    assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL)),
+        Some(DashboardRoute::Settings)
+    );
+    assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL)),
+        Some(DashboardRoute::Help)
+    );
+    assert_eq!(dashboard_route_from_key(key_char('1')), None);
+}
+
+#[test]
+fn dashboard_route_changes_are_persisted() {
+    let codex_home = tempfile::tempdir().expect("create temp codex home");
+    let mut shell = ShellState {
+        codex_home: codex_home.path().to_path_buf(),
+        ..ShellState::snapshot_fixture()
+    };
+
+    shell.set_dashboard_route(DashboardRoute::Settings);
+
+    assert_eq!(
+        AppShellRouteState::load(codex_home.path()),
+        AppShellRouteState {
+            route: DashboardRoute::Settings
+        }
+    );
 }
 
 #[test]
@@ -651,7 +717,7 @@ fn narrow_dashboard_overlay_prioritizes_live_activity() {
         status: "active".to_string(),
     }]);
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 32,
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 40,
     );
 
     let rendered = render_shell(&shell, area);
@@ -659,7 +725,7 @@ fn narrow_dashboard_overlay_prioritizes_live_activity() {
     assert!(rendered.contains("Approvals approval Run command: cargo test"));
     assert!(rendered.contains("Background workspace refresh queued"));
     assert!(rendered.contains("Tools in progress exec just test"));
-    assert!(rendered.contains("Subagents active subagent Started: review-agent"));
+    assert!(rendered.contains("Subagents"));
 }
 
 #[test]
@@ -730,6 +796,7 @@ fn dashboard_uses_available_width_for_long_values() {
         title: "exec just test -p codex-tui app_shell_tests".to_string(),
         status: "completed".to_string(),
     }]);
+    shell.dashboard_route = DashboardRoute::Settings;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 190, /*height*/ 36,
     );
@@ -737,6 +804,9 @@ fn dashboard_uses_available_width_for_long_values() {
     let rendered = render_shell(&shell, area);
 
     assert!(rendered.contains("gpt-5-codex-dashboard-detail"));
+    shell.dashboard_route = DashboardRoute::Workspace;
+    let rendered = render_shell(&shell, area);
+
     assert!(rendered.contains("/workspace/better-codex/codex-rs/tui"));
     assert!(rendered.contains("feature/dashboard-width-budget"));
     assert!(rendered.contains("exec just test -p codex-tui app_shell_tests"));
@@ -769,6 +839,7 @@ fn dashboard_renders_large_numbers_with_commas() {
             untracked: 6_000,
         },
     });
+    shell.dashboard_route = DashboardRoute::Settings;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 130, /*height*/ 48,
     );
@@ -779,6 +850,9 @@ fn dashboard_renders_large_numbers_with_commas() {
     assert!(rendered.contains("input 1,234,567"));
     assert!(rendered.contains("output 234,567"));
     assert!(rendered.contains("context 2,000,000"));
+    shell.dashboard_route = DashboardRoute::Workspace;
+    let rendered = render_shell(&shell, area);
+
     assert!(rendered.contains("1,234 files +56,789 -10,011"));
     assert!(rendered.contains("changes 21,000 files"));
     assert!(rendered.contains("added 1,000"));

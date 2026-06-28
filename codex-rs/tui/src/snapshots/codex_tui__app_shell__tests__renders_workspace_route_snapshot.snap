@@ -8,16 +8,20 @@ expression: "render_shell(&shell, area)"
 
  Conversation                                                          Workspace
  system: Better Codex app shell                                        cwd /workspace/better-codex
- you: Create a divergent standalone TUI.                               profile managed
-                                                                       files restricted, net
- codex: Started a fullscreen app shell backed by app-server turns.     restricted
- plan: 1. Build shell                                                  roots 4 writable
-       2. Wire transcript                                                /workspace/better-codex
-       3. Render dashboard                                               /workspace/better-codex...
- tool: exec just test -p codex-tui                                       /tmp/codex-cache
- diff: diff 3 files +128 -24
+ you: Create a divergent standalone TUI.                               branch feature/app-shell-...
+                                                                       changes 13 files
+ codex: Started a fullscreen app shell backed by app-server turns.       added 2
+ plan: 1. Build shell                                                    modified 5
+       2. Wire transcript                                                deleted 1
+       3. Render dashboard                                               renamed 1
+ tool: exec just test -p codex-tui                                       conflicted 1
+ diff: diff 3 files +128 -24                                             untracked 3
+                                                                       profile managed
+ codex: The new shell owns the fullscreen surface.                     files restricted, net
+                                                                       restricted
+
                                                                        Diff
- codex: The new shell owns the fullscreen surface.                     3 files +128 -24
+                                                                       3 files +128 -24
 
                                                                        Tools
                                                                        in progress exec just tes...
@@ -27,17 +31,5 @@ expression: "render_shell(&shell, area)"
                                                                        Enter send
                                                                        Ctrl+C/Esc exit
                                                                        Alt+Up select, Ctrl+O copy
-
-
-
-
-
-
-
-
-
-
-
-
  Composer ready 1:37
  > Summarize the new shell architecture

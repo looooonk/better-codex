@@ -3,21 +3,21 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Status
-                                                                       thinking
-                                                                       turn turn-act...
- Conversation
- system: Better Codex app shell                                        Model
- you: Create a divergent standalone TUI.                               gpt-5-codex
+ Better Codex                                                          Navigation
+                                                                       1S  2W  3Set  4Help
 
- codex: Started a fullscreen app shell backed by app-server turns.     Tokens
- plan: 1. Build shell                                                  total 1,440
-       2. Wire transcript                                              input 1,200
-       3. Render dashboard                                             output 240
- tool: exec just test -p codex-tui                                     context 200,000
- diff: diff 3 files +128 -24
-                                                                       Diff
- codex: The new shell owns the fullscreen surface.                     3 files +128 -24
+ Conversation                                                          Tools
+ system: Better Codex app shell                                        in progress exec just tes...
+ you: Create a divergent standalone TUI.                               completed file changes in...
+
+ codex: Started a fullscreen app shell backed by app-server turns.     Thread
+ plan: 1. Build shell                                                  stage-one
+       2. Wire transcript                                              id 01900000-0000-7000-800...
+       3. Render dashboard                                             resume, fork, archive,
+ tool: exec just test -p codex-tui
+ diff: diff 3 files +128 -24                                           Status
+                                                                       thinking
+ codex: The new shell owns the fullscreen surface.                     turn turn-act...
 
                                                                        Plan
                                                                        Build the standalone shell
@@ -25,6 +25,7 @@ expression: "render_shell(&shell, area)"
                                                                        x Shell frame
                                                                        > Transcript model
 
- Composer busy 1:37                                                    Tools
- > Summarize the new shell architecture                                in progress exec just tes...
-                                                                       completed file changes in...
+ Composer busy 1:37                                                    Keys
+ > Summarize the new shell architecture                                Enter steer
+                                                                       Ctrl+C interrupt, Esc exit
+                                                                       Alt+Up select, Ctrl+O copy

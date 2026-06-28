@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Status
-                                                                       thinking
+ Better Codex                                                          Navigation
+                                                                       1S  2W  3Set  4Help
 
  Conversation                                                          Model
  system: Better Codex app shell                                        gpt-5-codex
@@ -16,15 +16,14 @@ expression: "render_shell(&shell, area)"
        3. Render dashboard                                             context 200,000
  tool: exec just test -p codex-tui                                     context 95% used
  diff: diff 3 files +128 -24
-                                                                       Diff
- codex: The new shell owns the fullscreen surface.                     3 files +128 -24
+                                                                       Workspace
+ codex: The new shell owns the fullscreen surface.                     cwd /workspace/better-codex
+                                                                       profile managed
+                                                                       files restricted, net
+                                                                       restricted
 
-                                                                       Plan
-                                                                       Build the standalone shell
-                                                                       in slices.
-                                                                       x Shell frame
-                                                                       > Transcript model
-
- Composer ready 1:37                                                   Tools
- > Summarize the new shell architecture                                in progress exec just tes...
-                                                                       completed file changes in...
+                                                                       Keys
+                                                                       Enter send
+                                                                       Ctrl+C/Esc exit
+ Composer ready 1:37                                                   Alt+Up select, Ctrl+O copy
+ > Summarize the new shell architecture

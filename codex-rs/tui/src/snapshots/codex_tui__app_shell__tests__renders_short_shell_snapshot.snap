@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Status
-                                                                       thinking
+ Better Codex                                                          Navigation
+                                                                       1S  2W  3Set  4Help
 
- Conversation                                                          Model
-                                                                       gpt-5-codex
- codex: The new shell owns the fullscreen surface.
-                                                                       Tokens
-                                                                       total 1,440
- Composer ready 1:37                                                   input 1,200
- > Summarize the new shell architecture                                output 240
+ Conversation                                                          Tools
+                                                                       in progress exec just tes...
+ codex: The new shell owns the fullscreen surface.                     completed file changes in...
+
+                                                                       Thread
+ Composer ready 1:37                                                   stage-one
+ > Summarize the new shell architecture                                id 01900000-0000-7000-800...

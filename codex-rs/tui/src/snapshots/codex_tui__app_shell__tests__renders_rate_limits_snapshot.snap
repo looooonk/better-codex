@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Status
-                                                                       thinking
+ Better Codex                                                          Navigation
+                                                                       1S  2W  3Set  4Help
 
  Conversation                                                          Model
  system: Better Codex app shell                                        gpt-5-codex
@@ -24,21 +24,20 @@ expression: "render_shell(&shell, area)"
                                                                        limited RateLimitReached
                                                                        reset credits 2
 
-                                                                       Diff
-                                                                       3 files +128 -24
-
-                                                                       Plan
-                                                                       Build the standalone shell
-                                                                       in slices.
-                                                                       x Shell frame
-                                                                       > Transcript model
-
-                                                                       Tools
-                                                                       in progress exec just tes...
-                                                                       completed file changes in...
-
                                                                        Workspace
                                                                        cwd /workspace/better-codex
- Composer ready 1:37                                                   profile managed
- > Summarize the new shell architecture                                files restricted, net
+                                                                       profile managed
+                                                                       files restricted, net
                                                                        restricted
+
+                                                                       Keys
+                                                                       Enter send
+                                                                       Ctrl+C/Esc exit
+                                                                       Alt+Up select, Ctrl+O copy
+
+
+
+
+
+ Composer ready 1:37
+ > Summarize the new shell architecture

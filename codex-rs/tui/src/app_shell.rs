@@ -43,6 +43,7 @@ mod command_palette;
 mod composer;
 mod elicitation;
 mod events;
+mod navigation;
 mod render;
 mod user_input;
 mod workspace;
@@ -57,6 +58,8 @@ use command_palette::command_palette_entries;
 use composer::ComposerState;
 use elicitation::ElicitationChoice;
 use elicitation::PendingElicitation;
+use navigation::AppShellRouteState;
+use navigation::DashboardRoute;
 use render::draw_shell;
 use user_input::PendingUserInput;
 use user_input::UserInputAdvance;
@@ -88,7 +91,13 @@ pub(crate) async fn run(
     ));
 
     let started = start_selected_session(&mut app_server, &config, session_selection).await?;
-    let mut shell = ShellState::new(started.session, bootstrap.default_model);
+    let route_state = AppShellRouteState::load(config.codex_home.as_path());
+    let mut shell = ShellState::new(
+        started.session,
+        bootstrap.default_model,
+        config.codex_home.to_path_buf(),
+        route_state.route,
+    );
     shell.ingest_turn_history(started.turns);
     shell
         .refresh_workspace_status(workspace_command_runner.as_ref())
@@ -268,6 +277,8 @@ struct ShellState {
     transcript_scroll_max: Cell<usize>,
     transcript_selection: Option<usize>,
     command_palette: Option<CommandPaletteState>,
+    codex_home: std::path::PathBuf,
+    dashboard_route: DashboardRoute,
     composer: ComposerState,
     clipboard_lease: Option<ClipboardLease>,
     active_turn_id: Option<String>,
@@ -292,7 +303,12 @@ struct ShellState {
 }
 
 impl ShellState {
-    fn new(session: ThreadSessionState, fallback_model: String) -> Self {
+    fn new(
+        session: ThreadSessionState,
+        fallback_model: String,
+        codex_home: std::path::PathBuf,
+        dashboard_route: DashboardRoute,
+    ) -> Self {
         let model = if session.model.is_empty() {
             fallback_model
         } else {
@@ -316,6 +332,8 @@ impl ShellState {
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
             command_palette: None,
+            codex_home,
+            dashboard_route,
             composer: ComposerState::default(),
             clipboard_lease: None,
             active_turn_id: None,
@@ -380,6 +398,23 @@ impl ShellState {
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('o')) {
             self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
             return Ok(false);
+        }
+        if let Some(route) = dashboard_route_from_key(key) {
+            self.set_dashboard_route(route);
+            return Ok(false);
+        }
+        if key.modifiers.contains(KeyModifiers::ALT) {
+            match key.code {
+                KeyCode::Left => {
+                    self.set_dashboard_route(self.dashboard_route.previous());
+                    return Ok(false);
+                }
+                KeyCode::Right => {
+                    self.set_dashboard_route(self.dashboard_route.next());
+                    return Ok(false);
+                }
+                _ => {}
+            }
         }
         if self.transcript_selection.is_some()
             && let Some(handled) = self.handle_transcript_selection_key(key)
@@ -680,6 +715,18 @@ impl ShellState {
 
     fn close_command_palette(&mut self) {
         self.command_palette = None;
+    }
+
+    fn set_dashboard_route(&mut self, route: DashboardRoute) {
+        if self.dashboard_route == route {
+            return;
+        }
+
+        self.dashboard_route = route;
+        let route_state = AppShellRouteState { route };
+        if let Err(err) = route_state.save(&self.codex_home) {
+            tracing::warn!("failed to persist app shell route state: {err}");
+        }
     }
 
     fn command_palette_entries(&self) -> Vec<CommandPaletteEntry> {
@@ -1455,6 +1502,8 @@ impl ShellState {
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
             command_palette: None,
+            codex_home: std::path::PathBuf::from("/tmp/codex-home"),
+            dashboard_route: DashboardRoute::Sessions,
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Summarize the new shell architecture");
@@ -1590,6 +1639,8 @@ pub mod bench_support {
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
             command_palette: None,
+            codex_home: std::path::PathBuf::from("/tmp/codex-home"),
+            dashboard_route: DashboardRoute::Sessions,
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Benchmark the app shell render path");
@@ -1823,6 +1874,20 @@ fn compact_multiline(text: String) -> Option<String> {
     let mut compact = text.chars().take(MAX_CHARS).collect::<String>();
     compact.push_str("...");
     Some(compact)
+}
+
+fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
+    if !key.modifiers.contains(KeyModifiers::CONTROL) {
+        return None;
+    }
+
+    match key.code {
+        KeyCode::Char('1') => Some(DashboardRoute::Sessions),
+        KeyCode::Char('2') => Some(DashboardRoute::Workspace),
+        KeyCode::Char('3') => Some(DashboardRoute::Settings),
+        KeyCode::Char('4') => Some(DashboardRoute::Help),
+        _ => None,
+    }
 }
 
 fn approval_action_from_key(key: KeyEvent) -> Option<ApprovalAction> {
