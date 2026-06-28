@@ -904,11 +904,11 @@ fn transcript_selection_page_keys_scroll_without_changing_selection() {
 #[test]
 fn context_used_percent_handles_unknown_and_baseline_usage() {
     assert_eq!(
-        render::context_used_percent(&TokenUsage::default(), None),
+        dashboard::context_used_percent(&TokenUsage::default(), None),
         None
     );
     assert_eq!(
-        render::context_used_percent(
+        dashboard::context_used_percent(
             &TokenUsage {
                 total_tokens: 12_000,
                 ..TokenUsage::default()
@@ -922,7 +922,7 @@ fn context_used_percent_handles_unknown_and_baseline_usage() {
 #[test]
 fn context_used_percent_accounts_for_baseline_reserved_tokens() {
     assert_eq!(
-        render::context_used_percent(
+        dashboard::context_used_percent(
             &TokenUsage {
                 total_tokens: 190_000,
                 ..TokenUsage::default()
