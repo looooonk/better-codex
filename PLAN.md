@@ -49,7 +49,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 - [x] Add plan progress rendering from plan events and goal state.
 - [x] Add workspace status: current branch, dirty files, changed files by type, current cwd, and selected writable roots.
 - [x] Add tool, approval, background task, and subagent activity panels so non-conversation state does not leak into the main conversation surface except as transcript artifacts.
-- [ ] Make dashboard sections responsive so narrow terminals collapse to tabs or an overlay.
+- [x] Make dashboard sections responsive so narrow terminals collapse to tabs or an overlay.
 
 ## Stage 6: Session Navigation
 

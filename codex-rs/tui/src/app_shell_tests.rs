@@ -630,6 +630,29 @@ fn renders_activity_dashboard_panels_snapshot() {
 }
 
 #[test]
+fn narrow_dashboard_overlay_prioritizes_live_activity() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
+        .expect("approval request should be valid");
+    shell.workspace_status_refresh_due = true;
+    shell.subagent_activity = VecDeque::from([ToolActivity {
+        id: "agent-1".to_string(),
+        title: "subagent Started: review-agent".to_string(),
+        status: "active".to_string(),
+    }]);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 32,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(rendered.contains("Approvals approval Run command: cargo test"));
+    assert!(rendered.contains("Background workspace refresh queued"));
+    assert!(rendered.contains("Tools in progress exec just test"));
+    assert!(rendered.contains("Subagents active subagent Started: review-agent"));
+}
+
+#[test]
 fn subagent_items_route_to_subagent_activity() {
     let mut shell = ShellState::snapshot_fixture();
     shell.tool_activity.clear();

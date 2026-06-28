@@ -38,7 +38,6 @@ const MOCHA_SURFACE0: Color = Color::Rgb(49, 50, 68);
 const MOCHA_SURFACE1: Color = Color::Rgb(69, 71, 90);
 const MOCHA_TEXT: Color = Color::Rgb(205, 214, 244);
 const MOCHA_SUBTEXT0: Color = Color::Rgb(166, 173, 200);
-const MOCHA_OVERLAY0: Color = Color::Rgb(108, 112, 134);
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
 const PANE_PADDING: u16 = 1;
 const DASHBOARD_PANEL_GAP: u16 = 1;
@@ -66,33 +65,50 @@ impl ShellView<'_> {
                 .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
                 .split(area)
         };
-        let header_height = if dashboard_collapsed { 4 } else { 3 };
-        let main = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(header_height),
-                Constraint::Min(5),
-                Constraint::Length(6),
-            ])
-            .split(horizontal[0]);
-
-        self.render_header(main[0], dashboard_collapsed, buf);
-        self.render_transcript(main[1], buf);
-        self.render_input(main[2], buf);
-        if !dashboard_collapsed {
+        if dashboard_collapsed {
+            let dashboard_height = if area.height >= 30 {
+                9
+            } else if area.height >= 24 {
+                7
+            } else if area.height >= 18 {
+                5
+            } else {
+                3
+            };
+            let main = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Length(dashboard_height),
+                    Constraint::Min(5),
+                    Constraint::Length(6),
+                ])
+                .split(horizontal[0]);
+            self.render_header(main[0], buf);
+            self.render_collapsed_dashboard(main[1], buf);
+            self.render_transcript(main[2], buf);
+            self.render_input(main[3], buf);
+        } else {
+            let main = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Min(5),
+                    Constraint::Length(6),
+                ])
+                .split(horizontal[0]);
+            self.render_header(main[0], buf);
+            self.render_transcript(main[1], buf);
+            self.render_input(main[2], buf);
             self.render_dashboard(horizontal[1], buf);
         }
         self.render_command_palette(area, buf);
     }
 
-    fn render_header(&self, area: Rect, dashboard_collapsed: bool, buf: &mut Buffer) {
+    fn render_header(&self, area: Rect, buf: &mut Buffer) {
         fill_rect(buf, area, MOCHA_MANTLE);
         let content = pane_content_rect(area);
-        let mut lines = vec![Line::from("Better Codex".magenta().bold())];
-        if dashboard_collapsed {
-            lines.push(compact_dashboard_summary(self.shell));
-        }
-        Paragraph::new(lines)
+        Paragraph::new(Line::from("Better Codex".magenta().bold()))
             .style(pane_style(MOCHA_MANTLE))
             .render(content, buf);
     }
@@ -225,6 +241,80 @@ impl ShellView<'_> {
         fill_rect(buf, area, MOCHA_MANTLE);
         let content = pane_content_rect(area);
         let width = usize::from(content.width);
+        let panels = self.dashboard_panels(width);
+
+        self.render_dashboard_panels(content, &panels, buf);
+    }
+
+    fn render_collapsed_dashboard(&self, area: Rect, buf: &mut Buffer) {
+        fill_rect(buf, area, MOCHA_SURFACE0);
+        let content = pane_content_rect(area);
+        let width = usize::from(content.width);
+        let panels = self.dashboard_panels(width);
+        let body = body_rect_after_title(content);
+        let visible_count = panels.len().min(6);
+        let mut labels = panels
+            .iter()
+            .take(visible_count)
+            .map(|panel| panel.title.as_str())
+            .collect::<Vec<_>>()
+            .join("  ");
+        let hidden_count = panels.len().saturating_sub(visible_count);
+        if hidden_count > 0 {
+            labels.push_str(&format!("  +{} more", format_usize(hidden_count)));
+        }
+        let mut lines = vec![Line::from(
+            dashboard_value(&labels, width, /*prefix_width*/ 0).fg(MOCHA_SUBTEXT0),
+        )];
+        let available_panel_lines = usize::from(body.height.saturating_sub(1));
+        for title in [
+            "Approvals",
+            "Background",
+            "Tools",
+            "Subagents",
+            "Status",
+            "Model",
+            "Tokens",
+            "Plan",
+            "Workspace",
+            "Diff",
+            "Rate Limits",
+            "Keys",
+        ] {
+            if lines.len() > available_panel_lines {
+                break;
+            }
+            if let Some(panel) = panels.iter().find(|panel| panel.title == title) {
+                let summary = panel
+                    .lines
+                    .first()
+                    .map(|line| {
+                        line.spans
+                            .iter()
+                            .map(|span| span.content.as_ref())
+                            .collect::<String>()
+                    })
+                    .unwrap_or_else(|| "empty".to_string());
+                let title = panel.title.clone();
+                let prefix_width = title.chars().count() + 1;
+                lines.push(Line::from(vec![
+                    title.cyan().bold(),
+                    " ".dim(),
+                    dashboard_value(&summary, width, prefix_width).into(),
+                ]));
+            }
+        }
+
+        Paragraph::new(Line::from("Dashboard".bold()))
+            .style(pane_style(MOCHA_SURFACE0))
+            .render(title_rect(content), buf);
+        Paragraph::new(lines)
+            .style(pane_style(MOCHA_SURFACE0))
+            .wrap(Wrap { trim: false })
+            .render(body, buf);
+    }
+
+    fn dashboard_panels(&self, width: usize) -> Vec<DashboardPanel> {
         let context_window = self
             .shell
             .model_context_window
@@ -477,7 +567,7 @@ impl ShellView<'_> {
         };
         panels.push(DashboardPanel::new("Keys", key_lines));
 
-        self.render_dashboard_panels(content, &panels, buf);
+        panels
     }
 
     fn render_dashboard_panels(&self, area: Rect, panels: &[DashboardPanel], buf: &mut Buffer) {
@@ -662,22 +752,6 @@ fn body_rect_after_title(area: Rect) -> Rect {
         area.width,
         area.height.saturating_sub(1),
     )
-}
-
-fn compact_dashboard_summary(shell: &ShellState) -> Line<'static> {
-    Line::from(vec![
-        "Dashboard ".cyan().bold(),
-        status_span(&shell.status),
-        " · ".fg(MOCHA_OVERLAY0),
-        dashboard_value(
-            &shell.model,
-            /*line_width*/ 24,
-            /*prefix_width*/ 0,
-        )
-        .into(),
-        " · ".fg(MOCHA_OVERLAY0),
-        format!("{} tokens", format_i64(shell.token_usage.total_tokens)).fg(MOCHA_SUBTEXT0),
-    ])
 }
 
 fn centered_band_rect(area: Rect, height: u16) -> Rect {
