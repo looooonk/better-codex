@@ -30,6 +30,7 @@ use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
+use std::collections::VecDeque;
 
 const MOCHA_BASE: Color = Color::Rgb(30, 30, 46);
 const MOCHA_MANTLE: Color = Color::Rgb(24, 24, 37);
@@ -290,6 +291,19 @@ impl ShellView<'_> {
         }
         panels.push(DashboardPanel::new("Tokens", token_lines));
 
+        if self.shell.pending_approval.is_some()
+            || self.shell.pending_elicitation.is_some()
+            || self.shell.pending_user_input.is_some()
+        {
+            panels.push(DashboardPanel::new(
+                "Approvals",
+                approval_activity_lines(self.shell, width),
+            ));
+        }
+        if let Some(background_lines) = background_activity_lines(self.shell) {
+            panels.push(DashboardPanel::new("Background", background_lines));
+        }
+
         if !self.shell.rate_limits.is_empty() || self.shell.rate_limit_reset_credits.is_some() {
             let mut limit_lines = Vec::new();
             for limit in self.shell.rate_limits.iter().take(2) {
@@ -359,19 +373,16 @@ impl ShellView<'_> {
         }
         panels.push(DashboardPanel::new("Plan", plan_lines));
 
-        let tool_lines = if self.shell.tool_activity.is_empty() {
-            vec![Line::from("idle".dim())]
-        } else {
-            self.shell
-                .tool_activity
-                .iter()
-                .rev()
-                .take(4)
-                .rev()
-                .map(|activity| tool_activity_line(activity, width))
-                .collect()
-        };
-        panels.push(DashboardPanel::new("Tools", tool_lines));
+        panels.push(DashboardPanel::new(
+            "Tools",
+            activity_lines(&self.shell.tool_activity, width, "idle"),
+        ));
+        if !self.shell.subagent_activity.is_empty() {
+            panels.push(DashboardPanel::new(
+                "Subagents",
+                activity_lines(&self.shell.subagent_activity, width, "idle"),
+            ));
+        }
 
         let mut workspace_lines = vec![Line::from(vec![
             "cwd ".dim(),
@@ -831,6 +842,58 @@ fn tool_activity_line(activity: &ToolActivity, width: usize) -> Line<'static> {
         status,
         " ".dim(),
         dashboard_value(&activity.title, width, prefix_width).into(),
+    ])
+}
+
+fn activity_lines(
+    activities: &VecDeque<ToolActivity>,
+    width: usize,
+    empty_label: &'static str,
+) -> Vec<Line<'static>> {
+    if activities.is_empty() {
+        return vec![Line::from(empty_label.dim())];
+    }
+
+    activities
+        .iter()
+        .rev()
+        .take(4)
+        .rev()
+        .map(|activity| tool_activity_line(activity, width))
+        .collect()
+}
+
+fn approval_activity_lines(shell: &ShellState, width: usize) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    if let Some(pending) = &shell.pending_approval {
+        lines.push(activity_status_line("approval", pending.title(), width));
+    }
+    if let Some(pending) = &shell.pending_elicitation {
+        lines.push(activity_status_line("mcp", pending.title(), width));
+    }
+    if let Some(pending) = &shell.pending_user_input {
+        lines.push(activity_status_line("input", pending.title(), width));
+    }
+    if lines.is_empty() {
+        lines.push(Line::from("none pending".dim()));
+    }
+    lines
+}
+
+fn background_activity_lines(shell: &ShellState) -> Option<Vec<Line<'static>>> {
+    let mut lines = Vec::new();
+    if shell.workspace_status_refresh_due {
+        lines.push(Line::from("workspace refresh queued".dim()));
+    }
+    (!lines.is_empty()).then_some(lines)
+}
+
+fn activity_status_line(label: &'static str, title: &str, width: usize) -> Line<'static> {
+    let prefix_width = label.chars().count() + 1;
+    Line::from(vec![
+        label.cyan(),
+        " ".dim(),
+        dashboard_value(title, width, prefix_width).into(),
     ])
 }
 

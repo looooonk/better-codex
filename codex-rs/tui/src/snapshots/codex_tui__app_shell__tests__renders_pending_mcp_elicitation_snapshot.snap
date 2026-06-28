@@ -15,17 +15,17 @@ expression: "render_shell(&shell, area)"
        2. Wire transcript                                              output 240
        3. Render dashboard                                             context 200,000
  tool: exec just test -p codex-tui
- diff: diff 3 files +128 -24                                           Diff
-                                                                       3 files +128 -24
+ diff: diff 3 files +128 -24                                           Approvals
+                                                                       mcp MCP github: URL request
  codex: The new shell owns the fullscreen surface.
+                                                                       Diff
+                                                                       3 files +128 -24
+
                                                                        Plan
                                                                        Build the standalone shell
                                                                        in slices.
                                                                        x Shell frame
-                                                                       > Transcript model
-
-                                                                       Tools
- MCP Elicitation                                                       in progress exec just tes...
- ? MCP github: URL request                                             completed file changes in...
-   Open the GitHub authorization page? - https://github.com/lo...
-   a accept  d decline  c cancel                                       Workspace
+ MCP Elicitation                                                       > Transcript model
+ ? MCP github: URL request
+   Open the GitHub authorization page? - https://github.com/lo...      Tools
+   a accept  d decline  c cancel                                       in progress exec just tes...

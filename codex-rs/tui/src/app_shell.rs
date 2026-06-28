@@ -236,7 +236,7 @@ impl TranscriptKind {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ToolActivity {
     id: String,
     title: String,
@@ -280,6 +280,7 @@ struct ShellState {
     plan_steps: Vec<TurnPlanStep>,
     active_goal: Option<ThreadGoal>,
     tool_activity: VecDeque<ToolActivity>,
+    subagent_activity: VecDeque<ToolActivity>,
     latest_diff: Option<DiffSummary>,
     workspace_git_status: Option<WorkspaceGitStatus>,
     workspace_status_refresh_due: bool,
@@ -327,6 +328,7 @@ impl ShellState {
             plan_steps: Vec::new(),
             active_goal: None,
             tool_activity: VecDeque::new(),
+            subagent_activity: VecDeque::new(),
             latest_diff: None,
             workspace_git_status: None,
             workspace_status_refresh_due: false,
@@ -1228,7 +1230,7 @@ impl ShellState {
                 ..
             } => {
                 let title = command_summary(&command, exit_code, duration_ms);
-                self.upsert_tool(id, title.clone(), format!("{status:?}").to_lowercase());
+                self.upsert_tool_activity(id, title.clone(), format!("{status:?}").to_lowercase());
                 self.push_tool(title);
                 if let Some(output) = aggregated_output.and_then(compact_multiline) {
                     self.push_output(output);
@@ -1241,7 +1243,7 @@ impl ShellState {
             } => {
                 let summary = file_change_summary(&changes);
                 self.latest_diff = Some(diff_summary_from_changes(&changes));
-                self.upsert_tool(id, summary, format!("{status:?}").to_lowercase());
+                self.upsert_tool_activity(id, summary, format!("{status:?}").to_lowercase());
                 self.push_diff(file_change_detail(&changes));
             }
             ThreadItem::McpToolCall {
@@ -1257,7 +1259,7 @@ impl ShellState {
                 if let Some(duration_ms) = duration_ms {
                     title.push_str(&format!(" ({duration_ms}ms)"));
                 }
-                self.upsert_tool(id, title.clone(), format!("{status:?}").to_lowercase());
+                self.upsert_tool_activity(id, title.clone(), format!("{status:?}").to_lowercase());
                 self.push_tool(title);
                 if let Some(error) = error {
                     self.push_error(format!("mcp error: {}", error.message));
@@ -1282,7 +1284,7 @@ impl ShellState {
                 if let Some(duration_ms) = duration_ms {
                     title.push_str(&format!(" ({duration_ms}ms)"));
                 }
-                self.upsert_tool(id, title.clone(), format!("{status:?}").to_lowercase());
+                self.upsert_tool_activity(id, title.clone(), format!("{status:?}").to_lowercase());
                 self.push_tool(title);
             }
             ThreadItem::CollabAgentToolCall {
@@ -1293,7 +1295,11 @@ impl ShellState {
                 ..
             } => {
                 let title = format!("agent {tool:?}: {} targets", receiver_thread_ids.len());
-                self.upsert_tool(id, title.clone(), format!("{status:?}").to_lowercase());
+                self.upsert_subagent_activity(
+                    id,
+                    title.clone(),
+                    format!("{status:?}").to_lowercase(),
+                );
                 self.push_tool(title);
             }
             ThreadItem::SubAgentActivity {
@@ -1303,22 +1309,22 @@ impl ShellState {
                 ..
             } => {
                 let title = format!("subagent {kind:?}: {agent_path}");
-                self.upsert_tool(id, title.clone(), "active".to_string());
+                self.upsert_subagent_activity(id, title.clone(), "active".to_string());
                 self.push_tool(title);
             }
             ThreadItem::WebSearch { id, query, action } => {
                 let title = format!("web search: {query}");
-                self.upsert_tool(id, title.clone(), format!("{action:?}"));
+                self.upsert_tool_activity(id, title.clone(), format!("{action:?}"));
                 self.push_tool(title);
             }
             ThreadItem::ImageView { id, path } => {
                 let title = format!("view image: {path}");
-                self.upsert_tool(id, title.clone(), "completed".to_string());
+                self.upsert_tool_activity(id, title.clone(), "completed".to_string());
                 self.push_tool(title);
             }
             ThreadItem::Sleep { id, duration_ms } => {
                 let title = format!("sleep {duration_ms}ms");
-                self.upsert_tool(id, title.clone(), "completed".to_string());
+                self.upsert_tool_activity(id, title.clone(), "completed".to_string());
                 self.push_tool(title);
             }
             ThreadItem::ImageGeneration {
@@ -1330,7 +1336,7 @@ impl ShellState {
                 let title = saved_path
                     .map(|path| format!("image generation: {}", path.as_path().display()))
                     .unwrap_or_else(|| "image generation".to_string());
-                self.upsert_tool(id, title.clone(), status);
+                self.upsert_tool_activity(id, title.clone(), status);
                 self.push_tool(title);
             }
             ThreadItem::EnteredReviewMode { review, .. } => {
@@ -1345,21 +1351,22 @@ impl ShellState {
         }
     }
 
-    fn upsert_tool(&mut self, id: String, title: String, status: String) {
-        if let Some(existing) = self
-            .tool_activity
-            .iter_mut()
-            .find(|activity| activity.id == id)
-        {
-            existing.title = title;
-            existing.status = status;
-            return;
-        }
+    fn upsert_tool_activity(&mut self, id: String, title: String, status: String) {
+        upsert_activity(&mut self.tool_activity, id, title, status);
+    }
 
-        self.tool_activity
-            .push_back(ToolActivity { id, title, status });
-        while self.tool_activity.len() > 8 {
-            self.tool_activity.pop_front();
+    fn upsert_subagent_activity(&mut self, id: String, title: String, status: String) {
+        upsert_activity(&mut self.subagent_activity, id, title, status);
+    }
+
+    fn record_item_activity(&mut self, item: &ThreadItem, status: String) {
+        let id = item.id().to_string();
+        let title = events::item_activity_title(item);
+        match item {
+            ThreadItem::CollabAgentToolCall { .. } | ThreadItem::SubAgentActivity { .. } => {
+                self.upsert_subagent_activity(id, title, status);
+            }
+            _ => self.upsert_tool_activity(id, title, status),
         }
     }
 
@@ -1488,6 +1495,7 @@ impl ShellState {
                     status: "completed".to_string(),
                 },
             ]),
+            subagent_activity: VecDeque::new(),
             latest_diff: Some(DiffSummary {
                 files: 3,
                 additions: 128,
@@ -1514,6 +1522,24 @@ impl ShellState {
         shell.push_tool("exec just test -p codex-tui");
         shell.push_diff("diff 3 files +128 -24");
         shell
+    }
+}
+
+fn upsert_activity(
+    activities: &mut VecDeque<ToolActivity>,
+    id: String,
+    title: String,
+    status: String,
+) {
+    if let Some(existing) = activities.iter_mut().find(|activity| activity.id == id) {
+        existing.title = title;
+        existing.status = status;
+        return;
+    }
+
+    activities.push_back(ToolActivity { id, title, status });
+    while activities.len() > 8 {
+        activities.pop_front();
     }
 }
 

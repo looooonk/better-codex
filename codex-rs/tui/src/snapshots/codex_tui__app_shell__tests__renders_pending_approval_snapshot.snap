@@ -15,17 +15,17 @@ expression: "render_shell(&shell, area)"
        2. Wire transcript                                              output 240
        3. Render dashboard                                             context 200,000
  tool: exec just test -p codex-tui
- diff: diff 3 files +128 -24                                           Diff
-                                                                       3 files +128 -24
+ diff: diff 3 files +128 -24                                           Approvals
+                                                                       approval Run command: car...
  codex: The new shell owns the fullscreen surface.
+                                                                       Diff
+                                                                       3 files +128 -24
+
                                                                        Plan
                                                                        Build the standalone shell
                                                                        in slices.
                                                                        x Shell frame
-                                                                       > Transcript model
-
-                                                                       Tools
- Approval                                                              in progress exec just tes...
- ? Run command: cargo test -p codex-tui                                completed file changes in...
-   Needs network access - /workspace/better-codex
-   a approve  d deny  e edit  ? explain                                Workspace
+ Approval                                                              > Transcript model
+ ? Run command: cargo test -p codex-tui
+   Needs network access - /workspace/better-codex                      Tools
+   a approve  d deny  e edit  ? explain                                in progress exec just tes...

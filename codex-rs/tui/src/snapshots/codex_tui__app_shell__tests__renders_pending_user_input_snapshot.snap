@@ -15,17 +15,17 @@ expression: "render_shell(&shell, area)"
        2. Wire transcript                                              output 240
        3. Render dashboard                                             context 200,000
  tool: exec just test -p codex-tui
- diff: diff 3 files +128 -24                                           Diff
-                                                                       3 files +128 -24
+ diff: diff 3 files +128 -24                                           Approvals
+                                                                       input Tool input: tool-in...
  codex: The new shell owns the fullscreen surface.
+                                                                       Diff
+                                                                       3 files +128 -24
+
                                                                        Plan
                                                                        Build the standalone shell
                                                                        in slices.
                                                                        x Shell frame
-                                                                       > Transcript model
-
-                                                                       Tools
- Tool Input                                                            in progress exec just tes...
- ? Tool input: tool-input-1 (1/1)                                      completed file changes in...
-   Environment: Which environment should the tool use?
- > 2  1 Production  2 Staging                                          Workspace
+ Tool Input                                                            > Transcript model
+ ? Tool input: tool-input-1 (1/1)
+   Environment: Which environment should the tool use?                 Tools
+ > 2  1 Production  2 Staging                                          in progress exec just tes...

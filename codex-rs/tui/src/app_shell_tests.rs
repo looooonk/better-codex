@@ -1,7 +1,10 @@
 use super::render::ShellView;
 use super::*;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
+use codex_app_server_protocol::CollabAgentTool;
+use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
+use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_app_server_protocol::PermissionsRequestApprovalParams;
@@ -596,6 +599,69 @@ fn renders_tool_progress_snapshot() {
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_activity_dashboard_panels_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
+        .expect("approval request should be valid");
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    shell.active_turn_id = Some("turn-background-1234567890".to_string());
+    shell.streaming_plan = "1. Route activity into dashboard panels".to_string();
+    shell.workspace_status_refresh_due = true;
+    shell.subagent_activity = VecDeque::from([
+        ToolActivity {
+            id: "agent-1".to_string(),
+            title: "agent SpawnAgent: 1 targets".to_string(),
+            status: "in progress".to_string(),
+        },
+        ToolActivity {
+            id: "agent-2".to_string(),
+            title: "subagent Started: review-agent".to_string(),
+            status: "active".to_string(),
+        },
+    ]);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 120, /*height*/ 54,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn subagent_items_route_to_subagent_activity() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.tool_activity.clear();
+    shell.subagent_activity.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id,
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: ThreadItem::CollabAgentToolCall {
+            id: "agent-tool-1".to_string(),
+            tool: CollabAgentTool::SpawnAgent,
+            status: CollabAgentToolCallStatus::InProgress,
+            sender_thread_id: "parent-thread".to_string(),
+            receiver_thread_ids: vec!["agent-thread".to_string()],
+            prompt: Some("Inspect dashboard activity.".to_string()),
+            model: Some("gpt-5-codex".to_string()),
+            reasoning_effort: None,
+            agents_states: Default::default(),
+        },
+    }));
+
+    assert_eq!(shell.tool_activity, VecDeque::new());
+    assert_eq!(
+        shell.subagent_activity,
+        VecDeque::from([ToolActivity {
+            id: "agent-tool-1".to_string(),
+            title: "agent SpawnAgent".to_string(),
+            status: "in progress".to_string(),
+        }])
+    );
 }
 
 #[test]

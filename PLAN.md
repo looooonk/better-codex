@@ -41,14 +41,14 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 - [x] Show command output, file patches, and tool progress as structured transcript blocks.
 - [x] Add keyboard-first approve, deny, edit, and explain flows.
 - [x] Preserve a clear audit trail in the transcript after each decision.
-- [ ] Add integration tests for approval request handling through app-server events.
+- [x] Add integration tests for approval request handling through app-server events.
 
 ## Stage 5: Dashboard
 
 - [x] Replace the placeholder dashboard with borderless, flat live panels for token usage, context-window pressure, rate limits, active turn status, and model/service tier.
 - [x] Add plan progress rendering from plan events and goal state.
 - [x] Add workspace status: current branch, dirty files, changed files by type, current cwd, and selected writable roots.
-- [ ] Add tool, approval, background task, and subagent activity panels so non-conversation state does not leak into the main conversation surface except as transcript artifacts.
+- [x] Add tool, approval, background task, and subagent activity panels so non-conversation state does not leak into the main conversation surface except as transcript artifacts.
 - [ ] Make dashboard sections responsive so narrow terminals collapse to tabs or an overlay.
 
 ## Stage 6: Session Navigation

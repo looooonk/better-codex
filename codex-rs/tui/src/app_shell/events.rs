@@ -140,9 +140,7 @@ impl ShellState {
             }
             ServerNotification::ItemStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
-                    let id = started.item.id().to_string();
-                    let title = item_activity_title(&started.item);
-                    self.upsert_tool(id, title, "in progress".to_string());
+                    self.record_item_activity(&started.item, "in progress".to_string());
                 }
             }
             ServerNotification::ItemCompleted(completed) => {
@@ -162,7 +160,7 @@ impl ShellState {
                     self.latest_diff = Some(super::diff_summary_from_changes(&updated.changes));
                     self.workspace_status_refresh_due = true;
                     let summary = super::file_change_summary(&updated.changes);
-                    self.upsert_tool(updated.item_id, summary, "in progress".to_string());
+                    self.upsert_tool_activity(updated.item_id, summary, "in progress".to_string());
                     self.push_diff(super::file_change_detail(&updated.changes));
                 }
             }
@@ -170,7 +168,7 @@ impl ShellState {
                 if progress.thread_id == self.thread_id.to_string() {
                     let title = format!("mcp progress: {}", progress.message);
                     let transcript = super::compact_multiline(title.clone());
-                    self.upsert_tool(progress.item_id, title, "in progress".to_string());
+                    self.upsert_tool_activity(progress.item_id, title, "in progress".to_string());
                     if let Some(transcript) = transcript {
                         self.push_tool(transcript);
                     }
@@ -390,7 +388,7 @@ impl ShellState {
     }
 }
 
-fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) -> String {
+pub(super) fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) -> String {
     match item {
         codex_app_server_protocol::ThreadItem::UserMessage { .. } => "user message".to_string(),
         codex_app_server_protocol::ThreadItem::HookPrompt { .. } => "hook prompt".to_string(),
