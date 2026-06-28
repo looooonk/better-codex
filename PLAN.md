@@ -30,7 +30,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 ## Stage 3: Composer
 
 - [x] Add a multiline composer with cursor movement, history recall, paste handling, and clear visual focus states.
-- [ ] Support attachments and mentions through compact picker overlays.
+- [x] Support attachments and mentions through compact picker overlays.
 - [x] Add command palette entries for common app actions such as model switching, permissions, resume, fork, clear, and compact.
 - [x] Add interruption and mid-turn steering controls.
 - [x] Persist draft input per thread.
