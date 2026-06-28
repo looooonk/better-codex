@@ -2,6 +2,20 @@ use super::ShellState;
 use super::ToolActivity;
 use super::TranscriptKind;
 use super::TranscriptLine;
+use super::design::MOCHA_BASE;
+use super::design::MOCHA_MANTLE;
+use super::design::MOCHA_SURFACE0;
+use super::design::Tone;
+use super::design::badge_span;
+use super::design::body_rect_after_title;
+use super::design::centered_band_rect;
+use super::design::fill_rect;
+use super::design::key_hint_line;
+use super::design::pane_content_rect;
+use super::design::pane_style;
+use super::design::selection_style;
+use super::design::tab_span;
+use super::design::title_rect;
 use super::navigation::DashboardRoute;
 use crate::goal_display::format_goal_elapsed_seconds;
 use crate::goal_display::goal_status_label;
@@ -33,14 +47,7 @@ use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
 use std::collections::VecDeque;
 
-const MOCHA_BASE: Color = Color::Rgb(30, 30, 46);
-const MOCHA_MANTLE: Color = Color::Rgb(24, 24, 37);
-const MOCHA_SURFACE0: Color = Color::Rgb(49, 50, 68);
-const MOCHA_SURFACE1: Color = Color::Rgb(69, 71, 90);
-const MOCHA_TEXT: Color = Color::Rgb(205, 214, 244);
-const MOCHA_SUBTEXT0: Color = Color::Rgb(166, 173, 200);
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
-const PANE_PADDING: u16 = 1;
 const DASHBOARD_PANEL_GAP: u16 = 1;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
@@ -265,7 +272,7 @@ impl ShellView<'_> {
             labels.push_str(&format!("  +{} more", format_usize(hidden_count)));
         }
         let mut lines = vec![Line::from(
-            dashboard_value(&labels, width, /*prefix_width*/ 0).fg(MOCHA_SUBTEXT0),
+            dashboard_value(&labels, width, /*prefix_width*/ 0).dim(),
         )];
         let available_panel_lines = usize::from(body.height.saturating_sub(1));
         for title in [
@@ -575,21 +582,21 @@ impl ShellView<'_> {
 
         let key_lines = if self.shell.transcript_selection.is_some() {
             vec![
-                Line::from("Up/Down select"),
-                Line::from("Enter copy"),
-                Line::from("Esc composer"),
+                key_hint_line("Up/Down select"),
+                key_hint_line("Enter copy"),
+                key_hint_line("Esc composer"),
             ]
         } else if self.shell.active_turn_id.is_some() {
             vec![
-                Line::from("Enter steer"),
-                Line::from("Ctrl+C interrupt, Esc exit"),
-                Line::from("Alt+Up select, Ctrl+O copy"),
+                key_hint_line("Enter steer"),
+                key_hint_line("Ctrl+C interrupt, Esc exit"),
+                key_hint_line("Alt+Up select, Ctrl+O copy"),
             ]
         } else {
             vec![
-                Line::from("Enter send"),
-                Line::from("Ctrl+C/Esc exit"),
-                Line::from("Alt+Up select, Ctrl+O copy"),
+                key_hint_line("Enter send"),
+                key_hint_line("Ctrl+C/Esc exit"),
+                key_hint_line("Alt+Up select, Ctrl+O copy"),
             ]
         };
         panels.push(DashboardPanel::new("Keys", key_lines));
@@ -713,7 +720,7 @@ impl ShellView<'_> {
             };
             let line = Line::from(vec![marker, " ".dim(), title, detail]);
             if selected {
-                lines.push(line.style(Style::new().bg(MOCHA_SURFACE1)));
+                lines.push(line.style(selection_style()));
             } else {
                 lines.push(line);
             }
@@ -762,11 +769,7 @@ fn dashboard_navigation_panel(active_route: DashboardRoute) -> DashboardPanel {
             spans.push("  ".dim());
         }
         let label = format!("{}{}", index + 1, route.short_label());
-        if route == active_route {
-            spans.push(label.cyan().bold());
-        } else {
-            spans.push(label.dim());
-        }
+        spans.push(tab_span(label, route == active_route));
     }
     spans.push("  ".dim());
     spans.push("Alt+Left/Right".dim());
@@ -800,56 +803,6 @@ fn should_separate_transcript_item(
                 TranscriptKind::User | TranscriptKind::Assistant
             )
     })
-}
-
-fn fill_rect(buf: &mut Buffer, area: Rect, color: Color) {
-    let style = pane_style(color);
-    for y in area.y..area.y.saturating_add(area.height) {
-        for x in area.x..area.x.saturating_add(area.width) {
-            buf[(x, y)].set_symbol(" ").set_style(style);
-        }
-    }
-}
-
-fn pane_style(color: Color) -> Style {
-    Style::new().fg(MOCHA_TEXT).bg(color)
-}
-
-fn pane_content_rect(area: Rect) -> Rect {
-    let horizontal_padding = inset_for(area.width, PANE_PADDING);
-    let vertical_padding = inset_for(area.height, PANE_PADDING);
-    Rect::new(
-        area.x.saturating_add(horizontal_padding),
-        area.y.saturating_add(vertical_padding),
-        area.width
-            .saturating_sub(horizontal_padding.saturating_mul(2)),
-        area.height
-            .saturating_sub(vertical_padding.saturating_mul(2)),
-    )
-}
-
-fn inset_for(size: u16, padding: u16) -> u16 {
-    padding.min(size.saturating_sub(1) / 2)
-}
-
-fn title_rect(area: Rect) -> Rect {
-    Rect::new(area.x, area.y, area.width, area.height.min(1))
-}
-
-fn body_rect_after_title(area: Rect) -> Rect {
-    Rect::new(
-        area.x,
-        area.y.saturating_add(1),
-        area.width,
-        area.height.saturating_sub(1),
-    )
-}
-
-fn centered_band_rect(area: Rect, height: u16) -> Rect {
-    let available_height = area.height.saturating_sub(4);
-    let height = height.min(available_height).max(available_height.min(5));
-    let y = area.y + area.height.saturating_sub(height) / 2;
-    Rect::new(area.x, y, area.width, height)
 }
 
 fn transcript_lines(
@@ -903,10 +856,9 @@ fn transcript_lines(
         };
 
     if selected {
-        let selection_style = Style::new().bg(Color::DarkGray);
         rendered_lines = rendered_lines
             .into_iter()
-            .map(|line| line.style(selection_style))
+            .map(|line| line.style(selection_style()))
             .collect();
     }
     rendered_lines
@@ -966,10 +918,10 @@ fn status_line(status: &str) -> Line<'static> {
 
 fn status_span(status: &str) -> Span<'static> {
     match status {
-        "ready" => status.to_string().green(),
-        "failed" | "error" | "disconnected" => status.to_string().red(),
-        "thinking" | "reasoning" | "retrying" => status.to_string().cyan(),
-        "interrupted" => status.to_string().magenta(),
+        "ready" => badge_span(status, Tone::Success),
+        "failed" | "error" | "disconnected" => badge_span(status, Tone::Danger),
+        "thinking" | "reasoning" | "retrying" => badge_span(status, Tone::Focus),
+        "interrupted" => badge_span(status, Tone::Codex),
         _ => status.to_string().into(),
     }
 }
@@ -977,12 +929,14 @@ fn status_span(status: &str) -> Span<'static> {
 fn goal_status_span(status: codex_app_server_protocol::ThreadGoalStatus) -> Span<'static> {
     let label = goal_status_label(status);
     match status {
-        codex_app_server_protocol::ThreadGoalStatus::Active => label.cyan(),
-        codex_app_server_protocol::ThreadGoalStatus::Complete => label.green(),
+        codex_app_server_protocol::ThreadGoalStatus::Active => badge_span(label, Tone::Focus),
+        codex_app_server_protocol::ThreadGoalStatus::Complete => badge_span(label, Tone::Success),
         codex_app_server_protocol::ThreadGoalStatus::Blocked
         | codex_app_server_protocol::ThreadGoalStatus::UsageLimited
-        | codex_app_server_protocol::ThreadGoalStatus::BudgetLimited => label.red(),
-        codex_app_server_protocol::ThreadGoalStatus::Paused => label.magenta(),
+        | codex_app_server_protocol::ThreadGoalStatus::BudgetLimited => {
+            badge_span(label, Tone::Danger)
+        }
+        codex_app_server_protocol::ThreadGoalStatus::Paused => badge_span(label, Tone::Codex),
     }
 }
 

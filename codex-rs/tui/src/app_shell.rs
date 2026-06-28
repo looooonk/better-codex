@@ -41,6 +41,7 @@ use tokio_stream::StreamExt;
 mod approval;
 mod command_palette;
 mod composer;
+mod design;
 mod elicitation;
 mod events;
 mod navigation;
