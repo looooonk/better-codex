@@ -514,6 +514,11 @@ async fn replay_thread_snapshot_restores_draft_and_queued_input() {
 
     app.chat_widget
         .apply_external_edit("draft prompt".to_string());
+    for _ in 0.."prompt".len() {
+        app.chat_widget
+            .handle_key_event(KeyEvent::new(KeyCode::Left, KeyModifiers::NONE));
+    }
+    assert_eq!(app.chat_widget.composer_cursor(), "draft ".len());
     app.chat_widget.submit_user_message_with_mode(
         "queued follow-up".to_string(),
         CollaborationModeMask {
@@ -548,6 +553,7 @@ async fn replay_thread_snapshot_restores_draft_and_queued_input() {
     app.replay_thread_snapshot(snapshot, /*resume_restored_queue*/ true);
 
     assert_eq!(app.chat_widget.composer_text_with_pending(), "draft prompt");
+    assert_eq!(app.chat_widget.composer_cursor(), "draft ".len());
     assert!(app.chat_widget.queued_user_message_texts().is_empty());
     while let Ok(op) = new_op_rx.try_recv() {
         assert!(

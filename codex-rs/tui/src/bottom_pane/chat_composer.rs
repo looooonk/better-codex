@@ -410,6 +410,7 @@ pub(crate) struct ComposerDraftSnapshot {
     pub(crate) remote_image_urls: Vec<String>,
     pub(crate) mention_bindings: Vec<MentionBinding>,
     pub(crate) pending_pastes: Vec<(String, String)>,
+    pub(crate) cursor: usize,
 }
 
 const FOOTER_SPACING_HEIGHT: u16 = 0;
@@ -1276,6 +1277,11 @@ impl ChatComposer {
             .set_cursor(visible_cursor.min(self.draft.textarea.text().len()));
     }
 
+    pub(crate) fn set_cursor(&mut self, cursor: usize) {
+        self.set_current_cursor(cursor);
+        self.sync_popups();
+    }
+
     fn current_text_elements(&self) -> Vec<TextElement> {
         let shift = if self.draft.is_bash_mode { 1 } else { 0 };
         self.draft
@@ -1449,6 +1455,7 @@ impl ChatComposer {
             remote_image_urls: self.remote_image_urls(),
             mention_bindings: self.mention_bindings(),
             pending_pastes: self.pending_pastes(),
+            cursor: self.current_cursor(),
         }
     }
 

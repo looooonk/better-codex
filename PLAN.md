@@ -33,7 +33,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 - [ ] Support attachments and mentions through compact picker overlays.
 - [x] Add command palette entries for common app actions such as model switching, permissions, resume, fork, clear, and compact.
 - [x] Add interruption and mid-turn steering controls.
-- [ ] Persist draft input per thread.
+- [x] Persist draft input per thread.
 
 ## Stage 4: Approval And Tool UI
 

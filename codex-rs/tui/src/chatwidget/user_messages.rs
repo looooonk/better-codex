@@ -105,6 +105,7 @@ pub(super) struct ThreadComposerState {
     pub(super) text_elements: Vec<TextElement>,
     pub(super) mention_bindings: Vec<MentionBinding>,
     pub(super) pending_pastes: Vec<(String, String)>,
+    pub(super) cursor: usize,
 }
 
 impl ThreadComposerState {
