@@ -6,7 +6,6 @@
 use crate::app::AppExitInfo;
 use crate::app::ExitReason;
 use crate::app_server_session::AppServerSession;
-use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::app_server_session::app_server_rate_limit_snapshots;
 use crate::clipboard_copy::ClipboardLease;
@@ -39,6 +38,7 @@ use tokio::select;
 use tokio_stream::StreamExt;
 
 mod approval;
+mod backend;
 mod command_palette;
 mod composer;
 mod dashboard;
@@ -54,6 +54,9 @@ mod workspace;
 use approval::ApprovalAction;
 use approval::ApprovalChoice;
 use approval::PendingApproval;
+use backend::AppShellBackend;
+use backend::AppShellTurnStart;
+use backend::shutdown_app_shell_backend;
 use command_palette::CommandPaletteAction;
 use command_palette::CommandPaletteContext;
 use command_palette::CommandPaletteEntry;
@@ -158,9 +161,8 @@ pub(crate) async fn run(
         }
     };
 
-    let _ = app_server.thread_unsubscribe(shell.thread_id).await;
-    app_server
-        .shutdown()
+    let _ = app_server.unsubscribe_thread(shell.thread_id).await;
+    shutdown_app_shell_backend(app_server)
         .await
         .inspect_err(|err| {
             tracing::warn!("app-server shutdown failed: {err}");
@@ -176,11 +178,14 @@ pub(crate) async fn run(
     })
 }
 
-async fn start_selected_session(
-    app_server: &mut AppServerSession,
+async fn start_selected_session<S>(
+    app_server: &mut S,
     config: &Config,
     session_selection: SessionSelection,
-) -> Result<AppServerStartedThread> {
+) -> Result<crate::app_server_session::AppServerStartedThread>
+where
+    S: AppShellBackend,
+{
     match session_selection {
         SessionSelection::StartFresh | SessionSelection::Exit => {
             app_server
@@ -909,11 +914,10 @@ impl ShellState {
         })
     }
 
-    async fn submit_prompt(
-        &mut self,
-        app_server: &mut AppServerSession,
-        prompt: String,
-    ) -> Result<()> {
+    async fn submit_prompt<S>(&mut self, app_server: &mut S, prompt: String) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         if self.active_turn_id.is_some() {
             self.push_system("wait for the current turn to finish before sending another message");
             return Ok(());
@@ -925,25 +929,25 @@ impl ShellState {
         self.streaming_assistant.clear();
         self.streaming_plan.clear();
         let response = app_server
-            .turn_start(
-                self.thread_id,
-                vec![UserInput::Text {
+            .turn_start(AppShellTurnStart {
+                thread_id: self.thread_id,
+                items: vec![UserInput::Text {
                     text: prompt.clone(),
                     text_elements: Vec::new(),
                 }],
-                self.cwd.clone().into(),
-                self.approval_policy,
-                self.approvals_reviewer,
-                TurnPermissionsOverride::Preserve,
-                &self.runtime_workspace_roots,
-                self.model.clone(),
-                self.reasoning_effort.clone(),
-                None,
-                Some(self.service_tier.clone()),
-                self.collaboration_mode.as_deref().cloned(),
-                self.personality,
-                None,
-            )
+                cwd: self.cwd.clone().into(),
+                approval_policy: self.approval_policy,
+                approvals_reviewer: self.approvals_reviewer,
+                permissions_override: TurnPermissionsOverride::Preserve,
+                workspace_roots: self.runtime_workspace_roots.clone(),
+                model: self.model.clone(),
+                effort: self.reasoning_effort.clone(),
+                summary: None,
+                service_tier: Some(self.service_tier.clone()),
+                collaboration_mode: self.collaboration_mode.as_deref().cloned(),
+                personality: self.personality,
+                output_schema: None,
+            })
             .await?;
         self.composer.remember_submission(&prompt);
         self.composer.clear();
@@ -951,7 +955,10 @@ impl ShellState {
         Ok(())
     }
 
-    async fn interrupt_active_turn(&mut self, app_server: &mut AppServerSession) -> Result<()> {
+    async fn interrupt_active_turn<S>(&mut self, app_server: &mut S) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         let Some(turn_id) = self.active_turn_id.clone() else {
             self.push_status("no active turn to interrupt");
             return Ok(());
@@ -965,11 +972,10 @@ impl ShellState {
         Ok(())
     }
 
-    async fn steer_active_turn(
-        &mut self,
-        app_server: &mut AppServerSession,
-        prompt: String,
-    ) -> Result<()> {
+    async fn steer_active_turn<S>(&mut self, app_server: &mut S, prompt: String) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         let Some(turn_id) = self.active_turn_id.clone() else {
             self.submit_prompt(app_server, prompt).await?;
             return Ok(());
@@ -995,11 +1001,14 @@ impl ShellState {
         Ok(())
     }
 
-    async fn resolve_pending_approval(
+    async fn resolve_pending_approval<S>(
         &mut self,
-        app_server: &mut AppServerSession,
+        app_server: &mut S,
         choice: ApprovalChoice,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         let Some(pending) = self.pending_approval.as_ref() else {
             return Ok(());
         };
@@ -1019,11 +1028,14 @@ impl ShellState {
         Ok(())
     }
 
-    async fn handle_pending_approval_action(
+    async fn handle_pending_approval_action<S>(
         &mut self,
-        app_server: &mut AppServerSession,
+        app_server: &mut S,
         action: ApprovalAction,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         match action {
             ApprovalAction::Choose(choice) => {
                 self.resolve_pending_approval(app_server, choice).await
@@ -1036,7 +1048,10 @@ impl ShellState {
         }
     }
 
-    async fn edit_pending_approval(&mut self, app_server: &mut AppServerSession) -> Result<()> {
+    async fn edit_pending_approval<S>(&mut self, app_server: &mut S) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         let Some(pending) = self.pending_approval.as_ref() else {
             return Ok(());
         };
@@ -1066,11 +1081,10 @@ impl ShellState {
         }
     }
 
-    async fn handle_user_input_key(
-        &mut self,
-        key: KeyEvent,
-        app_server: &mut AppServerSession,
-    ) -> Result<bool> {
+    async fn handle_user_input_key<S>(&mut self, key: KeyEvent, app_server: &mut S) -> Result<bool>
+    where
+        S: AppShellBackend,
+    {
         match key.code {
             KeyCode::Esc => Ok(true),
             KeyCode::Enter => {
@@ -1146,10 +1160,10 @@ impl ShellState {
         }
     }
 
-    async fn resolve_pending_user_input(
-        &mut self,
-        app_server: &mut AppServerSession,
-    ) -> Result<()> {
+    async fn resolve_pending_user_input<S>(&mut self, app_server: &mut S) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         let answer = self.composer.submission_text();
         let Some(pending) = self.pending_user_input.as_ref() else {
             return Ok(());
@@ -1178,11 +1192,14 @@ impl ShellState {
         Ok(())
     }
 
-    async fn resolve_pending_elicitation(
+    async fn resolve_pending_elicitation<S>(
         &mut self,
-        app_server: &mut AppServerSession,
+        app_server: &mut S,
         choice: ElicitationChoice,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         let Some(pending) = self.pending_elicitation.as_ref() else {
             return Ok(());
         };

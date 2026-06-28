@@ -75,7 +75,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 ## Stage 9: Hardening
 
-- [ ] Add app-shell integration coverage for start, resume, fork, turn submit, streaming, approval, interruption, and shutdown.
+- [x] Add app-shell integration coverage for start, resume, fork, turn submit, streaming, approval, interruption, and shutdown.
 - [ ] Validate Linux, macOS, and Windows behavior, including alternate screen restoration after panic or fatal backend disconnect.
 - [x] Add performance checks for large transcripts and long streaming turns.
 - [ ] Remove inherited upstream UI paths once the new app reaches feature parity for daily development.

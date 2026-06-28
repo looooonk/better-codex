@@ -1,5 +1,5 @@
 use super::ShellState;
-use crate::app_server_session::AppServerSession;
+use super::backend::AppShellBackend;
 use crate::token_usage::TokenUsage;
 use crate::workspace_command::WorkspaceCommandExecutor;
 use base64::Engine;
@@ -15,12 +15,15 @@ use color_eyre::eyre::WrapErr;
 const UNSUPPORTED_REQUEST_ERROR: i64 = -32000;
 
 impl ShellState {
-    pub(super) async fn handle_app_server_event(
+    pub(super) async fn handle_app_server_event<S>(
         &mut self,
-        app_server: &mut AppServerSession,
+        app_server: &mut S,
         workspace_command_runner: &dyn WorkspaceCommandExecutor,
         event: AppServerEvent,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         match event {
             AppServerEvent::Lagged { skipped } => {
                 self.push_system(format!("skipped {skipped} best-effort backend events"));
@@ -275,11 +278,14 @@ impl ShellState {
         }
     }
 
-    async fn handle_server_request(
+    async fn handle_server_request<S>(
         &mut self,
-        app_server: &mut AppServerSession,
+        app_server: &mut S,
         request: ServerRequest,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         match super::PendingApproval::from_request(&request) {
             Ok(Some(pending)) => {
                 let title = pending.title().to_string();
@@ -336,11 +342,14 @@ impl ShellState {
         }
     }
 
-    async fn reject_unsupported_request(
+    async fn reject_unsupported_request<S>(
         &mut self,
-        app_server: &mut AppServerSession,
+        app_server: &mut S,
         request: ServerRequest,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         let request_id = request.id().clone();
         let message = format!(
             "unsupported interactive request: {}",
@@ -350,12 +359,15 @@ impl ShellState {
             .await
     }
 
-    async fn reject_request_with_message(
+    async fn reject_request_with_message<S>(
         &mut self,
-        app_server: &mut AppServerSession,
+        app_server: &mut S,
         request_id: codex_app_server_protocol::RequestId,
         message: String,
-    ) -> Result<()> {
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         self.push_error(message.clone());
         app_server
             .reject_server_request(

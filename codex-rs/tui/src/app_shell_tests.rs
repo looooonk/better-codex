@@ -1,10 +1,13 @@
 use super::render::ShellView;
 use super::*;
+use codex_app_server_client::AppServerEvent;
+use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::ItemStartedNotification;
+use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_app_server_protocol::PermissionsRequestApprovalParams;
@@ -15,9 +18,15 @@ use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadGoalClearedNotification;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
+use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
+use codex_app_server_protocol::TurnItemsView;
+use codex_app_server_protocol::TurnStartResponse;
+use codex_app_server_protocol::TurnStatus;
+use codex_app_server_protocol::TurnSteerResponse;
+use codex_app_server_protocol::UserInput as ApiUserInput;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
@@ -26,6 +35,8 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use serde_json::json;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::Mutex;
 
 #[test]
 fn renders_first_stage_shell_snapshot() {
@@ -1409,4 +1420,415 @@ diff --git a/src/b.rs b/src/b.rs
             removals: 2,
         }
     );
+}
+
+#[tokio::test]
+async fn start_resume_and_fork_route_through_app_shell_backend() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let resume_id = test_thread_id("01900000-0000-7000-8000-000000000101");
+    let fork_id = test_thread_id("01900000-0000-7000-8000-000000000102");
+
+    let started = start_selected_session(&mut backend, &config, SessionSelection::StartFresh).await;
+    let resumed = start_selected_session(
+        &mut backend,
+        &config,
+        SessionSelection::Resume(crate::resume_picker::SessionTarget {
+            path: Some(PathBuf::from("/workspace/resume")),
+            thread_id: resume_id,
+        }),
+    )
+    .await;
+    let forked = start_selected_session(
+        &mut backend,
+        &config,
+        SessionSelection::Fork(crate::resume_picker::SessionTarget {
+            path: Some(PathBuf::from("/workspace/fork")),
+            thread_id: fork_id,
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        started.expect("start should succeed").session.thread_name,
+        Some("started".to_string())
+    );
+    assert_eq!(
+        resumed.expect("resume should succeed").session.thread_id,
+        resume_id
+    );
+    assert_eq!(
+        forked.expect("fork should succeed").session.forked_from_id,
+        Some(fork_id)
+    );
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::Start(Some(ThreadStartSource::Startup)),
+            RecordedBackendCall::Resume(resume_id),
+            RecordedBackendCall::Fork(fork_id),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.streaming_plan.clear();
+    shell.active_turn_id = None;
+    let mut backend = RecordingBackend::default();
+    let workspace_runner = NoopWorkspaceRunner;
+
+    shell
+        .submit_prompt(&mut backend, "hello app shell".to_string())
+        .await
+        .expect("turn submit should succeed");
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &workspace_runner,
+            AppServerEvent::ServerNotification(ServerNotification::AgentMessageDelta(
+                codex_app_server_protocol::AgentMessageDeltaNotification {
+                    thread_id: shell.thread_id.to_string(),
+                    turn_id: "turn-submit".to_string(),
+                    item_id: "assistant-1".to_string(),
+                    delta: "streamed ".to_string(),
+                },
+            )),
+        )
+        .await
+        .expect("assistant delta should be handled");
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &workspace_runner,
+            AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(
+                codex_app_server_protocol::TurnCompletedNotification {
+                    thread_id: shell.thread_id.to_string(),
+                    turn: test_turn("turn-submit", TurnStatus::Completed),
+                },
+            )),
+        )
+        .await
+        .expect("turn completion should be handled");
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &workspace_runner,
+            AppServerEvent::ServerRequest(command_approval_request()),
+        )
+        .await
+        .expect("approval request should be handled");
+    shell
+        .resolve_pending_approval(&mut backend, ApprovalChoice::Approve)
+        .await
+        .expect("approval should resolve");
+
+    shell.active_turn_id = Some("turn-interrupt".to_string());
+    shell
+        .interrupt_active_turn(&mut backend)
+        .await
+        .expect("interrupt should resolve");
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &workspace_runner,
+            AppServerEvent::Disconnected {
+                message: "backend closed".to_string(),
+            },
+        )
+        .await
+        .expect("disconnect should be handled");
+
+    backend
+        .unsubscribe_thread(shell.thread_id)
+        .await
+        .expect("unsubscribe should be recorded");
+    let call_log = backend.call_log();
+    super::backend::shutdown_app_shell_backend(backend)
+        .await
+        .expect("shutdown should be recorded");
+
+    let calls = call_log.lock().expect("call log should lock").clone();
+    assert!(calls.iter().any(|call| {
+        matches!(
+            call,
+            RecordedBackendCall::TurnStart {
+                prompt,
+                thread_id,
+                ..
+            } if prompt == "hello app shell" && *thread_id == shell.thread_id
+        )
+    }));
+    assert!(calls.contains(&RecordedBackendCall::Resolve(RequestId::Integer(41))));
+    assert!(calls.contains(&RecordedBackendCall::Interrupt {
+        thread_id: shell.thread_id,
+        turn_id: "turn-interrupt".to_string(),
+    }));
+    assert!(calls.contains(&RecordedBackendCall::Unsubscribe(shell.thread_id)));
+    assert!(calls.contains(&RecordedBackendCall::Shutdown));
+    assert_eq!(shell.status, "disconnected");
+    assert!(
+        shell
+            .transcript
+            .iter()
+            .any(|line| line.kind == TranscriptKind::Assistant && line.text == "streamed ")
+    );
+    assert!(
+        shell
+            .transcript
+            .iter()
+            .any(|line| line.kind == TranscriptKind::Error && line.text == "backend closed")
+    );
+}
+
+#[derive(Clone, Default)]
+struct RecordingBackend {
+    calls: Arc<Mutex<Vec<RecordedBackendCall>>>,
+}
+
+impl RecordingBackend {
+    fn calls(&self) -> Vec<RecordedBackendCall> {
+        self.call_log()
+            .lock()
+            .expect("call log should lock")
+            .clone()
+    }
+
+    fn call_log(&self) -> Arc<Mutex<Vec<RecordedBackendCall>>> {
+        Arc::clone(&self.calls)
+    }
+
+    fn push(&self, call: RecordedBackendCall) {
+        self.calls.lock().expect("call log should lock").push(call);
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum RecordedBackendCall {
+    Start(Option<ThreadStartSource>),
+    Resume(codex_protocol::ThreadId),
+    Fork(codex_protocol::ThreadId),
+    TurnStart {
+        thread_id: codex_protocol::ThreadId,
+        prompt: String,
+        cwd: PathBuf,
+        model: String,
+    },
+    Interrupt {
+        thread_id: codex_protocol::ThreadId,
+        turn_id: String,
+    },
+    Resolve(RequestId),
+    Reject {
+        request_id: RequestId,
+        message: String,
+    },
+    Unsubscribe(codex_protocol::ThreadId),
+    Shutdown,
+}
+
+impl backend::AppShellBackend for RecordingBackend {
+    async fn start_thread_with_session_start_source(
+        &mut self,
+        _config: &Config,
+        session_start_source: Option<ThreadStartSource>,
+    ) -> color_eyre::Result<crate::app_server_session::AppServerStartedThread> {
+        self.push(RecordedBackendCall::Start(session_start_source));
+        Ok(started_thread(
+            "started",
+            test_thread_id("01900000-0000-7000-8000-000000000201"),
+            None,
+        ))
+    }
+
+    async fn resume_thread(
+        &mut self,
+        _config: Config,
+        thread_id: codex_protocol::ThreadId,
+    ) -> color_eyre::Result<crate::app_server_session::AppServerStartedThread> {
+        self.push(RecordedBackendCall::Resume(thread_id));
+        Ok(started_thread("resumed", thread_id, None))
+    }
+
+    async fn fork_thread(
+        &mut self,
+        _config: Config,
+        thread_id: codex_protocol::ThreadId,
+    ) -> color_eyre::Result<crate::app_server_session::AppServerStartedThread> {
+        self.push(RecordedBackendCall::Fork(thread_id));
+        Ok(started_thread(
+            "forked",
+            test_thread_id("01900000-0000-7000-8000-000000000202"),
+            Some(thread_id),
+        ))
+    }
+
+    async fn turn_start(
+        &mut self,
+        params: backend::AppShellTurnStart,
+    ) -> color_eyre::Result<TurnStartResponse> {
+        let prompt = params
+            .items
+            .iter()
+            .find_map(|item| match item {
+                ApiUserInput::Text { text, .. } => Some(text.clone()),
+                ApiUserInput::Image { .. }
+                | ApiUserInput::LocalImage { .. }
+                | ApiUserInput::Skill { .. }
+                | ApiUserInput::Mention { .. } => None,
+            })
+            .unwrap_or_default();
+        self.push(RecordedBackendCall::TurnStart {
+            thread_id: params.thread_id,
+            prompt,
+            cwd: params.cwd,
+            model: params.model,
+        });
+        Ok(TurnStartResponse {
+            turn: test_turn("turn-submit", TurnStatus::InProgress),
+        })
+    }
+
+    async fn turn_interrupt(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+        turn_id: String,
+    ) -> std::result::Result<(), TypedRequestError> {
+        self.push(RecordedBackendCall::Interrupt { thread_id, turn_id });
+        Ok(())
+    }
+
+    async fn turn_steer(
+        &mut self,
+        _thread_id: codex_protocol::ThreadId,
+        turn_id: String,
+        _items: Vec<ApiUserInput>,
+    ) -> std::result::Result<TurnSteerResponse, TypedRequestError> {
+        Ok(TurnSteerResponse { turn_id })
+    }
+
+    async fn resolve_server_request(
+        &self,
+        request_id: RequestId,
+        _result: serde_json::Value,
+    ) -> std::io::Result<()> {
+        self.push(RecordedBackendCall::Resolve(request_id));
+        Ok(())
+    }
+
+    async fn reject_server_request(
+        &self,
+        request_id: RequestId,
+        error: JSONRPCErrorError,
+    ) -> std::io::Result<()> {
+        self.push(RecordedBackendCall::Reject {
+            request_id,
+            message: error.message,
+        });
+        Ok(())
+    }
+
+    async fn unsubscribe_thread(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> color_eyre::Result<()> {
+        self.push(RecordedBackendCall::Unsubscribe(thread_id));
+        Ok(())
+    }
+
+    async fn shutdown(self) -> std::io::Result<()> {
+        self.push(RecordedBackendCall::Shutdown);
+        Ok(())
+    }
+}
+
+struct NoopWorkspaceRunner;
+
+impl crate::workspace_command::WorkspaceCommandExecutor for NoopWorkspaceRunner {
+    fn run(
+        &self,
+        _command: crate::workspace_command::WorkspaceCommand,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        crate::workspace_command::WorkspaceCommandOutput,
+                        crate::workspace_command::WorkspaceCommandError,
+                    >,
+                > + Send
+                + '_,
+        >,
+    > {
+        Box::pin(async {
+            Ok(crate::workspace_command::WorkspaceCommandOutput {
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+            })
+        })
+    }
+}
+
+async fn test_config() -> Config {
+    let codex_home = tempfile::tempdir().expect("temp codex home should be created");
+    Config::load_default_with_cli_overrides_for_codex_home(
+        codex_home.path().to_path_buf(),
+        Vec::new(),
+    )
+    .await
+    .expect("test config should load")
+}
+
+fn started_thread(
+    name: &str,
+    thread_id: codex_protocol::ThreadId,
+    forked_from_id: Option<codex_protocol::ThreadId>,
+) -> crate::app_server_session::AppServerStartedThread {
+    crate::app_server_session::AppServerStartedThread {
+        session: crate::session_state::ThreadSessionState {
+            thread_id,
+            forked_from_id,
+            fork_parent_title: forked_from_id.map(|_| "parent".to_string()),
+            thread_name: Some(name.to_string()),
+            model: "gpt-5-codex".to_string(),
+            model_provider_id: "openai".to_string(),
+            service_tier: None,
+            approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+            approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
+            permission_profile: codex_protocol::models::PermissionProfile::default(),
+            active_permission_profile: None,
+            cwd: test_absolute_path("workspace/better-codex"),
+            runtime_workspace_roots: vec![test_absolute_path("workspace/better-codex")],
+            instruction_source_paths: Vec::new(),
+            reasoning_effort: None,
+            collaboration_mode: None,
+            personality: None,
+            message_history: None,
+            network_proxy: None,
+            rollout_path: None,
+        },
+        turns: Vec::new(),
+    }
+}
+
+fn test_turn(id: &str, status: TurnStatus) -> Turn {
+    let is_complete = status != TurnStatus::InProgress;
+    Turn {
+        id: id.to_string(),
+        items: Vec::new(),
+        items_view: TurnItemsView::default(),
+        status,
+        error: None,
+        started_at: Some(1),
+        completed_at: is_complete.then_some(2),
+        duration_ms: is_complete.then_some(1_000),
+    }
+}
+
+fn test_thread_id(value: &str) -> codex_protocol::ThreadId {
+    codex_protocol::ThreadId::from_string(value).expect("test thread id should be valid")
 }
