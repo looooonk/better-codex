@@ -50,7 +50,6 @@ use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
 use crate::legacy_core::config::PermissionProfileSnapshot;
-use crate::legacy_core::config::edit::ConfigEditsBuilder;
 use crate::model_catalog::ModelCatalog;
 use crate::model_migration::ModelMigrationOutcome;
 use crate::model_migration::migration_copy_for_models;
@@ -878,9 +877,13 @@ impl App {
             SessionSelection::StartFresh | SessionSelection::Exit => {
                 spawn_startup_thread_start(&app_server, config.clone(), app_event_tx.clone());
                 // Count a startup tooltip once the initial chat widget can render it.
-                let startup_tooltip_override =
-                    prepare_startup_tooltip_override(&mut config, &available_models, is_first_run)
-                        .await;
+                let startup_tooltip_override = prepare_startup_tooltip_override(
+                    app_server.request_handle(),
+                    &mut config,
+                    &available_models,
+                    is_first_run,
+                )
+                .await;
                 let init = crate::chatwidget::ChatWidgetInit {
                     config: config.clone(),
                     frame_requester: tui.frame_requester(),

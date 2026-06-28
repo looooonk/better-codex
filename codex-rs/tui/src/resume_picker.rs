@@ -15,7 +15,6 @@ use crate::keymap::ListKeymap;
 use crate::keymap::PagerKeymap;
 use crate::keymap::RuntimeKeymap;
 use crate::legacy_core::config::Config;
-use crate::legacy_core::config::edit::ConfigEditsBuilder;
 use crate::markdown::append_markdown;
 use crate::pager_overlay::Overlay;
 use crate::session_resume::resolve_session_thread_id;
@@ -33,6 +32,7 @@ use crate::wrapping::RtOptions;
 use crate::wrapping::adaptive_wrap_lines;
 use chrono::DateTime;
 use chrono::Utc;
+use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadListCwdFilter;
@@ -269,7 +269,7 @@ struct PickerPage {
 
 #[derive(Clone)]
 struct SessionPickerViewPersistence {
-    codex_home: PathBuf,
+    request_handle: AppServerRequestHandle,
 }
 
 struct SessionPickerRunOptions {
@@ -356,6 +356,7 @@ async fn run_resume_picker_with_launch_context(
     let local_filter_cwd = local_picker_cwd_filter(&cwd_filter, uses_remote_workspace);
     let provider_filter = picker_provider_filter(config, uses_remote_workspace);
     let runtime_keymap = picker_runtime_keymap(config)?;
+    let request_handle = app_server.request_handle();
     let options = SessionPickerRunOptions {
         show_all,
         filter_cwd: cwd_filter,
@@ -364,9 +365,7 @@ async fn run_resume_picker_with_launch_context(
         launch_context,
         provider_filter,
         initial_density: SessionListDensity::from(config.tui_session_picker_view),
-        view_persistence: Some(SessionPickerViewPersistence {
-            codex_home: config.codex_home.to_path_buf(),
-        }),
+        view_persistence: Some(SessionPickerViewPersistence { request_handle }),
         pager_keymap: runtime_keymap.pager,
         list_keymap: runtime_keymap.list,
     };
@@ -401,6 +400,7 @@ pub async fn run_fork_picker_with_app_server(
     let local_filter_cwd = local_picker_cwd_filter(&cwd_filter, uses_remote_workspace);
     let provider_filter = picker_provider_filter(config, uses_remote_workspace);
     let runtime_keymap = picker_runtime_keymap(config)?;
+    let request_handle = app_server.request_handle();
     let options = SessionPickerRunOptions {
         show_all,
         filter_cwd: cwd_filter,
@@ -409,9 +409,7 @@ pub async fn run_fork_picker_with_app_server(
         launch_context: SessionPickerLaunchContext::Startup,
         provider_filter,
         initial_density: SessionListDensity::from(config.tui_session_picker_view),
-        view_persistence: Some(SessionPickerViewPersistence {
-            codex_home: config.codex_home.to_path_buf(),
-        }),
+        view_persistence: Some(SessionPickerViewPersistence { request_handle }),
         pager_keymap: runtime_keymap.pager,
         list_keymap: runtime_keymap.list,
     };
@@ -1665,11 +1663,13 @@ impl PickerState {
             return Ok(());
         };
 
-        ConfigEditsBuilder::new(&persistence.codex_home)
-            .set_session_picker_view(SessionPickerViewMode::from(self.density))
-            .apply()
-            .await
-            .map_err(|err| color_eyre::eyre::eyre!("failed to write config.toml: {err}"))?;
+        crate::config_update::write_config_batch(
+            persistence.request_handle.clone(),
+            vec![crate::config_update::build_session_picker_view_edit(
+                SessionPickerViewMode::from(self.density),
+            )],
+        )
+        .await?;
 
         Ok(())
     }
@@ -4422,6 +4422,14 @@ mod tests {
     #[tokio::test]
     async fn ctrl_o_persists_density_preference() {
         let tmp = tempdir().expect("tmpdir");
+        let config = crate::legacy_core::config::ConfigBuilder::default()
+            .codex_home(tmp.path().to_path_buf())
+            .build()
+            .await
+            .expect("config");
+        let app_server = crate::start_embedded_app_server_for_picker(&config)
+            .await
+            .expect("embedded app server");
         let loader = page_only_loader(|_| {});
         let mut state = PickerState::new(
             FrameRequester::test_dummy(),
@@ -4432,7 +4440,7 @@ mod tests {
             SessionPickerAction::Resume,
         );
         state.view_persistence = Some(SessionPickerViewPersistence {
-            codex_home: tmp.path().to_path_buf(),
+            request_handle: app_server.request_handle(),
         });
 
         state
@@ -4454,8 +4462,15 @@ session_picker_view = "dense"
     #[tokio::test]
     async fn ctrl_o_keeps_toggled_density_when_persistence_fails() {
         let tmp = tempdir().expect("tmpdir");
-        let codex_home_file = tmp.path().join("codex-home-file");
-        std::fs::write(&codex_home_file, "not a directory").expect("write codex home file");
+        let config = crate::legacy_core::config::ConfigBuilder::default()
+            .codex_home(tmp.path().to_path_buf())
+            .build()
+            .await
+            .expect("config");
+        let app_server = crate::start_embedded_app_server_for_picker(&config)
+            .await
+            .expect("embedded app server");
+        std::fs::create_dir(tmp.path().join(CONFIG_TOML_FILE)).expect("create config dir");
         let loader = page_only_loader(|_| {});
         let mut state = PickerState::new(
             FrameRequester::test_dummy(),
@@ -4466,7 +4481,7 @@ session_picker_view = "dense"
             SessionPickerAction::Resume,
         );
         state.view_persistence = Some(SessionPickerViewPersistence {
-            codex_home: codex_home_file,
+            request_handle: app_server.request_handle(),
         });
 
         state

@@ -16,6 +16,7 @@ use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::SkillsConfigWriteParams;
 use codex_app_server_protocol::SkillsConfigWriteResponse;
 use codex_config::loader::project_trust_key;
+use codex_config::types::SessionPickerViewMode;
 use codex_features::FEATURES;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::config_types::TrustLevel;
@@ -23,6 +24,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::Path;
 use uuid::Uuid;
@@ -39,9 +41,20 @@ pub(crate) fn clear_config_value(key_path: impl Into<String>) -> ConfigEdit {
     replace_config_value(key_path, JsonValue::Null)
 }
 
+fn quote_key_path_segment(segment: &str) -> String {
+    JsonValue::String(segment.to_string()).to_string()
+}
+
+fn key_path(segments: &[&str]) -> String {
+    segments
+        .iter()
+        .map(|segment| quote_key_path_segment(segment))
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
 pub(crate) fn app_scoped_key_path(app_id: &str, key_path: &str) -> String {
-    let app_id = serde_json::Value::String(app_id.to_string()).to_string();
-    format!("apps.{app_id}.{key_path}")
+    format!("apps.{}.{}", quote_key_path_segment(app_id), key_path)
 }
 
 pub(crate) fn format_config_error(err: &impl Display) -> String {
@@ -142,6 +155,85 @@ pub(crate) fn build_memory_settings_edits(
 
 pub(crate) fn build_oss_provider_edit(provider: &str) -> ConfigEdit {
     replace_config_value("oss_provider", serde_json::json!(provider))
+}
+
+pub(crate) fn build_notice_bool_edit(key: &str, acknowledged: bool) -> ConfigEdit {
+    replace_config_value(key_path(&["notice", key]), serde_json::json!(acknowledged))
+}
+
+pub(crate) fn build_model_migration_seen_edit(from_model: &str, to_model: &str) -> ConfigEdit {
+    replace_config_value(
+        key_path(&["notice", "model_migrations", from_model]),
+        serde_json::json!(to_model),
+    )
+}
+
+pub(crate) fn build_model_availability_nux_count_edits(
+    shown_count: &HashMap<String, u32>,
+) -> Vec<ConfigEdit> {
+    let mut entries: Vec<_> = shown_count.iter().collect();
+    entries.sort_unstable_by_key(|(model_slug, _)| *model_slug);
+
+    let mut edits = vec![clear_config_value(key_path(&[
+        "tui",
+        "model_availability_nux",
+    ]))];
+    for (model_slug, count) in entries {
+        edits.push(replace_config_value(
+            key_path(&["tui", "model_availability_nux", model_slug]),
+            serde_json::json!(count),
+        ));
+    }
+    edits
+}
+
+pub(crate) fn build_session_picker_view_edit(mode: SessionPickerViewMode) -> ConfigEdit {
+    replace_config_value(
+        key_path(&["tui", "session_picker_view"]),
+        serde_json::json!(mode.to_string()),
+    )
+}
+
+pub(crate) fn build_status_line_edits(items: &[String], use_theme_colors: bool) -> Vec<ConfigEdit> {
+    vec![
+        replace_config_value(key_path(&["tui", "status_line"]), serde_json::json!(items)),
+        replace_config_value(
+            key_path(&["tui", "status_line_use_colors"]),
+            serde_json::json!(use_theme_colors),
+        ),
+    ]
+}
+
+pub(crate) fn build_terminal_title_items_edit(items: &[String]) -> ConfigEdit {
+    replace_config_value(
+        key_path(&["tui", "terminal_title"]),
+        serde_json::json!(items),
+    )
+}
+
+pub(crate) fn build_syntax_theme_edit(name: &str) -> ConfigEdit {
+    replace_config_value(key_path(&["tui", "theme"]), serde_json::json!(name))
+}
+
+pub(crate) fn build_tui_pet_edit(pet_id: &str) -> ConfigEdit {
+    replace_config_value(key_path(&["tui", "pet"]), serde_json::json!(pet_id))
+}
+
+pub(crate) fn build_keymap_bindings_edit(
+    context: &str,
+    action: &str,
+    bindings: &[String],
+) -> ConfigEdit {
+    let value = if let [binding] = bindings {
+        serde_json::json!(binding)
+    } else {
+        serde_json::json!(bindings)
+    };
+    replace_config_value(key_path(&["tui", "keymap", context, action]), value)
+}
+
+pub(crate) fn build_keymap_binding_clear_edit(context: &str, action: &str) -> ConfigEdit {
+    clear_config_value(key_path(&["tui", "keymap", context, action]))
 }
 
 pub(crate) async fn write_config_batch(

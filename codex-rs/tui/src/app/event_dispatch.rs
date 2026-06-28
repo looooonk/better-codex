@@ -493,7 +493,7 @@ impl App {
                 self.handle_pet_selected(tui, pet_id);
             }
             AppEvent::PetDisabled => {
-                self.handle_pet_disabled(tui).await;
+                self.handle_pet_disabled(tui, app_server).await;
             }
             AppEvent::PetPreviewRequested { pet_id } => {
                 self.chat_widget.start_pet_picker_preview(pet_id);
@@ -507,7 +507,7 @@ impl App {
                 result,
             } => {
                 return self
-                    .handle_pet_selection_loaded(tui, request_id, pet_id, result)
+                    .handle_pet_selection_loaded(tui, app_server, request_id, pet_id, result)
                     .await;
             }
             AppEvent::ConfiguredPetLoaded { pet_id, result } => {
@@ -1802,10 +1802,14 @@ impl App {
                     .await;
             }
             AppEvent::PersistFullAccessWarningAcknowledged => {
-                if let Err(err) = ConfigEditsBuilder::for_config(&self.config)
-                    .set_hide_full_access_warning(/*acknowledged*/ true)
-                    .apply()
-                    .await
+                if let Err(err) = crate::config_update::write_config_batch(
+                    app_server.request_handle(),
+                    vec![crate::config_update::build_notice_bool_edit(
+                        "hide_full_access_warning",
+                        /*acknowledged*/ true,
+                    )],
+                )
+                .await
                 {
                     tracing::error!(
                         error = %err,
@@ -1817,10 +1821,14 @@ impl App {
                 }
             }
             AppEvent::PersistWorldWritableWarningAcknowledged => {
-                if let Err(err) = ConfigEditsBuilder::for_config(&self.config)
-                    .set_hide_world_writable_warning(/*acknowledged*/ true)
-                    .apply()
-                    .await
+                if let Err(err) = crate::config_update::write_config_batch(
+                    app_server.request_handle(),
+                    vec![crate::config_update::build_notice_bool_edit(
+                        "hide_world_writable_warning",
+                        /*acknowledged*/ true,
+                    )],
+                )
+                .await
                 {
                     tracing::error!(
                         error = %err,
@@ -1832,10 +1840,14 @@ impl App {
                 }
             }
             AppEvent::PersistRateLimitSwitchPromptHidden => {
-                if let Err(err) = ConfigEditsBuilder::for_config(&self.config)
-                    .set_hide_rate_limit_model_nudge(/*acknowledged*/ true)
-                    .apply()
-                    .await
+                if let Err(err) = crate::config_update::write_config_batch(
+                    app_server.request_handle(),
+                    vec![crate::config_update::build_notice_bool_edit(
+                        "hide_rate_limit_model_nudge",
+                        /*acknowledged*/ true,
+                    )],
+                )
+                .await
                 {
                     tracing::error!(
                         error = %err,
@@ -1875,10 +1887,14 @@ impl App {
                 from_model,
                 to_model,
             } => {
-                if let Err(err) = ConfigEditsBuilder::for_config(&self.config)
-                    .record_model_migration_seen(from_model.as_str(), to_model.as_str())
-                    .apply()
-                    .await
+                if let Err(err) = crate::config_update::write_config_batch(
+                    app_server.request_handle(),
+                    vec![crate::config_update::build_model_migration_seen_edit(
+                        from_model.as_str(),
+                        to_model.as_str(),
+                    )],
+                )
+                .await
                 {
                     tracing::error!(
                         error = %err,
@@ -2104,15 +2120,13 @@ impl App {
                 use_theme_colors,
             } => {
                 let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
-                let items_edit = crate::legacy_core::config::edit::status_line_items_edit(&ids);
-                let colors_edit =
-                    crate::legacy_core::config::edit::status_line_use_colors_edit(use_theme_colors);
-                let apply_result = ConfigEditsBuilder::for_config(&self.config)
-                    .with_edits([items_edit, colors_edit])
-                    .apply()
-                    .await;
+                let apply_result = crate::config_update::write_config_batch(
+                    app_server.request_handle(),
+                    crate::config_update::build_status_line_edits(&ids, use_theme_colors),
+                )
+                .await;
                 match apply_result {
-                    Ok(()) => {
+                    Ok(_) => {
                         self.config.tui_status_line = Some(ids.clone());
                         self.config.tui_status_line_use_colors = use_theme_colors;
                         self.chat_widget.setup_status_line(items, use_theme_colors);
@@ -2147,13 +2161,13 @@ impl App {
             }
             AppEvent::TerminalTitleSetup { items } => {
                 let ids = items.iter().map(ToString::to_string).collect::<Vec<_>>();
-                let edit = crate::legacy_core::config::edit::terminal_title_items_edit(&ids);
-                let apply_result = ConfigEditsBuilder::for_config(&self.config)
-                    .with_edits([edit])
-                    .apply()
-                    .await;
+                let apply_result = crate::config_update::write_config_batch(
+                    app_server.request_handle(),
+                    vec![crate::config_update::build_terminal_title_items_edit(&ids)],
+                )
+                .await;
                 match apply_result {
-                    Ok(()) => {
+                    Ok(_) => {
                         self.config.tui_terminal_title = Some(ids.clone());
                         self.chat_widget.setup_terminal_title(items);
                     }
@@ -2173,13 +2187,13 @@ impl App {
                 self.chat_widget.cancel_terminal_title_setup();
             }
             AppEvent::SyntaxThemeSelected { name } => {
-                let edit = crate::legacy_core::config::edit::syntax_theme_edit(&name);
-                let apply_result = ConfigEditsBuilder::for_config(&self.config)
-                    .with_edits([edit])
-                    .apply()
-                    .await;
+                let apply_result = crate::config_update::write_config_batch(
+                    app_server.request_handle(),
+                    vec![crate::config_update::build_syntax_theme_edit(&name)],
+                )
+                .await;
                 match apply_result {
-                    Ok(()) => {
+                    Ok(_) => {
                         // Ensure the selected theme is active in the current
                         // session.  The preview callback covers arrow-key
                         // navigation, but if the user presses Enter without
@@ -2232,11 +2246,11 @@ impl App {
                 key,
                 intent,
             } => {
-                self.apply_keymap_capture(context, action, key, intent)
+                self.apply_keymap_capture(app_server, context, action, key, intent)
                     .await;
             }
             AppEvent::KeymapCleared { context, action } => {
-                self.apply_keymap_clear(context, action).await;
+                self.apply_keymap_clear(app_server, context, action).await;
             }
         }
         Ok(AppRunControl::Continue)
@@ -2244,6 +2258,7 @@ impl App {
 
     async fn apply_keymap_capture(
         &mut self,
+        app_server: &AppServerSession,
         context: String,
         action: String,
         key: String,
@@ -2286,14 +2301,15 @@ impl App {
             }
         };
 
-        let edit =
-            crate::legacy_core::config::edit::keymap_bindings_edit(&context, &action, &bindings);
-        match ConfigEditsBuilder::for_config(&self.config)
-            .with_edits([edit])
-            .apply()
-            .await
+        match crate::config_update::write_config_batch(
+            app_server.request_handle(),
+            vec![crate::config_update::build_keymap_bindings_edit(
+                &context, &action, &bindings,
+            )],
+        )
+        .await
         {
-            Ok(()) => {
+            Ok(_) => {
                 self.config.tui_keymap = keymap_config.clone();
                 self.keymap = runtime_keymap.clone();
                 self.chat_widget
@@ -2315,7 +2331,12 @@ impl App {
         self.chat_widget.submit_op(AppCommand::reload_user_config());
     }
 
-    async fn apply_keymap_clear(&mut self, context: String, action: String) {
+    async fn apply_keymap_clear(
+        &mut self,
+        app_server: &AppServerSession,
+        context: String,
+        action: String,
+    ) {
         let keymap_config = match crate::keymap_setup::keymap_without_custom_binding(
             &self.config.tui_keymap,
             &context,
@@ -2337,13 +2358,15 @@ impl App {
             }
         };
 
-        let edit = crate::legacy_core::config::edit::keymap_binding_clear_edit(&context, &action);
-        match ConfigEditsBuilder::for_config(&self.config)
-            .with_edits([edit])
-            .apply()
-            .await
+        match crate::config_update::write_config_batch(
+            app_server.request_handle(),
+            vec![crate::config_update::build_keymap_binding_clear_edit(
+                &context, &action,
+            )],
+        )
+        .await
         {
-            Ok(()) => {
+            Ok(_) => {
                 self.config.tui_keymap = keymap_config.clone();
                 self.keymap = runtime_keymap.clone();
                 self.chat_widget

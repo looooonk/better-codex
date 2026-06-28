@@ -102,14 +102,20 @@ impl App {
         }));
     }
 
-    pub(super) async fn handle_pet_disabled(&mut self, tui: &mut tui::Tui) {
-        let edit = crate::legacy_core::config::edit::tui_pet_edit(crate::pets::DISABLED_PET_ID);
-        let apply_result = ConfigEditsBuilder::new(&self.config.codex_home)
-            .with_edits([edit])
-            .apply()
-            .await;
+    pub(super) async fn handle_pet_disabled(
+        &mut self,
+        tui: &mut tui::Tui,
+        app_server: &AppServerSession,
+    ) {
+        let apply_result = crate::config_update::write_config_batch(
+            app_server.request_handle(),
+            vec![crate::config_update::build_tui_pet_edit(
+                crate::pets::DISABLED_PET_ID,
+            )],
+        )
+        .await;
         match apply_result {
-            Ok(()) => {
+            Ok(_) => {
                 self.sync_tui_pet_disabled();
                 tui.frame_requester().schedule_frame();
             }
@@ -134,6 +140,7 @@ impl App {
     pub(super) async fn handle_pet_selection_loaded(
         &mut self,
         tui: &mut tui::Tui,
+        app_server: &AppServerSession,
         request_id: u64,
         pet_id: String,
         result: Result<Option<crate::pets::AmbientPet>, String>,
@@ -146,13 +153,13 @@ impl App {
         }
         match result {
             Ok(ambient_pet) => {
-                let edit = crate::legacy_core::config::edit::tui_pet_edit(&pet_id);
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_edits([edit])
-                    .apply()
-                    .await
+                match crate::config_update::write_config_batch(
+                    app_server.request_handle(),
+                    vec![crate::config_update::build_tui_pet_edit(&pet_id)],
+                )
+                .await
                 {
-                    Ok(()) => {
+                    Ok(_) => {
                         self.config.tui_pet = Some(pet_id.clone());
                         self.chat_widget
                             .set_tui_pet_loaded(Some(pet_id), ambient_pet);

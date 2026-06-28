@@ -230,6 +230,7 @@ pub(super) fn select_model_availability_nux(
 }
 
 pub(super) async fn prepare_startup_tooltip_override(
+    request_handle: AppServerRequestHandle,
     config: &mut Config,
     available_models: &[ModelPreset],
     is_first_run: bool,
@@ -251,10 +252,11 @@ pub(super) async fn prepare_startup_tooltip_override(
     let mut updated_shown_count = config.model_availability_nux.shown_count.clone();
     updated_shown_count.insert(tooltip_override.model_slug.clone(), next_count);
 
-    if let Err(err) = ConfigEditsBuilder::for_config(config)
-        .set_model_availability_nux_count(&updated_shown_count)
-        .apply()
-        .await
+    if let Err(err) = crate::config_update::write_config_batch(
+        request_handle,
+        crate::config_update::build_model_availability_nux_count_edits(&updated_shown_count),
+    )
+    .await
     {
         tracing::error!(
             error = %err,
