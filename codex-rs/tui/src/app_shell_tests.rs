@@ -63,6 +63,16 @@ fn renders_narrow_shell_snapshot() {
 }
 
 #[test]
+fn renders_short_shell_snapshot() {
+    let shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 12,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn renders_workspace_roots_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.runtime_workspace_roots = vec![

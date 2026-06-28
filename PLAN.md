@@ -70,7 +70,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 - [ ] Define a compact Catppuccin Mocha-inspired design system for terminal surfaces: flat panes, tables, tabs, lists, dialogs, badges, progress indicators, and key hints.
 - [ ] Replace bordered/rounded panel styling with borderless, non-rounded, differently-colored rectangular regions that sit flat on the background.
 - [ ] Use the existing TUI style rules within the Catppuccin Mocha palette: default foreground, cyan for focus/status, green for success, red for failures, magenta for Codex.
-- [ ] Add layout regression snapshots for desktop-sized, narrow, and short terminal viewports.
+- [x] Add layout regression snapshots for desktop-sized, narrow, and short terminal viewports.
 - [ ] Audit modules so new UI code stays split by feature and does not grow central orchestration files.
 
 ## Stage 9: Hardening

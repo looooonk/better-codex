@@ -1,0 +1,15 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+
+ Better Codex                                                          Status
+                                                                       thinking
+
+ Conversation                                                          Model
+                                                                       gpt-5-codex
+ codex: The new shell owns the fullscreen surface.
+                                                                       Tokens
+                                                                       total 1,440
+ Composer ready 1:37                                                   input 1,200
+ > Summarize the new shell architecture                                output 240
