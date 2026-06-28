@@ -43,7 +43,7 @@ impl ShellState {
         Ok(())
     }
 
-    fn handle_notification(&mut self, notification: ServerNotification) {
+    pub(super) fn handle_notification(&mut self, notification: ServerNotification) {
         match notification {
             ServerNotification::AgentMessageDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
@@ -126,6 +126,16 @@ impl ShellState {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.plan_explanation = updated.explanation;
                     self.plan_steps = updated.plan;
+                }
+            }
+            ServerNotification::ThreadGoalUpdated(updated) => {
+                if updated.thread_id == self.thread_id.to_string() {
+                    self.active_goal = Some(updated.goal);
+                }
+            }
+            ServerNotification::ThreadGoalCleared(cleared) => {
+                if cleared.thread_id == self.thread_id.to_string() {
+                    self.active_goal = None;
                 }
             }
             ServerNotification::ItemStarted(started) => {
@@ -234,8 +244,6 @@ impl ShellState {
             | ServerNotification::ThreadUnarchived(_)
             | ServerNotification::ThreadClosed(_)
             | ServerNotification::SkillsChanged(_)
-            | ServerNotification::ThreadGoalUpdated(_)
-            | ServerNotification::ThreadGoalCleared(_)
             | ServerNotification::ItemGuardianApprovalReviewStarted(_)
             | ServerNotification::ItemGuardianApprovalReviewCompleted(_)
             | ServerNotification::RawResponseItemCompleted(_)

@@ -46,7 +46,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 ## Stage 5: Dashboard
 
 - [x] Replace the placeholder dashboard with borderless, flat live panels for token usage, context-window pressure, rate limits, active turn status, and model/service tier.
-- [ ] Add plan progress rendering from plan events and goal state.
+- [x] Add plan progress rendering from plan events and goal state.
 - [x] Add workspace status: current branch, dirty files, changed files by type, current cwd, and selected writable roots.
 - [ ] Add tool, approval, background task, and subagent activity panels so non-conversation state does not leak into the main conversation surface except as transcript artifacts.
 - [ ] Make dashboard sections responsive so narrow terminals collapse to tabs or an overlay.

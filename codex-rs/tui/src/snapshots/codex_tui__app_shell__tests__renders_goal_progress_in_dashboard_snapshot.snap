@@ -1,0 +1,37 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+
+ Better Codex                                                          Status
+                                                                       thinking
+
+ Conversation                                                          Model
+ system: Better Codex app shell                                        gpt-5-codex
+ you: Create a divergent standalone TUI.
+                                                                       Tokens
+ codex: Started a fullscreen app shell backed by app-server turns.     total 1,440
+ plan: 1. Build shell                                                  input 1,200
+       2. Wire transcript                                              output 240
+       3. Render dashboard                                             context 200,000
+ tool: exec just test -p codex-tui
+ diff: diff 3 files +128 -24                                           Diff
+                                                                       3 files +128 -24
+ codex: The new shell owns the fullscreen surface.
+                                                                       Plan
+                                                                       goal active
+                                                                         Complete the unchecked ...
+                                                                         1m | 12,345/50,000 tokens
+                                                                       Build the standalone shell
+                                                                       in slices.
+                                                                       x Shell frame
+                                                                       > Transcript model
+
+                                                                       Tools
+                                                                       in progress exec just tes...
+                                                                       completed file changes in...
+
+ Composer ready 1:37                                                   Workspace
+ > Summarize the new shell architecture                                cwd /workspace/better-codex
+                                                                       profile managed
+                                                                       files restricted, net

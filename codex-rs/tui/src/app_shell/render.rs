@@ -2,6 +2,8 @@ use super::ShellState;
 use super::ToolActivity;
 use super::TranscriptKind;
 use super::TranscriptLine;
+use crate::goal_display::format_goal_elapsed_seconds;
+use crate::goal_display::goal_status_label;
 use crate::markdown;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::mark_buffer_hyperlinks;
@@ -319,10 +321,36 @@ impl ShellView<'_> {
         panels.push(DashboardPanel::new("Diff", diff_lines));
 
         let mut plan_lines = Vec::new();
+        if let Some(goal) = &self.shell.active_goal {
+            plan_lines.push(Line::from(vec![
+                "goal ".dim(),
+                goal_status_span(goal.status),
+            ]));
+            plan_lines.push(Line::from(format!(
+                "  {}",
+                dashboard_value(&goal.objective, width, /*prefix_width*/ 2)
+            )));
+            let mut usage = Vec::new();
+            if goal.time_used_seconds > 0 {
+                usage.push(format_goal_elapsed_seconds(goal.time_used_seconds));
+            }
+            if let Some(token_budget) = goal.token_budget {
+                usage.push(format!(
+                    "{}/{} tokens",
+                    format_i64(goal.tokens_used),
+                    format_i64(token_budget)
+                ));
+            } else if goal.tokens_used > 0 {
+                usage.push(format!("{} tokens", format_i64(goal.tokens_used)));
+            }
+            if !usage.is_empty() {
+                plan_lines.push(Line::from(format!("  {}", usage.join(" | ")).dim()));
+            }
+        }
         if let Some(explanation) = &self.shell.plan_explanation {
             plan_lines.push(Line::from(explanation.clone().dim()));
         }
-        if self.shell.plan_steps.is_empty() {
+        if self.shell.plan_steps.is_empty() && self.shell.active_goal.is_none() {
             plan_lines.push(Line::from("no active plan".dim()));
         } else {
             for step in self.shell.plan_steps.iter().take(5) {
@@ -767,6 +795,18 @@ fn status_span(status: &str) -> Span<'static> {
         "thinking" | "reasoning" | "retrying" => status.to_string().cyan(),
         "interrupted" => status.to_string().magenta(),
         _ => status.to_string().into(),
+    }
+}
+
+fn goal_status_span(status: codex_app_server_protocol::ThreadGoalStatus) -> Span<'static> {
+    let label = goal_status_label(status);
+    match status {
+        codex_app_server_protocol::ThreadGoalStatus::Active => label.cyan(),
+        codex_app_server_protocol::ThreadGoalStatus::Complete => label.green(),
+        codex_app_server_protocol::ThreadGoalStatus::Blocked
+        | codex_app_server_protocol::ThreadGoalStatus::UsageLimited
+        | codex_app_server_protocol::ThreadGoalStatus::BudgetLimited => label.red(),
+        codex_app_server_protocol::ThreadGoalStatus::Paused => label.magenta(),
     }
 }
 

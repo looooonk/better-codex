@@ -20,6 +20,7 @@ use crate::workspace_command::AppServerWorkspaceCommandRunner;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::PatchChangeKind;
 use codex_app_server_protocol::RateLimitSnapshot;
+use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnPlanStep;
@@ -93,6 +94,7 @@ pub(crate) async fn run(
         .refresh_workspace_status(workspace_command_runner.as_ref())
         .await;
     shell.refresh_rate_limits(&mut app_server).await;
+    shell.refresh_goal_state(&mut app_server).await;
 
     if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
         shell.submit_prompt(&mut app_server, prompt).await?;
@@ -276,6 +278,7 @@ struct ShellState {
     streaming_plan: String,
     plan_explanation: Option<String>,
     plan_steps: Vec<TurnPlanStep>,
+    active_goal: Option<ThreadGoal>,
     tool_activity: VecDeque<ToolActivity>,
     latest_diff: Option<DiffSummary>,
     workspace_git_status: Option<WorkspaceGitStatus>,
@@ -322,6 +325,7 @@ impl ShellState {
             streaming_plan: String::new(),
             plan_explanation: None,
             plan_steps: Vec::new(),
+            active_goal: None,
             tool_activity: VecDeque::new(),
             latest_diff: None,
             workspace_git_status: None,
@@ -521,6 +525,13 @@ impl ShellState {
             .as_ref()
             .map(|credits| credits.available_count);
         self.rate_limits = app_server_rate_limit_snapshots(response);
+    }
+
+    async fn refresh_goal_state(&mut self, app_server: &mut AppServerSession) {
+        let Ok(response) = app_server.thread_goal_get(self.thread_id).await else {
+            return;
+        };
+        self.active_goal = response.goal;
     }
 
     fn apply_rate_limit_update(&mut self, snapshot: RateLimitSnapshot) {
@@ -1464,6 +1475,7 @@ impl ShellState {
                     status: codex_app_server_protocol::TurnPlanStepStatus::Pending,
                 },
             ],
+            active_goal: None,
             tool_activity: VecDeque::from([
                 ToolActivity {
                     id: "tool-1".to_string(),

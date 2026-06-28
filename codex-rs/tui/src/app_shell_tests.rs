@@ -6,7 +6,12 @@ use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_app_server_protocol::PermissionsRequestApprovalParams;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::ThreadGoal;
+use codex_app_server_protocol::ThreadGoalClearedNotification;
+use codex_app_server_protocol::ThreadGoalStatus;
+use codex_app_server_protocol::ThreadGoalUpdatedNotification;
 use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
@@ -187,6 +192,21 @@ fn renders_active_turn_status_snapshot() {
     shell.active_turn_id = Some("turn-active-1234567890".to_string());
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_goal_progress_in_dashboard_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_goal = Some(test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::Active,
+        "Complete the unchecked PLAN.md dashboard progress item",
+    ));
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 34,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
@@ -379,6 +399,34 @@ fn copies_latest_assistant_without_selection() {
             "copied codex transcript item"
         ))
     );
+}
+
+#[test]
+fn thread_goal_notifications_update_dashboard_state() {
+    let mut shell = ShellState::snapshot_fixture();
+    let goal = test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::Paused,
+        "Keep the plan visible in the dashboard",
+    );
+
+    shell.handle_notification(ServerNotification::ThreadGoalUpdated(
+        ThreadGoalUpdatedNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn_id: Some("turn-1".to_string()),
+            goal: goal.clone(),
+        },
+    ));
+
+    assert_eq!(shell.active_goal, Some(goal));
+
+    shell.handle_notification(ServerNotification::ThreadGoalCleared(
+        ThreadGoalClearedNotification {
+            thread_id: shell.thread_id.to_string(),
+        },
+    ));
+
+    assert_eq!(shell.active_goal, None);
 }
 
 #[test]
@@ -1076,6 +1124,19 @@ fn mcp_url_elicitation_request() -> ServerRequest {
                 elicitation_id: "auth-1".to_string(),
             },
         },
+    }
+}
+
+fn test_thread_goal(thread_id: &ThreadId, status: ThreadGoalStatus, objective: &str) -> ThreadGoal {
+    ThreadGoal {
+        thread_id: thread_id.to_string(),
+        objective: objective.to_string(),
+        status,
+        token_budget: Some(50_000),
+        tokens_used: 12_345,
+        time_used_seconds: 90,
+        created_at: 1_900_000_000,
+        updated_at: 1_900_000_090,
     }
 }
 
