@@ -1311,6 +1311,7 @@ async fn run_ratatui_app(
         prev_hook(info);
     }));
     let mut initialized_terminal = tui::init()?;
+    let mut terminal_restore_guard = TerminalRestoreGuard::new();
     initialized_terminal.terminal.clear()?;
 
     let mut tui = Tui::new(
@@ -1318,7 +1319,6 @@ async fn run_ratatui_app(
         initialized_terminal.enhanced_keys_supported,
         initialized_terminal.stderr_guard,
     );
-    let mut terminal_restore_guard = TerminalRestoreGuard::new();
 
     #[cfg(not(debug_assertions))]
     {

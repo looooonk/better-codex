@@ -90,6 +90,7 @@ fn should_emit_notification(condition: NotificationCondition, terminal_focused: 
 
 impl Drop for Tui {
     fn drop(&mut self) {
+        let _ = self.leave_alt_screen();
         if let Err(err) = self.clear_ambient_pet_image() {
             tracing::debug!(error = %err, "failed to clear ambient pet image on TUI drop");
         }
@@ -177,6 +178,7 @@ mod tests {
 pub fn set_modes() -> Result<()> {
     ensure_virtual_terminal_processing()?;
 
+    let mut cleanup_guard = TerminalModeCleanupGuard::new();
     execute!(stdout(), EnableBracketedPaste)?;
 
     enable_raw_mode()?;
@@ -189,6 +191,7 @@ pub fn set_modes() -> Result<()> {
     keyboard_modes::enable_keyboard_enhancement();
 
     let _ = execute!(stdout(), EnableFocusChange);
+    cleanup_guard.disarm();
     Ok(())
 }
 
@@ -246,6 +249,28 @@ enum KeyboardRestore {
     ResetAfterExit,
 }
 
+struct TerminalModeCleanupGuard {
+    active: bool,
+}
+
+impl TerminalModeCleanupGuard {
+    fn new() -> Self {
+        Self { active: true }
+    }
+
+    fn disarm(&mut self) {
+        self.active = false;
+    }
+}
+
+impl Drop for TerminalModeCleanupGuard {
+    fn drop(&mut self) {
+        if self.active {
+            let _ = restore_terminal_modes_after_exit();
+        }
+    }
+}
+
 fn restore_common(
     raw_mode_restore: RawModeRestore,
     keyboard_restore: KeyboardRestore,
@@ -280,6 +305,19 @@ fn restore_common(
     }
 }
 
+fn restore_terminal_modes_after_exit() -> Result<()> {
+    let mut first_error =
+        restore_common(RawModeRestore::Disable, KeyboardRestore::ResetAfterExit).err();
+    if let Err(err) = execute!(stdout(), DisableAlternateScroll, LeaveAlternateScreen) {
+        first_error.get_or_insert(err);
+    }
+
+    match first_error {
+        Some(err) => Err(err),
+        None => Ok(()),
+    }
+}
+
 /// Restore the terminal to its original state.
 /// Inverse of `set_modes`.
 pub fn restore() -> Result<()> {
@@ -303,8 +341,7 @@ pub(super) fn reapply_raw_mode_after_resume() -> Result<()> {
 /// Uses a stronger keyboard reset than [`restore`] so the parent shell recovers even if a
 /// terminal missed the stack pop that normally pairs with [`set_modes`].
 pub fn restore_after_exit() -> Result<()> {
-    let mut first_error =
-        restore_common(RawModeRestore::Disable, KeyboardRestore::ResetAfterExit).err();
+    let mut first_error = restore_terminal_modes_after_exit().err();
     if let Err(err) = terminal_stderr::finish() {
         first_error.get_or_insert(err);
     }
@@ -384,6 +421,7 @@ pub(crate) fn init() -> Result<InitializedTerminal> {
         return Err(std::io::Error::other("stdout is not a terminal"));
     }
     set_modes()?;
+    let mut cleanup_guard = TerminalModeCleanupGuard::new();
 
     flush_terminal_input_buffer();
 
@@ -460,6 +498,7 @@ pub(crate) fn init() -> Result<InitializedTerminal> {
 
     let tui = CustomTerminal::with_options_and_cursor_position(backend, cursor_pos)?;
     let stderr_guard = terminal_stderr::TerminalStderrGuard::install()?;
+    cleanup_guard.disarm();
     Ok(InitializedTerminal {
         terminal: tui,
         enhanced_keys_supported,
