@@ -122,14 +122,14 @@ pub(super) fn command_palette_entries(context: CommandPaletteContext) -> Vec<Com
         CommandPaletteEntry {
             action: CommandPaletteAction::ResumeThread,
             title: "Resume thread",
-            detail: "Session navigation is not wired in the app shell yet",
-            enabled: false,
+            detail: "Open native session list",
+            enabled: true,
         },
         CommandPaletteEntry {
             action: CommandPaletteAction::ForkThread,
             title: "Fork thread",
-            detail: "Session navigation is not wired in the app shell yet",
-            enabled: false,
+            detail: "Open native session list",
+            enabled: true,
         },
         CommandPaletteEntry {
             action: CommandPaletteAction::CompactContext,

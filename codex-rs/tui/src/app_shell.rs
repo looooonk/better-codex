@@ -1126,18 +1126,32 @@ impl ShellState {
             }
             CommandPaletteAction::SwitchModel => {
                 self.set_dashboard_route(DashboardRoute::Settings);
+                self.session_list.focused = false;
                 self.settings.focused = true;
                 self.settings
                     .start_edit(SettingsAction::Model, self.model.clone());
             }
             CommandPaletteAction::ChangePermissions => {
                 self.set_dashboard_route(DashboardRoute::Settings);
+                self.session_list.focused = false;
                 self.settings.focused = true;
                 self.settings.focus_action(SettingsAction::ApprovalPolicy);
             }
-            CommandPaletteAction::ResumeThread
-            | CommandPaletteAction::ForkThread
-            | CommandPaletteAction::CompactContext => {}
+            CommandPaletteAction::ResumeThread => {
+                self.set_dashboard_route(DashboardRoute::Sessions);
+                self.settings.focused = false;
+                self.session_list.focused = true;
+                self.refresh_session_list(app_server).await;
+                self.push_status("press r to resume selected session");
+            }
+            CommandPaletteAction::ForkThread => {
+                self.set_dashboard_route(DashboardRoute::Sessions);
+                self.settings.focused = false;
+                self.session_list.focused = true;
+                self.refresh_session_list(app_server).await;
+                self.push_status("press f to fork selected session");
+            }
+            CommandPaletteAction::CompactContext => {}
         }
         Ok(())
     }

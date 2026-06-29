@@ -401,8 +401,8 @@ fn command_palette_lists_common_actions() {
             (CommandPaletteAction::InterruptTurn, false),
             (CommandPaletteAction::SwitchModel, true),
             (CommandPaletteAction::ChangePermissions, true),
-            (CommandPaletteAction::ResumeThread, false),
-            (CommandPaletteAction::ForkThread, false),
+            (CommandPaletteAction::ResumeThread, true),
+            (CommandPaletteAction::ForkThread, true),
             (CommandPaletteAction::CompactContext, false),
         ]
     );
@@ -443,6 +443,64 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
     assert!(
         rendered.contains("> approval: on-request"),
         "permissions action should focus approval policy row, got:\n{rendered}"
+    );
+}
+
+#[tokio::test]
+async fn command_palette_opens_native_session_list_for_resume_and_fork() {
+    let session_id = test_thread_id("01900000-0000-7000-8000-000000000601");
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
+        session_id,
+        Some("resume from palette"),
+        "palette preview",
+    )]);
+
+    shell.open_command_palette();
+    select_command_palette_action(&mut shell, CommandPaletteAction::ResumeThread);
+    shell
+        .execute_selected_command_palette_action(&mut backend)
+        .await
+        .expect("resume action should open sessions");
+
+    assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
+    assert!(shell.session_list.focused);
+    assert!(!shell.settings.focused);
+    assert!(shell.session_list.selected_is_current(session_id));
+    assert!(
+        shell.transcript.iter().any(|line| {
+            line.kind == TranscriptKind::Status && line.text == "press r to resume selected session"
+        }),
+        "resume action should leave a keyboard hint"
+    );
+
+    shell.open_command_palette();
+    select_command_palette_action(&mut shell, CommandPaletteAction::ForkThread);
+    shell
+        .execute_selected_command_palette_action(&mut backend)
+        .await
+        .expect("fork action should open sessions");
+
+    assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
+    assert!(shell.session_list.focused);
+    assert!(
+        shell.transcript.iter().any(|line| {
+            line.kind == TranscriptKind::Status && line.text == "press f to fork selected session"
+        }),
+        "fork action should leave a keyboard hint"
+    );
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+        ]
     );
 }
 
