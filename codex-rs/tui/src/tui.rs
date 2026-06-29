@@ -99,13 +99,17 @@ impl Drop for Tui {
 
 #[cfg(test)]
 mod tests {
+    use crossterm::Command;
     use std::io::Write as _;
 
+    use super::DisableAlternateScroll;
     use super::clear_for_viewport_change;
     use super::should_emit_notification;
+    use super::write_exit_alt_screen_restore;
     use crate::custom_terminal::Terminal as CustomTerminal;
     use crate::test_backend::VT100Backend;
     use codex_config::types::NotificationCondition;
+    use crossterm::terminal::LeaveAlternateScreen;
     use ratatui::layout::Position;
     use ratatui::layout::Rect;
 
@@ -172,6 +176,34 @@ mod tests {
             !rows.iter().skip(1).any(|row| row.contains("stale")),
             "expected stale cells inside the new viewport to be cleared, rows: {rows:?}"
         );
+    }
+
+    #[test]
+    fn exit_restore_leaves_alternate_screen_after_disabling_alt_scroll() {
+        let mut output = Vec::new();
+        write_exit_alt_screen_restore(&mut output).expect("write exit alt-screen restore");
+
+        let mut expected = String::new();
+        DisableAlternateScroll
+            .write_ansi(&mut expected)
+            .expect("disable alternate scroll ansi");
+        LeaveAlternateScreen
+            .write_ansi(&mut expected)
+            .expect("leave alternate screen ansi");
+
+        assert_eq!(
+            String::from_utf8(output).expect("utf8 restore sequence"),
+            expected
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn alternate_scroll_commands_force_ansi_on_windows() {
+        use super::EnableAlternateScroll;
+
+        assert!(EnableAlternateScroll.is_ansi_code_supported());
+        assert!(DisableAlternateScroll.is_ansi_code_supported());
     }
 }
 
@@ -308,7 +340,7 @@ fn restore_common(
 fn restore_terminal_modes_after_exit() -> Result<()> {
     let mut first_error =
         restore_common(RawModeRestore::Disable, KeyboardRestore::ResetAfterExit).err();
-    if let Err(err) = execute!(stdout(), DisableAlternateScroll, LeaveAlternateScreen) {
+    if let Err(err) = write_exit_alt_screen_restore(&mut stdout()) {
         first_error.get_or_insert(err);
     }
 
@@ -316,6 +348,10 @@ fn restore_terminal_modes_after_exit() -> Result<()> {
         Some(err) => Err(err),
         None => Ok(()),
     }
+}
+
+fn write_exit_alt_screen_restore(writer: &mut impl Write) -> Result<()> {
+    execute!(writer, DisableAlternateScroll, LeaveAlternateScreen)
 }
 
 /// Restore the terminal to its original state.
