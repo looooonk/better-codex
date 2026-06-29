@@ -10,11 +10,14 @@ use ratatui::text::Line;
 use std::path::PathBuf;
 
 const SESSION_LIST_LIMIT: u32 = 20;
+const SESSION_LIST_LINE_BUDGET: usize = 7;
+const SESSION_LIST_DEFAULT_VISIBLE_ROWS: usize = 6;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct SessionListState {
     rows: Vec<SessionRow>,
     selected: usize,
+    scroll_top: usize,
     pub(super) focused: bool,
     search_active: bool,
     search_query: String,
@@ -60,7 +63,7 @@ impl SessionListState {
             .into_iter()
             .filter_map(SessionRow::from_thread)
             .collect();
-        self.selected = self.selected.min(self.rows.len().saturating_sub(1));
+        self.normalize_selection_and_scroll();
         self.loaded = true;
         self.last_error = None;
     }
@@ -72,6 +75,7 @@ impl SessionListState {
 
     pub(super) fn move_selection_up(&mut self) {
         self.selected = self.selected.saturating_sub(1);
+        self.keep_selection_visible(SESSION_LIST_DEFAULT_VISIBLE_ROWS);
     }
 
     pub(super) fn move_selection_down(&mut self) {
@@ -79,6 +83,7 @@ impl SessionListState {
             .selected
             .saturating_add(1)
             .min(self.rows.len().saturating_sub(1));
+        self.keep_selection_visible(SESSION_LIST_DEFAULT_VISIBLE_ROWS);
     }
 
     pub(super) fn selected_thread_id(&self) -> Option<ThreadId> {
@@ -98,7 +103,7 @@ impl SessionListState {
             return None;
         }
         let removed = self.rows.remove(self.selected);
-        self.selected = self.selected.min(self.rows.len().saturating_sub(1));
+        self.normalize_selection_and_scroll();
         Some(removed)
     }
 
@@ -136,6 +141,7 @@ impl SessionListState {
     pub(super) fn toggle_archived(&mut self) {
         self.show_archived = !self.show_archived;
         self.selected = 0;
+        self.scroll_top = 0;
     }
 
     pub(super) fn show_archived(&self) -> bool {
@@ -225,9 +231,22 @@ impl SessionListState {
             lines.push(Line::from("no matching sessions".dim()));
         }
 
-        let remaining = 7usize.saturating_sub(lines.len());
-        for (index, row) in self.rows.iter().take(remaining).enumerate() {
-            lines.push(row_line(row, index == self.selected, width));
+        let remaining = SESSION_LIST_LINE_BUDGET.saturating_sub(lines.len());
+        let scroll_top = self.normalized_scroll_top(remaining);
+        for (index, row) in self
+            .rows
+            .iter()
+            .enumerate()
+            .skip(scroll_top)
+            .take(remaining)
+        {
+            lines.push(row_line(
+                row,
+                index == self.selected,
+                index,
+                self.rows.len(),
+                width,
+            ));
         }
         let hints = if self.show_archived {
             "r resume  f fork  u unarchive  d delete"
@@ -237,6 +256,38 @@ impl SessionListState {
         lines.push(Line::from(truncate_text(hints, width).dim()));
         lines.push(Line::from("/ search  v archived  esc composer".dim()));
         lines
+    }
+
+    fn normalize_selection_and_scroll(&mut self) {
+        self.selected = self.selected.min(self.rows.len().saturating_sub(1));
+        self.keep_selection_visible(SESSION_LIST_DEFAULT_VISIBLE_ROWS);
+    }
+
+    fn keep_selection_visible(&mut self, visible_rows: usize) {
+        self.scroll_top = self.normalized_scroll_top(visible_rows);
+    }
+
+    fn normalized_scroll_top(&self, visible_rows: usize) -> usize {
+        if self.rows.is_empty() || visible_rows == 0 {
+            return 0;
+        }
+
+        let max_scroll_top = self.rows.len().saturating_sub(visible_rows);
+        let mut scroll_top = self.scroll_top.min(max_scroll_top);
+        if self.selected < scroll_top {
+            scroll_top = self.selected;
+        }
+
+        let last_visible = scroll_top.saturating_add(visible_rows).saturating_sub(1);
+        if self.selected > last_visible {
+            scroll_top = self
+                .selected
+                .saturating_add(1)
+                .saturating_sub(visible_rows)
+                .min(max_scroll_top);
+        }
+
+        scroll_top
     }
 }
 
@@ -266,11 +317,26 @@ impl SessionRow {
     }
 }
 
-fn row_line(row: &SessionRow, selected: bool, width: usize) -> Line<'static> {
+fn row_line(
+    row: &SessionRow,
+    selected: bool,
+    index: usize,
+    total: usize,
+    width: usize,
+) -> Line<'static> {
     let marker = if selected {
         ">".cyan().bold()
     } else {
         " ".dim()
+    };
+    let total = total.max(1);
+    let position_width = total.to_string().len();
+    let position = format!("{:>position_width$}/{total}", index.saturating_add(1));
+    let position_width = position.chars().count();
+    let position = if selected {
+        position.cyan()
+    } else {
+        position.dim()
     };
     let mut detail = row
         .branch
@@ -288,7 +354,7 @@ fn row_line(row: &SessionRow, selected: bool, width: usize) -> Line<'static> {
         String::new()
     };
     let text = format!("{}{}{}", row.title, detail, age);
-    let prefix_width = 2;
+    let prefix_width = 3usize.saturating_add(position_width);
     let visible = dashboard_value(&text, width, prefix_width);
     let preview_width = width.saturating_sub(prefix_width + visible.chars().count() + 1);
     let preview = if preview_width > 8 {
@@ -296,5 +362,12 @@ fn row_line(row: &SessionRow, selected: bool, width: usize) -> Line<'static> {
     } else {
         "".dim()
     };
-    Line::from(vec![marker, " ".dim(), visible.into(), preview])
+    Line::from(vec![
+        marker,
+        " ".dim(),
+        position,
+        " ".dim(),
+        visible.into(),
+        preview,
+    ])
 }

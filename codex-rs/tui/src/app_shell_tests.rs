@@ -96,6 +96,35 @@ fn renders_native_session_list_snapshot() {
 }
 
 #[test]
+fn renders_scrolled_session_list_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    shell.session_list.replace_threads(
+        (1..=10)
+            .map(|index| {
+                let thread_id = test_thread_id(&format!("01900000-0000-7000-8000-{index:012x}"));
+                let title = format!("Session {index:02}");
+                let preview = format!("Preview for session {index:02}");
+                thread_fixture(thread_id, Some(&title), &preview)
+            })
+            .collect(),
+    );
+    for _ in 0..7 {
+        shell.session_list.move_selection_down();
+    }
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 32,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(rendered.contains("3/10 Session 03"));
+    assert!(rendered.contains(">  8/10 Session 08"));
+    assert!(!rendered.contains("1/10 Session 01"));
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn renders_scrolled_transcript_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.push_status("first checkpoint");
