@@ -1301,15 +1301,7 @@ async fn run_ratatui_app(
 
     tooltips::announcement::prewarm();
 
-    // Forward panic reports through tracing so they appear in the UI status
-    // line, but do not swallow the default/color-eyre panic handler.
-    // Chain to the previous hook so users still get a rich panic report
-    // (including backtraces) after we restore the terminal.
-    let prev_hook = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        tracing::error!("panic: {info}");
-        prev_hook(info);
-    }));
+    install_terminal_restoring_panic_hook(restore);
     let mut initialized_terminal = tui::init()?;
     let mut terminal_restore_guard = TerminalRestoreGuard::new();
     initialized_terminal.terminal.clear()?;
@@ -1814,6 +1806,19 @@ fn restore() {
     }
 }
 
+fn install_terminal_restoring_panic_hook(restore_terminal: impl Fn() + Send + Sync + 'static) {
+    // Forward panic reports through tracing so they appear in the UI status
+    // line, but do not swallow the default/color-eyre panic handler.
+    // Chain to the previous hook so users still get a rich panic report
+    // (including backtraces) after we restore the terminal.
+    let prev_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        tracing::error!("panic: {info}");
+        restore_terminal();
+        prev_hook(info);
+    }));
+}
+
 struct TerminalRestoreGuard {
     active: bool,
 }
@@ -2000,6 +2005,7 @@ mod tests {
     use codex_config::config_toml::ProjectConfig;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
+    use std::sync::Mutex;
     use tempfile::TempDir;
 
     async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
@@ -2087,6 +2093,61 @@ mod tests {
             .set_times(times)?;
 
         Ok(thread_id)
+    }
+
+    struct PanicHookReset {
+        original_hook: Option<Box<dyn Fn(&std::panic::PanicHookInfo<'_>) + Send + Sync + 'static>>,
+    }
+
+    impl PanicHookReset {
+        fn capture() -> Self {
+            Self {
+                original_hook: Some(std::panic::take_hook()),
+            }
+        }
+    }
+
+    impl Drop for PanicHookReset {
+        fn drop(&mut self) {
+            if let Some(original_hook) = self.original_hook.take() {
+                let _installed_hook = std::panic::take_hook();
+                std::panic::set_hook(original_hook);
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn panic_hook_restores_terminal_before_forwarding_report() {
+        let _hook_reset = PanicHookReset::capture();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        std::panic::set_hook(Box::new({
+            let events = events.clone();
+            move |_info| {
+                events
+                    .lock()
+                    .expect("panic hook events should lock")
+                    .push("previous");
+            }
+        }));
+
+        install_terminal_restoring_panic_hook({
+            let events = events.clone();
+            move || {
+                events
+                    .lock()
+                    .expect("panic hook events should lock")
+                    .push("restore");
+            }
+        });
+
+        let result = std::panic::catch_unwind(|| panic!("panic hook test"));
+
+        assert!(result.is_err());
+        assert_eq!(
+            *events.lock().expect("panic hook events should lock"),
+            vec!["restore", "previous"]
+        );
     }
 
     #[test]
