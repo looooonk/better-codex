@@ -51,6 +51,10 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
         .map(format_i64)
         .unwrap_or_else(|| "unknown".to_string());
     let mut panels = vec![dashboard_navigation_panel(shell.dashboard_route)];
+    panels.push(DashboardPanel::new(
+        "Sessions",
+        shell.session_list.lines(width),
+    ));
     let mut status_lines = vec![status_line(&shell.status)];
     if let Some(active_turn_id) = &shell.active_turn_id {
         status_lines.push(Line::from(vec![
@@ -271,6 +275,7 @@ fn route_dashboard_panels(
     let titles: &[&str] = match route {
         DashboardRoute::Sessions => &[
             "Navigation",
+            "Sessions",
             "Approvals",
             "Background",
             "Tools",

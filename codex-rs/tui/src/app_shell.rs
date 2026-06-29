@@ -6,6 +6,7 @@
 use crate::app::AppExitInfo;
 use crate::app::ExitReason;
 use crate::app_server_session::AppServerSession;
+use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::app_server_session::app_server_rate_limit_snapshots;
 use crate::clipboard_copy::ClipboardLease;
@@ -49,6 +50,7 @@ mod elicitation;
 mod events;
 mod navigation;
 mod render;
+mod sessions;
 mod user_input;
 mod workspace;
 use approval::ApprovalAction;
@@ -68,6 +70,7 @@ use elicitation::PendingElicitation;
 use navigation::AppShellRouteState;
 use navigation::DashboardRoute;
 use render::draw_shell;
+use sessions::SessionListState;
 use user_input::PendingUserInput;
 use user_input::UserInputAdvance;
 use workspace::WorkspaceGitStatus;
@@ -111,6 +114,7 @@ pub(crate) async fn run(
         .await;
     shell.refresh_rate_limits(&mut app_server).await;
     shell.refresh_goal_state(&mut app_server).await;
+    shell.refresh_session_list(&mut app_server).await;
 
     if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
         shell.submit_prompt(&mut app_server, prompt).await?;
@@ -126,7 +130,7 @@ pub(crate) async fn run(
                 };
                 match event {
                     TuiEvent::Key(key) => {
-                        if shell.handle_key(key, &mut app_server).await? {
+                        if shell.handle_key(key, &config, &mut app_server).await? {
                             break ExitReason::UserRequested;
                         }
                         tui.frame_requester().schedule_frame();
@@ -285,6 +289,7 @@ struct ShellState {
     transcript_scroll: usize,
     transcript_scroll_max: Cell<usize>,
     transcript_selection: Option<usize>,
+    session_list: SessionListState,
     command_palette: Option<CommandPaletteState>,
     codex_home: std::path::PathBuf,
     dashboard_route: DashboardRoute,
@@ -340,6 +345,7 @@ impl ShellState {
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
+            session_list: SessionListState::default(),
             command_palette: None,
             codex_home,
             dashboard_route,
@@ -388,6 +394,7 @@ impl ShellState {
     async fn handle_key(
         &mut self,
         key: KeyEvent,
+        config: &Config,
         app_server: &mut AppServerSession,
     ) -> Result<bool> {
         if key.kind != KeyEventKind::Press {
@@ -410,16 +417,22 @@ impl ShellState {
         }
         if let Some(route) = dashboard_route_from_key(key) {
             self.set_dashboard_route(route);
+            self.session_list.focused = route == DashboardRoute::Sessions;
+            if route == DashboardRoute::Sessions {
+                self.refresh_session_list(app_server).await;
+            }
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::ALT) {
             match key.code {
                 KeyCode::Left => {
                     self.set_dashboard_route(self.dashboard_route.previous());
+                    self.session_list.focused = false;
                     return Ok(false);
                 }
                 KeyCode::Right => {
                     self.set_dashboard_route(self.dashboard_route.next());
+                    self.session_list.focused = false;
                     return Ok(false);
                 }
                 _ => {}
@@ -454,6 +467,14 @@ impl ShellState {
         }
         if self.pending_user_input.is_some() {
             return self.handle_user_input_key(key, app_server).await;
+        }
+        if self.dashboard_route == DashboardRoute::Sessions
+            && self.session_list.focused
+            && self
+                .handle_session_list_key(key, config, app_server)
+                .await?
+        {
+            return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('p')) {
             self.open_command_palette();
@@ -580,6 +601,19 @@ impl ShellState {
         self.active_goal = response.goal;
     }
 
+    async fn refresh_session_list<S>(&mut self, app_server: &mut S)
+    where
+        S: AppShellBackend,
+    {
+        match app_server
+            .thread_list(self.session_list.list_params())
+            .await
+        {
+            Ok(response) => self.session_list.replace_threads(response.data),
+            Err(err) => self.session_list.set_error(err.to_string()),
+        }
+    }
+
     fn apply_rate_limit_update(&mut self, snapshot: RateLimitSnapshot) {
         let Some(limit_id) = snapshot.limit_id.as_deref() else {
             if self.rate_limits.is_empty() {
@@ -667,6 +701,359 @@ impl ShellState {
             | KeyCode::PageDown => {}
         }
         Ok(())
+    }
+
+    async fn handle_session_list_key<S>(
+        &mut self,
+        key: KeyEvent,
+        config: &Config,
+        app_server: &mut S,
+    ) -> Result<bool>
+    where
+        S: AppShellBackend,
+    {
+        if self.session_list.renaming() {
+            return self
+                .handle_session_rename_key(key, app_server)
+                .await
+                .map(|()| true);
+        }
+        if self.session_list.search_active() {
+            return self
+                .handle_session_search_key(key, app_server)
+                .await
+                .map(|()| true);
+        }
+        match key.code {
+            KeyCode::Esc => {
+                self.session_list.focused = false;
+                Ok(true)
+            }
+            KeyCode::Up => {
+                self.session_list.move_selection_up();
+                Ok(true)
+            }
+            KeyCode::Down => {
+                self.session_list.move_selection_down();
+                Ok(true)
+            }
+            KeyCode::Char('/') => {
+                self.session_list.start_search();
+                Ok(true)
+            }
+            KeyCode::Char('v') => {
+                self.session_list.toggle_archived();
+                self.refresh_session_list(app_server).await;
+                Ok(true)
+            }
+            KeyCode::Char('r') => {
+                self.resume_selected_session(config, app_server).await?;
+                Ok(true)
+            }
+            KeyCode::Char('f') => {
+                self.fork_selected_session(config, app_server).await?;
+                Ok(true)
+            }
+            KeyCode::Char('a') if !self.session_list.show_archived() => {
+                self.archive_selected_session(app_server).await?;
+                Ok(true)
+            }
+            KeyCode::Char('u') if self.session_list.show_archived() => {
+                self.unarchive_selected_session(app_server).await?;
+                Ok(true)
+            }
+            KeyCode::Char('d') => {
+                self.delete_selected_session(app_server).await?;
+                Ok(true)
+            }
+            KeyCode::Char('n') if !self.session_list.show_archived() => {
+                self.session_list.start_rename();
+                Ok(true)
+            }
+            KeyCode::PageUp => {
+                for _ in 0..5 {
+                    self.session_list.move_selection_up();
+                }
+                Ok(true)
+            }
+            KeyCode::PageDown => {
+                for _ in 0..5 {
+                    self.session_list.move_selection_down();
+                }
+                Ok(true)
+            }
+            KeyCode::Char(_)
+            | KeyCode::Backspace
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Enter
+            | KeyCode::Home
+            | KeyCode::End
+            | KeyCode::Delete
+            | KeyCode::Insert
+            | KeyCode::F(_)
+            | KeyCode::Null
+            | KeyCode::CapsLock
+            | KeyCode::ScrollLock
+            | KeyCode::NumLock
+            | KeyCode::PrintScreen
+            | KeyCode::Pause
+            | KeyCode::Menu
+            | KeyCode::KeypadBegin
+            | KeyCode::Media(_)
+            | KeyCode::Modifier(_)
+            | KeyCode::Tab
+            | KeyCode::BackTab => Ok(false),
+        }
+    }
+
+    async fn handle_session_search_key<S>(
+        &mut self,
+        key: KeyEvent,
+        app_server: &mut S,
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        match key.code {
+            KeyCode::Esc => {
+                self.session_list.clear_search();
+                self.refresh_session_list(app_server).await;
+            }
+            KeyCode::Enter => {
+                self.session_list.stop_search();
+            }
+            KeyCode::Backspace => {
+                self.session_list.backspace_search();
+                self.refresh_session_list(app_server).await;
+            }
+            KeyCode::Char(ch)
+                if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
+            {
+                self.session_list.push_search_char(ch);
+                self.refresh_session_list(app_server).await;
+            }
+            KeyCode::Char(_) => {}
+            KeyCode::Up => {
+                self.session_list.move_selection_up();
+            }
+            KeyCode::Down => {
+                self.session_list.move_selection_down();
+            }
+            KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Home
+            | KeyCode::End
+            | KeyCode::Delete
+            | KeyCode::Insert
+            | KeyCode::F(_)
+            | KeyCode::Null
+            | KeyCode::CapsLock
+            | KeyCode::ScrollLock
+            | KeyCode::NumLock
+            | KeyCode::PrintScreen
+            | KeyCode::Pause
+            | KeyCode::Menu
+            | KeyCode::KeypadBegin
+            | KeyCode::Media(_)
+            | KeyCode::Modifier(_)
+            | KeyCode::Tab
+            | KeyCode::BackTab
+            | KeyCode::PageUp
+            | KeyCode::PageDown => {}
+        }
+        Ok(())
+    }
+
+    async fn handle_session_rename_key<S>(
+        &mut self,
+        key: KeyEvent,
+        app_server: &mut S,
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        match key.code {
+            KeyCode::Esc => {
+                self.session_list.cancel_rename();
+            }
+            KeyCode::Enter => {
+                let Some(thread_id) = self.session_list.selected_thread_id() else {
+                    self.session_list.cancel_rename();
+                    return Ok(());
+                };
+                let Some(name) = self.session_list.take_rename_draft() else {
+                    return Ok(());
+                };
+                if name.is_empty() {
+                    self.push_error("session name cannot be empty");
+                    return Ok(());
+                }
+                app_server.thread_set_name(thread_id, name.clone()).await?;
+                self.session_list.rename_selected(name.clone());
+                if thread_id == self.thread_id {
+                    self.thread_name = Some(name.clone());
+                }
+                self.push_status(format!("renamed session {name}"));
+            }
+            KeyCode::Backspace => {
+                self.session_list.backspace_rename();
+            }
+            KeyCode::Char(ch)
+                if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
+            {
+                self.session_list.push_rename_char(ch);
+            }
+            KeyCode::Char(_) => {}
+            KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Home
+            | KeyCode::End
+            | KeyCode::Delete
+            | KeyCode::Insert
+            | KeyCode::F(_)
+            | KeyCode::Null
+            | KeyCode::CapsLock
+            | KeyCode::ScrollLock
+            | KeyCode::NumLock
+            | KeyCode::PrintScreen
+            | KeyCode::Pause
+            | KeyCode::Menu
+            | KeyCode::KeypadBegin
+            | KeyCode::Media(_)
+            | KeyCode::Modifier(_)
+            | KeyCode::Tab
+            | KeyCode::BackTab
+            | KeyCode::PageUp
+            | KeyCode::PageDown
+            | KeyCode::Up
+            | KeyCode::Down => {}
+        }
+        Ok(())
+    }
+
+    async fn resume_selected_session<S>(
+        &mut self,
+        config: &Config,
+        app_server: &mut S,
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        let Some(thread_id) = self.session_list.selected_thread_id() else {
+            self.push_status("no session selected");
+            return Ok(());
+        };
+        if thread_id == self.thread_id {
+            self.push_status("session is already open");
+            return Ok(());
+        }
+        let started = app_server.resume_thread(config.clone(), thread_id).await?;
+        self.replace_started_session(started);
+        self.refresh_session_list(app_server).await;
+        Ok(())
+    }
+
+    async fn fork_selected_session<S>(&mut self, config: &Config, app_server: &mut S) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        let Some(thread_id) = self.session_list.selected_thread_id() else {
+            self.push_status("no session selected");
+            return Ok(());
+        };
+        let started = app_server.fork_thread(config.clone(), thread_id).await?;
+        self.replace_started_session(started);
+        self.refresh_session_list(app_server).await;
+        Ok(())
+    }
+
+    async fn archive_selected_session<S>(&mut self, app_server: &mut S) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        let Some(thread_id) = self.session_list.selected_thread_id() else {
+            self.push_status("no session selected");
+            return Ok(());
+        };
+        if self.session_list.selected_is_current(self.thread_id) {
+            self.push_error("cannot archive the active session");
+            return Ok(());
+        }
+        app_server.thread_archive(thread_id).await?;
+        let title = self
+            .session_list
+            .remove_selected()
+            .map(|row| row.thread_id.to_string())
+            .unwrap_or_else(|| thread_id.to_string());
+        self.push_status(format!("archived session {title}"));
+        Ok(())
+    }
+
+    async fn unarchive_selected_session<S>(&mut self, app_server: &mut S) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        let Some(thread_id) = self.session_list.selected_thread_id() else {
+            self.push_status("no session selected");
+            return Ok(());
+        };
+        app_server.thread_unarchive(thread_id).await?;
+        self.session_list.remove_selected();
+        self.push_status(format!("unarchived session {thread_id}"));
+        Ok(())
+    }
+
+    async fn delete_selected_session<S>(&mut self, app_server: &mut S) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        let Some(thread_id) = self.session_list.selected_thread_id() else {
+            self.push_status("no session selected");
+            return Ok(());
+        };
+        if self.session_list.selected_is_current(self.thread_id) {
+            self.push_error("cannot delete the active session");
+            return Ok(());
+        }
+        app_server.thread_delete(thread_id).await?;
+        self.session_list.remove_selected();
+        self.push_status(format!("deleted session {thread_id}"));
+        Ok(())
+    }
+
+    fn replace_started_session(&mut self, started: AppServerStartedThread) {
+        let session = started.session;
+        self.thread_id = session.thread_id;
+        self.thread_name = session.thread_name;
+        if !session.model.is_empty() {
+            self.model = session.model;
+        }
+        self.cwd = session.cwd.to_string_lossy().to_string();
+        self.approval_policy = session.approval_policy;
+        self.approvals_reviewer = session.approvals_reviewer;
+        self.permission_profile = session.permission_profile;
+        self.runtime_workspace_roots = session.runtime_workspace_roots;
+        self.reasoning_effort = session.reasoning_effort;
+        self.service_tier = session.service_tier;
+        self.collaboration_mode = session.collaboration_mode;
+        self.personality = session.personality;
+        self.transcript.clear();
+        self.transcript_scroll = 0;
+        self.transcript_scroll_max.set(0);
+        self.transcript_selection = None;
+        self.streaming_assistant.clear();
+        self.streaming_plan.clear();
+        self.plan_explanation = None;
+        self.plan_steps.clear();
+        self.active_goal = None;
+        self.active_turn_id = None;
+        self.pending_approval = None;
+        self.pending_elicitation = None;
+        self.pending_user_input = None;
+        self.status = "ready".to_string();
+        self.push_system("switched session");
+        self.ingest_turn_history(started.turns);
     }
 
     async fn execute_selected_command_palette_action(
@@ -1522,6 +1909,7 @@ impl ShellState {
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
+            session_list: SessionListState::default(),
             command_palette: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
@@ -1659,6 +2047,7 @@ pub mod bench_support {
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
+            session_list: SessionListState::default(),
             command_palette: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,

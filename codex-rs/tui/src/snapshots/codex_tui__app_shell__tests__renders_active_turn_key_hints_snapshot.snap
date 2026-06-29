@@ -6,18 +6,24 @@ expression: "render_shell(&shell, area)"
  Better Codex                                                          Navigation
                                                                        1S  2W  3Set  4Help
 
- Conversation                                                          Tools
- system: Better Codex app shell                                        in progress exec just tes...
- you: Create a divergent standalone TUI.                               completed file changes in...
+ Conversation                                                          Sessions
+ system: Better Codex app shell                                        ctrl+1 focus active 0 shown
+ you: Create a divergent standalone TUI.                               loading sessions
+                                                                       r resume  f fork  a archi...
+ codex: Started a fullscreen app shell backed by app-server turns.     / search  v archived  esc
+ plan: 1. Build shell
+       2. Wire transcript                                              Tools
+       3. Render dashboard                                             in progress exec just tes...
+ tool: exec just test -p codex-tui                                     completed file changes in...
+ diff: diff 3 files +128 -24
+                                                                       Thread
+ codex: The new shell owns the fullscreen surface.                     stage-one
+                                                                       id 01900000-0000-7000-800...
+                                                                       resume, fork, archive,
 
- codex: Started a fullscreen app shell backed by app-server turns.     Thread
- plan: 1. Build shell                                                  stage-one
-       2. Wire transcript                                              id 01900000-0000-7000-800...
-       3. Render dashboard                                             resume, fork, archive,
- tool: exec just test -p codex-tui
- diff: diff 3 files +128 -24                                           Status
+                                                                       Status
                                                                        thinking
- codex: The new shell owns the fullscreen surface.                     turn turn-act...
+                                                                       turn turn-act...
 
                                                                        Plan
                                                                        Build the standalone shell
@@ -29,12 +35,6 @@ expression: "render_shell(&shell, area)"
                                                                        Enter steer
                                                                        Ctrl+C interrupt, Esc exit
                                                                        Alt+Up select, Ctrl+O copy
-
-
-
-
-
-
 
 
 

@@ -7,10 +7,10 @@ expression: "render_shell(&shell, area)"
 
 
  Dashboard
- Navigation  Tools  Thread  Status  Plan  Keys
+ Navigation  Sessions  Tools  Thread  Status  Plan  +1 more
  Navigation 1S  2W  3Set  4Help  Alt+Left/Right
- Thread stage-one
  Tools in progress exec just test -p codex-tui
+ Sessions ctrl+1 focus active 0 shown
 
 
  Conversation

@@ -6,25 +6,26 @@ expression: "render_shell(&shell, area)"
  Better Codex                                                                  Navigation
                                                                                1S  2W  3Set  4Help
 
- Conversation                                                                  Tools
- codex: # Result                                                               in progress exec just test -p...
-                                                                               completed file changes in app...
-        - Render assistant text as markdown.
-        - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.    Thread
-                                                                               stage-one
-        fn transcript() -> &'static str {                                      id 01900000-0000-7000-8000-00...
-        "markdown"                                                             resume, fork, archive, delete in
-        }
-                                                                               Status
-         Area     Status                                                       thinking
-        ━━━━━━━  ━━━━━━━━
-         code     done                                                         Plan
-        ───────  ────────                                                      Build the standalone shell in
-         table    done                                                         slices.
- plan: 1. Keep transcript rendering width-aware.                               x Shell frame
-       2. Leave selection and copy mode for the next slice.                    > Transcript model
+ Conversation                                                                  Sessions
+ codex: # Result                                                               ctrl+1 focus active 0 shown
+                                                                               loading sessions
+        - Render assistant text as markdown.                                   r resume  f fork  a archive  ...
+        - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.    / search  v archived  esc
 
-                                                                               Keys
- Composer ready 1:1                                                            Enter send
- > Type a message, Shift+Enter for newline                                     Ctrl+C/Esc exit
-                                                                               Alt+Up select, Ctrl+O copy
+        fn transcript() -> &'static str {                                      Tools
+        "markdown"                                                             in progress exec just test -p...
+        }                                                                      completed file changes in app...
+
+         Area     Status                                                       Thread
+        ━━━━━━━  ━━━━━━━━                                                      stage-one
+         code     done                                                         id 01900000-0000-7000-8000-00...
+        ───────  ────────                                                      resume, fork, archive, delete in
+         table    done
+ plan: 1. Keep transcript rendering width-aware.                               Status
+       2. Leave selection and copy mode for the next slice.                    thinking
+
+                                                                               Plan
+ Composer ready 1:1                                                            Build the standalone shell in
+ > Type a message, Shift+Enter for newline                                     slices.
+                                                                               x Shell frame
+                                                                               > Transcript model

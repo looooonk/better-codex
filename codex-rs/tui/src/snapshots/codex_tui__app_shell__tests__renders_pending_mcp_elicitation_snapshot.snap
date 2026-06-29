@@ -6,26 +6,26 @@ expression: "render_shell(&shell, area)"
  Better Codex                                                          Navigation
                                                                        1S  2W  3Set  4Help
 
- Conversation                                                          Approvals
- system: Better Codex app shell                                        mcp MCP github: URL request
- you: Create a divergent standalone TUI.
-                                                                       Tools
- codex: Started a fullscreen app shell backed by app-server turns.     in progress exec just tes...
- plan: 1. Build shell                                                  completed file changes in...
-       2. Wire transcript
-       3. Render dashboard                                             Thread
- tool: exec just test -p codex-tui                                     stage-one
- diff: diff 3 files +128 -24                                           id 01900000-0000-7000-800...
-                                                                       resume, fork, archive,
- codex: The new shell owns the fullscreen surface.
-                                                                       Status
-                                                                       thinking
+ Conversation                                                          Sessions
+ system: Better Codex app shell                                        ctrl+1 focus active 0 shown
+ you: Create a divergent standalone TUI.                               loading sessions
+                                                                       r resume  f fork  a archi...
+ codex: Started a fullscreen app shell backed by app-server turns.     / search  v archived  esc
+ plan: 1. Build shell
+       2. Wire transcript                                              Approvals
+       3. Render dashboard                                             mcp MCP github: URL request
+ tool: exec just test -p codex-tui
+ diff: diff 3 files +128 -24                                           Tools
+                                                                       in progress exec just tes...
+ codex: The new shell owns the fullscreen surface.                     completed file changes in...
 
-                                                                       Plan
-                                                                       Build the standalone shell
-                                                                       in slices.
-                                                                       x Shell frame
- MCP Elicitation                                                       > Transcript model
+                                                                       Thread
+                                                                       stage-one
+                                                                       id 01900000-0000-7000-800...
+                                                                       resume, fork, archive,
+
+                                                                       Status
+ MCP Elicitation                                                       thinking
  ? MCP github: URL request
-   Open the GitHub authorization page? - https://github.com/lo...      Keys
-   a accept  d decline  c cancel                                       Enter send
+   Open the GitHub authorization page? - https://github.com/lo...      Plan
+   a accept  d decline  c cancel                                       Build the standalone shell

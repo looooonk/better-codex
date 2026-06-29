@@ -6,10 +6,10 @@ expression: "render_shell(&shell, area)"
  Better Codex                                                          Navigation
                                                                        1S  2W  3Set  4Help
 
- Conversation                                                          Tools
-                                                                    ┃  in progress exec just tes...
- codex: The new shell owns the fullscreen surface.                  ┃  completed file changes in...
-
-                                                                       Thread
- Composer ready 1:37                                                   stage-one
- > Summarize the new shell architecture                                id 01900000-0000-7000-800...
+ Conversation                                                          Sessions
+                                                                    ┃  ctrl+1 focus active 0 shown
+ codex: The new shell owns the fullscreen surface.                  ┃  loading sessions
+                                                                       r resume  f fork  a archi...
+                                                                       / search  v archived  esc
+ Composer ready 1:37
+ > Summarize the new shell architecture                                Tools

@@ -5,6 +5,9 @@ use crate::legacy_core::config::Config;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::Thread;
+use codex_app_server_protocol::ThreadListParams;
+use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerResponse;
@@ -41,6 +44,32 @@ pub(super) trait AppShellBackend {
         config: Config,
         thread_id: ThreadId,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send;
+
+    fn thread_list(
+        &mut self,
+        params: ThreadListParams,
+    ) -> impl std::future::Future<Output = Result<ThreadListResponse>> + Send;
+
+    fn thread_archive(
+        &mut self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn thread_unarchive(
+        &mut self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<Thread>> + Send;
+
+    fn thread_delete(
+        &mut self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn thread_set_name(
+        &mut self,
+        thread_id: ThreadId,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     fn turn_start(
         &mut self,
@@ -125,6 +154,26 @@ impl AppShellBackend for AppServerSession {
         thread_id: ThreadId,
     ) -> Result<AppServerStartedThread> {
         AppServerSession::fork_thread(self, config, thread_id).await
+    }
+
+    async fn thread_list(&mut self, params: ThreadListParams) -> Result<ThreadListResponse> {
+        AppServerSession::thread_list(self, params).await
+    }
+
+    async fn thread_archive(&mut self, thread_id: ThreadId) -> Result<()> {
+        AppServerSession::thread_archive(self, thread_id).await
+    }
+
+    async fn thread_unarchive(&mut self, thread_id: ThreadId) -> Result<Thread> {
+        AppServerSession::thread_unarchive(self, thread_id).await
+    }
+
+    async fn thread_delete(&mut self, thread_id: ThreadId) -> Result<()> {
+        AppServerSession::thread_delete(self, thread_id).await
+    }
+
+    async fn thread_set_name(&mut self, thread_id: ThreadId, name: String) -> Result<()> {
+        AppServerSession::thread_set_name(self, thread_id, name).await
     }
 
     async fn turn_start(&mut self, params: AppShellTurnStart) -> Result<TurnStartResponse> {

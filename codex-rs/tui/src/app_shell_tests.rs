@@ -15,11 +15,16 @@ use codex_app_server_protocol::PermissionsRequestApprovalParams;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::SessionSource;
+use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadGoalClearedNotification;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
+use codex_app_server_protocol::ThreadListParams;
+use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadStartSource;
+use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
@@ -44,6 +49,29 @@ fn renders_first_stage_shell_snapshot() {
     let shell = ShellState::snapshot_fixture();
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_native_session_list_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    shell.session_list.replace_threads(vec![
+        thread_fixture(
+            test_thread_id("01900000-0000-7000-8000-000000000501"),
+            Some("Refactor dashboard navigation"),
+            "Add native routes for sessions and workspace",
+        ),
+        thread_fixture(
+            test_thread_id("01900000-0000-7000-8000-000000000502"),
+            None,
+            "Investigate approval rendering regression",
+        ),
+    ]);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 32,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
@@ -1518,6 +1546,142 @@ async fn start_resume_and_fork_route_through_app_shell_backend() {
 }
 
 #[tokio::test]
+async fn native_session_list_search_archive_delete_and_rename() {
+    let config = test_config().await;
+    let session_id = test_thread_id("01900000-0000-7000-8000-000000000301");
+    let other_id = test_thread_id("01900000-0000-7000-8000-000000000302");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.thread_id = session_id;
+    shell.session_list.focused = true;
+    let mut backend = RecordingBackend::with_threads(vec![
+        thread_fixture(session_id, Some("current"), "current preview"),
+        thread_fixture(other_id, Some("feature search"), "other preview"),
+    ]);
+
+    shell.refresh_session_list(&mut backend).await;
+    shell
+        .handle_session_list_key(key_char('/'), &config, &mut backend)
+        .await
+        .expect("search mode should start");
+    shell
+        .handle_session_list_key(key_char('f'), &config, &mut backend)
+        .await
+        .expect("search should filter");
+    shell
+        .handle_session_list_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("search should finish");
+    shell
+        .handle_session_list_key(key_char('a'), &config, &mut backend)
+        .await
+        .expect("archive should resolve");
+    shell
+        .handle_session_list_key(key_char('v'), &config, &mut backend)
+        .await
+        .expect("archived view should load");
+    shell
+        .handle_session_list_key(key_char('u'), &config, &mut backend)
+        .await
+        .expect("unarchive should resolve");
+    shell
+        .handle_session_list_key(key_char('v'), &config, &mut backend)
+        .await
+        .expect("active view should reload");
+    shell
+        .handle_session_list_key(key_char('n'), &config, &mut backend)
+        .await
+        .expect("rename should start");
+    shell
+        .handle_session_list_key(key_char('!'), &config, &mut backend)
+        .await
+        .expect("rename should edit");
+    shell
+        .handle_session_list_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("rename should resolve");
+    shell
+        .handle_session_list_key(key_char('d'), &config, &mut backend)
+        .await
+        .expect("delete should resolve");
+
+    let calls = backend.calls();
+    assert!(calls.contains(&RecordedBackendCall::ThreadList {
+        archived: Some(false),
+        search_term: Some("f".to_string()),
+    }));
+    assert!(calls.contains(&RecordedBackendCall::Archive(other_id)));
+    assert!(calls.contains(&RecordedBackendCall::Unarchive(other_id)));
+    assert!(calls.contains(&RecordedBackendCall::SetName {
+        thread_id: other_id,
+        name: "feature search!".to_string(),
+    }));
+    assert!(calls.contains(&RecordedBackendCall::Delete(other_id)));
+}
+
+#[tokio::test]
+async fn native_session_list_resume_and_fork_switch_shell_thread() {
+    let config = test_config().await;
+    let resume_id = test_thread_id("01900000-0000-7000-8000-000000000401");
+    let fork_id = test_thread_id("01900000-0000-7000-8000-000000000402");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    let mut backend = RecordingBackend::with_threads(vec![
+        thread_fixture(resume_id, Some("resume target"), "resume preview"),
+        thread_fixture(fork_id, Some("fork target"), "fork preview"),
+    ]);
+
+    shell.refresh_session_list(&mut backend).await;
+    shell
+        .handle_session_list_key(key_char('r'), &config, &mut backend)
+        .await
+        .expect("resume should resolve");
+    assert_eq!(shell.thread_id, resume_id);
+
+    shell.refresh_session_list(&mut backend).await;
+    shell.session_list.move_selection_down();
+    shell
+        .handle_session_list_key(key_char('f'), &config, &mut backend)
+        .await
+        .expect("fork should resolve");
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::Resume(resume_id),
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::Fork(fork_id),
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+        ]
+    );
+    assert_eq!(
+        shell.thread_name,
+        Some("forked".to_string()),
+        "fork should replace the active shell session"
+    );
+}
+
+#[tokio::test]
 async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -1634,9 +1798,17 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
 #[derive(Clone, Default)]
 struct RecordingBackend {
     calls: Arc<Mutex<Vec<RecordedBackendCall>>>,
+    threads: Arc<Mutex<Vec<Thread>>>,
 }
 
 impl RecordingBackend {
+    fn with_threads(threads: Vec<Thread>) -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            threads: Arc::new(Mutex::new(threads)),
+        }
+    }
+
     fn calls(&self) -> Vec<RecordedBackendCall> {
         self.call_log()
             .lock()
@@ -1658,6 +1830,17 @@ enum RecordedBackendCall {
     Start(Option<ThreadStartSource>),
     Resume(codex_protocol::ThreadId),
     Fork(codex_protocol::ThreadId),
+    ThreadList {
+        archived: Option<bool>,
+        search_term: Option<String>,
+    },
+    Archive(codex_protocol::ThreadId),
+    Unarchive(codex_protocol::ThreadId),
+    Delete(codex_protocol::ThreadId),
+    SetName {
+        thread_id: codex_protocol::ThreadId,
+        name: String,
+    },
     TurnStart {
         thread_id: codex_protocol::ThreadId,
         prompt: String,
@@ -1711,6 +1894,76 @@ impl backend::AppShellBackend for RecordingBackend {
             test_thread_id("01900000-0000-7000-8000-000000000202"),
             Some(thread_id),
         ))
+    }
+
+    async fn thread_list(
+        &mut self,
+        params: ThreadListParams,
+    ) -> color_eyre::Result<ThreadListResponse> {
+        self.push(RecordedBackendCall::ThreadList {
+            archived: params.archived,
+            search_term: params.search_term.clone(),
+        });
+        let search_term = params.search_term.unwrap_or_default().to_lowercase();
+        let data = self
+            .threads
+            .lock()
+            .expect("threads should lock")
+            .iter()
+            .filter(|thread| {
+                search_term.is_empty()
+                    || thread
+                        .name
+                        .as_deref()
+                        .unwrap_or(thread.preview.as_str())
+                        .to_lowercase()
+                        .contains(&search_term)
+                    || thread.preview.to_lowercase().contains(&search_term)
+            })
+            .cloned()
+            .collect();
+        Ok(ThreadListResponse {
+            data,
+            next_cursor: None,
+            backwards_cursor: None,
+        })
+    }
+
+    async fn thread_archive(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> color_eyre::Result<()> {
+        self.push(RecordedBackendCall::Archive(thread_id));
+        Ok(())
+    }
+
+    async fn thread_unarchive(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> color_eyre::Result<Thread> {
+        self.push(RecordedBackendCall::Unarchive(thread_id));
+        Ok(thread_fixture(
+            thread_id,
+            Some("unarchived"),
+            "unarchived preview",
+        ))
+    }
+
+    async fn thread_delete(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> color_eyre::Result<()> {
+        self.push(RecordedBackendCall::Delete(thread_id));
+        Ok(())
+    }
+
+    async fn thread_set_name(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+        name: String,
+    ) -> color_eyre::Result<()> {
+        self.push(RecordedBackendCall::SetName { thread_id, name });
+        Ok(())
     }
 
     async fn turn_start(
@@ -1857,6 +2110,41 @@ fn started_thread(
             network_proxy: None,
             rollout_path: None,
         },
+        turns: Vec::new(),
+    }
+}
+
+fn thread_fixture(
+    thread_id: codex_protocol::ThreadId,
+    name: Option<&str>,
+    preview: &str,
+) -> Thread {
+    Thread {
+        id: thread_id.to_string(),
+        extra: None,
+        session_id: thread_id.to_string(),
+        forked_from_id: None,
+        parent_thread_id: None,
+        preview: preview.to_string(),
+        ephemeral: false,
+        model_provider: "openai".to_string(),
+        created_at: 1_900_000_000,
+        updated_at: 1_900_000_100,
+        recency_at: Some(1_900_000_100),
+        status: ThreadStatus::NotLoaded,
+        path: None,
+        cwd: test_absolute_path("workspace/better-codex"),
+        cli_version: "0.0.0-test".to_string(),
+        source: SessionSource::Cli,
+        thread_source: None,
+        agent_nickname: None,
+        agent_role: None,
+        git_info: Some(codex_app_server_protocol::GitInfo {
+            sha: None,
+            branch: Some("main".to_string()),
+            origin_url: None,
+        }),
+        name: name.map(ToString::to_string),
         turns: Vec::new(),
     }
 }

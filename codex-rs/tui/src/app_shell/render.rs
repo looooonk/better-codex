@@ -251,11 +251,12 @@ impl ShellView<'_> {
         let available_panel_lines = usize::from(body.height.saturating_sub(1));
         for title in [
             "Navigation",
-            "Thread",
             "Approvals",
             "Background",
             "Tools",
             "Subagents",
+            "Sessions",
+            "Thread",
             "Status",
             "Model",
             "Tokens",

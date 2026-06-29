@@ -6,19 +6,25 @@ expression: "render_shell(&shell, area)"
  Better Codex                                                                        Navigation
                                                                                      1S  2W  3Set  4Help
 
- Conversation                                                                        Approvals
- system: Better Codex app shell                                                      approval Run command: cargo tes...
- you: Create a divergent standalone TUI.                                             input Tool input: tool-input-1
+ Conversation                                                                        Sessions
+ system: Better Codex app shell                                                      ctrl+1 focus active 0 shown
+ you: Create a divergent standalone TUI.                                             loading sessions
+                                                                                     r resume  f fork  a archive  d ...
+ codex: Started a fullscreen app shell backed by app-server turns.                   / search  v archived  esc composer
+ plan: 1. Build shell
+       2. Wire transcript                                                            Approvals
+       3. Render dashboard                                                           approval Run command: cargo tes...
+ tool: exec just test -p codex-tui                                                   input Tool input: tool-input-1
+ diff: diff 3 files +128 -24
+ plan: 1. Route activity into dashboard panels                                       Background
+                                                                                     workspace refresh queued
+ codex: The new shell owns the fullscreen surface.
+                                                                                     Tools
+                                                                                     in progress exec just test -p c...
+                                                                                     completed file changes in app_s...
 
- codex: Started a fullscreen app shell backed by app-server turns.                   Background
- plan: 1. Build shell                                                                workspace refresh queued
-       2. Wire transcript
-       3. Render dashboard                                                           Tools
- tool: exec just test -p codex-tui                                                   in progress exec just test -p c...
- diff: diff 3 files +128 -24                                                         completed file changes in app_s...
- plan: 1. Route activity into dashboard panels
                                                                                      Subagents
- codex: The new shell owns the fullscreen surface.                                   in progress agent SpawnAgent: 1...
+                                                                                     in progress agent SpawnAgent: 1...
                                                                                      active subagent Started: review...
 
                                                                                      Thread
@@ -40,12 +46,6 @@ expression: "render_shell(&shell, area)"
                                                                                      Enter steer
                                                                                      Ctrl+C interrupt, Esc exit
                                                                                      Alt+Up select, Ctrl+O copy
-
-
-
-
-
-
 
 
 
