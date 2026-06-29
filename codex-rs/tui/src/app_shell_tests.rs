@@ -51,6 +51,9 @@ use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput as ApiUserInput;
 use codex_app_server_protocol::WriteStatus;
+use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
+use codex_protocol::openai_models::ModelPreset;
+use codex_protocol::openai_models::ModelServiceTier;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
@@ -1552,6 +1555,34 @@ fn key_char(ch: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(ch), KeyModifiers::empty())
 }
 
+fn model_preset_fixture(slug: &str, show_in_picker: bool, service_tiers: &[&str]) -> ModelPreset {
+    ModelPreset {
+        id: slug.to_string(),
+        model: slug.to_string(),
+        display_name: slug.to_string(),
+        description: format!("{slug} description"),
+        default_reasoning_effort: ReasoningEffort::Medium,
+        supported_reasoning_efforts: Vec::new(),
+        supports_personality: false,
+        additional_speed_tiers: Vec::new(),
+        service_tiers: service_tiers
+            .iter()
+            .map(|tier| ModelServiceTier {
+                id: (*tier).to_string(),
+                name: (*tier).to_string(),
+                description: format!("{tier} description"),
+            })
+            .collect(),
+        default_service_tier: None,
+        is_default: false,
+        upgrade: None,
+        show_in_picker,
+        availability_nux: None,
+        supported_in_api: true,
+        input_modalities: Vec::new(),
+    }
+}
+
 fn command_approval_request() -> ServerRequest {
     ServerRequest::CommandExecutionRequestApproval {
         request_id: RequestId::Integer(41),
@@ -2242,6 +2273,120 @@ async fn native_settings_pages_write_config_and_validate_edits() {
     assert!(
         rendered.contains("missing-theme"),
         "settings validation should render the invalid theme name"
+    );
+}
+
+#[tokio::test]
+async fn native_settings_cycle_models_and_service_tiers() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    shell.settings.focused = true;
+    shell.available_models = vec![
+        model_preset_fixture("gpt-5-codex", /*show_in_picker*/ true, &[]),
+        model_preset_fixture("hidden-model", /*show_in_picker*/ false, &[]),
+        model_preset_fixture(
+            "gpt-5.5",
+            /*show_in_picker*/ true,
+            &["fast-tier", "batch-tier"],
+        ),
+    ];
+    let mut backend = RecordingBackend::default();
+
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("model should cycle");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("reasoning row should be selected");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("service tier row should be selected");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("service tier should cycle to first tier");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("service tier should cycle to second tier");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("service tier should cycle to default");
+
+    assert_eq!(shell.model, "gpt-5.5");
+    assert_eq!(
+        shell.service_tier.as_deref(),
+        Some(SERVICE_TIER_DEFAULT_REQUEST_VALUE)
+    );
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ConfigWrite(vec![
+                ("model".to_string(), json!("gpt-5.5")),
+                (
+                    "model_reasoning_effort".to_string(),
+                    serde_json::Value::Null
+                ),
+            ]),
+            RecordedBackendCall::ThreadSettingsUpdate {
+                model: Some("gpt-5.5".to_string()),
+                effort: None,
+                service_tier: None,
+                approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+            },
+            RecordedBackendCall::ConfigWrite(vec![(
+                "service_tier".to_string(),
+                json!("fast-tier"),
+            )]),
+            RecordedBackendCall::ThreadSettingsUpdate {
+                model: None,
+                effort: None,
+                service_tier: Some(Some("fast-tier".to_string())),
+                approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+            },
+            RecordedBackendCall::ConfigWrite(vec![(
+                "service_tier".to_string(),
+                json!("batch-tier"),
+            )]),
+            RecordedBackendCall::ThreadSettingsUpdate {
+                model: None,
+                effort: None,
+                service_tier: Some(Some("batch-tier".to_string())),
+                approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+            },
+            RecordedBackendCall::ConfigWrite(vec![(
+                "service_tier".to_string(),
+                json!(SERVICE_TIER_DEFAULT_REQUEST_VALUE),
+            )]),
+            RecordedBackendCall::ThreadSettingsUpdate {
+                model: None,
+                effort: None,
+                service_tier: Some(Some(SERVICE_TIER_DEFAULT_REQUEST_VALUE.to_string())),
+                approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+            },
+        ]
     );
 }
 

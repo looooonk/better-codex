@@ -84,8 +84,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 Agents may continuously work through this plan until every unchecked item is complete. While an agent loop is running, the user may run the program and update this section with fixes, regressions, or feature requests discovered during live use. Treat these entries as user-supplied implementation tasks: triage them against the staged plan, keep them as checkboxes, and mark them complete only after the requested behavior has been implemented and verified.
 
-- [x] Numbers in the dashboard like token count or time should be rendered with commas as delimiters (i.e. 1,000,000 over 1000000).
-- [x] Scrolling does not work for the conversation log; scrolling just acts identical to the up and down arrows where it selects previous messages.
-- [x] Display a narrow scrollbar to the right-side of the conversation log that shows at which point of the conversation log the user has scrolled to, instead of showing how many lines the user is above the bottom (remove that feature). The scroll bar should get shorter as the conversation length increases, but should have a minimum height.
 - [x] When scrolling between sessions via up / down arrows, the marker for the session `>` can go disappear if it goes below the allocated amount of sessions the dashboard can display. Remove this behavior and allow the user to properly scroll between sessions using the arrows.
 - [x] After implementing scrolling for sessions, add numbers to the sessions instead of a scroll bar so the user can get a sense of scrolling and raw position.
+- [x] Currently cannot scroll through models (like gpt5.5 / gpt5.4 etc.) or service tiers, and this should be fixed.
+- [ ] The search functionality for sessions is extremely slow, this should be accelerated if possible (unless this is an issue due to unoptimized compilation).

@@ -30,6 +30,7 @@ use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnPlanStep;
 use codex_app_server_protocol::UserInput;
 use codex_protocol::ThreadId;
+use codex_protocol::openai_models::ModelPreset;
 use color_eyre::Result;
 use color_eyre::eyre::WrapErr;
 use crossterm::event::KeyCode;
@@ -118,6 +119,7 @@ pub(crate) async fn run(
     let mut shell = ShellState::new(
         started.session,
         bootstrap.default_model,
+        bootstrap.available_models,
         config.codex_home.to_path_buf(),
         route_state.route,
         config.tui_theme.clone(),
@@ -292,6 +294,7 @@ struct ShellState {
     thread_id: ThreadId,
     thread_name: Option<String>,
     model: String,
+    available_models: Vec<ModelPreset>,
     cwd: String,
     approval_policy: codex_app_server_protocol::AskForApproval,
     approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer,
@@ -342,6 +345,7 @@ impl ShellState {
     fn new(
         session: ThreadSessionState,
         fallback_model: String,
+        available_models: Vec<ModelPreset>,
         codex_home: std::path::PathBuf,
         dashboard_route: DashboardRoute,
         tui_theme: Option<String>,
@@ -357,6 +361,7 @@ impl ShellState {
             thread_id: session.thread_id,
             thread_name: session.thread_name,
             model,
+            available_models,
             cwd: session.cwd.to_string_lossy().to_string(),
             approval_policy: session.approval_policy,
             approvals_reviewer: session.approvals_reviewer,
@@ -2021,6 +2026,7 @@ impl ShellState {
                 .expect("valid snapshot thread id"),
             thread_name: Some("stage-one".to_string()),
             model: "gpt-5-codex".to_string(),
+            available_models: Vec::new(),
             cwd: "/workspace/better-codex".to_string(),
             approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
             approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
@@ -2165,6 +2171,7 @@ pub mod bench_support {
             thread_id: ThreadId::new(),
             thread_name: Some("bench".to_string()),
             model: "gpt-5-codex".to_string(),
+            available_models: Vec::new(),
             cwd: "/workspace/better-codex".to_string(),
             approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
             approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,

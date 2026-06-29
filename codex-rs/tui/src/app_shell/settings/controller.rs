@@ -13,6 +13,7 @@ use crate::config_update::replace_config_value;
 use crate::render::highlight::validate_theme_name;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
+use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use codex_protocol::openai_models::ReasoningEffort;
 use color_eyre::Result;
 use crossterm::event::KeyCode;
@@ -152,11 +153,15 @@ impl ShellState {
         let action = self.settings.selected_action();
         match action {
             SettingsAction::Model => {
-                self.settings.start_edit(action, self.model.clone());
+                if !self.cycle_model(app_server).await? {
+                    self.settings.start_edit(action, self.model.clone());
+                }
             }
             SettingsAction::ServiceTier => {
-                self.settings
-                    .start_edit(action, self.service_tier.clone().unwrap_or_default());
+                if !self.cycle_service_tier(app_server).await? {
+                    self.settings
+                        .start_edit(action, self.service_tier.clone().unwrap_or_default());
+                }
             }
             SettingsAction::Theme => {
                 self.settings
@@ -214,6 +219,66 @@ impl ShellState {
         Ok(())
     }
 
+    async fn cycle_model<S>(&mut self, app_server: &mut S) -> Result<bool>
+    where
+        S: AppShellBackend,
+    {
+        let Some(next_model) = ({
+            let models = self
+                .available_models
+                .iter()
+                .filter(|preset| preset.show_in_picker)
+                .map(|preset| preset.model.as_str())
+                .collect::<Vec<_>>();
+            if models.is_empty() {
+                None
+            } else {
+                let current = models
+                    .iter()
+                    .position(|model| *model == self.model)
+                    .unwrap_or(models.len().saturating_sub(1));
+                Some(models[(current + 1) % models.len()].to_string())
+            }
+        }) else {
+            return Ok(false);
+        };
+        self.apply_model(next_model, app_server).await?;
+        Ok(true)
+    }
+
+    async fn cycle_service_tier<S>(&mut self, app_server: &mut S) -> Result<bool>
+    where
+        S: AppShellBackend,
+    {
+        let Some(next_tier) = ({
+            let Some(preset) = self
+                .available_models
+                .iter()
+                .find(|preset| preset.model == self.model)
+            else {
+                return Ok(false);
+            };
+            if preset.service_tiers.is_empty() {
+                None
+            } else {
+                let mut tiers = Vec::with_capacity(preset.service_tiers.len() + 1);
+                tiers.push(SERVICE_TIER_DEFAULT_REQUEST_VALUE);
+                tiers.extend(preset.service_tiers.iter().map(|tier| tier.id.as_str()));
+
+                let current = self
+                    .service_tier
+                    .as_deref()
+                    .and_then(|service_tier| tiers.iter().position(|tier| *tier == service_tier))
+                    .unwrap_or(0);
+                Some(Some(tiers[(current + 1) % tiers.len()].to_string()))
+            }
+        }) else {
+            return Ok(false);
+        };
+        self.apply_service_tier(next_tier, app_server).await?;
+        Ok(true)
+    }
+
     async fn apply_settings_edit<S>(
         &mut self,
         action: SettingsAction,
@@ -233,21 +298,7 @@ impl ShellState {
                     self.settings.set_error("model cannot contain whitespace");
                     return Ok(());
                 }
-                self.model = draft.clone();
-                app_server
-                    .write_config(build_model_selection_edits(
-                        &draft,
-                        self.reasoning_effort.as_ref(),
-                    ))
-                    .await?;
-                app_server
-                    .thread_settings_update(self.thread_settings_update_params(
-                        Some(draft.clone()),
-                        None,
-                        None,
-                    ))
-                    .await?;
-                self.settings.set_info(format!("model set to {draft}"));
+                self.apply_model(draft, app_server).await?;
             }
             SettingsAction::ServiceTier => {
                 if draft.chars().any(char::is_whitespace) {
@@ -256,20 +307,7 @@ impl ShellState {
                     return Ok(());
                 }
                 let service_tier = (!draft.is_empty()).then_some(draft.clone());
-                self.service_tier = service_tier.clone();
-                app_server
-                    .write_config(build_service_tier_selection_edits(service_tier.as_deref()))
-                    .await?;
-                app_server
-                    .thread_settings_update(self.thread_settings_update_params(
-                        None,
-                        None,
-                        Some(service_tier.clone()),
-                    ))
-                    .await?;
-                let label = service_tier.as_deref().unwrap_or("default");
-                self.settings
-                    .set_info(format!("service tier set to {label}"));
+                self.apply_service_tier(service_tier, app_server).await?;
             }
             SettingsAction::Theme => {
                 let theme = (!draft.is_empty()).then_some(draft.clone());
@@ -295,6 +333,53 @@ impl ShellState {
             | SettingsAction::McpServers
             | SettingsAction::Plugins => {}
         }
+        Ok(())
+    }
+
+    async fn apply_model<S>(&mut self, model: String, app_server: &mut S) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        self.model = model.clone();
+        app_server
+            .write_config(build_model_selection_edits(
+                &model,
+                self.reasoning_effort.as_ref(),
+            ))
+            .await?;
+        app_server
+            .thread_settings_update(self.thread_settings_update_params(
+                Some(model.clone()),
+                None,
+                None,
+            ))
+            .await?;
+        self.settings.set_info(format!("model set to {model}"));
+        Ok(())
+    }
+
+    async fn apply_service_tier<S>(
+        &mut self,
+        service_tier: Option<String>,
+        app_server: &mut S,
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        self.service_tier = service_tier.clone();
+        app_server
+            .write_config(build_service_tier_selection_edits(service_tier.as_deref()))
+            .await?;
+        app_server
+            .thread_settings_update(self.thread_settings_update_params(
+                None,
+                None,
+                Some(service_tier.clone()),
+            ))
+            .await?;
+        let label = service_tier.as_deref().unwrap_or("default");
+        self.settings
+            .set_info(format!("service tier set to {label}"));
         Ok(())
     }
 
