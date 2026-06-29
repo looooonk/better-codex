@@ -84,9 +84,6 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 Agents may continuously work through this plan until every unchecked item is complete. While an agent loop is running, the user may run the program and update this section with fixes, regressions, or feature requests discovered during live use. Treat these entries as user-supplied implementation tasks: triage them against the staged plan, keep them as checkboxes, and mark them complete only after the requested behavior has been implemented and verified.
 
-- [x] Add a bit of spacing between user messages and codex messages in the conversation pane.
-- [x] Add a little bit of padding for all sides for all panes, like the side dashboard and the text input pane.
-- [x] Newlines in Codex's response and command outputs seem to be rendered twice
-- [x] Items in the dashboard are prematurely cutoff even when the horizontal space allows for more text to be rendered
 - [x] Numbers in the dashboard like token count or time should be rendered with commas as delimiters (i.e. 1,000,000 over 1000000).
 - [x] Scrolling does not work for the conversation log; scrolling just acts identical to the up and down arrows where it selects previous messages.
+- [ ] Display a narrow scrollbar to the right-side of the conversation log that shows at which point of the conversation log the user has scrolled to, instead of showing how many lines the user is above the bottom (remove that feature). The scroll bar should get shorter as the conversation length increases, but should have a minimum height.
