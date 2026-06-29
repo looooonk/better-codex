@@ -29,6 +29,8 @@ impl ShellState {
             theme: self.tui_theme.clone(),
             animations: self.animations,
             show_tooltips: self.show_tooltips,
+            mcp_inventory: self.mcp_inventory.clone(),
+            plugin_inventory: self.plugin_inventory.clone(),
         }
     }
 
@@ -202,6 +204,12 @@ impl ShellState {
                     }
                 ));
             }
+            SettingsAction::McpServers => {
+                self.refresh_mcp_inventory(app_server).await;
+            }
+            SettingsAction::Plugins => {
+                self.refresh_plugin_inventory(app_server).await;
+            }
         }
         Ok(())
     }
@@ -283,7 +291,9 @@ impl ShellState {
             SettingsAction::ReasoningEffort
             | SettingsAction::ApprovalPolicy
             | SettingsAction::Animations
-            | SettingsAction::Tooltips => {}
+            | SettingsAction::Tooltips
+            | SettingsAction::McpServers
+            | SettingsAction::Plugins => {}
         }
         Ok(())
     }

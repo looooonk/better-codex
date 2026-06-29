@@ -18,7 +18,10 @@ use crate::tui;
 use crate::tui::TuiEvent;
 use crate::workspace_command::AppServerWorkspaceCommandRunner;
 use codex_app_server_protocol::FileUpdateChange;
+use codex_app_server_protocol::ListMcpServerStatusParams;
+use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::PatchChangeKind;
+use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadItem;
@@ -48,6 +51,7 @@ mod dashboard_workspace;
 mod design;
 mod elicitation;
 mod events;
+mod integrations;
 mod navigation;
 mod render;
 mod sessions;
@@ -69,6 +73,8 @@ use command_palette::command_palette_entries;
 use composer::ComposerState;
 use elicitation::ElicitationChoice;
 use elicitation::PendingElicitation;
+use integrations::McpInventorySummary;
+use integrations::PluginInventorySummary;
 use navigation::AppShellRouteState;
 use navigation::DashboardRoute;
 use render::draw_shell;
@@ -300,6 +306,8 @@ struct ShellState {
     transcript_selection: Option<usize>,
     session_list: SessionListState,
     settings: SettingsState,
+    mcp_inventory: McpInventorySummary,
+    plugin_inventory: PluginInventorySummary,
     tui_theme: Option<String>,
     animations: bool,
     show_tooltips: bool,
@@ -363,6 +371,8 @@ impl ShellState {
             transcript_selection: None,
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
+            mcp_inventory: McpInventorySummary::default(),
+            plugin_inventory: PluginInventorySummary::default(),
             tui_theme,
             animations,
             show_tooltips,
@@ -640,6 +650,75 @@ impl ShellState {
         {
             Ok(response) => self.session_list.replace_threads(response.data),
             Err(err) => self.session_list.set_error(err.to_string()),
+        }
+    }
+
+    async fn refresh_mcp_inventory<S>(&mut self, app_server: &mut S)
+    where
+        S: AppShellBackend,
+    {
+        let mut cursor = None;
+        let mut response = codex_app_server_protocol::ListMcpServerStatusResponse {
+            data: Vec::new(),
+            next_cursor: None,
+        };
+        loop {
+            match app_server
+                .mcp_server_status_list(ListMcpServerStatusParams {
+                    cursor: cursor.clone(),
+                    limit: Some(100),
+                    detail: Some(McpServerStatusDetail::ToolsAndAuthOnly),
+                    thread_id: Some(self.thread_id.to_string()),
+                })
+                .await
+            {
+                Ok(mut page) => {
+                    cursor = page.next_cursor.take();
+                    response.data.extend(page.data);
+                    if cursor.is_none() {
+                        self.mcp_inventory = McpInventorySummary::from_response(&response);
+                        self.settings.set_info("mcp inventory refreshed");
+                        return;
+                    }
+                }
+                Err(err) => {
+                    self.mcp_inventory = McpInventorySummary::from_error(err.to_string());
+                    self.settings.set_error("failed to refresh mcp inventory");
+                    return;
+                }
+            }
+        }
+    }
+
+    async fn refresh_plugin_inventory<S>(&mut self, app_server: &mut S)
+    where
+        S: AppShellBackend,
+    {
+        let cwd = match codex_utils_absolute_path::AbsolutePathBuf::try_from(
+            std::path::PathBuf::from(&self.cwd),
+        ) {
+            Ok(cwd) => cwd,
+            Err(err) => {
+                self.plugin_inventory = PluginInventorySummary::from_error(err.to_string());
+                self.settings.set_error("failed to refresh plugins");
+                return;
+            }
+        };
+        match app_server
+            .plugin_list(PluginListParams {
+                cwds: Some(vec![cwd]),
+                marketplace_kinds: None,
+            })
+            .await
+        {
+            Ok(response) => {
+                self.plugin_inventory = PluginInventorySummary::from_response(&response);
+                self.settings.set_info("plugin inventory refreshed");
+            }
+            Err(err) => {
+                self.plugin_inventory = PluginInventorySummary::from_error(err.to_string());
+                self.settings.set_error("failed to refresh plugins");
+            }
         }
     }
 
@@ -1963,6 +2042,8 @@ impl ShellState {
             transcript_selection: None,
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
+            mcp_inventory: McpInventorySummary::default(),
+            plugin_inventory: PluginInventorySummary::default(),
             tui_theme: None,
             animations: true,
             show_tooltips: true,
@@ -2105,6 +2186,8 @@ pub mod bench_support {
             transcript_selection: None,
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
+            mcp_inventory: McpInventorySummary::default(),
+            plugin_inventory: PluginInventorySummary::default(),
             tui_theme: None,
             animations: true,
             show_tooltips: true,

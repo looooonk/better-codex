@@ -1,4 +1,6 @@
 use super::dashboard::dashboard_value;
+use super::integrations::McpInventorySummary;
+use super::integrations::PluginInventorySummary;
 use crate::text_formatting::truncate_text;
 use codex_app_server_protocol::AskForApproval;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -23,6 +25,7 @@ pub(super) enum SettingsPage {
     Model,
     Permissions,
     Appearance,
+    Integrations,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,6 +37,8 @@ pub(super) enum SettingsAction {
     Theme,
     Animations,
     Tooltips,
+    McpServers,
+    Plugins,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +50,8 @@ pub(super) struct SettingsView {
     pub(super) theme: Option<String>,
     pub(super) animations: bool,
     pub(super) show_tooltips: bool,
+    pub(super) mcp_inventory: McpInventorySummary,
+    pub(super) plugin_inventory: PluginInventorySummary,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,6 +93,8 @@ impl SettingsState {
             tab("Permissions", self.page == SettingsPage::Permissions),
             "  ".dim(),
             tab("Appearance", self.page == SettingsPage::Appearance),
+            "  ".dim(),
+            tab("Integrations", self.page == SettingsPage::Integrations),
         ]));
 
         if let Some(edit) = &self.edit {
@@ -129,7 +138,8 @@ impl SettingsState {
         self.page = match self.page {
             SettingsPage::Model => SettingsPage::Permissions,
             SettingsPage::Permissions => SettingsPage::Appearance,
-            SettingsPage::Appearance => SettingsPage::Model,
+            SettingsPage::Appearance => SettingsPage::Integrations,
+            SettingsPage::Integrations => SettingsPage::Model,
         };
         self.selected = 0;
         self.edit = None;
@@ -140,6 +150,7 @@ impl SettingsState {
             SettingsPage::Model => SettingsPage::Appearance,
             SettingsPage::Permissions => SettingsPage::Model,
             SettingsPage::Appearance => SettingsPage::Permissions,
+            SettingsPage::Integrations => SettingsPage::Appearance,
         };
         self.selected = 0;
         self.edit = None;
@@ -167,6 +178,7 @@ impl SettingsState {
             SettingsAction::Theme | SettingsAction::Animations | SettingsAction::Tooltips => {
                 SettingsPage::Appearance
             }
+            SettingsAction::McpServers | SettingsAction::Plugins => SettingsPage::Integrations,
         };
         self.selected = self
             .actions()
@@ -230,6 +242,7 @@ impl SettingsState {
                 SettingsAction::Animations,
                 SettingsAction::Tooltips,
             ],
+            SettingsPage::Integrations => &[SettingsAction::McpServers, SettingsAction::Plugins],
         }
     }
 }
@@ -240,6 +253,7 @@ impl SettingsPage {
             Self::Model => "model",
             Self::Permissions => "permissions",
             Self::Appearance => "appearance",
+            Self::Integrations => "integrations",
         }
     }
 }
@@ -254,6 +268,8 @@ impl SettingsAction {
             Self::Theme => "theme",
             Self::Animations => "animations",
             Self::Tooltips => "tooltips",
+            Self::McpServers => "mcp servers",
+            Self::Plugins => "plugins",
         }
     }
 }
@@ -294,6 +310,8 @@ fn setting_row(
         SettingsAction::Theme => view.theme.clone().unwrap_or_else(|| "default".to_string()),
         SettingsAction::Animations => on_off(view.animations).to_string(),
         SettingsAction::Tooltips => on_off(view.show_tooltips).to_string(),
+        SettingsAction::McpServers => view.mcp_inventory.label(),
+        SettingsAction::Plugins => view.plugin_inventory.label(),
     };
     let text = format!("{label}: {value}");
     Line::from(vec![

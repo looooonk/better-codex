@@ -9,7 +9,7 @@ expression: "render_shell(&shell, area)"
  Conversation                                                          Settings
  system: Better Codex app shell                                        ctrl+3 focus model 3 fields
  you: Create a divergent standalone TUI.                               Model  Permissions
-                                                                       Appearance
+                                                                       Appearance  Integrations
  codex: Started a fullscreen app shell backed by app-server turns.     > model: gpt-5-codex
  plan: 1. Build shell                                                    reasoning: default
        2. Wire transcript                                                service tier: default
@@ -24,8 +24,8 @@ expression: "render_shell(&shell, area)"
                                                                        context 200,000
                                                                        context 95% used
 
+                                                                       Integrations
+ Composer ready 1:37                                                   mcp not loaded
+ > Summarize the new shell architecture                                plugins not loaded
+
                                                                        Workspace
- Composer ready 1:37                                                   cwd /workspace/better-codex
- > Summarize the new shell architecture                                profile managed
-                                                                       files restricted, net
-                                                                       restricted

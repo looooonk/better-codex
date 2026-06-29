@@ -5,8 +5,13 @@ use crate::config_update::write_config_batch;
 use crate::legacy_core::config::Config;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AskForApproval;
+use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ConfigWriteResponse;
+use codex_app_server_protocol::ListMcpServerStatusParams;
+use codex_app_server_protocol::ListMcpServerStatusResponse;
+use codex_app_server_protocol::PluginListParams;
+use codex_app_server_protocol::PluginListResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadListParams;
@@ -25,6 +30,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::Result;
 use std::path::PathBuf;
+use uuid::Uuid;
 
 /// Backend operations the app shell drives through the app-server boundary.
 ///
@@ -84,6 +90,16 @@ pub(super) trait AppShellBackend {
         &mut self,
         params: ThreadSettingsUpdateParams,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn mcp_server_status_list(
+        &mut self,
+        params: ListMcpServerStatusParams,
+    ) -> impl std::future::Future<Output = Result<ListMcpServerStatusResponse>> + Send;
+
+    fn plugin_list(
+        &mut self,
+        params: PluginListParams,
+    ) -> impl std::future::Future<Output = Result<PluginListResponse>> + Send;
 
     fn turn_start(
         &mut self,
@@ -196,6 +212,29 @@ impl AppShellBackend for AppServerSession {
 
     async fn thread_settings_update(&mut self, params: ThreadSettingsUpdateParams) -> Result<()> {
         AppServerSession::thread_settings_update(self, params).await
+    }
+
+    async fn mcp_server_status_list(
+        &mut self,
+        params: ListMcpServerStatusParams,
+    ) -> Result<ListMcpServerStatusResponse> {
+        AppServerSession::request_handle(self)
+            .request_typed(ClientRequest::McpServerStatusList {
+                request_id: RequestId::String(format!("app-shell-mcp-{}", Uuid::new_v4())),
+                params,
+            })
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn plugin_list(&mut self, params: PluginListParams) -> Result<PluginListResponse> {
+        AppServerSession::request_handle(self)
+            .request_typed(ClientRequest::PluginList {
+                request_id: RequestId::String(format!("app-shell-plugin-{}", Uuid::new_v4())),
+                params,
+            })
+            .await
+            .map_err(Into::into)
     }
 
     async fn turn_start(&mut self, params: AppShellTurnStart) -> Result<TurnStartResponse> {

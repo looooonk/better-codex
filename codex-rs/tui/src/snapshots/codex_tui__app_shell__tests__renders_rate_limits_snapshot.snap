@@ -9,7 +9,7 @@ expression: "render_shell(&shell, area)"
  Conversation                                                          Settings
  system: Better Codex app shell                                        ctrl+3 focus model 3 fields
  you: Create a divergent standalone TUI.                               Model  Permissions
-                                                                       Appearance
+                                                                       Appearance  Integrations
  codex: Started a fullscreen app shell backed by app-server turns.     > model: gpt-5-codex
  plan: 1. Build shell                                                    reasoning: default
        2. Wire transcript                                                service tier: default
@@ -23,6 +23,10 @@ expression: "render_shell(&shell, area)"
                                                                        output 240
                                                                        context 200,000
 
+                                                                       Integrations
+                                                                       mcp not loaded
+                                                                       plugins not loaded
+
                                                                        Rate Limits
                                                                        Codex 82% 300m
                                                                          secondary 18% 10,080m
@@ -35,10 +39,7 @@ expression: "render_shell(&shell, area)"
                                                                        Workspace
                                                                        cwd /workspace/better-codex
                                                                        profile managed
-                                                                       files restricted, net
-                                                                       restricted
+ Composer ready 1:37                                                   files restricted, net
+ > Summarize the new shell architecture                                restricted
 
                                                                        Keys
- Composer ready 1:37                                                   Enter send
- > Summarize the new shell architecture                                Ctrl+C/Esc exit
-                                                                       Alt+Up select, Ctrl+O copy

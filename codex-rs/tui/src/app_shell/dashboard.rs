@@ -59,6 +59,10 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
         "Settings",
         shell.settings.lines(&shell.settings_view(), width),
     ));
+    panels.push(DashboardPanel::new(
+        "Integrations",
+        integration_lines(shell, width),
+    ));
     let mut status_lines = vec![status_line(&shell.status)];
     if let Some(active_turn_id) = &shell.active_turn_id {
         status_lines.push(Line::from(vec![
@@ -295,6 +299,7 @@ fn route_dashboard_panels(
             "Settings",
             "Model",
             "Tokens",
+            "Integrations",
             "Rate Limits",
             "Workspace",
             "Keys",
@@ -439,6 +444,29 @@ fn activity_status_line(label: &'static str, title: &str, width: usize) -> Line<
         " ".dim(),
         dashboard_value(title, width, prefix_width).into(),
     ])
+}
+
+fn integration_lines(shell: &ShellState, width: usize) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from(vec![
+        "mcp ".dim(),
+        dashboard_value(&shell.mcp_inventory.label(), width, /*prefix_width*/ 4).into(),
+    ])];
+    lines.push(Line::from(vec![
+        "plugins ".dim(),
+        dashboard_value(
+            &shell.plugin_inventory.label(),
+            width,
+            /*prefix_width*/ 8,
+        )
+        .into(),
+    ]));
+    if shell.mcp_inventory.has_details() {
+        lines.extend(shell.mcp_inventory.lines(width).into_iter().take(2));
+    }
+    if shell.plugin_inventory.has_details() {
+        lines.extend(shell.plugin_inventory.lines(width).into_iter().take(2));
+    }
+    lines
 }
 
 fn short_id(id: &str) -> String {

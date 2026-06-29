@@ -11,9 +11,23 @@ use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
+use codex_app_server_protocol::ListMcpServerStatusParams;
+use codex_app_server_protocol::ListMcpServerStatusResponse;
+use codex_app_server_protocol::McpAuthStatus;
 use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
+use codex_app_server_protocol::McpServerStatus;
+use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::PermissionsRequestApprovalParams;
+use codex_app_server_protocol::PluginAuthPolicy;
+use codex_app_server_protocol::PluginAvailability;
+use codex_app_server_protocol::PluginInstallPolicy;
+use codex_app_server_protocol::PluginInterface;
+use codex_app_server_protocol::PluginListParams;
+use codex_app_server_protocol::PluginListResponse;
+use codex_app_server_protocol::PluginMarketplaceEntry;
+use codex_app_server_protocol::PluginSource;
+use codex_app_server_protocol::PluginSummary;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
@@ -1590,6 +1604,94 @@ fn test_absolute_path(tail: &str) -> AbsolutePathBuf {
     AbsolutePathBuf::try_from(path).expect("test path should be absolute")
 }
 
+fn mcp_status_fixture<const N: usize>(
+    name: &str,
+    auth_status: McpAuthStatus,
+    tools: [&str; N],
+) -> McpServerStatus {
+    McpServerStatus {
+        name: name.to_string(),
+        server_info: None,
+        tools: tools
+            .into_iter()
+            .map(|tool| {
+                (
+                    tool.to_string(),
+                    codex_protocol::mcp::Tool {
+                        name: tool.to_string(),
+                        title: None,
+                        description: None,
+                        input_schema: serde_json::json!({}),
+                        output_schema: None,
+                        annotations: None,
+                        icons: None,
+                        meta: None,
+                    },
+                )
+            })
+            .collect(),
+        resources: Vec::new(),
+        resource_templates: Vec::new(),
+        auth_status,
+    }
+}
+
+fn plugin_list_response_fixture() -> PluginListResponse {
+    PluginListResponse {
+        marketplaces: vec![PluginMarketplaceEntry {
+            name: "local".to_string(),
+            path: Some(test_absolute_path("codex-home/plugins/marketplace.json")),
+            interface: None,
+            plugins: vec![
+                plugin_summary_fixture("plugin-calendar", "Calendar", true, true),
+                plugin_summary_fixture("plugin-drive", "Drive", false, false),
+            ],
+        }],
+        marketplace_load_errors: Vec::new(),
+        featured_plugin_ids: Vec::new(),
+    }
+}
+
+fn plugin_summary_fixture(id: &str, name: &str, installed: bool, enabled: bool) -> PluginSummary {
+    PluginSummary {
+        id: id.to_string(),
+        remote_plugin_id: None,
+        local_version: None,
+        name: name.to_string(),
+        share_context: None,
+        source: PluginSource::Local {
+            path: test_absolute_path(&format!("codex-home/plugins/{id}")),
+        },
+        installed,
+        enabled,
+        install_policy: PluginInstallPolicy::Available,
+        auth_policy: PluginAuthPolicy::OnUse,
+        availability: PluginAvailability::Available,
+        interface: Some(PluginInterface {
+            display_name: Some(name.to_string()),
+            short_description: None,
+            long_description: None,
+            developer_name: None,
+            category: None,
+            capabilities: Vec::new(),
+            website_url: None,
+            privacy_policy_url: None,
+            terms_of_service_url: None,
+            default_prompt: None,
+            brand_color: None,
+            composer_icon: None,
+            composer_icon_url: None,
+            logo: None,
+            logo_dark: None,
+            logo_url: None,
+            logo_url_dark: None,
+            screenshots: Vec::new(),
+            screenshot_urls: Vec::new(),
+        }),
+        keywords: Vec::new(),
+    }
+}
+
 fn buffer_contents(buf: &Buffer, area: Rect) -> String {
     let mut rows = Vec::new();
     for y in area.y..area.bottom() {
@@ -1813,6 +1915,73 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
         shell.thread_name,
         Some("forked".to_string()),
         "fork should replace the active shell session"
+    );
+}
+
+#[tokio::test]
+async fn native_settings_integrations_refresh_mcp_and_plugins() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    shell.settings.focused = true;
+    shell.settings.focus_action(SettingsAction::McpServers);
+    let mut backend = RecordingBackend::with_integrations(
+        vec![
+            mcp_status_fixture("github", McpAuthStatus::OAuth, ["search", "read"]),
+            mcp_status_fixture("linear", McpAuthStatus::NotLoggedIn, ["issue"]),
+        ],
+        plugin_list_response_fixture(),
+    );
+
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("mcp inventory should refresh");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("plugins row should be selected");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("plugin inventory should refresh");
+
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::McpServerStatusList {
+                cursor: None,
+                detail: Some(McpServerStatusDetail::ToolsAndAuthOnly),
+                thread_id: Some(shell.thread_id.to_string()),
+            },
+            RecordedBackendCall::PluginList {
+                cwd: Some(vec![test_absolute_path("workspace/better-codex")]),
+                marketplace_kinds: None,
+            },
+        ]
+    );
+    assert_eq!(
+        shell.mcp_inventory.label(),
+        "2 servers / 3 tools / 1 login needed"
+    );
+    assert_eq!(shell.plugin_inventory.label(), "1 installed / 2 available");
+    let rendered = render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 34,
+        ),
+    );
+    assert!(
+        rendered.contains("Integrations"),
+        "dashboard should render native integrations panel:\n{rendered}"
     );
 }
 
@@ -2064,6 +2233,8 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
 struct RecordingBackend {
     calls: Arc<Mutex<Vec<RecordedBackendCall>>>,
     threads: Arc<Mutex<Vec<Thread>>>,
+    mcp_statuses: Arc<Mutex<Vec<McpServerStatus>>>,
+    plugin_response: Arc<Mutex<Option<PluginListResponse>>>,
 }
 
 impl RecordingBackend {
@@ -2071,6 +2242,20 @@ impl RecordingBackend {
         Self {
             calls: Arc::new(Mutex::new(Vec::new())),
             threads: Arc::new(Mutex::new(threads)),
+            mcp_statuses: Arc::new(Mutex::new(Vec::new())),
+            plugin_response: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    fn with_integrations(
+        mcp_statuses: Vec<McpServerStatus>,
+        plugin_response: PluginListResponse,
+    ) -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            threads: Arc::new(Mutex::new(Vec::new())),
+            mcp_statuses: Arc::new(Mutex::new(mcp_statuses)),
+            plugin_response: Arc::new(Mutex::new(Some(plugin_response))),
         }
     }
 
@@ -2112,6 +2297,15 @@ enum RecordedBackendCall {
         effort: Option<ReasoningEffort>,
         service_tier: Option<Option<String>>,
         approval_policy: codex_app_server_protocol::AskForApproval,
+    },
+    McpServerStatusList {
+        cursor: Option<String>,
+        detail: Option<McpServerStatusDetail>,
+        thread_id: Option<String>,
+    },
+    PluginList {
+        cwd: Option<Vec<AbsolutePathBuf>>,
+        marketplace_kinds: Option<Vec<codex_app_server_protocol::PluginListMarketplaceKind>>,
     },
     TurnStart {
         thread_id: codex_protocol::ThreadId,
@@ -2269,6 +2463,45 @@ impl backend::AppShellBackend for RecordingBackend {
                 .unwrap_or(codex_app_server_protocol::AskForApproval::OnRequest),
         });
         Ok(())
+    }
+
+    async fn mcp_server_status_list(
+        &mut self,
+        params: ListMcpServerStatusParams,
+    ) -> color_eyre::Result<ListMcpServerStatusResponse> {
+        self.push(RecordedBackendCall::McpServerStatusList {
+            cursor: params.cursor,
+            detail: params.detail,
+            thread_id: params.thread_id,
+        });
+        Ok(ListMcpServerStatusResponse {
+            data: self
+                .mcp_statuses
+                .lock()
+                .expect("mcp statuses should lock")
+                .clone(),
+            next_cursor: None,
+        })
+    }
+
+    async fn plugin_list(
+        &mut self,
+        params: PluginListParams,
+    ) -> color_eyre::Result<PluginListResponse> {
+        self.push(RecordedBackendCall::PluginList {
+            cwd: params.cwds,
+            marketplace_kinds: params.marketplace_kinds,
+        });
+        Ok(self
+            .plugin_response
+            .lock()
+            .expect("plugin response should lock")
+            .clone()
+            .unwrap_or(PluginListResponse {
+                marketplaces: Vec::new(),
+                marketplace_load_errors: Vec::new(),
+                featured_plugin_ids: Vec::new(),
+            }))
     }
 
     async fn turn_start(
