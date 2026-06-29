@@ -86,4 +86,4 @@ Agents may continuously work through this plan until every unchecked item is com
 
 - [x] Numbers in the dashboard like token count or time should be rendered with commas as delimiters (i.e. 1,000,000 over 1000000).
 - [x] Scrolling does not work for the conversation log; scrolling just acts identical to the up and down arrows where it selects previous messages.
-- [ ] Display a narrow scrollbar to the right-side of the conversation log that shows at which point of the conversation log the user has scrolled to, instead of showing how many lines the user is above the bottom (remove that feature). The scroll bar should get shorter as the conversation length increases, but should have a minimum height.
+- [x] Display a narrow scrollbar to the right-side of the conversation log that shows at which point of the conversation log the user has scrolled to, instead of showing how many lines the user is above the bottom (remove that feature). The scroll bar should get shorter as the conversation length increases, but should have a minimum height.

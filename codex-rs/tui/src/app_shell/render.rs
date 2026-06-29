@@ -39,6 +39,7 @@ use ratatui::widgets::Wrap;
 
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
 const DASHBOARD_PANEL_GAP: u16 = 1;
+const TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT: u16 = 2;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
     let height = tui.terminal.size()?.height;
@@ -115,45 +116,16 @@ impl ShellView<'_> {
         fill_rect(buf, area, MOCHA_BASE);
         let content = pane_content_rect(area);
         let body = body_rect_after_title(content);
-        let mut lines = Vec::new();
         let cwd = std::path::Path::new(&self.shell.cwd);
-        let transcript_width = body.width;
-        let mut previous_kind = None;
-        for (index, line) in self.shell.transcript.iter().enumerate() {
-            push_transcript_lines(
-                &mut lines,
-                &mut previous_kind,
-                line,
-                transcript_width,
-                cwd,
-                self.shell.transcript_selection == Some(index),
-            );
-        }
-        if !self.shell.streaming_plan.is_empty() {
-            push_transcript_lines(
-                &mut lines,
-                &mut previous_kind,
-                &TranscriptLine::new(TranscriptKind::Plan, self.shell.streaming_plan.clone()),
-                transcript_width,
-                cwd,
-                /*selected*/ false,
-            );
-        }
-        if !self.shell.streaming_assistant.is_empty() {
-            push_transcript_lines(
-                &mut lines,
-                &mut previous_kind,
-                &TranscriptLine::new(
-                    TranscriptKind::Assistant,
-                    self.shell.streaming_assistant.clone(),
-                ),
-                transcript_width,
-                cwd,
-                /*selected*/ false,
-            );
-        }
+        let mut text_body = body;
+        let mut lines = collect_transcript_lines(self.shell, body.width, cwd);
         let visible_count = usize::from(body.height);
-        let max_scroll = lines.len().saturating_sub(visible_count);
+        let mut max_scroll = lines.len().saturating_sub(visible_count);
+        if max_scroll > 0 && body.width > 1 {
+            text_body.width = text_body.width.saturating_sub(1);
+            lines = collect_transcript_lines(self.shell, text_body.width, cwd);
+            max_scroll = lines.len().saturating_sub(visible_count);
+        }
         self.shell.transcript_scroll_max.set(max_scroll);
         let scroll = self.shell.transcript_scroll.min(max_scroll);
         let visible_from = lines.len().saturating_sub(visible_count + scroll);
@@ -163,11 +135,15 @@ impl ShellView<'_> {
                 selected.saturating_add(1),
                 self.shell.transcript.len()
             )
-        } else if scroll == 0 {
-            "Conversation".to_string()
         } else {
-            format!("Conversation +{scroll}")
+            "Conversation".to_string()
         };
+        let scrollbar = transcript_scrollbar_metrics(
+            lines.len(),
+            body.height,
+            visible_from,
+            TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT,
+        );
         let visible_hyperlink_lines = lines.into_iter().skip(visible_from).collect::<Vec<_>>();
         let visible_lines = visible_lines(visible_hyperlink_lines.clone());
         Paragraph::new(Line::from(title.bold()))
@@ -175,8 +151,16 @@ impl ShellView<'_> {
             .render(title_rect(content), buf);
         Paragraph::new(visible_lines)
             .style(pane_style(MOCHA_BASE))
-            .render(body, buf);
-        mark_buffer_hyperlinks(buf, body, &visible_hyperlink_lines, /*scroll_rows*/ 0);
+            .render(text_body, buf);
+        mark_buffer_hyperlinks(
+            buf,
+            text_body,
+            &visible_hyperlink_lines,
+            /*scroll_rows*/ 0,
+        );
+        if let Some(scrollbar) = scrollbar {
+            render_transcript_scrollbar(buf, body, scrollbar);
+        }
     }
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
@@ -398,6 +382,108 @@ impl ShellView<'_> {
             .style(pane_style(MOCHA_SURFACE0))
             .wrap(Wrap { trim: true })
             .render(content, buf);
+    }
+}
+
+fn collect_transcript_lines(
+    shell: &ShellState,
+    transcript_width: u16,
+    cwd: &std::path::Path,
+) -> Vec<HyperlinkLine> {
+    let mut lines = Vec::new();
+    let mut previous_kind = None;
+    for (index, line) in shell.transcript.iter().enumerate() {
+        push_transcript_lines(
+            &mut lines,
+            &mut previous_kind,
+            line,
+            transcript_width,
+            cwd,
+            shell.transcript_selection == Some(index),
+        );
+    }
+    if !shell.streaming_plan.is_empty() {
+        push_transcript_lines(
+            &mut lines,
+            &mut previous_kind,
+            &TranscriptLine::new(TranscriptKind::Plan, shell.streaming_plan.clone()),
+            transcript_width,
+            cwd,
+            /*selected*/ false,
+        );
+    }
+    if !shell.streaming_assistant.is_empty() {
+        push_transcript_lines(
+            &mut lines,
+            &mut previous_kind,
+            &TranscriptLine::new(TranscriptKind::Assistant, shell.streaming_assistant.clone()),
+            transcript_width,
+            cwd,
+            /*selected*/ false,
+        );
+    }
+    lines
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct TranscriptScrollbarMetrics {
+    pub(super) thumb_top: u16,
+    pub(super) thumb_height: u16,
+}
+
+pub(super) fn transcript_scrollbar_metrics(
+    total_lines: usize,
+    visible_count: u16,
+    visible_from: usize,
+    min_thumb_height: u16,
+) -> Option<TranscriptScrollbarMetrics> {
+    let visible_count_usize = usize::from(visible_count);
+    if visible_count == 0 || total_lines <= visible_count_usize {
+        return None;
+    }
+
+    let track_height = visible_count;
+    let min_thumb_height = min_thumb_height.min(track_height).max(1);
+    let raw_thumb_height = visible_count_usize
+        .saturating_mul(visible_count_usize)
+        .div_ceil(total_lines)
+        .try_into()
+        .unwrap_or(u16::MAX);
+    let thumb_height = raw_thumb_height.clamp(min_thumb_height, track_height);
+    let thumb_travel = track_height.saturating_sub(thumb_height);
+    let max_visible_from = total_lines.saturating_sub(visible_count_usize);
+    let thumb_top = if thumb_travel == 0 || max_visible_from == 0 {
+        0
+    } else {
+        let rounded_offset = visible_from
+            .min(max_visible_from)
+            .saturating_mul(usize::from(thumb_travel))
+            .saturating_add(max_visible_from / 2)
+            / max_visible_from;
+        rounded_offset.try_into().unwrap_or(thumb_travel)
+    };
+
+    Some(TranscriptScrollbarMetrics {
+        thumb_top,
+        thumb_height,
+    })
+}
+
+fn render_transcript_scrollbar(
+    buf: &mut Buffer,
+    body: Rect,
+    scrollbar: TranscriptScrollbarMetrics,
+) {
+    let x = body.right().saturating_sub(1);
+    let thumb_start = body.y.saturating_add(scrollbar.thumb_top);
+    let thumb_end = thumb_start.saturating_add(scrollbar.thumb_height);
+    for y in body.y..body.bottom() {
+        let cell = buf.cell_mut((x, y)).expect("scrollbar cell should exist");
+        if (thumb_start..thumb_end).contains(&y) {
+            cell.set_symbol("┃").set_style(Style::new().cyan());
+        } else {
+            cell.set_symbol("│").set_style(Style::new().dim());
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 use super::render::ShellView;
+use super::render::TranscriptScrollbarMetrics;
 use super::*;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
@@ -910,6 +911,51 @@ fn transcript_selection_page_keys_scroll_without_changing_selection() {
     );
     assert_eq!(shell.transcript_selection, Some(3));
     assert_eq!(shell.transcript_scroll, 0);
+}
+
+#[test]
+fn transcript_scrollbar_metrics_tracks_visible_range() {
+    assert_eq!(
+        render::transcript_scrollbar_metrics(
+            /*total_lines*/ 40, /*visible_count*/ 10, /*visible_from*/ 0,
+            /*min_thumb_height*/ 2
+        ),
+        Some(TranscriptScrollbarMetrics {
+            thumb_top: 0,
+            thumb_height: 3,
+        })
+    );
+    assert_eq!(
+        render::transcript_scrollbar_metrics(
+            /*total_lines*/ 40, /*visible_count*/ 10, /*visible_from*/ 30,
+            /*min_thumb_height*/ 2
+        ),
+        Some(TranscriptScrollbarMetrics {
+            thumb_top: 7,
+            thumb_height: 3,
+        })
+    );
+}
+
+#[test]
+fn transcript_scrollbar_metrics_uses_minimum_thumb_height() {
+    assert_eq!(
+        render::transcript_scrollbar_metrics(
+            /*total_lines*/ 1_000, /*visible_count*/ 10, /*visible_from*/ 500,
+            /*min_thumb_height*/ 2
+        ),
+        Some(TranscriptScrollbarMetrics {
+            thumb_top: 4,
+            thumb_height: 2,
+        })
+    );
+    assert_eq!(
+        render::transcript_scrollbar_metrics(
+            /*total_lines*/ 8, /*visible_count*/ 10, /*visible_from*/ 0,
+            /*min_thumb_height*/ 2
+        ),
+        None
+    );
 }
 
 #[test]

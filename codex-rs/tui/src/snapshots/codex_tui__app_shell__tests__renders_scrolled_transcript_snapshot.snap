@@ -6,11 +6,11 @@ expression: "render_shell(&shell, area)"
  Better Codex                                                          Navigation
                                                                        1S  2W  3Set  4Help
 
- Conversation +4                                                       Tools
- tool: exec just test -p codex-tui                                     in progress exec just tes...
- diff: diff 3 files +128 -24                                           completed file changes in...
- status: first checkpoint
- status: second checkpoint                                             Thread
+ Conversation                                                          Tools
+ tool: exec just test -p codex-tui                                  │  in progress exec just tes...
+ diff: diff 3 files +128 -24                                        ┃  completed file changes in...
+ status: first checkpoint                                           ┃
+ status: second checkpoint                                          │  Thread
                                                                        stage-one
                                                                        id 01900000-0000-7000-800...
  Composer ready 1:37                                                   resume, fork, archive,
