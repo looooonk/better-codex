@@ -10,6 +10,7 @@ use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::app_server_session::app_server_rate_limit_snapshots;
 use crate::clipboard_copy::ClipboardLease;
+use crate::key_hint;
 use crate::legacy_core::config::Config;
 use crate::resume_picker::SessionSelection;
 use crate::session_state::ThreadSessionState;
@@ -454,22 +455,15 @@ impl ShellState {
             }
             return Ok(false);
         }
-        if key.modifiers.contains(KeyModifiers::ALT) {
-            match key.code {
-                KeyCode::Left => {
-                    self.set_dashboard_route(self.dashboard_route.previous());
-                    self.session_list.focused = false;
-                    self.settings.focused = false;
-                    return Ok(false);
-                }
-                KeyCode::Right => {
-                    self.set_dashboard_route(self.dashboard_route.next());
-                    self.session_list.focused = false;
-                    self.settings.focused = false;
-                    return Ok(false);
-                }
-                _ => {}
-            }
+        if let Some(step) = dashboard_route_step_from_key(key, self.composer.is_empty()) {
+            let route = match step {
+                DashboardRouteStep::Previous => self.dashboard_route.previous(),
+                DashboardRouteStep::Next => self.dashboard_route.next(),
+            };
+            self.set_dashboard_route(route);
+            self.session_list.focused = false;
+            self.settings.focused = false;
+            return Ok(false);
         }
         if self.transcript_selection.is_some()
             && let Some(handled) = self.handle_transcript_selection_key(key)
@@ -2430,17 +2424,104 @@ fn compact_multiline(text: String) -> Option<String> {
 }
 
 fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
-    if !key.modifiers.contains(KeyModifiers::CONTROL) {
+    if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return None;
     }
 
-    match key.code {
-        KeyCode::Char('1') => Some(DashboardRoute::Sessions),
-        KeyCode::Char('2') => Some(DashboardRoute::Workspace),
-        KeyCode::Char('3') => Some(DashboardRoute::Settings),
-        KeyCode::Char('4') => Some(DashboardRoute::Help),
+    if key_hint::ctrl(KeyCode::Char('1')).is_press(key) {
+        return Some(DashboardRoute::Sessions);
+    }
+    if key_hint::ctrl(KeyCode::Char('2')).is_press(key) {
+        return Some(DashboardRoute::Workspace);
+    }
+    if key_hint::ctrl(KeyCode::Char(' ')).is_press(key) {
+        return Some(DashboardRoute::Workspace);
+    }
+    if key_hint::ctrl(KeyCode::Char('3')).is_press(key) {
+        return Some(DashboardRoute::Settings);
+    }
+    if key_hint::ctrl(KeyCode::Char('4')).is_press(key) {
+        return Some(DashboardRoute::Help);
+    }
+
+    match key {
+        KeyEvent {
+            code: KeyCode::Char('\u{0000}') | KeyCode::Null,
+            modifiers,
+            ..
+        } if modifiers.is_empty() || modifiers.contains(KeyModifiers::CONTROL) => {
+            Some(DashboardRoute::Workspace)
+        }
+        KeyEvent {
+            code: KeyCode::Char('\u{001b}'),
+            modifiers,
+            ..
+        } if modifiers.is_empty() => Some(DashboardRoute::Settings),
+        KeyEvent {
+            code: KeyCode::Esc,
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL) => Some(DashboardRoute::Settings),
         _ => None,
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DashboardRouteStep {
+    Previous,
+    Next,
+}
+
+fn dashboard_route_step_from_key(
+    key: KeyEvent,
+    allow_word_motion_fallback: bool,
+) -> Option<DashboardRouteStep> {
+    if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+        return None;
+    }
+
+    if key.modifiers.contains(KeyModifiers::ALT) {
+        match key.code {
+            KeyCode::Left => return Some(DashboardRouteStep::Previous),
+            KeyCode::Right => return Some(DashboardRouteStep::Next),
+            _ => {}
+        }
+    }
+    dashboard_route_word_motion_fallback(key, allow_word_motion_fallback)
+}
+
+#[cfg(target_os = "macos")]
+fn dashboard_route_word_motion_fallback(
+    key: KeyEvent,
+    allow_word_motion_fallback: bool,
+) -> Option<DashboardRouteStep> {
+    if !allow_word_motion_fallback {
+        return None;
+    }
+
+    match key {
+        KeyEvent {
+            code: KeyCode::Char('b'),
+            modifiers: KeyModifiers::ALT,
+            kind: KeyEventKind::Press | KeyEventKind::Repeat,
+            ..
+        } => Some(DashboardRouteStep::Previous),
+        KeyEvent {
+            code: KeyCode::Char('f'),
+            modifiers: KeyModifiers::ALT,
+            kind: KeyEventKind::Press | KeyEventKind::Repeat,
+            ..
+        } => Some(DashboardRouteStep::Next),
+        _ => None,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn dashboard_route_word_motion_fallback(
+    _key: KeyEvent,
+    _allow_word_motion_fallback: bool,
+) -> Option<DashboardRouteStep> {
+    None
 }
 
 fn approval_action_from_key(key: KeyEvent) -> Option<ApprovalAction> {

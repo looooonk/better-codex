@@ -566,6 +566,10 @@ fn dashboard_route_key_mapping_covers_native_routes() {
         Some(DashboardRoute::Workspace)
     );
     assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::CONTROL)),
+        Some(DashboardRoute::Workspace)
+    );
+    assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL)),
         Some(DashboardRoute::Settings)
     );
@@ -573,7 +577,104 @@ fn dashboard_route_key_mapping_covers_native_routes() {
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL)),
         Some(DashboardRoute::Help)
     );
+    assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('\u{0000}'), KeyModifiers::NONE)),
+        Some(DashboardRoute::Workspace)
+    );
+    assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Null, KeyModifiers::NONE)),
+        Some(DashboardRoute::Workspace)
+    );
+    assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('\u{001b}'), KeyModifiers::NONE)),
+        Some(DashboardRoute::Settings)
+    );
+    assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::CONTROL)),
+        Some(DashboardRoute::Settings)
+    );
     assert_eq!(dashboard_route_from_key(key_char('1')), None);
+    assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        None
+    );
+}
+
+#[test]
+fn dashboard_route_step_key_mapping_covers_alt_arrows() {
+    assert_eq!(
+        dashboard_route_step_from_key(
+            KeyEvent::new(KeyCode::Left, KeyModifiers::ALT),
+            /*allow_word_motion_fallback*/ false
+        ),
+        Some(DashboardRouteStep::Previous)
+    );
+    assert_eq!(
+        dashboard_route_step_from_key(
+            KeyEvent::new(KeyCode::Right, KeyModifiers::ALT),
+            /*allow_word_motion_fallback*/ false
+        ),
+        Some(DashboardRouteStep::Next)
+    );
+    assert_eq!(
+        dashboard_route_step_from_key(
+            KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+            /*allow_word_motion_fallback*/ false
+        ),
+        None
+    );
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn dashboard_route_step_matches_macos_option_arrow_fallbacks_only_when_allowed() {
+    assert_eq!(
+        dashboard_route_step_from_key(
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT),
+            /*allow_word_motion_fallback*/ true
+        ),
+        Some(DashboardRouteStep::Previous)
+    );
+    assert_eq!(
+        dashboard_route_step_from_key(
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
+            /*allow_word_motion_fallback*/ true
+        ),
+        Some(DashboardRouteStep::Next)
+    );
+    assert_eq!(
+        dashboard_route_step_from_key(
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT),
+            /*allow_word_motion_fallback*/ false
+        ),
+        None
+    );
+    assert_eq!(
+        dashboard_route_step_from_key(
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
+            /*allow_word_motion_fallback*/ false
+        ),
+        None
+    );
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn dashboard_route_step_matches_alt_arrows_only_off_macos() {
+    assert_eq!(
+        dashboard_route_step_from_key(
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT),
+            /*allow_word_motion_fallback*/ true
+        ),
+        None
+    );
+    assert_eq!(
+        dashboard_route_step_from_key(
+            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
+            /*allow_word_motion_fallback*/ true
+        ),
+        None
+    );
 }
 
 #[test]

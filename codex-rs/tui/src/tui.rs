@@ -343,6 +343,7 @@ fn restore_terminal_modes_after_exit() -> Result<()> {
     if let Err(err) = write_exit_alt_screen_restore(&mut stdout()) {
         first_error.get_or_insert(err);
     }
+    keyboard_modes::reset_keyboard_reporting_after_exit();
 
     match first_error {
         Some(err) => Err(err),
@@ -815,7 +816,11 @@ impl Tui {
         if !self.alt_screen_enabled {
             return Ok(());
         }
+        let was_alt_screen = self.is_alt_screen_active();
         let _ = execute!(self.terminal.backend_mut(), EnterAlternateScreen);
+        if !was_alt_screen {
+            keyboard_modes::enable_keyboard_enhancement();
+        }
         // Keep wheel input available in alternate screen.
         let _ = execute!(self.terminal.backend_mut(), EnableAlternateScroll);
         let _ = execute!(self.terminal.backend_mut(), EnableMouseCapture);
@@ -837,6 +842,9 @@ impl Tui {
     pub fn leave_alt_screen(&mut self) -> Result<()> {
         if !self.alt_screen_enabled {
             return Ok(());
+        }
+        if self.is_alt_screen_active() {
+            keyboard_modes::restore_keyboard_enhancement_stack();
         }
         // Disable alternate scroll when leaving alt-screen
         let _ = execute!(self.terminal.backend_mut(), DisableMouseCapture);

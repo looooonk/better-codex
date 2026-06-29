@@ -14,6 +14,11 @@ use crossterm::event::PushKeyboardEnhancementFlags;
 use ratatui::crossterm::execute;
 
 const DISABLE_KEYBOARD_ENHANCEMENT_ENV_VAR: &str = "CODEX_TUI_DISABLE_KEYBOARD_ENHANCEMENT";
+const KEYBOARD_ENHANCEMENT_FLAGS: KeyboardEnhancementFlags =
+    KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+        .union(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+        .union(KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS)
+        .union(KeyboardEnhancementFlags::REPORT_ALL_KEYS_AS_ESCAPE_CODES);
 
 pub(super) fn keyboard_enhancement_disabled() -> bool {
     let disable_env = std::env::var(DISABLE_KEYBOARD_ENHANCEMENT_ENV_VAR).ok();
@@ -126,11 +131,7 @@ pub(super) fn enable_keyboard_enhancement() {
     let _ = execute!(
         stdout(),
         DisableModifyOtherKeys,
-        PushKeyboardEnhancementFlags(
-            KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
-                | KeyboardEnhancementFlags::REPORT_EVENT_TYPES
-                | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS
-        )
+        PushKeyboardEnhancementFlags(KEYBOARD_ENHANCEMENT_FLAGS)
     );
 
     if tmux_should_enable_modify_other_keys() {
@@ -206,24 +207,24 @@ pub(super) fn reset_keyboard_reporting_after_exit() {
     let _ = execute!(
         stdout(),
         PopKeyboardEnhancementFlags,
-        ResetKeyboardEnhancementFlags,
+        ClearKeyboardEnhancementFlags,
         DisableModifyOtherKeys
     );
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ResetKeyboardEnhancementFlags;
+struct ClearKeyboardEnhancementFlags;
 
-impl Command for ResetKeyboardEnhancementFlags {
+impl Command for ClearKeyboardEnhancementFlags {
     fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
-        f.write_str("\x1b[<u")
+        f.write_str("\x1b[=0u")
     }
 
     #[cfg(windows)]
     fn execute_winapi(&self) -> std::io::Result<()> {
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-            "keyboard enhancement reset is not implemented for the legacy Windows API",
+            "keyboard enhancement flag clearing is not implemented for the legacy Windows API",
         ))
     }
 
@@ -279,15 +280,17 @@ impl Command for DisableModifyOtherKeys {
 
 #[cfg(test)]
 mod tests {
+    use super::ClearKeyboardEnhancementFlags;
     use super::DisableModifyOtherKeys;
     use super::EnableModifyOtherKeys;
-    use super::ResetKeyboardEnhancementFlags;
+    use super::KEYBOARD_ENHANCEMENT_FLAGS;
     use super::keyboard_enhancement_disabled_for;
     use super::parse_bool_env;
     use super::tmux_session_detected;
     use super::tmux_should_enable_modify_other_keys_for;
     use super::vscode_terminal_detected;
     use crossterm::Command;
+    use crossterm::event::PushKeyboardEnhancementFlags;
     use pretty_assertions::assert_eq;
 
     fn ansi_for(command: impl Command) -> String {
@@ -394,8 +397,16 @@ mod tests {
     }
 
     #[test]
-    fn reset_keyboard_enhancement_flags_clears_all_pushed_levels() {
-        assert_eq!(ansi_for(ResetKeyboardEnhancementFlags), "\x1b[<u");
+    fn clear_keyboard_enhancement_flags_disables_active_reporting() {
+        assert_eq!(ansi_for(ClearKeyboardEnhancementFlags), "\x1b[=0u");
+    }
+
+    #[test]
+    fn keyboard_enhancement_flags_request_full_key_reporting() {
+        assert_eq!(
+            ansi_for(PushKeyboardEnhancementFlags(KEYBOARD_ENHANCEMENT_FLAGS)),
+            "\x1b[>15u"
+        );
     }
 
     #[test]
