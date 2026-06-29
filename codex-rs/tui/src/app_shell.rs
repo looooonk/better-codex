@@ -51,6 +51,7 @@ mod events;
 mod navigation;
 mod render;
 mod sessions;
+mod settings;
 mod user_input;
 mod workspace;
 use approval::ApprovalAction;
@@ -71,6 +72,9 @@ use navigation::AppShellRouteState;
 use navigation::DashboardRoute;
 use render::draw_shell;
 use sessions::SessionListState;
+#[cfg(test)]
+use settings::SettingsAction;
+use settings::SettingsState;
 use user_input::PendingUserInput;
 use user_input::UserInputAdvance;
 use workspace::WorkspaceGitStatus;
@@ -107,6 +111,9 @@ pub(crate) async fn run(
         bootstrap.default_model,
         config.codex_home.to_path_buf(),
         route_state.route,
+        config.tui_theme.clone(),
+        config.animations,
+        config.show_tooltips,
     );
     shell.ingest_turn_history(started.turns);
     shell
@@ -290,6 +297,10 @@ struct ShellState {
     transcript_scroll_max: Cell<usize>,
     transcript_selection: Option<usize>,
     session_list: SessionListState,
+    settings: SettingsState,
+    tui_theme: Option<String>,
+    animations: bool,
+    show_tooltips: bool,
     command_palette: Option<CommandPaletteState>,
     codex_home: std::path::PathBuf,
     dashboard_route: DashboardRoute,
@@ -322,6 +333,9 @@ impl ShellState {
         fallback_model: String,
         codex_home: std::path::PathBuf,
         dashboard_route: DashboardRoute,
+        tui_theme: Option<String>,
+        animations: bool,
+        show_tooltips: bool,
     ) -> Self {
         let model = if session.model.is_empty() {
             fallback_model
@@ -346,6 +360,10 @@ impl ShellState {
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
             session_list: SessionListState::default(),
+            settings: SettingsState::default(),
+            tui_theme,
+            animations,
+            show_tooltips,
             command_palette: None,
             codex_home,
             dashboard_route,
@@ -418,6 +436,7 @@ impl ShellState {
         if let Some(route) = dashboard_route_from_key(key) {
             self.set_dashboard_route(route);
             self.session_list.focused = route == DashboardRoute::Sessions;
+            self.settings.focused = route == DashboardRoute::Settings;
             if route == DashboardRoute::Sessions {
                 self.refresh_session_list(app_server).await;
             }
@@ -428,11 +447,13 @@ impl ShellState {
                 KeyCode::Left => {
                     self.set_dashboard_route(self.dashboard_route.previous());
                     self.session_list.focused = false;
+                    self.settings.focused = false;
                     return Ok(false);
                 }
                 KeyCode::Right => {
                     self.set_dashboard_route(self.dashboard_route.next());
                     self.session_list.focused = false;
+                    self.settings.focused = false;
                     return Ok(false);
                 }
                 _ => {}
@@ -473,6 +494,12 @@ impl ShellState {
             && self
                 .handle_session_list_key(key, config, app_server)
                 .await?
+        {
+            return Ok(false);
+        }
+        if self.dashboard_route == DashboardRoute::Settings
+            && self.settings.focused
+            && self.handle_settings_key(key, app_server).await?
         {
             return Ok(false);
         }
@@ -1910,6 +1937,10 @@ impl ShellState {
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
             session_list: SessionListState::default(),
+            settings: SettingsState::default(),
+            tui_theme: None,
+            animations: true,
+            show_tooltips: true,
             command_palette: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
@@ -2048,6 +2079,10 @@ pub mod bench_support {
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
             session_list: SessionListState::default(),
+            settings: SettingsState::default(),
+            tui_theme: None,
+            animations: true,
+            show_tooltips: true,
             command_palette: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,

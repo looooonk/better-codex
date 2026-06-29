@@ -6,24 +6,26 @@ expression: "render_shell(&shell, area)"
  Better Codex                                                          Navigation
                                                                        1S  2W  3Set  4Help
 
- Conversation                                                          Model
- system: Better Codex app shell                                        gpt-5-codex
- you: Create a divergent standalone TUI.                               reasoning high
-                                                                       tier flex
- codex: Started a fullscreen app shell backed by app-server turns.
- plan: 1. Build shell                                                  Tokens
-       2. Wire transcript                                              total 1,440
-       3. Render dashboard                                             input 1,200
- tool: exec just test -p codex-tui                                     output 240
- diff: diff 3 files +128 -24                                           context 200,000
+ Conversation                                                          Settings
+ system: Better Codex app shell                                        focused model 3 fields
+ you: Create a divergent standalone TUI.                               Model  Permissions
+                                                                       Appearance
+ codex: Started a fullscreen app shell backed by app-server turns.     > model: gpt-5-codex
+ plan: 1. Build shell                                                    reasoning: high
+       2. Wire transcript                                                service tier: flex
+       3. Render dashboard
+ tool: exec just test -p codex-tui                                     Model
+ diff: diff 3 files +128 -24                                           gpt-5-codex
+                                                                       reasoning high
+ codex: The new shell owns the fullscreen surface.                     tier flex
 
- codex: The new shell owns the fullscreen surface.                     Workspace
-                                                                       cwd /workspace/better-codex
+                                                                       Tokens
+                                                                       total 1,440
+                                                                       input 1,200
+                                                                       output 240
+                                                                       context 200,000
+
+ Composer ready 1:37                                                   Workspace
+ > Summarize the new shell architecture                                cwd /workspace/better-codex
                                                                        profile managed
                                                                        files restricted, net
-                                                                       restricted
-
-                                                                       Keys
-                                                                       Enter send
- Composer ready 1:37                                                   Ctrl+C/Esc exit
- > Summarize the new shell architecture                                Alt+Up select, Ctrl+O copy

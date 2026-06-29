@@ -7,6 +7,8 @@ use codex_app_server_protocol::AdditionalNetworkPermissions;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
+use codex_app_server_protocol::ConfigEdit;
+use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::McpServerElicitationRequest;
@@ -23,6 +25,7 @@ use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
+use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ToolRequestUserInputOption;
@@ -33,6 +36,7 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput as ApiUserInput;
+use codex_app_server_protocol::WriteStatus;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
@@ -181,10 +185,30 @@ fn renders_workspace_route_snapshot() {
 fn renders_model_runtime_details_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Settings;
+    shell.settings.focused = true;
     shell.reasoning_effort = Some(ReasoningEffort::High);
     shell.service_tier = Some("flex".to_string());
+    shell.tui_theme = Some("dracula".to_string());
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_settings_pages_validation_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    shell.settings.focused = true;
+    shell
+        .settings
+        .start_edit(SettingsAction::Theme, "missing-theme".to_string());
+    shell
+        .settings
+        .set_error("unknown syntax theme `missing-theme`");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 32,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
@@ -1682,6 +1706,136 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
 }
 
 #[tokio::test]
+async fn native_settings_pages_write_config_and_validate_edits() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    shell.settings.focused = true;
+    let mut backend = RecordingBackend::default();
+
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("reasoning row should be selected");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("reasoning cycle should persist");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("permissions page should open");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("approval cycle should persist");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("appearance page should open");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("animations row should be selected");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("animations toggle should persist");
+
+    let calls = backend.calls();
+    assert!(calls.contains(&RecordedBackendCall::ConfigWrite(vec![
+        ("model".to_string(), serde_json::json!("gpt-5-codex"),),
+        (
+            "model_reasoning_effort".to_string(),
+            serde_json::json!("minimal"),
+        ),
+    ])));
+    assert!(calls.contains(&RecordedBackendCall::ThreadSettingsUpdate {
+        model: None,
+        effort: Some(ReasoningEffort::Minimal),
+        service_tier: None,
+        approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+    }));
+    assert!(calls.contains(&RecordedBackendCall::ConfigWrite(vec![(
+        "approval_policy".to_string(),
+        serde_json::json!("never"),
+    )])));
+    assert!(calls.contains(&RecordedBackendCall::ThreadSettingsUpdate {
+        model: None,
+        effort: None,
+        service_tier: None,
+        approval_policy: codex_app_server_protocol::AskForApproval::Never,
+    }));
+    assert!(calls.contains(&RecordedBackendCall::ConfigWrite(vec![(
+        "tui.animations".to_string(),
+        serde_json::json!(false),
+    )])));
+    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Minimal));
+    assert_eq!(
+        shell.approval_policy,
+        codex_app_server_protocol::AskForApproval::Never
+    );
+    assert!(!shell.animations);
+
+    shell
+        .handle_settings_key(KeyEvent::new(KeyCode::Up, KeyModifiers::NONE), &mut backend)
+        .await
+        .expect("theme row should be selected");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("theme edit should start");
+    for ch in "missing-theme".chars() {
+        shell
+            .handle_settings_key(key_char(ch), &mut backend)
+            .await
+            .expect("theme draft should edit");
+    }
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("invalid theme should be handled");
+
+    assert_eq!(backend.calls(), calls);
+    let rendered = render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 32,
+        ),
+    );
+    assert!(
+        rendered.contains("missing-theme"),
+        "settings validation should render the invalid theme name"
+    );
+}
+
+#[tokio::test]
 async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -1841,6 +1995,13 @@ enum RecordedBackendCall {
         thread_id: codex_protocol::ThreadId,
         name: String,
     },
+    ConfigWrite(Vec<(String, serde_json::Value)>),
+    ThreadSettingsUpdate {
+        model: Option<String>,
+        effort: Option<ReasoningEffort>,
+        service_tier: Option<Option<String>>,
+        approval_policy: codex_app_server_protocol::AskForApproval,
+    },
     TurnStart {
         thread_id: codex_protocol::ThreadId,
         prompt: String,
@@ -1963,6 +2124,39 @@ impl backend::AppShellBackend for RecordingBackend {
         name: String,
     ) -> color_eyre::Result<()> {
         self.push(RecordedBackendCall::SetName { thread_id, name });
+        Ok(())
+    }
+
+    async fn write_config(
+        &mut self,
+        edits: Vec<ConfigEdit>,
+    ) -> color_eyre::Result<ConfigWriteResponse> {
+        self.push(RecordedBackendCall::ConfigWrite(
+            edits
+                .into_iter()
+                .map(|edit| (edit.key_path, edit.value))
+                .collect(),
+        ));
+        Ok(ConfigWriteResponse {
+            status: WriteStatus::Ok,
+            version: "1".to_string(),
+            file_path: test_absolute_path("codex-home/config.toml"),
+            overridden_metadata: None,
+        })
+    }
+
+    async fn thread_settings_update(
+        &mut self,
+        params: ThreadSettingsUpdateParams,
+    ) -> color_eyre::Result<()> {
+        self.push(RecordedBackendCall::ThreadSettingsUpdate {
+            model: params.model,
+            effort: params.effort,
+            service_tier: params.service_tier,
+            approval_policy: params
+                .approval_policy
+                .unwrap_or(codex_app_server_protocol::AskForApproval::OnRequest),
+        });
         Ok(())
     }
 

@@ -62,7 +62,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 - [ ] Rebuild login, trust-directory, model migration, theme, permissions, MCP, plugin, and external-agent migration flows in the new app architecture.
 - [x] Keep configuration writes behind existing app-server/config helpers.
-- [ ] Add settings pages with editable fields and validation feedback.
+- [x] Add settings pages with editable fields and validation feedback.
 - [ ] Add first-run and unsafe-workspace flows that feel native to the app shell.
 
 ## Stage 8: Visual System

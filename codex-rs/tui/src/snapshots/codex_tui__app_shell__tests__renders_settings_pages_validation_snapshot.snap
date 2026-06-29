@@ -1,0 +1,35 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+
+ Better Codex                                                          Navigation
+                                                                       1S  2W  3Set  4Help
+
+ Conversation                                                          Settings
+ system: Better Codex app shell                                        focused appearance 3 fields
+ you: Create a divergent standalone TUI.                               Model  Permissions
+                                                                       Appearance
+ codex: Started a fullscreen app shell backed by app-server turns.     edit theme missing-theme
+ plan: 1. Build shell                                                  unknown syntax theme `mis...
+       2. Wire transcript                                              > theme: default
+       3. Render dashboard                                               animations: on
+ tool: exec just test -p codex-tui                                       tooltips: on
+ diff: diff 3 files +128 -24
+                                                                       Model
+ codex: The new shell owns the fullscreen surface.                     gpt-5-codex
+
+                                                                       Tokens
+                                                                       total 1,440
+                                                                       input 1,200
+                                                                       output 240
+                                                                       context 200,000
+
+                                                                       Workspace
+                                                                       cwd /workspace/better-codex
+                                                                       profile managed
+                                                                       files restricted, net
+ Composer ready 1:37                                                   restricted
+ > Summarize the new shell architecture
+                                                                       Keys
+                                                                       Enter send

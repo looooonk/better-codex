@@ -1,13 +1,17 @@
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
+use crate::config_update::write_config_batch;
 use crate::legacy_core::config::Config;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AskForApproval;
+use codex_app_server_protocol::ConfigEdit;
+use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
+use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerResponse;
@@ -69,6 +73,16 @@ pub(super) trait AppShellBackend {
         &mut self,
         thread_id: ThreadId,
         name: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn write_config(
+        &mut self,
+        edits: Vec<ConfigEdit>,
+    ) -> impl std::future::Future<Output = Result<ConfigWriteResponse>> + Send;
+
+    fn thread_settings_update(
+        &mut self,
+        params: ThreadSettingsUpdateParams,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
     fn turn_start(
@@ -174,6 +188,14 @@ impl AppShellBackend for AppServerSession {
 
     async fn thread_set_name(&mut self, thread_id: ThreadId, name: String) -> Result<()> {
         AppServerSession::thread_set_name(self, thread_id, name).await
+    }
+
+    async fn write_config(&mut self, edits: Vec<ConfigEdit>) -> Result<ConfigWriteResponse> {
+        write_config_batch(AppServerSession::request_handle(self), edits).await
+    }
+
+    async fn thread_settings_update(&mut self, params: ThreadSettingsUpdateParams) -> Result<()> {
+        AppServerSession::thread_settings_update(self, params).await
     }
 
     async fn turn_start(&mut self, params: AppShellTurnStart) -> Result<TurnStartResponse> {

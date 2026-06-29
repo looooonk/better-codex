@@ -256,6 +256,7 @@ impl ShellView<'_> {
             "Tools",
             "Subagents",
             "Sessions",
+            "Settings",
             "Thread",
             "Status",
             "Model",
