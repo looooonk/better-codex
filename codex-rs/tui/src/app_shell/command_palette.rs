@@ -110,14 +110,14 @@ pub(super) fn command_palette_entries(context: CommandPaletteContext) -> Vec<Com
         CommandPaletteEntry {
             action: CommandPaletteAction::SwitchModel,
             title: "Switch model",
-            detail: "Model picker is not wired in the app shell yet",
-            enabled: false,
+            detail: "Open model settings",
+            enabled: true,
         },
         CommandPaletteEntry {
             action: CommandPaletteAction::ChangePermissions,
             title: "Change permissions",
-            detail: "Permissions picker is not wired in the app shell yet",
-            enabled: false,
+            detail: "Open approval policy settings",
+            enabled: true,
         },
         CommandPaletteEntry {
             action: CommandPaletteAction::ResumeThread,

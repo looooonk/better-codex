@@ -73,7 +73,6 @@ use navigation::AppShellRouteState;
 use navigation::DashboardRoute;
 use render::draw_shell;
 use sessions::SessionListState;
-#[cfg(test)]
 use settings::SettingsAction;
 use settings::SettingsState;
 pub(crate) use startup::StartupOnboardingOutcome;
@@ -1086,10 +1085,10 @@ impl ShellState {
         self.ingest_turn_history(started.turns);
     }
 
-    async fn execute_selected_command_palette_action(
-        &mut self,
-        app_server: &mut AppServerSession,
-    ) -> Result<()> {
+    async fn execute_selected_command_palette_action<S>(&mut self, app_server: &mut S) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         let Some(palette) = &self.command_palette else {
             return Ok(());
         };
@@ -1125,9 +1124,18 @@ impl ShellState {
             CommandPaletteAction::InterruptTurn => {
                 self.interrupt_active_turn(app_server).await?;
             }
-            CommandPaletteAction::SwitchModel
-            | CommandPaletteAction::ChangePermissions
-            | CommandPaletteAction::ResumeThread
+            CommandPaletteAction::SwitchModel => {
+                self.set_dashboard_route(DashboardRoute::Settings);
+                self.settings.focused = true;
+                self.settings
+                    .start_edit(SettingsAction::Model, self.model.clone());
+            }
+            CommandPaletteAction::ChangePermissions => {
+                self.set_dashboard_route(DashboardRoute::Settings);
+                self.settings.focused = true;
+                self.settings.focus_action(SettingsAction::ApprovalPolicy);
+            }
+            CommandPaletteAction::ResumeThread
             | CommandPaletteAction::ForkThread
             | CommandPaletteAction::CompactContext => {}
         }

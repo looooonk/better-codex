@@ -150,6 +150,15 @@ impl SettingsState {
     }
 
     pub(super) fn start_edit(&mut self, action: SettingsAction, current_value: String) {
+        self.focus_action(action);
+        self.edit = Some(SettingsEdit {
+            action,
+            draft: current_value,
+        });
+        self.feedback = None;
+    }
+
+    pub(super) fn focus_action(&mut self, action: SettingsAction) {
         self.page = match action {
             SettingsAction::Model
             | SettingsAction::ReasoningEffort
@@ -164,10 +173,7 @@ impl SettingsState {
             .iter()
             .position(|candidate| *candidate == action)
             .unwrap_or(0);
-        self.edit = Some(SettingsEdit {
-            action,
-            draft: current_value,
-        });
+        self.edit = None;
         self.feedback = None;
     }
 

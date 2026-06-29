@@ -399,13 +399,66 @@ fn command_palette_lists_common_actions() {
             (CommandPaletteAction::ScrollTranscriptTop, true),
             (CommandPaletteAction::ScrollTranscriptBottom, true),
             (CommandPaletteAction::InterruptTurn, false),
-            (CommandPaletteAction::SwitchModel, false),
-            (CommandPaletteAction::ChangePermissions, false),
+            (CommandPaletteAction::SwitchModel, true),
+            (CommandPaletteAction::ChangePermissions, true),
             (CommandPaletteAction::ResumeThread, false),
             (CommandPaletteAction::ForkThread, false),
             (CommandPaletteAction::CompactContext, false),
         ]
     );
+}
+
+#[tokio::test]
+async fn command_palette_opens_native_model_and_permissions_settings() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+
+    shell.open_command_palette();
+    select_command_palette_action(&mut shell, CommandPaletteAction::SwitchModel);
+    shell
+        .execute_selected_command_palette_action(&mut backend)
+        .await
+        .expect("model action should open settings");
+
+    assert_eq!(shell.dashboard_route, DashboardRoute::Settings);
+    assert!(shell.settings.focused);
+    assert!(shell.settings.editing());
+
+    shell.open_command_palette();
+    select_command_palette_action(&mut shell, CommandPaletteAction::ChangePermissions);
+    shell
+        .execute_selected_command_palette_action(&mut backend)
+        .await
+        .expect("permissions action should open settings");
+
+    assert_eq!(shell.dashboard_route, DashboardRoute::Settings);
+    assert!(shell.settings.focused);
+    assert!(!shell.settings.editing());
+    let rendered = render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 32,
+        ),
+    );
+    assert!(
+        rendered.contains("> approval: on-request"),
+        "permissions action should focus approval policy row, got:\n{rendered}"
+    );
+}
+
+fn select_command_palette_action(shell: &mut ShellState, action: CommandPaletteAction) {
+    let entries = shell.command_palette_entries();
+    let index = entries
+        .iter()
+        .position(|entry| entry.action == action)
+        .expect("palette action should exist");
+    let palette = shell
+        .command_palette
+        .as_mut()
+        .expect("command palette should be open");
+    for _ in 0..index {
+        palette.move_down(&entries);
+    }
 }
 
 #[test]
