@@ -1393,15 +1393,14 @@ async fn run_ratatui_app(
     } else {
         LoginStatus::NotAuthenticated
     };
-    let should_show_onboarding =
-        should_show_onboarding(login_status, &initial_config, should_show_trust_screen_flag);
+    let show_login_screen = should_show_login_screen(login_status, &initial_config);
+    let should_show_onboarding = show_login_screen;
 
-    let config = if should_show_onboarding {
-        let show_login_screen = should_show_login_screen(login_status, &initial_config);
+    let mut config = if should_show_onboarding {
         let onboarding_result = run_onboarding_app(
             OnboardingScreenArgs {
                 show_login_screen,
-                show_trust_screen: should_show_trust_screen_flag,
+                show_trust_screen: false,
                 login_status,
                 app_server_request_handle: app_server
                     .as_ref()
@@ -1463,6 +1462,39 @@ async fn run_ratatui_app(
     } else {
         initial_config
     };
+
+    if should_show_trust_screen_flag {
+        let Some(startup_app_server) = app_server.as_mut() else {
+            unreachable!("app server should be initialized for startup trust flow");
+        };
+        match app_shell::run_startup_onboarding(&mut tui, startup_app_server, &config).await? {
+            app_shell::StartupOnboardingOutcome::Continue { trust_persisted } => {
+                if trust_persisted {
+                    config = load_config_or_exit(
+                        cli_kv_overrides.clone(),
+                        overrides.clone(),
+                        loader_overrides.clone(),
+                        cloud_config_bundle.clone(),
+                        strict_config,
+                    )
+                    .await;
+                }
+            }
+            app_shell::StartupOnboardingOutcome::Exit => {
+                shutdown_app_server_if_present(app_server.take()).await;
+                terminal_restore_guard.restore_silently();
+                session_log::log_session_end();
+                let _ = tui.terminal.clear();
+                return Ok(AppExitInfo {
+                    token_usage: crate::token_usage::TokenUsage::default(),
+                    thread_id: None,
+                    resume_hint: None,
+                    update_action: None,
+                    exit_reason: ExitReason::UserRequested,
+                });
+            }
+        }
+    }
 
     let mut missing_session_exit = |id_str: &str, action: &str| {
         error!("Error finding conversation path: {id_str}");
@@ -1943,18 +1975,6 @@ async fn load_bootstrap_config_or_exit(
 /// Determine if the user has decided whether to trust the current directory.
 fn should_show_trust_screen(config: &Config) -> bool {
     config.active_project.trust_level.is_none()
-}
-
-fn should_show_onboarding(
-    login_status: LoginStatus,
-    config: &Config,
-    show_trust_screen: bool,
-) -> bool {
-    if show_trust_screen {
-        return true;
-    }
-
-    should_show_login_screen(login_status, config)
 }
 
 fn should_show_login_screen(login_status: LoginStatus, config: &Config) -> bool {

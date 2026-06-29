@@ -61,14 +61,21 @@ pub(crate) fn format_config_error(err: &impl Display) -> String {
     format!("{err:#}")
 }
 
-fn trusted_project_edit(project_path: &Path) -> ConfigEdit {
+pub(crate) fn build_project_trust_level_edit(
+    project_path: &Path,
+    trust_level: TrustLevel,
+) -> ConfigEdit {
     let project_key = project_trust_key(project_path)
         .replace('\\', "\\\\")
         .replace('"', "\\\"");
     replace_config_value(
         format!("projects.\"{project_key}\".trust_level"),
-        serde_json::json!(TrustLevel::Trusted.to_string()),
+        serde_json::json!(trust_level.to_string()),
     )
+}
+
+fn trusted_project_edit(project_path: &Path) -> ConfigEdit {
+    build_project_trust_level_edit(project_path, TrustLevel::Trusted)
 }
 
 pub(crate) fn build_model_selection_edits(

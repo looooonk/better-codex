@@ -52,6 +52,7 @@ mod navigation;
 mod render;
 mod sessions;
 mod settings;
+mod startup;
 mod user_input;
 mod workspace;
 use approval::ApprovalAction;
@@ -75,6 +76,8 @@ use sessions::SessionListState;
 #[cfg(test)]
 use settings::SettingsAction;
 use settings::SettingsState;
+pub(crate) use startup::StartupOnboardingOutcome;
+pub(crate) use startup::run_startup_onboarding;
 use user_input::PendingUserInput;
 use user_input::UserInputAdvance;
 use workspace::WorkspaceGitStatus;

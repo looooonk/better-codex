@@ -14,10 +14,28 @@ fn app_scoped_key_path_quotes_dotted_app_ids() {
 #[test]
 fn trusted_project_edit_targets_project_trust_level() {
     assert_eq!(
-        trusted_project_edit(Path::new("/workspace/team.project")),
+        build_project_trust_level_edit(
+            Path::new("/workspace/team.project"),
+            codex_protocol::config_types::TrustLevel::Trusted
+        ),
         ConfigEdit {
             key_path: "projects.\"/workspace/team.project\".trust_level".to_string(),
             value: serde_json::json!("trusted"),
+            merge_strategy: MergeStrategy::Replace,
+        }
+    );
+}
+
+#[test]
+fn project_trust_level_edit_can_mark_project_untrusted() {
+    assert_eq!(
+        build_project_trust_level_edit(
+            Path::new("/workspace/untrusted"),
+            codex_protocol::config_types::TrustLevel::Untrusted
+        ),
+        ConfigEdit {
+            key_path: "projects.\"/workspace/untrusted\".trust_level".to_string(),
+            value: serde_json::json!("untrusted"),
             merge_strategy: MergeStrategy::Replace,
         }
     );
