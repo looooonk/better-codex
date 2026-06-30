@@ -5601,7 +5601,7 @@ async fn queued_rollback_syncs_overlay_and_clears_deferred_history() {
 async fn late_usage_result_can_follow_finalized_plan() {
     let (mut app, mut app_event_rx, _op_rx) = make_test_app_with_channels().await;
     app.chat_widget
-        .add_token_activity_output(crate::chatwidget::TokenActivityView::Daily);
+        .add_token_activity_output(crate::token_usage::TokenActivityView::Daily);
     let request_id = match app_event_rx.try_recv() {
         Ok(AppEvent::RefreshTokenActivity { request_id }) => request_id,
         other => panic!("expected token activity refresh request, got {other:?}"),

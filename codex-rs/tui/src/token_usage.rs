@@ -8,6 +8,38 @@ use serde::Serialize;
 
 const BASELINE_TOKENS: i64 = 12000;
 
+/// Selects the aggregation represented by the token activity chart.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TokenActivityView {
+    Daily,
+    Weekly,
+    Cumulative,
+}
+
+impl TokenActivityView {
+    /// Parses the optional `/usage` argument into a supported chart view.
+    ///
+    /// An empty argument selects the daily view so `/usage` and `/usage daily`
+    /// behave identically. Returning `None` lets the slash-command dispatcher
+    /// report unsupported arguments instead of silently choosing a view.
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "" | "day" | "daily" => Some(Self::Daily),
+            "week" | "weekly" => Some(Self::Weekly),
+            "cumulative" => Some(Self::Cumulative),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn label(self) -> &'static str {
+        match self {
+            Self::Daily => "Daily",
+            Self::Weekly => "Weekly",
+            Self::Cumulative => "Cumulative",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsage {
     pub input_tokens: i64,

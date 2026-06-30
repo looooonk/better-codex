@@ -19,6 +19,7 @@ use ratatui::text::Span;
 
 use crate::render::highlight::foreground_style_for_scopes;
 use crate::status::format_tokens_compact;
+use crate::token_usage::TokenActivityView;
 use palette::TokenActivityPalette;
 
 const WEEK_COUNT: usize = 52;
@@ -27,38 +28,6 @@ const CELL_COUNT: usize = WEEK_COUNT * DAY_COUNT;
 const CHART_LEFT_WIDTH: usize = 4;
 const SUMMARY_INDENT: &str = " ";
 const SUMMARY_INDENT_WIDTH: u16 = 1;
-
-/// Selects the aggregation represented by the token activity chart.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TokenActivityView {
-    Daily,
-    Weekly,
-    Cumulative,
-}
-
-impl TokenActivityView {
-    /// Parses the optional `/usage` argument into a supported chart view.
-    ///
-    /// An empty argument selects the daily view so `/usage` and `/usage daily`
-    /// behave identically. Returning `None` lets the slash-command dispatcher
-    /// report unsupported arguments instead of silently choosing a view.
-    pub(in crate::chatwidget) fn parse(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "" | "day" | "daily" => Some(Self::Daily),
-            "week" | "weekly" => Some(Self::Weekly),
-            "cumulative" => Some(Self::Cumulative),
-            _ => None,
-        }
-    }
-
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Self::Daily => "Daily",
-            Self::Weekly => "Weekly",
-            Self::Cumulative => "Cumulative",
-        }
-    }
-}
 
 pub(super) fn loaded_lines(
     view: TokenActivityView,

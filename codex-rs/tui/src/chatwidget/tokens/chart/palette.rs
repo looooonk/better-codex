@@ -7,7 +7,6 @@ use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 
-use super::TokenActivityView;
 use crate::color::blend;
 use crate::render::highlight::foreground_style_for_scopes;
 use crate::style::accent_style;
@@ -16,6 +15,7 @@ use crate::terminal_palette::best_color_for_level;
 use crate::terminal_palette::default_bg;
 use crate::terminal_palette::default_fg;
 use crate::terminal_palette::stdout_color_level;
+use crate::token_usage::TokenActivityView;
 
 // In low-color terminals we distinguish empty vs active cells by glyph (a
 // width-matched filled/hollow pair). In truecolor terminals the grid uses a

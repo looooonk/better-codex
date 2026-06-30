@@ -40,6 +40,7 @@ use crate::app_server_session::AppServerStartedThread;
 use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::TerminalTitleItem;
+use crate::branch_summary::StatusLineGitSummary;
 use crate::goal_files::GoalDraft;
 use crate::user_message::UserMessage;
 use codex_app_server_protocol::AskForApproval;
@@ -1002,7 +1003,7 @@ pub(crate) enum AppEvent {
     /// Async update of Git summary fields for status line rendering.
     StatusLineGitSummaryUpdated {
         cwd: PathBuf,
-        summary: crate::chatwidget::StatusLineGitSummary,
+        summary: StatusLineGitSummary,
     },
     /// Async update of the workspace notification headline for status line rendering.
     StatusLineWorkspaceHeadlineUpdated {

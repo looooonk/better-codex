@@ -910,7 +910,7 @@ impl App {
             },
             AppEvent::OpenTokenActivity => {
                 self.chat_widget
-                    .add_token_activity_output(crate::chatwidget::TokenActivityView::Daily);
+                    .add_token_activity_output(crate::token_usage::TokenActivityView::Daily);
             }
             AppEvent::OpenRateLimitResetCredits => {
                 let request_id = self.chat_widget.show_rate_limit_reset_loading_popup();

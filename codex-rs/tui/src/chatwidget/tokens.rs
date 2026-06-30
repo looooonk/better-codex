@@ -30,8 +30,7 @@ use crate::history_cell::CompositeHistoryCell;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::PlainHistoryCell;
 use crate::history_cell::plain_lines;
-
-pub(crate) use chart::TokenActivityView;
+use crate::token_usage::TokenActivityView;
 
 /// Tracks the renderable lifecycle of one token activity history cell.
 #[derive(Debug)]
