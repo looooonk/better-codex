@@ -1,6 +1,12 @@
 // Forbid accidental stdout/stderr writes in the *library* portion of the TUI.
 // The standalone `codex-tui` binary prints a short help message before the
 // alternate‑screen mode starts; that file opts‑out locally via `allow`.
+//
+// The dev binary currently depends on the new app-shell path while several
+// inherited UI modules remain compiled for tests and staged removal work. Keep
+// binary builds warning-free without hiding those unused-code warnings from
+// test builds.
+#![cfg_attr(not(test), allow(dead_code, unused_imports))]
 #![deny(clippy::print_stdout, clippy::print_stderr)]
 #![deny(clippy::disallowed_methods)]
 use crate::legacy_core::check_execpolicy_for_warnings;
