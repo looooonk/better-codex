@@ -76,6 +76,29 @@ impl ComposerState {
         self.clear_history_recall();
     }
 
+    pub(super) fn delete_word_left(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+
+        let mut delete_from = self.cursor;
+        let mut found_word = false;
+        for (index, ch) in self.text[..self.cursor].char_indices().rev() {
+            if word_motion_char(ch) {
+                found_word = true;
+                delete_from = index;
+            } else if found_word {
+                break;
+            } else {
+                delete_from = index;
+            }
+        }
+
+        self.text.drain(delete_from..self.cursor);
+        self.cursor = delete_from;
+        self.clear_history_recall();
+    }
+
     pub(super) fn delete(&mut self) {
         let Some(next) = self.next_boundary(self.cursor) else {
             return;

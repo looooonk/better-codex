@@ -501,7 +501,25 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        if key.kind != KeyEventKind::Press {
+        if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+            return Ok(false);
+        }
+        if key.kind == KeyEventKind::Repeat
+            && !matches!(
+                key.code,
+                KeyCode::Backspace
+                    | KeyCode::Char('\u{007f}')
+                    | KeyCode::Delete
+                    | KeyCode::Left
+                    | KeyCode::Right
+                    | KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::Home
+                    | KeyCode::End
+                    | KeyCode::PageUp
+                    | KeyCode::PageDown
+            )
+        {
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
@@ -600,6 +618,10 @@ impl ShellState {
             && self.settings.focused
             && self.handle_settings_key(key, app_server).await?
         {
+            return Ok(false);
+        }
+        if let Some(action) = composer_backspace_action_from_key(key) {
+            self.apply_composer_backspace_action(action);
             return Ok(false);
         }
         if let Some(word_motion) = composer_word_motion_from_key(key) {
@@ -1691,10 +1713,23 @@ impl ShellState {
         }
     }
 
+    fn apply_composer_backspace_action(&mut self, action: ComposerBackspaceAction) {
+        match action {
+            ComposerBackspaceAction::DeleteChar => self.composer.backspace(),
+            ComposerBackspaceAction::DeleteWordLeft => self.composer.delete_word_left(),
+            ComposerBackspaceAction::Clear => self.composer.clear(),
+        }
+    }
+
     async fn handle_user_input_key<S>(&mut self, key: KeyEvent, app_server: &mut S) -> Result<bool>
     where
         S: AppShellBackend,
     {
+        if let Some(action) = composer_backspace_action_from_key(key) {
+            self.apply_composer_backspace_action(action);
+            return Ok(false);
+        }
+
         match key.code {
             KeyCode::Esc => Ok(true),
             KeyCode::Enter => {
@@ -2646,6 +2681,35 @@ enum DashboardRouteStep {
 enum ComposerWordMotion {
     Left,
     Right,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComposerBackspaceAction {
+    DeleteChar,
+    DeleteWordLeft,
+    Clear,
+}
+
+fn composer_backspace_action_from_key(key: KeyEvent) -> Option<ComposerBackspaceAction> {
+    if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+        return None;
+    }
+
+    let is_backspace = matches!(key.code, KeyCode::Backspace)
+        || matches!(key.code, KeyCode::Char('\u{007f}'))
+            && (key.modifiers.contains(KeyModifiers::CONTROL)
+                || key.modifiers.contains(KeyModifiers::ALT));
+    if !is_backspace {
+        return None;
+    }
+
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        Some(ComposerBackspaceAction::Clear)
+    } else if key.modifiers.contains(KeyModifiers::ALT) {
+        Some(ComposerBackspaceAction::DeleteWordLeft)
+    } else {
+        Some(ComposerBackspaceAction::DeleteChar)
+    }
 }
 
 fn composer_word_motion_from_key(key: KeyEvent) -> Option<ComposerWordMotion> {

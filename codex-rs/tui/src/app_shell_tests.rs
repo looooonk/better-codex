@@ -823,6 +823,94 @@ fn composer_word_motion_key_mapping_covers_standard_shortcuts() {
     assert_eq!(composer_word_motion_from_key(key_char('b')), None);
 }
 
+#[test]
+fn composer_backspace_key_mapping_covers_modified_shortcuts() {
+    assert_eq!(
+        composer_backspace_action_from_key(KeyEvent::new(
+            KeyCode::Backspace,
+            KeyModifiers::CONTROL
+        )),
+        Some(ComposerBackspaceAction::Clear)
+    );
+    assert_eq!(
+        composer_backspace_action_from_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT)),
+        Some(ComposerBackspaceAction::DeleteWordLeft)
+    );
+    assert_eq!(
+        composer_backspace_action_from_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE)),
+        Some(ComposerBackspaceAction::DeleteChar)
+    );
+    assert_eq!(
+        composer_backspace_action_from_key(KeyEvent::new(
+            KeyCode::Char('\u{007f}'),
+            KeyModifiers::ALT
+        )),
+        Some(ComposerBackspaceAction::DeleteWordLeft)
+    );
+    assert_eq!(
+        composer_backspace_action_from_key(KeyEvent::new(
+            KeyCode::Char('\u{007f}'),
+            KeyModifiers::NONE
+        )),
+        None
+    );
+}
+
+#[tokio::test]
+async fn composer_modified_backspace_shortcuts_delete_expected_text() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("alpha beta");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("alt backspace should delete a word");
+    assert_eq!(shell.composer.text(), "alpha ");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("ctrl backspace should clear the composer");
+    assert_eq!(shell.composer.text(), "");
+    assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
+async fn composer_backspace_repeat_deletes_continuously() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("abc");
+
+    for kind in [
+        KeyEventKind::Press,
+        KeyEventKind::Repeat,
+        KeyEventKind::Repeat,
+    ] {
+        shell
+            .handle_key(
+                KeyEvent::new_with_kind(KeyCode::Backspace, KeyModifiers::NONE, kind),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("backspace press and repeat should delete");
+    }
+
+    assert_eq!(shell.composer.text(), "");
+    assert_eq!(backend.calls(), Vec::new());
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn dashboard_route_step_matches_macos_option_arrow_fallbacks_only_when_allowed() {
