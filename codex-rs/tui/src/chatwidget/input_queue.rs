@@ -113,7 +113,7 @@ mod tests {
         state.pending_steers.push_back(PendingSteer {
             user_message: UserMessage::from("pending"),
             history_record: UserMessageHistoryRecord::UserMessageText,
-            compare_key: crate::chatwidget::user_messages::PendingSteerCompareKey {
+            compare_key: crate::thread_input_state::PendingSteerCompareKey {
                 message: "pending".to_string(),
                 image_count: 0,
             },

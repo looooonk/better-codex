@@ -7,35 +7,20 @@
 
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::collections::VecDeque;
-use std::ops::Deref;
 use std::path::PathBuf;
 
 use crate::bottom_pane::LocalImageAttachment;
-use crate::bottom_pane::MentionBinding;
-use crate::bottom_pane::QueuedInputAction;
+use crate::thread_input_state::PendingSteerCompareKey;
+use crate::thread_input_state::UserMessageHistoryOverride;
+use crate::thread_input_state::UserMessageHistoryRecord;
 use crate::user_message::UserMessage;
 use codex_app_server_protocol::TextElement as AppServerTextElement;
 use codex_app_server_protocol::UserInput;
-use codex_protocol::config_types::CollaborationMode;
-use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::models::local_image_label_text;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
 
 use super::ChatWidget;
-
-#[derive(Clone, Debug, PartialEq)]
-pub(super) enum UserMessageHistoryRecord {
-    UserMessageText,
-    Override(UserMessageHistoryOverride),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub(super) struct UserMessageHistoryOverride {
-    pub(super) text: String,
-    pub(super) text_elements: Vec<TextElement>,
-}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum ShellEscapePolicy {
@@ -43,84 +28,10 @@ pub(super) enum ShellEscapePolicy {
     Disallow,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct QueuedUserMessage {
-    pub(super) user_message: UserMessage,
-    pub(super) action: QueuedInputAction,
-    pub(super) pending_pastes: Vec<(String, String)>,
-}
-
-impl QueuedUserMessage {
-    pub(super) fn new(user_message: UserMessage, action: QueuedInputAction) -> Self {
-        Self {
-            user_message,
-            action,
-            pending_pastes: Vec::new(),
-        }
-    }
-
-    pub(super) fn into_user_message(self) -> UserMessage {
-        self.user_message
-    }
-}
-
-impl From<UserMessage> for QueuedUserMessage {
-    fn from(user_message: UserMessage) -> Self {
-        Self::new(user_message, QueuedInputAction::Plain)
-    }
-}
-
-impl Deref for QueuedUserMessage {
-    type Target = UserMessage;
-
-    fn deref(&self) -> &Self::Target {
-        &self.user_message
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum QueueDrain {
     Continue,
     Stop,
-}
-
-#[derive(Debug, Clone, PartialEq, Default)]
-pub(super) struct ThreadComposerState {
-    pub(super) text: String,
-    pub(super) local_images: Vec<LocalImageAttachment>,
-    pub(super) remote_image_urls: Vec<String>,
-    pub(super) text_elements: Vec<TextElement>,
-    pub(super) mention_bindings: Vec<MentionBinding>,
-    pub(super) pending_pastes: Vec<(String, String)>,
-    pub(super) cursor: usize,
-}
-
-impl ThreadComposerState {
-    pub(super) fn has_content(&self) -> bool {
-        !self.text.is_empty()
-            || !self.local_images.is_empty()
-            || !self.remote_image_urls.is_empty()
-            || !self.text_elements.is_empty()
-            || !self.mention_bindings.is_empty()
-            || !self.pending_pastes.is_empty()
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct ThreadInputState {
-    pub(super) composer: Option<ThreadComposerState>,
-    pub(super) pending_steers: VecDeque<UserMessage>,
-    pub(super) pending_steer_history_records: VecDeque<UserMessageHistoryRecord>,
-    pub(super) pending_steer_compare_keys: VecDeque<PendingSteerCompareKey>,
-    pub(super) rejected_steers_queue: VecDeque<UserMessage>,
-    pub(super) rejected_steer_history_records: VecDeque<UserMessageHistoryRecord>,
-    pub(super) queued_user_messages: VecDeque<QueuedUserMessage>,
-    pub(super) queued_user_message_history_records: VecDeque<UserMessageHistoryRecord>,
-    pub(super) user_turn_pending_start: bool,
-    pub(super) current_collaboration_mode: CollaborationMode,
-    pub(super) active_collaboration_mask: Option<CollaborationModeMask>,
-    pub(super) task_running: bool,
-    pub(super) agent_turn_running: bool,
 }
 
 #[derive(Debug)]
@@ -464,12 +375,6 @@ pub(super) struct UserMessageDisplay {
     pub(super) remote_image_urls: Vec<String>,
     pub(super) local_images: Vec<PathBuf>,
     pub(super) text_elements: Vec<TextElement>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct PendingSteerCompareKey {
-    pub(super) message: String,
-    pub(super) image_count: usize,
 }
 
 impl ChatWidget {

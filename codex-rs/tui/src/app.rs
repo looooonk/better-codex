@@ -32,7 +32,6 @@ use crate::bottom_pane::SelectionItem;
 use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::chatwidget::ChatWidget;
-use crate::chatwidget::ThreadInputState;
 use crate::chatwidget_init::ChatWidgetInit;
 use crate::cwd_prompt::CwdPromptAction;
 use crate::diff_render::DiffSummary;
@@ -73,6 +72,7 @@ use crate::test_support::PathBufExt;
 use crate::test_support::test_path_buf;
 #[cfg(test)]
 use crate::test_support::test_path_display;
+use crate::thread_input_state::ThreadInputState;
 use crate::thread_replay::ReplayKind;
 use crate::token_usage::TokenUsage;
 use crate::transcript_reflow::TranscriptReflowState;
