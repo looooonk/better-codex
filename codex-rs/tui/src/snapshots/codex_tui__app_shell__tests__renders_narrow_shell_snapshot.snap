@@ -14,9 +14,9 @@ expression: "render_shell(&shell, area)"
 
 
  Conversation
-       3. Render dashboard                                                  │
  ▌ tool exec just test -p codex-tui                                         │
- ▌ diff diff 3 files +128 -24                                               ┃
+                                                                            │
+ ▌ diff diff 3 files +128 -24                                               │
                                                                             ┃
  codex: The new shell owns the fullscreen surface.                          ┃
 

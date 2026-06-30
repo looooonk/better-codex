@@ -541,13 +541,20 @@ fn should_separate_transcript_item(
     previous_kind: Option<TranscriptKind>,
     current_kind: TranscriptKind,
 ) -> bool {
-    previous_kind.is_some_and(|previous_kind| {
-        previous_kind != TranscriptKind::System
-            && matches!(
-                current_kind,
-                TranscriptKind::User | TranscriptKind::Assistant
-            )
-    })
+    let Some(previous_kind) = previous_kind else {
+        return false;
+    };
+    if previous_kind == TranscriptKind::System {
+        return false;
+    }
+    matches!(
+        current_kind,
+        TranscriptKind::User
+            | TranscriptKind::Assistant
+            | TranscriptKind::Tool
+            | TranscriptKind::Diff
+            | TranscriptKind::Output
+    )
 }
 
 fn transcript_lines(

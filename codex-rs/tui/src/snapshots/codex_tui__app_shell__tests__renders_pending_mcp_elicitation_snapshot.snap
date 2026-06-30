@@ -14,12 +14,12 @@ expression: "render_shell(&shell, area)"
  plan: 1. Build shell
        2. Wire transcript                                              Approvals
        3. Render dashboard                                             mcp MCP github: URL request
- ▌ tool exec just test -p codex-tui
- ▌ diff diff 3 files +128 -24                                          Tools
-                                                                       in progress exec just tes...
- codex: The new shell owns the fullscreen surface.                     completed file changes in...
 
-                                                                       Thread
+ ▌ tool exec just test -p codex-tui                                    Tools
+                                                                       in progress exec just tes...
+ ▌ diff diff 3 files +128 -24                                          completed file changes in...
+
+ codex: The new shell owns the fullscreen surface.                     Thread
                                                                        stage-one
                                                                        id 01900000-0000-7000-800...
                                                                        resume, fork, archive,

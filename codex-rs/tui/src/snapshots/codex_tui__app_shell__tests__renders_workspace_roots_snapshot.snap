@@ -14,12 +14,12 @@ expression: "render_shell(&shell, area)"
  plan: 1. Build shell                                                  roots 4 writable
        2. Wire transcript                                                /workspace/better-codex
        3. Render dashboard                                               /workspace/better-codex...
- ▌ tool exec just test -p codex-tui                                      /tmp/codex-cache
- ▌ diff diff 3 files +128 -24
+                                                                         /tmp/codex-cache
+ ▌ tool exec just test -p codex-tui
                                                                        Diff
- codex: The new shell owns the fullscreen surface.                     3 files +128 -24
+ ▌ diff diff 3 files +128 -24                                          3 files +128 -24
 
-                                                                       Tools
+ codex: The new shell owns the fullscreen surface.                     Tools
                                                                        in progress exec just tes...
                                                                        completed file changes in...
 

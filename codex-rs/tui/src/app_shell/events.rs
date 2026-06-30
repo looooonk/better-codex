@@ -154,8 +154,13 @@ impl ShellState {
             ServerNotification::ItemStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
                     if let Some(title) = item_activity_title(&started.item) {
+                        let item_id = started.item.id().to_string();
                         self.record_item_activity(&started.item, title.clone(), "in progress");
-                        self.push_tool_with_status(title, super::ToolBlockStatus::Running);
+                        self.push_tool_with_status_for_item(
+                            item_id,
+                            title,
+                            super::ToolBlockStatus::Running,
+                        );
                     }
                 }
             }
@@ -176,8 +181,13 @@ impl ShellState {
                     self.latest_diff = Some(super::diff_summary_from_changes(&updated.changes));
                     self.workspace_status_refresh_due = true;
                     let summary = super::file_change_summary(&updated.changes);
-                    self.upsert_tool_activity(updated.item_id, summary, "in progress".to_string());
-                    self.push_diff_with_status(
+                    self.upsert_tool_activity(
+                        updated.item_id.clone(),
+                        summary,
+                        "in progress".to_string(),
+                    );
+                    self.push_diff_with_status_for_item(
+                        updated.item_id,
                         super::file_change_detail(&updated.changes),
                         super::ToolBlockStatus::Running,
                     );
@@ -187,9 +197,17 @@ impl ShellState {
                 if progress.thread_id == self.thread_id.to_string() {
                     let title = format!("mcp progress: {}", progress.message);
                     let transcript = super::compact_multiline(title.clone());
-                    self.upsert_tool_activity(progress.item_id, title, "in progress".to_string());
+                    self.upsert_tool_activity(
+                        progress.item_id.clone(),
+                        title,
+                        "in progress".to_string(),
+                    );
                     if let Some(transcript) = transcript {
-                        self.push_tool_with_status(transcript, super::ToolBlockStatus::Running);
+                        self.push_tool_with_status_for_item(
+                            progress.item_id,
+                            transcript,
+                            super::ToolBlockStatus::Running,
+                        );
                     }
                 }
             }

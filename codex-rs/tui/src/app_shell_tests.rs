@@ -8,6 +8,8 @@ use codex_app_server_protocol::AppSummary;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
+use codex_app_server_protocol::CommandExecutionSource;
+use codex_app_server_protocol::CommandExecutionStatus;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::ExternalAgentConfigDetectParams;
@@ -17,6 +19,7 @@ use codex_app_server_protocol::ExternalAgentConfigImportItemTypeSuccess;
 use codex_app_server_protocol::ExternalAgentConfigImportTypeResult;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
+use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ListMcpServerStatusParams;
@@ -1432,6 +1435,53 @@ fn non_tool_item_starts_do_not_render_as_tool_calls() {
 }
 
 #[test]
+fn completed_tool_item_updates_existing_transcript_status() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: thread_id.clone(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: command_execution_item("exec-1", CommandExecutionStatus::InProgress, None),
+    }));
+
+    let running_buf = render_shell_buffer(&shell, area);
+    assert_eq!(
+        accent_color_for_row(&running_buf, area, "exec cargo test"),
+        Some(Color::Cyan)
+    );
+
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: command_execution_item("exec-1", CommandExecutionStatus::Completed, Some(0)),
+        },
+    ));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, "exec cargo test exit 0 42ms")
+                .tool_status(ToolBlockStatus::Success)
+                .item_id("exec-1")
+        ])
+    );
+    let completed_buf = render_shell_buffer(&shell, area);
+    assert_eq!(
+        accent_color_for_row(&completed_buf, area, "exec cargo test"),
+        Some(Color::Green)
+    );
+}
+
+#[test]
 fn transcript_newlines_render_as_single_row_breaks() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -1448,6 +1498,25 @@ fn transcript_newlines_render_as_single_row_breaks() {
     assert_adjacent_rows(&rendered, "first result", "second result");
     assert_adjacent_rows(&rendered, "line one", "line two");
     assert_adjacent_rows(&rendered, "line two", "line three");
+}
+
+#[test]
+fn tool_transcript_items_render_with_single_blank_row_gaps() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.composer.clear();
+    shell.streaming_assistant.clear();
+    shell.push_assistant("assistant done");
+    shell.push_tool_with_status("exec one", ToolBlockStatus::Running);
+    shell.push_tool_with_status("exec two", ToolBlockStatus::Success);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 24,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert_single_blank_row_between(&rendered, "assistant done", "exec one");
+    assert_single_blank_row_between(&rendered, "exec one", "exec two");
 }
 
 #[test]
@@ -1990,6 +2059,20 @@ fn assert_adjacent_rows(rendered: &str, first: &str, second: &str) {
     assert_eq!(second_index, first_index + 1);
 }
 
+fn assert_single_blank_row_between(rendered: &str, first: &str, second: &str) {
+    let rows = rendered.lines().collect::<Vec<_>>();
+    let first_index = rows
+        .iter()
+        .position(|row| row.contains(first))
+        .unwrap_or_else(|| panic!("missing rendered row containing {first:?}"));
+    let second_index = rows
+        .iter()
+        .position(|row| row.contains(second))
+        .unwrap_or_else(|| panic!("missing rendered row containing {second:?}"));
+
+    assert_eq!(second_index, first_index + 2);
+}
+
 fn key_char(ch: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(ch), KeyModifiers::empty())
 }
@@ -2193,6 +2276,25 @@ fn sample_file_changes() -> Vec<FileUpdateChange> {
             diff: "@@\n-left\n+right\n".to_string(),
         },
     ]
+}
+
+fn command_execution_item(
+    id: &str,
+    status: CommandExecutionStatus,
+    exit_code: Option<i32>,
+) -> ThreadItem {
+    ThreadItem::CommandExecution {
+        id: id.to_string(),
+        command: "cargo test".to_string(),
+        cwd: LegacyAppPathString::from_abs_path(&test_absolute_path("workspace/better-codex")),
+        process_id: None,
+        source: CommandExecutionSource::Agent,
+        status,
+        command_actions: Vec::new(),
+        aggregated_output: None,
+        exit_code,
+        duration_ms: Some(42),
+    }
 }
 
 fn test_absolute_path(tail: &str) -> AbsolutePathBuf {

@@ -14,12 +14,12 @@ expression: "render_shell(&shell, area)"
  plan: 1. Build shell                                                    reasoning: default
        2. Wire transcript                                                service tier: default
        3. Render dashboard
- ▌ tool exec just test -p codex-tui                                    Model
- ▌ diff diff 3 files +128 -24                                          gpt-5-codex
+                                                                       Model
+ ▌ tool exec just test -p codex-tui                                    gpt-5-codex
 
- codex: The new shell owns the fullscreen surface.                     Tokens
+ ▌ diff diff 3 files +128 -24                                          Tokens
                                                                        total 1,440
-                                                                       input 1,200
+ codex: The new shell owns the fullscreen surface.                     input 1,200
                                                                        output 240
                                                                        context 200,000
 

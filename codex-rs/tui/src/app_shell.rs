@@ -276,6 +276,7 @@ struct TranscriptLine {
     kind: TranscriptKind,
     text: String,
     tool_status: Option<ToolBlockStatus>,
+    item_id: Option<String>,
 }
 
 impl TranscriptLine {
@@ -284,11 +285,17 @@ impl TranscriptLine {
             kind,
             text: text.into(),
             tool_status: None,
+            item_id: None,
         }
     }
 
     fn tool_status(mut self, status: ToolBlockStatus) -> Self {
         self.tool_status = Some(status);
+        self
+    }
+
+    fn item_id(mut self, item_id: impl Into<String>) -> Self {
+        self.item_id = Some(item_id.into());
         self
     }
 }
@@ -1944,8 +1951,12 @@ impl ShellState {
             } => {
                 let title = command_summary(&command, exit_code, duration_ms);
                 let tool_status = command_tool_status(&status, exit_code);
-                self.upsert_tool_activity(id, title.clone(), format!("{status:?}").to_lowercase());
-                self.push_tool_with_status(title, tool_status);
+                self.upsert_tool_activity(
+                    id.clone(),
+                    title.clone(),
+                    format!("{status:?}").to_lowercase(),
+                );
+                self.push_tool_with_status_for_item(id, title, tool_status);
                 if let Some(output) = aggregated_output.and_then(compact_multiline) {
                     self.push_output_with_status(output, tool_status);
                 }
@@ -1957,8 +1968,13 @@ impl ShellState {
             } => {
                 let summary = file_change_summary(&changes);
                 self.latest_diff = Some(diff_summary_from_changes(&changes));
-                self.upsert_tool_activity(id, summary, format!("{status:?}").to_lowercase());
-                self.push_diff_with_status(
+                self.upsert_tool_activity(
+                    id.clone(),
+                    summary,
+                    format!("{status:?}").to_lowercase(),
+                );
+                self.push_diff_with_status_for_item(
+                    id,
                     file_change_detail(&changes),
                     tool_status_from_debug(&status),
                 );
@@ -1977,8 +1993,12 @@ impl ShellState {
                     title.push_str(&format!(" ({duration_ms}ms)"));
                 }
                 let tool_status = tool_status_from_debug(&status);
-                self.upsert_tool_activity(id, title.clone(), format!("{status:?}").to_lowercase());
-                self.push_tool_with_status(title, tool_status);
+                self.upsert_tool_activity(
+                    id.clone(),
+                    title.clone(),
+                    format!("{status:?}").to_lowercase(),
+                );
+                self.push_tool_with_status_for_item(id, title, tool_status);
                 if let Some(error) = error {
                     self.push_error(format!("mcp error: {}", error.message));
                 }
@@ -2003,8 +2023,12 @@ impl ShellState {
                     title.push_str(&format!(" ({duration_ms}ms)"));
                 }
                 let tool_status = dynamic_tool_status(&status, success);
-                self.upsert_tool_activity(id, title.clone(), format!("{status:?}").to_lowercase());
-                self.push_tool_with_status(title, tool_status);
+                self.upsert_tool_activity(
+                    id.clone(),
+                    title.clone(),
+                    format!("{status:?}").to_lowercase(),
+                );
+                self.push_tool_with_status_for_item(id, title, tool_status);
             }
             ThreadItem::CollabAgentToolCall {
                 id,
@@ -2015,11 +2039,11 @@ impl ShellState {
             } => {
                 let title = format!("agent {tool:?}: {} targets", receiver_thread_ids.len());
                 self.upsert_subagent_activity(
-                    id,
+                    id.clone(),
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status(title, tool_status_from_debug(&status));
+                self.push_tool_with_status_for_item(id, title, tool_status_from_debug(&status));
             }
             ThreadItem::SubAgentActivity {
                 id,
@@ -2028,23 +2052,23 @@ impl ShellState {
                 ..
             } => {
                 let title = format!("subagent {kind:?}: {agent_path}");
-                self.upsert_subagent_activity(id, title.clone(), "active".to_string());
-                self.push_tool_with_status(title, ToolBlockStatus::Running);
+                self.upsert_subagent_activity(id.clone(), title.clone(), "active".to_string());
+                self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Running);
             }
             ThreadItem::WebSearch { id, query, action } => {
                 let title = format!("web search: {query}");
-                self.upsert_tool_activity(id, title.clone(), format!("{action:?}"));
-                self.push_tool_with_status(title, tool_status_from_debug(&action));
+                self.upsert_tool_activity(id.clone(), title.clone(), format!("{action:?}"));
+                self.push_tool_with_status_for_item(id, title, tool_status_from_debug(&action));
             }
             ThreadItem::ImageView { id, path } => {
                 let title = format!("view image: {path}");
-                self.upsert_tool_activity(id, title.clone(), "completed".to_string());
-                self.push_tool_with_status(title, ToolBlockStatus::Success);
+                self.upsert_tool_activity(id.clone(), title.clone(), "completed".to_string());
+                self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Success);
             }
             ThreadItem::Sleep { id, duration_ms } => {
                 let title = format!("sleep {duration_ms}ms");
-                self.upsert_tool_activity(id, title.clone(), "completed".to_string());
-                self.push_tool_with_status(title, ToolBlockStatus::Success);
+                self.upsert_tool_activity(id.clone(), title.clone(), "completed".to_string());
+                self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Success);
             }
             ThreadItem::ImageGeneration {
                 id,
@@ -2056,8 +2080,8 @@ impl ShellState {
                     .map(|path| format!("image generation: {}", path.as_path().display()))
                     .unwrap_or_else(|| "image generation".to_string());
                 let tool_status = tool_status_from_str(&status);
-                self.upsert_tool_activity(id, title.clone(), status);
-                self.push_tool_with_status(title, tool_status);
+                self.upsert_tool_activity(id.clone(), title.clone(), status);
+                self.push_tool_with_status_for_item(id, title, tool_status);
             }
             ThreadItem::EnteredReviewMode { review, .. } => {
                 self.push_status(format!("entered review mode: {review}"));
@@ -2113,6 +2137,19 @@ impl ShellState {
         self.push_line(TranscriptLine::new(TranscriptKind::Tool, text).tool_status(status));
     }
 
+    fn push_tool_with_status_for_item(
+        &mut self,
+        item_id: impl Into<String>,
+        text: impl Into<String>,
+        status: ToolBlockStatus,
+    ) {
+        self.upsert_line(
+            TranscriptLine::new(TranscriptKind::Tool, text)
+                .tool_status(status)
+                .item_id(item_id),
+        );
+    }
+
     #[cfg(test)]
     fn push_diff(&mut self, text: impl Into<String>) {
         self.push_diff_with_status(text, ToolBlockStatus::Success);
@@ -2120,6 +2157,19 @@ impl ShellState {
 
     fn push_diff_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
         self.push_line(TranscriptLine::new(TranscriptKind::Diff, text).tool_status(status));
+    }
+
+    fn push_diff_with_status_for_item(
+        &mut self,
+        item_id: impl Into<String>,
+        text: impl Into<String>,
+        status: ToolBlockStatus,
+    ) {
+        self.upsert_line(
+            TranscriptLine::new(TranscriptKind::Diff, text)
+                .tool_status(status)
+                .item_id(item_id),
+        );
     }
 
     #[cfg(test)]
@@ -2157,6 +2207,19 @@ impl ShellState {
                 self.transcript_selection = Some(selected.saturating_sub(1));
             }
         }
+    }
+
+    fn upsert_line(&mut self, line: TranscriptLine) {
+        if let Some(item_id) = line.item_id.as_deref()
+            && let Some(existing) = self.transcript.iter_mut().find(|existing| {
+                existing.kind == line.kind && existing.item_id.as_deref() == Some(item_id)
+            })
+        {
+            *existing = line;
+            return;
+        }
+
+        self.push_line(line);
     }
 
     fn resume_hint(&self) -> Option<String> {

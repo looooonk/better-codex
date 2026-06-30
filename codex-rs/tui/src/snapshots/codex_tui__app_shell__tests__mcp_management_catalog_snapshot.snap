@@ -14,7 +14,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
  plan: 1. Build shell                                                         > mcp servers: 2 servers / 3...
        2. Wire transcript                                                       plugins: not loaded
        3. Render dashboard
- ▌ tool exec just test -p codex-tui                                           Model
+                                                                              Model
 
  MCP Servers
  1/2 mcp servers  Enter/l login  d disable  x remove  a add  e edit  r reload

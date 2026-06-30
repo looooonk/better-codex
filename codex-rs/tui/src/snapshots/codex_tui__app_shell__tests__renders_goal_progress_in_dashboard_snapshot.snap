@@ -14,12 +14,12 @@ expression: "render_shell(&shell, area)"
  plan: 1. Build shell
        2. Wire transcript                                              Tools
        3. Render dashboard                                             in progress exec just tes...
- ▌ tool exec just test -p codex-tui                                    completed file changes in...
- ▌ diff diff 3 files +128 -24
+                                                                       completed file changes in...
+ ▌ tool exec just test -p codex-tui
                                                                        Thread
- codex: The new shell owns the fullscreen surface.                     stage-one
+ ▌ diff diff 3 files +128 -24                                          stage-one
                                                                        id 01900000-0000-7000-800...
-                                                                       resume, fork, archive,
+ codex: The new shell owns the fullscreen surface.                     resume, fork, archive,
 
                                                                        Status
                                                                        thinking

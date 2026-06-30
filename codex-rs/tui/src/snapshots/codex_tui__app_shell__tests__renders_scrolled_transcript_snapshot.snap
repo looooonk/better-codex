@@ -7,7 +7,7 @@ expression: "render_shell(&shell, area)"
                                                                        1S  2W  3Set  4Help
 
  Conversation                                                          Sessions
- ▌ tool exec just test -p codex-tui                                 │  ctrl+1 focus active 0 shown
+                                                                    │  ctrl+1 focus active 0 shown
  ▌ diff diff 3 files +128 -24                                       ┃  loading sessions
  status: first checkpoint                                           ┃  r resume  f fork  a archi...
  status: second checkpoint                                          │  / search  v archived  esc
