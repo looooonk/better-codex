@@ -210,7 +210,11 @@ impl ShellState {
                 ));
             }
             SettingsAction::McpServers => {
-                self.refresh_mcp_inventory(app_server).await;
+                if self.mcp_catalog.is_some() {
+                    self.open_mcp_management();
+                } else {
+                    self.refresh_mcp_inventory(app_server).await;
+                }
             }
             SettingsAction::Plugins => {
                 if self.plugin_catalog.is_some() {

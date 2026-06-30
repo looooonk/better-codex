@@ -20,6 +20,7 @@ use crate::tui::TuiEvent;
 use crate::workspace_command::AppServerWorkspaceCommandRunner;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::ListMcpServerStatusParams;
+use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::PatchChangeKind;
 use codex_app_server_protocol::PluginListParams;
@@ -56,6 +57,7 @@ mod elicitation;
 mod events;
 mod external_agent_import;
 mod integrations;
+mod mcp_management;
 mod navigation;
 mod plugin_management;
 mod render;
@@ -82,6 +84,7 @@ use elicitation::PendingElicitation;
 use external_agent_import::ExternalAgentImportState;
 use integrations::McpInventorySummary;
 use integrations::PluginInventorySummary;
+use mcp_management::McpManagementState;
 use navigation::AppShellRouteState;
 use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
@@ -360,6 +363,7 @@ struct ShellState {
     session_list: SessionListState,
     settings: SettingsState,
     mcp_inventory: McpInventorySummary,
+    mcp_catalog: Option<ListMcpServerStatusResponse>,
     plugin_inventory: PluginInventorySummary,
     plugin_catalog: Option<PluginListResponse>,
     tui_theme: Option<String>,
@@ -374,6 +378,7 @@ struct ShellState {
     pending_approval: Option<PendingApproval>,
     pending_elicitation: Option<PendingElicitation>,
     pending_external_agent_import: Option<ExternalAgentImportState>,
+    pending_mcp_management: Option<McpManagementState>,
     pending_plugin_management: Option<PluginManagementState>,
     pending_user_input: Option<PendingUserInput>,
     streaming_assistant: String,
@@ -430,6 +435,7 @@ impl ShellState {
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
+            mcp_catalog: None,
             plugin_inventory: PluginInventorySummary::default(),
             plugin_catalog: None,
             tui_theme,
@@ -444,6 +450,7 @@ impl ShellState {
             pending_approval: None,
             pending_elicitation: None,
             pending_external_agent_import: None,
+            pending_mcp_management: None,
             pending_plugin_management: None,
             pending_user_input: None,
             streaming_assistant: String::new(),
@@ -562,6 +569,11 @@ impl ShellState {
             && self
                 .handle_external_agent_import_key(key, app_server)
                 .await?
+        {
+            return Ok(false);
+        }
+        if self.pending_mcp_management.is_some()
+            && self.handle_mcp_management_key(key, app_server).await?
         {
             return Ok(false);
         }
@@ -756,12 +768,14 @@ impl ShellState {
                     response.data.extend(page.data);
                     if cursor.is_none() {
                         self.mcp_inventory = McpInventorySummary::from_response(&response);
+                        self.mcp_catalog = Some(response);
                         self.settings.set_info("mcp inventory refreshed");
                         return;
                     }
                 }
                 Err(err) => {
                     self.mcp_inventory = McpInventorySummary::from_error(err.to_string());
+                    self.mcp_catalog = None;
                     self.settings.set_error("failed to refresh mcp inventory");
                     return;
                 }
@@ -2140,6 +2154,7 @@ impl ShellState {
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
+            mcp_catalog: None,
             plugin_inventory: PluginInventorySummary::default(),
             plugin_catalog: None,
             tui_theme: None,
@@ -2158,6 +2173,7 @@ impl ShellState {
             pending_approval: None,
             pending_elicitation: None,
             pending_external_agent_import: None,
+            pending_mcp_management: None,
             pending_plugin_management: None,
             pending_user_input: None,
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
@@ -2288,6 +2304,7 @@ pub mod bench_support {
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
+            mcp_catalog: None,
             plugin_inventory: PluginInventorySummary::default(),
             plugin_catalog: None,
             tui_theme: None,
@@ -2306,6 +2323,7 @@ pub mod bench_support {
             pending_approval: None,
             pending_elicitation: None,
             pending_external_agent_import: None,
+            pending_mcp_management: None,
             pending_plugin_management: None,
             pending_user_input: None,
             streaming_assistant: String::new(),

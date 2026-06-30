@@ -111,6 +111,15 @@ impl ShellView<'_> {
             fill_rect(buf, panel_area, MOCHA_SURFACE0);
             self.render_titled_panel(panel_area, "Claude Code Import", lines, MOCHA_SURFACE0, buf);
         }
+        if let Some(pending) = &self.shell.pending_mcp_management {
+            let lines = pending.lines();
+            let line_count = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+            let panel_height = line_count.saturating_add(4).min(area.height);
+            let panel_area = centered_band_rect(area, panel_height);
+            Clear.render(panel_area, buf);
+            fill_rect(buf, panel_area, MOCHA_SURFACE0);
+            self.render_titled_panel(panel_area, "MCP Servers", lines, MOCHA_SURFACE0, buf);
+        }
         if let Some(pending) = &self.shell.pending_plugin_management {
             let lines = pending.lines();
             let line_count = u16::try_from(lines.len()).unwrap_or(u16::MAX);

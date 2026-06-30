@@ -14,6 +14,9 @@ use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
+use codex_app_server_protocol::McpServerOauthLoginParams;
+use codex_app_server_protocol::McpServerOauthLoginResponse;
+use codex_app_server_protocol::McpServerRefreshResponse;
 use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::PluginInstallParams;
 use codex_app_server_protocol::PluginInstallResponse;
@@ -104,6 +107,22 @@ pub(super) trait AppShellBackend {
         &mut self,
         params: ListMcpServerStatusParams,
     ) -> impl std::future::Future<Output = Result<ListMcpServerStatusResponse>> + Send;
+
+    fn mcp_server_oauth_login(
+        &mut self,
+        params: McpServerOauthLoginParams,
+    ) -> impl std::future::Future<Output = Result<McpServerOauthLoginResponse>> + Send;
+
+    fn mcp_server_refresh(
+        &mut self,
+    ) -> impl std::future::Future<Output = Result<McpServerRefreshResponse>> + Send;
+
+    fn mcp_server_write_config(
+        &mut self,
+        server_name: String,
+        value: serde_json::Value,
+        merge_strategy: MergeStrategy,
+    ) -> impl std::future::Future<Output = Result<ConfigWriteResponse>> + Send;
 
     fn plugin_list(
         &mut self,
@@ -267,8 +286,52 @@ impl AppShellBackend for AppServerSession {
     ) -> Result<ListMcpServerStatusResponse> {
         AppServerSession::request_handle(self)
             .request_typed(ClientRequest::McpServerStatusList {
-                request_id: RequestId::String(format!("app-shell-mcp-{}", Uuid::new_v4())),
+                request_id: app_shell_request_id("app-shell-mcp"),
                 params,
+            })
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn mcp_server_oauth_login(
+        &mut self,
+        params: McpServerOauthLoginParams,
+    ) -> Result<McpServerOauthLoginResponse> {
+        AppServerSession::request_handle(self)
+            .request_typed(ClientRequest::McpServerOauthLogin {
+                request_id: app_shell_request_id("app-shell-mcp-login"),
+                params,
+            })
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn mcp_server_refresh(&mut self) -> Result<McpServerRefreshResponse> {
+        AppServerSession::request_handle(self)
+            .request_typed(ClientRequest::McpServerRefresh {
+                request_id: app_shell_request_id("app-shell-mcp-refresh"),
+                params: None,
+            })
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn mcp_server_write_config(
+        &mut self,
+        server_name: String,
+        value: serde_json::Value,
+        merge_strategy: MergeStrategy,
+    ) -> Result<ConfigWriteResponse> {
+        AppServerSession::request_handle(self)
+            .request_typed(ClientRequest::ConfigValueWrite {
+                request_id: app_shell_request_id("app-shell-mcp-config"),
+                params: ConfigValueWriteParams {
+                    key_path: format!("mcp_servers.{}", serde_json::Value::String(server_name)),
+                    value,
+                    merge_strategy,
+                    file_path: None,
+                    expected_version: None,
+                },
             })
             .await
             .map_err(Into::into)

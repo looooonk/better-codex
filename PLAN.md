@@ -69,7 +69,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
   - [x] Validate editable app-shell settings values and show inline feedback for invalid values, including unknown syntax themes.
   - [x] Persist app-shell model, reasoning, service tier, approval policy, theme, animations, and tooltip changes through app-server-backed config writes.
   - [x] Add app-shell integration settings rows that refresh MCP server and plugin inventory through app-server APIs.
-  - [ ] Add app-shell MCP management flows beyond inventory refresh, including auth/login actions and add, edit, disable, or remove server actions as applicable.
+  - [x] Add app-shell MCP management flows beyond inventory refresh, including auth/login actions and add, edit, disable, or remove server actions as applicable.
   - [x] Add app-shell plugin management flows beyond inventory refresh, including browse, install, enable, disable, update, and auth-required actions as applicable.
   - [x] Replace the inherited external-agent migration picker/import flow with an app-shell-native flow for detecting, selecting, importing, and reporting Claude Code migration items.
   - [ ] Add app-shell snapshot and interaction coverage for each rebuilt flow, then remove the old flow reachability from startup and command handling.

@@ -24,8 +24,12 @@ use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::McpAuthStatus;
 use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
+use codex_app_server_protocol::McpServerOauthLoginParams;
+use codex_app_server_protocol::McpServerOauthLoginResponse;
+use codex_app_server_protocol::McpServerRefreshResponse;
 use codex_app_server_protocol::McpServerStatus;
 use codex_app_server_protocol::McpServerStatusDetail;
+use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::MigrationDetails;
 use codex_app_server_protocol::PermissionsRequestApprovalParams;
 use codex_app_server_protocol::PluginAuthPolicy;
@@ -2140,6 +2144,13 @@ fn mutate_plugin(
     }
 }
 
+fn remove_mcp_status(statuses: &Arc<Mutex<Vec<McpServerStatus>>>, server_name: &str) {
+    statuses
+        .lock()
+        .expect("mcp statuses should lock")
+        .retain(|status| status.name != server_name);
+}
+
 fn buffer_contents(buf: &Buffer, area: Rect) -> String {
     let mut rows = Vec::new();
     for y in area.y..area.bottom() {
@@ -2434,6 +2445,174 @@ async fn native_settings_integrations_refresh_mcp_and_plugins() {
         rendered.contains("Integrations"),
         "dashboard should render native integrations panel:\n{rendered}"
     );
+}
+
+#[tokio::test]
+async fn mcp_management_catalog_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    shell.settings.focused = true;
+    shell.settings.focus_action(SettingsAction::McpServers);
+    let mut backend = RecordingBackend::with_integrations(
+        vec![
+            mcp_status_fixture("github", McpAuthStatus::NotLoggedIn, ["search", "read"]),
+            mcp_status_fixture("linear", McpAuthStatus::BearerToken, ["issue"]),
+        ],
+        plugin_list_response_fixture(),
+    );
+
+    for description in ["mcp inventory should refresh", "mcp manager should open"] {
+        shell
+            .handle_settings_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &mut backend,
+            )
+            .await
+            .expect(description);
+    }
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 110, /*height*/ 36,
+        ),
+    ));
+}
+
+#[tokio::test]
+async fn mcp_management_actions_login_disable_remove_add_and_edit() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    shell.settings.focused = true;
+    shell.settings.focus_action(SettingsAction::McpServers);
+    let mut backend = RecordingBackend::with_integrations(
+        vec![
+            mcp_status_fixture("github", McpAuthStatus::NotLoggedIn, ["search"]),
+            mcp_status_fixture("linear", McpAuthStatus::BearerToken, ["issue"]),
+        ],
+        plugin_list_response_fixture(),
+    );
+
+    for description in ["mcp inventory should refresh", "mcp manager should open"] {
+        shell
+            .handle_settings_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &mut backend,
+            )
+            .await
+            .expect(description);
+    }
+
+    for code in [
+        KeyCode::Char('l'),
+        KeyCode::Down,
+        KeyCode::Char('d'),
+        KeyCode::Char('x'),
+    ] {
+        shell
+            .handle_key(
+                KeyEvent::new(code, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("mcp action should succeed");
+    }
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("add mode should open");
+    for ch in r#"docs {"url":"https://example.test/mcp"}"#.chars() {
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("draft char should be accepted");
+    }
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("add edit should save");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('e'), KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("edit mode should open");
+    for _ in 0.."docs {}".len() {
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("draft char should delete");
+    }
+    for ch in r#"docs {"url":"https://example.test/updated"}"#.chars() {
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Char(ch), KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("draft char should be accepted");
+    }
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("edit should save");
+
+    let calls = backend.calls();
+    for expected_call in [
+        RecordedBackendCall::McpServerOauthLogin {
+            name: "github".to_string(),
+            thread_id: Some(shell.thread_id.to_string()),
+        },
+        RecordedBackendCall::McpServerWriteConfig {
+            server_name: "linear".to_string(),
+            value: serde_json::json!({ "enabled": false }),
+            merge_strategy: MergeStrategy::Upsert,
+        },
+        RecordedBackendCall::McpServerWriteConfig {
+            server_name: "linear".to_string(),
+            value: serde_json::Value::Null,
+            merge_strategy: MergeStrategy::Replace,
+        },
+        RecordedBackendCall::McpServerWriteConfig {
+            server_name: "docs".to_string(),
+            value: serde_json::json!({ "url": "https://example.test/mcp" }),
+            merge_strategy: MergeStrategy::Replace,
+        },
+        RecordedBackendCall::McpServerWriteConfig {
+            server_name: "docs".to_string(),
+            value: serde_json::json!({ "url": "https://example.test/updated" }),
+            merge_strategy: MergeStrategy::Replace,
+        },
+    ] {
+        assert!(calls.contains(&expected_call), "{expected_call:?}");
+    }
 }
 
 #[tokio::test]
@@ -3018,6 +3197,16 @@ enum RecordedBackendCall {
         detail: Option<McpServerStatusDetail>,
         thread_id: Option<String>,
     },
+    McpServerOauthLogin {
+        name: String,
+        thread_id: Option<String>,
+    },
+    McpServerRefresh,
+    McpServerWriteConfig {
+        server_name: String,
+        value: serde_json::Value,
+        merge_strategy: MergeStrategy,
+    },
     PluginList {
         cwd: Option<Vec<AbsolutePathBuf>>,
         marketplace_kinds: Option<Vec<codex_app_server_protocol::PluginListMarketplaceKind>>,
@@ -3214,6 +3403,61 @@ impl backend::AppShellBackend for RecordingBackend {
                 .expect("mcp statuses should lock")
                 .clone(),
             next_cursor: None,
+        })
+    }
+
+    async fn mcp_server_oauth_login(
+        &mut self,
+        params: McpServerOauthLoginParams,
+    ) -> color_eyre::Result<McpServerOauthLoginResponse> {
+        self.push(RecordedBackendCall::McpServerOauthLogin {
+            name: params.name,
+            thread_id: params.thread_id,
+        });
+        Ok(McpServerOauthLoginResponse {
+            authorization_url: "https://auth.example.test/mcp".to_string(),
+        })
+    }
+
+    async fn mcp_server_refresh(&mut self) -> color_eyre::Result<McpServerRefreshResponse> {
+        self.push(RecordedBackendCall::McpServerRefresh);
+        Ok(McpServerRefreshResponse {})
+    }
+
+    async fn mcp_server_write_config(
+        &mut self,
+        server_name: String,
+        value: serde_json::Value,
+        merge_strategy: MergeStrategy,
+    ) -> color_eyre::Result<ConfigWriteResponse> {
+        self.push(RecordedBackendCall::McpServerWriteConfig {
+            server_name: server_name.clone(),
+            value: value.clone(),
+            merge_strategy,
+        });
+        if value.is_null() {
+            remove_mcp_status(&self.mcp_statuses, &server_name);
+        } else if !self
+            .mcp_statuses
+            .lock()
+            .expect("mcp statuses should lock")
+            .iter()
+            .any(|status| status.name == server_name)
+        {
+            self.mcp_statuses
+                .lock()
+                .expect("mcp statuses should lock")
+                .push(mcp_status_fixture(
+                    &server_name,
+                    McpAuthStatus::Unsupported,
+                    [],
+                ));
+        }
+        Ok(ConfigWriteResponse {
+            status: WriteStatus::Ok,
+            version: "1".to_string(),
+            file_path: test_absolute_path("codex-home/config.toml"),
+            overridden_metadata: None,
         })
     }
 
