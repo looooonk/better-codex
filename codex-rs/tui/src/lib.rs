@@ -95,7 +95,9 @@ pub fn run_terminal_restore_fatal_disconnect_helper_for_tests() -> ! {
 
 mod active_cell_transcript;
 mod additional_dirs;
+#[cfg(test)]
 mod app;
+#[cfg(test)]
 mod app_backtrack;
 mod app_command;
 mod app_event;
@@ -112,7 +114,9 @@ mod approval_events;
 mod ascii_animation;
 mod bottom_pane;
 mod branch_summary;
+#[cfg(test)]
 mod chatwidget;
+#[cfg(test)]
 mod chatwidget_init;
 mod cli;
 mod clipboard_copy;
