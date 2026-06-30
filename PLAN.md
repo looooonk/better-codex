@@ -64,7 +64,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
   - [ ] Move the login/auth selection flow, including ChatGPT device-code login and API key entry, into the app shell instead of running the inherited onboarding screen before the shell starts.
   - [x] Add an app-shell-native trust-directory startup flow with trust, continue-untrusted, and exit choices.
   - [x] Persist app-shell trust-directory decisions through the app-server config write path and reload config after a persisted decision.
-  - [ ] Replace the inherited model migration prompt with an app-shell-native migration surface and route accepted/declined decisions through the app-server config helpers.
+  - [x] Replace the inherited model migration prompt with an app-shell-native migration surface and route accepted/declined decisions through the app-server config helpers.
   - [x] Add app-shell settings controls for model, reasoning effort, service tier, approval policy, theme, animations, and tooltips.
   - [x] Validate editable app-shell settings values and show inline feedback for invalid values, including unknown syntax themes.
   - [x] Persist app-shell model, reasoning, service tier, approval policy, theme, animations, and tooltip changes through app-server-backed config writes.

@@ -59,6 +59,7 @@ mod render;
 mod sessions;
 mod settings;
 mod startup;
+mod startup_model_migration;
 mod user_input;
 mod workspace;
 use approval::ApprovalAction;
@@ -96,7 +97,7 @@ const TRANSCRIPT_SELECTION_STEP: usize = 1;
 pub(crate) async fn run(
     tui: &mut tui::Tui,
     mut app_server: AppServerSession,
-    config: Config,
+    mut config: Config,
     initial_prompt: Option<String>,
     session_selection: SessionSelection,
     startup_bootstrap: Option<crate::app_server_session::AppServerBootstrap>,
@@ -109,7 +110,36 @@ pub(crate) async fn run(
         Some(bootstrap) => bootstrap,
         None => app_server.bootstrap(&config).await?,
     };
+    if startup_model_migration::run_model_migration_onboarding(
+        tui,
+        &mut app_server,
+        &mut config,
+        bootstrap.default_model.as_str(),
+        &bootstrap.available_models,
+    )
+    .await?
+    .is_exit()
+    {
+        app_server
+            .shutdown()
+            .await
+            .inspect_err(|err| {
+                tracing::warn!("app-server shutdown failed: {err}");
+            })
+            .ok();
+        return Ok(AppExitInfo {
+            token_usage: TokenUsage::default(),
+            thread_id: None,
+            resume_hint: None,
+            update_action: None,
+            exit_reason: ExitReason::UserRequested,
+        });
+    }
 
+    let fallback_model = config
+        .model
+        .clone()
+        .unwrap_or_else(|| bootstrap.default_model.clone());
     let workspace_command_runner = Arc::new(AppServerWorkspaceCommandRunner::new(
         app_server.request_handle(),
     ));
@@ -118,7 +148,7 @@ pub(crate) async fn run(
     let route_state = AppShellRouteState::load(config.codex_home.as_path());
     let mut shell = ShellState::new(
         started.session,
-        bootstrap.default_model,
+        fallback_model,
         bootstrap.available_models,
         config.codex_home.to_path_buf(),
         route_state.route,
