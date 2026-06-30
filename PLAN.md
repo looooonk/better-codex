@@ -111,14 +111,8 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 Agents may continuously work through this plan until every unchecked item is complete. While an agent loop is running, the user may run the program and update this section with fixes, regressions, or feature requests discovered during live use. Treat these entries as user-supplied implementation tasks: triage them against the staged plan, keep them as checkboxes, and mark them complete only after the requested behavior has been implemented and verified.
 
-- [x] Visually wrap all tool calls and CLI commands Codex runs with a flat, no border, single-colored rectangle. The rectangle should have a colored left edge however, as an accent. The color of this accent is determined by the next item in this list.
-- [x] Add coloring indicators for when tools are one of {running, success, fail} as the accent for the rectangle.
-- [x] Add a small gap between the conversation log and the scroll bar, currently too close.
-- [x] Fix all warnings that appear when compiling to binary.
-- [x] Add a newline between the previous message and tool calls. Add spacing between sequential tool calls as well. Make sure that double newlines never occur, however.
-- [x] Tool use box accent coloring is not correctly rendered; the bars do not update to be green / red but rather emit a new tool call log that is a duplicate of the previous one, just with the status updated. Instead, when a tool call state changes it should change the status / accent of that tool call rather then emit a new one.
-- [x] Duplicate tool use can also duplicate user messages in the conversation log.
-- [x] Tool call background boxes only extend to the end of the tool call text, instead of spanning horizontally across the entire conversation window. This should be fixed.
-- [x] Add support for CTRL + BACKSPACE and ALT + BACKSPACE to delete the entire text and the previous word respectively.
 - [x] Add support for being able to continuously press BACKSPACE instead of tapping it multiple times.
 - [x] Remove or hide "reasoning" and "assistant message" and "user message" from tool calls.
+- [ ] For "output" chats in the conversation log, add appropriate indentation to note that they are outputs instead of tool calls. This means the left edge of the rectangle should be pushed inwards, but the right edge of the rectangle should be left alone.
+- [ ] Truncate outputs to 4 lines when they go over that limit (not by character count).
+- [ ] Fix error where rectangle boxes for tool calls and outputs break with random floating letters, the boxes protruding outside of the conversation box, etc.
