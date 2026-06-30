@@ -9,6 +9,7 @@ use super::dashboard::format_usize;
 use super::design::MOCHA_BASE;
 use super::design::MOCHA_MANTLE;
 use super::design::MOCHA_SURFACE0;
+use super::design::MOCHA_SURFACE1;
 use super::design::body_rect_after_title;
 use super::design::centered_band_rect;
 use super::design::fill_rect;
@@ -42,6 +43,7 @@ use unicode_width::UnicodeWidthStr;
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
 const DASHBOARD_PANEL_GAP: u16 = 1;
 const TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT: u16 = 2;
+const OUTPUT_BLOCK_INDENT: usize = 2;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
     let height = tui.terminal.size()?.height;
@@ -632,9 +634,26 @@ fn tool_block_lines(
     selected: bool,
 ) -> Vec<HyperlinkLine> {
     let width = usize::from(width).max(12);
+    let block_indent = if line.kind == TranscriptKind::Output {
+        OUTPUT_BLOCK_INDENT.min(width.saturating_sub(1))
+    } else {
+        0
+    };
+    let block_width = width.saturating_sub(block_indent).max(1);
+    let block_background = match line.kind {
+        TranscriptKind::Output => MOCHA_MANTLE,
+        TranscriptKind::Tool | TranscriptKind::Diff => MOCHA_SURFACE0,
+        TranscriptKind::System
+        | TranscriptKind::User
+        | TranscriptKind::Assistant
+        | TranscriptKind::Plan
+        | TranscriptKind::Status
+        | TranscriptKind::Audit
+        | TranscriptKind::Error => MOCHA_SURFACE0,
+    };
     let label = line.kind.label();
     let label_prefix_width = label.len() + 3;
-    let content_width = width.saturating_sub(label_prefix_width).max(1);
+    let content_width = block_width.saturating_sub(label_prefix_width).max(1);
     let options = textwrap::Options::new(content_width);
     let wrapped = textwrap::wrap(&line.text, options);
     let wrapped = if wrapped.is_empty() {
@@ -651,17 +670,32 @@ fn tool_block_lines(
             } else {
                 " ".repeat(label.len() + 1).dim()
             };
-            let mut spans = vec![
-                Span::styled("▌", status.accent_style()),
+            let mut spans = Vec::new();
+            if block_indent > 0 {
+                spans.push(" ".repeat(block_indent).into());
+            }
+            let accent_style = if line.kind == TranscriptKind::Output {
+                Style::new().fg(MOCHA_SURFACE1).bg(block_background)
+            } else {
+                status.accent_style()
+            };
+            spans.extend([
+                Span::styled("▌", accent_style),
                 " ".into(),
                 label_span,
                 wrapped.into_owned().into(),
-            ];
-            let occupied_width = label_prefix_width + spans[3].content.width();
+            ]);
+            let content_span_index = usize::from(block_indent > 0) + 3;
+            let occupied_width =
+                block_indent + label_prefix_width + spans[content_span_index].content.width();
             if occupied_width < width {
                 spans.push(" ".repeat(width - occupied_width).into());
             }
-            HyperlinkLine::new(Line::from(spans).style(Style::new().bg(MOCHA_SURFACE0)))
+            let mut line = Line::from(spans);
+            for span in line.spans.iter_mut().skip(usize::from(block_indent > 0)) {
+                span.style = span.style.patch(Style::new().bg(block_background));
+            }
+            HyperlinkLine::new(line)
         })
         .collect::<Vec<_>>();
 

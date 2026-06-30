@@ -152,16 +152,16 @@ impl ShellState {
                 }
             }
             ServerNotification::ItemStarted(started) => {
-                if started.thread_id == self.thread_id.to_string() {
-                    if let Some(title) = item_activity_title(&started.item) {
-                        let item_id = started.item.id().to_string();
-                        self.record_item_activity(&started.item, title.clone(), "in progress");
-                        self.push_tool_with_status_for_item(
-                            item_id,
-                            title,
-                            super::ToolBlockStatus::Running,
-                        );
-                    }
+                if started.thread_id == self.thread_id.to_string()
+                    && let Some(title) = item_activity_title(&started.item)
+                {
+                    let item_id = started.item.id().to_string();
+                    self.record_item_activity(&started.item, title.clone(), "in progress");
+                    self.push_tool_with_status_for_item(
+                        item_id,
+                        title,
+                        super::ToolBlockStatus::Running,
+                    );
                 }
             }
             ServerNotification::ItemCompleted(completed) => {

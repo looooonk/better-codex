@@ -185,6 +185,50 @@ fn renders_short_shell_snapshot() {
 }
 
 #[test]
+fn renders_output_blocks_as_inset_neutral_rectangles() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.push_tool_with_status("exec cargo test", ToolBlockStatus::Success);
+    shell.push_output_with_status("compiled 42 crates in 1.2s", ToolBlockStatus::Success);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
+    );
+
+    let buf = render_shell_buffer(&shell, area);
+    let rendered = buffer_contents(&buf, area);
+    let tool_row =
+        row_containing(&buf, area, "tool exec cargo test").expect("tool row should render");
+    let output_row =
+        row_containing(&buf, area, "output compiled 42 crates").expect("output row should render");
+    let tool_accent_x =
+        accent_x_for_row(&buf, area, tool_row).expect("tool row should have an accent");
+    let output_accent_x =
+        accent_x_for_row(&buf, area, output_row).expect("output row should have an accent");
+
+    assert_eq!(output_accent_x, tool_accent_x + 2);
+    assert_eq!(
+        rightmost_bg_x_for_row(&buf, area, tool_row, Color::Rgb(49, 50, 68)),
+        rightmost_bg_x_for_row(&buf, area, output_row, Color::Rgb(24, 24, 37)),
+    );
+    assert_eq!(
+        buf.cell((output_accent_x, output_row))
+            .expect("output accent cell should exist")
+            .style()
+            .fg,
+        Some(Color::Rgb(69, 71, 90))
+    );
+    assert_eq!(
+        buf.cell((tool_accent_x, tool_row))
+            .expect("tool accent cell should exist")
+            .style()
+            .fg,
+        Some(Color::Green)
+    );
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn renders_workspace_roots_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Workspace;
@@ -2016,6 +2060,23 @@ fn accent_color_for_row(buf: &Buffer, area: Rect, needle: &str) -> Option<Color>
         }
     }
     None
+}
+
+fn accent_x_for_row(buf: &Buffer, area: Rect, y: u16) -> Option<u16> {
+    for x in area.x..area.right() {
+        let cell = buf.cell((x, y))?;
+        if cell.symbol() == "▌" {
+            return Some(x);
+        }
+    }
+    None
+}
+
+fn rightmost_bg_x_for_row(buf: &Buffer, area: Rect, y: u16, background: Color) -> Option<u16> {
+    (area.x..area.right()).rev().find(|x| {
+        buf.cell((*x, y))
+            .is_some_and(|cell| cell.style().bg == Some(background))
+    })
 }
 
 fn scrollbar_cell(buf: &Buffer, area: Rect) -> Option<(u16, u16)> {
