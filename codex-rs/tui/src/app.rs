@@ -78,6 +78,8 @@ use crate::transcript_reflow::TranscriptReflowState;
 use crate::tui;
 use crate::tui::TuiEvent;
 use crate::update_action::UpdateAction;
+use crate::user_message::UserMessage;
+use crate::user_message::create_initial_user_message;
 use crate::version::CODEX_CLI_VERSION;
 use crate::workspace_command::AppServerWorkspaceCommandRunner;
 use crate::workspace_command::WorkspaceCommandRunner;
@@ -700,7 +702,7 @@ impl App {
         &self,
         tui: &mut tui::Tui,
         cfg: crate::legacy_core::config::Config,
-        initial_user_message: Option<crate::chatwidget::UserMessage>,
+        initial_user_message: Option<UserMessage>,
     ) -> crate::chatwidget::ChatWidgetInit {
         crate::chatwidget::ChatWidgetInit {
             config: cfg,
@@ -864,7 +866,7 @@ impl App {
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
                     workspace_command_runner: Some(workspace_command_runner.clone()),
-                    initial_user_message: crate::chatwidget::create_initial_user_message(
+                    initial_user_message: create_initial_user_message(
                         initial_prompt.clone(),
                         initial_images.clone(),
                         // CLI prompt args are plain strings, so they don't provide element ranges.
@@ -900,7 +902,7 @@ impl App {
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
                     workspace_command_runner: Some(workspace_command_runner.clone()),
-                    initial_user_message: crate::chatwidget::create_initial_user_message(
+                    initial_user_message: create_initial_user_message(
                         initial_prompt.clone(),
                         initial_images.clone(),
                         // CLI prompt args are plain strings, so they don't provide element ranges.
@@ -939,7 +941,7 @@ impl App {
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
                     workspace_command_runner: Some(workspace_command_runner.clone()),
-                    initial_user_message: crate::chatwidget::create_initial_user_message(
+                    initial_user_message: create_initial_user_message(
                         initial_prompt.clone(),
                         initial_images.clone(),
                         // CLI prompt args are plain strings, so they don't provide element ranges.

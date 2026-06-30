@@ -1,5 +1,6 @@
 use super::*;
 use crate::legacy_core::config::PermissionProfileCatalogEntry;
+use crate::user_message::create_initial_user_message;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_DANGER_FULL_ACCESS;
 use codex_protocol::models::ManagedFileSystemPermissions;

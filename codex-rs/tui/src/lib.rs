@@ -208,6 +208,7 @@ mod update_versions;
 mod updates;
 #[cfg(any(not(debug_assertions), test))]
 mod updates_cache;
+mod user_message;
 mod version;
 mod width;
 #[cfg(any(target_os = "windows", test))]

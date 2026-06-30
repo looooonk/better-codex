@@ -11,7 +11,6 @@ use crate::app_backtrack::BacktrackState;
 use crate::app_backtrack::user_count;
 
 use crate::chatwidget::ChatWidgetInit;
-use crate::chatwidget::create_initial_user_message;
 use crate::chatwidget::tests::helpers::render_bottom_popup;
 use crate::chatwidget::tests::make_chatwidget_manual_with_sender;
 use crate::chatwidget::tests::set_chatgpt_auth;
@@ -26,6 +25,8 @@ use crate::history_cell::UserHistoryCell;
 use crate::history_cell::new_session_info;
 use crate::multi_agents::AgentPickerThreadEntry;
 use crate::multi_agents::SubAgentActivityDisplay;
+use crate::user_message::UserMessage;
+use crate::user_message::create_initial_user_message;
 use assert_matches::assert_matches;
 
 use crate::app_command::AppCommand as Op;
@@ -3678,7 +3679,7 @@ async fn active_side_thread_renders_live_mcp_startup_notifications() {
 #[tokio::test]
 async fn side_restore_user_message_puts_inline_question_back_in_composer() {
     let mut app = make_test_app().await;
-    let user_message = crate::chatwidget::UserMessage::from("side question");
+    let user_message = UserMessage::from("side question");
 
     app.restore_side_user_message(Some(user_message));
 
@@ -5176,7 +5177,7 @@ async fn cancelled_turn_edit_restores_prompt_and_rolls_back_latest_turn() {
         local_image_paths: Vec::new(),
         remote_image_urls: Vec::new(),
     }) as Arc<dyn HistoryCell>];
-    let prompt = crate::chatwidget::UserMessage {
+    let prompt = UserMessage {
         text: "edit me".to_string(),
         local_images: Vec::new(),
         remote_image_urls: vec!["https://example.com/edit.png".to_string()],
@@ -5201,7 +5202,7 @@ async fn cancelled_turn_edit_restores_prompt_and_rolls_back_latest_turn() {
 #[tokio::test]
 async fn first_cancelled_turn_edit_restores_prompt_without_local_history() {
     let (mut app, _app_event_rx, mut op_rx) = make_test_app_with_channels().await;
-    let prompt = crate::chatwidget::UserMessage {
+    let prompt = UserMessage {
         text: "edit first prompt".to_string(),
         local_images: Vec::new(),
         remote_image_urls: vec!["https://example.com/edit.png".to_string()],

@@ -9,6 +9,7 @@
 
 use super::*;
 use crate::chatwidget::InterruptedTurnNoticeMode;
+use crate::user_message::UserMessage;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 
@@ -503,10 +504,7 @@ impl App {
         }
     }
 
-    pub(super) fn restore_side_user_message(
-        &mut self,
-        user_message: Option<crate::chatwidget::UserMessage>,
-    ) {
+    pub(super) fn restore_side_user_message(&mut self, user_message: Option<UserMessage>) {
         if let Some(user_message) = user_message {
             self.chat_widget
                 .restore_user_message_to_composer(user_message);
@@ -556,7 +554,7 @@ impl App {
         tui: &mut tui::Tui,
         app_server: &mut AppServerSession,
         parent_thread_id: ThreadId,
-        mut user_message: Option<crate::chatwidget::UserMessage>,
+        mut user_message: Option<UserMessage>,
     ) -> Result<AppRunControl> {
         if let Some(message) = self.side_start_block_message() {
             self.restore_side_user_message(user_message.take());

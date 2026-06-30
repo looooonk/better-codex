@@ -54,7 +54,7 @@ impl App {
                     tui,
                     app_server,
                     Some(ThreadStartSource::Clear),
-                    crate::chatwidget::create_initial_user_message(
+                    crate::user_message::create_initial_user_message(
                         Some(text),
                         Vec::new(),
                         Vec::new(),

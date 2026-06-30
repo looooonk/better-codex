@@ -31,7 +31,6 @@ use std::sync::Arc;
 use crate::app::App;
 use crate::app_command::AppCommand;
 use crate::app_event::AppEvent;
-use crate::chatwidget::UserMessage;
 #[cfg(test)]
 use crate::history_cell::AgentMessageCell;
 use crate::history_cell::SessionInfoCell;
@@ -39,6 +38,7 @@ use crate::history_cell::UserHistoryCell;
 use crate::pager_overlay::Overlay;
 use crate::tui;
 use crate::tui::TuiEvent;
+use crate::user_message::UserMessage;
 use codex_protocol::ThreadId;
 use codex_protocol::user_input::TextElement;
 use color_eyre::eyre::Result;
