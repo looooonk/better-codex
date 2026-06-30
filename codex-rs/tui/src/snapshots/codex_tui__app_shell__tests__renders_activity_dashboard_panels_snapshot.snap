@@ -14,8 +14,8 @@ expression: "render_shell(&shell, area)"
  plan: 1. Build shell
        2. Wire transcript                                                            Approvals
        3. Render dashboard                                                           approval Run command: cargo tes...
- tool: exec just test -p codex-tui                                                   input Tool input: tool-input-1
- diff: diff 3 files +128 -24
+ ▌ tool exec just test -p codex-tui                                                  input Tool input: tool-input-1
+ ▌ diff diff 3 files +128 -24
  plan: 1. Route activity into dashboard panels                                       Background
                                                                                      workspace refresh queued
  codex: The new shell owns the fullscreen surface.

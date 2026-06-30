@@ -14,8 +14,8 @@ expression: "render_shell(&shell, area)"
  plan: 1. Build shell                                                    modified 5
        2. Wire transcript                                                deleted 1
        3. Render dashboard                                               renamed 1
- tool: exec just test -p codex-tui                                       conflicted 1
- diff: diff 3 files +128 -24                                             untracked 3
+ ▌ tool exec just test -p codex-tui                                      conflicted 1
+ ▌ diff diff 3 files +128 -24                                            untracked 3
                                                                        profile managed
  codex: The new shell owns the fullscreen surface.                     files restricted, net
                                                                        restricted

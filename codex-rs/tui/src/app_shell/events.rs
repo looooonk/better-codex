@@ -118,10 +118,13 @@ impl ShellState {
                     self.latest_diff = Some(super::diff_summary_from_unified_diff(&updated.diff));
                     self.workspace_status_refresh_due = true;
                     if let Some(summary) = &self.latest_diff {
-                        self.push_diff(format!(
-                            "diff {} files +{} -{}",
-                            summary.files, summary.additions, summary.removals
-                        ));
+                        self.push_diff_with_status(
+                            format!(
+                                "diff {} files +{} -{}",
+                                summary.files, summary.additions, summary.removals
+                            ),
+                            super::ToolBlockStatus::Running,
+                        );
                     }
                 }
             }
@@ -144,6 +147,10 @@ impl ShellState {
             ServerNotification::ItemStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
                     self.record_item_activity(&started.item, "in progress".to_string());
+                    self.push_tool_with_status(
+                        item_activity_title(&started.item),
+                        super::ToolBlockStatus::Running,
+                    );
                 }
             }
             ServerNotification::ItemCompleted(completed) => {
@@ -155,7 +162,7 @@ impl ShellState {
                 if delta.thread_id == self.thread_id.to_string()
                     && let Some(output) = super::compact_multiline(delta.delta)
                 {
-                    self.push_output(output);
+                    self.push_output_with_status(output, super::ToolBlockStatus::Running);
                 }
             }
             ServerNotification::FileChangePatchUpdated(updated) => {
@@ -164,7 +171,10 @@ impl ShellState {
                     self.workspace_status_refresh_due = true;
                     let summary = super::file_change_summary(&updated.changes);
                     self.upsert_tool_activity(updated.item_id, summary, "in progress".to_string());
-                    self.push_diff(super::file_change_detail(&updated.changes));
+                    self.push_diff_with_status(
+                        super::file_change_detail(&updated.changes),
+                        super::ToolBlockStatus::Running,
+                    );
                 }
             }
             ServerNotification::McpToolCallProgress(progress) => {
@@ -173,7 +183,7 @@ impl ShellState {
                     let transcript = super::compact_multiline(title.clone());
                     self.upsert_tool_activity(progress.item_id, title, "in progress".to_string());
                     if let Some(transcript) = transcript {
-                        self.push_tool(transcript);
+                        self.push_tool_with_status(transcript, super::ToolBlockStatus::Running);
                     }
                 }
             }
@@ -189,7 +199,7 @@ impl ShellState {
                     .and_then(|bytes| String::from_utf8(bytes).ok())
                     .and_then(super::compact_multiline);
                 if let Some(output) = output {
-                    self.push_output(output);
+                    self.push_output_with_status(output, super::ToolBlockStatus::Running);
                 }
             }
             ServerNotification::Error(error) => {

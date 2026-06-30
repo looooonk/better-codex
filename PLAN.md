@@ -114,6 +114,6 @@ Agents may continuously work through this plan until every unchecked item is com
 - [x] Currently cannot scroll through models (like gpt5.5 / gpt5.4 etc.) or service tiers, and this should be fixed.
 - [ ] The search functionality for sessions is extremely slow, this should be accelerated if possible (unless this is an issue due to unoptimized compilation).
 - [ ] Support shortcuts for navigation in the textbox, like CTRL + LEFT or ALT + RIGHT according to the standard keybinds.
-- [ ] Visually wrap all tool calls and CLI commands Codex runs with a flat, no border, single-colored rectangle. The rectangle should have a colored left edge however, as an accent. The color of this accent is determined by the next item in this list.
-- [ ] Add coloring indicators for when tools are one of {running, success, fail} as the accent for the rectangle.
+- [x] Visually wrap all tool calls and CLI commands Codex runs with a flat, no border, single-colored rectangle. The rectangle should have a colored left edge however, as an accent. The color of this accent is determined by the next item in this list.
+- [x] Add coloring indicators for when tools are one of {running, success, fail} as the accent for the rectangle.
 - [ ] Add a small gap between the conversation log and the scroll bar, currently too close.

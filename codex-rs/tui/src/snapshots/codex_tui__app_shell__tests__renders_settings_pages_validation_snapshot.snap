@@ -14,8 +14,8 @@ expression: "render_shell(&shell, area)"
  plan: 1. Build shell                                                  unknown syntax theme `mis...
        2. Wire transcript                                              > theme: default
        3. Render dashboard                                               animations: on
- tool: exec just test -p codex-tui                                       tooltips: on
- diff: diff 3 files +128 -24
+ ▌ tool exec just test -p codex-tui                                      tooltips: on
+ ▌ diff diff 3 files +128 -24
                                                                        Model
  codex: The new shell owns the fullscreen surface.                     gpt-5-codex
 

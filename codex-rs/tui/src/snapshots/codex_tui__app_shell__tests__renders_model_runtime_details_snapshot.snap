@@ -14,8 +14,8 @@ expression: "render_shell(&shell, area)"
  plan: 1. Build shell                                                    reasoning: high
        2. Wire transcript                                                service tier: flex
        3. Render dashboard
- tool: exec just test -p codex-tui                                     Model
- diff: diff 3 files +128 -24                                           gpt-5-codex
+ ▌ tool exec just test -p codex-tui                                    Model
+ ▌ diff diff 3 files +128 -24                                          gpt-5-codex
                                                                        reasoning high
  codex: The new shell owns the fullscreen surface.                     tier flex
 

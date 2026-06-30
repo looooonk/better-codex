@@ -14,13 +14,13 @@ expression: "render_shell(&shell, area)"
  plan: 1. Build shell
        2. Wire transcript                                              Tools
        3. Render dashboard                                             in progress exec just tes...
- tool: exec just test -p codex-tui                                     completed file changes in...
- diff: diff 3 files +128 -24
- diff: diff 5 files +4 -3                                              Thread
-         M src/app.rs                                                  stage-one
-         A src/new.rs                                                  id 01900000-0000-7000-800...
-         D src/old.rs                                                  resume, fork, archive,
-         R src/from.rs -> src/to.rs
+ ▌ tool exec just test -p codex-tui                                    completed file changes in...
+ ▌ diff diff 3 files +128 -24
+ ▌ diff diff 5 files +4 -3                                             Thread
+ ▌        M src/app.rs                                                 stage-one
+ ▌        A src/new.rs                                                 id 01900000-0000-7000-800...
+ ▌        D src/old.rs                                                 resume, fork, archive,
+ ▌        R src/from.rs -> src/to.rs
                                                                        Status
  codex: The new shell owns the fullscreen surface.                     thinking
 

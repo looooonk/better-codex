@@ -60,6 +60,7 @@ use codex_utils_path_uri::LegacyAppPathString;
 use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -1000,6 +1001,34 @@ fn renders_tool_progress_snapshot() {
 }
 
 #[test]
+fn tool_transcript_blocks_use_status_accent_colors() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.push_tool_with_status("exec just test -p codex-tui", ToolBlockStatus::Running);
+    shell.push_tool_with_status("exec true exit 0", ToolBlockStatus::Success);
+    shell.push_tool_with_status("exec false exit 1", ToolBlockStatus::Fail);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+
+    let buf = render_shell_buffer(&shell, area);
+
+    assert_eq!(
+        accent_color_for_row(&buf, area, "exec just test"),
+        Some(Color::Cyan)
+    );
+    assert_eq!(
+        accent_color_for_row(&buf, area, "exec true"),
+        Some(Color::Green)
+    );
+    assert_eq!(
+        accent_color_for_row(&buf, area, "exec false"),
+        Some(Color::Red)
+    );
+}
+
+#[test]
 fn renders_activity_dashboard_panels_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.pending_approval = PendingApproval::from_request(&command_approval_request())
@@ -1532,9 +1561,34 @@ diff 10 files +10 -0
 }
 
 fn render_shell(shell: &ShellState, area: Rect) -> String {
+    let buf = render_shell_buffer(shell, area);
+    buffer_contents(&buf, area)
+}
+
+fn render_shell_buffer(shell: &ShellState, area: Rect) -> Buffer {
     let mut buf = Buffer::empty(area);
     ShellView { shell }.render(area, &mut buf);
-    buffer_contents(&buf, area)
+    buf
+}
+
+fn accent_color_for_row(buf: &Buffer, area: Rect, needle: &str) -> Option<Color> {
+    for y in area.y..area.bottom() {
+        let mut row = String::new();
+        for x in area.x..area.right() {
+            if let Some(cell) = buf.cell((x, y)) {
+                row.push_str(cell.symbol());
+            }
+        }
+        if row.contains(needle) {
+            for x in area.x..area.right() {
+                let cell = buf.cell((x, y))?;
+                if cell.symbol() == "▌" {
+                    return cell.style().fg;
+                }
+            }
+        }
+    }
+    None
 }
 
 fn assert_adjacent_rows(rendered: &str, first: &str, second: &str) {

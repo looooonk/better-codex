@@ -1,4 +1,5 @@
 use super::ShellState;
+use super::ToolBlockStatus;
 use super::TranscriptKind;
 use super::TranscriptLine;
 use super::dashboard::DashboardPanel;
@@ -523,6 +524,15 @@ fn transcript_lines(
     cwd: &std::path::Path,
     selected: bool,
 ) -> Vec<HyperlinkLine> {
+    if let Some(status) = line.tool_status
+        && matches!(
+            line.kind,
+            TranscriptKind::Tool | TranscriptKind::Diff | TranscriptKind::Output
+        )
+    {
+        return tool_block_lines(line, width, status, selected);
+    }
+
     let width = usize::from(width).max(12);
     let label = line.kind.label();
     let style = match line.kind {
@@ -574,6 +584,63 @@ fn transcript_lines(
             .collect();
     }
     rendered_lines
+}
+
+fn tool_block_lines(
+    line: &TranscriptLine,
+    width: u16,
+    status: ToolBlockStatus,
+    selected: bool,
+) -> Vec<HyperlinkLine> {
+    let width = usize::from(width).max(12);
+    let label = line.kind.label();
+    let label_prefix_width = label.len() + 3;
+    let content_width = width.saturating_sub(label_prefix_width).max(1);
+    let options = textwrap::Options::new(content_width);
+    let wrapped = textwrap::wrap(&line.text, options);
+    let wrapped = if wrapped.is_empty() {
+        vec!["".into()]
+    } else {
+        wrapped
+    };
+    let mut rendered_lines = wrapped
+        .into_iter()
+        .enumerate()
+        .map(|(index, wrapped)| {
+            let label_span = if index == 0 {
+                format!("{label} ").bold()
+            } else {
+                " ".repeat(label.len() + 1).dim()
+            };
+            HyperlinkLine::new(
+                Line::from(vec![
+                    Span::styled("▌", status.accent_style()),
+                    " ".into(),
+                    label_span,
+                    wrapped.into_owned().into(),
+                ])
+                .style(Style::new().bg(MOCHA_SURFACE0)),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    if selected {
+        rendered_lines = rendered_lines
+            .into_iter()
+            .map(|line| line.style(selection_style()))
+            .collect();
+    }
+    rendered_lines
+}
+
+impl ToolBlockStatus {
+    fn accent_style(self) -> Style {
+        match self {
+            Self::Running => Style::new().cyan().bg(MOCHA_SURFACE0),
+            Self::Success => Style::new().green().bg(MOCHA_SURFACE0),
+            Self::Fail => Style::new().red().bg(MOCHA_SURFACE0),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]

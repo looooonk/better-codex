@@ -14,8 +14,8 @@ expression: "render_shell(&shell, area)"
  plan: 1. Build shell
        2. Wire transcript                                              Approvals
        3. Render dashboard                                             approval Run command: car...
- tool: exec just test -p codex-tui
- diff: diff 3 files +128 -24                                           Tools
+ ▌ tool exec just test -p codex-tui
+ ▌ diff diff 3 files +128 -24                                          Tools
                                                                        in progress exec just tes...
  codex: The new shell owns the fullscreen surface.                     completed file changes in...
 

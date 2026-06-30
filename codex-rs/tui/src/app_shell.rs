@@ -234,6 +234,7 @@ where
 struct TranscriptLine {
     kind: TranscriptKind,
     text: String,
+    tool_status: Option<ToolBlockStatus>,
 }
 
 impl TranscriptLine {
@@ -241,7 +242,13 @@ impl TranscriptLine {
         Self {
             kind,
             text: text.into(),
+            tool_status: None,
         }
+    }
+
+    fn tool_status(mut self, status: ToolBlockStatus) -> Self {
+        self.tool_status = Some(status);
+        self
     }
 }
 
@@ -257,6 +264,13 @@ enum TranscriptKind {
     Status,
     Audit,
     Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ToolBlockStatus {
+    Running,
+    Success,
+    Fail,
 }
 
 impl TranscriptKind {
@@ -1815,10 +1829,11 @@ impl ShellState {
                 ..
             } => {
                 let title = command_summary(&command, exit_code, duration_ms);
+                let tool_status = command_tool_status(&status, exit_code);
                 self.upsert_tool_activity(id, title.clone(), format!("{status:?}").to_lowercase());
-                self.push_tool(title);
+                self.push_tool_with_status(title, tool_status);
                 if let Some(output) = aggregated_output.and_then(compact_multiline) {
-                    self.push_output(output);
+                    self.push_output_with_status(output, tool_status);
                 }
             }
             ThreadItem::FileChange {
@@ -1829,7 +1844,10 @@ impl ShellState {
                 let summary = file_change_summary(&changes);
                 self.latest_diff = Some(diff_summary_from_changes(&changes));
                 self.upsert_tool_activity(id, summary, format!("{status:?}").to_lowercase());
-                self.push_diff(file_change_detail(&changes));
+                self.push_diff_with_status(
+                    file_change_detail(&changes),
+                    tool_status_from_debug(&status),
+                );
             }
             ThreadItem::McpToolCall {
                 id,
@@ -1844,8 +1862,9 @@ impl ShellState {
                 if let Some(duration_ms) = duration_ms {
                     title.push_str(&format!(" ({duration_ms}ms)"));
                 }
+                let tool_status = tool_status_from_debug(&status);
                 self.upsert_tool_activity(id, title.clone(), format!("{status:?}").to_lowercase());
-                self.push_tool(title);
+                self.push_tool_with_status(title, tool_status);
                 if let Some(error) = error {
                     self.push_error(format!("mcp error: {}", error.message));
                 }
@@ -1869,8 +1888,9 @@ impl ShellState {
                 if let Some(duration_ms) = duration_ms {
                     title.push_str(&format!(" ({duration_ms}ms)"));
                 }
+                let tool_status = dynamic_tool_status(&status, success);
                 self.upsert_tool_activity(id, title.clone(), format!("{status:?}").to_lowercase());
-                self.push_tool(title);
+                self.push_tool_with_status(title, tool_status);
             }
             ThreadItem::CollabAgentToolCall {
                 id,
@@ -1885,7 +1905,7 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool(title);
+                self.push_tool_with_status(title, tool_status_from_debug(&status));
             }
             ThreadItem::SubAgentActivity {
                 id,
@@ -1895,22 +1915,22 @@ impl ShellState {
             } => {
                 let title = format!("subagent {kind:?}: {agent_path}");
                 self.upsert_subagent_activity(id, title.clone(), "active".to_string());
-                self.push_tool(title);
+                self.push_tool_with_status(title, ToolBlockStatus::Running);
             }
             ThreadItem::WebSearch { id, query, action } => {
                 let title = format!("web search: {query}");
                 self.upsert_tool_activity(id, title.clone(), format!("{action:?}"));
-                self.push_tool(title);
+                self.push_tool_with_status(title, tool_status_from_debug(&action));
             }
             ThreadItem::ImageView { id, path } => {
                 let title = format!("view image: {path}");
                 self.upsert_tool_activity(id, title.clone(), "completed".to_string());
-                self.push_tool(title);
+                self.push_tool_with_status(title, ToolBlockStatus::Success);
             }
             ThreadItem::Sleep { id, duration_ms } => {
                 let title = format!("sleep {duration_ms}ms");
                 self.upsert_tool_activity(id, title.clone(), "completed".to_string());
-                self.push_tool(title);
+                self.push_tool_with_status(title, ToolBlockStatus::Success);
             }
             ThreadItem::ImageGeneration {
                 id,
@@ -1921,8 +1941,9 @@ impl ShellState {
                 let title = saved_path
                     .map(|path| format!("image generation: {}", path.as_path().display()))
                     .unwrap_or_else(|| "image generation".to_string());
+                let tool_status = tool_status_from_str(&status);
                 self.upsert_tool_activity(id, title.clone(), status);
-                self.push_tool(title);
+                self.push_tool_with_status(title, tool_status);
             }
             ThreadItem::EnteredReviewMode { review, .. } => {
                 self.push_status(format!("entered review mode: {review}"));
@@ -1972,15 +1993,29 @@ impl ShellState {
     }
 
     fn push_tool(&mut self, text: impl Into<String>) {
-        self.push_line(TranscriptLine::new(TranscriptKind::Tool, text));
+        self.push_tool_with_status(text, ToolBlockStatus::Running);
     }
 
+    fn push_tool_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
+        self.push_line(TranscriptLine::new(TranscriptKind::Tool, text).tool_status(status));
+    }
+
+    #[cfg(test)]
     fn push_diff(&mut self, text: impl Into<String>) {
-        self.push_line(TranscriptLine::new(TranscriptKind::Diff, text));
+        self.push_diff_with_status(text, ToolBlockStatus::Success);
     }
 
+    fn push_diff_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
+        self.push_line(TranscriptLine::new(TranscriptKind::Diff, text).tool_status(status));
+    }
+
+    #[cfg(test)]
     fn push_output(&mut self, text: impl Into<String>) {
-        self.push_line(TranscriptLine::new(TranscriptKind::Output, text));
+        self.push_output_with_status(text, ToolBlockStatus::Running);
+    }
+
+    fn push_output_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
+        self.push_line(TranscriptLine::new(TranscriptKind::Output, text).tool_status(status));
     }
 
     fn push_status(&mut self, text: impl Into<String>) {
@@ -2310,6 +2345,45 @@ fn command_summary(command: &str, exit_code: Option<i32>, duration_ms: Option<i6
         summary.push_str(&format!(" {duration_ms}ms"));
     }
     summary
+}
+
+fn command_tool_status<T: std::fmt::Debug>(status: &T, exit_code: Option<i32>) -> ToolBlockStatus {
+    if exit_code.is_some_and(|exit_code| exit_code != 0) {
+        return ToolBlockStatus::Fail;
+    }
+    tool_status_from_debug(status)
+}
+
+fn dynamic_tool_status<T: std::fmt::Debug>(status: &T, success: Option<bool>) -> ToolBlockStatus {
+    match success {
+        Some(true) => ToolBlockStatus::Success,
+        Some(false) => ToolBlockStatus::Fail,
+        None => tool_status_from_debug(status),
+    }
+}
+
+fn tool_status_from_debug<T: std::fmt::Debug>(status: &T) -> ToolBlockStatus {
+    tool_status_from_str(&format!("{status:?}"))
+}
+
+fn tool_status_from_str(status: &str) -> ToolBlockStatus {
+    let status = status.to_ascii_lowercase();
+    if status.contains("fail")
+        || status.contains("error")
+        || status.contains("cancel")
+        || status.contains("declin")
+    {
+        ToolBlockStatus::Fail
+    } else if status.contains("complete")
+        || status.contains("success")
+        || status.contains("succeed")
+        || status == "ok"
+        || status.contains("done")
+    {
+        ToolBlockStatus::Success
+    } else {
+        ToolBlockStatus::Running
+    }
 }
 
 fn file_change_summary(changes: &[FileUpdateChange]) -> String {
