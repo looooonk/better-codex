@@ -2,7 +2,7 @@
 
 use std::collections::VecDeque;
 
-use crate::app::app_server_requests::ResolvedAppServerRequest;
+use crate::app_server_requests::ResolvedAppServerRequest;
 use crate::approval_events::ApplyPatchApprovalRequestEvent;
 use crate::approval_events::ExecApprovalRequestEvent;
 use codex_app_server_protocol::McpServerElicitationRequestParams;

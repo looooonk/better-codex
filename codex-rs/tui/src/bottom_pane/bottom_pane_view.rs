@@ -1,4 +1,4 @@
-use crate::app::app_server_requests::ResolvedAppServerRequest;
+use crate::app_server_requests::ResolvedAppServerRequest;
 use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::McpServerElicitationFormRequest;
 use crate::render::renderable::Renderable;

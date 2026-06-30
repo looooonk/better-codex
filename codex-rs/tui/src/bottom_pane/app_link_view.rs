@@ -25,9 +25,9 @@ use super::scroll_state::ScrollState;
 use super::selection_popup_common::GenericDisplayRow;
 use super::selection_popup_common::measure_rows_height;
 use super::selection_popup_common::render_rows;
-use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
+use crate::app_server_requests::ResolvedAppServerRequest;
 use crate::key_hint;
 use crate::key_hint::KeyBindingListExt;
 use crate::keymap::ListKeymap;
@@ -850,8 +850,8 @@ impl crate::render::renderable::Renderable for AppLinkView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::app_server_requests::ResolvedAppServerRequest;
     use crate::app_event::AppEvent;
+    use crate::app_server_requests::ResolvedAppServerRequest;
     use crate::render::renderable::Renderable;
     use insta::assert_snapshot;
     use pretty_assertions::assert_eq;

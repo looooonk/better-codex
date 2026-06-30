@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::app::app_server_requests::ResolvedAppServerRequest;
+use crate::app_server_requests::ResolvedAppServerRequest;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;

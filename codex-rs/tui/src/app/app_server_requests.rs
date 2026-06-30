@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use super::App;
 use crate::app_command::AppCommand;
 use crate::app_server_approval_conversions::granted_permission_profile_from_request;
+use crate::app_server_requests::ResolvedAppServerRequest;
 use crate::app_server_session::AppServerSession;
 use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
 use codex_app_server_protocol::FileChangeRequestApprovalResponse;
@@ -45,26 +46,6 @@ pub(super) struct AppServerRequestResolution {
 pub(super) struct UnsupportedAppServerRequest {
     pub(super) request_id: AppServerRequestId,
     pub(super) message: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ResolvedAppServerRequest {
-    ExecApproval {
-        id: String,
-    },
-    FileChangeApproval {
-        id: String,
-    },
-    PermissionsApproval {
-        id: String,
-    },
-    UserInput {
-        call_id: String,
-    },
-    McpElicitation {
-        server_name: String,
-        request_id: AppServerRequestId,
-    },
 }
 
 #[derive(Debug, Default)]
@@ -416,9 +397,9 @@ struct McpRequestKey {
 #[cfg(test)]
 mod tests {
     use super::PendingAppServerRequests;
-    use super::ResolvedAppServerRequest;
     use super::UnsupportedAppServerRequest;
     use crate::app_command::AppCommand as Op;
+    use crate::app_server_requests::ResolvedAppServerRequest;
     use codex_app_server_protocol::AdditionalFileSystemPermissions;
     use codex_app_server_protocol::AdditionalNetworkPermissions;
     use codex_app_server_protocol::CommandExecutionApprovalDecision;

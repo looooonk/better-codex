@@ -14,11 +14,11 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::app::app_server_requests::ResolvedAppServerRequest;
 #[cfg(test)]
 use crate::app_command::AppCommand as Op;
 use crate::app_event::AppEvent;
 use crate::app_event_sender::AppEventSender;
+use crate::app_server_requests::ResolvedAppServerRequest;
 use crate::bottom_pane::BottomPaneView;
 use crate::bottom_pane::CancellationEvent;
 use crate::bottom_pane::list_selection_view::ListSelectionView;

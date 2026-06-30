@@ -16,10 +16,10 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::app_event::AppEvent;
 use crate::app_event::ConnectorsSnapshot;
 use crate::app_event_sender::AppEventSender;
+use crate::app_server_requests::ResolvedAppServerRequest;
 use crate::bottom_pane::pending_input_preview::PendingInputPreview;
 use crate::bottom_pane::pending_thread_approvals::PendingThreadApprovals;
 use crate::bottom_pane::unified_exec_footer::UnifiedExecFooter;
@@ -1852,9 +1852,9 @@ impl Renderable for BottomPane {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::app_server_requests::ResolvedAppServerRequest;
     use crate::app_command::AppCommand as Op;
     use crate::app_event::AppEvent;
+    use crate::app_server_requests::ResolvedAppServerRequest;
     use crate::status_indicator_widget::STATUS_DETAILS_DEFAULT_MAX_LINES;
     use crate::status_indicator_widget::StatusDetailsCapitalization;
     use crate::test_support::PathBufExt;

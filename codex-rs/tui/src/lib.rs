@@ -102,6 +102,7 @@ mod app_event_sender;
 mod app_exit;
 mod app_info;
 mod app_server_approval_conversions;
+mod app_server_requests;
 mod app_server_session;
 mod app_shell;
 #[doc(hidden)]

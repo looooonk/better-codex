@@ -35,8 +35,8 @@ use ratatui::widgets::Widget;
 use serde_json::Value;
 use unicode_width::UnicodeWidthStr;
 
-use crate::app::app_server_requests::ResolvedAppServerRequest;
 use crate::app_event_sender::AppEventSender;
+use crate::app_server_requests::ResolvedAppServerRequest;
 use crate::bottom_pane::CancellationEvent;
 use crate::bottom_pane::ChatComposer;
 use crate::bottom_pane::ChatComposerConfig;
