@@ -474,7 +474,10 @@ impl ShellState {
             }
             return Ok(false);
         }
-        if let Some(step) = dashboard_route_step_from_key(key, self.composer.is_empty()) {
+        if self.composer.is_empty()
+            && let Some(step) =
+                dashboard_route_step_from_key(key, /*allow_word_motion_fallback*/ true)
+        {
             let route = match step {
                 DashboardRouteStep::Previous => self.dashboard_route.previous(),
                 DashboardRouteStep::Next => self.dashboard_route.next(),
@@ -526,6 +529,13 @@ impl ShellState {
             && self.settings.focused
             && self.handle_settings_key(key, app_server).await?
         {
+            return Ok(false);
+        }
+        if let Some(word_motion) = composer_word_motion_from_key(key) {
+            match word_motion {
+                ComposerWordMotion::Left => self.composer.move_word_left(),
+                ComposerWordMotion::Right => self.composer.move_word_right(),
+            }
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('p')) {
@@ -2551,6 +2561,58 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
 enum DashboardRouteStep {
     Previous,
     Next,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ComposerWordMotion {
+    Left,
+    Right,
+}
+
+fn composer_word_motion_from_key(key: KeyEvent) -> Option<ComposerWordMotion> {
+    if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+        return None;
+    }
+
+    match key {
+        KeyEvent {
+            code: KeyCode::Left,
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL) || modifiers.contains(KeyModifiers::ALT) => {
+            Some(ComposerWordMotion::Left)
+        }
+        KeyEvent {
+            code: KeyCode::Right,
+            modifiers,
+            ..
+        } if modifiers.contains(KeyModifiers::CONTROL) || modifiers.contains(KeyModifiers::ALT) => {
+            Some(ComposerWordMotion::Right)
+        }
+        _ => composer_word_motion_fallback(key),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn composer_word_motion_fallback(key: KeyEvent) -> Option<ComposerWordMotion> {
+    match key {
+        KeyEvent {
+            code: KeyCode::Char('b'),
+            modifiers: KeyModifiers::ALT,
+            ..
+        } => Some(ComposerWordMotion::Left),
+        KeyEvent {
+            code: KeyCode::Char('f'),
+            modifiers: KeyModifiers::ALT,
+            ..
+        } => Some(ComposerWordMotion::Right),
+        _ => None,
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn composer_word_motion_fallback(_key: KeyEvent) -> Option<ComposerWordMotion> {
+    None
 }
 
 fn dashboard_route_step_from_key(

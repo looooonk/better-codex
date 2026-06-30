@@ -122,8 +122,8 @@ impl ShellView<'_> {
         let mut lines = collect_transcript_lines(self.shell, body.width, cwd);
         let visible_count = usize::from(body.height);
         let mut max_scroll = lines.len().saturating_sub(visible_count);
-        if max_scroll > 0 && body.width > 1 {
-            text_body.width = text_body.width.saturating_sub(1);
+        if max_scroll > 0 && body.width > 2 {
+            text_body.width = text_body.width.saturating_sub(2);
             lines = collect_transcript_lines(self.shell, text_body.width, cwd);
             max_scroll = lines.len().saturating_sub(visible_count);
         }

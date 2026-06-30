@@ -96,6 +96,42 @@ impl ComposerState {
         }
     }
 
+    pub(super) fn move_word_left(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+
+        let mut boundary = 0;
+        let mut found_word = false;
+        for (index, ch) in self.text[..self.cursor].char_indices().rev() {
+            if word_motion_char(ch) {
+                found_word = true;
+                boundary = index;
+            } else if found_word {
+                break;
+            }
+        }
+        self.cursor = boundary;
+    }
+
+    pub(super) fn move_word_right(&mut self) {
+        if self.cursor >= self.text.len() {
+            return;
+        }
+
+        let mut found_word = false;
+        for (offset, ch) in self.text[self.cursor..].char_indices() {
+            let index = self.cursor + offset;
+            if word_motion_char(ch) {
+                found_word = true;
+            } else if found_word {
+                self.cursor = index;
+                return;
+            }
+        }
+        self.cursor = self.text.len();
+    }
+
     pub(super) fn move_to_line_start(&mut self) {
         self.cursor = self.line_start(self.cursor);
     }
@@ -242,4 +278,8 @@ impl ComposerState {
             .next()
             .map(|ch| cursor + ch.len_utf8())
     }
+}
+
+fn word_motion_char(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
 }

@@ -658,6 +658,27 @@ fn dashboard_route_step_key_mapping_covers_alt_arrows() {
     );
 }
 
+#[test]
+fn composer_word_motion_key_mapping_covers_standard_shortcuts() {
+    assert_eq!(
+        composer_word_motion_from_key(KeyEvent::new(KeyCode::Left, KeyModifiers::CONTROL)),
+        Some(ComposerWordMotion::Left)
+    );
+    assert_eq!(
+        composer_word_motion_from_key(KeyEvent::new(KeyCode::Right, KeyModifiers::CONTROL)),
+        Some(ComposerWordMotion::Right)
+    );
+    assert_eq!(
+        composer_word_motion_from_key(KeyEvent::new(KeyCode::Left, KeyModifiers::ALT)),
+        Some(ComposerWordMotion::Left)
+    );
+    assert_eq!(
+        composer_word_motion_from_key(KeyEvent::new(KeyCode::Right, KeyModifiers::ALT)),
+        Some(ComposerWordMotion::Right)
+    );
+    assert_eq!(composer_word_motion_from_key(key_char('b')), None);
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn dashboard_route_step_matches_macos_option_arrow_fallbacks_only_when_allowed() {
@@ -1298,6 +1319,29 @@ fn transcript_scrollbar_metrics_uses_minimum_thumb_height() {
 }
 
 #[test]
+fn rendered_transcript_leaves_gap_before_scrollbar() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    for index in 0..40 {
+        shell.push_assistant(format!("scrollbar gap transcript row {index}"));
+    }
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 24,
+    );
+
+    let buf = render_shell_buffer(&shell, area);
+
+    let (x, y) = scrollbar_cell(&buf, area).expect("scrollbar should render");
+    assert_eq!(
+        buf.cell((x.saturating_sub(1), y))
+            .expect("gap cell should exist")
+            .symbol(),
+        " "
+    );
+}
+
+#[test]
 fn context_used_percent_handles_unknown_and_baseline_usage() {
     assert_eq!(
         dashboard::context_used_percent(&TokenUsage::default(), None),
@@ -1349,6 +1393,24 @@ fn composer_edits_multiline_text_at_cursor() {
         (composer.text().to_string(), composer.cursor_position()),
         ("alp\nha\nbeXta".to_string(), (1, 0))
     );
+}
+
+#[test]
+fn composer_moves_by_word() {
+    let mut composer = ComposerState::default();
+    composer.set_text("alpha beta_gamma, delta");
+
+    composer.move_word_left();
+    assert_eq!(composer.cursor_position(), (0, 18));
+
+    composer.move_word_left();
+    assert_eq!(composer.cursor_position(), (0, 6));
+
+    composer.move_word_right();
+    assert_eq!(composer.cursor_position(), (0, 16));
+
+    composer.move_word_right();
+    assert_eq!(composer.cursor_position(), (0, 23));
 }
 
 #[test]
@@ -1585,6 +1647,18 @@ fn accent_color_for_row(buf: &Buffer, area: Rect, needle: &str) -> Option<Color>
                 if cell.symbol() == "▌" {
                     return cell.style().fg;
                 }
+            }
+        }
+    }
+    None
+}
+
+fn scrollbar_cell(buf: &Buffer, area: Rect) -> Option<(u16, u16)> {
+    for y in area.y..area.bottom() {
+        for x in area.x..area.right() {
+            let cell = buf.cell((x, y))?;
+            if matches!(cell.symbol(), "┃" | "│") {
+                return Some((x, y));
             }
         }
     }
