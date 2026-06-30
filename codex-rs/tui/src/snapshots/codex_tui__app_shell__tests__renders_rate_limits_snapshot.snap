@@ -21,18 +21,18 @@ expression: "render_shell(&shell, area)"
                                                                        total 1,440
  codex: The new shell owns the fullscreen surface.                     input 1,200
                                                                        output 240
-                                                                       context 200,000
+                                                                       Context 100% left
 
                                                                        Integrations
                                                                        mcp not loaded
                                                                        plugins not loaded
 
                                                                        Rate Limits
-                                                                       Codex 82% 300m
-                                                                         secondary 18% 10,080m
+                                                                       Codex 82% 5h
+                                                                         secondary 18% 7d
                                                                        credits $12.34
                                                                        spend 75% left
-                                                                       Background 95% 60m
+                                                                       Background 95% 1h
                                                                        limited RateLimitReached
                                                                        reset credits 2
 

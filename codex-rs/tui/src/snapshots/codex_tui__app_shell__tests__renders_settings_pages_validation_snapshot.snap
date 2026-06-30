@@ -23,7 +23,7 @@ expression: "render_shell(&shell, area)"
                                                                        total 1,440
                                                                        input 1,200
                                                                        output 240
-                                                                       context 200,000
+                                                                       Context 100% left
 
                                                                        Integrations
                                                                        mcp not loaded

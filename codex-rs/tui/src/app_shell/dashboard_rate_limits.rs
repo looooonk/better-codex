@@ -59,7 +59,17 @@ fn rate_limit_window_line(label: &str, window: &RateLimitWindow) -> Line<'static
     };
     let mut spans = vec![label.to_string().into(), " ".dim(), percent];
     if let Some(duration) = window.window_duration_mins {
-        spans.extend([" ".dim(), format!("{}m", format_i64(duration)).dim()]);
+        let duration = duration.max(0);
+        let duration = if duration == 0 {
+            "0m".to_string()
+        } else if duration % (24 * 60) == 0 {
+            format!("{}d", format_i64(duration / (24 * 60)))
+        } else if duration % 60 == 0 {
+            format!("{}h", format_i64(duration / 60))
+        } else {
+            format!("{}m", format_i64(duration))
+        };
+        spans.extend([" ".dim(), duration.dim()]);
     }
     Line::from(spans)
 }

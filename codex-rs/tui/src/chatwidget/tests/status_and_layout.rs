@@ -115,7 +115,7 @@ async fn token_usage_update_uses_runtime_context_window() {
     handle_token_count(
         &mut chat,
         Some(make_token_info(
-            /*total_tokens*/ 0, /*context_window*/ 950_000,
+            /*total_tokens*/ 500_000, /*context_window*/ 950_000,
         )),
     );
 
@@ -123,7 +123,7 @@ async fn token_usage_update_uses_runtime_context_window() {
         chat.status_line_value_for_item(crate::bottom_pane::StatusLineItem::ContextWindowSize),
         Some("950K window".to_string())
     );
-    assert_eq!(chat.bottom_pane.context_window_percent(), Some(100));
+    assert_eq!(chat.bottom_pane.context_window_percent(), Some(48));
 
     chat.add_status_output(
         /*refreshing_rate_limits*/ false, /*request_id*/ None,
@@ -140,16 +140,16 @@ async fn token_usage_update_uses_runtime_context_window() {
                 .map(|span| span.content.as_ref())
                 .collect::<String>()
         })
-        .find(|line| line.contains("Context window"))
-        .expect("context window line");
+        .find(|line| line.contains("Context"))
+        .expect("context line");
 
     assert!(
-        context_line.contains("950K"),
-        "expected /status to use runtime context window, got: {context_line}"
+        context_line.contains("48% left"),
+        "expected /status to use runtime context window percent, got: {context_line}"
     );
     assert!(
-        !context_line.contains("1M"),
-        "expected /status to avoid raw config context window, got: {context_line}"
+        !context_line.contains("51% left"),
+        "expected /status to avoid config context window percent, got: {context_line}"
     );
 }
 

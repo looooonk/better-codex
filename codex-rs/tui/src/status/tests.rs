@@ -2024,15 +2024,15 @@ async fn status_context_window_uses_last_usage() {
     let rendered_lines = render_lines(&composite.display_lines(/*width*/ 80));
     let context_line = rendered_lines
         .into_iter()
-        .find(|line| line.contains("Context window"))
+        .find(|line| line.contains("Context"))
         .expect("context line");
 
     assert!(
-        context_line.contains("13.7K used / 272K"),
-        "expected context line to reflect last usage tokens, got: {context_line}"
+        context_line.contains("99% left"),
+        "expected context line to reflect last usage percent, got: {context_line}"
     );
     assert!(
-        !context_line.contains("102K"),
-        "context line should not use total aggregated tokens, got: {context_line}"
+        !context_line.contains("65% left"),
+        "context line should not use total aggregated usage, got: {context_line}"
     );
 }

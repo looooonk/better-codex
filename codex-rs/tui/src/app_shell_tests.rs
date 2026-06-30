@@ -1641,7 +1641,7 @@ fn dashboard_renders_large_numbers_with_commas() {
     assert!(rendered.contains("total 1,469,134"));
     assert!(rendered.contains("input 1,234,567"));
     assert!(rendered.contains("output 234,567"));
-    assert!(rendered.contains("context 2,000,000"));
+    assert!(rendered.contains("Context 27% left"));
     shell.dashboard_route = DashboardRoute::Workspace;
     let rendered = render_shell(&shell, area);
 

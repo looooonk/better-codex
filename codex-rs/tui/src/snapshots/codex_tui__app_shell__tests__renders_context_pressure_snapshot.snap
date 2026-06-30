@@ -21,11 +21,11 @@ expression: "render_shell(&shell, area)"
                                                                        total 190,000
  codex: The new shell owns the fullscreen surface.                     input 150,000
                                                                        output 40,000
-                                                                       context 200,000
-                                                                       context 95% used
+                                                                       Context 5% left
 
                                                                        Integrations
- Composer ready 1:37                                                   mcp not loaded
- > Summarize the new shell architecture                                plugins not loaded
-
+                                                                       mcp not loaded
+ Composer ready 1:37                                                   plugins not loaded
+ > Summarize the new shell architecture
                                                                        Workspace
+                                                                       cwd /workspace/better-codex

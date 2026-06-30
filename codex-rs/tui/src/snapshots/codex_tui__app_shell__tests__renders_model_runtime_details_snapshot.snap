@@ -23,7 +23,7 @@ expression: "render_shell(&shell, area)"
                                                                        total 1,440
                                                                        input 1,200
                                                                        output 240
-                                                                       context 200,000
+                                                                       Context 100% left
 
  Composer ready 1:37                                                   Integrations
  > Summarize the new shell architecture                                mcp not loaded

@@ -58,8 +58,6 @@ const CHATGPT_USAGE_URL: &str = "https://chatgpt.com/codex/settings/usage";
 #[derive(Debug, Clone)]
 struct StatusContextWindowData {
     percent_remaining: i64,
-    tokens_in_context: i64,
-    window: i64,
 }
 
 #[derive(Debug, Clone)]
@@ -330,8 +328,6 @@ impl StatusHistoryCell {
         };
         let context_window = context_window.map(|window| StatusContextWindowData {
             percent_remaining: context_usage.percent_of_context_window_remaining(window),
-            tokens_in_context: context_usage.tokens_in_context_window(),
-            window,
         });
 
         let token_usage = StatusTokenUsageData {
@@ -393,18 +389,8 @@ impl StatusHistoryCell {
 
     fn context_window_spans(&self) -> Option<Vec<Span<'static>>> {
         let context = self.token_usage.context_window.as_ref()?;
-        let percent = context.percent_remaining;
-        let used_fmt = format_tokens_compact(context.tokens_in_context);
-        let window_fmt = format_tokens_compact(context.window);
-
-        Some(vec![
-            Span::from(format!("{percent}% left")),
-            Span::from(" (").dim(),
-            Span::from(used_fmt).dim(),
-            Span::from(" used / ").dim(),
-            Span::from(window_fmt).dim(),
-            Span::from(")").dim(),
-        ])
+        let percent_remaining = context.percent_remaining;
+        Some(vec![Span::from(format!("{percent_remaining}% left"))])
     }
 
     fn rate_limit_lines(
@@ -770,7 +756,7 @@ impl HistoryCell for StatusHistoryCell {
         }
         push_label(&mut labels, &mut seen, "Token usage");
         if self.token_usage.context_window.is_some() {
-            push_label(&mut labels, &mut seen, "Context window");
+            push_label(&mut labels, &mut seen, "Context");
         }
 
         self.collect_rate_limit_labels(&rate_limit_state, &mut seen, &mut labels);
@@ -858,7 +844,7 @@ impl HistoryCell for StatusHistoryCell {
         }
 
         if let Some(spans) = self.context_window_spans() {
-            lines.push(formatter.line("Context window", spans));
+            lines.push(formatter.line("Context", spans));
         }
 
         lines.extend(self.rate_limit_lines(&rate_limit_state, available_inner_width, &formatter));

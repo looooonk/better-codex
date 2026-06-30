@@ -46,10 +46,6 @@ impl DashboardPanel {
 }
 
 pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<DashboardPanel> {
-    let context_window = shell
-        .model_context_window
-        .map(format_i64)
-        .unwrap_or_else(|| "unknown".to_string());
     let mut panels = vec![dashboard_navigation_panel(shell.dashboard_route)];
     panels.push(DashboardPanel::new(
         "Sessions",
@@ -106,7 +102,7 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
         ]));
     }
     panels.push(DashboardPanel::new("Model", model_lines));
-    let mut token_lines = vec![
+    let token_lines = vec![
         Line::from(format!(
             "total {}",
             format_i64(shell.token_usage.total_tokens)
@@ -119,22 +115,11 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
             "output {}",
             format_i64(shell.token_usage.output_tokens)
         )),
-        Line::from(format!("context {context_window}")),
+        match context_remaining_percent(&shell.token_usage, shell.model_context_window) {
+            Some(percent) => Line::from(format!("Context {percent}% left")),
+            None => Line::from("Context unknown".dim()),
+        },
     ];
-    if let Some(context_used_percent) =
-        context_used_percent(&shell.token_usage, shell.model_context_window)
-            .filter(|percent| *percent >= 50)
-    {
-        let line = format!("context {context_used_percent}% used");
-        let line = if context_used_percent >= 90 {
-            line.red()
-        } else if context_used_percent >= 75 {
-            line.magenta()
-        } else {
-            line.cyan()
-        };
-        token_lines.push(Line::from(line));
-    }
     panels.push(DashboardPanel::new("Tokens", token_lines));
 
     if shell.pending_approval.is_some()
@@ -272,8 +257,15 @@ pub(super) fn context_used_percent(
     usage: &crate::token_usage::TokenUsage,
     model_context_window: Option<i64>,
 ) -> Option<i64> {
+    Some(100 - context_remaining_percent(usage, model_context_window)?)
+}
+
+fn context_remaining_percent(
+    usage: &crate::token_usage::TokenUsage,
+    model_context_window: Option<i64>,
+) -> Option<i64> {
     let context_window = model_context_window.filter(|window| *window > 0)?;
-    Some(100 - usage.percent_of_context_window_remaining(context_window))
+    Some(usage.percent_of_context_window_remaining(context_window))
 }
 
 fn route_dashboard_panels(
