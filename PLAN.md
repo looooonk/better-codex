@@ -111,9 +111,13 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 Agents may continuously work through this plan until every unchecked item is complete. While an agent loop is running, the user may run the program and update this section with fixes, regressions, or feature requests discovered during live use. Treat these entries as user-supplied implementation tasks: triage them against the staged plan, keep them as checkboxes, and mark them complete only after the requested behavior has been implemented and verified.
 
-- [x] Currently cannot scroll through models (like gpt5.5 / gpt5.4 etc.) or service tiers, and this should be fixed.
-- [x] The search functionality for sessions is extremely slow, this should be accelerated if possible (unless this is an issue due to unoptimized compilation).
-- [x] Support shortcuts for navigation in the textbox, like CTRL + LEFT or ALT + RIGHT according to the standard keybinds.
 - [x] Visually wrap all tool calls and CLI commands Codex runs with a flat, no border, single-colored rectangle. The rectangle should have a colored left edge however, as an accent. The color of this accent is determined by the next item in this list.
 - [x] Add coloring indicators for when tools are one of {running, success, fail} as the accent for the rectangle.
 - [x] Add a small gap between the conversation log and the scroll bar, currently too close.
+- [ ] Fix all warnings that appear when compiling to binary.
+- [ ] Add a newline between the previous message and tool calls. Add spacing between sequential tool calls as well. Make sure that double newlines never occur, however.
+- [ ] Tool use box accent coloring is not correctly rendered; the bars do not update to be green / red but rather emit a new tool call log that is a duplicate of the previous one, just with the status updated. Instead, when a tool call state changes it should change the status / accent of that tool call rather then emit a new one.
+- [ ] Duplicate tool use can also duplicate user messages in the conversation log.
+- [ ] Tool call background boxes only extend to the end of the tool call text, instead of spanning horizontally across the entire conversation window. This should be fixed.
+- [ ] Add support for CTRL + BACKSPACE and ALT + BACKSPACE to delete the entire text and the previous word respectively.
+- [ ] Add support for being able to continuously press BACKSPACE instead of tapping it multiple times.
