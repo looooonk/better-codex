@@ -17,6 +17,8 @@ use crate::app_event::RateLimitRefreshOrigin;
 #[cfg(target_os = "windows")]
 use crate::app_event::WindowsSandboxEnableMode;
 use crate::app_event_sender::AppEventSender;
+use crate::app_exit::AppExitInfo;
+use crate::app_exit::ExitReason;
 use crate::app_server_session::AppServerBootstrap;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
@@ -393,37 +395,10 @@ fn managed_filesystem_sandbox_is_restricted(permission_profile: &PermissionProfi
 /// perceived typing speed for non-backlogged output.
 const COMMIT_ANIMATION_TICK: Duration = tui::TARGET_FRAME_INTERVAL;
 
-#[derive(Debug, Clone)]
-pub struct AppExitInfo {
-    pub token_usage: TokenUsage,
-    pub thread_id: Option<ThreadId>,
-    pub resume_hint: Option<String>,
-    pub update_action: Option<UpdateAction>,
-    pub exit_reason: ExitReason,
-}
-
-impl AppExitInfo {
-    pub fn fatal(message: impl Into<String>) -> Self {
-        Self {
-            token_usage: TokenUsage::default(),
-            thread_id: None,
-            resume_hint: None,
-            update_action: None,
-            exit_reason: ExitReason::Fatal(message.into()),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub(crate) enum AppRunControl {
     Continue,
     Exit(ExitReason),
-}
-
-#[derive(Debug, Clone)]
-pub enum ExitReason {
-    UserRequested,
-    Fatal(String),
 }
 
 fn session_summary(

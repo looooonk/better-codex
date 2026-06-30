@@ -3,8 +3,8 @@
 //! This intentionally avoids the inherited chat widget and owns a small app-like
 //! fullscreen surface that talks to Codex through the app-server harness.
 
-use crate::app::AppExitInfo;
-use crate::app::ExitReason;
+use crate::app_exit::AppExitInfo;
+use crate::app_exit::ExitReason;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
