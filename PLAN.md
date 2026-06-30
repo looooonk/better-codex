@@ -113,3 +113,4 @@ Agents may continuously work through this plan until every unchecked item is com
 
 - [x] Truncate outputs to 4 lines when they go over that limit (not by character count).
 - [x] Fix error where rectangle boxes for tool calls and outputs break with random floating letters, the boxes protruding outside of the conversation box, etc.
+- [ ] Fix context decreasing way too fast; better-codex's context decreases drastically faster (decreases to around 46% even with a simple summarization request).
