@@ -1,39 +1,38 @@
 use color_eyre::eyre::Result;
+use color_eyre::eyre::WrapErr;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use ratatui::buffer::Buffer;
+use ratatui::layout::Constraint;
+use ratatui::layout::Direction;
+use ratatui::layout::Layout;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
+use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
-use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
-use ratatui::widgets::WidgetRef;
-use ratatui::widgets::Wrap;
-use tokio::sync::mpsc::unbounded_channel;
+use ratatui::widgets::Widget;
 use tokio_stream::StreamExt;
 
-use crate::app_event::AppEvent;
-use crate::app_event_sender::AppEventSender;
 use crate::app_server_session::AppServerSession;
-use crate::bottom_pane::BottomPaneView;
-use crate::bottom_pane::ListSelectionView;
-use crate::bottom_pane::SelectionItem;
-use crate::bottom_pane::SelectionViewParams;
-use crate::bottom_pane::popup_consts::standard_popup_hint_line_for_keymap;
 use crate::config_update::format_config_error;
 use crate::hooks_rpc::HookTrustUpdate;
 use crate::hooks_rpc::fetch_hooks_list;
 use crate::hooks_rpc::hook_needs_review;
 use crate::hooks_rpc::hooks_list_entry_for_cwd;
 use crate::hooks_rpc::write_hook_trusts;
-use crate::keymap::RuntimeKeymap;
 use crate::legacy_core::config::Config;
-use crate::render::renderable::ColumnRenderable;
-use crate::render::renderable::Renderable;
 use crate::tui::Tui;
 use crate::tui::TuiEvent;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::HooksListEntry;
 use std::path::PathBuf;
+
+const MOCHA_BASE: Color = Color::Rgb(30, 30, 46);
+const MOCHA_MANTLE: Color = Color::Rgb(24, 24, 37);
+const MOCHA_SURFACE0: Color = Color::Rgb(49, 50, 68);
 
 pub(crate) enum StartupHooksReviewOutcome {
     Continue,
@@ -45,6 +44,75 @@ enum StartupHooksReviewSelection {
     ReviewHooks,
     TrustAllAndContinue,
     ContinueWithoutTrusting,
+}
+
+impl StartupHooksReviewSelection {
+    const ALL: [Self; 3] = [
+        Self::ReviewHooks,
+        Self::TrustAllAndContinue,
+        Self::ContinueWithoutTrusting,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::ReviewHooks => "Review hooks",
+            Self::TrustAllAndContinue => "Trust all and continue",
+            Self::ContinueWithoutTrusting => "Continue without trusting",
+        }
+    }
+
+    fn description(self) -> &'static str {
+        match self {
+            Self::ReviewHooks => "Open the hooks browser before starting the app shell.",
+            Self::TrustAllAndContinue => "Persist trust for every new or changed hook.",
+            Self::ContinueWithoutTrusting => "Start the app shell with untrusted hooks disabled.",
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct StartupHooksReviewState {
+    entry: HooksListEntry,
+    selected: usize,
+    trust_all_error: Option<String>,
+    trusting_all: bool,
+}
+
+impl StartupHooksReviewState {
+    fn new(entry: HooksListEntry) -> Self {
+        Self {
+            entry,
+            selected: 0,
+            trust_all_error: None,
+            trusting_all: false,
+        }
+    }
+
+    fn selected(&self) -> StartupHooksReviewSelection {
+        StartupHooksReviewSelection::ALL[self
+            .selected
+            .min(StartupHooksReviewSelection::ALL.len() - 1)]
+    }
+
+    fn move_up(&mut self) {
+        self.selected = self.selected.saturating_sub(1);
+    }
+
+    fn move_down(&mut self) {
+        self.selected = self
+            .selected
+            .saturating_add(1)
+            .min(StartupHooksReviewSelection::ALL.len().saturating_sub(1));
+    }
+
+    fn select_number(&mut self, number: char) {
+        self.selected = match number {
+            '1' => 0,
+            '2' => 1,
+            '3' => 2,
+            _ => self.selected,
+        };
+    }
 }
 
 pub(crate) async fn load_startup_hooks_review_entry(
@@ -69,7 +137,7 @@ pub(crate) async fn load_startup_hooks_review_entry(
 pub(crate) async fn maybe_run_startup_hooks_review(
     app_server: &mut AppServerSession,
     tui: &mut Tui,
-    config: &Config,
+    _config: &Config,
     bypass_hook_trust: bool,
     entry: HooksListEntry,
 ) -> Result<StartupHooksReviewOutcome> {
@@ -77,160 +145,113 @@ pub(crate) async fn maybe_run_startup_hooks_review(
         return Ok(StartupHooksReviewOutcome::Continue);
     }
 
-    run_startup_hooks_review_app(app_server, tui, config, entry).await
+    run_startup_hooks_review_app(app_server, tui, entry).await
 }
 
 async fn run_startup_hooks_review_app(
     app_server: &mut AppServerSession,
     tui: &mut Tui,
-    config: &Config,
     entry: HooksListEntry,
 ) -> Result<StartupHooksReviewOutcome> {
-    let keymap = RuntimeKeymap::from_config(&config.tui_keymap)
-        .map_err(|err| color_eyre::eyre::eyre!(err))?;
-    let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-    let app_event_tx = AppEventSender::new(tx_raw);
-    let mut trust_all_error = None;
-    let mut view = selection_view(
-        &entry,
-        trust_all_error.as_deref(),
-        /*trusting_all*/ false,
-        app_event_tx.clone(),
-        &keymap,
-    );
-    draw_view(tui, &view)?;
+    tui.enter_alt_screen()
+        .wrap_err("failed to enter startup hooks review screen")?;
+    tui.frame_requester().schedule_frame();
 
-    let tui_events = tui.event_stream();
-    tokio::pin!(tui_events);
+    let mut state = StartupHooksReviewState::new(entry);
+    let mut tui_events = tui.event_stream();
 
     loop {
         let Some(event) = tui_events.next().await else {
             return Ok(StartupHooksReviewOutcome::Continue);
         };
         match event {
-            TuiEvent::Key(key_event) => {
-                if matches!(key_event.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
-                    view.handle_key_event(key_event);
-                }
-                let Some(selection) = selected_choice(&mut view) else {
-                    draw_view(tui, &view)?;
-                    continue;
-                };
-                match selection {
+            TuiEvent::Key(key) => match handle_startup_hooks_key(key, &mut state) {
+                StartupHooksReviewKeyAction::Continue => match state.selected() {
                     StartupHooksReviewSelection::ReviewHooks => {
-                        return Ok(StartupHooksReviewOutcome::OpenHooksBrowser(entry));
+                        return Ok(StartupHooksReviewOutcome::OpenHooksBrowser(state.entry));
                     }
                     StartupHooksReviewSelection::ContinueWithoutTrusting => {
                         return Ok(StartupHooksReviewOutcome::Continue);
                     }
                     StartupHooksReviewSelection::TrustAllAndContinue => {
-                        view = selection_view(
-                            &entry,
-                            trust_all_error.as_deref(),
-                            /*trusting_all*/ true,
-                            app_event_tx.clone(),
-                            &keymap,
-                        );
-                        draw_view(tui, &view)?;
-                        let result = write_hook_trusts(
-                            app_server.request_handle(),
-                            entry
-                                .hooks
-                                .iter()
-                                .filter(|hook| hook_needs_review(hook))
-                                .map(|hook| HookTrustUpdate {
-                                    key: hook.key.clone(),
-                                    current_hash: hook.current_hash.clone(),
-                                })
-                                .collect(),
-                        )
-                        .await
-                        .map(|_| ())
-                        .map_err(|err| {
-                            format!("Failed to trust hooks: {}", format_config_error(&err))
-                        });
-                        match result {
+                        state.trusting_all = true;
+                        tui.frame_requester().schedule_frame();
+                        match persist_hook_trusts(app_server, &state.entry).await {
                             Ok(()) => return Ok(StartupHooksReviewOutcome::Continue),
                             Err(err) => {
-                                trust_all_error = Some(err);
-                                view = selection_view(
-                                    &entry,
-                                    trust_all_error.as_deref(),
-                                    /*trusting_all*/ false,
-                                    app_event_tx.clone(),
-                                    &keymap,
-                                );
-                                draw_view(tui, &view)?;
+                                state.trusting_all = false;
+                                state.trust_all_error = Some(err);
+                                tui.frame_requester().schedule_frame();
                             }
                         }
                     }
+                },
+                StartupHooksReviewKeyAction::Exit => {
+                    return Ok(StartupHooksReviewOutcome::Continue);
                 }
-            }
+                StartupHooksReviewKeyAction::Redraw => {
+                    tui.frame_requester().schedule_frame();
+                }
+                StartupHooksReviewKeyAction::Ignored => {}
+            },
             TuiEvent::Paste(_) => {}
-            TuiEvent::Draw | TuiEvent::Resize => draw_view(tui, &view)?,
+            TuiEvent::Resize | TuiEvent::Draw => draw_startup_hooks_review(tui, &state)?,
         }
     }
 }
 
-fn selected_choice(view: &mut ListSelectionView) -> Option<StartupHooksReviewSelection> {
-    if !view.is_complete() {
-        return None;
-    }
-    match view.take_last_selected_index() {
-        Some(0) => Some(StartupHooksReviewSelection::ReviewHooks),
-        Some(1) => Some(StartupHooksReviewSelection::TrustAllAndContinue),
-        Some(2) | None => Some(StartupHooksReviewSelection::ContinueWithoutTrusting),
-        Some(_) => None,
-    }
-}
-
-fn selection_view(
+async fn persist_hook_trusts(
+    app_server: &mut AppServerSession,
     entry: &HooksListEntry,
-    trust_all_error: Option<&str>,
-    trusting_all: bool,
-    app_event_tx: AppEventSender,
-    keymap: &RuntimeKeymap,
-) -> ListSelectionView {
-    ListSelectionView::new(
-        selection_view_params(entry, trust_all_error, trusting_all, keymap),
-        app_event_tx,
-        keymap.list.clone(),
+) -> std::result::Result<(), String> {
+    write_hook_trusts(
+        app_server.request_handle(),
+        entry
+            .hooks
+            .iter()
+            .filter(|hook| hook_needs_review(hook))
+            .map(|hook| HookTrustUpdate {
+                key: hook.key.clone(),
+                current_hash: hook.current_hash.clone(),
+            })
+            .collect(),
     )
+    .await
+    .map(|_| ())
+    .map_err(|err| format!("Failed to trust hooks: {}", format_config_error(&err)))
 }
 
-#[allow(clippy::disallowed_methods)]
-fn selection_view_params(
-    entry: &HooksListEntry,
-    trust_all_error: Option<&str>,
-    trusting_all: bool,
-    keymap: &RuntimeKeymap,
-) -> SelectionViewParams {
-    let count = review_needed_count(entry);
-    let count_line = match count {
-        1 => "1 hook is new or changed.".to_string(),
-        count => format!("{count} hooks are new or changed."),
-    };
-    let mut header = ColumnRenderable::new();
-    header.push(Line::from("Hooks need review".bold()));
-    header.push(Line::from(count_line).yellow());
-    header.push(Line::from(
-        "Hooks can run outside the sandbox after you trust them.".dim(),
-    ));
-    if let Some(error) = trust_all_error {
-        header.push(Paragraph::new(Line::from(error.to_string()).red()).wrap(Wrap { trim: false }));
-    } else if trusting_all {
-        header.push(Line::from("Trusting hooks...".dim()));
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StartupHooksReviewKeyAction {
+    Continue,
+    Exit,
+    Redraw,
+    Ignored,
+}
 
-    SelectionViewParams {
-        footer_hint: Some(standard_popup_hint_line_for_keymap(&keymap.list)),
-        items: vec![
-            selection_item("Review hooks", trusting_all),
-            selection_item("Trust all and continue", trusting_all),
-            selection_item("Continue without trusting (hooks won't run)", trusting_all),
-        ],
-        header: Box::new(header),
-        ..Default::default()
+fn handle_startup_hooks_key(
+    key: KeyEvent,
+    state: &mut StartupHooksReviewState,
+) -> StartupHooksReviewKeyAction {
+    if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+        return StartupHooksReviewKeyAction::Ignored;
+    }
+    match key.code {
+        KeyCode::Up => {
+            state.move_up();
+            StartupHooksReviewKeyAction::Redraw
+        }
+        KeyCode::Down => {
+            state.move_down();
+            StartupHooksReviewKeyAction::Redraw
+        }
+        KeyCode::Char(number @ ('1' | '2' | '3')) => {
+            state.select_number(number);
+            StartupHooksReviewKeyAction::Redraw
+        }
+        KeyCode::Enter => StartupHooksReviewKeyAction::Continue,
+        KeyCode::Esc => StartupHooksReviewKeyAction::Exit,
+        _ => StartupHooksReviewKeyAction::Ignored,
     }
 }
 
@@ -246,162 +267,201 @@ fn review_is_needed(bypass_hook_trust: bool, entry: &HooksListEntry) -> bool {
     !bypass_hook_trust && review_needed_count(entry) > 0
 }
 
-fn selection_item(name: &str, is_disabled: bool) -> SelectionItem {
-    SelectionItem {
-        name: name.to_string(),
-        dismiss_on_select: true,
-        is_disabled,
-        ..Default::default()
+fn draw_startup_hooks_review(
+    tui: &mut Tui,
+    state: &StartupHooksReviewState,
+) -> std::io::Result<()> {
+    let height = tui.terminal.size()?.height;
+    tui.draw(height, |frame| {
+        StartupHooksReviewView { state }.render(frame.area(), frame.buffer);
+    })
+}
+
+struct StartupHooksReviewView<'a> {
+    state: &'a StartupHooksReviewState,
+}
+
+impl StartupHooksReviewView<'_> {
+    fn render(&self, area: Rect, buf: &mut Buffer) {
+        fill_rect(buf, area, MOCHA_BASE);
+        let horizontal = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+            .split(area);
+        self.render_main(horizontal[0], buf);
+        self.render_dashboard(horizontal[1], buf);
+    }
+
+    fn render_main(&self, area: Rect, buf: &mut Buffer) {
+        fill_rect(buf, area, MOCHA_BASE);
+        let vertical = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(3),
+                Constraint::Min(8),
+                Constraint::Length(5),
+            ])
+            .split(area);
+        fill_rect(buf, vertical[0], MOCHA_MANTLE);
+        Paragraph::new(Line::from("Better Codex".magenta().bold()))
+            .style(pane_style(MOCHA_MANTLE))
+            .render(pane_content_rect(vertical[0]), buf);
+
+        let content = pane_content_rect(vertical[1]);
+        let count = review_needed_count(&self.state.entry);
+        let mut lines = vec![
+            Line::from("Hooks need review".bold()),
+            Line::from(""),
+            hook_count_line(count),
+            Line::from("Hooks can run outside the sandbox after you trust them.".dim()),
+            Line::from(""),
+        ];
+        for (index, selection) in StartupHooksReviewSelection::ALL.into_iter().enumerate() {
+            lines.push(selection_line(
+                index,
+                selection,
+                index == self.state.selected,
+            ));
+            lines.extend(
+                wrapped_lines_with_indent(
+                    selection.description(),
+                    usize::from(content.width),
+                    "  ",
+                )
+                .into_iter()
+                .map(ratatui::prelude::Stylize::dim),
+            );
+        }
+        if let Some(error) = &self.state.trust_all_error {
+            lines.push(Line::from(""));
+            lines.extend(
+                wrapped_lines(error, usize::from(content.width))
+                    .into_iter()
+                    .map(ratatui::prelude::Stylize::red),
+            );
+        } else if self.state.trusting_all {
+            lines.push(Line::from(""));
+            lines.push("Trusting hooks...".dim().into());
+        }
+        Paragraph::new(lines)
+            .style(pane_style(MOCHA_BASE))
+            .render(content, buf);
+
+        fill_rect(buf, vertical[2], MOCHA_SURFACE0);
+        Paragraph::new(vec![
+            Line::from("Enter continue  Up/Down choose  1/2/3 jump  Esc continue".dim()),
+            Line::from("Hook trust decisions are written through app-server config.".dim()),
+        ])
+        .style(pane_style(MOCHA_SURFACE0))
+        .render(pane_content_rect(vertical[2]), buf);
+    }
+
+    fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
+        fill_rect(buf, area, MOCHA_SURFACE0);
+        let content = pane_content_rect(area);
+        let mut lines = vec![
+            Line::from("Startup".bold()),
+            Line::from(""),
+            Line::from("workspace".dim()),
+        ];
+        lines.extend(wrapped_lines(
+            &self.state.entry.cwd.display().to_string(),
+            usize::from(content.width),
+        ));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            "needs review ".dim(),
+            review_needed_count(&self.state.entry)
+                .to_string()
+                .cyan()
+                .bold(),
+        ]));
+        lines.push(Line::from(vec![
+            "warnings ".dim(),
+            self.state.entry.warnings.len().to_string().into(),
+        ]));
+        lines.push(Line::from(vec![
+            "errors ".dim(),
+            self.state.entry.errors.len().to_string().into(),
+        ]));
+        lines.push(Line::from(""));
+        lines.push(Line::from(vec![
+            "selected ".dim(),
+            self.state.selected().label().cyan().bold(),
+        ]));
+        Paragraph::new(lines)
+            .style(pane_style(MOCHA_SURFACE0))
+            .render(content, buf);
     }
 }
 
-fn draw_view(tui: &mut Tui, view: &ListSelectionView) -> Result<()> {
-    tui.draw(u16::MAX, |frame| {
-        let area = frame.area();
-        frame.render_widget_ref(Clear, area);
-        let view_area = Rect::new(
-            area.x,
-            area.y,
-            area.width,
-            view.desired_height(area.width).min(area.height),
-        );
-        frame.render_widget_ref(&StandaloneSelectionView { view }, view_area);
-    })?;
-    Ok(())
-}
-
-struct StandaloneSelectionView<'a> {
-    view: &'a ListSelectionView,
-}
-
-impl WidgetRef for &StandaloneSelectionView<'_> {
-    fn render_ref(&self, area: Rect, buf: &mut Buffer) {
-        self.view.render(area, buf);
+fn hook_count_line(count: usize) -> Line<'static> {
+    match count {
+        1 => "1 hook is new or changed.".magenta().into(),
+        count => format!("{count} hooks are new or changed.")
+            .magenta()
+            .into(),
     }
+}
+
+fn selection_line(
+    index: usize,
+    selection: StartupHooksReviewSelection,
+    selected: bool,
+) -> Line<'static> {
+    let marker = if selected {
+        ">".cyan().bold()
+    } else {
+        " ".dim()
+    };
+    let label = format!("{}. {}", index + 1, selection.label());
+    Line::from(vec![marker, " ".dim(), label.into()])
+}
+
+fn fill_rect(buf: &mut Buffer, area: Rect, color: Color) {
+    let style = pane_style(color);
+    for y in area.y..area.y.saturating_add(area.height) {
+        for x in area.x..area.x.saturating_add(area.width) {
+            buf[(x, y)].set_symbol(" ").set_style(style);
+        }
+    }
+}
+
+fn pane_style(color: Color) -> Style {
+    Style::new().bg(color)
+}
+
+fn pane_content_rect(area: Rect) -> Rect {
+    let horizontal_padding = 1.min(area.width.saturating_sub(1) / 2);
+    let vertical_padding = 1.min(area.height.saturating_sub(1) / 2);
+    Rect::new(
+        area.x.saturating_add(horizontal_padding),
+        area.y.saturating_add(vertical_padding),
+        area.width
+            .saturating_sub(horizontal_padding.saturating_mul(2)),
+        area.height
+            .saturating_sub(vertical_padding.saturating_mul(2)),
+    )
+}
+
+fn wrapped_lines(text: &str, width: usize) -> Vec<Line<'static>> {
+    let width = width.max(1);
+    textwrap::wrap(text, width)
+        .into_iter()
+        .map(|line| Line::from(line.into_owned()))
+        .collect()
+}
+
+fn wrapped_lines_with_indent(text: &str, width: usize, indent: &'static str) -> Vec<Line<'static>> {
+    let options = textwrap::Options::new(width.max(indent.len() + 1))
+        .initial_indent(indent)
+        .subsequent_indent(indent);
+    textwrap::wrap(text, options)
+        .into_iter()
+        .map(|line| Line::from(line.into_owned()))
+        .collect()
 }
 
 #[cfg(test)]
-mod tests {
-    use super::review_is_needed;
-    use super::selection_view;
-    use crate::app_event::AppEvent;
-    use crate::app_event_sender::AppEventSender;
-    use crate::keymap::RuntimeKeymap;
-    use crate::render::renderable::Renderable;
-    use crate::test_support::PathBufExt;
-    use crate::test_support::test_path_buf;
-    use codex_app_server_protocol::HookEventName;
-    use codex_app_server_protocol::HookHandlerType;
-    use codex_app_server_protocol::HookMetadata;
-    use codex_app_server_protocol::HookSource;
-    use codex_app_server_protocol::HookTrustStatus;
-    use codex_app_server_protocol::HooksListEntry;
-    use insta::assert_snapshot;
-    use ratatui::buffer::Buffer;
-    use ratatui::layout::Rect;
-    use tokio::sync::mpsc::unbounded_channel;
-
-    fn hook(key: &str, trust_status: HookTrustStatus) -> HookMetadata {
-        HookMetadata {
-            key: key.to_string(),
-            event_name: HookEventName::PreToolUse,
-            handler_type: HookHandlerType::Command,
-            is_managed: false,
-            matcher: Some("Bash".to_string()),
-            command: Some("/tmp/hook.sh".to_string()),
-            timeout_sec: 30,
-            status_message: None,
-            source_path: test_path_buf("/tmp/hooks.json").abs(),
-            source: HookSource::User,
-            plugin_id: None,
-            display_order: 0,
-            enabled: false,
-            current_hash: format!("sha256:{key}"),
-            trust_status,
-        }
-    }
-
-    fn entry() -> HooksListEntry {
-        HooksListEntry {
-            cwd: test_path_buf("/tmp"),
-            hooks: vec![
-                hook("path:new", HookTrustStatus::Untrusted),
-                hook("path:changed", HookTrustStatus::Modified),
-            ],
-            warnings: Vec::new(),
-            errors: Vec::new(),
-        }
-    }
-
-    fn render_lines(view: &crate::bottom_pane::ListSelectionView, width: u16) -> String {
-        let height = view.desired_height(width);
-        let area = Rect::new(0, 0, width, height);
-        let mut buf = Buffer::empty(area);
-        view.render(area, &mut buf);
-
-        (0..area.height)
-            .map(|row| {
-                let rendered = (0..area.width)
-                    .map(|col| {
-                        let symbol = buf[(area.x + col, area.y + row)].symbol();
-                        if symbol.is_empty() {
-                            " ".to_string()
-                        } else {
-                            symbol.to_string()
-                        }
-                    })
-                    .collect::<String>();
-                rendered.trim_end().to_string()
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    #[test]
-    fn bypass_hook_trust_suppresses_startup_review() {
-        assert!(!review_is_needed(/*bypass_hook_trust*/ true, &entry()));
-    }
-
-    #[test]
-    fn untrusted_hooks_need_review_without_bypass() {
-        assert!(review_is_needed(/*bypass_hook_trust*/ false, &entry()));
-    }
-
-    #[test]
-    fn renders_prompt() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let keymap = RuntimeKeymap::defaults();
-        let view = selection_view(
-            &entry(),
-            /*trust_all_error*/ None,
-            /*trusting_all*/ false,
-            AppEventSender::new(tx_raw),
-            &keymap,
-        );
-
-        assert_snapshot!(
-            "startup_hooks_review_prompt",
-            render_lines(&view, /*width*/ 80)
-        );
-    }
-
-    #[test]
-    fn renders_prompt_with_trust_error() {
-        let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
-        let keymap = RuntimeKeymap::defaults();
-        let view = selection_view(
-            &entry(),
-            Some(
-                "Failed to trust hooks: config/batchWrite failed in TUI: Invalid configuration: features.fast_mode=true is not supported; allowed set [fast_mode=false]",
-            ),
-            /*trusting_all*/ false,
-            AppEventSender::new(tx_raw),
-            &keymap,
-        );
-
-        assert_snapshot!(
-            "startup_hooks_review_prompt_with_trust_error",
-            render_lines(&view, /*width*/ 62)
-        );
-    }
-}
+#[path = "startup_hooks_review_tests.rs"]
+mod tests;

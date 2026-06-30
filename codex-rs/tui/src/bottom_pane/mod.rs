@@ -109,6 +109,7 @@ pub(crate) use footer::GoalStatusIndicator;
 #[cfg(test)]
 pub(crate) use footer::goal_status_indicator_line;
 pub(crate) use list_selection_view::ColumnWidthMode;
+#[cfg(test)]
 pub(crate) use list_selection_view::ListSelectionView;
 pub(crate) use list_selection_view::OnSelectionChangedCallback;
 pub(crate) use list_selection_view::SelectionRowDisplay;
