@@ -11,12 +11,18 @@ expression: rendered
  Navigation 1S  2W  3Set  4Help  Alt+Left/Right
  Tools in progress exec just test -p codex-tui
  Sessions ctrl+1 focus active 0 shown
+ Thread stage-one
+ Status thinking
 
 
  Conversation
  ▌ tool exec cargo test
 
-   ▌ output compiled 42 crates in 1.2s
+   ▌ output line 1
+   ▌        line 2
+   ▌        line 3    wide
+   ▌        ... 4 more output lines
+
 
 
 

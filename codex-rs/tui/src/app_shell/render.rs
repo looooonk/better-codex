@@ -17,6 +17,8 @@ use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::design::selection_style;
 use super::design::title_rect;
+use crate::line_truncation::line_width;
+use crate::line_truncation::truncate_line_to_width;
 use crate::markdown;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::mark_buffer_hyperlinks;
@@ -44,6 +46,7 @@ const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
 const DASHBOARD_PANEL_GAP: u16 = 1;
 const TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT: u16 = 2;
 const OUTPUT_BLOCK_INDENT: usize = 2;
+const OUTPUT_BLOCK_MAX_LINES: usize = 4;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
     let height = tui.terminal.size()?.height;
@@ -654,13 +657,39 @@ fn tool_block_lines(
     let label = line.kind.label();
     let label_prefix_width = label.len() + 3;
     let content_width = block_width.saturating_sub(label_prefix_width).max(1);
-    let options = textwrap::Options::new(content_width);
-    let wrapped = textwrap::wrap(&line.text, options);
-    let wrapped = if wrapped.is_empty() {
-        vec!["".into()]
+    let normalized_text = line.text.replace('\r', "\n").replace('\t', "    ");
+    let visible_text = codex_ansi_escape::ansi_escape(&normalized_text);
+    let visible_text_lines = if visible_text.lines.is_empty() {
+        vec![String::new()]
     } else {
-        wrapped
+        visible_text
+            .lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
     };
+    let mut wrapped = Vec::new();
+    for text in visible_text_lines {
+        let line_wrapped = textwrap::wrap(&text, textwrap::Options::new(content_width));
+        if line_wrapped.is_empty() {
+            wrapped.push(String::new());
+        } else {
+            wrapped.extend(line_wrapped.into_iter().map(std::borrow::Cow::into_owned));
+        }
+    }
+    if line.kind == TranscriptKind::Output && wrapped.len() > OUTPUT_BLOCK_MAX_LINES {
+        let hidden_lines = wrapped.len().saturating_sub(OUTPUT_BLOCK_MAX_LINES - 1);
+        wrapped.truncate(OUTPUT_BLOCK_MAX_LINES);
+        if let Some(last) = wrapped.last_mut() {
+            let noun = if hidden_lines == 1 { "line" } else { "lines" };
+            *last = format!("... {hidden_lines} more output {noun}");
+        }
+    }
     let mut rendered_lines = wrapped
         .into_iter()
         .enumerate()
@@ -683,17 +712,30 @@ fn tool_block_lines(
                 Span::styled("▌", accent_style),
                 " ".into(),
                 label_span,
-                wrapped.into_owned().into(),
+                wrapped.into(),
             ]);
             let content_span_index = usize::from(block_indent > 0) + 3;
             let occupied_width =
                 block_indent + label_prefix_width + spans[content_span_index].content.width();
             if occupied_width < width {
-                spans.push(" ".repeat(width - occupied_width).into());
+                spans.push(Span::styled(
+                    " ".repeat(width - occupied_width),
+                    Style::new().bg(block_background),
+                ));
             }
             let mut line = Line::from(spans);
             for span in line.spans.iter_mut().skip(usize::from(block_indent > 0)) {
                 span.style = span.style.patch(Style::new().bg(block_background));
+            }
+            if line_width(&line) > width {
+                line = truncate_line_to_width(line, width);
+            }
+            let rendered_width = line_width(&line);
+            if rendered_width < width {
+                line.spans.push(Span::styled(
+                    " ".repeat(width - rendered_width),
+                    Style::new().bg(block_background),
+                ));
             }
             HyperlinkLine::new(line)
         })

@@ -1957,7 +1957,7 @@ impl ShellState {
                     format!("{status:?}").to_lowercase(),
                 );
                 self.push_tool_with_status_for_item(id, title, tool_status);
-                if let Some(output) = aggregated_output.and_then(compact_multiline) {
+                if let Some(output) = aggregated_output.and_then(compact_output_text) {
                     self.push_output_with_status(output, tool_status);
                 }
             }
@@ -2688,6 +2688,15 @@ fn compact_multiline(text: String) -> Option<String> {
     let mut compact = text.chars().take(MAX_CHARS).collect::<String>();
     compact.push_str("...");
     Some(compact)
+}
+
+fn compact_output_text(text: String) -> Option<String> {
+    let text = text.trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
 }
 
 fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {

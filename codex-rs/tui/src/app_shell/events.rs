@@ -171,7 +171,7 @@ impl ShellState {
             }
             ServerNotification::CommandExecutionOutputDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string()
-                    && let Some(output) = super::compact_multiline(delta.delta)
+                    && let Some(output) = super::compact_output_text(delta.delta)
                 {
                     self.push_output_with_status(output, super::ToolBlockStatus::Running);
                 }
@@ -221,7 +221,7 @@ impl ShellState {
                     .decode(delta.delta_base64)
                     .ok()
                     .and_then(|bytes| String::from_utf8(bytes).ok())
-                    .and_then(super::compact_multiline);
+                    .and_then(super::compact_output_text);
                 if let Some(output) = output {
                     self.push_output_with_status(output, super::ToolBlockStatus::Running);
                 }

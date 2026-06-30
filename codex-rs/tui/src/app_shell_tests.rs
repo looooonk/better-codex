@@ -190,25 +190,36 @@ fn renders_output_blocks_as_inset_neutral_rectangles() {
     shell.transcript.clear();
     shell.streaming_assistant.clear();
     shell.push_tool_with_status("exec cargo test", ToolBlockStatus::Success);
-    shell.push_output_with_status("compiled 42 crates in 1.2s", ToolBlockStatus::Success);
+    shell.push_output_with_status(
+        "line 1\n\u{1b}[31mline 2\u{1b}[0m\nline 3\twide\nline 4\rline 5\nline 6\nline 7",
+        ToolBlockStatus::Success,
+    );
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 30,
     );
 
     let buf = render_shell_buffer(&shell, area);
     let rendered = buffer_contents(&buf, area);
     let tool_row =
         row_containing(&buf, area, "tool exec cargo test").expect("tool row should render");
-    let output_row =
-        row_containing(&buf, area, "output compiled 42 crates").expect("output row should render");
+    let output_row = row_containing(&buf, area, "output line 1").expect("output row should render");
+    let output_hidden_row =
+        row_containing(&buf, area, "... 4 more output lines").expect("output cap should render");
     let tool_accent_x =
         accent_x_for_row(&buf, area, tool_row).expect("tool row should have an accent");
     let output_accent_x =
         accent_x_for_row(&buf, area, output_row).expect("output row should have an accent");
 
+    assert_eq!(output_hidden_row, output_row + 3);
+    assert!(!rendered.contains("[31m"));
+    assert!(!rendered.contains("line 5"));
     assert_eq!(output_accent_x, tool_accent_x + 2);
     assert_eq!(
         rightmost_bg_x_for_row(&buf, area, tool_row, Color::Rgb(49, 50, 68)),
+        rightmost_bg_x_for_row(&buf, area, output_row, Color::Rgb(24, 24, 37)),
+    );
+    assert_eq!(
+        rightmost_bg_x_for_row(&buf, area, output_hidden_row, Color::Rgb(24, 24, 37)),
         rightmost_bg_x_for_row(&buf, area, output_row, Color::Rgb(24, 24, 37)),
     );
     assert_eq!(
