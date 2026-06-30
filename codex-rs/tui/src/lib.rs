@@ -93,6 +93,7 @@ pub fn run_terminal_restore_fatal_disconnect_helper_for_tests() -> ! {
     tui::run_terminal_restore_fatal_disconnect_helper_for_tests()
 }
 
+mod active_cell_transcript;
 mod additional_dirs;
 mod app;
 mod app_backtrack;

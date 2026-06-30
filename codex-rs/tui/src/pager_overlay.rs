@@ -18,7 +18,7 @@
 use std::io::Result;
 use std::sync::Arc;
 
-use crate::chatwidget::ActiveCellTranscriptKey;
+use crate::active_cell_transcript::ActiveCellTranscriptKey;
 use crate::history_cell::HistoryCell;
 use crate::history_cell::UserHistoryCell;
 use crate::key_hint;
