@@ -61,6 +61,18 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 ## Stage 7: Settings And Onboarding
 
 - [ ] Rebuild login, trust-directory, model migration, theme, permissions, MCP, plugin, and external-agent migration flows in the new app architecture.
+  - [ ] Move the login/auth selection flow, including ChatGPT device-code login and API key entry, into the app shell instead of running the inherited onboarding screen before the shell starts.
+  - [x] Add an app-shell-native trust-directory startup flow with trust, continue-untrusted, and exit choices.
+  - [x] Persist app-shell trust-directory decisions through the app-server config write path and reload config after a persisted decision.
+  - [ ] Replace the inherited model migration prompt with an app-shell-native migration surface and route accepted/declined decisions through the app-server config helpers.
+  - [x] Add app-shell settings controls for model, reasoning effort, service tier, approval policy, theme, animations, and tooltips.
+  - [x] Validate editable app-shell settings values and show inline feedback for invalid values, including unknown syntax themes.
+  - [x] Persist app-shell model, reasoning, service tier, approval policy, theme, animations, and tooltip changes through app-server-backed config writes.
+  - [x] Add app-shell integration settings rows that refresh MCP server and plugin inventory through app-server APIs.
+  - [ ] Add app-shell MCP management flows beyond inventory refresh, including auth/login actions and add, edit, disable, or remove server actions as applicable.
+  - [ ] Add app-shell plugin management flows beyond inventory refresh, including browse, install, enable, disable, update, and auth-required actions as applicable.
+  - [ ] Replace the inherited external-agent migration picker/import flow with an app-shell-native flow for detecting, selecting, importing, and reporting Claude Code migration items.
+  - [ ] Add app-shell snapshot and interaction coverage for each rebuilt flow, then remove the old flow reachability from startup and command handling.
 - [x] Keep configuration writes behind existing app-server/config helpers.
 - [x] Add settings pages with editable fields and validation feedback.
 - [x] Add first-run and unsafe-workspace flows that feel native to the app shell.
@@ -77,8 +89,23 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 - [x] Add app-shell integration coverage for start, resume, fork, turn submit, streaming, approval, interruption, and shutdown.
 - [ ] Validate Linux, macOS, and Windows behavior, including alternate screen restoration after panic or fatal backend disconnect.
+  - [x] Restore terminal modes and leave alternate screen from the TUI drop path, explicit exit path, and terminal restore guard.
+  - [x] Install a terminal-restoring panic hook before forwarding to the previous panic hook.
+  - [x] Add unit coverage for panic-hook restore ordering and the alternate-screen leave sequence.
+  - [x] Surface app-server disconnection in the app shell as terminal status/transcript state and return a fatal exit when the backend event stream ends.
+  - [ ] Add an end-to-end terminal/PTY regression that proves alternate screen, raw mode, cursor, mouse, focus, and paste modes are restored after a panic.
+  - [ ] Add an end-to-end terminal/PTY regression that proves alternate screen and terminal modes are restored after a fatal backend disconnect.
+  - [ ] Run and record validation for the app shell on Linux, macOS, and Windows, including inline mode and alternate-screen mode.
+  - [ ] Confirm Windows virtual-terminal handling, input-buffer cleanup, and color probing still leave the terminal usable after fatal exits.
 - [x] Add performance checks for large transcripts and long streaming turns.
 - [ ] Remove inherited upstream UI paths once the new app reaches feature parity for daily development.
+  - [x] Route the normal TUI launch path into the new app-shell run loop instead of the inherited `App::run` chat UI.
+  - [ ] Remove the inherited `App` and `ChatWidget` runtime implementation once no remaining launch, startup, or command path depends on it.
+  - [ ] Port or replace remaining inherited pre-shell UI flows, including login onboarding, model migration, external-agent migration, and startup hook review surfaces.
+  - [ ] Remove obsolete inherited slash-command, bottom-pane, history-cell, and transcript-rendering surfaces after equivalent app-shell behavior exists.
+  - [ ] Migrate relevant tests and snapshots from legacy chat UI modules to app-shell coverage, then delete snapshots for removed surfaces.
+  - [ ] Prune unused modules, public exports, and dependencies left behind by the inherited UI removal.
+  - [ ] Verify resume, fork, settings, approvals, MCP/plugin interactions, and session navigation still work after legacy UI removal.
 
 ## Live User Input
 
