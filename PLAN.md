@@ -121,3 +121,4 @@ Agents may continuously work through this plan until every unchecked item is com
 - [ ] Tool call background boxes only extend to the end of the tool call text, instead of spanning horizontally across the entire conversation window. This should be fixed.
 - [ ] Add support for CTRL + BACKSPACE and ALT + BACKSPACE to delete the entire text and the previous word respectively.
 - [ ] Add support for being able to continuously press BACKSPACE instead of tapping it multiple times.
+- [ ] Remove or hide "reasoning" and "assistant message" and "user message" from tool calls.
