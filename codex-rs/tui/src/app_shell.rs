@@ -405,6 +405,7 @@ struct ShellState {
     rate_limit_reset_credits: Option<i64>,
     status: String,
     token_usage: TokenUsage,
+    context_token_usage: TokenUsage,
     model_context_window: Option<i64>,
 }
 
@@ -477,6 +478,7 @@ impl ShellState {
             rate_limit_reset_credits: None,
             status: "ready".to_string(),
             token_usage: TokenUsage::default(),
+            context_token_usage: TokenUsage::default(),
             model_context_window: None,
         };
         shell.push_system("Better Codex app shell");
@@ -2324,6 +2326,13 @@ impl ShellState {
                 reasoning_output_tokens: 80,
                 total_tokens: 1440,
             },
+            context_token_usage: TokenUsage {
+                input_tokens: 1200,
+                cached_input_tokens: 300,
+                output_tokens: 240,
+                reasoning_output_tokens: 80,
+                total_tokens: 1440,
+            },
             model_context_window: Some(200000),
         };
         shell.push_system("Better Codex app shell");
@@ -2457,6 +2466,13 @@ pub mod bench_support {
             rate_limit_reset_credits: None,
             status: "benchmarking".to_string(),
             token_usage: TokenUsage {
+                input_tokens: 120_000,
+                cached_input_tokens: 30_000,
+                output_tokens: 35_000,
+                reasoning_output_tokens: 8_000,
+                total_tokens: 155_000,
+            },
+            context_token_usage: TokenUsage {
                 input_tokens: 120_000,
                 cached_input_tokens: 30_000,
                 output_tokens: 35_000,

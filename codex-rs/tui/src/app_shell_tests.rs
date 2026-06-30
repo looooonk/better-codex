@@ -405,6 +405,7 @@ fn renders_context_pressure_snapshot() {
         reasoning_output_tokens: 12_000,
         total_tokens: 190_000,
     };
+    shell.context_token_usage = shell.token_usage.clone();
     shell.model_context_window = Some(200_000);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
@@ -1614,6 +1615,7 @@ fn dashboard_renders_large_numbers_with_commas() {
         reasoning_output_tokens: 12_345,
         total_tokens: 1_469_134,
     };
+    shell.context_token_usage = shell.token_usage.clone();
     shell.model_context_window = Some(2_000_000);
     shell.latest_diff = Some(DiffSummary {
         files: 1_234,
@@ -1790,6 +1792,49 @@ fn context_used_percent_accounts_for_baseline_reserved_tokens() {
             Some(200_000),
         ),
         Some(95)
+    );
+}
+
+#[tokio::test]
+async fn token_usage_notification_uses_last_usage_for_context_pressure() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &NoopWorkspaceRunner,
+            AppServerEvent::ServerNotification(ServerNotification::ThreadTokenUsageUpdated(
+                codex_app_server_protocol::ThreadTokenUsageUpdatedNotification {
+                    thread_id: shell.thread_id.to_string(),
+                    turn_id: "turn-context".to_string(),
+                    token_usage: codex_app_server_protocol::ThreadTokenUsage {
+                        total: codex_app_server_protocol::TokenUsageBreakdown {
+                            total_tokens: 900_000,
+                            input_tokens: 800_000,
+                            cached_input_tokens: 100_000,
+                            output_tokens: 100_000,
+                            reasoning_output_tokens: 0,
+                        },
+                        last: codex_app_server_protocol::TokenUsageBreakdown {
+                            total_tokens: 24_000,
+                            input_tokens: 20_000,
+                            cached_input_tokens: 4_000,
+                            output_tokens: 4_000,
+                            reasoning_output_tokens: 0,
+                        },
+                        model_context_window: Some(200_000),
+                    },
+                },
+            )),
+        )
+        .await
+        .expect("token usage notification should be handled");
+
+    assert_eq!(shell.token_usage.total_tokens, 900_000);
+    assert_eq!(
+        dashboard::context_used_percent(&shell.context_token_usage, shell.model_context_window),
+        Some(6)
     );
 }
 

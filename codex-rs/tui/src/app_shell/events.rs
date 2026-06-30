@@ -8,6 +8,7 @@ use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ThreadTokenUsage;
+use codex_app_server_protocol::TokenUsageBreakdown;
 use codex_app_server_protocol::TurnStatus;
 use color_eyre::Result;
 use color_eyre::eyre::WrapErr;
@@ -417,13 +418,8 @@ impl ShellState {
     }
 
     fn apply_token_usage(&mut self, usage: ThreadTokenUsage) {
-        self.token_usage = TokenUsage {
-            input_tokens: usage.total.input_tokens,
-            cached_input_tokens: usage.total.cached_input_tokens,
-            output_tokens: usage.total.output_tokens,
-            reasoning_output_tokens: usage.total.reasoning_output_tokens,
-            total_tokens: usage.total.total_tokens,
-        };
+        self.token_usage = token_usage_from_breakdown(usage.total);
+        self.context_token_usage = token_usage_from_breakdown(usage.last);
         self.model_context_window = usage.model_context_window;
     }
 
@@ -431,6 +427,16 @@ impl ShellState {
         self.pending_approval.is_some()
             || self.pending_elicitation.is_some()
             || self.pending_user_input.is_some()
+    }
+}
+
+fn token_usage_from_breakdown(breakdown: TokenUsageBreakdown) -> TokenUsage {
+    TokenUsage {
+        input_tokens: breakdown.input_tokens,
+        cached_input_tokens: breakdown.cached_input_tokens,
+        output_tokens: breakdown.output_tokens,
+        reasoning_output_tokens: breakdown.reasoning_output_tokens,
+        total_tokens: breakdown.total_tokens,
     }
 }
 

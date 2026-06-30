@@ -115,7 +115,7 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
             "output {}",
             format_i64(shell.token_usage.output_tokens)
         )),
-        match context_remaining_percent(&shell.token_usage, shell.model_context_window) {
+        match context_remaining_percent(&shell.context_token_usage, shell.model_context_window) {
             Some(percent) => Line::from(format!("Context {percent}% left")),
             None => Line::from("Context unknown".dim()),
         },
