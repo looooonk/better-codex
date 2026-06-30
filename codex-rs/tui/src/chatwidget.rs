@@ -54,6 +54,7 @@ use crate::bottom_pane::StatusSurfacePreviewData;
 use crate::bottom_pane::StatusSurfacePreviewItem;
 use crate::bottom_pane::TerminalTitleItem;
 use crate::bottom_pane::TerminalTitleSetupView;
+use crate::chatwidget_init::ChatWidgetInit;
 use crate::diff_model::FileChange;
 use crate::external_editor_state::ExternalEditorState;
 use crate::git_action_directives::parse_assistant_markdown;
@@ -475,35 +476,6 @@ const AUTO_REVIEW_DESCRIPTION: &str = "Only ask for actions detected as potentia
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_STATUS_LINE_ITEMS: [&str; 2] = ["model-with-reasoning", "current-dir"];
 const MAX_AGENT_COPY_HISTORY: usize = 32;
-
-/// Common initialization parameters shared by all `ChatWidget` constructors.
-pub(crate) struct ChatWidgetInit {
-    pub(crate) config: Config,
-    pub(crate) frame_requester: FrameRequester,
-    pub(crate) app_event_tx: AppEventSender,
-    /// App-server-backed runner used by status surfaces for workspace metadata probes.
-    ///
-    /// Tests that do not exercise git status-line refreshes may leave this unset. Production TUI
-    /// construction provides a runner for the active app-server session.
-    pub(crate) workspace_command_runner: Option<WorkspaceCommandRunner>,
-    pub(crate) initial_user_message: Option<UserMessage>,
-    pub(crate) enhanced_keys_supported: bool,
-    pub(crate) has_chatgpt_account: bool,
-    pub(crate) has_codex_backend_auth: bool,
-    pub(crate) model_catalog: Arc<ModelCatalog>,
-    pub(crate) feedback: codex_feedback::CodexFeedback,
-    pub(crate) is_first_run: bool,
-    pub(crate) status_account_display: Option<StatusAccountDisplay>,
-    pub(crate) runtime_model_provider_base_url: Option<String>,
-    pub(crate) initial_plan_type: Option<PlanType>,
-    pub(crate) model: Option<String>,
-    pub(crate) startup_tooltip_override: Option<String>,
-    // Shared latch so we only warn once about invalid status-line item IDs.
-    pub(crate) status_line_invalid_items_warned: Arc<AtomicBool>,
-    // Shared latch so we only warn once about invalid terminal-title item IDs.
-    pub(crate) terminal_title_invalid_items_warned: Arc<AtomicBool>,
-    pub(crate) session_telemetry: SessionTelemetry,
-}
 
 /// Maintains the per-session UI state and interaction state machines for the chat screen.
 ///

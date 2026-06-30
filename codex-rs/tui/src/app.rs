@@ -33,6 +33,7 @@ use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::chatwidget::ChatWidget;
 use crate::chatwidget::ThreadInputState;
+use crate::chatwidget_init::ChatWidgetInit;
 use crate::cwd_prompt::CwdPromptAction;
 use crate::diff_render::DiffSummary;
 use crate::exec_command::split_command_string;
@@ -703,8 +704,8 @@ impl App {
         tui: &mut tui::Tui,
         cfg: crate::legacy_core::config::Config,
         initial_user_message: Option<UserMessage>,
-    ) -> crate::chatwidget::ChatWidgetInit {
-        crate::chatwidget::ChatWidgetInit {
+    ) -> ChatWidgetInit {
+        ChatWidgetInit {
             config: cfg,
             frame_requester: tui.frame_requester(),
             app_event_tx: self.app_event_tx.clone(),
@@ -861,7 +862,7 @@ impl App {
                     is_first_run,
                 )
                 .await;
-                let init = crate::chatwidget::ChatWidgetInit {
+                let init = ChatWidgetInit {
                     config: config.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
@@ -897,7 +898,7 @@ impl App {
                     .resume_thread(config.clone(), target_session.thread_id)
                     .await
                     .map_err(|err| session_start_error("resume", &target_session, err))?;
-                let init = crate::chatwidget::ChatWidgetInit {
+                let init = ChatWidgetInit {
                     config: config.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),
@@ -936,7 +937,7 @@ impl App {
                     .fork_thread(config.clone(), target_session.thread_id)
                     .await
                     .map_err(|err| session_start_error("fork", &target_session, err))?;
-                let init = crate::chatwidget::ChatWidgetInit {
+                let init = ChatWidgetInit {
                     config: config.clone(),
                     frame_requester: tui.frame_requester(),
                     app_event_tx: app_event_tx.clone(),

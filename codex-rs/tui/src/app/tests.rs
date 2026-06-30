@@ -10,11 +10,11 @@ use crate::app_backtrack::BacktrackSelection;
 use crate::app_backtrack::BacktrackState;
 use crate::app_backtrack::user_count;
 
-use crate::chatwidget::ChatWidgetInit;
 use crate::chatwidget::tests::helpers::render_bottom_popup;
 use crate::chatwidget::tests::make_chatwidget_manual_with_sender;
 use crate::chatwidget::tests::set_chatgpt_auth;
 use crate::chatwidget::tests::set_fast_mode_test_catalog;
+use crate::chatwidget_init::ChatWidgetInit;
 use crate::file_search::FileSearchManager;
 use crate::goal_files;
 use crate::history_cell::AgentMarkdownCell;

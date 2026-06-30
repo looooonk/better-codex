@@ -113,6 +113,7 @@ mod ascii_animation;
 mod bottom_pane;
 mod branch_summary;
 mod chatwidget;
+mod chatwidget_init;
 mod cli;
 mod clipboard_copy;
 mod clipboard_paste;
