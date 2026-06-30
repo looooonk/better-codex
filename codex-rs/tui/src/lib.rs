@@ -88,6 +88,12 @@ pub fn run_terminal_restore_panic_helper_for_tests() -> ! {
     tui::run_terminal_restore_panic_helper_for_tests()
 }
 
+#[cfg(unix)]
+#[doc(hidden)]
+pub fn run_terminal_restore_fatal_disconnect_helper_for_tests() -> ! {
+    tui::run_terminal_restore_fatal_disconnect_helper_for_tests()
+}
+
 mod additional_dirs;
 mod app;
 mod app_backtrack;

@@ -94,7 +94,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
   - [x] Add unit coverage for panic-hook restore ordering and the alternate-screen leave sequence.
   - [x] Surface app-server disconnection in the app shell as terminal status/transcript state and return a fatal exit when the backend event stream ends.
   - [x] Add an end-to-end terminal/PTY regression that proves alternate screen, raw mode, cursor, mouse, focus, and paste modes are restored after a panic.
-  - [ ] Add an end-to-end terminal/PTY regression that proves alternate screen and terminal modes are restored after a fatal backend disconnect.
+  - [x] Add an end-to-end terminal/PTY regression that proves alternate screen and terminal modes are restored after a fatal backend disconnect.
   - [ ] Run and record validation for the app shell on Linux, macOS, and Windows, including inline mode and alternate-screen mode.
   - [ ] Confirm Windows virtual-terminal handling, input-buffer cleanup, and color probing still leave the terminal usable after fatal exits.
 - [x] Add performance checks for large transcripts and long streaming turns.

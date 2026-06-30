@@ -393,8 +393,31 @@ pub fn restore_after_exit() -> Result<()> {
 #[doc(hidden)]
 pub fn run_terminal_restore_panic_helper_for_tests() -> ! {
     set_panic_hook();
+    enter_terminal_restore_helper_modes("panic helper");
+
+    panic!("intentional panic for terminal restore regression");
+}
+
+#[cfg(unix)]
+#[doc(hidden)]
+#[expect(
+    clippy::print_stderr,
+    reason = "test helper mirrors the binary's fatal-exit message after terminal restore"
+)]
+pub fn run_terminal_restore_fatal_disconnect_helper_for_tests() -> ! {
+    enter_terminal_restore_helper_modes("fatal-disconnect helper");
+    if let Err(err) = restore_after_exit() {
+        eprintln!("failed to restore terminal after fatal disconnect: {err}");
+        std::process::exit(120);
+    }
+    eprintln!("ERROR: app-server disconnected");
+    std::process::exit(1);
+}
+
+#[cfg(unix)]
+fn enter_terminal_restore_helper_modes(label: &str) {
     if let Err(err) = set_modes() {
-        panic!("set terminal modes for panic helper: {err}");
+        panic!("set terminal modes for {label}: {err}");
     }
     if let Err(err) = execute!(
         stdout(),
@@ -404,10 +427,8 @@ pub fn run_terminal_restore_panic_helper_for_tests() -> ! {
         crossterm::cursor::Hide,
         SetCursorStyle::SteadyBar,
     ) {
-        panic!("enter terminal modes for panic helper: {err}");
+        panic!("enter terminal modes for {label}: {err}");
     }
-
-    panic!("intentional panic for terminal restore regression");
 }
 
 /// Restore the terminal to its original state, but keep raw mode enabled.

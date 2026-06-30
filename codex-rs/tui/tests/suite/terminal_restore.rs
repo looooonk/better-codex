@@ -18,16 +18,33 @@ use crossterm::event::DisableMouseCapture;
 use crossterm::terminal::LeaveAlternateScreen;
 
 const TERMINAL_RESTORE_PANIC_HELPER_ENV: &str = "CODEX_TUI_TERMINAL_RESTORE_PANIC_HELPER";
+const TERMINAL_RESTORE_FATAL_DISCONNECT_HELPER_ENV: &str =
+    "CODEX_TUI_TERMINAL_RESTORE_FATAL_DISCONNECT_HELPER";
 
 #[test]
 fn panic_hook_restores_terminal_modes_under_pty() {
+    let output = run_restore_helper_under_pty(TERMINAL_RESTORE_PANIC_HELPER_ENV);
+    assert_restored_terminal_sequences(&output);
+}
+
+#[test]
+fn fatal_disconnect_restores_terminal_modes_under_pty() {
+    let output = run_restore_helper_under_pty(TERMINAL_RESTORE_FATAL_DISCONNECT_HELPER_ENV);
+    assert_restored_terminal_sequences(&output);
+    assert!(
+        output.contains("ERROR: app-server disconnected"),
+        "missing fatal disconnect message in pty output {output:?}"
+    );
+}
+
+fn run_restore_helper_under_pty(helper_env: &str) -> String {
     let pty = open_pty();
     let original_termios = termios(pty.slave.as_raw_fd());
     let codex_tui = codex_utils_cargo_bin::cargo_bin("codex-tui").expect("codex-tui binary");
 
     let mut command = ProcessCommand::new(codex_tui);
     command
-        .env(TERMINAL_RESTORE_PANIC_HELPER_ENV, "1")
+        .env(helper_env, "1")
         .stdin(Stdio::from(dup_file(pty.slave.as_raw_fd())))
         .stdout(Stdio::from(dup_file(pty.slave.as_raw_fd())))
         .stderr(Stdio::from(dup_file(pty.slave.as_raw_fd())));
@@ -40,16 +57,18 @@ fn panic_hook_restores_terminal_modes_under_pty() {
     assert_termios_restored(&original_termios, &restored_termios);
 
     drop(pty.slave);
-    let output = read_available_pty_output(pty.master);
+    read_available_pty_output(pty.master)
+}
 
-    assert_contains_sequence(&output, DisableBracketedPaste, "bracketed paste disable");
-    assert_contains_sequence(&output, DisableFocusChange, "focus-report disable");
-    assert_contains_sequence(&output, DisableMouseCapture, "mouse disable");
-    assert_contains_sequence(&output, DisableAlternateScroll, "alternate scroll disable");
-    assert_contains_sequence(&output, LeaveAlternateScreen, "leave alternate screen");
-    assert_contains_sequence(&output, Show, "cursor show");
+fn assert_restored_terminal_sequences(output: &str) {
+    assert_contains_sequence(output, DisableBracketedPaste, "bracketed paste disable");
+    assert_contains_sequence(output, DisableFocusChange, "focus-report disable");
+    assert_contains_sequence(output, DisableMouseCapture, "mouse disable");
+    assert_contains_sequence(output, DisableAlternateScroll, "alternate scroll disable");
+    assert_contains_sequence(output, LeaveAlternateScreen, "leave alternate screen");
+    assert_contains_sequence(output, Show, "cursor show");
     assert_contains_sequence(
-        &output,
+        output,
         SetCursorStyle::DefaultUserShape,
         "default cursor shape",
     );
