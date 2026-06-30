@@ -37,6 +37,7 @@ use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
+use unicode_width::UnicodeWidthStr;
 
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
 const DASHBOARD_PANEL_GAP: u16 = 1;
@@ -643,15 +644,17 @@ fn tool_block_lines(
             } else {
                 " ".repeat(label.len() + 1).dim()
             };
-            HyperlinkLine::new(
-                Line::from(vec![
-                    Span::styled("▌", status.accent_style()),
-                    " ".into(),
-                    label_span,
-                    wrapped.into_owned().into(),
-                ])
-                .style(Style::new().bg(MOCHA_SURFACE0)),
-            )
+            let mut spans = vec![
+                Span::styled("▌", status.accent_style()),
+                " ".into(),
+                label_span,
+                wrapped.into_owned().into(),
+            ];
+            let occupied_width = label_prefix_width + spans[3].content.width();
+            if occupied_width < width {
+                spans.push(" ".repeat(width - occupied_width).into());
+            }
+            HyperlinkLine::new(Line::from(spans).style(Style::new().bg(MOCHA_SURFACE0)))
         })
         .collect::<Vec<_>>();
 

@@ -117,8 +117,8 @@ Agents may continuously work through this plan until every unchecked item is com
 - [ ] Fix all warnings that appear when compiling to binary.
 - [ ] Add a newline between the previous message and tool calls. Add spacing between sequential tool calls as well. Make sure that double newlines never occur, however.
 - [ ] Tool use box accent coloring is not correctly rendered; the bars do not update to be green / red but rather emit a new tool call log that is a duplicate of the previous one, just with the status updated. Instead, when a tool call state changes it should change the status / accent of that tool call rather then emit a new one.
-- [ ] Duplicate tool use can also duplicate user messages in the conversation log.
-- [ ] Tool call background boxes only extend to the end of the tool call text, instead of spanning horizontally across the entire conversation window. This should be fixed.
+- [x] Duplicate tool use can also duplicate user messages in the conversation log.
+- [x] Tool call background boxes only extend to the end of the tool call text, instead of spanning horizontally across the entire conversation window. This should be fixed.
 - [x] Add support for CTRL + BACKSPACE and ALT + BACKSPACE to delete the entire text and the previous word respectively.
 - [x] Add support for being able to continuously press BACKSPACE instead of tapping it multiple times.
-- [ ] Remove or hide "reasoning" and "assistant message" and "user message" from tool calls.
+- [x] Remove or hide "reasoning" and "assistant message" and "user message" from tool calls.

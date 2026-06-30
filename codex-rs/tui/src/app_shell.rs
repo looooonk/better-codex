@@ -2079,14 +2079,13 @@ impl ShellState {
         upsert_activity(&mut self.subagent_activity, id, title, status);
     }
 
-    fn record_item_activity(&mut self, item: &ThreadItem, status: String) {
+    fn record_item_activity(&mut self, item: &ThreadItem, title: String, status: &str) {
         let id = item.id().to_string();
-        let title = events::item_activity_title(item);
         match item {
             ThreadItem::CollabAgentToolCall { .. } | ThreadItem::SubAgentActivity { .. } => {
-                self.upsert_subagent_activity(id, title, status);
+                self.upsert_subagent_activity(id, title, status.to_string());
             }
-            _ => self.upsert_tool_activity(id, title, status),
+            _ => self.upsert_tool_activity(id, title, status.to_string()),
         }
     }
 

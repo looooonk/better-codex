@@ -1282,6 +1282,28 @@ fn tool_transcript_blocks_use_status_accent_colors() {
 }
 
 #[test]
+fn tool_transcript_block_background_spans_conversation_width() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.push_tool_with_status("exec short", ToolBlockStatus::Running);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+
+    let buf = render_shell_buffer(&shell, area);
+    let row = row_containing(&buf, area, "exec short").expect("tool row should render");
+
+    assert_eq!(
+        buf.cell((68, row))
+            .expect("right edge cell should exist")
+            .style()
+            .bg,
+        Some(design::MOCHA_SURFACE0)
+    );
+}
+
+#[test]
 fn renders_activity_dashboard_panels_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.pending_approval = PendingApproval::from_request(&command_approval_request())
@@ -1365,6 +1387,48 @@ fn subagent_items_route_to_subagent_activity() {
             status: "in progress".to_string(),
         }])
     );
+}
+
+#[test]
+fn non_tool_item_starts_do_not_render_as_tool_calls() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.tool_activity.clear();
+    shell.subagent_activity.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    for item in [
+        ThreadItem::UserMessage {
+            id: "user-start".to_string(),
+            client_id: None,
+            content: vec![UserInput::Text {
+                text: "hello".to_string(),
+                text_elements: Vec::new(),
+            }],
+        },
+        ThreadItem::AgentMessage {
+            id: "assistant-start".to_string(),
+            text: "working".to_string(),
+            phase: None,
+            memory_citation: None,
+        },
+        ThreadItem::Reasoning {
+            id: "reasoning-start".to_string(),
+            summary: vec!["thinking".to_string()],
+            content: Vec::new(),
+        },
+    ] {
+        shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            started_at_ms: 0,
+            item,
+        }));
+    }
+
+    assert_eq!(shell.transcript, VecDeque::new());
+    assert_eq!(shell.tool_activity, VecDeque::new());
+    assert_eq!(shell.subagent_activity, VecDeque::new());
 }
 
 #[test]
@@ -1892,6 +1956,21 @@ fn scrollbar_cell(buf: &Buffer, area: Rect) -> Option<(u16, u16)> {
             if matches!(cell.symbol(), "┃" | "│") {
                 return Some((x, y));
             }
+        }
+    }
+    None
+}
+
+fn row_containing(buf: &Buffer, area: Rect, needle: &str) -> Option<u16> {
+    for y in area.y..area.bottom() {
+        let mut row = String::new();
+        for x in area.x..area.right() {
+            if let Some(cell) = buf.cell((x, y)) {
+                row.push_str(cell.symbol());
+            }
+        }
+        if row.contains(needle) {
+            return Some(y);
         }
     }
     None

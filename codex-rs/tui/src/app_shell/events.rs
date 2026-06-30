@@ -153,11 +153,10 @@ impl ShellState {
             }
             ServerNotification::ItemStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
-                    self.record_item_activity(&started.item, "in progress".to_string());
-                    self.push_tool_with_status(
-                        item_activity_title(&started.item),
-                        super::ToolBlockStatus::Running,
-                    );
+                    if let Some(title) = item_activity_title(&started.item) {
+                        self.record_item_activity(&started.item, title.clone(), "in progress");
+                        self.push_tool_with_status(title, super::ToolBlockStatus::Running);
+                    }
                 }
             }
             ServerNotification::ItemCompleted(completed) => {
@@ -417,56 +416,50 @@ impl ShellState {
     }
 }
 
-pub(super) fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) -> String {
+pub(super) fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) -> Option<String> {
     match item {
-        codex_app_server_protocol::ThreadItem::UserMessage { .. } => "user message".to_string(),
-        codex_app_server_protocol::ThreadItem::HookPrompt { .. } => "hook prompt".to_string(),
-        codex_app_server_protocol::ThreadItem::AgentMessage { .. } => {
-            "assistant message".to_string()
-        }
-        codex_app_server_protocol::ThreadItem::Plan { .. } => "plan update".to_string(),
-        codex_app_server_protocol::ThreadItem::Reasoning { .. } => "reasoning".to_string(),
+        codex_app_server_protocol::ThreadItem::UserMessage { .. }
+        | codex_app_server_protocol::ThreadItem::HookPrompt { .. }
+        | codex_app_server_protocol::ThreadItem::AgentMessage { .. }
+        | codex_app_server_protocol::ThreadItem::Plan { .. }
+        | codex_app_server_protocol::ThreadItem::Reasoning { .. }
+        | codex_app_server_protocol::ThreadItem::EnteredReviewMode { .. }
+        | codex_app_server_protocol::ThreadItem::ExitedReviewMode { .. }
+        | codex_app_server_protocol::ThreadItem::ContextCompaction { .. } => None,
         codex_app_server_protocol::ThreadItem::CommandExecution { command, .. } => {
-            format!("exec {command}")
+            Some(format!("exec {command}"))
         }
         codex_app_server_protocol::ThreadItem::FileChange { changes, .. } => {
-            super::file_change_summary(changes)
+            Some(super::file_change_summary(changes))
         }
         codex_app_server_protocol::ThreadItem::McpToolCall { server, tool, .. } => {
-            format!("mcp {server}/{tool}")
+            Some(format!("mcp {server}/{tool}"))
         }
         codex_app_server_protocol::ThreadItem::DynamicToolCall {
             namespace, tool, ..
-        } => namespace
-            .as_ref()
-            .map(|namespace| format!("tool {namespace}/{tool}"))
-            .unwrap_or_else(|| format!("tool {tool}")),
+        } => Some(
+            namespace
+                .as_ref()
+                .map(|namespace| format!("tool {namespace}/{tool}"))
+                .unwrap_or_else(|| format!("tool {tool}")),
+        ),
         codex_app_server_protocol::ThreadItem::CollabAgentToolCall { tool, .. } => {
-            format!("agent {tool:?}")
+            Some(format!("agent {tool:?}"))
         }
         codex_app_server_protocol::ThreadItem::SubAgentActivity {
             kind, agent_path, ..
-        } => format!("subagent {kind:?}: {agent_path}"),
+        } => Some(format!("subagent {kind:?}: {agent_path}")),
         codex_app_server_protocol::ThreadItem::WebSearch { query, .. } => {
-            format!("web search: {query}")
+            Some(format!("web search: {query}"))
         }
         codex_app_server_protocol::ThreadItem::ImageView { path, .. } => {
-            format!("view image: {path}")
+            Some(format!("view image: {path}"))
         }
         codex_app_server_protocol::ThreadItem::Sleep { duration_ms, .. } => {
-            format!("sleep {duration_ms}ms")
+            Some(format!("sleep {duration_ms}ms"))
         }
         codex_app_server_protocol::ThreadItem::ImageGeneration { .. } => {
-            "image generation".to_string()
-        }
-        codex_app_server_protocol::ThreadItem::EnteredReviewMode { review, .. } => {
-            format!("entered review mode: {review}")
-        }
-        codex_app_server_protocol::ThreadItem::ExitedReviewMode { review, .. } => {
-            format!("exited review mode: {review}")
-        }
-        codex_app_server_protocol::ThreadItem::ContextCompaction { .. } => {
-            "context compaction".to_string()
+            Some("image generation".to_string())
         }
     }
 }
