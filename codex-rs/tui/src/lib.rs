@@ -82,6 +82,12 @@ use uuid::Uuid;
 
 pub(crate) use codex_app_server_client::legacy_core;
 
+#[cfg(unix)]
+#[doc(hidden)]
+pub fn run_terminal_restore_panic_helper_for_tests() -> ! {
+    tui::run_terminal_restore_panic_helper_for_tests()
+}
+
 mod additional_dirs;
 mod app;
 mod app_backtrack;

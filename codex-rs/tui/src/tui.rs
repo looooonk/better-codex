@@ -389,6 +389,27 @@ pub fn restore_after_exit() -> Result<()> {
     }
 }
 
+#[cfg(unix)]
+#[doc(hidden)]
+pub fn run_terminal_restore_panic_helper_for_tests() -> ! {
+    set_panic_hook();
+    if let Err(err) = set_modes() {
+        panic!("set terminal modes for panic helper: {err}");
+    }
+    if let Err(err) = execute!(
+        stdout(),
+        EnterAlternateScreen,
+        EnableAlternateScroll,
+        EnableMouseCapture,
+        crossterm::cursor::Hide,
+        SetCursorStyle::SteadyBar,
+    ) {
+        panic!("enter terminal modes for panic helper: {err}");
+    }
+
+    panic!("intentional panic for terminal restore regression");
+}
+
 /// Restore the terminal to its original state, but keep raw mode enabled.
 pub fn restore_keep_raw() -> Result<()> {
     restore_common(RawModeRestore::Keep, KeyboardRestore::PopStack)

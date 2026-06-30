@@ -10,6 +10,8 @@ use codex_utils_cli::CliConfigOverrides;
 use std::io::Write;
 use supports_color::Stream;
 
+const TERMINAL_RESTORE_PANIC_HELPER_ENV: &str = "CODEX_TUI_TERMINAL_RESTORE_PANIC_HELPER";
+
 fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<String> {
     let is_fatal = matches!(&exit_info.exit_reason, ExitReason::Fatal(_));
     let AppExitInfo {
@@ -48,6 +50,14 @@ struct TopCli {
 }
 
 fn main() -> anyhow::Result<()> {
+    if std::env::var_os(TERMINAL_RESTORE_PANIC_HELPER_ENV).is_some() {
+        #[cfg(unix)]
+        codex_tui::run_terminal_restore_panic_helper_for_tests();
+
+        #[cfg(not(unix))]
+        anyhow::bail!("terminal restore panic helper is only supported on Unix");
+    }
+
     arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {
         let top_cli = TopCli::parse();
         let mut inner = top_cli.inner;
