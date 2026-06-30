@@ -6,10 +6,10 @@
 use super::*;
 use crate::bottom_pane::status_line_from_segments;
 use crate::branch_summary;
-use crate::chatwidget::limit_label_for_window;
-use crate::chatwidget::rate_limits::get_limits_duration;
 use crate::legacy_core::config::Config;
 use crate::status::format_tokens_compact;
+use crate::status::get_limits_duration;
+use crate::status::limit_label_for_window;
 use codex_app_server_protocol::AskForApproval;
 use codex_config::ConfigLayerSource;
 use codex_protocol::config_types::ApprovalsReviewer;

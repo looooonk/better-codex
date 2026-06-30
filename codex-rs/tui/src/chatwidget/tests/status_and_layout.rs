@@ -1,7 +1,7 @@
 use super::*;
 use crate::bottom_pane::goal_status_indicator_line;
 use crate::chatwidget::rate_limits::NUDGE_MODEL_SLUG;
-use crate::chatwidget::rate_limits::get_limits_duration;
+use crate::status::get_limits_duration;
 use codex_app_server_protocol::SpendControlLimitSnapshot;
 use pretty_assertions::assert_eq;
 use ratatui::backend::TestBackend;

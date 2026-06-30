@@ -3,8 +3,8 @@ use codex_app_server_protocol::ConsumeAccountRateLimitResetCreditResponse;
 use codex_app_server_protocol::RateLimitResetCreditsSummary;
 use uuid::Uuid;
 
-use super::rate_limits::get_limits_duration;
 use super::*;
+use crate::status::get_limits_duration;
 
 const USAGE_MENU_VIEW_ID: &str = "usage-menu";
 const RATE_LIMIT_RESET_VIEW_ID: &str = "rate-limit-reset";
