@@ -2093,6 +2093,13 @@ async fn native_session_list_search_archive_delete_and_rename() {
         .handle_session_list_key(key_char('f'), &config, &mut backend)
         .await
         .expect("search should filter");
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+        }]
+    );
     shell
         .handle_session_list_key(
             KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
@@ -2139,10 +2146,6 @@ async fn native_session_list_search_archive_delete_and_rename() {
         .expect("delete should resolve");
 
     let calls = backend.calls();
-    assert!(calls.contains(&RecordedBackendCall::ThreadList {
-        archived: Some(false),
-        search_term: Some("f".to_string()),
-    }));
     assert!(calls.contains(&RecordedBackendCall::Archive(other_id)));
     assert!(calls.contains(&RecordedBackendCall::Unarchive(other_id)));
     assert!(calls.contains(&RecordedBackendCall::SetName {

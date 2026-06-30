@@ -15,6 +15,7 @@ const SESSION_LIST_DEFAULT_VISIBLE_ROWS: usize = 6;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct SessionListState {
+    all_rows: Vec<SessionRow>,
     rows: Vec<SessionRow>,
     selected: usize,
     scroll_top: usize,
@@ -51,7 +52,7 @@ impl SessionListState {
             archived: Some(self.show_archived),
             cwd: None::<ThreadListCwdFilter>,
             use_state_db_only: false,
-            search_term: (!self.search_query.trim().is_empty())
+            search_term: (!self.search_active && !self.search_query.trim().is_empty())
                 .then(|| self.search_query.trim().to_string()),
             parent_thread_id: None,
             ancestor_thread_id: None,
@@ -59,10 +60,11 @@ impl SessionListState {
     }
 
     pub(super) fn replace_threads(&mut self, threads: Vec<Thread>) {
-        self.rows = threads
+        self.all_rows = threads
             .into_iter()
             .filter_map(SessionRow::from_thread)
             .collect();
+        self.apply_search_filter();
         self.normalize_selection_and_scroll();
         self.loaded = true;
         self.last_error = None;
@@ -103,14 +105,31 @@ impl SessionListState {
             return None;
         }
         let removed = self.rows.remove(self.selected);
+        self.all_rows
+            .retain(|row| row.thread_id != removed.thread_id);
+        self.apply_search_filter();
         self.normalize_selection_and_scroll();
         Some(removed)
     }
 
     pub(super) fn rename_selected(&mut self, name: String) {
-        if let Some(row) = self.rows.get_mut(self.selected) {
+        let Some(thread_id) = self.selected_thread_id() else {
+            return;
+        };
+        if let Some(row) = self
+            .all_rows
+            .iter_mut()
+            .find(|row| row.thread_id == thread_id)
+        {
             row.title = name;
         }
+        self.apply_search_filter();
+        self.selected = self
+            .rows
+            .iter()
+            .position(|row| row.thread_id == thread_id)
+            .unwrap_or_default();
+        self.normalize_selection_and_scroll();
     }
 
     pub(super) fn start_search(&mut self) {
@@ -119,15 +138,21 @@ impl SessionListState {
 
     pub(super) fn push_search_char(&mut self, ch: char) {
         self.search_query.push(ch);
+        self.apply_search_filter();
+        self.normalize_selection_and_scroll();
     }
 
     pub(super) fn backspace_search(&mut self) {
         self.search_query.pop();
+        self.apply_search_filter();
+        self.normalize_selection_and_scroll();
     }
 
     pub(super) fn clear_search(&mut self) {
         self.search_query.clear();
         self.search_active = false;
+        self.apply_search_filter();
+        self.normalize_selection_and_scroll();
     }
 
     pub(super) fn stop_search(&mut self) {
@@ -140,6 +165,8 @@ impl SessionListState {
 
     pub(super) fn toggle_archived(&mut self) {
         self.show_archived = !self.show_archived;
+        self.all_rows.clear();
+        self.rows.clear();
         self.selected = 0;
         self.scroll_top = 0;
     }
@@ -263,6 +290,22 @@ impl SessionListState {
         self.keep_selection_visible(SESSION_LIST_DEFAULT_VISIBLE_ROWS);
     }
 
+    fn apply_search_filter(&mut self) {
+        let query = self.search_query.trim();
+        if query.is_empty() {
+            self.rows.clone_from(&self.all_rows);
+            return;
+        }
+
+        let query = query.to_lowercase();
+        self.rows = self
+            .all_rows
+            .iter()
+            .filter(|row| row.matches_search(&query))
+            .cloned()
+            .collect();
+    }
+
     fn keep_selection_visible(&mut self, visible_rows: usize) {
         self.scroll_top = self.normalized_scroll_top(visible_rows);
     }
@@ -314,6 +357,16 @@ impl SessionRow {
             branch: thread.git_info.and_then(|git_info| git_info.branch),
             updated_at: thread.updated_at,
         })
+    }
+
+    fn matches_search(&self, query: &str) -> bool {
+        self.title.to_lowercase().contains(query)
+            || self.preview.to_lowercase().contains(query)
+            || self
+                .branch
+                .as_deref()
+                .is_some_and(|branch| branch.to_lowercase().contains(query))
+            || self.cwd.to_string_lossy().to_lowercase().contains(query)
     }
 }
 

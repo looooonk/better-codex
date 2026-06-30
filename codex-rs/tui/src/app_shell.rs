@@ -850,10 +850,8 @@ impl ShellState {
                 .map(|()| true);
         }
         if self.session_list.search_active() {
-            return self
-                .handle_session_search_key(key, app_server)
-                .await
-                .map(|()| true);
+            self.handle_session_search_key(key);
+            return Ok(true);
         }
         match key.code {
             KeyCode::Esc => {
@@ -938,31 +936,21 @@ impl ShellState {
         }
     }
 
-    async fn handle_session_search_key<S>(
-        &mut self,
-        key: KeyEvent,
-        app_server: &mut S,
-    ) -> Result<()>
-    where
-        S: AppShellBackend,
-    {
+    fn handle_session_search_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Esc => {
                 self.session_list.clear_search();
-                self.refresh_session_list(app_server).await;
             }
             KeyCode::Enter => {
                 self.session_list.stop_search();
             }
             KeyCode::Backspace => {
                 self.session_list.backspace_search();
-                self.refresh_session_list(app_server).await;
             }
             KeyCode::Char(ch)
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
             {
                 self.session_list.push_search_char(ch);
-                self.refresh_session_list(app_server).await;
             }
             KeyCode::Char(_) => {}
             KeyCode::Up => {
@@ -993,7 +981,6 @@ impl ShellState {
             | KeyCode::PageUp
             | KeyCode::PageDown => {}
         }
-        Ok(())
     }
 
     async fn handle_session_rename_key<S>(
