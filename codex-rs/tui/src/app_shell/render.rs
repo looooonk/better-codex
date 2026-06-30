@@ -102,6 +102,15 @@ impl ShellView<'_> {
             self.render_input(main[2], buf);
             self.render_dashboard(horizontal[1], buf);
         }
+        if let Some(pending) = &self.shell.pending_external_agent_import {
+            let lines = pending.lines();
+            let line_count = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+            let panel_height = line_count.saturating_add(4).min(area.height);
+            let panel_area = centered_band_rect(area, panel_height);
+            Clear.render(panel_area, buf);
+            fill_rect(buf, panel_area, MOCHA_SURFACE0);
+            self.render_titled_panel(panel_area, "Claude Code Import", lines, MOCHA_SURFACE0, buf);
+        }
         self.render_command_palette(area, buf);
     }
 
@@ -348,12 +357,16 @@ impl ShellView<'_> {
             return;
         };
         let entries = self.shell.command_palette_entries();
-        let palette_area = centered_band_rect(area, /*height*/ 17);
+        let palette_height = u16::try_from(entries.len())
+            .unwrap_or(u16::MAX)
+            .saturating_add(6)
+            .min(area.height);
+        let palette_area = centered_band_rect(area, palette_height);
         let content = pane_content_rect(palette_area);
         Clear.render(palette_area, buf);
 
         let mut lines = Vec::new();
-        for (index, entry) in entries.iter().take(11).enumerate() {
+        for (index, entry) in entries.iter().enumerate() {
             let selected = index == palette.selected();
             let marker = if selected {
                 ">".cyan().bold()

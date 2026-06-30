@@ -8,6 +8,9 @@ use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ConfigWriteResponse;
+use codex_app_server_protocol::ExternalAgentConfigDetectParams;
+use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
+use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::PluginListParams;
@@ -100,6 +103,24 @@ pub(super) trait AppShellBackend {
         &mut self,
         params: PluginListParams,
     ) -> impl std::future::Future<Output = Result<PluginListResponse>> + Send;
+
+    fn uses_remote_workspace(&self) -> bool;
+
+    fn uses_embedded_app_server(&self) -> bool;
+
+    fn external_agent_config_import_in_progress(&self) -> bool;
+
+    fn external_agent_config_detect(
+        &mut self,
+        params: ExternalAgentConfigDetectParams,
+    ) -> impl std::future::Future<Output = Result<ExternalAgentConfigDetectResponse>> + Send;
+
+    fn external_agent_config_import(
+        &mut self,
+        migration_items: Vec<ExternalAgentConfigMigrationItem>,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn consume_external_agent_config_import_completion(&self) -> bool;
 
     fn turn_start(
         &mut self,
@@ -235,6 +256,36 @@ impl AppShellBackend for AppServerSession {
             })
             .await
             .map_err(Into::into)
+    }
+
+    fn uses_remote_workspace(&self) -> bool {
+        AppServerSession::uses_remote_workspace(self)
+    }
+
+    fn uses_embedded_app_server(&self) -> bool {
+        AppServerSession::uses_embedded_app_server(self)
+    }
+
+    fn external_agent_config_import_in_progress(&self) -> bool {
+        AppServerSession::external_agent_config_import_in_progress(self)
+    }
+
+    async fn external_agent_config_detect(
+        &mut self,
+        params: ExternalAgentConfigDetectParams,
+    ) -> Result<ExternalAgentConfigDetectResponse> {
+        AppServerSession::external_agent_config_detect(self, params).await
+    }
+
+    async fn external_agent_config_import(
+        &mut self,
+        migration_items: Vec<ExternalAgentConfigMigrationItem>,
+    ) -> Result<()> {
+        AppServerSession::external_agent_config_import(self, migration_items).await
+    }
+
+    fn consume_external_agent_config_import_completion(&self) -> bool {
+        AppServerSession::consume_external_agent_config_import_completion(self)
     }
 
     async fn turn_start(&mut self, params: AppShellTurnStart) -> Result<TurnStartResponse> {

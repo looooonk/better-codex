@@ -24,7 +24,7 @@ pub(crate) enum ExternalAgentConfigMigrationFlowOutcome {
     Cancelled,
 }
 
-fn external_agent_config_migration_started_lines(
+pub(crate) fn external_agent_config_migration_started_lines(
     selected_items: &[ExternalAgentConfigMigrationItem],
     remaining_item_count: usize,
 ) -> Vec<Line<'static>> {

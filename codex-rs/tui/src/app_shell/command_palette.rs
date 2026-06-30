@@ -10,6 +10,7 @@ pub(super) enum CommandPaletteAction {
     ChangePermissions,
     ResumeThread,
     ForkThread,
+    ImportExternalAgentConfig,
     CompactContext,
 }
 
@@ -129,6 +130,12 @@ pub(super) fn command_palette_entries(context: CommandPaletteContext) -> Vec<Com
             action: CommandPaletteAction::ForkThread,
             title: "Fork thread",
             detail: "Open native session list",
+            enabled: true,
+        },
+        CommandPaletteEntry {
+            action: CommandPaletteAction::ImportExternalAgentConfig,
+            title: "Import Claude Code setup",
+            detail: "Review detected setup before importing",
             enabled: true,
         },
         CommandPaletteEntry {

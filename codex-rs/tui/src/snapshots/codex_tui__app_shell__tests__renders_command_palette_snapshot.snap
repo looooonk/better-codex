@@ -21,11 +21,11 @@ expression: "render_shell(&shell, area)"
  Change permissions
  Resume thread
  Fork thread
+ Import Claude Code setup
  Compact context
 
 
 
-                                                                       Build the standalone shell
                                                                        in slices.
  Composer ready 1:37                                                   x Shell frame
  > Summarize the new shell architecture                                > Transcript model

@@ -1,0 +1,35 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
+---
+
+ Better Codex                                                          Navigation
+                                                                       1S  2W  3Set  4Help
+
+ Conversation                                                          Sessions
+ system: Better Codex app shell                                        ctrl+1 focus active 0 shown
+ you: Create a divergent standalone TUI.                               loading sessions
+                                                                       r resume  f fork  a archi...
+ codex: Started a fullscreen app shell backed by app-server turns.     / search  v archived  esc
+ plan: 1. Build shell
+
+ Claude Code Import
+ Review Claude Code setup  Settings 1, Skills 1
+
+ > [x] Settings (settings.json -> config.toml) - home
+       Import settings from Claude Code
+   [x] Skills - better-codex
+       1 skill: review
+
+ Enter import  Space toggle  Esc cancel
+
+
+                                                                       Plan
+                                                                       Build the standalone shell
+                                                                       in slices.
+                                                                       x Shell frame
+                                                                       > Transcript model
+ Composer ready 1:37
+ > Summarize the new shell architecture                                Keys
+                                                                       Enter send
+                                                                       Ctrl+C/Esc exit

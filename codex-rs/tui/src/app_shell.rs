@@ -53,6 +53,7 @@ mod dashboard_workspace;
 mod design;
 mod elicitation;
 mod events;
+mod external_agent_import;
 mod integrations;
 mod navigation;
 mod render;
@@ -76,6 +77,7 @@ use command_palette::command_palette_entries;
 use composer::ComposerState;
 use elicitation::ElicitationChoice;
 use elicitation::PendingElicitation;
+use external_agent_import::ExternalAgentImportState;
 use integrations::McpInventorySummary;
 use integrations::PluginInventorySummary;
 use navigation::AppShellRouteState;
@@ -367,6 +369,7 @@ struct ShellState {
     active_turn_id: Option<String>,
     pending_approval: Option<PendingApproval>,
     pending_elicitation: Option<PendingElicitation>,
+    pending_external_agent_import: Option<ExternalAgentImportState>,
     pending_user_input: Option<PendingUserInput>,
     streaming_assistant: String,
     streaming_plan: String,
@@ -434,6 +437,7 @@ impl ShellState {
             active_turn_id: None,
             pending_approval: None,
             pending_elicitation: None,
+            pending_external_agent_import: None,
             pending_user_input: None,
             streaming_assistant: String::new(),
             streaming_plan: String::new(),
@@ -542,6 +546,13 @@ impl ShellState {
             && let Some(choice) = elicitation_choice_from_key(key)
         {
             self.resolve_pending_elicitation(app_server, choice).await?;
+            return Ok(false);
+        }
+        if self.pending_external_agent_import.is_some()
+            && self
+                .handle_external_agent_import_key(key, app_server)
+                .await?
+        {
             return Ok(false);
         }
         if self.pending_user_input.is_some() {
@@ -1269,6 +1280,9 @@ impl ShellState {
                 self.session_list.focused = true;
                 self.refresh_session_list(app_server).await;
                 self.push_status("press f to fork selected session");
+            }
+            CommandPaletteAction::ImportExternalAgentConfig => {
+                self.start_external_agent_import_review(app_server).await?;
             }
             CommandPaletteAction::CompactContext => {}
         }
@@ -2121,6 +2135,7 @@ impl ShellState {
             active_turn_id: None,
             pending_approval: None,
             pending_elicitation: None,
+            pending_external_agent_import: None,
             pending_user_input: None,
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
             streaming_plan: String::new(),
@@ -2266,6 +2281,7 @@ pub mod bench_support {
             active_turn_id: Some("turn-bench-1234567890".to_string()),
             pending_approval: None,
             pending_elicitation: None,
+            pending_external_agent_import: None,
             pending_user_input: None,
             streaming_assistant: String::new(),
             streaming_plan: String::new(),

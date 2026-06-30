@@ -9,6 +9,13 @@ use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ConfigWriteResponse;
+use codex_app_server_protocol::ExternalAgentConfigDetectParams;
+use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
+use codex_app_server_protocol::ExternalAgentConfigImportCompletedNotification;
+use codex_app_server_protocol::ExternalAgentConfigImportItemTypeSuccess;
+use codex_app_server_protocol::ExternalAgentConfigImportTypeResult;
+use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
+use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ListMcpServerStatusParams;
@@ -18,6 +25,7 @@ use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
 use codex_app_server_protocol::McpServerStatus;
 use codex_app_server_protocol::McpServerStatusDetail;
+use codex_app_server_protocol::MigrationDetails;
 use codex_app_server_protocol::PermissionsRequestApprovalParams;
 use codex_app_server_protocol::PluginAuthPolicy;
 use codex_app_server_protocol::PluginAvailability;
@@ -32,6 +40,7 @@ use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SessionSource;
+use codex_app_server_protocol::SkillMigration;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadGoalClearedNotification;
@@ -450,6 +459,7 @@ fn command_palette_lists_common_actions() {
             (CommandPaletteAction::ChangePermissions, true),
             (CommandPaletteAction::ResumeThread, true),
             (CommandPaletteAction::ForkThread, true),
+            (CommandPaletteAction::ImportExternalAgentConfig, true),
             (CommandPaletteAction::CompactContext, false),
         ]
     );
@@ -549,6 +559,131 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
             },
         ]
     );
+}
+
+#[tokio::test]
+async fn command_palette_opens_external_agent_import_review() {
+    let items = external_agent_items();
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::with_external_agent_items(items.clone());
+
+    shell.open_command_palette();
+    select_command_palette_action(&mut shell, CommandPaletteAction::ImportExternalAgentConfig);
+    shell
+        .execute_selected_command_palette_action(&mut backend)
+        .await
+        .expect("import action should detect Claude Code setup");
+
+    assert!(shell.pending_external_agent_import.is_some());
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ExternalAgentConfigDetect {
+            include_home: true,
+            cwds: Some(vec![PathBuf::from(&shell.cwd)]),
+        }]
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 32,
+        )
+    ));
+}
+
+#[tokio::test]
+async fn external_agent_import_starts_selected_items_and_reports_completion() {
+    let items = external_agent_items();
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::with_external_agent_items(items.clone());
+
+    shell
+        .start_external_agent_import_review(&mut backend)
+        .await
+        .expect("review should open");
+    shell
+        .handle_external_agent_import_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("selected items should import");
+
+    assert_eq!(shell.pending_external_agent_import, None);
+    assert!(
+        shell.transcript.iter().any(|line| {
+            line.kind == TranscriptKind::Status && line.text.contains("Claude Code import started")
+        }),
+        "started import should be reported"
+    );
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &NoopWorkspaceRunner,
+            AppServerEvent::ServerNotification(
+                ServerNotification::ExternalAgentConfigImportCompleted(
+                    external_agent_import_completed_notification(),
+                ),
+            ),
+        )
+        .await
+        .expect("completion notification should be handled");
+
+    assert!(
+        shell.transcript.iter().any(|line| {
+            line.kind == TranscriptKind::Status && line.text.contains("Claude Code import finished")
+        }),
+        "completed import should be reported"
+    );
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ExternalAgentConfigDetect {
+                include_home: true,
+                cwds: Some(vec![PathBuf::from(&shell.cwd)]),
+            },
+            RecordedBackendCall::ExternalAgentConfigImport(items),
+            RecordedBackendCall::ExternalAgentConfigImportCompletionConsumed,
+        ]
+    );
+}
+
+fn external_agent_items() -> Vec<ExternalAgentConfigMigrationItem> {
+    vec![
+        ExternalAgentConfigMigrationItem {
+            item_type: ExternalAgentConfigMigrationItemType::Config,
+            description: "Import settings from Claude Code".to_string(),
+            cwd: None,
+            details: None,
+        },
+        ExternalAgentConfigMigrationItem {
+            item_type: ExternalAgentConfigMigrationItemType::Skills,
+            description: "Import skills from Claude Code".to_string(),
+            cwd: Some(PathBuf::from("/repo/better-codex")),
+            details: Some(MigrationDetails {
+                skills: vec![SkillMigration {
+                    name: "review".to_string(),
+                }],
+                ..MigrationDetails::default()
+            }),
+        },
+    ]
+}
+
+fn external_agent_import_completed_notification() -> ExternalAgentConfigImportCompletedNotification
+{
+    ExternalAgentConfigImportCompletedNotification {
+        import_id: "import-1".to_string(),
+        item_type_results: vec![ExternalAgentConfigImportTypeResult {
+            item_type: ExternalAgentConfigMigrationItemType::Config,
+            successes: vec![ExternalAgentConfigImportItemTypeSuccess {
+                item_type: ExternalAgentConfigMigrationItemType::Config,
+                cwd: None,
+                source: Some("Claude Code".to_string()),
+                target: Some("config.toml".to_string()),
+            }],
+            failures: Vec::new(),
+        }],
+    }
 }
 
 fn select_command_palette_action(shell: &mut ShellState, action: CommandPaletteAction) {
@@ -2635,21 +2770,38 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     );
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct RecordingBackend {
     calls: Arc<Mutex<Vec<RecordedBackendCall>>>,
     threads: Arc<Mutex<Vec<Thread>>>,
     mcp_statuses: Arc<Mutex<Vec<McpServerStatus>>>,
     plugin_response: Arc<Mutex<Option<PluginListResponse>>>,
+    external_agent_items: Arc<Mutex<Vec<ExternalAgentConfigMigrationItem>>>,
+    external_agent_import_in_progress: Arc<Mutex<bool>>,
+    remote_workspace: bool,
+    embedded_app_server: bool,
+}
+
+impl Default for RecordingBackend {
+    fn default() -> Self {
+        Self {
+            calls: Arc::new(Mutex::new(Vec::new())),
+            threads: Arc::new(Mutex::new(Vec::new())),
+            mcp_statuses: Arc::new(Mutex::new(Vec::new())),
+            plugin_response: Arc::new(Mutex::new(None)),
+            external_agent_items: Arc::new(Mutex::new(Vec::new())),
+            external_agent_import_in_progress: Arc::new(Mutex::new(false)),
+            remote_workspace: false,
+            embedded_app_server: true,
+        }
+    }
 }
 
 impl RecordingBackend {
     fn with_threads(threads: Vec<Thread>) -> Self {
         Self {
-            calls: Arc::new(Mutex::new(Vec::new())),
             threads: Arc::new(Mutex::new(threads)),
-            mcp_statuses: Arc::new(Mutex::new(Vec::new())),
-            plugin_response: Arc::new(Mutex::new(None)),
+            ..Self::default()
         }
     }
 
@@ -2658,10 +2810,16 @@ impl RecordingBackend {
         plugin_response: PluginListResponse,
     ) -> Self {
         Self {
-            calls: Arc::new(Mutex::new(Vec::new())),
-            threads: Arc::new(Mutex::new(Vec::new())),
             mcp_statuses: Arc::new(Mutex::new(mcp_statuses)),
             plugin_response: Arc::new(Mutex::new(Some(plugin_response))),
+            ..Self::default()
+        }
+    }
+
+    fn with_external_agent_items(items: Vec<ExternalAgentConfigMigrationItem>) -> Self {
+        Self {
+            external_agent_items: Arc::new(Mutex::new(items)),
+            ..Self::default()
         }
     }
 
@@ -2713,6 +2871,12 @@ enum RecordedBackendCall {
         cwd: Option<Vec<AbsolutePathBuf>>,
         marketplace_kinds: Option<Vec<codex_app_server_protocol::PluginListMarketplaceKind>>,
     },
+    ExternalAgentConfigDetect {
+        include_home: bool,
+        cwds: Option<Vec<PathBuf>>,
+    },
+    ExternalAgentConfigImport(Vec<ExternalAgentConfigMigrationItem>),
+    ExternalAgentConfigImportCompletionConsumed,
     TurnStart {
         thread_id: codex_protocol::ThreadId,
         prompt: String,
@@ -2908,6 +3072,65 @@ impl backend::AppShellBackend for RecordingBackend {
                 marketplace_load_errors: Vec::new(),
                 featured_plugin_ids: Vec::new(),
             }))
+    }
+
+    fn uses_remote_workspace(&self) -> bool {
+        self.remote_workspace
+    }
+
+    fn uses_embedded_app_server(&self) -> bool {
+        self.embedded_app_server
+    }
+
+    fn external_agent_config_import_in_progress(&self) -> bool {
+        *self
+            .external_agent_import_in_progress
+            .lock()
+            .expect("import progress should lock")
+    }
+
+    async fn external_agent_config_detect(
+        &mut self,
+        params: ExternalAgentConfigDetectParams,
+    ) -> color_eyre::Result<ExternalAgentConfigDetectResponse> {
+        self.push(RecordedBackendCall::ExternalAgentConfigDetect {
+            include_home: params.include_home,
+            cwds: params.cwds,
+        });
+        Ok(ExternalAgentConfigDetectResponse {
+            items: self
+                .external_agent_items
+                .lock()
+                .expect("external agent items should lock")
+                .clone(),
+        })
+    }
+
+    async fn external_agent_config_import(
+        &mut self,
+        migration_items: Vec<ExternalAgentConfigMigrationItem>,
+    ) -> color_eyre::Result<()> {
+        *self
+            .external_agent_import_in_progress
+            .lock()
+            .expect("import progress should lock") = true;
+        self.push(RecordedBackendCall::ExternalAgentConfigImport(
+            migration_items,
+        ));
+        Ok(())
+    }
+
+    fn consume_external_agent_config_import_completion(&self) -> bool {
+        let mut in_progress = self
+            .external_agent_import_in_progress
+            .lock()
+            .expect("import progress should lock");
+        let should_report = *in_progress;
+        *in_progress = false;
+        if should_report {
+            self.push(RecordedBackendCall::ExternalAgentConfigImportCompletionConsumed);
+        }
+        should_report
     }
 
     async fn turn_start(

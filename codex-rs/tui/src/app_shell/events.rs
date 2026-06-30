@@ -29,6 +29,13 @@ impl ShellState {
                 self.push_system(format!("skipped {skipped} best-effort backend events"));
             }
             AppServerEvent::ServerNotification(notification) => {
+                if let ServerNotification::ExternalAgentConfigImportCompleted(notification) =
+                    &notification
+                    && app_server.consume_external_agent_config_import_completion()
+                {
+                    self.report_external_agent_import_finished(notification);
+                    return Ok(());
+                }
                 self.handle_notification(notification);
             }
             AppServerEvent::ServerRequest(request) => {
