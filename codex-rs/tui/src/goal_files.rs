@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::app_server_session::AppServerSession;
 use crate::bottom_pane::ChatComposer;
-use crate::bottom_pane::LocalImageAttachment;
+use crate::composer_input_types::LocalImageAttachment;
 use anyhow::Context;
 use anyhow::Result;
 use anyhow::bail;

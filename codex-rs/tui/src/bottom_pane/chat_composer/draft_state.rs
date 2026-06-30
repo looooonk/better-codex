@@ -3,10 +3,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use crate::bottom_pane::MentionBinding;
 use crate::bottom_pane::paste_burst::PasteBurst;
 use crate::bottom_pane::textarea::TextArea;
 use crate::bottom_pane::textarea::TextAreaState;
+use crate::composer_input_types::MentionBinding;
 
 pub(super) struct DraftState {
     pub(super) textarea: TextArea,

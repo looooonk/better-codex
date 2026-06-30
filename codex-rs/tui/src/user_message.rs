@@ -2,8 +2,8 @@
 
 use std::path::PathBuf;
 
-use crate::bottom_pane::LocalImageAttachment;
-use crate::bottom_pane::MentionBinding;
+use crate::composer_input_types::LocalImageAttachment;
+use crate::composer_input_types::MentionBinding;
 use codex_protocol::models::local_image_label_text;
 use codex_protocol::user_input::TextElement;
 

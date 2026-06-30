@@ -24,7 +24,7 @@ use super::super::footer::reset_mode_after_activity;
 use super::ActivePopup;
 use super::ChatComposer;
 use super::InputResult;
-use super::QueuedInputAction;
+use crate::composer_input_types::QueuedInputAction;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum SlashValidation {

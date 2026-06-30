@@ -23,6 +23,8 @@ use crate::app_server_requests::ResolvedAppServerRequest;
 use crate::bottom_pane::pending_input_preview::PendingInputPreview;
 use crate::bottom_pane::pending_thread_approvals::PendingThreadApprovals;
 use crate::bottom_pane::unified_exec_footer::UnifiedExecFooter;
+use crate::composer_input_types::LocalImageAttachment;
+use crate::composer_input_types::MentionBinding;
 use crate::key_hint;
 use crate::key_hint::KeyBinding;
 use crate::key_hint::KeyBindingListExt;
@@ -74,22 +76,6 @@ pub(crate) use mcp_server_elicitation::McpServerElicitationOverlay;
 pub(crate) use request_user_input::RequestUserInputOverlay;
 pub(crate) use status_line_style::status_line_from_segments;
 mod bottom_pane_view;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct LocalImageAttachment {
-    pub(crate) placeholder: String,
-    pub(crate) path: PathBuf,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct MentionBinding {
-    /// Visible mention sigil (`$` or `@`).
-    pub(crate) sigil: char,
-    /// Mention token text without the leading sigil (`$` or `@`).
-    pub(crate) mention: String,
-    /// Canonical mention target (for example `app://...` or absolute SKILL.md path).
-    pub(crate) path: String,
-}
 mod chat_composer;
 mod chat_composer_history;
 mod command_popup;
@@ -184,7 +170,6 @@ use crate::bottom_pane::prompt_args::parse_slash_name;
 pub(crate) use chat_composer::ChatComposer;
 pub(crate) use chat_composer::ChatComposerConfig;
 pub(crate) use chat_composer::InputResult;
-pub(crate) use chat_composer::QueuedInputAction;
 pub(crate) use chat_composer_history::HistoryEntry;
 
 use crate::status_indicator_widget::StatusDetailsCapitalization;

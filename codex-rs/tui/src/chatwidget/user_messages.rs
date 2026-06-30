@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use crate::bottom_pane::LocalImageAttachment;
+use crate::composer_input_types::LocalImageAttachment;
 use crate::thread_input_state::PendingSteerCompareKey;
 use crate::thread_input_state::UserMessageHistoryOverride;
 use crate::thread_input_state::UserMessageHistoryRecord;

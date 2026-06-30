@@ -119,6 +119,7 @@ mod clipboard_copy;
 mod clipboard_paste;
 mod collaboration_modes;
 mod color;
+mod composer_input_types;
 mod config_update;
 pub(crate) mod custom_terminal;
 mod pets;

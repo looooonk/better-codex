@@ -12,8 +12,8 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 
 use super::InputResult;
-use crate::bottom_pane::LocalImageAttachment;
 use crate::bottom_pane::textarea::TextArea;
+use crate::composer_input_types::LocalImageAttachment;
 use codex_protocol::models::local_image_label_text;
 use codex_protocol::user_input::TextElement;
 

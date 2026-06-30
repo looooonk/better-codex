@@ -232,11 +232,12 @@ use self::slash_input::SubmissionValidation;
 use crate::app_event::AppEvent;
 use crate::app_event::ConnectorsSnapshot;
 use crate::app_event_sender::AppEventSender;
-use crate::bottom_pane::LocalImageAttachment;
-use crate::bottom_pane::MentionBinding;
 use crate::bottom_pane::textarea::TextArea;
 use crate::clipboard_paste::normalize_pasted_path;
 use crate::clipboard_paste::pasted_image_format;
+use crate::composer_input_types::LocalImageAttachment;
+use crate::composer_input_types::MentionBinding;
+use crate::composer_input_types::QueuedInputAction;
 use crate::history_cell;
 use crate::skills_helpers::skill_display_name;
 use crate::tui::FrameRequester;
@@ -296,13 +297,6 @@ pub enum InputResult {
     /// committed only if dispatch accepts it.
     CommandWithArgs(SlashCommand, String, Vec<TextElement>),
     None,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum QueuedInputAction {
-    Plain,
-    ParseSlash,
-    RunShell,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

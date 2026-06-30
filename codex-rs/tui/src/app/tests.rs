@@ -4350,7 +4350,7 @@ async fn set_thread_goal_draft_materializes_long_objective_and_confirms_before_p
                 (9..9 + image_placeholder.len()).into(),
                 Some(image_placeholder.to_string()),
             )],
-            local_images: vec![crate::bottom_pane::LocalImageAttachment {
+            local_images: vec![crate::composer_input_types::LocalImageAttachment {
                 placeholder: image_placeholder.to_string(),
                 path: image_path,
             }],

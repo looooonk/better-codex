@@ -4,9 +4,9 @@
 use std::collections::VecDeque;
 use std::ops::Deref;
 
-use crate::bottom_pane::LocalImageAttachment;
-use crate::bottom_pane::MentionBinding;
-use crate::bottom_pane::QueuedInputAction;
+use crate::composer_input_types::LocalImageAttachment;
+use crate::composer_input_types::MentionBinding;
+use crate::composer_input_types::QueuedInputAction;
 use crate::user_message::UserMessage;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::CollaborationModeMask;
