@@ -111,9 +111,5 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 Agents may continuously work through this plan until every unchecked item is complete. While an agent loop is running, the user may run the program and update this section with fixes, regressions, or feature requests discovered during live use. Treat these entries as user-supplied implementation tasks: triage them against the staged plan, keep them as checkboxes, and mark them complete only after the requested behavior has been implemented and verified.
 
-- [x] Add support for being able to continuously press BACKSPACE instead of tapping it multiple times.
-- [x] Remove or hide "reasoning" and "assistant message" and "user message" from tool calls.
-- [x] For "output" chats in the conversation log, add appropriate indentation to note that they are outputs instead of tool calls. This means the left edge of the rectangle should be pushed inwards, but the right edge of the rectangle should be left alone.
-- [x] Color the bounding rectangles for the output sections differently from the status accents of the tool call rectangles.
 - [x] Truncate outputs to 4 lines when they go over that limit (not by character count).
 - [x] Fix error where rectangle boxes for tool calls and outputs break with random floating letters, the boxes protruding outside of the conversation box, etc.
