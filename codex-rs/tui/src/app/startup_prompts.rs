@@ -1,7 +1,7 @@
 //! Startup warnings, model migration prompts, and bootstrap prompt helpers.
 //!
-//! These helpers run before or during `App::run` bootstrap. They translate configuration and model
-//! catalog state into one-time TUI prompts or warning cells without owning the main event loop.
+//! These helpers run before or during the legacy `App` bootstrap. They translate configuration and
+//! model catalog state into one-time TUI prompts or warning cells without owning the main event loop.
 
 use super::*;
 use codex_config::ConfigLayerSource;

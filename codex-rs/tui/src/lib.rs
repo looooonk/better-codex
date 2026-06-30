@@ -18,7 +18,6 @@ use crate::session_resume::ResolveCwdOutcome;
 use crate::session_resume::resolve_cwd_for_resume_or_fork;
 pub use crate::startup_error::LocalStateDbStartupError;
 use additional_dirs::add_dir_warning_message;
-use app::App;
 pub use app::AppExitInfo;
 pub use app::ExitReason;
 use app_server_session::AppServerSession;
@@ -161,7 +160,6 @@ mod multi_agents;
 mod notifications;
 #[cfg(any(not(debug_assertions), test))]
 mod npm_registry;
-pub(crate) mod onboarding;
 mod oss_selection;
 mod pager_overlay;
 mod permission_compat;
@@ -1774,8 +1772,6 @@ async fn run_ratatui_app(
         StartupHooksReviewOutcome::Continue => None,
         StartupHooksReviewOutcome::OpenHooksBrowser(data) => Some(data),
     };
-    let _legacy_app_run = App::run;
-
     let app_result = app_shell::run(
         &mut tui,
         app_server,

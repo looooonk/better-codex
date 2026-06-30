@@ -60,7 +60,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 ## Stage 7: Settings And Onboarding
 
-- [ ] Rebuild login, trust-directory, model migration, theme, permissions, MCP, plugin, and external-agent migration flows in the new app architecture.
+- [x] Rebuild login, trust-directory, model migration, theme, permissions, MCP, plugin, and external-agent migration flows in the new app architecture.
   - [x] Move the login/auth selection flow, including ChatGPT device-code login and API key entry, into the app shell instead of running the inherited onboarding screen before the shell starts.
   - [x] Add an app-shell-native trust-directory startup flow with trust, continue-untrusted, and exit choices.
   - [x] Persist app-shell trust-directory decisions through the app-server config write path and reload config after a persisted decision.
@@ -72,7 +72,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
   - [x] Add app-shell MCP management flows beyond inventory refresh, including auth/login actions and add, edit, disable, or remove server actions as applicable.
   - [x] Add app-shell plugin management flows beyond inventory refresh, including browse, install, enable, disable, update, and auth-required actions as applicable.
   - [x] Replace the inherited external-agent migration picker/import flow with an app-shell-native flow for detecting, selecting, importing, and reporting Claude Code migration items.
-  - [ ] Add app-shell snapshot and interaction coverage for each rebuilt flow, then remove the old flow reachability from startup and command handling.
+  - [x] Add app-shell snapshot and interaction coverage for each rebuilt flow, then remove the old flow reachability from startup and command handling.
 - [x] Keep configuration writes behind existing app-server/config helpers.
 - [x] Add settings pages with editable fields and validation feedback.
 - [x] Add first-run and unsafe-workspace flows that feel native to the app shell.
