@@ -115,3 +115,4 @@ Agents may continuously work through this plan until every unchecked item is com
 - [x] Fix error where rectangle boxes for tool calls and outputs break with random floating letters, the boxes protruding outside of the conversation box, etc.
 - [x] Fix context decreasing way too fast; better-codex's context decreases drastically faster (decreases to around 46% even with a simple summarization request).
 - [ ] Add support for slash commands (e.g. /clear, /model) in the chat log as well.
+- [ ] Dynamic output such as tqdm or pytest does not render properly, it looks like multiple output blocks instead of 1.
