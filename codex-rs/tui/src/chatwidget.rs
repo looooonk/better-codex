@@ -76,6 +76,7 @@ use crate::terminal_title::SetTerminalTitleResult;
 use crate::terminal_title::clear_terminal_title;
 use crate::terminal_title::set_terminal_title;
 use crate::text_formatting::proper_join;
+use crate::thread_replay::ReplayKind;
 use crate::token_usage::TokenUsage;
 use crate::token_usage::TokenUsageInfo;
 use crate::user_message::UserMessage;
@@ -763,12 +764,6 @@ struct CancelEditState {
     prompt: Option<UserMessage>,
     eligible: bool,
     armed: bool,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ReplayKind {
-    ResumeInitialMessages,
-    ThreadSnapshot,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
