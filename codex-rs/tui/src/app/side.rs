@@ -8,7 +8,7 @@
 //! for them.
 
 use super::*;
-use crate::chatwidget::InterruptedTurnNoticeMode;
+use crate::interrupted_turn_notice::InterruptedTurnNoticeMode;
 use crate::user_message::UserMessage;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;

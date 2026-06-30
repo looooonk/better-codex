@@ -55,7 +55,9 @@ use crate::bottom_pane::StatusSurfacePreviewItem;
 use crate::bottom_pane::TerminalTitleItem;
 use crate::bottom_pane::TerminalTitleSetupView;
 use crate::diff_model::FileChange;
+use crate::external_editor_state::ExternalEditorState;
 use crate::git_action_directives::parse_assistant_markdown;
+use crate::interrupted_turn_notice::InterruptedTurnNoticeMode;
 use crate::legacy_core::config::Config;
 use crate::legacy_core::config::PermissionProfileSnapshot;
 use crate::mention_codec::LinkedMention;
@@ -503,14 +505,6 @@ pub(crate) struct ChatWidgetInit {
     pub(crate) session_telemetry: SessionTelemetry,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub(crate) enum ExternalEditorState {
-    #[default]
-    Closed,
-    Requested,
-    Active,
-}
-
 /// Maintains the per-session UI state and interaction state machines for the chat screen.
 ///
 /// `ChatWidget` owns the state derived from the protocol event stream (history cells, streaming
@@ -750,13 +744,6 @@ pub(crate) struct ChatWidget {
 enum CodexOpTarget {
     Direct(UnboundedSender<AppCommand>),
     AppEvent,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) enum InterruptedTurnNoticeMode {
-    #[default]
-    Default,
-    Suppress,
 }
 
 #[derive(Debug, Default)]
