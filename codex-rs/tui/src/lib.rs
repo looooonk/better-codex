@@ -222,8 +222,6 @@ pub(crate) mod test_backend;
 #[cfg(test)]
 pub(crate) mod test_support;
 
-use crate::onboarding::onboarding_screen::OnboardingScreenArgs;
-use crate::onboarding::onboarding_screen::run_onboarding_app;
 use crate::startup_hooks_review::StartupHooksReviewOutcome;
 use crate::startup_hooks_review::load_startup_hooks_review_entry;
 use crate::startup_hooks_review::maybe_run_startup_hooks_review;
@@ -1398,28 +1396,20 @@ async fn run_ratatui_app(
         LoginStatus::NotAuthenticated
     };
     let show_login_screen = should_show_login_screen(login_status, &initial_config);
-    let should_show_onboarding = show_login_screen;
 
-    let mut config = if should_show_onboarding {
-        let onboarding_result = run_onboarding_app(
-            OnboardingScreenArgs {
-                show_login_screen,
-                show_trust_screen: false,
-                login_status,
-                app_server_request_handle: app_server
-                    .as_ref()
-                    .map(AppServerSession::request_handle),
-                config: initial_config.clone(),
-            },
-            if show_login_screen {
-                app_server.as_mut()
-            } else {
-                None
-            },
+    let mut config = if show_login_screen {
+        let Some(startup_app_server) = app_server.as_mut() else {
+            unreachable!("app server should be initialized for startup login flow");
+        };
+        if app_shell::run_login_onboarding(
             &mut tui,
+            startup_app_server,
+            &initial_config,
+            login_status,
         )
-        .await?;
-        if onboarding_result.should_exit {
+        .await?
+            == app_shell::LoginOnboardingOutcome::Exit
+        {
             shutdown_app_server_if_present(app_server.take()).await;
             terminal_restore_guard.restore_silently();
             session_log::log_session_end();
@@ -1435,7 +1425,7 @@ async fn run_ratatui_app(
         // If this onboarding run included the login step, always refresh the cloud config bundle
         // and rebuild config. This avoids missing newly available cloud-managed policy due to login
         // status detection edge cases.
-        if show_login_screen && !uses_remote_workspace {
+        if !uses_remote_workspace {
             cloud_config_bundle = cloud_config_bundle_loader_for_storage(
                 initial_config.codex_home.to_path_buf(),
                 /*enable_codex_api_key_env*/ false,
@@ -1447,11 +1437,8 @@ async fn run_ratatui_app(
             .await;
         }
 
-        // If the user made an explicit trust decision, or we showed the login flow, reload config
-        // so current process state reflects persisted trust/auth changes.
-        if onboarding_result.directory_trust_persisted
-            || (show_login_screen && !uses_remote_workspace)
-        {
+        // Reload config so current process state reflects persisted auth changes.
+        if !uses_remote_workspace {
             load_config_or_exit(
                 cli_kv_overrides.clone(),
                 overrides.clone(),

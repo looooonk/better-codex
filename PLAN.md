@@ -61,7 +61,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 ## Stage 7: Settings And Onboarding
 
 - [ ] Rebuild login, trust-directory, model migration, theme, permissions, MCP, plugin, and external-agent migration flows in the new app architecture.
-  - [ ] Move the login/auth selection flow, including ChatGPT device-code login and API key entry, into the app shell instead of running the inherited onboarding screen before the shell starts.
+  - [x] Move the login/auth selection flow, including ChatGPT device-code login and API key entry, into the app shell instead of running the inherited onboarding screen before the shell starts.
   - [x] Add an app-shell-native trust-directory startup flow with trust, continue-untrusted, and exit choices.
   - [x] Persist app-shell trust-directory decisions through the app-server config write path and reload config after a persisted decision.
   - [x] Replace the inherited model migration prompt with an app-shell-native migration surface and route accepted/declined decisions through the app-server config helpers.

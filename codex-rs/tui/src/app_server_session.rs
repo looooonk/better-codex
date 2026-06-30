@@ -22,6 +22,8 @@ use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::Account;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::AuthMode;
+use codex_app_server_protocol::CancelLoginAccountParams;
+use codex_app_server_protocol::CancelLoginAccountResponse;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ConfigBatchWriteParams;
 use codex_app_server_protocol::ConfigWriteResponse;
@@ -34,6 +36,8 @@ use codex_app_server_protocol::GetAccountParams;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::GetAccountResponse;
 use codex_app_server_protocol::JSONRPCErrorError;
+use codex_app_server_protocol::LoginAccountParams;
+use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::LogoutAccountResponse;
 use codex_app_server_protocol::MemoryResetResponse;
 use codex_app_server_protocol::Model as ApiModel;
@@ -376,6 +380,31 @@ impl AppServerSession {
             })
             .await
             .wrap_err("account/rateLimits/read failed")
+    }
+
+    pub(crate) async fn login_account(
+        &mut self,
+        params: LoginAccountParams,
+    ) -> Result<LoginAccountResponse> {
+        let request_id = self.next_request_id();
+        self.client
+            .request_typed(ClientRequest::LoginAccount { request_id, params })
+            .await
+            .wrap_err("account/login/start failed")
+    }
+
+    pub(crate) async fn cancel_login_account(
+        &mut self,
+        login_id: String,
+    ) -> Result<CancelLoginAccountResponse> {
+        let request_id = self.next_request_id();
+        self.client
+            .request_typed(ClientRequest::CancelLoginAccount {
+                request_id,
+                params: CancelLoginAccountParams { login_id },
+            })
+            .await
+            .wrap_err("account/login/cancel failed")
     }
 
     pub(crate) async fn external_agent_config_detect(
