@@ -4,6 +4,7 @@ use super::*;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
+use codex_app_server_protocol::AppSummary;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
@@ -29,13 +30,17 @@ use codex_app_server_protocol::MigrationDetails;
 use codex_app_server_protocol::PermissionsRequestApprovalParams;
 use codex_app_server_protocol::PluginAuthPolicy;
 use codex_app_server_protocol::PluginAvailability;
+use codex_app_server_protocol::PluginInstallParams;
 use codex_app_server_protocol::PluginInstallPolicy;
+use codex_app_server_protocol::PluginInstallResponse;
 use codex_app_server_protocol::PluginInterface;
 use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::PluginListResponse;
 use codex_app_server_protocol::PluginMarketplaceEntry;
 use codex_app_server_protocol::PluginSource;
 use codex_app_server_protocol::PluginSummary;
+use codex_app_server_protocol::PluginUninstallParams;
+use codex_app_server_protocol::PluginUninstallResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
@@ -2116,6 +2121,25 @@ fn plugin_summary_fixture(id: &str, name: &str, installed: bool, enabled: bool) 
     }
 }
 
+fn mutate_plugin(
+    response: &Arc<Mutex<Option<PluginListResponse>>>,
+    plugin_key: &str,
+    mut update: impl FnMut(&mut PluginSummary),
+) {
+    let mut response = response.lock().expect("plugin response should lock");
+    let Some(response) = response.as_mut() else {
+        return;
+    };
+    for marketplace in &mut response.marketplaces {
+        for plugin in &mut marketplace.plugins {
+            if plugin.id == plugin_key || plugin.name == plugin_key {
+                update(plugin);
+                return;
+            }
+        }
+    }
+}
+
 fn buffer_contents(buf: &Buffer, area: Rect) -> String {
     let mut rows = Vec::new();
     for y in area.y..area.bottom() {
@@ -2409,6 +2433,121 @@ async fn native_settings_integrations_refresh_mcp_and_plugins() {
     assert!(
         rendered.contains("Integrations"),
         "dashboard should render native integrations panel:\n{rendered}"
+    );
+}
+
+#[tokio::test]
+async fn plugin_management_catalog_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    shell.settings.focused = true;
+    shell.settings.focus_action(SettingsAction::Plugins);
+    let mut backend =
+        RecordingBackend::with_integrations(Vec::new(), plugin_list_response_fixture());
+
+    for description in [
+        "plugin inventory should refresh",
+        "plugin catalog should open",
+    ] {
+        shell
+            .handle_settings_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &mut backend,
+            )
+            .await
+            .expect(description);
+    }
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 110, /*height*/ 36,
+        ),
+    ));
+}
+
+#[tokio::test]
+async fn plugin_management_actions_update_enable_install_auth_and_uninstall() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    shell.settings.focused = true;
+    shell.settings.focus_action(SettingsAction::Plugins);
+    let mut backend =
+        RecordingBackend::with_integrations(Vec::new(), plugin_list_response_fixture());
+    backend.set_plugin_install_response(PluginInstallResponse {
+        auth_policy: PluginAuthPolicy::OnInstall,
+        apps_needing_auth: vec![AppSummary {
+            id: "gmail".to_string(),
+            name: "Gmail".to_string(),
+            description: None,
+            install_url: None,
+            category: None,
+        }],
+    });
+
+    for description in [
+        "plugin inventory should refresh",
+        "plugin catalog should open",
+    ] {
+        shell
+            .handle_settings_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &mut backend,
+            )
+            .await
+            .expect(description);
+    }
+    for (code, description) in [
+        (KeyCode::Char('i'), "installed plugin should update"),
+        (KeyCode::Char('e'), "installed plugin should disable"),
+        (KeyCode::Char('e'), "installed plugin should enable"),
+        (KeyCode::Down, "available plugin should be selected"),
+        (KeyCode::Enter, "available plugin should install"),
+        (KeyCode::Char('u'), "installed plugin should uninstall"),
+    ] {
+        shell
+            .handle_key(
+                KeyEvent::new(code, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect(description);
+    }
+
+    let calls = backend.calls();
+    for expected_call in [
+        RecordedBackendCall::PluginInstall {
+            marketplace_path: Some(test_absolute_path("codex-home/plugins/marketplace.json")),
+            remote_marketplace_name: None,
+            plugin_name: "Calendar".to_string(),
+        },
+        RecordedBackendCall::PluginSetEnabled {
+            plugin_id: "plugin-calendar".to_string(),
+            enabled: false,
+        },
+        RecordedBackendCall::PluginSetEnabled {
+            plugin_id: "plugin-calendar".to_string(),
+            enabled: true,
+        },
+        RecordedBackendCall::PluginInstall {
+            marketplace_path: Some(test_absolute_path("codex-home/plugins/marketplace.json")),
+            remote_marketplace_name: None,
+            plugin_name: "Drive".to_string(),
+        },
+        RecordedBackendCall::PluginUninstall {
+            plugin_id: "plugin-drive".to_string(),
+        },
+    ] {
+        assert!(calls.contains(&expected_call), "{expected_call:?}");
+    }
+    assert!(
+        shell
+            .transcript
+            .iter()
+            .any(|line| line.text.contains("auth required for Gmail")),
+        "installing auth-required plugins should report the app auth follow-up"
     );
 }
 
@@ -2776,6 +2915,7 @@ struct RecordingBackend {
     threads: Arc<Mutex<Vec<Thread>>>,
     mcp_statuses: Arc<Mutex<Vec<McpServerStatus>>>,
     plugin_response: Arc<Mutex<Option<PluginListResponse>>>,
+    plugin_install_response: Arc<Mutex<PluginInstallResponse>>,
     external_agent_items: Arc<Mutex<Vec<ExternalAgentConfigMigrationItem>>>,
     external_agent_import_in_progress: Arc<Mutex<bool>>,
     remote_workspace: bool,
@@ -2789,6 +2929,10 @@ impl Default for RecordingBackend {
             threads: Arc::new(Mutex::new(Vec::new())),
             mcp_statuses: Arc::new(Mutex::new(Vec::new())),
             plugin_response: Arc::new(Mutex::new(None)),
+            plugin_install_response: Arc::new(Mutex::new(PluginInstallResponse {
+                auth_policy: PluginAuthPolicy::OnUse,
+                apps_needing_auth: Vec::new(),
+            })),
             external_agent_items: Arc::new(Mutex::new(Vec::new())),
             external_agent_import_in_progress: Arc::new(Mutex::new(false)),
             remote_workspace: false,
@@ -2837,6 +2981,13 @@ impl RecordingBackend {
     fn push(&self, call: RecordedBackendCall) {
         self.calls.lock().expect("call log should lock").push(call);
     }
+
+    fn set_plugin_install_response(&self, response: PluginInstallResponse) {
+        *self
+            .plugin_install_response
+            .lock()
+            .expect("plugin install response should lock") = response;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -2870,6 +3021,18 @@ enum RecordedBackendCall {
     PluginList {
         cwd: Option<Vec<AbsolutePathBuf>>,
         marketplace_kinds: Option<Vec<codex_app_server_protocol::PluginListMarketplaceKind>>,
+    },
+    PluginInstall {
+        marketplace_path: Option<AbsolutePathBuf>,
+        remote_marketplace_name: Option<String>,
+        plugin_name: String,
+    },
+    PluginUninstall {
+        plugin_id: String,
+    },
+    PluginSetEnabled {
+        plugin_id: String,
+        enabled: bool,
     },
     ExternalAgentConfigDetect {
         include_home: bool,
@@ -3072,6 +3235,60 @@ impl backend::AppShellBackend for RecordingBackend {
                 marketplace_load_errors: Vec::new(),
                 featured_plugin_ids: Vec::new(),
             }))
+    }
+
+    async fn plugin_install(
+        &mut self,
+        params: PluginInstallParams,
+    ) -> color_eyre::Result<PluginInstallResponse> {
+        self.push(RecordedBackendCall::PluginInstall {
+            marketplace_path: params.marketplace_path.clone(),
+            remote_marketplace_name: params.remote_marketplace_name.clone(),
+            plugin_name: params.plugin_name.clone(),
+        });
+        mutate_plugin(&self.plugin_response, &params.plugin_name, |plugin| {
+            plugin.installed = true;
+            plugin.enabled = true;
+        });
+        Ok(self
+            .plugin_install_response
+            .lock()
+            .expect("plugin install response should lock")
+            .clone())
+    }
+
+    async fn plugin_uninstall(
+        &mut self,
+        params: PluginUninstallParams,
+    ) -> color_eyre::Result<PluginUninstallResponse> {
+        self.push(RecordedBackendCall::PluginUninstall {
+            plugin_id: params.plugin_id.clone(),
+        });
+        mutate_plugin(&self.plugin_response, &params.plugin_id, |plugin| {
+            plugin.installed = false;
+            plugin.enabled = false;
+        });
+        Ok(PluginUninstallResponse {})
+    }
+
+    async fn plugin_set_enabled(
+        &mut self,
+        plugin_id: String,
+        enabled: bool,
+    ) -> color_eyre::Result<ConfigWriteResponse> {
+        self.push(RecordedBackendCall::PluginSetEnabled {
+            plugin_id: plugin_id.clone(),
+            enabled,
+        });
+        mutate_plugin(&self.plugin_response, &plugin_id, |plugin| {
+            plugin.enabled = enabled;
+        });
+        Ok(ConfigWriteResponse {
+            status: WriteStatus::Ok,
+            version: "1".to_string(),
+            file_path: test_absolute_path("codex-home/config.toml"),
+            overridden_metadata: None,
+        })
     }
 
     fn uses_remote_workspace(&self) -> bool {

@@ -23,6 +23,7 @@ use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::PatchChangeKind;
 use codex_app_server_protocol::PluginListParams;
+use codex_app_server_protocol::PluginListResponse;
 use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadItem;
@@ -56,6 +57,7 @@ mod events;
 mod external_agent_import;
 mod integrations;
 mod navigation;
+mod plugin_management;
 mod render;
 mod sessions;
 mod settings;
@@ -82,6 +84,7 @@ use integrations::McpInventorySummary;
 use integrations::PluginInventorySummary;
 use navigation::AppShellRouteState;
 use navigation::DashboardRoute;
+use plugin_management::PluginManagementState;
 use render::draw_shell;
 use sessions::SessionListState;
 use settings::SettingsAction;
@@ -358,6 +361,7 @@ struct ShellState {
     settings: SettingsState,
     mcp_inventory: McpInventorySummary,
     plugin_inventory: PluginInventorySummary,
+    plugin_catalog: Option<PluginListResponse>,
     tui_theme: Option<String>,
     animations: bool,
     show_tooltips: bool,
@@ -370,6 +374,7 @@ struct ShellState {
     pending_approval: Option<PendingApproval>,
     pending_elicitation: Option<PendingElicitation>,
     pending_external_agent_import: Option<ExternalAgentImportState>,
+    pending_plugin_management: Option<PluginManagementState>,
     pending_user_input: Option<PendingUserInput>,
     streaming_assistant: String,
     streaming_plan: String,
@@ -426,6 +431,7 @@ impl ShellState {
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
             plugin_inventory: PluginInventorySummary::default(),
+            plugin_catalog: None,
             tui_theme,
             animations,
             show_tooltips,
@@ -438,6 +444,7 @@ impl ShellState {
             pending_approval: None,
             pending_elicitation: None,
             pending_external_agent_import: None,
+            pending_plugin_management: None,
             pending_user_input: None,
             streaming_assistant: String::new(),
             streaming_plan: String::new(),
@@ -475,12 +482,15 @@ impl ShellState {
         }
     }
 
-    async fn handle_key(
+    async fn handle_key<S>(
         &mut self,
         key: KeyEvent,
         config: &Config,
-        app_server: &mut AppServerSession,
-    ) -> Result<bool> {
+        app_server: &mut S,
+    ) -> Result<bool>
+    where
+        S: AppShellBackend,
+    {
         if key.kind != KeyEventKind::Press {
             return Ok(false);
         }
@@ -552,6 +562,11 @@ impl ShellState {
             && self
                 .handle_external_agent_import_key(key, app_server)
                 .await?
+        {
+            return Ok(false);
+        }
+        if self.pending_plugin_management.is_some()
+            && self.handle_plugin_management_key(key, app_server).await?
         {
             return Ok(false);
         }
@@ -764,6 +779,7 @@ impl ShellState {
             Ok(cwd) => cwd,
             Err(err) => {
                 self.plugin_inventory = PluginInventorySummary::from_error(err.to_string());
+                self.plugin_catalog = None;
                 self.settings.set_error("failed to refresh plugins");
                 return;
             }
@@ -777,10 +793,12 @@ impl ShellState {
         {
             Ok(response) => {
                 self.plugin_inventory = PluginInventorySummary::from_response(&response);
+                self.plugin_catalog = Some(response);
                 self.settings.set_info("plugin inventory refreshed");
             }
             Err(err) => {
                 self.plugin_inventory = PluginInventorySummary::from_error(err.to_string());
+                self.plugin_catalog = None;
                 self.settings.set_error("failed to refresh plugins");
             }
         }
@@ -813,11 +831,14 @@ impl ShellState {
         self.composer.insert_str(text);
     }
 
-    async fn handle_command_palette_key(
+    async fn handle_command_palette_key<S>(
         &mut self,
         key: KeyEvent,
-        app_server: &mut AppServerSession,
-    ) -> Result<()> {
+        app_server: &mut S,
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         match key.code {
             KeyCode::Esc => {
                 self.close_command_palette();
@@ -2120,6 +2141,7 @@ impl ShellState {
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
             plugin_inventory: PluginInventorySummary::default(),
+            plugin_catalog: None,
             tui_theme: None,
             animations: true,
             show_tooltips: true,
@@ -2136,6 +2158,7 @@ impl ShellState {
             pending_approval: None,
             pending_elicitation: None,
             pending_external_agent_import: None,
+            pending_plugin_management: None,
             pending_user_input: None,
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
             streaming_plan: String::new(),
@@ -2266,6 +2289,7 @@ pub mod bench_support {
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
             plugin_inventory: PluginInventorySummary::default(),
+            plugin_catalog: None,
             tui_theme: None,
             animations: true,
             show_tooltips: true,
@@ -2282,6 +2306,7 @@ pub mod bench_support {
             pending_approval: None,
             pending_elicitation: None,
             pending_external_agent_import: None,
+            pending_plugin_management: None,
             pending_user_input: None,
             streaming_assistant: String::new(),
             streaming_plan: String::new(),

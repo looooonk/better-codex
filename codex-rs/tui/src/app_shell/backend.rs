@@ -7,14 +7,20 @@ use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ConfigEdit;
+use codex_app_server_protocol::ConfigValueWriteParams;
 use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::ExternalAgentConfigDetectParams;
 use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
+use codex_app_server_protocol::MergeStrategy;
+use codex_app_server_protocol::PluginInstallParams;
+use codex_app_server_protocol::PluginInstallResponse;
 use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::PluginListResponse;
+use codex_app_server_protocol::PluginUninstallParams;
+use codex_app_server_protocol::PluginUninstallResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadListParams;
@@ -104,6 +110,22 @@ pub(super) trait AppShellBackend {
         params: PluginListParams,
     ) -> impl std::future::Future<Output = Result<PluginListResponse>> + Send;
 
+    fn plugin_install(
+        &mut self,
+        params: PluginInstallParams,
+    ) -> impl std::future::Future<Output = Result<PluginInstallResponse>> + Send;
+
+    fn plugin_uninstall(
+        &mut self,
+        params: PluginUninstallParams,
+    ) -> impl std::future::Future<Output = Result<PluginUninstallResponse>> + Send;
+
+    fn plugin_set_enabled(
+        &mut self,
+        plugin_id: String,
+        enabled: bool,
+    ) -> impl std::future::Future<Output = Result<ConfigWriteResponse>> + Send;
+
     fn uses_remote_workspace(&self) -> bool;
 
     fn uses_embedded_app_server(&self) -> bool;
@@ -161,6 +183,10 @@ pub(super) trait AppShellBackend {
     fn shutdown(self) -> impl std::future::Future<Output = std::io::Result<()>> + Send
     where
         Self: Sized;
+}
+
+fn app_shell_request_id(prefix: &str) -> RequestId {
+    RequestId::String(format!("{prefix}-{}", Uuid::new_v4()))
 }
 
 #[derive(Debug, Clone)]
@@ -253,6 +279,52 @@ impl AppShellBackend for AppServerSession {
             .request_typed(ClientRequest::PluginList {
                 request_id: RequestId::String(format!("app-shell-plugin-{}", Uuid::new_v4())),
                 params,
+            })
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn plugin_install(
+        &mut self,
+        params: PluginInstallParams,
+    ) -> Result<PluginInstallResponse> {
+        AppServerSession::request_handle(self)
+            .request_typed(ClientRequest::PluginInstall {
+                request_id: app_shell_request_id("app-shell-plugin-install"),
+                params,
+            })
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn plugin_uninstall(
+        &mut self,
+        params: PluginUninstallParams,
+    ) -> Result<PluginUninstallResponse> {
+        AppServerSession::request_handle(self)
+            .request_typed(ClientRequest::PluginUninstall {
+                request_id: app_shell_request_id("app-shell-plugin-uninstall"),
+                params,
+            })
+            .await
+            .map_err(Into::into)
+    }
+
+    async fn plugin_set_enabled(
+        &mut self,
+        plugin_id: String,
+        enabled: bool,
+    ) -> Result<ConfigWriteResponse> {
+        AppServerSession::request_handle(self)
+            .request_typed(ClientRequest::ConfigValueWrite {
+                request_id: app_shell_request_id("app-shell-plugin-enable"),
+                params: ConfigValueWriteParams {
+                    key_path: format!("plugins.{plugin_id}"),
+                    value: serde_json::json!({ "enabled": enabled }),
+                    merge_strategy: MergeStrategy::Upsert,
+                    file_path: None,
+                    expected_version: None,
+                },
             })
             .await
             .map_err(Into::into)

@@ -213,7 +213,11 @@ impl ShellState {
                 self.refresh_mcp_inventory(app_server).await;
             }
             SettingsAction::Plugins => {
-                self.refresh_plugin_inventory(app_server).await;
+                if self.plugin_catalog.is_some() {
+                    self.open_plugin_management();
+                } else {
+                    self.refresh_plugin_inventory(app_server).await;
+                }
             }
         }
         Ok(())

@@ -1,0 +1,39 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
+---
+
+ Better Codex                                                                 Navigation
+                                                                              1S  2W  3Set  4Help
+
+ Conversation                                                                 Settings
+ system: Better Codex app shell                                               focused integrations 2 fields
+ you: Create a divergent standalone TUI.                                      Model  Permissions  Appearance
+                                                                              Integrations
+ codex: Started a fullscreen app shell backed by app-server turns.            plugin inventory refreshed
+ plan: 1. Build shell                                                           mcp servers: not loaded
+       2. Wire transcript                                                     > plugins: 1 installed / 2 a...
+       3. Render dashboard
+ ▌ tool exec just test -p codex-tui                                           Model
+
+ Plugins
+ 1/2 plugin catalog  Enter action  i install/update  e enable/disable  u uninstall  r refresh
+ > enabled    Calendar (local)
+   available  Drive (local)
+
+ Action: press i or Enter to update from the marketplace
+
+
+                                                                              mcp not loaded
+                                                                              plugins 1 installed / 2 avai...
+                                                                              marketplaces 1
+                                                                              plugins 2
+
+                                                                              Workspace
+                                                                              cwd /workspace/better-codex
+                                                                              profile managed
+                                                                              files restricted, net
+ Composer ready 1:37                                                          restricted
+ > Summarize the new shell architecture
+                                                                              Keys
+                                                                              Enter send
