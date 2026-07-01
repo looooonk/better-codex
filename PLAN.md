@@ -112,6 +112,6 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 Agents may continuously work through this plan until every unchecked item is complete. While an agent loop is running, the user may run the program and update this section with fixes, regressions, or feature requests discovered during live use. Treat these entries as user-supplied implementation tasks: triage them against the staged plan, keep them as checkboxes, and mark them complete only after the requested behavior has been implemented and verified.
 
 - [x] Add support for /goal (or some way of running goal related commands) if not already implemented.
-- [ ] Fix user input completely freezing when conversation grows even a little long or when long tool calls (like rust compiles) happens.
+- [x] Fix user input completely freezing when conversation grows even a little long or when long tool calls (like rust compiles) happens.
 - [ ] Remove cursor not being exactly next to the user typed text.
-- [ ] Fix "diff" boxes rendering multiple times when files are edited (especially in sequence). Diff boxes should show once every time a file edit happens, and the total diff should not be shown in the conversation log.
+- [x] Fix "diff" boxes rendering multiple times when files are edited (especially in sequence). Diff boxes should show once every time a file edit happens, and the total diff should not be shown in the conversation log.

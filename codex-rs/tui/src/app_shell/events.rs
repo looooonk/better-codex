@@ -47,7 +47,7 @@ impl ShellState {
                 self.push_error(message);
             }
         }
-        if self.workspace_status_refresh_due {
+        if self.workspace_status_refresh_due && self.active_turn_id.is_none() {
             self.refresh_workspace_status(workspace_command_runner)
                 .await;
         }
@@ -125,15 +125,6 @@ impl ShellState {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.latest_diff = Some(super::diff_summary_from_unified_diff(&updated.diff));
                     self.workspace_status_refresh_due = true;
-                    if let Some(summary) = &self.latest_diff {
-                        self.push_diff_with_status(
-                            format!(
-                                "{} files +{} -{}",
-                                summary.files, summary.additions, summary.removals
-                            ),
-                            super::ToolBlockStatus::Running,
-                        );
-                    }
                 }
             }
             ServerNotification::TurnPlanUpdated(updated) => {

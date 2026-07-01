@@ -23,6 +23,7 @@ use codex_app_server_protocol::ExternalAgentConfigImportItemTypeSuccess;
 use codex_app_server_protocol::ExternalAgentConfigImportTypeResult;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
+use codex_app_server_protocol::FileChangePatchUpdatedNotification;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
@@ -73,6 +74,7 @@ use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
+use codex_app_server_protocol::TurnDiffUpdatedNotification;
 use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnStatus;
@@ -1803,6 +1805,46 @@ fn command_output_deltas_update_one_output_block() {
 }
 
 #[test]
+fn command_output_transcript_text_is_bounded() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    for index in 0..200 {
+        shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+            CommandExecutionOutputDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+                item_id: "exec-1".to_string(),
+                delta: format!("compile line {index:03}: {}\n", "x".repeat(96)),
+            },
+        ));
+    }
+
+    let output = shell
+        .transcript
+        .back()
+        .expect("output line should be present")
+        .text
+        .clone();
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::new(TranscriptKind::Output, output.clone())
+            .tool_status(ToolBlockStatus::Running)
+            .item_id("exec-1")])
+    );
+    assert!(output.starts_with(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX));
+    assert!(
+        output.chars().count()
+            <= MAX_TRANSCRIPT_OUTPUT_CHARS + TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX.len()
+    );
+    assert!(!output.contains("compile line 000"));
+    assert!(output.contains("compile line 199"));
+}
+
+#[test]
 fn legacy_command_exec_output_deltas_update_one_output_block() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -1827,6 +1869,112 @@ fn legacy_command_exec_output_deltas_update_one_output_block() {
         )
         .tool_status(ToolBlockStatus::Running)
         .item_id("command-exec:process-1")])
+    );
+}
+
+#[tokio::test]
+async fn workspace_refresh_waits_until_active_turn_finishes() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let thread_id = shell.thread_id.to_string();
+    shell.active_turn_id = Some("turn-1".to_string());
+    shell.workspace_status_refresh_due = false;
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &NoopWorkspaceRunner,
+            AppServerEvent::ServerNotification(ServerNotification::TurnDiffUpdated(
+                TurnDiffUpdatedNotification {
+                    thread_id: thread_id.clone(),
+                    turn_id: "turn-1".to_string(),
+                    diff: "@@\n-old\n+new\n".to_string(),
+                },
+            )),
+        )
+        .await
+        .expect("diff update should be handled");
+
+    assert_eq!(shell.workspace_status_refresh_due, true);
+    assert_eq!(shell.workspace_git_status, None);
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &NoopWorkspaceRunner,
+            AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(
+                codex_app_server_protocol::TurnCompletedNotification {
+                    thread_id,
+                    turn: test_turn("turn-1", TurnStatus::Completed),
+                },
+            )),
+        )
+        .await
+        .expect("turn completion should refresh workspace status");
+
+    assert_eq!(shell.workspace_status_refresh_due, false);
+    assert_eq!(
+        shell.workspace_git_status,
+        Some(WorkspaceGitStatus::default())
+    );
+}
+
+#[test]
+fn turn_diff_updates_dashboard_without_conversation_diff_box() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    shell.handle_notification(ServerNotification::TurnDiffUpdated(
+        TurnDiffUpdatedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            diff: "+added\n-removed\n+added again\n".to_string(),
+        },
+    ));
+
+    assert_eq!(
+        shell.latest_diff,
+        Some(DiffSummary {
+            files: 0,
+            additions: 2,
+            removals: 1,
+        })
+    );
+    assert_eq!(shell.transcript, VecDeque::new());
+}
+
+#[test]
+fn file_change_patch_updates_one_diff_box_per_item() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    for diff in ["+first\n", "+second\n"] {
+        shell.handle_notification(ServerNotification::FileChangePatchUpdated(
+            FileChangePatchUpdatedNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+                item_id: "file-1".to_string(),
+                changes: vec![FileUpdateChange {
+                    path: "src/lib.rs".to_string(),
+                    kind: PatchChangeKind::Update { move_path: None },
+                    diff: diff.to_string(),
+                }],
+            },
+        ));
+    }
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::new(
+            TranscriptKind::Diff,
+            "1 files +1 -0\n  M src/lib.rs"
+        )
+        .tool_status(ToolBlockStatus::Running)
+        .item_id("file-1")])
     );
 }
 

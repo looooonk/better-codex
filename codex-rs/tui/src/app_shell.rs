@@ -106,6 +106,9 @@ use user_input::UserInputAdvance;
 use workspace::WorkspaceGitStatus;
 
 const MAX_TRANSCRIPT_LINES: usize = 400;
+const MAX_TRANSCRIPT_OUTPUT_CHARS: usize = 8_000;
+const MAX_TRANSCRIPT_OUTPUT_LINES: usize = 160;
+const TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX: &str = "... earlier output omitted ...\n";
 const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
 const TRANSCRIPT_SELECTION_STEP: usize = 1;
 
@@ -2392,11 +2395,16 @@ impl ShellState {
             existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(&item_id)
         }) {
             existing.text.push_str(&delta);
+            existing.text = compact_output_for_transcript(std::mem::take(&mut existing.text));
             existing.tool_status = Some(status);
             return;
         }
 
-        self.push_output_with_status_for_item(item_id, delta, status);
+        self.push_output_with_status_for_item(
+            item_id,
+            compact_output_for_transcript(delta),
+            status,
+        );
     }
 
     fn update_output_status_for_item(&mut self, item_id: &str, status: ToolBlockStatus) {
@@ -2935,8 +2943,44 @@ fn compact_output_text(text: String) -> Option<String> {
     if text.is_empty() {
         None
     } else {
-        Some(text.to_string())
+        Some(compact_output_for_transcript(text.to_string()))
     }
+}
+
+fn compact_output_for_transcript(text: String) -> String {
+    let was_compacted = text.starts_with(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX);
+    let source = if was_compacted {
+        &text[TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX.len()..]
+    } else {
+        text.as_str()
+    };
+    let needs_compaction = source.chars().count() > MAX_TRANSCRIPT_OUTPUT_CHARS
+        || source.split(['\n', '\r']).count() > MAX_TRANSCRIPT_OUTPUT_LINES;
+    if !needs_compaction {
+        return text;
+    }
+
+    let normalized = source.replace('\r', "\n");
+    let mut tail_lines = normalized
+        .lines()
+        .rev()
+        .take(MAX_TRANSCRIPT_OUTPUT_LINES)
+        .collect::<Vec<_>>();
+    tail_lines.reverse();
+    let mut compact = tail_lines.join("\n");
+    if compact.chars().count() > MAX_TRANSCRIPT_OUTPUT_CHARS {
+        let mut tail_chars = compact
+            .chars()
+            .rev()
+            .take(MAX_TRANSCRIPT_OUTPUT_CHARS)
+            .collect::<Vec<_>>();
+        tail_chars.reverse();
+        compact = tail_chars.into_iter().collect();
+    }
+    format!(
+        "{TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX}{}",
+        compact.trim_start_matches('\n')
+    )
 }
 
 fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
