@@ -44,6 +44,11 @@ use unicode_width::UnicodeWidthStr;
 
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
 const DASHBOARD_PANEL_GAP: u16 = 1;
+const HEADER_HEIGHT: u16 = 3;
+const INPUT_PANEL_MIN_HEIGHT: u16 = 6;
+const INPUT_PANEL_MAX_HEIGHT: u16 = 12;
+const PANE_CHROME_HEIGHT: u16 = 3;
+const TRANSCRIPT_MIN_HEIGHT: u16 = 5;
 const TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT: u16 = 2;
 const OUTPUT_BLOCK_INDENT: usize = 2;
 const OUTPUT_BLOCK_MAX_LINES: usize = 4;
@@ -81,13 +86,18 @@ impl ShellView<'_> {
             } else {
                 3
             };
+            let input_height = self.input_panel_height(
+                area.height
+                    .saturating_sub(HEADER_HEIGHT)
+                    .saturating_sub(dashboard_height),
+            );
             let main = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),
+                    Constraint::Length(HEADER_HEIGHT),
                     Constraint::Length(dashboard_height),
-                    Constraint::Min(5),
-                    Constraint::Length(6),
+                    Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
+                    Constraint::Length(input_height),
                 ])
                 .split(horizontal[0]);
             self.render_header(main[0], buf);
@@ -95,12 +105,13 @@ impl ShellView<'_> {
             self.render_transcript(main[2], buf);
             self.render_input(main[3], buf);
         } else {
+            let input_height = self.input_panel_height(area.height.saturating_sub(HEADER_HEIGHT));
             let main = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(3),
-                    Constraint::Min(5),
-                    Constraint::Length(6),
+                    Constraint::Length(HEADER_HEIGHT),
+                    Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
+                    Constraint::Length(input_height),
                 ])
                 .split(horizontal[0]);
             self.render_header(main[0], buf);
@@ -240,17 +251,40 @@ impl ShellView<'_> {
         } else {
             format!("Composer ready {}:{}", line + 1, column + 1)
         };
-        self.render_titled_panel(
-            area,
-            &title,
-            composer_lines(
-                self.shell.composer.text(),
-                self.shell.composer.cursor(),
-                self.shell.composer.is_empty(),
-            ),
-            MOCHA_SURFACE0,
-            buf,
+        let visible_height = usize::from(body_rect_after_title(pane_content_rect(area)).height);
+        let mut lines = composer_lines(
+            self.shell.composer.text(),
+            self.shell.composer.cursor(),
+            self.shell.composer.is_empty(),
         );
+        if visible_height > 0 && lines.len() > visible_height {
+            let max_start = lines.len().saturating_sub(visible_height);
+            let start = line
+                .saturating_add(1)
+                .saturating_sub(visible_height)
+                .min(max_start);
+            lines = lines.into_iter().skip(start).take(visible_height).collect();
+        }
+        self.render_titled_panel(area, &title, lines, MOCHA_SURFACE0, buf);
+    }
+
+    fn input_panel_height(&self, available_height: u16) -> u16 {
+        if self.shell.pending_approval.is_some()
+            || self.shell.pending_user_input.is_some()
+            || self.shell.pending_elicitation.is_some()
+        {
+            return available_height.min(INPUT_PANEL_MIN_HEIGHT);
+        }
+
+        let composer_line_count =
+            u16::try_from(self.shell.composer.text().split('\n').count()).unwrap_or(u16::MAX);
+        let desired_height = composer_line_count
+            .saturating_add(PANE_CHROME_HEIGHT)
+            .clamp(INPUT_PANEL_MIN_HEIGHT, INPUT_PANEL_MAX_HEIGHT);
+        let max_height = available_height
+            .saturating_sub(TRANSCRIPT_MIN_HEIGHT)
+            .max(available_height.min(INPUT_PANEL_MIN_HEIGHT));
+        desired_height.min(max_height)
     }
 
     fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
@@ -933,6 +967,9 @@ fn composer_line_spans(
 ) -> Vec<Span<'static>> {
     let mut spans = vec![prefix];
     if !(start..=end).contains(&cursor) {
+        if text.is_empty() {
+            return Vec::new();
+        }
         spans.push(text.to_string().into());
         return spans;
     }
@@ -950,7 +987,7 @@ fn composer_line_spans(
             spans.push(after[rest_start..].to_string().into());
         }
     } else {
-        spans.push(" ".to_string().reversed());
+        spans.push("▌".reversed());
     }
     spans
 }

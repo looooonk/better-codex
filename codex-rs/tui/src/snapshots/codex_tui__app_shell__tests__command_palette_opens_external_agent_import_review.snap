@@ -30,6 +30,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
                                                                        x Shell frame
                                                                        > Transcript model
  Composer ready 1:37
- > Summarize the new shell architecture                                Keys
+ > Summarize the new shell architecture▌                               Keys
                                                                        Enter send
                                                                        Ctrl+C/Esc exit

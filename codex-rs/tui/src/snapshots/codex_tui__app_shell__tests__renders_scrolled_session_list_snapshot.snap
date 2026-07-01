@@ -30,6 +30,6 @@ expression: rendered
                                                                        thinking
 
  Composer ready 1:37                                                   Plan
- > Summarize the new shell architecture                                Build the standalone shell
+ > Summarize the new shell architecture▌                               Build the standalone shell
                                                                        in slices.
                                                                        x Shell frame

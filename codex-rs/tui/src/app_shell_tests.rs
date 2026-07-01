@@ -98,6 +98,19 @@ fn renders_first_stage_shell_snapshot() {
 }
 
 #[test]
+fn renders_multiline_composer_growth_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell
+        .composer
+        .set_text("alpha\n\nbravo\n\ncharlie\n\ndelta");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn renders_native_session_list_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.session_list.focused = true;
@@ -1932,6 +1945,86 @@ fn composer_recalls_submission_history_from_draft() {
 
     composer.move_down_or_recall_history();
     assert_eq!(composer.text(), "draft");
+}
+
+#[tokio::test]
+async fn shift_enter_preserves_multiline_composer_when_typing() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.clear();
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("shift enter should insert a newline");
+    shell
+        .handle_key(key_char('a'), &config, &mut backend)
+        .await
+        .expect("typing after a newline should edit the second line");
+
+    assert_eq!(
+        (
+            shell.composer.text().to_string(),
+            shell.composer.cursor_position()
+        ),
+        ("\na".to_string(), (1, 1))
+    );
+
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let rendered = render_shell(&shell, area);
+
+    assert!(
+        rendered.contains("Composer ready 2:2"),
+        "composer should render the cursor on the second line"
+    );
+    assert!(
+        rendered.contains("  a"),
+        "composer should keep typed text on the second line"
+    );
+}
+
+#[tokio::test]
+async fn repeated_shift_enter_keeps_blank_line_cursor_visible() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.clear();
+
+    for _ in 0..8 {
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("shift enter should insert a newline");
+    }
+
+    assert_eq!(shell.composer.cursor_position(), (8, 0));
+
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let buf = render_shell_buffer(&shell, area);
+    let title_row = row_containing(&buf, area, "Composer ready 9:1")
+        .expect("composer should render the ninth logical line");
+    let cursor_row = (title_row.saturating_add(1)..area.bottom())
+        .find(|y| {
+            (area.x..area.right())
+                .any(|x| buf.cell((x, *y)).is_some_and(|cell| cell.symbol() == "▌"))
+        })
+        .expect("composer should render the cursor inside the input panel");
+
+    assert!(title_row <= 18, "composer panel should grow upward");
+    assert!(cursor_row > title_row);
 }
 
 #[test]

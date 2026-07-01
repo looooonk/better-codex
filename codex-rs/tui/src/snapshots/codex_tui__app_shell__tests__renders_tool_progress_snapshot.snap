@@ -26,6 +26,6 @@ expression: "render_shell(&shell, area)"
 
                                                                        Plan
  Composer ready 1:37                                                   Build the standalone shell
- > Summarize the new shell architecture                                in slices.
+ > Summarize the new shell architecture▌                               in slices.
                                                                        x Shell frame
                                                                        > Transcript model

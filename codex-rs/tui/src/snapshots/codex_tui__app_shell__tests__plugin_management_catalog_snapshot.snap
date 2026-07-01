@@ -34,6 +34,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
                                                                               profile managed
                                                                               files restricted, net
  Composer ready 1:37                                                          restricted
- > Summarize the new shell architecture
+ > Summarize the new shell architecture▌
                                                                               Keys
                                                                               Enter send

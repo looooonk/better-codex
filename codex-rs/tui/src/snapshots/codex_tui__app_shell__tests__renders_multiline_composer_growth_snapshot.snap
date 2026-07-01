@@ -1,0 +1,31 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+
+ Better Codex                                                          Navigation
+                                                                       1S  2W  3Set  4Help
+
+ Conversation                                                          Sessions
+ you: Create a divergent standalone TUI.                            ┃  ctrl+1 focus active 0 shown
+                                                                    ┃  loading sessions
+ codex: Started a fullscreen app shell backed by app-server turns.  ┃  r resume  f fork  a archi...
+ plan: 1. Build shell                                               ┃  / search  v archived  esc
+       2. Wire transcript                                           ┃
+       3. Render dashboard                                          ┃  Tools
+                                                                    ┃  in progress exec just tes...
+ ▌ tool exec just test -p codex-tui                                 ┃  completed file changes in...
+                                                                    ┃
+ ▌ edited 3 files +128 -24                                          ┃  Thread
+                                                                    ┃  stage-one
+ codex: The new shell owns the fullscreen surface.                  ┃  id 01900000-0000-7000-800...
+                                                                       resume, fork, archive,
+
+ Composer ready 7:6                                                    Status
+ > alpha                                                               thinking
+
+   bravo                                                               Plan
+                                                                       Build the standalone shell
+   charlie                                                             in slices.
+                                                                       x Shell frame
+   delta▌                                                              > Transcript model
