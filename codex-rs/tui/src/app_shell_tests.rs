@@ -55,7 +55,10 @@ use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::SkillMigration;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoal;
+use codex_app_server_protocol::ThreadGoalClearResponse;
 use codex_app_server_protocol::ThreadGoalClearedNotification;
+use codex_app_server_protocol::ThreadGoalGetResponse;
+use codex_app_server_protocol::ThreadGoalSetResponse;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
 use codex_app_server_protocol::ThreadListParams;
@@ -838,6 +841,129 @@ async fn clear_slash_command_resets_visible_transcript_without_submitting_turn()
 
     shell.composer.move_up_or_recall_history();
     assert_eq!(shell.composer.text(), "/clear");
+}
+
+#[tokio::test]
+async fn goal_slash_command_sets_and_shows_thread_goal() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("/goal Ship the standalone shell");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("goal set command should be handled locally");
+
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::GoalSet {
+            thread_id: shell.thread_id,
+            objective: Some("Ship the standalone shell".to_string()),
+            status: Some(ThreadGoalStatus::Active),
+            token_budget: None,
+        }]
+    );
+    assert_eq!(
+        shell.active_goal,
+        Some(ThreadGoal {
+            token_budget: None,
+            ..test_thread_goal(
+                &shell.thread_id,
+                ThreadGoalStatus::Active,
+                "Ship the standalone shell"
+            )
+        })
+    );
+    assert_eq!(shell.composer.text(), "");
+
+    shell.composer.set_text("/goal");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("goal show command should be handled locally");
+
+    assert!(backend.calls().contains(&RecordedBackendCall::GoalGet {
+        thread_id: shell.thread_id,
+    }));
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Status
+            && line
+                .text
+                .contains("goal active. Objective: Ship the standalone shell")
+    }));
+    assert!(
+        !backend
+            .calls()
+            .iter()
+            .any(|call| matches!(call, RecordedBackendCall::TurnStart { .. })),
+        "goal slash commands should not submit turns"
+    );
+
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[tokio::test]
+async fn goal_slash_command_pauses_resumes_and_clears_thread_goal() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    *backend.active_goal.lock().expect("goal should lock") = Some(test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::Active,
+        "Keep iterating",
+    ));
+
+    for command in ["/goal pause", "/goal resume", "/goal clear"] {
+        shell.composer.set_text(command);
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .unwrap_or_else(|err| panic!("{command} should be handled locally: {err}"));
+    }
+
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::GoalSet {
+                thread_id: shell.thread_id,
+                objective: None,
+                status: Some(ThreadGoalStatus::Paused),
+                token_budget: None,
+            },
+            RecordedBackendCall::GoalSet {
+                thread_id: shell.thread_id,
+                objective: None,
+                status: Some(ThreadGoalStatus::Active),
+                token_budget: None,
+            },
+            RecordedBackendCall::GoalClear {
+                thread_id: shell.thread_id,
+            },
+        ]
+    );
+    assert_eq!(shell.active_goal, None);
+    assert!(
+        shell
+            .transcript
+            .iter()
+            .any(|line| line.kind == TranscriptKind::Status && line.text == "goal cleared")
+    );
 }
 
 #[test]
@@ -3612,6 +3738,7 @@ struct RecordingBackend {
     plugin_install_response: Arc<Mutex<PluginInstallResponse>>,
     external_agent_items: Arc<Mutex<Vec<ExternalAgentConfigMigrationItem>>>,
     external_agent_import_in_progress: Arc<Mutex<bool>>,
+    active_goal: Arc<Mutex<Option<ThreadGoal>>>,
     remote_workspace: bool,
     embedded_app_server: bool,
 }
@@ -3629,6 +3756,7 @@ impl Default for RecordingBackend {
             })),
             external_agent_items: Arc::new(Mutex::new(Vec::new())),
             external_agent_import_in_progress: Arc::new(Mutex::new(false)),
+            active_goal: Arc::new(Mutex::new(None)),
             remote_workspace: false,
             embedded_app_server: true,
         }
@@ -3699,6 +3827,18 @@ enum RecordedBackendCall {
     SetName {
         thread_id: codex_protocol::ThreadId,
         name: String,
+    },
+    GoalGet {
+        thread_id: codex_protocol::ThreadId,
+    },
+    GoalSet {
+        thread_id: codex_protocol::ThreadId,
+        objective: Option<String>,
+        status: Option<ThreadGoalStatus>,
+        token_budget: Option<Option<i64>>,
+    },
+    GoalClear {
+        thread_id: codex_protocol::ThreadId,
     },
     ConfigWrite(Vec<(String, serde_json::Value)>),
     ThreadSettingsUpdate {
@@ -3867,6 +4007,66 @@ impl backend::AppShellBackend for RecordingBackend {
     ) -> color_eyre::Result<()> {
         self.push(RecordedBackendCall::SetName { thread_id, name });
         Ok(())
+    }
+
+    async fn thread_goal_get(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> color_eyre::Result<ThreadGoalGetResponse> {
+        self.push(RecordedBackendCall::GoalGet { thread_id });
+        Ok(ThreadGoalGetResponse {
+            goal: self.active_goal.lock().expect("goal should lock").clone(),
+        })
+    }
+
+    async fn thread_goal_set(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+        objective: Option<String>,
+        status: Option<ThreadGoalStatus>,
+        token_budget: Option<Option<i64>>,
+    ) -> color_eyre::Result<ThreadGoalSetResponse> {
+        self.push(RecordedBackendCall::GoalSet {
+            thread_id,
+            objective: objective.clone(),
+            status,
+            token_budget,
+        });
+
+        let mut goal = self.active_goal.lock().expect("goal should lock");
+        let existing = goal.clone();
+        let Some(objective) =
+            objective.or_else(|| existing.as_ref().map(|goal| goal.objective.clone()))
+        else {
+            return Err(color_eyre::eyre::eyre!("no goal is currently set"));
+        };
+        let status = status
+            .or_else(|| existing.as_ref().map(|goal| goal.status))
+            .unwrap_or(ThreadGoalStatus::Active);
+        let mut updated = test_thread_goal(&thread_id, status, &objective);
+        updated.token_budget =
+            token_budget.unwrap_or_else(|| existing.as_ref().and_then(|goal| goal.token_budget));
+        if let Some(existing) = existing {
+            updated.tokens_used = existing.tokens_used;
+            updated.time_used_seconds = existing.time_used_seconds;
+            updated.created_at = existing.created_at;
+        }
+        *goal = Some(updated.clone());
+        Ok(ThreadGoalSetResponse { goal: updated })
+    }
+
+    async fn thread_goal_clear(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> color_eyre::Result<ThreadGoalClearResponse> {
+        self.push(RecordedBackendCall::GoalClear { thread_id });
+        let cleared = self
+            .active_goal
+            .lock()
+            .expect("goal should lock")
+            .take()
+            .is_some();
+        Ok(ThreadGoalClearResponse { cleared })
     }
 
     async fn write_config(

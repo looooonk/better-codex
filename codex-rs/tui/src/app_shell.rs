@@ -10,6 +10,9 @@ use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::app_server_session::app_server_rate_limit_snapshots;
 use crate::clipboard_copy::ClipboardLease;
+use crate::goal_display::GOAL_USAGE;
+use crate::goal_display::goal_status_label;
+use crate::goal_display::goal_usage_summary;
 use crate::key_hint;
 use crate::legacy_core::config::Config;
 use crate::resume_picker::SessionSelection;
@@ -27,6 +30,7 @@ use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::PluginListResponse;
 use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::ThreadGoal;
+use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnPlanStep;
@@ -321,16 +325,45 @@ enum ToolBlockStatus {
     Fail,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum LocalSlashCommand {
     Clear,
+    Goal(GoalSlashCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GoalSlashCommand {
+    Show,
+    Set(String),
+    Clear,
+    Pause,
+    Resume,
+    Edit,
 }
 
 impl LocalSlashCommand {
     fn parse(text: &str) -> Option<Self> {
-        match text.trim() {
-            "/clear" => Some(Self::Clear),
+        let trimmed = text.trim();
+        let mut parts = trimmed.splitn(2, char::is_whitespace);
+        let command = parts.next()?;
+        let args = parts.next().unwrap_or("").trim();
+        match command {
+            "/clear" if args.is_empty() => Some(Self::Clear),
+            "/goal" => Some(Self::Goal(GoalSlashCommand::parse(args))),
             _ => None,
+        }
+    }
+}
+
+impl GoalSlashCommand {
+    fn parse(args: &str) -> Self {
+        match args {
+            "" => Self::Show,
+            "clear" => Self::Clear,
+            "pause" => Self::Pause,
+            "resume" => Self::Resume,
+            "edit" => Self::Edit,
+            objective => Self::Set(objective.to_string()),
         }
     }
 }
@@ -667,7 +700,8 @@ impl ShellState {
                     let prompt = self.composer.submission_text();
                     if !prompt.is_empty() {
                         if let Some(command) = LocalSlashCommand::parse(&prompt) {
-                            self.run_local_slash_command(command, prompt);
+                            self.run_local_slash_command(command, prompt, app_server)
+                                .await?;
                         } else if self.active_turn_id.is_some() {
                             self.steer_active_turn(app_server, prompt).await?;
                         } else {
@@ -1512,11 +1546,131 @@ impl ShellState {
         self.push_system("visible transcript cleared");
     }
 
-    fn run_local_slash_command(&mut self, command: LocalSlashCommand, prompt: String) {
+    async fn run_local_slash_command<S>(
+        &mut self,
+        command: LocalSlashCommand,
+        prompt: String,
+        app_server: &mut S,
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
         self.composer.remember_submission(&prompt);
         self.composer.clear();
         match command {
             LocalSlashCommand::Clear => self.clear_visible_transcript(),
+            LocalSlashCommand::Goal(command) => {
+                self.run_goal_slash_command(command, app_server).await
+            }
+        }
+        Ok(())
+    }
+
+    async fn run_goal_slash_command<S>(&mut self, command: GoalSlashCommand, app_server: &mut S)
+    where
+        S: AppShellBackend,
+    {
+        match command {
+            GoalSlashCommand::Show => self.show_goal_status(app_server).await,
+            GoalSlashCommand::Set(objective) => {
+                self.set_goal_objective(app_server, objective).await
+            }
+            GoalSlashCommand::Clear => self.clear_goal(app_server).await,
+            GoalSlashCommand::Pause => {
+                self.update_goal_status(app_server, ThreadGoalStatus::Paused, "paused")
+                    .await;
+            }
+            GoalSlashCommand::Resume => {
+                self.update_goal_status(app_server, ThreadGoalStatus::Active, "resumed")
+                    .await;
+            }
+            GoalSlashCommand::Edit => {
+                self.push_status("use /goal <objective> to edit the current goal objective");
+            }
+        }
+    }
+
+    async fn show_goal_status<S>(&mut self, app_server: &mut S)
+    where
+        S: AppShellBackend,
+    {
+        match app_server.thread_goal_get(self.thread_id).await {
+            Ok(response) => {
+                self.active_goal = response.goal;
+                match &self.active_goal {
+                    Some(goal) => self.push_status(format!(
+                        "goal {}. {}",
+                        goal_status_label(goal.status),
+                        goal_usage_summary(goal)
+                    )),
+                    None => self.push_status(format!("no goal is currently set. {GOAL_USAGE}")),
+                }
+            }
+            Err(err) => self.push_error(format!("failed to read goal: {err}")),
+        }
+    }
+
+    async fn set_goal_objective<S>(&mut self, app_server: &mut S, objective: String)
+    where
+        S: AppShellBackend,
+    {
+        match app_server
+            .thread_goal_set(
+                self.thread_id,
+                Some(objective),
+                Some(ThreadGoalStatus::Active),
+                /*token_budget*/ None,
+            )
+            .await
+        {
+            Ok(response) => {
+                let objective = response.goal.objective.clone();
+                self.active_goal = Some(response.goal);
+                self.push_status(format!("goal set: {objective}"));
+            }
+            Err(err) => self.push_error(format!("failed to set goal: {err}")),
+        }
+    }
+
+    async fn clear_goal<S>(&mut self, app_server: &mut S)
+    where
+        S: AppShellBackend,
+    {
+        match app_server.thread_goal_clear(self.thread_id).await {
+            Ok(response) => {
+                self.active_goal = None;
+                if response.cleared {
+                    self.push_status("goal cleared");
+                } else {
+                    self.push_status("no goal is currently set");
+                }
+            }
+            Err(err) => self.push_error(format!("failed to clear goal: {err}")),
+        }
+    }
+
+    async fn update_goal_status<S>(
+        &mut self,
+        app_server: &mut S,
+        status: ThreadGoalStatus,
+        action: &str,
+    ) where
+        S: AppShellBackend,
+    {
+        match app_server
+            .thread_goal_set(
+                self.thread_id,
+                /*objective*/ None,
+                Some(status),
+                /*token_budget*/ None,
+            )
+            .await
+        {
+            Ok(response) => {
+                self.active_goal = Some(response.goal);
+                self.push_status(format!("goal {action}"));
+            }
+            Err(err) => self.push_error(format!("failed to update goal: {err}")),
         }
     }
 

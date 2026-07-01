@@ -26,6 +26,10 @@ use codex_app_server_protocol::PluginUninstallParams;
 use codex_app_server_protocol::PluginUninstallResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::Thread;
+use codex_app_server_protocol::ThreadGoalClearResponse;
+use codex_app_server_protocol::ThreadGoalGetResponse;
+use codex_app_server_protocol::ThreadGoalSetResponse;
+use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
@@ -92,6 +96,24 @@ pub(super) trait AppShellBackend {
         thread_id: ThreadId,
         name: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn thread_goal_get(
+        &mut self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<ThreadGoalGetResponse>> + Send;
+
+    fn thread_goal_set(
+        &mut self,
+        thread_id: ThreadId,
+        objective: Option<String>,
+        status: Option<ThreadGoalStatus>,
+        token_budget: Option<Option<i64>>,
+    ) -> impl std::future::Future<Output = Result<ThreadGoalSetResponse>> + Send;
+
+    fn thread_goal_clear(
+        &mut self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<ThreadGoalClearResponse>> + Send;
 
     fn write_config(
         &mut self,
@@ -270,6 +292,24 @@ impl AppShellBackend for AppServerSession {
 
     async fn thread_set_name(&mut self, thread_id: ThreadId, name: String) -> Result<()> {
         AppServerSession::thread_set_name(self, thread_id, name).await
+    }
+
+    async fn thread_goal_get(&mut self, thread_id: ThreadId) -> Result<ThreadGoalGetResponse> {
+        AppServerSession::thread_goal_get(self, thread_id).await
+    }
+
+    async fn thread_goal_set(
+        &mut self,
+        thread_id: ThreadId,
+        objective: Option<String>,
+        status: Option<ThreadGoalStatus>,
+        token_budget: Option<Option<i64>>,
+    ) -> Result<ThreadGoalSetResponse> {
+        AppServerSession::thread_goal_set(self, thread_id, objective, status, token_budget).await
+    }
+
+    async fn thread_goal_clear(&mut self, thread_id: ThreadId) -> Result<ThreadGoalClearResponse> {
+        AppServerSession::thread_goal_clear(self, thread_id).await
     }
 
     async fn write_config(&mut self, edits: Vec<ConfigEdit>) -> Result<ConfigWriteResponse> {
