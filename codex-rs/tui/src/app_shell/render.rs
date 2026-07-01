@@ -26,10 +26,12 @@ use crate::terminal_hyperlinks::prefix_hyperlink_lines;
 use crate::terminal_hyperlinks::visible_lines;
 use crate::text_formatting::truncate_text;
 use crate::tui;
+use crossterm::cursor::SetCursorStyle;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Constraint;
 use ratatui::layout::Direction;
 use ratatui::layout::Layout;
+use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
@@ -56,7 +58,13 @@ const OUTPUT_BLOCK_MAX_LINES: usize = 4;
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
     let height = tui.terminal.size()?.height;
     tui.draw(height, |frame| {
-        ShellView { shell }.render(frame.area(), frame.buffer);
+        let view = ShellView { shell };
+        let area = frame.area();
+        view.render(area, frame.buffer);
+        if let Some(position) = view.cursor_position(area) {
+            frame.set_cursor_style(SetCursorStyle::SteadyBar);
+            frame.set_cursor_position(position);
+        }
     })
 }
 
@@ -67,57 +75,15 @@ pub(super) struct ShellView<'a> {
 impl ShellView<'_> {
     pub(super) fn render(&self, area: Rect, buf: &mut Buffer) {
         fill_rect(buf, area, MOCHA_BASE);
-        let dashboard_collapsed = area.width < DASHBOARD_COLLAPSE_WIDTH;
-        let horizontal = if dashboard_collapsed {
-            vec![area].into()
-        } else {
-            Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
-                .split(area)
-        };
-        if dashboard_collapsed {
-            let dashboard_height = if area.height >= 30 {
-                9
-            } else if area.height >= 24 {
-                7
-            } else if area.height >= 18 {
-                5
-            } else {
-                3
-            };
-            let input_height = self.input_panel_height(
-                area.height
-                    .saturating_sub(HEADER_HEIGHT)
-                    .saturating_sub(dashboard_height),
-            );
-            let main = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(HEADER_HEIGHT),
-                    Constraint::Length(dashboard_height),
-                    Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
-                    Constraint::Length(input_height),
-                ])
-                .split(horizontal[0]);
-            self.render_header(main[0], buf);
-            self.render_collapsed_dashboard(main[1], buf);
-            self.render_transcript(main[2], buf);
-            self.render_input(main[3], buf);
-        } else {
-            let input_height = self.input_panel_height(area.height.saturating_sub(HEADER_HEIGHT));
-            let main = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(HEADER_HEIGHT),
-                    Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
-                    Constraint::Length(input_height),
-                ])
-                .split(horizontal[0]);
-            self.render_header(main[0], buf);
-            self.render_transcript(main[1], buf);
-            self.render_input(main[2], buf);
-            self.render_dashboard(horizontal[1], buf);
+        let layout = self.layout(area);
+        self.render_header(layout.header, buf);
+        if let Some(collapsed_dashboard) = layout.collapsed_dashboard {
+            self.render_collapsed_dashboard(collapsed_dashboard, buf);
+        }
+        self.render_transcript(layout.transcript, buf);
+        self.render_input(layout.input, buf);
+        if let Some(dashboard) = layout.dashboard {
+            self.render_dashboard(dashboard, buf);
         }
         if let Some(pending) = &self.shell.pending_external_agent_import {
             let lines = pending.lines();
@@ -147,6 +113,86 @@ impl ShellView<'_> {
             self.render_titled_panel(panel_area, "Plugins", lines, MOCHA_SURFACE0, buf);
         }
         self.render_command_palette(area, buf);
+    }
+
+    pub(super) fn cursor_position(&self, area: Rect) -> Option<Position> {
+        if self.shell.command_palette.is_some()
+            || self.shell.pending_approval.is_some()
+            || self.shell.pending_elicitation.is_some()
+            || self.shell.pending_external_agent_import.is_some()
+            || self.shell.pending_mcp_management.is_some()
+            || self.shell.pending_plugin_management.is_some()
+            || self.shell.pending_user_input.is_some()
+        {
+            return None;
+        }
+
+        composer_cursor_position(
+            self.input_area(area),
+            self.shell.composer.text(),
+            self.shell.composer.cursor(),
+            self.shell.composer.is_empty(),
+        )
+    }
+
+    pub(super) fn input_area(&self, area: Rect) -> Rect {
+        self.layout(area).input
+    }
+
+    fn layout(&self, area: Rect) -> ShellLayout {
+        if area.width < DASHBOARD_COLLAPSE_WIDTH {
+            let dashboard_height = if area.height >= 30 {
+                9
+            } else if area.height >= 24 {
+                7
+            } else if area.height >= 18 {
+                5
+            } else {
+                3
+            };
+            let input_height = self.input_panel_height(
+                area.height
+                    .saturating_sub(HEADER_HEIGHT)
+                    .saturating_sub(dashboard_height),
+            );
+            let main = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(HEADER_HEIGHT),
+                    Constraint::Length(dashboard_height),
+                    Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
+                    Constraint::Length(input_height),
+                ])
+                .split(area);
+            return ShellLayout {
+                header: main[0],
+                collapsed_dashboard: Some(main[1]),
+                transcript: main[2],
+                input: main[3],
+                dashboard: None,
+            };
+        }
+
+        let horizontal = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+            .split(area);
+        let input_height = self.input_panel_height(area.height.saturating_sub(HEADER_HEIGHT));
+        let main = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Length(HEADER_HEIGHT),
+                Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
+                Constraint::Length(input_height),
+            ])
+            .split(horizontal[0]);
+        ShellLayout {
+            header: main[0],
+            collapsed_dashboard: None,
+            transcript: main[1],
+            input: main[2],
+            dashboard: Some(horizontal[1]),
+        }
     }
 
     fn render_header(&self, area: Rect, buf: &mut Buffer) {
@@ -252,11 +298,7 @@ impl ShellView<'_> {
             format!("Composer ready {}:{}", line + 1, column + 1)
         };
         let visible_height = usize::from(body_rect_after_title(pane_content_rect(area)).height);
-        let mut lines = composer_lines(
-            self.shell.composer.text(),
-            self.shell.composer.cursor(),
-            self.shell.composer.is_empty(),
-        );
+        let mut lines = composer_lines(self.shell.composer.text(), self.shell.composer.is_empty());
         if visible_height > 0 && lines.len() > visible_height {
             let max_start = lines.len().saturating_sub(visible_height);
             let start = line
@@ -457,6 +499,15 @@ impl ShellView<'_> {
             .wrap(Wrap { trim: true })
             .render(content, buf);
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ShellLayout {
+    header: Rect,
+    collapsed_dashboard: Option<Rect>,
+    transcript: Rect,
+    input: Rect,
+    dashboard: Option<Rect>,
 }
 
 fn collect_transcript_lines(
@@ -842,7 +893,7 @@ impl LineStyle {
     }
 }
 
-fn composer_lines(text: &str, cursor: usize, is_empty: bool) -> Vec<Line<'static>> {
+fn composer_lines(text: &str, is_empty: bool) -> Vec<Line<'static>> {
     if is_empty {
         return vec![Line::from(vec![
             "> ".cyan(),
@@ -851,18 +902,14 @@ fn composer_lines(text: &str, cursor: usize, is_empty: bool) -> Vec<Line<'static
     }
 
     let mut lines = Vec::new();
-    let mut offset = 0usize;
     for (index, logical_line) in text.split('\n').enumerate() {
-        let end = offset + logical_line.len();
+        if logical_line.is_empty() {
+            lines.push(Line::default());
+            continue;
+        }
+
         let prefix = if index == 0 { "> ".cyan() } else { "  ".dim() };
-        lines.push(Line::from(composer_line_spans(
-            prefix,
-            logical_line,
-            cursor,
-            offset,
-            end,
-        )));
-        offset = end + 1;
+        lines.push(Line::from(vec![prefix, logical_line.to_string().into()]));
     }
     lines
 }
@@ -958,36 +1005,55 @@ fn elicitation_lines(pending: &super::PendingElicitation) -> Vec<Line<'static>> 
     ]
 }
 
-fn composer_line_spans(
-    prefix: Span<'static>,
+fn composer_cursor_position(
+    input_area: Rect,
     text: &str,
     cursor: usize,
-    start: usize,
-    end: usize,
-) -> Vec<Span<'static>> {
-    let mut spans = vec![prefix];
-    if !(start..=end).contains(&cursor) {
-        if text.is_empty() {
-            return Vec::new();
-        }
-        spans.push(text.to_string().into());
-        return spans;
+    is_empty: bool,
+) -> Option<Position> {
+    let body = body_rect_after_title(pane_content_rect(input_area));
+    if body.width == 0 || body.height == 0 {
+        return None;
     }
 
-    let cursor_offset = cursor.saturating_sub(start);
-    let before = &text[..cursor_offset.min(text.len())];
-    let after = &text[cursor_offset.min(text.len())..];
-    if !before.is_empty() {
-        spans.push(before.to_string().into());
-    }
-    if let Some(ch) = after.chars().next() {
-        spans.push(ch.to_string().reversed());
-        let rest_start = ch.len_utf8();
-        if rest_start < after.len() {
-            spans.push(after[rest_start..].to_string().into());
-        }
+    let cursor = cursor.min(text.len());
+    let line_start = text[..cursor]
+        .rfind('\n')
+        .map(|index| index + 1)
+        .unwrap_or(0);
+    let logical_line = text[..line_start].chars().filter(|ch| *ch == '\n').count();
+    let line_count = if is_empty {
+        1
     } else {
-        spans.push("▌".reversed());
+        text.split('\n').count()
+    };
+    let visible_height = usize::from(body.height);
+    let visible_start = if line_count > visible_height {
+        logical_line
+            .saturating_add(1)
+            .saturating_sub(visible_height)
+            .min(line_count.saturating_sub(visible_height))
+    } else {
+        0
+    };
+    let y = logical_line.checked_sub(visible_start)?;
+    if y >= visible_height {
+        return None;
     }
-    spans
+
+    let before_cursor = &text[line_start..cursor];
+    let unwrapped_column = 2usize.saturating_add(UnicodeWidthStr::width(before_cursor));
+    let body_width = usize::from(body.width).max(1);
+    let wrapped_y = y.saturating_add(unwrapped_column / body_width);
+    if wrapped_y >= visible_height {
+        return None;
+    }
+    let x = unwrapped_column % body_width;
+
+    Some(Position {
+        x: body.x.saturating_add(u16::try_from(x).unwrap_or(u16::MAX)),
+        y: body
+            .y
+            .saturating_add(u16::try_from(wrapped_y).unwrap_or(u16::MAX)),
+    })
 }

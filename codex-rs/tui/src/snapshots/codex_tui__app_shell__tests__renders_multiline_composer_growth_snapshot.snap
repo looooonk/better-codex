@@ -28,4 +28,4 @@ expression: "render_shell(&shell, area)"
                                                                        Build the standalone shell
    charlie                                                             in slices.
                                                                        x Shell frame
-   delta▌                                                              > Transcript model
+   delta                                                               > Transcript model

@@ -113,5 +113,5 @@ Agents may continuously work through this plan until every unchecked item is com
 
 - [x] Add support for /goal (or some way of running goal related commands) if not already implemented.
 - [x] Fix user input completely freezing when conversation grows even a little long or when long tool calls (like rust compiles) happens.
-- [ ] Remove cursor not being exactly next to the user typed text.
+- [x] Remove cursor not being exactly next to the user typed text.
 - [x] Fix "diff" boxes rendering multiple times when files are edited (especially in sequence). Diff boxes should show once every time a file edit happens, and the total diff should not be shown in the conversation log.

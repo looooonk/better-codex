@@ -2380,6 +2380,18 @@ async fn shift_enter_preserves_multiline_composer_when_typing() {
         rendered.contains("  a"),
         "composer should keep typed text on the second line"
     );
+    let view = ShellView { shell: &shell };
+    let buf = render_shell_buffer(&shell, area);
+    let input_area = view.input_area(area);
+    let row = row_containing(&buf, input_area, "  a").expect("typed text row should render");
+    let text_x =
+        row_needle_x(&buf, input_area, row, "a").expect("typed text should have x position");
+    let cursor = view
+        .cursor_position(area)
+        .expect("composer cursor should be visible");
+
+    assert_eq!(cursor.y, row);
+    assert_eq!(cursor.x, text_x + 1);
 }
 
 #[tokio::test]
@@ -2405,18 +2417,41 @@ async fn repeated_shift_enter_keeps_blank_line_cursor_visible() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
+    let view = ShellView { shell: &shell };
     let buf = render_shell_buffer(&shell, area);
-    let title_row = row_containing(&buf, area, "Composer ready 9:1")
+    let input_area = view.input_area(area);
+    let title_row = row_containing(&buf, input_area, "Composer ready 9:1")
         .expect("composer should render the ninth logical line");
-    let cursor_row = (title_row.saturating_add(1)..area.bottom())
-        .find(|y| {
-            (area.x..area.right())
-                .any(|x| buf.cell((x, *y)).is_some_and(|cell| cell.symbol() == "▌"))
-        })
-        .expect("composer should render the cursor inside the input panel");
+    let cursor = view
+        .cursor_position(area)
+        .expect("composer cursor should be visible");
 
     assert!(title_row <= 18, "composer panel should grow upward");
-    assert!(cursor_row > title_row);
+    assert!(cursor.y > title_row);
+    assert_eq!(cursor.x, 3);
+}
+
+#[test]
+fn composer_cursor_position_tracks_text_end_without_synthetic_glyph() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.set_text("alpha\nbeta");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let view = ShellView { shell: &shell };
+    let buf = render_shell_buffer(&shell, area);
+    let input_area = view.input_area(area);
+    let row =
+        row_containing(&buf, input_area, "  beta").expect("second composer row should render");
+    let text_x =
+        row_needle_x(&buf, input_area, row, "beta").expect("typed text should have x position");
+    let cursor = view
+        .cursor_position(area)
+        .expect("composer cursor should be visible");
+
+    assert_eq!(cursor.y, row);
+    assert_eq!(cursor.x, text_x + 4);
+    assert!(!buffer_contents(&buf, area).contains("beta▌"));
 }
 
 #[test]
@@ -2681,6 +2716,17 @@ fn row_containing(buf: &Buffer, area: Rect, needle: &str) -> Option<u16> {
         }
     }
     None
+}
+
+fn row_needle_x(buf: &Buffer, area: Rect, y: u16, needle: &str) -> Option<u16> {
+    let mut row = String::new();
+    for x in area.x..area.right() {
+        if let Some(cell) = buf.cell((x, y)) {
+            row.push_str(cell.symbol());
+        }
+    }
+    row.find(needle)
+        .and_then(|offset| area.x.checked_add(u16::try_from(offset).ok()?))
 }
 
 fn assert_adjacent_rows(rendered: &str, first: &str, second: &str) {

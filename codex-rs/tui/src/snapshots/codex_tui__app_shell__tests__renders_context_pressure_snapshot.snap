@@ -26,6 +26,6 @@ expression: "render_shell(&shell, area)"
                                                                        Integrations
                                                                        mcp not loaded
  Composer ready 1:37                                                   plugins not loaded
- > Summarize the new shell architecture▌
+ > Summarize the new shell architecture
                                                                        Workspace
                                                                        cwd /workspace/better-codex

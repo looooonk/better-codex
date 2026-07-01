@@ -26,5 +26,5 @@ expression: "render_shell(&shell, area)"
                                                                        Context 100% left
 
  Composer ready 1:37                                                   Integrations
- > Summarize the new shell architecture▌                               mcp not loaded
+ > Summarize the new shell architecture                                mcp not loaded
                                                                        plugins not loaded

@@ -40,6 +40,6 @@ expression: "render_shell(&shell, area)"
                                                                        cwd /workspace/better-codex
                                                                        profile managed
  Composer ready 1:37                                                   files restricted, net
- > Summarize the new shell architecture▌                               restricted
+ > Summarize the new shell architecture                                restricted
 
                                                                        Keys

@@ -30,6 +30,6 @@ expression: "render_shell(&shell, area)"
                                                                        plugins not loaded
 
  Composer ready 1:37                                                   Workspace
- > Summarize the new shell architecture▌                               cwd /workspace/better-codex
+ > Summarize the new shell architecture                                cwd /workspace/better-codex
                                                                        profile managed
                                                                        files restricted, net

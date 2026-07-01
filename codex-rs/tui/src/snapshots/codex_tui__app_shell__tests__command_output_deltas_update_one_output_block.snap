@@ -18,6 +18,6 @@ expression: "render_shell(&shell, area)"
                                                                        in progress exec cargo test
 
  Composer ready 1:37                                                   Thread
- > Summarize the new shell architecture▌                               stage-one
+ > Summarize the new shell architecture                                stage-one
                                                                        id 01900000-0000-7000-800...
                                                                        resume, fork, archive,

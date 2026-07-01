@@ -32,4 +32,4 @@ expression: "render_shell(&shell, area)"
                                                                        Ctrl+C/Esc exit
                                                                        Alt+Up select, Ctrl+O copy
  Composer ready 1:37
- > Summarize the new shell architecture▌
+ > Summarize the new shell architecture
