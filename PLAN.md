@@ -111,9 +111,7 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 
 Agents may continuously work through this plan until every unchecked item is complete. While an agent loop is running, the user may run the program and update this section with fixes, regressions, or feature requests discovered during live use. Treat these entries as user-supplied implementation tasks: triage them against the staged plan, keep them as checkboxes, and mark them complete only after the requested behavior has been implemented and verified.
 
-- [x] Add support for certain slash commands (e.g. /clear) in the chat log as well. Items like /model do not necessarily need support since you can select it from the dashboard, but items like /clear would be good to have.
-- [x] Dynamic output such as tqdm or pytest does not render properly, it looks like multiple output blocks instead of 1.
-- [x] SHIFT + ENTER does not properly work. The initial SHIFT + ENTER press adds two lines, but typing anything then snaps the cursor back to just one new line.
-- [x] Typing multiple new lines sequentially via repeating SHIFT + ENTER multiple times causes the cursor to go outside of the text box's view. The text box should probably increase.
-- [x] For diffs, make it a bit more clear that Codex is actually *editing* the files, maybe by replacing the word "diff" with "edited" etc.
 - [x] Add support for /goal (or some way of running goal related commands) if not already implemented.
+- [ ] Fix user input completely freezing when conversation grows even a little long or when long tool calls (like rust compiles) happens.
+- [ ] Remove cursor not being exactly next to the user typed text.
+- [ ] Fix "diff" boxes rendering multiple times when files are edited (especially in sequence). Diff boxes should show once every time a file edit happens, and the total diff should not be shown in the conversation log.
