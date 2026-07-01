@@ -1,12 +1,16 @@
 use super::render::ShellView;
 use super::render::TranscriptScrollbarMetrics;
 use super::*;
+use base64::Engine;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
 use codex_app_server_protocol::AppSummary;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
+use codex_app_server_protocol::CommandExecOutputDeltaNotification;
+use codex_app_server_protocol::CommandExecOutputStream;
+use codex_app_server_protocol::CommandExecutionOutputDeltaNotification;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::CommandExecutionSource;
 use codex_app_server_protocol::CommandExecutionStatus;
@@ -1709,6 +1713,120 @@ fn completed_tool_item_updates_existing_transcript_status() {
     assert_eq!(
         accent_color_for_row(&completed_buf, area, "exec cargo test"),
         Some(Color::Green)
+    );
+}
+
+#[test]
+fn command_output_deltas_update_one_output_block() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: thread_id.clone(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: command_execution_item("exec-1", CommandExecutionStatus::InProgress, None),
+    }));
+    for delta in ["pytest 40%\r", "pytest 80%\r", "pytest 100%\n"] {
+        shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+            CommandExecutionOutputDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+                item_id: "exec-1".to_string(),
+                delta: delta.to_string(),
+            },
+        ));
+    }
+
+    assert_eq!(
+        shell
+            .transcript
+            .iter()
+            .filter(|line| line.kind == TranscriptKind::Output)
+            .count(),
+        1
+    );
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, "exec cargo test")
+                .tool_status(ToolBlockStatus::Running)
+                .item_id("exec-1"),
+            TranscriptLine::new(
+                TranscriptKind::Output,
+                "pytest 40%\rpytest 80%\rpytest 100%\n"
+            )
+            .tool_status(ToolBlockStatus::Running)
+            .item_id("exec-1"),
+        ])
+    );
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+    insta::assert_snapshot!(render_shell(&shell, area));
+
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::CommandExecution {
+                id: "exec-1".to_string(),
+                command: "cargo test".to_string(),
+                cwd: LegacyAppPathString::from_abs_path(&test_absolute_path(
+                    "workspace/better-codex",
+                )),
+                process_id: None,
+                source: CommandExecutionSource::Agent,
+                status: CommandExecutionStatus::Completed,
+                command_actions: Vec::new(),
+                aggregated_output: Some("pytest 100%\n".to_string()),
+                exit_code: Some(0),
+                duration_ms: Some(42),
+            },
+        },
+    ));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, "exec cargo test exit 0 42ms")
+                .tool_status(ToolBlockStatus::Success)
+                .item_id("exec-1"),
+            TranscriptLine::new(TranscriptKind::Output, "pytest 100%")
+                .tool_status(ToolBlockStatus::Success)
+                .item_id("exec-1"),
+        ])
+    );
+}
+
+#[test]
+fn legacy_command_exec_output_deltas_update_one_output_block() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+
+    for output in ["tqdm 1/3\r", "tqdm 2/3\r", "tqdm 3/3\n"] {
+        shell.handle_notification(ServerNotification::CommandExecOutputDelta(
+            CommandExecOutputDeltaNotification {
+                process_id: "process-1".to_string(),
+                stream: CommandExecOutputStream::Stdout,
+                delta_base64: base64::engine::general_purpose::STANDARD.encode(output),
+                cap_reached: false,
+            },
+        ));
+    }
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::new(
+            TranscriptKind::Output,
+            "tqdm 1/3\rtqdm 2/3\rtqdm 3/3\n"
+        )
+        .tool_status(ToolBlockStatus::Running)
+        .item_id("command-exec:process-1")])
     );
 }
 

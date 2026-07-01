@@ -2136,9 +2136,11 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id, title, tool_status);
+                self.push_tool_with_status_for_item(id.clone(), title, tool_status);
                 if let Some(output) = aggregated_output.and_then(compact_output_text) {
-                    self.push_output_with_status(output, tool_status);
+                    self.push_output_with_status_for_item(id, output, tool_status);
+                } else {
+                    self.update_output_status_for_item(&id, tool_status);
                 }
             }
             ThreadItem::FileChange {
@@ -2359,6 +2361,50 @@ impl ShellState {
 
     fn push_output_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
         self.push_line(TranscriptLine::new(TranscriptKind::Output, text).tool_status(status));
+    }
+
+    fn push_output_with_status_for_item(
+        &mut self,
+        item_id: impl Into<String>,
+        text: impl Into<String>,
+        status: ToolBlockStatus,
+    ) {
+        self.upsert_line(
+            TranscriptLine::new(TranscriptKind::Output, text)
+                .tool_status(status)
+                .item_id(item_id),
+        );
+    }
+
+    fn push_output_delta_with_status_for_item(
+        &mut self,
+        item_id: impl Into<String>,
+        delta: impl Into<String>,
+        status: ToolBlockStatus,
+    ) {
+        let item_id = item_id.into();
+        let delta = delta.into();
+        if delta.trim().is_empty() {
+            return;
+        }
+
+        if let Some(existing) = self.transcript.iter_mut().find(|existing| {
+            existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(&item_id)
+        }) {
+            existing.text.push_str(&delta);
+            existing.tool_status = Some(status);
+            return;
+        }
+
+        self.push_output_with_status_for_item(item_id, delta, status);
+    }
+
+    fn update_output_status_for_item(&mut self, item_id: &str, status: ToolBlockStatus) {
+        if let Some(existing) = self.transcript.iter_mut().find(|existing| {
+            existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(item_id)
+        }) {
+            existing.tool_status = Some(status);
+        }
     }
 
     fn push_status(&mut self, text: impl Into<String>) {
