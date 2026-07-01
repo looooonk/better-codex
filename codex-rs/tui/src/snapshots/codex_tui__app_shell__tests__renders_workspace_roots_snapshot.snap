@@ -16,8 +16,8 @@ expression: "render_shell(&shell, area)"
        3. Render dashboard                                               /workspace/better-codex...
                                                                          /tmp/codex-cache
  ▌ tool exec just test -p codex-tui
-                                                                       Diff
- ▌ diff diff 3 files +128 -24                                          3 files +128 -24
+                                                                       Edits
+ ▌ edited 3 files +128 -24                                             3 files +128 -24
 
  codex: The new shell owns the fullscreen surface.                     Tools
                                                                        in progress exec just tes...

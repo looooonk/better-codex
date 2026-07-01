@@ -321,6 +321,20 @@ enum ToolBlockStatus {
     Fail,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalSlashCommand {
+    Clear,
+}
+
+impl LocalSlashCommand {
+    fn parse(text: &str) -> Option<Self> {
+        match text.trim() {
+            "/clear" => Some(Self::Clear),
+            _ => None,
+        }
+    }
+}
+
 impl TranscriptKind {
     fn label(self) -> &'static str {
         match self {
@@ -329,7 +343,7 @@ impl TranscriptKind {
             Self::Assistant => "codex",
             Self::Plan => "plan",
             Self::Tool => "tool",
-            Self::Diff => "diff",
+            Self::Diff => "edited",
             Self::Output => "output",
             Self::Status => "status",
             Self::Audit => "audit",
@@ -652,7 +666,9 @@ impl ShellState {
                 } else {
                     let prompt = self.composer.submission_text();
                     if !prompt.is_empty() {
-                        if self.active_turn_id.is_some() {
+                        if let Some(command) = LocalSlashCommand::parse(&prompt) {
+                            self.run_local_slash_command(command, prompt);
+                        } else if self.active_turn_id.is_some() {
                             self.steer_active_turn(app_server, prompt).await?;
                         } else {
                             self.submit_prompt(app_server, prompt).await?;
@@ -1494,6 +1510,14 @@ impl ShellState {
         self.transcript_scroll = 0;
         self.transcript_selection = None;
         self.push_system("visible transcript cleared");
+    }
+
+    fn run_local_slash_command(&mut self, command: LocalSlashCommand, prompt: String) {
+        self.composer.remember_submission(&prompt);
+        self.composer.clear();
+        match command {
+            LocalSlashCommand::Clear => self.clear_visible_transcript(),
+        }
     }
 
     fn move_transcript_selection_up(&mut self, rows: usize) {
@@ -2340,7 +2364,7 @@ impl ShellState {
         shell.push_assistant("Started a fullscreen app shell backed by app-server turns.");
         shell.push_plan("1. Build shell\n2. Wire transcript\n3. Render dashboard");
         shell.push_tool("exec just test -p codex-tui");
-        shell.push_diff("diff 3 files +128 -24");
+        shell.push_diff("3 files +128 -24");
         shell
     }
 }
@@ -2591,7 +2615,7 @@ fn tool_status_from_str(status: &str) -> ToolBlockStatus {
 fn file_change_summary(changes: &[FileUpdateChange]) -> String {
     let summary = diff_summary_from_changes(changes);
     format!(
-        "diff {} files +{} -{}",
+        "{} files +{} -{}",
         summary.files, summary.additions, summary.removals
     )
 }

@@ -297,7 +297,7 @@ impl ShellView<'_> {
             "Tokens",
             "Plan",
             "Workspace",
-            "Diff",
+            "Edits",
             "Rate Limits",
             "Keys",
         ] {

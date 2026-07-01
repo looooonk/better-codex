@@ -17,7 +17,7 @@ expression: "render_shell(&shell, area)"
                                                                        completed file changes in...
  ▌ tool exec just test -p codex-tui
                                                                        Thread
- ▌ diff diff 3 files +128 -24                                          stage-one
+ ▌ edited 3 files +128 -24                                             stage-one
                                                                        id 01900000-0000-7000-800...
  ▌ tool mcp progress: indexed 42 files                                 resume, fork, archive,
  ▌      preparing search results

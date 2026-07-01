@@ -8,7 +8,7 @@ expression: "render_shell(&shell, area)"
 
  Conversation                                                          Sessions
                                                                     │  ctrl+1 focus active 0 shown
- ▌ diff diff 3 files +128 -24                                       ┃  loading sessions
+ ▌ edited 3 files +128 -24                                          ┃  loading sessions
  status: first checkpoint                                           ┃  r resume  f fork  a archi...
  status: second checkpoint                                          │  / search  v archived  esc
 

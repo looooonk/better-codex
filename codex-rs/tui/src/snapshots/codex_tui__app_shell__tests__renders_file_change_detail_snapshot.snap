@@ -14,13 +14,13 @@ expression: "render_shell(&shell, area)"
                                                                     ┃
  ▌ tool exec just test -p codex-tui                                 ┃  Tools
                                                                     ┃  in progress exec just tes...
- ▌ diff diff 3 files +128 -24                                       ┃  completed file changes in...
+ ▌ edited 3 files +128 -24                                          ┃  completed file changes in...
                                                                     ┃
- ▌ diff diff 5 files +4 -3                                          ┃  Thread
- ▌        M src/app.rs                                              ┃  stage-one
- ▌        A src/new.rs                                              ┃  id 01900000-0000-7000-800...
- ▌        D src/old.rs                                              ┃  resume, fork, archive,
- ▌        R src/from.rs -> src/to.rs                                ┃
+ ▌ edited 5 files +4 -3                                             ┃  Thread
+ ▌          M src/app.rs                                            ┃  stage-one
+ ▌          A src/new.rs                                            ┃  id 01900000-0000-7000-800...
+ ▌          D src/old.rs                                            ┃  resume, fork, archive,
+ ▌          R src/from.rs -> src/to.rs                              ┃
                                                                     ┃  Status
  codex: The new shell owns the fullscreen surface.                  ┃  thinking
 

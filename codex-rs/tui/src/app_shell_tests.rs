@@ -791,6 +791,42 @@ fn command_palette_clear_resets_visible_transcript() {
     assert_eq!(shell.transcript_selection, None);
 }
 
+#[tokio::test]
+async fn clear_slash_command_resets_visible_transcript_without_submitting_turn() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.streaming_assistant = "streaming".to_string();
+    shell.streaming_plan = "plan".to_string();
+    shell.composer.set_text("/clear");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("clear command should be handled locally");
+
+    assert_eq!(
+        shell.transcript.iter().cloned().collect::<Vec<_>>(),
+        vec![TranscriptLine::new(
+            TranscriptKind::System,
+            "visible transcript cleared"
+        )]
+    );
+    assert_eq!(shell.streaming_assistant, "");
+    assert_eq!(shell.streaming_plan, "");
+    assert_eq!(shell.composer.text(), "");
+    assert_eq!(shell.transcript_scroll, 0);
+    assert_eq!(shell.transcript_selection, None);
+    assert_eq!(backend.calls(), Vec::new());
+
+    shell.composer.move_up_or_recall_history();
+    assert_eq!(shell.composer.text(), "/clear");
+}
+
 #[test]
 fn dashboard_route_key_mapping_covers_native_routes() {
     assert_eq!(
@@ -1047,7 +1083,7 @@ fn transcript_selection_moves_between_items() {
 
     assert_eq!(
         shell.selected_transcript_copy_text(),
-        Some((TranscriptKind::Diff, "diff 3 files +128 -24"))
+        Some((TranscriptKind::Diff, "3 files +128 -24"))
     );
 
     shell.move_transcript_selection_up(2);
@@ -2074,7 +2110,7 @@ fn file_change_detail_caps_file_rows() {
     assert_eq!(
         file_change_detail(&changes),
         "\
-diff 10 files +10 -0
+10 files +10 -0
   A src/file0.rs
   A src/file1.rs
   A src/file2.rs

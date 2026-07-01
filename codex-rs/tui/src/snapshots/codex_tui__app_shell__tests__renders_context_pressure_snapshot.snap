@@ -17,7 +17,7 @@ expression: "render_shell(&shell, area)"
                                                                        Model
  ▌ tool exec just test -p codex-tui                                    gpt-5-codex
 
- ▌ diff diff 3 files +128 -24                                          Tokens
+ ▌ edited 3 files +128 -24                                             Tokens
                                                                        total 190,000
  codex: The new shell owns the fullscreen surface.                     input 150,000
                                                                        output 40,000

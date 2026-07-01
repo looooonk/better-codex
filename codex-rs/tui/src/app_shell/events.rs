@@ -128,7 +128,7 @@ impl ShellState {
                     if let Some(summary) = &self.latest_diff {
                         self.push_diff_with_status(
                             format!(
-                                "diff {} files +{} -{}",
+                                "{} files +{} -{}",
                                 summary.files, summary.additions, summary.removals
                             ),
                             super::ToolBlockStatus::Running,

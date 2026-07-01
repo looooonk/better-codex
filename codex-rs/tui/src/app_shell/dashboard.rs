@@ -163,7 +163,7 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
     } else {
         vec![Line::from("no changes".dim())]
     };
-    panels.push(DashboardPanel::new("Diff", diff_lines));
+    panels.push(DashboardPanel::new("Edits", diff_lines));
 
     let mut plan_lines = Vec::new();
     if let Some(goal) = &shell.active_goal {
@@ -285,7 +285,7 @@ fn route_dashboard_panels(
             "Plan",
             "Keys",
         ],
-        DashboardRoute::Workspace => &["Navigation", "Workspace", "Diff", "Tools", "Keys"],
+        DashboardRoute::Workspace => &["Navigation", "Workspace", "Edits", "Tools", "Keys"],
         DashboardRoute::Settings => &[
             "Navigation",
             "Settings",
