@@ -18,10 +18,10 @@ expression: "render_shell(&shell, area)"
  ▌ tool exec just test -p codex-tui                                    gpt-5-codex
 
  ▌ edited 3 files +128 -24                                             Tokens
-                                                                       total 190,000
- codex: The new shell owns the fullscreen surface.                     input 150,000
-                                                                       output 40,000
-                                                                       Context 5% left
+                                                                       total 280,000
+ codex: The new shell owns the fullscreen surface.                     input 260,000
+                                                                       output 20,000
+                                                                       Context 26% left
 
                                                                        Integrations
                                                                        mcp not loaded

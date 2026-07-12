@@ -58,27 +58,32 @@ impl ShellState {
         match notification {
             ServerNotification::AgentMessageDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
+                    self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     self.streaming_assistant.push_str(&delta.delta);
                 }
             }
             ServerNotification::PlanDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
+                    self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     self.streaming_plan.push_str(&delta.delta);
                 }
             }
             ServerNotification::ReasoningSummaryTextDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
+                    self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     self.status = "reasoning".to_string();
                 }
             }
             ServerNotification::ReasoningTextDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
+                    self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     self.status = "reasoning".to_string();
                 }
             }
             ServerNotification::TurnStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
-                    self.active_turn_id = Some(started.turn.id);
+                    self.active_turn_id = Some(started.turn.id.clone());
+                    self.reset_safety_buffering_for_turn_start(&started.turn.id);
                     self.status = "thinking".to_string();
                 }
             }
@@ -86,6 +91,7 @@ impl ShellState {
                 if completed.thread_id == self.thread_id.to_string() {
                     self.finish_streaming_plan();
                     self.finish_streaming_assistant();
+                    self.clear_safety_buffering_for_turn_completion(&completed.turn.id);
                     self.active_turn_id = None;
                     self.workspace_status_refresh_due = true;
                     self.status = match completed.turn.status {
@@ -226,12 +232,16 @@ impl ShellState {
             }
             ServerNotification::Error(error) => {
                 if error.thread_id == self.thread_id.to_string() {
-                    self.status = if error.will_retry {
-                        "retrying".to_string()
-                    } else {
-                        "error".to_string()
-                    };
-                    self.push_error(error.error.message);
+                    let handled_safety_error =
+                        !error.will_retry && self.handle_safety_access_error(&error.error.message);
+                    if !handled_safety_error {
+                        self.status = if error.will_retry {
+                            "retrying".to_string()
+                        } else {
+                            "error".to_string()
+                        };
+                        self.push_error(error.error.message);
+                    }
                 }
             }
             ServerNotification::Warning(warning) => {
@@ -265,6 +275,9 @@ impl ShellState {
             ServerNotification::AccountRateLimitsUpdated(updated) => {
                 self.apply_rate_limit_update(updated.rate_limits);
             }
+            ServerNotification::ModelSafetyBufferingUpdated(updated) => {
+                self.on_model_safety_buffering_updated(updated);
+            }
             ServerNotification::ProcessOutputDelta(_)
             | ServerNotification::ProcessExited(_)
             | ServerNotification::FileChangeOutputDelta(_)
@@ -292,7 +305,6 @@ impl ShellState {
             | ServerNotification::ReasoningSummaryPartAdded(_)
             | ServerNotification::ContextCompacted(_)
             | ServerNotification::TurnModerationMetadata(_)
-            | ServerNotification::ModelSafetyBufferingUpdated(_)
             | ServerNotification::DeprecationNotice(_)
             | ServerNotification::FuzzyFileSearchSessionUpdated(_)
             | ServerNotification::FuzzyFileSearchSessionCompleted(_)
@@ -470,8 +482,8 @@ pub(super) fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) 
         codex_app_server_protocol::ThreadItem::SubAgentActivity {
             kind, agent_path, ..
         } => Some(format!("subagent {kind:?}: {agent_path}")),
-        codex_app_server_protocol::ThreadItem::WebSearch { query, .. } => {
-            Some(format!("web search: {query}"))
+        codex_app_server_protocol::ThreadItem::WebSearch(item) => {
+            Some(format!("web search: {}", item.query))
         }
         codex_app_server_protocol::ThreadItem::ImageView { path, .. } => {
             Some(format!("view image: {path}"))
@@ -479,7 +491,7 @@ pub(super) fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) 
         codex_app_server_protocol::ThreadItem::Sleep { duration_ms, .. } => {
             Some(format!("sleep {duration_ms}ms"))
         }
-        codex_app_server_protocol::ThreadItem::ImageGeneration { .. } => {
+        codex_app_server_protocol::ThreadItem::ImageGeneration(_) => {
             Some("image generation".to_string())
         }
     }

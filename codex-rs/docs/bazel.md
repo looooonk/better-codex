@@ -76,10 +76,12 @@ configurations.
 
 ### All remote configurations
 
-This fork does not carry the upstream GitHub Actions Bazel wrapper. Run Bazel
-directly for local builds, tests, lockfile checks, and target discovery.
-Loading-phase target-discovery `bazel query` commands only enumerate labels and
-do not need remote caches or execution.
+This fork does not carry the upstream GitHub Actions Bazel integration. It
+retains `.github/scripts/run_bazel_with_buildbuddy.py` and the V8 helpers for
+local tooling validation, but ordinary local builds, tests, lockfile checks,
+and target discovery should invoke Bazel directly. Loading-phase target-discovery
+`bazel query` commands only enumerate labels and do not need remote caches or
+execution.
 
 The `Cache/BES` host is also used for remote downloads.
 

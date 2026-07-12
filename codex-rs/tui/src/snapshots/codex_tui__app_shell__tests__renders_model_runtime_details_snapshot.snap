@@ -10,14 +10,14 @@ expression: "render_shell(&shell, area)"
  system: Better Codex app shell                                        focused model 3 fields
  you: Create a divergent standalone TUI.                               Model  Permissions
                                                                        Appearance  Integrations
- codex: Started a fullscreen app shell backed by app-server turns.     > model: gpt-5-codex
- plan: 1. Build shell                                                    reasoning: high
-       2. Wire transcript                                                service tier: flex
+ codex: Started a fullscreen app shell backed by app-server turns.     > model: gpt-5.6-sol
+ plan: 1. Build shell                                                    reasoning: Max
+       2. Wire transcript                                                service tier: priority
        3. Render dashboard
                                                                        Model
- ▌ tool exec just test -p codex-tui                                    gpt-5-codex
-                                                                       reasoning high
- ▌ edited 3 files +128 -24                                             tier flex
+ ▌ tool exec just test -p codex-tui                                    gpt-5.6-sol
+                                                                       reasoning max
+ ▌ edited 3 files +128 -24                                             tier priority
 
  codex: The new shell owns the fullscreen surface.                     Tokens
                                                                        total 1,440

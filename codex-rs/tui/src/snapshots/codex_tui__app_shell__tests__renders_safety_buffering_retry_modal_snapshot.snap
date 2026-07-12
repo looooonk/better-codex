@@ -1,0 +1,31 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
+---
+
+ Better Codex                                                          Navigation
+                                                                       1S  2W  3Set  4Help
+
+ Conversation                                                          Sessions
+ system: Better Codex app shell                                        ctrl+1 focus active 0 shown
+
+ Safety review
+ Our systems are thinking a bit more about this request before responding.
+
+ Hang tight or retry with a faster model for a quicker response, though it may be less capable of
+ handling complex requests.
+
+ > Retry with a faster model
+   Dismiss and keep waiting
+   Learn more
+
+ No action is required. Codex will keep waiting, and this menu will close when the response is
+ ready.
+ Up/Down select  Enter confirm  Esc dismiss
+
+
+
+ Composer busy 1:1                                                     Plan
+ > Type a message, Shift+Enter for newline                             Build the standalone shell
+                                                                       in slices.
+                                                                       x Shell frame

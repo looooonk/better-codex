@@ -15,6 +15,7 @@ use codex_models_manager::manager::RefreshStrategy;
 use codex_protocol::ThreadId;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::protocol::MultiAgentVersion;
+use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_rollout::is_persisted_rollout_item;
 use codex_thread_store::AppendThreadItemsParams;
@@ -188,6 +189,7 @@ impl ExternalAgentSessionImporter {
                 &config.model,
                 /*allow_provider_model_fallback*/ false,
                 RefreshStrategy::Offline,
+                config.http_client_factory(),
             )
             .await;
         let model_info = models_manager
@@ -221,6 +223,7 @@ impl ExternalAgentSessionImporter {
             dynamic_tools: Vec::new(),
             selected_capability_roots: Vec::new(),
             multi_agent_version: Some(MultiAgentVersion::V1),
+            history_mode: ThreadHistoryMode::Legacy,
             initial_window_id: uuid::Uuid::now_v7().to_string(),
             metadata: ThreadPersistenceMetadata {
                 cwd: Some(cwd.clone()),
@@ -228,7 +231,7 @@ impl ExternalAgentSessionImporter {
                 memory_mode,
             },
         };
-        rollout_items.retain(is_persisted_rollout_item);
+        rollout_items.retain(|item| is_persisted_rollout_item(item, ThreadHistoryMode::Legacy));
         let title = title
             .as_deref()
             .and_then(codex_core::util::normalize_thread_name);

@@ -26,7 +26,7 @@ fn login_selection_respects_forced_login_method() {
 
 #[test]
 fn login_keys_open_api_entry_and_capture_secret_text() {
-    let mut state = LoginOnboardingState::new(None);
+    let mut state = LoginOnboardingState::new(/*forced_login_method*/ None);
 
     assert_eq!(press(KeyCode::Down, &mut state), LoginKeyAction::Redraw);
     assert_eq!(state.selected(), LoginSelection::ApiKey);
@@ -50,7 +50,7 @@ fn login_keys_open_api_entry_and_capture_secret_text() {
 
 #[test]
 fn device_code_completion_matches_active_login() {
-    let mut state = LoginOnboardingState::new(None);
+    let mut state = LoginOnboardingState::new(/*forced_login_method*/ None);
     state.mode = LoginMode::DeviceCode {
         login_id: Some("login-1".to_string()),
         verification_url: Some("https://auth.example.test/device".to_string()),
@@ -77,7 +77,26 @@ fn device_code_completion_matches_active_login() {
 
 #[test]
 fn login_onboarding_view_renders_native_auth_choices() {
-    let state = LoginOnboardingState::new(None);
+    let state = LoginOnboardingState::new(/*forced_login_method*/ None);
+    let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+
+    terminal
+        .draw(|frame| {
+            LoginOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut());
+        })
+        .expect("draw login onboarding");
+    insta::assert_snapshot!(terminal.backend().to_string());
+}
+
+#[test]
+fn login_onboarding_view_renders_device_code_phishing_warning() {
+    let mut state = LoginOnboardingState::new(/*forced_login_method*/ None);
+    state.mode = LoginMode::DeviceCode {
+        login_id: Some("login-1".to_string()),
+        verification_url: Some("https://auth.example.test/device".to_string()),
+        user_code: Some("ABCD-EFGH".to_string()),
+    };
     let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
     let mut terminal = Terminal::new(backend).expect("create terminal");
 

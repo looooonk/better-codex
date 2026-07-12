@@ -1,6 +1,7 @@
 use super::*;
 use crate::legacy_core::config::Config;
 use crate::model_migration::ModelMigrationCopy;
+use codex_protocol::openai_models::ModelUpgrade;
 use codex_protocol::openai_models::ReasoningEffort;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -58,23 +59,31 @@ async fn model_migration_prompt_data_respects_seen_decision() {
     )
     .await
     .expect("load test config");
-    let available_models = crate::test_support::TEST_MODEL_PRESETS.clone();
-    let current = available_models
-        .iter()
-        .find(|preset| preset.model == "gpt-5.3-codex")
-        .expect("current preset present");
-    let upgrade = current.upgrade.as_ref().expect("upgrade configured");
+    let mut available_models = crate::test_support::TEST_MODEL_PRESETS.clone();
+    let current_model = "gpt-5.4";
+    let target_model = "gpt-5.5";
+    available_models
+        .iter_mut()
+        .find(|preset| preset.model == current_model)
+        .expect("current preset present")
+        .upgrade = Some(ModelUpgrade {
+        id: target_model.to_string(),
+        migration_config_key: "hide_test_migration_prompt".to_string(),
+        model_link: None,
+        upgrade_copy: None,
+        migration_markdown: None,
+    });
 
-    let prompt = model_migration_prompt_data(&config, &current.model, &available_models)
+    let prompt = model_migration_prompt_data(&config, current_model, &available_models)
         .expect("migration prompt should be eligible");
-    assert_eq!(prompt.target_model, upgrade.id);
+    assert_eq!(prompt.target_model, target_model);
 
     config
         .notices
         .model_migrations
-        .insert(current.model.clone(), upgrade.id.clone());
+        .insert(current_model.to_string(), target_model.to_string());
     assert!(
-        model_migration_prompt_data(&config, &current.model, &available_models).is_none(),
+        model_migration_prompt_data(&config, current_model, &available_models).is_none(),
         "seen migrations should not prompt again"
     );
 }

@@ -32,6 +32,7 @@ use codex_app_server_protocol::ThreadGoalSetResponse;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
+use codex_app_server_protocol::ThreadRollbackResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::TurnStartResponse;
@@ -195,6 +196,12 @@ pub(super) trait AppShellBackend {
         thread_id: ThreadId,
         turn_id: String,
     ) -> impl std::future::Future<Output = std::result::Result<(), TypedRequestError>> + Send;
+
+    fn thread_rollback(
+        &mut self,
+        thread_id: ThreadId,
+        num_turns: u32,
+    ) -> impl std::future::Future<Output = Result<ThreadRollbackResponse>> + Send;
 
     fn turn_steer(
         &mut self,
@@ -490,6 +497,14 @@ impl AppShellBackend for AppServerSession {
         turn_id: String,
     ) -> std::result::Result<(), TypedRequestError> {
         AppServerSession::turn_interrupt(self, thread_id, turn_id).await
+    }
+
+    async fn thread_rollback(
+        &mut self,
+        thread_id: ThreadId,
+        num_turns: u32,
+    ) -> Result<ThreadRollbackResponse> {
+        AppServerSession::thread_rollback(self, thread_id, num_turns).await
     }
 
     async fn turn_steer(

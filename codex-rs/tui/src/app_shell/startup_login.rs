@@ -447,7 +447,12 @@ impl LoginOnboardingView<'_> {
                 verification_url,
                 user_code,
                 ..
-            } => self.push_device_code_lines(&mut lines, verification_url, user_code),
+            } => self.push_device_code_lines(
+                &mut lines,
+                verification_url,
+                user_code,
+                usize::from(content.width),
+            ),
         }
         if let Some(error) = &self.state.error {
             lines.push(Line::from(""));
@@ -502,6 +507,7 @@ impl LoginOnboardingView<'_> {
         lines: &mut Vec<Line<'static>>,
         verification_url: &Option<String>,
         user_code: &Option<String>,
+        width: usize,
     ) {
         match (verification_url, user_code) {
             (Some(verification_url), Some(user_code)) => {
@@ -513,7 +519,14 @@ impl LoginOnboardingView<'_> {
                 lines.push(Line::from(""));
                 lines.push(user_code.clone().cyan().bold().into());
                 lines.push(Line::from(""));
-                lines.push("Never share this device code with anyone.".dim().into());
+                lines.extend(
+                    wrapped_lines(
+                        "Continue only if you started this login in Codex. If a website or another person gave you this code, cancel.",
+                        width,
+                    )
+                    .into_iter()
+                    .map(ratatui::prelude::Stylize::dim),
+                );
             }
             _ => {
                 lines.push("Requesting a one-time code from ChatGPT...".dim().into());

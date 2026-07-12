@@ -26,6 +26,8 @@ use crate::terminal_hyperlinks::prefix_hyperlink_lines;
 use crate::terminal_hyperlinks::visible_lines;
 use crate::text_formatting::truncate_text;
 use crate::tui;
+use crate::wrapping::RtOptions;
+use crate::wrapping::word_wrap_lines;
 use crossterm::cursor::SetCursorStyle;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Constraint;
@@ -111,6 +113,18 @@ impl ShellView<'_> {
             Clear.render(panel_area, buf);
             fill_rect(buf, panel_area, MOCHA_SURFACE0);
             self.render_titled_panel(panel_area, "Plugins", lines, MOCHA_SURFACE0, buf);
+        }
+        if let Some(lines) = self.shell.safety_buffering_modal_lines() {
+            let lines = word_wrap_lines(
+                lines,
+                RtOptions::new(usize::from(pane_content_rect(area).width.max(1))),
+            );
+            let line_count = u16::try_from(lines.len()).unwrap_or(u16::MAX);
+            let panel_height = line_count.saturating_add(4).min(area.height);
+            let panel_area = centered_band_rect(area, panel_height);
+            Clear.render(panel_area, buf);
+            fill_rect(buf, panel_area, MOCHA_SURFACE0);
+            self.render_titled_panel(panel_area, "Safety review", lines, MOCHA_SURFACE0, buf);
         }
         self.render_command_palette(area, buf);
     }
@@ -479,7 +493,7 @@ impl ShellView<'_> {
                 entry.title.to_string().dim()
             };
             let detail = if selected {
-                format!(" - {}", truncate_text(entry.detail, /*max_chars*/ 28)).dim()
+                format!(" - {}", truncate_text(entry.detail, /*max_graphemes*/ 28)).dim()
             } else {
                 String::new().into()
             };
@@ -1000,7 +1014,10 @@ fn elicitation_lines(pending: &super::PendingElicitation) -> Vec<Line<'static>> 
 
     vec![
         Line::from(vec!["? ".cyan().bold(), pending.title().to_string().bold()]),
-        Line::from(vec!["  ".into(), truncate_text(pending.detail(), 62).dim()]),
+        Line::from(vec![
+            "  ".into(),
+            truncate_text(pending.detail(), /*max_graphemes*/ 62).dim(),
+        ]),
         Line::from(action_line),
     ]
 }

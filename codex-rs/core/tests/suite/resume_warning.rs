@@ -34,6 +34,7 @@ fn resume_history(
         current_date: None,
         timezone: None,
         approval_policy: config.permissions.approval_policy.value(),
+        approvals_reviewer: None,
         sandbox_policy: config.legacy_sandbox_policy(),
         permission_profile: None,
         network: None,
@@ -73,6 +74,8 @@ fn resume_history(
             RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
                 turn_id,
                 last_agent_message: None,
+                error: None,
+                started_at: None,
                 completed_at: None,
                 duration_ms: None,
                 time_to_first_token_ms: None,

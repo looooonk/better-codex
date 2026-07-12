@@ -1,6 +1,7 @@
 use super::*;
 use crate::error_code::internal_error;
 use crate::error_code::invalid_request;
+use codex_analytics::PluginInstallSource;
 use codex_app_server_protocol::PluginAvailability;
 use codex_app_server_protocol::PluginInstallPolicy;
 use codex_app_server_protocol::PluginSharePrincipalRole;
@@ -35,6 +36,8 @@ pub(crate) struct PluginRequestProcessor {
     analytics_events_client: AnalyticsEventsClient,
     config_manager: ConfigManager,
     workspace_settings_cache: Arc<workspace_settings::WorkspaceSettingsCache>,
+    on_effective_plugins_changed:
+        Arc<dyn Fn(codex_core_plugins::EffectivePluginsChange) + Send + Sync>,
 }
 
 fn plugin_skills_to_info(
@@ -101,6 +104,15 @@ fn marketplace_plugin_source_to_info(source: MarketplacePluginSource) -> PluginS
             ref_name,
             sha,
         },
+        MarketplacePluginSource::Npm {
+            package,
+            version,
+            registry,
+        } => PluginSource::Npm {
+            package,
+            version,
+            registry,
+        },
     }
 }
 
@@ -134,7 +146,7 @@ fn share_context_for_source(
                 creator_name: None,
                 share_principals: None,
             }),
-        MarketplacePluginSource::Git { .. } => None,
+        MarketplacePluginSource::Git { .. } | MarketplacePluginSource::Npm { .. } => None,
     }
 }
 
@@ -146,6 +158,7 @@ fn convert_configured_marketplace_plugin_to_plugin_summary(
     PluginSummary {
         id: plugin.id,
         remote_plugin_id: None,
+        version: None,
         local_version: plugin.local_version,
         installed: plugin.installed,
         enabled: plugin.enabled,
@@ -153,6 +166,7 @@ fn convert_configured_marketplace_plugin_to_plugin_summary(
         share_context,
         source: marketplace_plugin_source_to_info(plugin.source),
         install_policy: plugin.policy.installation.into(),
+        install_policy_source: None,
         auth_policy: plugin.policy.authentication.into(),
         availability: PluginAvailability::Available,
         interface: plugin.interface.map(local_plugin_interface_to_info),
@@ -346,6 +360,9 @@ impl PluginRequestProcessor {
         analytics_events_client: AnalyticsEventsClient,
         config_manager: ConfigManager,
         workspace_settings_cache: Arc<workspace_settings::WorkspaceSettingsCache>,
+        on_effective_plugins_changed: Arc<
+            dyn Fn(codex_core_plugins::EffectivePluginsChange) + Send + Sync,
+        >,
     ) -> Self {
         Self {
             auth_manager,
@@ -354,6 +371,7 @@ impl PluginRequestProcessor {
             analytics_events_client,
             config_manager,
             workspace_settings_cache,
+            on_effective_plugins_changed,
         }
     }
 
@@ -456,36 +474,14 @@ impl PluginRequestProcessor {
             .map(|response| Some(response.into()))
     }
 
-    pub(crate) fn effective_plugins_changed_callback(&self) -> Arc<dyn Fn() + Send + Sync> {
-        let thread_manager = Arc::clone(&self.thread_manager);
-        let config_manager = self.config_manager.clone();
-        Arc::new(move || {
-            Self::spawn_effective_plugins_changed_task(
-                Arc::clone(&thread_manager),
-                config_manager.clone(),
-            );
-        })
+    pub(crate) fn effective_plugins_changed_callback(
+        &self,
+    ) -> Arc<dyn Fn(codex_core_plugins::EffectivePluginsChange) + Send + Sync> {
+        Arc::clone(&self.on_effective_plugins_changed)
     }
 
     fn on_effective_plugins_changed(&self) {
-        Self::spawn_effective_plugins_changed_task(
-            Arc::clone(&self.thread_manager),
-            self.config_manager.clone(),
-        );
-    }
-
-    fn spawn_effective_plugins_changed_task(
-        thread_manager: Arc<ThreadManager>,
-        config_manager: ConfigManager,
-    ) {
-        tokio::spawn(async move {
-            thread_manager.plugins_manager().clear_cache();
-            thread_manager.skills_service().clear_cache();
-            if thread_manager.list_thread_ids().await.is_empty() {
-                return;
-            }
-            crate::mcp_refresh::queue_best_effort_refresh(&thread_manager, &config_manager).await;
-        });
+        (self.on_effective_plugins_changed)(Default::default());
     }
 
     fn clear_plugin_related_caches(&self) {
@@ -1086,6 +1082,7 @@ impl PluginRequestProcessor {
                     summary: PluginSummary {
                         id: outcome.plugin.id,
                         remote_plugin_id: None,
+                        version: None,
                         local_version: outcome.plugin.local_version,
                         name: outcome.plugin.name,
                         share_context,
@@ -1093,6 +1090,7 @@ impl PluginRequestProcessor {
                         installed: outcome.plugin.installed,
                         enabled: outcome.plugin.enabled,
                         install_policy: outcome.plugin.policy.installation.into(),
+                        install_policy_source: None,
                         auth_policy: outcome.plugin.policy.authentication.into(),
                         availability: PluginAvailability::Available,
                         interface: outcome.plugin.interface.map(local_plugin_interface_to_info),
@@ -1116,6 +1114,7 @@ impl PluginRequestProcessor {
                     apps: app_summaries,
                     app_templates: Vec::new(),
                     mcp_servers: outcome.plugin.mcp_server_names,
+                    scheduled_tasks: None,
                 }
             }
             Err(remote_marketplace_name) => {
@@ -1535,6 +1534,7 @@ impl PluginRequestProcessor {
                     &remote_marketplace_name,
                     /*plugin_id*/ None,
                     error_type,
+                    /*sub_error_type*/ None,
                     err.to_string(),
                 );
                 remote_plugin_catalog_error_to_jsonrpc(
@@ -1578,11 +1578,13 @@ impl PluginRequestProcessor {
         )
         .map_err(|err| {
             let error_type = remote_plugin_bundle_install_error_type(&err);
+            let sub_error_type = err.sub_error_type();
             self.track_plugin_install_failed_for_remote_plugin(
                 &remote_plugin_id,
                 &actual_remote_marketplace_name,
                 Some(&resolved_plugin_id),
                 error_type,
+                sub_error_type,
                 err.to_string(),
             );
             remote_plugin_bundle_install_error_to_jsonrpc(err)
@@ -1595,11 +1597,13 @@ impl PluginRequestProcessor {
         .await
         .map_err(|err| {
             let error_type = remote_plugin_bundle_install_error_type(&err);
+            let sub_error_type = err.sub_error_type();
             self.track_plugin_install_failed_for_remote_plugin(
                 &remote_plugin_id,
                 &actual_remote_marketplace_name,
                 Some(&resolved_plugin_id),
                 error_type,
+                sub_error_type,
                 err.to_string(),
             );
             remote_plugin_bundle_install_error_to_jsonrpc(err)
@@ -1622,6 +1626,7 @@ impl PluginRequestProcessor {
                 &actual_remote_marketplace_name,
                 Some(&result.plugin_id),
                 error_type,
+                /*sub_error_type*/ None,
                 err.to_string(),
             );
             remote_plugin_catalog_error_to_jsonrpc(err, "install remote plugin")
@@ -1719,12 +1724,14 @@ impl PluginRequestProcessor {
         marketplace_name: &str,
         plugin_id: Option<&PluginId>,
         error_type: &'static str,
+        sub_error_type: Option<String>,
         error_message: String,
     ) {
         tracing::warn!(
             remote_plugin_id = %remote_plugin_id,
             marketplace_name = %marketplace_name,
             error_type = %error_type,
+            sub_error_type = sub_error_type.as_deref(),
             error = %error_message,
             "remote plugin install failed"
         );
@@ -1739,8 +1746,11 @@ impl PluginRequestProcessor {
                 capability_summary: None,
             }
         };
-        self.analytics_events_client
-            .track_plugin_install_failed(plugin, error_type.to_string());
+        self.analytics_events_client.track_plugin_install_failed(
+            plugin,
+            PluginInstallSource::Manual,
+            error_type.to_string(),
+        );
     }
 
     async fn plugin_apps_needing_auth_for_install(
@@ -2159,6 +2169,7 @@ fn remote_plugin_summary_to_info(summary: RemoteCatalogPluginSummary) -> PluginS
     PluginSummary {
         id: summary.id,
         remote_plugin_id: Some(summary.remote_plugin_id),
+        version: summary.version,
         local_version: summary.local_version,
         name: summary.name,
         share_context: summary
@@ -2168,6 +2179,7 @@ fn remote_plugin_summary_to_info(summary: RemoteCatalogPluginSummary) -> PluginS
         installed: summary.installed,
         enabled: summary.enabled,
         install_policy: summary.install_policy,
+        install_policy_source: summary.install_policy_source,
         auth_policy: summary.auth_policy,
         availability: summary.availability,
         interface: summary.interface,
@@ -2261,6 +2273,7 @@ fn remote_plugin_detail_to_info(
         apps,
         app_templates,
         mcp_servers: detail.mcp_servers,
+        scheduled_tasks: detail.scheduled_tasks,
     }
 }
 
