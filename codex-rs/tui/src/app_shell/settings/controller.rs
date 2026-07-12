@@ -5,6 +5,8 @@ use super::SettingsView;
 use super::approval_policy_label;
 use super::next_approval_policy;
 use super::next_reasoning_effort;
+use super::reasoning_effort_label;
+use super::ultra_reasoning_concurrency_warning;
 use crate::config_update::build_model_selection_edits;
 use crate::config_update::build_service_tier_selection_edits;
 use crate::config_update::build_syntax_theme_edit;
@@ -168,7 +170,16 @@ impl ShellState {
                     .start_edit(action, self.tui_theme.clone().unwrap_or_default());
             }
             SettingsAction::ReasoningEffort => {
-                let effort = next_reasoning_effort(self.reasoning_effort.clone());
+                let Some(preset) = self
+                    .available_models
+                    .iter()
+                    .find(|preset| preset.model == self.model)
+                else {
+                    self.settings
+                        .set_error(format!("model metadata unavailable for `{}`", self.model));
+                    return Ok(());
+                };
+                let effort = next_reasoning_effort(self.reasoning_effort.as_ref(), preset);
                 self.apply_reasoning_effort(effort, app_server).await?;
             }
             SettingsAction::ApprovalPolicy => {
@@ -348,20 +359,51 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        self.model = model.clone();
-        app_server
-            .write_config(build_model_selection_edits(
-                &model,
-                self.reasoning_effort.as_ref(),
-            ))
-            .await?;
+        let preset = self
+            .available_models
+            .iter()
+            .find(|preset| preset.model == model);
+        let effort = preset
+            .map(|preset| preset.default_reasoning_effort.clone())
+            .or_else(|| self.reasoning_effort.clone());
+        let service_tier = match (preset, self.service_tier.as_deref()) {
+            (Some(_), Some(SERVICE_TIER_DEFAULT_REQUEST_VALUE)) | (_, None) => {
+                self.service_tier.clone()
+            }
+            (Some(preset), Some(service_tier))
+                if preset
+                    .service_tiers
+                    .iter()
+                    .any(|tier| tier.id == service_tier) =>
+            {
+                self.service_tier.clone()
+            }
+            (Some(_), Some(_)) => None,
+            (None, Some(_)) => self.service_tier.clone(),
+        };
+        let service_tier_update = (service_tier != self.service_tier).then(|| service_tier.clone());
+        let mut edits = build_model_selection_edits(&model, effort.as_ref());
+        if service_tier_update.is_some() {
+            edits.extend(build_service_tier_selection_edits(service_tier.as_deref()));
+        }
+        app_server.write_config(edits).await?;
         app_server
             .thread_settings_update(self.thread_settings_update_params(
                 Some(model.clone()),
-                None,
-                None,
+                effort.clone(),
+                service_tier_update,
             ))
             .await?;
+        if let Some(collaboration_mode) = self.collaboration_mode.as_mut() {
+            **collaboration_mode = collaboration_mode.with_updates(
+                Some(model.clone()),
+                Some(effort.clone()),
+                /*developer_instructions*/ None,
+            );
+        }
+        self.model = model.clone();
+        self.reasoning_effort = effort;
+        self.service_tier = service_tier;
         self.settings.set_info(format!("model set to {model}"));
         Ok(())
     }
@@ -380,8 +422,8 @@ impl ShellState {
             .await?;
         app_server
             .thread_settings_update(self.thread_settings_update_params(
-                None,
-                None,
+                /*model*/ None,
+                /*effort*/ None,
                 Some(service_tier.clone()),
             ))
             .await?;
@@ -399,16 +441,39 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        let thread_effort = effort.clone().or_else(|| {
+            self.available_models
+                .iter()
+                .find(|preset| preset.model == self.model)
+                .map(|preset| preset.default_reasoning_effort.clone())
+        });
         self.reasoning_effort = effort.clone();
         app_server
             .write_config(build_model_selection_edits(&self.model, effort.as_ref()))
             .await?;
         app_server
-            .thread_settings_update(self.thread_settings_update_params(None, effort.clone(), None))
+            .thread_settings_update(self.thread_settings_update_params(
+                /*model*/ None,
+                thread_effort.clone(),
+                /*service_tier*/ None,
+            ))
             .await?;
+        if let Some(collaboration_mode) = self.collaboration_mode.as_mut() {
+            **collaboration_mode = collaboration_mode.with_updates(
+                /*model*/ None,
+                Some(effort.clone()),
+                /*developer_instructions*/ None,
+            );
+        }
+        if let Some(warning) = ultra_reasoning_concurrency_warning(
+            thread_effort.as_ref(),
+            self.max_concurrent_threads_per_session,
+        ) {
+            self.push_status(warning);
+        }
         let label = effort
             .as_ref()
-            .map(ToString::to_string)
+            .map(reasoning_effort_label)
             .unwrap_or_else(|| "default".to_string());
         self.settings.set_info(format!("reasoning set to {label}"));
         Ok(())
@@ -430,7 +495,9 @@ impl ShellState {
             )])
             .await?;
         app_server
-            .thread_settings_update(self.thread_settings_update_params(None, None, None))
+            .thread_settings_update(self.thread_settings_update_params(
+                /*model*/ None, /*effort*/ None, /*service_tier*/ None,
+            ))
             .await?;
         self.settings.set_info(format!(
             "approval policy set to {}",

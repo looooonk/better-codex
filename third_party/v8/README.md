@@ -33,9 +33,17 @@ Use this as the maintainer flow for a version bump:
    alongside the artifact generation change.
 
 When changing the remaining prebuilt `rusty_v8` `http_file` inputs, keep the
-checked-in checksum manifest and `MODULE.bazel` in sync. The upstream Codex CI
-helpers that automated this were removed from this fork, so prefer the simplest
-local Bazel validation that exercises the changed inputs.
+checked-in checksum manifest and `MODULE.bazel` in sync:
+
+```bash
+python3 .github/scripts/rusty_v8_bazel.py update-module-bazel
+python3 .github/scripts/rusty_v8_bazel.py check-module-bazel
+```
+
+These selected upstream helpers are retained for local validation even though
+the fork does not retain the corresponding release workflow. The commands
+default to the `rusty_v8_*` `http_file` versions present in `MODULE.bazel` and
+validate every matching entry.
 
 The consumer-facing selectors are:
 

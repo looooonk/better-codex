@@ -116,4 +116,3 @@ Agents may continuously work through this plan until every unchecked item is com
 - [ ] SHIFT + ENTER does not properly work. The initial SHIFT + ENTER press adds two lines, but typing anything then snaps the cursor back to just one new line.
 - [ ] Typing multiple new lines sequentially via repeating SHIFT + ENTER multiple times causes the cursor to go outside of the text box's view. The text box should probably increase.
 - [ ] For diffs, make it a bit more clear that Codex is actually *editing* the files, maybe by replacing the word "diff" with "edited" etc.
-

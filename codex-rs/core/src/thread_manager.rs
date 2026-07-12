@@ -21,6 +21,9 @@ use codex_agent_graph_store::LocalAgentGraphStore;
 use codex_analytics::AnalyticsEventsClient;
 use codex_app_server_protocol::ThreadHistoryBuilder;
 use codex_app_server_protocol::TurnStatus;
+use codex_code_mode::CodeModeSessionProvider;
+use codex_code_mode::InProcessCodeModeSessionProvider;
+use codex_code_mode::ProcessOwnedCodeModeSessionProvider;
 use codex_core_plugins::PluginsManager;
 use codex_exec_server::EnvironmentManager;
 use codex_extension_api::ExtensionDataInit;
@@ -53,6 +56,7 @@ use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
@@ -184,6 +188,7 @@ pub struct StartThreadOptions {
     pub config: Config,
     pub allow_provider_model_fallback: bool,
     pub initial_history: InitialHistory,
+    pub history_mode: Option<ThreadHistoryMode>,
     pub session_source: Option<SessionSource>,
     pub thread_source: Option<ThreadSource>,
     pub dynamic_tools: Vec<codex_protocol::dynamic_tools::DynamicToolSpec>,
@@ -240,6 +245,7 @@ pub(crate) struct ThreadManagerState {
     skills_service: Arc<SkillsService>,
     plugins_manager: Arc<PluginsManager>,
     mcp_manager: Arc<McpManager>,
+    code_mode_session_provider: Arc<dyn CodeModeSessionProvider>,
     extensions: Arc<ExtensionRegistry<Config>>,
     user_instructions_provider: Arc<dyn UserInstructionsProvider>,
     thread_store: Arc<dyn ThreadStore>,
@@ -336,6 +342,11 @@ impl ThreadManager {
                 skills_service,
                 plugins_manager,
                 mcp_manager,
+                code_mode_session_provider: if config.features.enabled(Feature::CodeModeHost) {
+                    Arc::new(ProcessOwnedCodeModeSessionProvider::default())
+                } else {
+                    Arc::new(InProcessCodeModeSessionProvider)
+                },
                 extensions,
                 user_instructions_provider,
                 thread_store,
@@ -351,6 +362,16 @@ impl ThreadManager {
             }),
             _test_codex_home_guard: None,
         }
+    }
+
+    pub(crate) fn with_code_mode_host_program_for_tests(mut self, host_program: PathBuf) -> Self {
+        let Some(state) = Arc::get_mut(&mut self.state) else {
+            unreachable!("new thread manager state should not be shared");
+        };
+        state.code_mode_session_provider = Arc::new(
+            ProcessOwnedCodeModeSessionProvider::with_host_program(host_program),
+        );
+        self
     }
 
     /// Construct with a dummy AuthManager containing the provided CodexAuth.
@@ -441,6 +462,7 @@ impl ThreadManager {
                 skills_service,
                 plugins_manager,
                 mcp_manager,
+                code_mode_session_provider: Arc::new(InProcessCodeModeSessionProvider),
                 extensions: empty_extension_registry(),
                 user_instructions_provider: Arc::new(
                     crate::test_support::EmptyUserInstructionsProvider,
@@ -520,10 +542,14 @@ impl ThreadManager {
         self.state.models_manager.clone()
     }
 
-    pub async fn list_models(&self, refresh_strategy: RefreshStrategy) -> Vec<ModelPreset> {
+    pub async fn list_models(
+        &self,
+        refresh_strategy: RefreshStrategy,
+        http_client_factory: codex_http_client::HttpClientFactory,
+    ) -> Vec<ModelPreset> {
         self.state
             .models_manager
-            .list_models(refresh_strategy)
+            .list_models(refresh_strategy, http_client_factory)
             .await
     }
 
@@ -637,6 +663,7 @@ impl ThreadManager {
             config,
             allow_provider_model_fallback: false,
             initial_history: InitialHistory::New,
+            history_mode: None,
             session_source: None,
             thread_source: None,
             dynamic_tools,
@@ -672,6 +699,7 @@ impl ThreadManager {
         Box::pin(self.state.spawn_thread_with_source(
             options.config,
             options.initial_history,
+            options.history_mode,
             options.allow_provider_model_fallback,
             Arc::clone(&self.state.auth_manager),
             agent_control,
@@ -768,6 +796,7 @@ impl ThreadManager {
         Box::pin(self.state.spawn_thread_with_source(
             config,
             initial_history,
+            /*history_mode*/ None,
             /*allow_provider_model_fallback*/ false,
             auth_manager,
             agent_control,
@@ -838,6 +867,7 @@ impl ThreadManager {
         Box::pin(self.state.spawn_thread_with_source(
             config,
             initial_history,
+            /*history_mode*/ None,
             /*allow_provider_model_fallback*/ false,
             auth_manager,
             agent_control,
@@ -1339,6 +1369,7 @@ impl ThreadManagerState {
         Box::pin(self.spawn_thread_with_source(
             config,
             InitialHistory::New,
+            /*history_mode*/ None,
             /*allow_provider_model_fallback*/ false,
             Arc::clone(&self.auth_manager),
             agent_control,
@@ -1378,6 +1409,7 @@ impl ThreadManagerState {
         Box::pin(self.spawn_thread_with_source(
             config,
             initial_history,
+            /*history_mode*/ None,
             /*allow_provider_model_fallback*/ false,
             Arc::clone(&self.auth_manager),
             agent_control,
@@ -1419,6 +1451,7 @@ impl ThreadManagerState {
         Box::pin(self.spawn_thread_with_source(
             config,
             initial_history,
+            /*history_mode*/ None,
             /*allow_provider_model_fallback*/ false,
             Arc::clone(&self.auth_manager),
             agent_control,
@@ -1461,6 +1494,7 @@ impl ThreadManagerState {
         Box::pin(self.spawn_thread_with_source(
             config,
             initial_history,
+            /*history_mode*/ None,
             /*allow_provider_model_fallback*/ false,
             auth_manager,
             agent_control,
@@ -1486,6 +1520,7 @@ impl ThreadManagerState {
         &self,
         config: Config,
         initial_history: InitialHistory,
+        history_mode: Option<ThreadHistoryMode>,
         allow_provider_model_fallback: bool,
         auth_manager: Arc<AuthManager>,
         agent_control: AgentControl,
@@ -1562,8 +1597,10 @@ impl ThreadManagerState {
             skills_service: Arc::clone(&self.skills_service),
             plugins_manager: Arc::clone(&self.plugins_manager),
             mcp_manager: Arc::clone(&self.mcp_manager),
+            code_mode_session_provider: Arc::clone(&self.code_mode_session_provider),
             extensions: Arc::clone(&self.extensions),
             conversation_history: initial_history,
+            requested_history_mode: history_mode,
             session_source,
             forked_from_thread_id,
             parent_thread_id,
@@ -1749,6 +1786,7 @@ fn truncate_before_nth_user_message(
 struct SnapshotTurnState {
     ends_mid_turn: bool,
     active_turn_id: Option<String>,
+    active_turn_started_at: Option<i64>,
     active_turn_start_index: Option<usize>,
 }
 
@@ -1768,6 +1806,7 @@ fn snapshot_turn_state(history: &InitialHistory) -> SnapshotTurnState {
             return SnapshotTurnState {
                 ends_mid_turn: false,
                 active_turn_id: None,
+                active_turn_started_at: None,
                 active_turn_start_index: None,
             };
         }
@@ -1775,6 +1814,7 @@ fn snapshot_turn_state(history: &InitialHistory) -> SnapshotTurnState {
         return SnapshotTurnState {
             ends_mid_turn: true,
             active_turn_id,
+            active_turn_started_at: active_turn_snapshot.and_then(|turn| turn.started_at),
             active_turn_start_index: builder.active_turn_start_index(),
         };
     }
@@ -1786,6 +1826,7 @@ fn snapshot_turn_state(history: &InitialHistory) -> SnapshotTurnState {
         return SnapshotTurnState {
             ends_mid_turn: false,
             active_turn_id: None,
+            active_turn_started_at: None,
             active_turn_start_index: None,
         };
     };
@@ -1801,6 +1842,7 @@ fn snapshot_turn_state(history: &InitialHistory) -> SnapshotTurnState {
             )
         }),
         active_turn_id: None,
+        active_turn_started_at: None,
         active_turn_start_index: None,
     }
 }
@@ -1828,6 +1870,7 @@ fn fork_history_from_snapshot(
                 append_interrupted_boundary(
                     history,
                     snapshot_state.active_turn_id,
+                    snapshot_state.active_turn_started_at,
                     interrupted_marker,
                 )
             } else {
@@ -1843,11 +1886,13 @@ fn fork_history_from_snapshot(
 fn append_interrupted_boundary(
     history: InitialHistory,
     turn_id: Option<String>,
+    started_at: Option<i64>,
     interrupted_marker: InterruptedTurnHistoryMarker,
 ) -> InitialHistory {
     let aborted_event = RolloutItem::EventMsg(EventMsg::TurnAborted(TurnAbortedEvent {
         turn_id,
         reason: TurnAbortReason::Interrupted,
+        started_at,
         completed_at: None,
         duration_ms: None,
     }));

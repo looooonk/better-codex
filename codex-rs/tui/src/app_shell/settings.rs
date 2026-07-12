@@ -3,12 +3,15 @@ use super::integrations::McpInventorySummary;
 use super::integrations::PluginInventorySummary;
 use crate::text_formatting::truncate_text;
 use codex_app_server_protocol::AskForApproval;
+use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ReasoningEffort;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
 
 mod controller;
+
+const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct SettingsState {
@@ -299,7 +302,7 @@ fn setting_row(
         SettingsAction::ReasoningEffort => view
             .reasoning_effort
             .as_ref()
-            .map(ToString::to_string)
+            .map(reasoning_effort_label)
             .unwrap_or_else(|| "default".to_string()),
         SettingsAction::ServiceTier => view
             .service_tier
@@ -338,16 +341,73 @@ pub(super) fn next_approval_policy(policy: AskForApproval) -> AskForApproval {
     }
 }
 
-pub(super) fn next_reasoning_effort(effort: Option<ReasoningEffort>) -> Option<ReasoningEffort> {
+pub(super) fn reasoning_effort_label(effort: &ReasoningEffort) -> String {
     match effort {
-        None => Some(ReasoningEffort::Minimal),
-        Some(ReasoningEffort::Minimal) => Some(ReasoningEffort::Low),
-        Some(ReasoningEffort::Low) => Some(ReasoningEffort::Medium),
-        Some(ReasoningEffort::Medium) => Some(ReasoningEffort::High),
-        Some(ReasoningEffort::High) => Some(ReasoningEffort::XHigh),
-        Some(ReasoningEffort::XHigh) => Some(ReasoningEffort::Ultra),
-        Some(ReasoningEffort::Ultra | ReasoningEffort::None | ReasoningEffort::Custom(_)) => None,
+        ReasoningEffort::None => "None".to_string(),
+        ReasoningEffort::Minimal => "Minimal".to_string(),
+        ReasoningEffort::Low => "Low".to_string(),
+        ReasoningEffort::Medium => "Medium".to_string(),
+        ReasoningEffort::High => "High".to_string(),
+        ReasoningEffort::XHigh => "Extra high".to_string(),
+        ReasoningEffort::Max => "Max".to_string(),
+        ReasoningEffort::Ultra => "Ultra".to_string(),
+        ReasoningEffort::Custom(effort) => effort.clone(),
     }
+}
+
+pub(super) fn next_reasoning_effort(
+    effort: Option<&ReasoningEffort>,
+    preset: &ModelPreset,
+) -> Option<ReasoningEffort> {
+    if preset.supported_reasoning_efforts.is_empty() {
+        return match effort {
+            Some(effort) if effort == &preset.default_reasoning_effort => None,
+            None | Some(_) => Some(preset.default_reasoning_effort.clone()),
+        };
+    }
+
+    let Some(effort) = effort else {
+        return preset
+            .supported_reasoning_efforts
+            .first()
+            .map(|preset| preset.effort.clone());
+    };
+    if let Some(index) = preset
+        .supported_reasoning_efforts
+        .iter()
+        .position(|preset| &preset.effort == effort)
+    {
+        return preset
+            .supported_reasoning_efforts
+            .get(index + 1)
+            .map(|preset| preset.effort.clone());
+    }
+
+    preset
+        .supported_reasoning_efforts
+        .iter()
+        .find(|supported| supported.effort == preset.default_reasoning_effort)
+        .or_else(|| preset.supported_reasoning_efforts.first())
+        .map(|preset| preset.effort.clone())
+}
+
+pub(super) fn ultra_reasoning_concurrency_warning(
+    effort: Option<&ReasoningEffort>,
+    max_concurrent_threads_per_session: usize,
+) -> Option<String> {
+    if effort != Some(&ReasoningEffort::Ultra)
+        || max_concurrent_threads_per_session < ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD
+    {
+        return None;
+    }
+
+    let max_subagents = max_concurrent_threads_per_session.saturating_sub(1);
+    Some(format!(
+        "Ultra reasoning may proactively use multiple agents. This session is configured for \
+         {max_concurrent_threads_per_session} concurrent threads with up to {max_subagents} \
+         subagents which can increase usage quickly. Consider setting \
+         features.multi_agent_v2.max_concurrent_threads_per_session below 8."
+    ))
 }
 
 fn on_off(enabled: bool) -> &'static str {

@@ -12,6 +12,7 @@ use codex_app_server_protocol::CommandExecutionSource;
 use codex_app_server_protocol::CommandExecutionStatus;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ConfigWriteResponse;
+use codex_app_server_protocol::ErrorNotification;
 use codex_app_server_protocol::ExternalAgentConfigDetectParams;
 use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
 use codex_app_server_protocol::ExternalAgentConfigImportCompletedNotification;
@@ -19,6 +20,7 @@ use codex_app_server_protocol::ExternalAgentConfigImportItemTypeSuccess;
 use codex_app_server_protocol::ExternalAgentConfigImportTypeResult;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
+use codex_app_server_protocol::ImageGenerationItem;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
@@ -34,6 +36,7 @@ use codex_app_server_protocol::McpServerStatus;
 use codex_app_server_protocol::McpServerStatusDetail;
 use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::MigrationDetails;
+use codex_app_server_protocol::ModelSafetyBufferingUpdatedNotification;
 use codex_app_server_protocol::PermissionsRequestApprovalParams;
 use codex_app_server_protocol::PluginAuthPolicy;
 use codex_app_server_protocol::PluginAvailability;
@@ -60,22 +63,29 @@ use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
+use codex_app_server_protocol::ThreadRollbackResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
+use codex_app_server_protocol::TurnError;
 use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput as ApiUserInput;
+use codex_app_server_protocol::WebSearchItem;
 use codex_app_server_protocol::WriteStatus;
+use codex_protocol::config_types::CollaborationMode;
+use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
+use codex_protocol::config_types::Settings as CollaborationModeSettings;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelServiceTier;
 use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
 use pretty_assertions::assert_eq;
@@ -109,7 +119,7 @@ fn renders_native_session_list_snapshot() {
         ),
         thread_fixture(
             test_thread_id("01900000-0000-7000-8000-000000000502"),
-            None,
+            /*name*/ None,
             "Investigate approval rendering regression",
         ),
     ]);
@@ -156,7 +166,7 @@ fn renders_scrolled_transcript_snapshot() {
     shell.push_status("second checkpoint");
     shell.push_status("third checkpoint");
     shell.push_status("fourth checkpoint");
-    shell.scroll_transcript_up(4);
+    shell.scroll_transcript_up(/*rows*/ 4);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 16,
     );
@@ -309,9 +319,28 @@ fn renders_model_runtime_details_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
-    shell.reasoning_effort = Some(ReasoningEffort::High);
-    shell.service_tier = Some("flex".to_string());
+    shell.model = "gpt-5.6-sol".to_string();
+    shell.reasoning_effort = Some(ReasoningEffort::Max);
+    shell.service_tier = Some("priority".to_string());
     shell.tui_theme = Some("dracula".to_string());
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_model_availability_nux_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.streaming_assistant.clear();
+    shell.push_system(
+        "Our most capable model yet. GPT-5.6 Sol can tackle complex code changes, dig into research, produce polished documents, and take on your most ambitious work. Sol is highly capable at lower reasoning efforts—try starting lower, then turn it up for harder jobs.",
+    );
+    assert_eq!(
+        shell.transcript.back().map(|line| line.kind),
+        Some(TranscriptKind::System)
+    );
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -399,14 +428,14 @@ fn renders_context_pressure_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Settings;
     shell.token_usage = TokenUsage {
-        input_tokens: 150_000,
-        cached_input_tokens: 20_000,
-        output_tokens: 40_000,
-        reasoning_output_tokens: 12_000,
-        total_tokens: 190_000,
+        input_tokens: 260_000,
+        cached_input_tokens: 40_000,
+        output_tokens: 20_000,
+        reasoning_output_tokens: 8_000,
+        total_tokens: 280_000,
     };
     shell.context_token_usage = shell.token_usage.clone();
-    shell.model_context_window = Some(200_000);
+    shell.model_context_window = Some(372_000);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -1050,7 +1079,7 @@ fn transcript_selection_moves_between_items() {
         Some((TranscriptKind::Diff, "diff 3 files +128 -24"))
     );
 
-    shell.move_transcript_selection_up(2);
+    shell.move_transcript_selection_up(/*rows*/ 2);
 
     assert_eq!(
         shell.selected_transcript_copy_text(),
@@ -1060,7 +1089,7 @@ fn transcript_selection_moves_between_items() {
         ))
     );
 
-    shell.move_transcript_selection_down(1);
+    shell.move_transcript_selection_down(/*rows*/ 1);
 
     assert_eq!(
         shell.selected_transcript_copy_text(),
@@ -1186,6 +1215,354 @@ fn completed_agent_message_replaces_matching_stream() {
             "hello from codex"
         )]
     );
+}
+
+#[test]
+fn completed_reasoning_hides_empty_generated_summary_parts() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+
+    shell.ingest_completed_item(ThreadItem::Reasoning {
+        id: "reasoning-1".to_string(),
+        summary: vec![
+            "**Checking the first thing**\n\n<!-- -->".to_string(),
+            "**Checking the second thing**\n\n<!-- -->".to_string(),
+        ],
+        content: vec!["raw reasoning must not replace an empty summary".to_string()],
+    });
+
+    assert_eq!(shell.transcript, VecDeque::new());
+}
+
+#[test]
+fn completed_reasoning_uses_summary_without_interleaving_raw_content() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+
+    shell.ingest_completed_item(ThreadItem::Reasoning {
+        id: "reasoning-1".to_string(),
+        summary: vec![
+            "**Plan**\n\ndone".to_string(),
+            "**Checking tests**\n\n<!-- -->".to_string(),
+        ],
+        content: vec![
+            "raw reasoning one".to_string(),
+            "raw reasoning two".to_string(),
+        ],
+    });
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::new(
+            TranscriptKind::Status,
+            "reasoning: done",
+        )])
+    );
+    insta::assert_snapshot!(shell.transcript[0].text, @"reasoning: done");
+}
+
+#[test]
+fn completed_extension_items_render_as_successful_tools() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.tool_activity.clear();
+
+    shell.ingest_completed_item(ThreadItem::WebSearch(WebSearchItem {
+        id: "web-1".to_string(),
+        query: "latest protocol changes".to_string(),
+        action: None,
+    }));
+    shell.ingest_completed_item(ThreadItem::ImageGeneration(ImageGenerationItem {
+        id: "image-1".to_string(),
+        status: "completed".to_string(),
+        revised_prompt: None,
+        result: String::new(),
+        saved_path: None,
+    }));
+
+    assert_eq!(
+        shell.tool_activity,
+        VecDeque::from([
+            ToolActivity {
+                id: "web-1".to_string(),
+                title: "web search: latest protocol changes".to_string(),
+                status: "completed".to_string(),
+            },
+            ToolActivity {
+                id: "image-1".to_string(),
+                title: "image generation".to_string(),
+                status: "completed".to_string(),
+            },
+        ])
+    );
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, "web search: latest protocol changes")
+                .tool_status(ToolBlockStatus::Success)
+                .item_id("web-1"),
+            TranscriptLine::new(TranscriptKind::Tool, "image generation")
+                .tool_status(ToolBlockStatus::Success)
+                .item_id("image-1"),
+        ])
+    );
+}
+
+#[tokio::test]
+async fn safety_buffering_retry_rolls_back_and_resubmits_without_duplicate_transcript() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.transcript.clear();
+
+    shell
+        .submit_prompt(&mut backend, "Explain the request".to_string())
+        .await
+        .expect("turn should start");
+    shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &shell,
+            "turn-submit",
+            /*show_buffering_ui*/ true,
+            Some("faster-model"),
+        ),
+    ));
+
+    shell
+        .handle_key(key_char('r'), &config, &mut backend)
+        .await
+        .expect("retry key should be handled");
+
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::TurnStart {
+                thread_id: shell.thread_id,
+                prompt: "Explain the request".to_string(),
+                cwd: PathBuf::from("/workspace/better-codex"),
+                model: "gpt-5-codex".to_string(),
+                effort: None,
+                collaboration_mode: None,
+            },
+            RecordedBackendCall::Interrupt {
+                thread_id: shell.thread_id,
+                turn_id: "turn-submit".to_string(),
+            },
+            RecordedBackendCall::Rollback {
+                thread_id: shell.thread_id,
+                num_turns: 1,
+            },
+            RecordedBackendCall::TurnStart {
+                thread_id: shell.thread_id,
+                prompt: "Explain the request".to_string(),
+                cwd: PathBuf::from("/workspace/better-codex"),
+                model: "faster-model".to_string(),
+                effort: Some(ReasoningEffort::Low),
+                collaboration_mode: None,
+            },
+        ]
+    );
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::new(
+            TranscriptKind::User,
+            "Explain the request",
+        )])
+    );
+    assert_eq!(shell.active_turn_id.as_deref(), Some("turn-submit"));
+    assert!(shell.safety_buffering_modal_lines().is_none());
+}
+
+#[tokio::test]
+async fn renders_safety_buffering_retry_modal_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+
+    shell
+        .submit_prompt(&mut backend, "Explain the request".to_string())
+        .await
+        .expect("turn should start");
+    shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &shell,
+            "turn-submit",
+            /*show_buffering_ui*/ true,
+            Some("faster-model"),
+        ),
+    ));
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        ),
+    ));
+}
+
+#[test]
+fn safety_buffering_filters_stale_updates_and_cleans_up_when_streaming_starts() {
+    let shell = ShellState::snapshot_fixture();
+    let thread_id = shell.thread_id.to_string();
+    let streaming_notifications = [
+        ServerNotification::AgentMessageDelta(
+            codex_app_server_protocol::AgentMessageDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-active".to_string(),
+                item_id: "assistant-1".to_string(),
+                delta: "response".to_string(),
+            },
+        ),
+        ServerNotification::PlanDelta(codex_app_server_protocol::PlanDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-active".to_string(),
+            item_id: "plan-1".to_string(),
+            delta: "plan".to_string(),
+        }),
+        ServerNotification::ReasoningSummaryTextDelta(
+            codex_app_server_protocol::ReasoningSummaryTextDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-active".to_string(),
+                item_id: "reasoning-1".to_string(),
+                delta: "summary".to_string(),
+                summary_index: 0,
+            },
+        ),
+        ServerNotification::ReasoningTextDelta(
+            codex_app_server_protocol::ReasoningTextDeltaNotification {
+                thread_id,
+                turn_id: "turn-active".to_string(),
+                item_id: "reasoning-1".to_string(),
+                delta: "reasoning".to_string(),
+                content_index: 0,
+            },
+        ),
+    ];
+
+    for streaming_notification in streaming_notifications {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.active_turn_id = Some("turn-active".to_string());
+
+        let mut stale_thread = safety_buffering_notification(
+            &shell,
+            "turn-active",
+            /*show_buffering_ui*/ true,
+            Some("faster-model"),
+        );
+        stale_thread.thread_id = "other-thread".to_string();
+        shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+            stale_thread,
+        ));
+        shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+            safety_buffering_notification(
+                &shell,
+                "turn-stale",
+                /*show_buffering_ui*/ true,
+                Some("faster-model"),
+            ),
+        ));
+        assert!(shell.safety_buffering_modal_lines().is_none());
+
+        shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+            safety_buffering_notification(
+                &shell,
+                "turn-active",
+                /*show_buffering_ui*/ true,
+                Some("faster-model"),
+            ),
+        ));
+        assert!(shell.safety_buffering_modal_lines().is_some());
+        assert_eq!(shell.status, "waiting");
+
+        shell.handle_notification(streaming_notification);
+        assert!(shell.safety_buffering_modal_lines().is_none());
+        assert_ne!(shell.status, "waiting");
+
+        shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+            safety_buffering_notification(
+                &shell,
+                "turn-active",
+                /*show_buffering_ui*/ true,
+                Some("faster-model"),
+            ),
+        ));
+        assert!(shell.safety_buffering_modal_lines().is_none());
+    }
+}
+
+#[test]
+fn safety_buffering_hide_and_turn_completion_clear_the_modal() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &shell,
+            "turn-active",
+            /*show_buffering_ui*/ true,
+            /*faster_model*/ None,
+        ),
+    ));
+    assert!(shell.safety_buffering_modal_lines().is_some());
+
+    shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &shell,
+            "turn-active",
+            /*show_buffering_ui*/ false,
+            /*faster_model*/ None,
+        ),
+    ));
+    assert!(shell.safety_buffering_modal_lines().is_none());
+    assert_eq!(shell.status, "thinking");
+
+    shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &shell,
+            "turn-active",
+            /*show_buffering_ui*/ true,
+            /*faster_model*/ None,
+        ),
+    ));
+    shell.handle_notification(ServerNotification::TurnCompleted(
+        codex_app_server_protocol::TurnCompletedNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn: test_turn("turn-active", TurnStatus::Completed),
+        },
+    ));
+    assert!(shell.safety_buffering_modal_lines().is_none());
+    assert_eq!(shell.status, "ready");
+}
+
+#[test]
+fn bio_policy_error_renders_dedicated_safety_notice() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.active_turn_id = Some("turn-active".to_string());
+
+    shell.handle_notification(ServerNotification::Error(ErrorNotification {
+        error: TurnError {
+            message: serde_json::json!({
+                "error": {"code": "bio_policy", "message": "copy may change"}
+            })
+            .to_string(),
+            codex_error_info: None,
+            additional_details: None,
+        },
+        will_retry: false,
+        thread_id: shell.thread_id.to_string(),
+        turn_id: "turn-active".to_string(),
+    }));
+
+    assert_eq!(shell.transcript.len(), 1);
+    assert_eq!(shell.transcript[0].kind, TranscriptKind::Status);
+    assert_eq!(shell.active_turn_id, None);
+    insta::assert_snapshot!(shell.transcript[0].text, @r"
+This content can't be shown
+
+We take extra caution with requests involving biological research and applications that could pose safety risks. Eligible researchers can apply for Trusted Access.
+
+Trusted Access: https://www.openai.com/form/trusted-access-for-biology-research/
+Learn more: https://help.openai.com/en/articles/20001326
+    ");
 }
 
 #[test]
@@ -1504,7 +1881,11 @@ fn completed_tool_item_updates_existing_transcript_status() {
         thread_id: thread_id.clone(),
         turn_id: "turn-1".to_string(),
         started_at_ms: 0,
-        item: command_execution_item("exec-1", CommandExecutionStatus::InProgress, None),
+        item: command_execution_item(
+            "exec-1",
+            CommandExecutionStatus::InProgress,
+            /*exit_code*/ None,
+        ),
     }));
 
     let running_buf = render_shell_buffer(&shell, area);
@@ -1664,7 +2045,7 @@ fn transcript_scroll_clamps_to_last_rendered_range() {
     shell.scroll_transcript_up(TRANSCRIPT_PAGE_SCROLL_STEP);
     assert_eq!(shell.transcript_scroll, 10);
 
-    shell.scroll_transcript_down(3);
+    shell.scroll_transcript_down(/*rows*/ 3);
     assert_eq!(shell.transcript_scroll, 7);
 
     shell.scroll_transcript_to_top();
@@ -1766,7 +2147,7 @@ fn rendered_transcript_leaves_gap_before_scrollbar() {
 #[test]
 fn context_used_percent_handles_unknown_and_baseline_usage() {
     assert_eq!(
-        dashboard::context_used_percent(&TokenUsage::default(), None),
+        dashboard::context_used_percent(&TokenUsage::default(), /*model_context_window*/ None,),
         None
     );
     assert_eq!(
@@ -2194,14 +2575,44 @@ fn key_char(ch: char) -> KeyEvent {
     KeyEvent::new(KeyCode::Char(ch), KeyModifiers::empty())
 }
 
-fn model_preset_fixture(slug: &str, show_in_picker: bool, service_tiers: &[&str]) -> ModelPreset {
+fn safety_buffering_notification(
+    shell: &ShellState,
+    turn_id: &str,
+    show_buffering_ui: bool,
+    faster_model: Option<&str>,
+) -> ModelSafetyBufferingUpdatedNotification {
+    ModelSafetyBufferingUpdatedNotification {
+        thread_id: shell.thread_id.to_string(),
+        turn_id: turn_id.to_string(),
+        model: shell.model.clone(),
+        use_cases: Vec::new(),
+        reasons: Vec::new(),
+        show_buffering_ui,
+        faster_model: faster_model.map(str::to_string),
+    }
+}
+
+fn model_preset_fixture(
+    slug: &str,
+    show_in_picker: bool,
+    default_reasoning_effort: ReasoningEffort,
+    supported_reasoning_efforts: &[ReasoningEffort],
+    service_tiers: &[&str],
+) -> ModelPreset {
     ModelPreset {
         id: slug.to_string(),
         model: slug.to_string(),
         display_name: slug.to_string(),
         description: format!("{slug} description"),
-        default_reasoning_effort: ReasoningEffort::Medium,
-        supported_reasoning_efforts: Vec::new(),
+        default_reasoning_effort,
+        supported_reasoning_efforts: supported_reasoning_efforts
+            .iter()
+            .cloned()
+            .map(|effort| ReasoningEffortPreset {
+                description: format!("{effort} reasoning"),
+                effort,
+            })
+            .collect(),
         supports_personality: false,
         additional_speed_tiers: Vec::new(),
         service_tiers: service_tiers
@@ -2220,6 +2631,20 @@ fn model_preset_fixture(slug: &str, show_in_picker: bool, service_tiers: &[&str]
         supported_in_api: true,
         input_modalities: Vec::new(),
     }
+}
+
+fn collaboration_mode_fixture(
+    model: &str,
+    reasoning_effort: Option<ReasoningEffort>,
+) -> Box<CollaborationMode> {
+    Box::new(CollaborationMode {
+        mode: ModeKind::Default,
+        settings: CollaborationModeSettings {
+            model: model.to_string(),
+            reasoning_effort,
+            developer_instructions: None,
+        },
+    })
 }
 
 fn command_approval_request() -> ServerRequest {
@@ -2462,8 +2887,18 @@ fn plugin_list_response_fixture() -> PluginListResponse {
             path: Some(test_absolute_path("codex-home/plugins/marketplace.json")),
             interface: None,
             plugins: vec![
-                plugin_summary_fixture("plugin-calendar", "Calendar", true, true),
-                plugin_summary_fixture("plugin-drive", "Drive", false, false),
+                plugin_summary_fixture(
+                    "plugin-calendar",
+                    "Calendar",
+                    /*installed*/ true,
+                    /*enabled*/ true,
+                ),
+                plugin_summary_fixture(
+                    "plugin-drive",
+                    "Drive",
+                    /*installed*/ false,
+                    /*enabled*/ false,
+                ),
             ],
         }],
         marketplace_load_errors: Vec::new(),
@@ -2475,6 +2910,7 @@ fn plugin_summary_fixture(id: &str, name: &str, installed: bool, enabled: bool) 
     PluginSummary {
         id: id.to_string(),
         remote_plugin_id: None,
+        version: None,
         local_version: None,
         name: name.to_string(),
         share_context: None,
@@ -2484,6 +2920,7 @@ fn plugin_summary_fixture(id: &str, name: &str, installed: bool, enabled: bool) 
         installed,
         enabled,
         install_policy: PluginInstallPolicy::Available,
+        install_policy_source: None,
         auth_policy: PluginAuthPolicy::OnUse,
         availability: PluginAvailability::Available,
         interface: Some(PluginInterface {
@@ -3121,6 +3558,20 @@ async fn native_settings_pages_write_config_and_validate_edits() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
+    shell.available_models = vec![model_preset_fixture(
+        "gpt-5-codex",
+        /*show_in_picker*/ true,
+        ReasoningEffort::Low,
+        &[
+            ReasoningEffort::Low,
+            ReasoningEffort::Medium,
+            ReasoningEffort::High,
+            ReasoningEffort::XHigh,
+            ReasoningEffort::Max,
+            ReasoningEffort::Ultra,
+        ],
+        &[],
+    )];
     let mut backend = RecordingBackend::default();
 
     shell
@@ -3178,12 +3629,12 @@ async fn native_settings_pages_write_config_and_validate_edits() {
         ("model".to_string(), serde_json::json!("gpt-5-codex"),),
         (
             "model_reasoning_effort".to_string(),
-            serde_json::json!("minimal"),
+            serde_json::json!("low"),
         ),
     ])));
     assert!(calls.contains(&RecordedBackendCall::ThreadSettingsUpdate {
         model: None,
-        effort: Some(ReasoningEffort::Minimal),
+        effort: Some(ReasoningEffort::Low),
         service_tier: None,
         approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
     }));
@@ -3201,7 +3652,7 @@ async fn native_settings_pages_write_config_and_validate_edits() {
         "tui.animations".to_string(),
         serde_json::json!(false),
     )])));
-    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Minimal));
+    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Low));
     assert_eq!(
         shell.approval_policy,
         codex_app_server_protocol::AskForApproval::Never
@@ -3247,16 +3698,60 @@ async fn native_settings_pages_write_config_and_validate_edits() {
 }
 
 #[tokio::test]
+async fn ultra_reasoning_warns_about_configured_agent_concurrency() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.settings.focused = true;
+    shell.settings.focus_action(SettingsAction::ReasoningEffort);
+    shell.max_concurrent_threads_per_session = 8;
+    shell.available_models = vec![model_preset_fixture(
+        "gpt-5-codex",
+        /*show_in_picker*/ true,
+        ReasoningEffort::Ultra,
+        &[ReasoningEffort::Ultra],
+        &[],
+    )];
+    let mut backend = RecordingBackend::default();
+
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("ultra reasoning should be selected");
+
+    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Ultra));
+    let warning = shell.transcript.back().expect("warning should be rendered");
+    assert_eq!(warning.kind, TranscriptKind::Status);
+    insta::assert_snapshot!(warning.text, @"Ultra reasoning may proactively use multiple agents. This session is configured for 8 concurrent threads with up to 7 subagents which can increase usage quickly. Consider setting features.multi_agent_v2.max_concurrent_threads_per_session below 8.");
+}
+
+#[tokio::test]
 async fn native_settings_cycle_models_and_service_tiers() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
     shell.available_models = vec![
-        model_preset_fixture("gpt-5-codex", /*show_in_picker*/ true, &[]),
-        model_preset_fixture("hidden-model", /*show_in_picker*/ false, &[]),
+        model_preset_fixture(
+            "gpt-5-codex",
+            /*show_in_picker*/ true,
+            ReasoningEffort::Medium,
+            &[ReasoningEffort::Low, ReasoningEffort::Medium],
+            &[],
+        ),
+        model_preset_fixture(
+            "hidden-model",
+            /*show_in_picker*/ false,
+            ReasoningEffort::Medium,
+            &[ReasoningEffort::Low, ReasoningEffort::Medium],
+            &[],
+        ),
         model_preset_fixture(
             "gpt-5.5",
             /*show_in_picker*/ true,
+            ReasoningEffort::Medium,
+            &[ReasoningEffort::Low, ReasoningEffort::Medium],
             &["fast-tier", "batch-tier"],
         ),
     ];
@@ -3306,6 +3801,7 @@ async fn native_settings_cycle_models_and_service_tiers() {
         .expect("service tier should cycle to default");
 
     assert_eq!(shell.model, "gpt-5.5");
+    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Medium));
     assert_eq!(
         shell.service_tier.as_deref(),
         Some(SERVICE_TIER_DEFAULT_REQUEST_VALUE)
@@ -3315,14 +3811,11 @@ async fn native_settings_cycle_models_and_service_tiers() {
         vec![
             RecordedBackendCall::ConfigWrite(vec![
                 ("model".to_string(), json!("gpt-5.5")),
-                (
-                    "model_reasoning_effort".to_string(),
-                    serde_json::Value::Null
-                ),
+                ("model_reasoning_effort".to_string(), json!("medium")),
             ]),
             RecordedBackendCall::ThreadSettingsUpdate {
                 model: Some("gpt-5.5".to_string()),
-                effort: None,
+                effort: Some(ReasoningEffort::Medium),
                 service_tier: None,
                 approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
             },
@@ -3355,6 +3848,243 @@ async fn native_settings_cycle_models_and_service_tiers() {
                 effort: None,
                 service_tier: Some(Some(SERVICE_TIER_DEFAULT_REQUEST_VALUE.to_string())),
                 approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+            },
+        ]
+    );
+}
+
+#[test]
+fn native_settings_reasoning_cycle_follows_model_catalog() {
+    let sol = model_preset_fixture(
+        "gpt-5.6-sol",
+        /*show_in_picker*/ true,
+        ReasoningEffort::Low,
+        &[
+            ReasoningEffort::Low,
+            ReasoningEffort::Medium,
+            ReasoningEffort::High,
+            ReasoningEffort::XHigh,
+            ReasoningEffort::Max,
+            ReasoningEffort::Ultra,
+        ],
+        &["priority"],
+    );
+    let luna = model_preset_fixture(
+        "gpt-5.6-luna",
+        /*show_in_picker*/ true,
+        ReasoningEffort::Medium,
+        &[
+            ReasoningEffort::Low,
+            ReasoningEffort::Medium,
+            ReasoningEffort::High,
+            ReasoningEffort::XHigh,
+            ReasoningEffort::Max,
+        ],
+        &["priority"],
+    );
+
+    let mut effort = None;
+    let mut sol_cycle = Vec::new();
+    for _ in 0..7 {
+        effort = settings::next_reasoning_effort(effort.as_ref(), &sol);
+        sol_cycle.push(effort.clone());
+    }
+    assert_eq!(
+        sol_cycle,
+        vec![
+            Some(ReasoningEffort::Low),
+            Some(ReasoningEffort::Medium),
+            Some(ReasoningEffort::High),
+            Some(ReasoningEffort::XHigh),
+            Some(ReasoningEffort::Max),
+            Some(ReasoningEffort::Ultra),
+            None,
+        ]
+    );
+
+    let mut effort = None;
+    let mut luna_cycle = Vec::new();
+    for _ in 0..6 {
+        effort = settings::next_reasoning_effort(effort.as_ref(), &luna);
+        luna_cycle.push(effort.clone());
+    }
+    assert_eq!(
+        luna_cycle,
+        vec![
+            Some(ReasoningEffort::Low),
+            Some(ReasoningEffort::Medium),
+            Some(ReasoningEffort::High),
+            Some(ReasoningEffort::XHigh),
+            Some(ReasoningEffort::Max),
+            None,
+        ]
+    );
+    assert_eq!(
+        settings::reasoning_effort_label(&ReasoningEffort::Max),
+        "Max"
+    );
+    assert_eq!(
+        settings::reasoning_effort_label(&ReasoningEffort::XHigh),
+        "Extra high"
+    );
+}
+
+#[tokio::test]
+async fn native_settings_reasoning_wrap_resets_active_thread_to_model_default() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.settings.focused = true;
+    shell.settings.focus_action(SettingsAction::ReasoningEffort);
+    shell.model = "gpt-5.6-sol".to_string();
+    shell.reasoning_effort = Some(ReasoningEffort::Ultra);
+    shell.collaboration_mode = Some(collaboration_mode_fixture(
+        "gpt-5.6-sol",
+        Some(ReasoningEffort::Ultra),
+    ));
+    shell.available_models = vec![model_preset_fixture(
+        "gpt-5.6-sol",
+        /*show_in_picker*/ true,
+        ReasoningEffort::Low,
+        &[
+            ReasoningEffort::Low,
+            ReasoningEffort::Medium,
+            ReasoningEffort::High,
+            ReasoningEffort::XHigh,
+            ReasoningEffort::Max,
+            ReasoningEffort::Ultra,
+        ],
+        &["priority"],
+    )];
+    let mut backend = RecordingBackend::default();
+
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("reasoning should wrap to the model default");
+
+    assert_eq!(shell.reasoning_effort, None);
+    assert_eq!(
+        shell.collaboration_mode,
+        Some(collaboration_mode_fixture(
+            "gpt-5.6-sol",
+            /*reasoning_effort*/ None,
+        ))
+    );
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ConfigWrite(vec![
+                ("model".to_string(), json!("gpt-5.6-sol")),
+                (
+                    "model_reasoning_effort".to_string(),
+                    serde_json::Value::Null
+                ),
+            ]),
+            RecordedBackendCall::ThreadSettingsUpdate {
+                model: None,
+                effort: Some(ReasoningEffort::Low),
+                service_tier: None,
+                approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn native_settings_model_switch_resets_unsupported_runtime_options() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    shell.settings.focused = true;
+    shell.model = "gpt-5.6-sol".to_string();
+    shell.reasoning_effort = Some(ReasoningEffort::Ultra);
+    shell.service_tier = Some("priority".to_string());
+    shell.collaboration_mode = Some(collaboration_mode_fixture(
+        "gpt-5.6-sol",
+        Some(ReasoningEffort::Ultra),
+    ));
+    shell.available_models = vec![
+        model_preset_fixture(
+            "gpt-5.6-sol",
+            /*show_in_picker*/ true,
+            ReasoningEffort::Low,
+            &[
+                ReasoningEffort::Low,
+                ReasoningEffort::Medium,
+                ReasoningEffort::High,
+                ReasoningEffort::XHigh,
+                ReasoningEffort::Max,
+                ReasoningEffort::Ultra,
+            ],
+            &["priority"],
+        ),
+        model_preset_fixture(
+            "gpt-5.6-luna",
+            /*show_in_picker*/ true,
+            ReasoningEffort::Medium,
+            &[
+                ReasoningEffort::Low,
+                ReasoningEffort::Medium,
+                ReasoningEffort::High,
+                ReasoningEffort::XHigh,
+                ReasoningEffort::Max,
+            ],
+            &[],
+        ),
+    ];
+    let mut backend = RecordingBackend::default();
+
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("model should switch");
+    shell
+        .submit_prompt(&mut backend, "Use current settings".to_string())
+        .await
+        .expect("turn should use the locally updated collaboration mode");
+
+    assert_eq!(shell.model, "gpt-5.6-luna");
+    assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Medium));
+    assert_eq!(shell.service_tier, None);
+    assert_eq!(
+        shell.collaboration_mode,
+        Some(collaboration_mode_fixture(
+            "gpt-5.6-luna",
+            Some(ReasoningEffort::Medium),
+        ))
+    );
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ConfigWrite(vec![
+                ("model".to_string(), json!("gpt-5.6-luna")),
+                ("model_reasoning_effort".to_string(), json!("medium")),
+                ("service_tier".to_string(), serde_json::Value::Null),
+            ]),
+            RecordedBackendCall::ThreadSettingsUpdate {
+                model: Some("gpt-5.6-luna".to_string()),
+                effort: Some(ReasoningEffort::Medium),
+                service_tier: Some(None),
+                approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
+            },
+            RecordedBackendCall::TurnStart {
+                thread_id: shell.thread_id,
+                prompt: "Use current settings".to_string(),
+                cwd: PathBuf::from("/workspace/better-codex"),
+                model: "gpt-5.6-luna".to_string(),
+                effort: Some(ReasoningEffort::Medium),
+                collaboration_mode: Some(CollaborationMode {
+                    mode: ModeKind::Default,
+                    settings: CollaborationModeSettings {
+                        model: "gpt-5.6-luna".to_string(),
+                        reasoning_effort: Some(ReasoningEffort::Medium),
+                        developer_instructions: None,
+                    },
+                }),
             },
         ]
     );
@@ -3620,10 +4350,16 @@ enum RecordedBackendCall {
         prompt: String,
         cwd: PathBuf,
         model: String,
+        effort: Option<ReasoningEffort>,
+        collaboration_mode: Option<CollaborationMode>,
     },
     Interrupt {
         thread_id: codex_protocol::ThreadId,
         turn_id: String,
+    },
+    Rollback {
+        thread_id: codex_protocol::ThreadId,
+        num_turns: u32,
     },
     Resolve(RequestId),
     Reject {
@@ -3644,7 +4380,7 @@ impl backend::AppShellBackend for RecordingBackend {
         Ok(started_thread(
             "started",
             test_thread_id("01900000-0000-7000-8000-000000000201"),
-            None,
+            /*forked_from_id*/ None,
         ))
     }
 
@@ -3654,7 +4390,9 @@ impl backend::AppShellBackend for RecordingBackend {
         thread_id: codex_protocol::ThreadId,
     ) -> color_eyre::Result<crate::app_server_session::AppServerStartedThread> {
         self.push(RecordedBackendCall::Resume(thread_id));
-        Ok(started_thread("resumed", thread_id, None))
+        Ok(started_thread(
+            "resumed", thread_id, /*forked_from_id*/ None,
+        ))
     }
 
     async fn fork_thread(
@@ -4000,6 +4738,8 @@ impl backend::AppShellBackend for RecordingBackend {
             prompt,
             cwd: params.cwd,
             model: params.model,
+            effort: params.effort,
+            collaboration_mode: params.collaboration_mode,
         });
         Ok(TurnStartResponse {
             turn: test_turn("turn-submit", TurnStatus::InProgress),
@@ -4013,6 +4753,20 @@ impl backend::AppShellBackend for RecordingBackend {
     ) -> std::result::Result<(), TypedRequestError> {
         self.push(RecordedBackendCall::Interrupt { thread_id, turn_id });
         Ok(())
+    }
+
+    async fn thread_rollback(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+        num_turns: u32,
+    ) -> color_eyre::Result<ThreadRollbackResponse> {
+        self.push(RecordedBackendCall::Rollback {
+            thread_id,
+            num_turns,
+        });
+        Ok(ThreadRollbackResponse {
+            thread: thread_fixture(thread_id, Some("rolled back"), "rolled back preview"),
+        })
     }
 
     async fn turn_steer(
@@ -4141,6 +4895,7 @@ fn thread_fixture(
         parent_thread_id: None,
         preview: preview.to_string(),
         ephemeral: false,
+        history_mode: Default::default(),
         model_provider: "openai".to_string(),
         created_at: 1_900_000_000,
         updated_at: 1_900_000_100,

@@ -61,9 +61,11 @@ mod mcp_management;
 mod navigation;
 mod plugin_management;
 mod render;
+mod safety_buffering;
 mod sessions;
 mod settings;
 mod startup;
+mod startup_availability_nux;
 mod startup_login;
 mod startup_model_migration;
 mod user_input;
@@ -90,6 +92,7 @@ use navigation::AppShellRouteState;
 use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
 use render::draw_shell;
+use safety_buffering::SafetyBufferingState;
 use sessions::SessionListState;
 use settings::SettingsAction;
 use settings::SettingsState;
@@ -151,6 +154,12 @@ pub(crate) async fn run(
         .model
         .clone()
         .unwrap_or_else(|| bootstrap.default_model.clone());
+    let availability_nux = startup_availability_nux::prepare(
+        app_server.request_handle(),
+        &mut config,
+        &bootstrap.available_models,
+    )
+    .await;
     let workspace_command_runner = Arc::new(AppServerWorkspaceCommandRunner::new(
         app_server.request_handle(),
     ));
@@ -166,8 +175,12 @@ pub(crate) async fn run(
         config.tui_theme.clone(),
         config.animations,
         config.show_tooltips,
+        config.multi_agent_v2.max_concurrent_threads_per_session,
     );
     shell.ingest_turn_history(started.turns);
+    if let Some(message) = availability_nux {
+        shell.push_system(message);
+    }
     shell
         .refresh_workspace_status(workspace_command_runner.as_ref())
         .await;
@@ -365,6 +378,7 @@ struct ShellState {
     reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
     service_tier: Option<String>,
     collaboration_mode: Option<Box<codex_protocol::config_types::CollaborationMode>>,
+    max_concurrent_threads_per_session: usize,
     personality: Option<codex_protocol::config_types::Personality>,
     transcript: VecDeque<TranscriptLine>,
     transcript_scroll: usize,
@@ -391,6 +405,7 @@ struct ShellState {
     pending_mcp_management: Option<McpManagementState>,
     pending_plugin_management: Option<PluginManagementState>,
     pending_user_input: Option<PendingUserInput>,
+    safety_buffering: SafetyBufferingState,
     streaming_assistant: String,
     streaming_plan: String,
     plan_explanation: Option<String>,
@@ -419,6 +434,7 @@ impl ShellState {
         tui_theme: Option<String>,
         animations: bool,
         show_tooltips: bool,
+        max_concurrent_threads_per_session: usize,
     ) -> Self {
         let model = if session.model.is_empty() {
             fallback_model
@@ -438,6 +454,7 @@ impl ShellState {
             reasoning_effort: session.reasoning_effort,
             service_tier: session.service_tier,
             collaboration_mode: session.collaboration_mode,
+            max_concurrent_threads_per_session,
             personality: session.personality,
             transcript: VecDeque::new(),
             transcript_scroll: 0,
@@ -464,6 +481,7 @@ impl ShellState {
             pending_mcp_management: None,
             pending_plugin_management: None,
             pending_user_input: None,
+            safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: String::new(),
             streaming_plan: String::new(),
             plan_explanation: None,
@@ -540,6 +558,10 @@ impl ShellState {
         }
         if self.command_palette.is_some() {
             self.handle_command_palette_key(key, app_server).await?;
+            return Ok(false);
+        }
+        if self.safety_buffering_modal_lines().is_some() {
+            self.handle_safety_buffering_key(key, app_server).await;
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('o')) {
@@ -1279,6 +1301,7 @@ impl ShellState {
         self.pending_approval = None;
         self.pending_elicitation = None;
         self.pending_user_input = None;
+        self.safety_buffering.clear();
         self.status = "ready".to_string();
         self.push_system("switched session");
         self.ingest_turn_history(started.turns);
@@ -1565,34 +1588,40 @@ impl ShellState {
         }
 
         self.scroll_transcript_to_bottom();
+        let transcript_len_before_submit = self.transcript.len();
         self.push_user(prompt.clone());
         self.status = "thinking".to_string();
         self.streaming_assistant.clear();
         self.streaming_plan.clear();
-        let response = app_server
-            .turn_start(AppShellTurnStart {
-                thread_id: self.thread_id,
-                items: vec![UserInput::Text {
-                    text: prompt.clone(),
-                    text_elements: Vec::new(),
-                }],
-                cwd: self.cwd.clone().into(),
-                approval_policy: self.approval_policy,
-                approvals_reviewer: self.approvals_reviewer,
-                permissions_override: TurnPermissionsOverride::Preserve,
-                workspace_roots: self.runtime_workspace_roots.clone(),
-                model: self.model.clone(),
-                effort: self.reasoning_effort.clone(),
-                summary: None,
-                service_tier: Some(self.service_tier.clone()),
-                collaboration_mode: self.collaboration_mode.as_deref().cloned(),
-                personality: self.personality,
-                output_schema: None,
-            })
-            .await?;
+        let params = AppShellTurnStart {
+            thread_id: self.thread_id,
+            items: vec![UserInput::Text {
+                text: prompt.clone(),
+                text_elements: Vec::new(),
+            }],
+            cwd: self.cwd.clone().into(),
+            approval_policy: self.approval_policy,
+            approvals_reviewer: self.approvals_reviewer,
+            permissions_override: TurnPermissionsOverride::Preserve,
+            workspace_roots: self.runtime_workspace_roots.clone(),
+            model: self.model.clone(),
+            effort: self.reasoning_effort.clone(),
+            summary: None,
+            service_tier: Some(self.service_tier.clone()),
+            collaboration_mode: self.collaboration_mode.as_deref().cloned(),
+            personality: self.personality,
+            output_schema: None,
+        };
+        let response = app_server.turn_start(params.clone()).await?;
         self.composer.remember_submission(&prompt);
         self.composer.clear();
-        self.active_turn_id = Some(response.turn.id);
+        self.active_turn_id = Some(response.turn.id.clone());
+        self.record_safety_buffering_turn(
+            response.turn.id,
+            params,
+            prompt,
+            transcript_len_before_submit,
+        );
         Ok(())
     }
 
@@ -1933,11 +1962,12 @@ impl ShellState {
             ThreadItem::Reasoning {
                 summary, content, ..
             } => {
-                let text = summary
-                    .into_iter()
-                    .chain(content)
-                    .collect::<Vec<_>>()
-                    .join("\n");
+                let text = if summary.is_empty() {
+                    content.join("\n\n")
+                } else {
+                    crate::history_cell::split_reasoning_summary_parts(&summary).1
+                };
+                let text = text.trim();
                 if !text.is_empty() {
                     self.push_status(format!("reasoning: {text}"));
                 }
@@ -2057,10 +2087,16 @@ impl ShellState {
                 self.upsert_subagent_activity(id.clone(), title.clone(), "active".to_string());
                 self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Running);
             }
-            ThreadItem::WebSearch { id, query, action } => {
-                let title = format!("web search: {query}");
-                self.upsert_tool_activity(id.clone(), title.clone(), format!("{action:?}"));
-                self.push_tool_with_status_for_item(id, title, tool_status_from_debug(&action));
+            ThreadItem::WebSearch(item) => {
+                let title = format!("web search: {}", item.query);
+                self.upsert_tool_activity(
+                    item.id.clone(),
+                    title.clone(),
+                    item.action
+                        .as_ref()
+                        .map_or_else(|| "completed".to_string(), |action| format!("{action:?}")),
+                );
+                self.push_tool_with_status_for_item(item.id, title, ToolBlockStatus::Success);
             }
             ThreadItem::ImageView { id, path } => {
                 let title = format!("view image: {path}");
@@ -2072,18 +2108,14 @@ impl ShellState {
                 self.upsert_tool_activity(id.clone(), title.clone(), "completed".to_string());
                 self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Success);
             }
-            ThreadItem::ImageGeneration {
-                id,
-                status,
-                saved_path,
-                ..
-            } => {
-                let title = saved_path
+            ThreadItem::ImageGeneration(item) => {
+                let title = item
+                    .saved_path
                     .map(|path| format!("image generation: {}", path.as_path().display()))
                     .unwrap_or_else(|| "image generation".to_string());
-                let tool_status = tool_status_from_str(&status);
-                self.upsert_tool_activity(id.clone(), title.clone(), status);
-                self.push_tool_with_status_for_item(id, title, tool_status);
+                let tool_status = tool_status_from_str(&item.status);
+                self.upsert_tool_activity(item.id.clone(), title.clone(), item.status);
+                self.push_tool_with_status_for_item(item.id, title, tool_status);
             }
             ThreadItem::EnteredReviewMode { review, .. } => {
                 self.push_status(format!("entered review mode: {review}"));
@@ -2248,6 +2280,7 @@ impl ShellState {
             reasoning_effort: None,
             service_tier: None,
             collaboration_mode: None,
+            max_concurrent_threads_per_session: 4,
             personality: None,
             transcript: VecDeque::new(),
             transcript_scroll: 0,
@@ -2278,6 +2311,7 @@ impl ShellState {
             pending_mcp_management: None,
             pending_plugin_management: None,
             pending_user_input: None,
+            safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
             streaming_plan: String::new(),
             plan_explanation: Some("Build the standalone shell in slices.".to_string()),
@@ -2405,6 +2439,7 @@ pub mod bench_support {
             reasoning_effort: None,
             service_tier: None,
             collaboration_mode: None,
+            max_concurrent_threads_per_session: 4,
             personality: None,
             transcript: VecDeque::new(),
             transcript_scroll: 0,
@@ -2435,6 +2470,7 @@ pub mod bench_support {
             pending_mcp_management: None,
             pending_plugin_management: None,
             pending_user_input: None,
+            safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: String::new(),
             streaming_plan: String::new(),
             plan_explanation: Some("Keep render performance bounded.".to_string()),
