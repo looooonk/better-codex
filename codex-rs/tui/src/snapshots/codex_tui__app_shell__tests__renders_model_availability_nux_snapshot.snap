@@ -17,7 +17,7 @@ expression: "render_shell(&shell, area)"
                                                                        completed file changes in...
  ▌ tool exec just test -p codex-tui
                                                                        Thread
- ▌ diff diff 3 files +128 -24                                          stage-one
+ ▌ edited 3 files +128 -24                                             stage-one
  system: Our most capable model yet. GPT-5.6 Sol can tackle complex    id 01900000-0000-7000-800...
          code changes, dig into research, produce polished documents,  resume, fork, archive,
          and take on your most ambitious work. Sol is highly capable

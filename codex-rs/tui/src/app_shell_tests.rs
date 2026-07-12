@@ -1,12 +1,16 @@
 use super::render::ShellView;
 use super::render::TranscriptScrollbarMetrics;
 use super::*;
+use base64::Engine;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
 use codex_app_server_protocol::AppSummary;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
+use codex_app_server_protocol::CommandExecOutputDeltaNotification;
+use codex_app_server_protocol::CommandExecOutputStream;
+use codex_app_server_protocol::CommandExecutionOutputDeltaNotification;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::CommandExecutionSource;
 use codex_app_server_protocol::CommandExecutionStatus;
@@ -20,6 +24,7 @@ use codex_app_server_protocol::ExternalAgentConfigImportItemTypeSuccess;
 use codex_app_server_protocol::ExternalAgentConfigImportTypeResult;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
+use codex_app_server_protocol::FileChangePatchUpdatedNotification;
 use codex_app_server_protocol::ImageGenerationItem;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
@@ -58,7 +63,10 @@ use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::SkillMigration;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoal;
+use codex_app_server_protocol::ThreadGoalClearResponse;
 use codex_app_server_protocol::ThreadGoalClearedNotification;
+use codex_app_server_protocol::ThreadGoalGetResponse;
+use codex_app_server_protocol::ThreadGoalSetResponse;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
 use codex_app_server_protocol::ThreadListParams;
@@ -70,6 +78,7 @@ use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
+use codex_app_server_protocol::TurnDiffUpdatedNotification;
 use codex_app_server_protocol::TurnError;
 use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnStartResponse;
@@ -100,6 +109,19 @@ use std::sync::Mutex;
 #[test]
 fn renders_first_stage_shell_snapshot() {
     let shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_multiline_composer_growth_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell
+        .composer
+        .set_text("alpha\n\nbravo\n\ncharlie\n\ndelta");
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -820,6 +842,165 @@ fn command_palette_clear_resets_visible_transcript() {
     assert_eq!(shell.transcript_selection, None);
 }
 
+#[tokio::test]
+async fn clear_slash_command_resets_visible_transcript_without_submitting_turn() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.streaming_assistant = "streaming".to_string();
+    shell.streaming_plan = "plan".to_string();
+    shell.composer.set_text("/clear");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("clear command should be handled locally");
+
+    assert_eq!(
+        shell.transcript.iter().cloned().collect::<Vec<_>>(),
+        vec![TranscriptLine::new(
+            TranscriptKind::System,
+            "visible transcript cleared"
+        )]
+    );
+    assert_eq!(shell.streaming_assistant, "");
+    assert_eq!(shell.streaming_plan, "");
+    assert_eq!(shell.composer.text(), "");
+    assert_eq!(shell.transcript_scroll, 0);
+    assert_eq!(shell.transcript_selection, None);
+    assert_eq!(backend.calls(), Vec::new());
+
+    shell.composer.move_up_or_recall_history();
+    assert_eq!(shell.composer.text(), "/clear");
+}
+
+#[tokio::test]
+async fn goal_slash_command_sets_and_shows_thread_goal() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("/goal Ship the standalone shell");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("goal set command should be handled locally");
+
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::GoalSet {
+            thread_id: shell.thread_id,
+            objective: Some("Ship the standalone shell".to_string()),
+            status: Some(ThreadGoalStatus::Active),
+            token_budget: None,
+        }]
+    );
+    assert_eq!(
+        shell.active_goal,
+        Some(ThreadGoal {
+            token_budget: None,
+            ..test_thread_goal(
+                &shell.thread_id,
+                ThreadGoalStatus::Active,
+                "Ship the standalone shell"
+            )
+        })
+    );
+    assert_eq!(shell.composer.text(), "");
+
+    shell.composer.set_text("/goal");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("goal show command should be handled locally");
+
+    assert!(backend.calls().contains(&RecordedBackendCall::GoalGet {
+        thread_id: shell.thread_id,
+    }));
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Status
+            && line
+                .text
+                .contains("goal active. Objective: Ship the standalone shell")
+    }));
+    assert!(
+        !backend
+            .calls()
+            .iter()
+            .any(|call| matches!(call, RecordedBackendCall::TurnStart { .. })),
+        "goal slash commands should not submit turns"
+    );
+
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[tokio::test]
+async fn goal_slash_command_pauses_resumes_and_clears_thread_goal() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    *backend.active_goal.lock().expect("goal should lock") = Some(test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::Active,
+        "Keep iterating",
+    ));
+
+    for command in ["/goal pause", "/goal resume", "/goal clear"] {
+        shell.composer.set_text(command);
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .unwrap_or_else(|err| panic!("{command} should be handled locally: {err}"));
+    }
+
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::GoalSet {
+                thread_id: shell.thread_id,
+                objective: None,
+                status: Some(ThreadGoalStatus::Paused),
+                token_budget: None,
+            },
+            RecordedBackendCall::GoalSet {
+                thread_id: shell.thread_id,
+                objective: None,
+                status: Some(ThreadGoalStatus::Active),
+                token_budget: None,
+            },
+            RecordedBackendCall::GoalClear {
+                thread_id: shell.thread_id,
+            },
+        ]
+    );
+    assert_eq!(shell.active_goal, None);
+    assert!(
+        shell
+            .transcript
+            .iter()
+            .any(|line| line.kind == TranscriptKind::Status && line.text == "goal cleared")
+    );
+}
+
 #[test]
 fn dashboard_route_key_mapping_covers_native_routes() {
     assert_eq!(
@@ -1076,7 +1257,7 @@ fn transcript_selection_moves_between_items() {
 
     assert_eq!(
         shell.selected_transcript_copy_text(),
-        Some((TranscriptKind::Diff, "diff 3 files +128 -24"))
+        Some((TranscriptKind::Diff, "3 files +128 -24"))
     );
 
     shell.move_transcript_selection_up(/*rows*/ 2);
@@ -1919,6 +2100,266 @@ fn completed_tool_item_updates_existing_transcript_status() {
 }
 
 #[test]
+fn command_output_deltas_update_one_output_block() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: thread_id.clone(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: command_execution_item("exec-1", CommandExecutionStatus::InProgress, None),
+    }));
+    for delta in ["pytest 40%\r", "pytest 80%\r", "pytest 100%\n"] {
+        shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+            CommandExecutionOutputDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+                item_id: "exec-1".to_string(),
+                delta: delta.to_string(),
+            },
+        ));
+    }
+
+    assert_eq!(
+        shell
+            .transcript
+            .iter()
+            .filter(|line| line.kind == TranscriptKind::Output)
+            .count(),
+        1
+    );
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, "exec cargo test")
+                .tool_status(ToolBlockStatus::Running)
+                .item_id("exec-1"),
+            TranscriptLine::new(
+                TranscriptKind::Output,
+                "pytest 40%\rpytest 80%\rpytest 100%\n"
+            )
+            .tool_status(ToolBlockStatus::Running)
+            .item_id("exec-1"),
+        ])
+    );
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+    insta::assert_snapshot!(render_shell(&shell, area));
+
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::CommandExecution {
+                id: "exec-1".to_string(),
+                command: "cargo test".to_string(),
+                cwd: LegacyAppPathString::from_abs_path(&test_absolute_path(
+                    "workspace/better-codex",
+                )),
+                process_id: None,
+                source: CommandExecutionSource::Agent,
+                status: CommandExecutionStatus::Completed,
+                command_actions: Vec::new(),
+                aggregated_output: Some("pytest 100%\n".to_string()),
+                exit_code: Some(0),
+                duration_ms: Some(42),
+            },
+        },
+    ));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, "exec cargo test exit 0 42ms")
+                .tool_status(ToolBlockStatus::Success)
+                .item_id("exec-1"),
+            TranscriptLine::new(TranscriptKind::Output, "pytest 100%")
+                .tool_status(ToolBlockStatus::Success)
+                .item_id("exec-1"),
+        ])
+    );
+}
+
+#[test]
+fn command_output_transcript_text_is_bounded() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    for index in 0..200 {
+        shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+            CommandExecutionOutputDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+                item_id: "exec-1".to_string(),
+                delta: format!("compile line {index:03}: {}\n", "x".repeat(96)),
+            },
+        ));
+    }
+
+    let output = shell
+        .transcript
+        .back()
+        .expect("output line should be present")
+        .text
+        .clone();
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::new(TranscriptKind::Output, output.clone())
+            .tool_status(ToolBlockStatus::Running)
+            .item_id("exec-1")])
+    );
+    assert!(output.starts_with(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX));
+    assert!(
+        output.chars().count()
+            <= MAX_TRANSCRIPT_OUTPUT_CHARS + TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX.len()
+    );
+    assert!(!output.contains("compile line 000"));
+    assert!(output.contains("compile line 199"));
+}
+
+#[test]
+fn legacy_command_exec_output_deltas_update_one_output_block() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+
+    for output in ["tqdm 1/3\r", "tqdm 2/3\r", "tqdm 3/3\n"] {
+        shell.handle_notification(ServerNotification::CommandExecOutputDelta(
+            CommandExecOutputDeltaNotification {
+                process_id: "process-1".to_string(),
+                stream: CommandExecOutputStream::Stdout,
+                delta_base64: base64::engine::general_purpose::STANDARD.encode(output),
+                cap_reached: false,
+            },
+        ));
+    }
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::new(
+            TranscriptKind::Output,
+            "tqdm 1/3\rtqdm 2/3\rtqdm 3/3\n"
+        )
+        .tool_status(ToolBlockStatus::Running)
+        .item_id("command-exec:process-1")])
+    );
+}
+
+#[tokio::test]
+async fn workspace_refresh_waits_until_active_turn_finishes() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let thread_id = shell.thread_id.to_string();
+    shell.active_turn_id = Some("turn-1".to_string());
+    shell.workspace_status_refresh_due = false;
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &NoopWorkspaceRunner,
+            AppServerEvent::ServerNotification(ServerNotification::TurnDiffUpdated(
+                TurnDiffUpdatedNotification {
+                    thread_id: thread_id.clone(),
+                    turn_id: "turn-1".to_string(),
+                    diff: "@@\n-old\n+new\n".to_string(),
+                },
+            )),
+        )
+        .await
+        .expect("diff update should be handled");
+
+    assert_eq!(shell.workspace_status_refresh_due, true);
+    assert_eq!(shell.workspace_git_status, None);
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &NoopWorkspaceRunner,
+            AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(
+                codex_app_server_protocol::TurnCompletedNotification {
+                    thread_id,
+                    turn: test_turn("turn-1", TurnStatus::Completed),
+                },
+            )),
+        )
+        .await
+        .expect("turn completion should refresh workspace status");
+
+    assert_eq!(shell.workspace_status_refresh_due, false);
+    assert_eq!(
+        shell.workspace_git_status,
+        Some(WorkspaceGitStatus::default())
+    );
+}
+
+#[test]
+fn turn_diff_updates_dashboard_without_conversation_diff_box() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    shell.handle_notification(ServerNotification::TurnDiffUpdated(
+        TurnDiffUpdatedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            diff: "+added\n-removed\n+added again\n".to_string(),
+        },
+    ));
+
+    assert_eq!(
+        shell.latest_diff,
+        Some(DiffSummary {
+            files: 0,
+            additions: 2,
+            removals: 1,
+        })
+    );
+    assert_eq!(shell.transcript, VecDeque::new());
+}
+
+#[test]
+fn file_change_patch_updates_one_diff_box_per_item() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    for diff in ["+first\n", "+second\n"] {
+        shell.handle_notification(ServerNotification::FileChangePatchUpdated(
+            FileChangePatchUpdatedNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+                item_id: "file-1".to_string(),
+                changes: vec![FileUpdateChange {
+                    path: "src/lib.rs".to_string(),
+                    kind: PatchChangeKind::Update { move_path: None },
+                    diff: diff.to_string(),
+                }],
+            },
+        ));
+    }
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::new(
+            TranscriptKind::Diff,
+            "1 files +1 -0\n  M src/lib.rs"
+        )
+        .tool_status(ToolBlockStatus::Running)
+        .item_id("file-1")])
+    );
+}
+
+#[test]
 fn transcript_newlines_render_as_single_row_breaks() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -2279,6 +2720,121 @@ fn composer_recalls_submission_history_from_draft() {
     assert_eq!(composer.text(), "draft");
 }
 
+#[tokio::test]
+async fn shift_enter_preserves_multiline_composer_when_typing() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.clear();
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("shift enter should insert a newline");
+    shell
+        .handle_key(key_char('a'), &config, &mut backend)
+        .await
+        .expect("typing after a newline should edit the second line");
+
+    assert_eq!(
+        (
+            shell.composer.text().to_string(),
+            shell.composer.cursor_position()
+        ),
+        ("\na".to_string(), (1, 1))
+    );
+
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let rendered = render_shell(&shell, area);
+
+    assert!(
+        rendered.contains("Composer ready 2:2"),
+        "composer should render the cursor on the second line"
+    );
+    assert!(
+        rendered.contains("  a"),
+        "composer should keep typed text on the second line"
+    );
+    let view = ShellView { shell: &shell };
+    let buf = render_shell_buffer(&shell, area);
+    let input_area = view.input_area(area);
+    let row = row_containing(&buf, input_area, "  a").expect("typed text row should render");
+    let text_x =
+        row_needle_x(&buf, input_area, row, "a").expect("typed text should have x position");
+    let cursor = view
+        .cursor_position(area)
+        .expect("composer cursor should be visible");
+
+    assert_eq!(cursor.y, row);
+    assert_eq!(cursor.x, text_x + 1);
+}
+
+#[tokio::test]
+async fn repeated_shift_enter_keeps_blank_line_cursor_visible() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.clear();
+
+    for _ in 0..8 {
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::SHIFT),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("shift enter should insert a newline");
+    }
+
+    assert_eq!(shell.composer.cursor_position(), (8, 0));
+
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let view = ShellView { shell: &shell };
+    let buf = render_shell_buffer(&shell, area);
+    let input_area = view.input_area(area);
+    let title_row = row_containing(&buf, input_area, "Composer ready 9:1")
+        .expect("composer should render the ninth logical line");
+    let cursor = view
+        .cursor_position(area)
+        .expect("composer cursor should be visible");
+
+    assert!(title_row <= 18, "composer panel should grow upward");
+    assert!(cursor.y > title_row);
+    assert_eq!(cursor.x, 3);
+}
+
+#[test]
+fn composer_cursor_position_tracks_text_end_without_synthetic_glyph() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.set_text("alpha\nbeta");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let view = ShellView { shell: &shell };
+    let buf = render_shell_buffer(&shell, area);
+    let input_area = view.input_area(area);
+    let row =
+        row_containing(&buf, input_area, "  beta").expect("second composer row should render");
+    let text_x =
+        row_needle_x(&buf, input_area, row, "beta").expect("typed text should have x position");
+    let cursor = view
+        .cursor_position(area)
+        .expect("composer cursor should be visible");
+
+    assert_eq!(cursor.y, row);
+    assert_eq!(cursor.x, text_x + 4);
+    assert!(!buffer_contents(&buf, area).contains("beta▌"));
+}
+
 #[test]
 fn command_approval_serializes_accept_and_deny() {
     let pending = PendingApproval::from_request(&command_approval_request())
@@ -2455,7 +3011,7 @@ fn file_change_detail_caps_file_rows() {
     assert_eq!(
         file_change_detail(&changes),
         "\
-diff 10 files +10 -0
+10 files +10 -0
   A src/file0.rs
   A src/file1.rs
   A src/file2.rs
@@ -2541,6 +3097,17 @@ fn row_containing(buf: &Buffer, area: Rect, needle: &str) -> Option<u16> {
         }
     }
     None
+}
+
+fn row_needle_x(buf: &Buffer, area: Rect, y: u16, needle: &str) -> Option<u16> {
+    let mut row = String::new();
+    for x in area.x..area.right() {
+        if let Some(cell) = buf.cell((x, y)) {
+            row.push_str(cell.symbol());
+        }
+    }
+    row.find(needle)
+        .and_then(|offset| area.x.checked_add(u16::try_from(offset).ok()?))
 }
 
 fn assert_adjacent_rows(rendered: &str, first: &str, second: &str) {
@@ -4213,6 +4780,7 @@ struct RecordingBackend {
     plugin_install_response: Arc<Mutex<PluginInstallResponse>>,
     external_agent_items: Arc<Mutex<Vec<ExternalAgentConfigMigrationItem>>>,
     external_agent_import_in_progress: Arc<Mutex<bool>>,
+    active_goal: Arc<Mutex<Option<ThreadGoal>>>,
     remote_workspace: bool,
     embedded_app_server: bool,
 }
@@ -4230,6 +4798,7 @@ impl Default for RecordingBackend {
             })),
             external_agent_items: Arc::new(Mutex::new(Vec::new())),
             external_agent_import_in_progress: Arc::new(Mutex::new(false)),
+            active_goal: Arc::new(Mutex::new(None)),
             remote_workspace: false,
             embedded_app_server: true,
         }
@@ -4300,6 +4869,18 @@ enum RecordedBackendCall {
     SetName {
         thread_id: codex_protocol::ThreadId,
         name: String,
+    },
+    GoalGet {
+        thread_id: codex_protocol::ThreadId,
+    },
+    GoalSet {
+        thread_id: codex_protocol::ThreadId,
+        objective: Option<String>,
+        status: Option<ThreadGoalStatus>,
+        token_budget: Option<Option<i64>>,
+    },
+    GoalClear {
+        thread_id: codex_protocol::ThreadId,
     },
     ConfigWrite(Vec<(String, serde_json::Value)>),
     ThreadSettingsUpdate {
@@ -4476,6 +5057,66 @@ impl backend::AppShellBackend for RecordingBackend {
     ) -> color_eyre::Result<()> {
         self.push(RecordedBackendCall::SetName { thread_id, name });
         Ok(())
+    }
+
+    async fn thread_goal_get(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> color_eyre::Result<ThreadGoalGetResponse> {
+        self.push(RecordedBackendCall::GoalGet { thread_id });
+        Ok(ThreadGoalGetResponse {
+            goal: self.active_goal.lock().expect("goal should lock").clone(),
+        })
+    }
+
+    async fn thread_goal_set(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+        objective: Option<String>,
+        status: Option<ThreadGoalStatus>,
+        token_budget: Option<Option<i64>>,
+    ) -> color_eyre::Result<ThreadGoalSetResponse> {
+        self.push(RecordedBackendCall::GoalSet {
+            thread_id,
+            objective: objective.clone(),
+            status,
+            token_budget,
+        });
+
+        let mut goal = self.active_goal.lock().expect("goal should lock");
+        let existing = goal.clone();
+        let Some(objective) =
+            objective.or_else(|| existing.as_ref().map(|goal| goal.objective.clone()))
+        else {
+            return Err(color_eyre::eyre::eyre!("no goal is currently set"));
+        };
+        let status = status
+            .or_else(|| existing.as_ref().map(|goal| goal.status))
+            .unwrap_or(ThreadGoalStatus::Active);
+        let mut updated = test_thread_goal(&thread_id, status, &objective);
+        updated.token_budget =
+            token_budget.unwrap_or_else(|| existing.as_ref().and_then(|goal| goal.token_budget));
+        if let Some(existing) = existing {
+            updated.tokens_used = existing.tokens_used;
+            updated.time_used_seconds = existing.time_used_seconds;
+            updated.created_at = existing.created_at;
+        }
+        *goal = Some(updated.clone());
+        Ok(ThreadGoalSetResponse { goal: updated })
+    }
+
+    async fn thread_goal_clear(
+        &mut self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> color_eyre::Result<ThreadGoalClearResponse> {
+        self.push(RecordedBackendCall::GoalClear { thread_id });
+        let cleared = self
+            .active_goal
+            .lock()
+            .expect("goal should lock")
+            .take()
+            .is_some();
+        Ok(ThreadGoalClearResponse { cleared })
     }
 
     async fn write_config(

@@ -17,10 +17,10 @@ expression: "render_shell(&shell, area)"
                                                                          conflicted 1
  ▌ tool exec just test -p codex-tui                                      untracked 3
                                                                        profile managed
- ▌ diff diff 3 files +128 -24                                          files restricted, net
+ ▌ edited 3 files +128 -24                                             files restricted, net
                                                                        restricted
  codex: The new shell owns the fullscreen surface.
-                                                                       Diff
+                                                                       Edits
                                                                        3 files +128 -24
 
                                                                        Tools

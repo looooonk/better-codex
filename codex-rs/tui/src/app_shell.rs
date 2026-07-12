@@ -10,6 +10,9 @@ use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::app_server_session::app_server_rate_limit_snapshots;
 use crate::clipboard_copy::ClipboardLease;
+use crate::goal_display::GOAL_USAGE;
+use crate::goal_display::goal_status_label;
+use crate::goal_display::goal_usage_summary;
 use crate::key_hint;
 use crate::legacy_core::config::Config;
 use crate::resume_picker::SessionSelection;
@@ -27,6 +30,7 @@ use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::PluginListResponse;
 use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::ThreadGoal;
+use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnPlanStep;
@@ -105,6 +109,9 @@ use user_input::UserInputAdvance;
 use workspace::WorkspaceGitStatus;
 
 const MAX_TRANSCRIPT_LINES: usize = 400;
+const MAX_TRANSCRIPT_OUTPUT_CHARS: usize = 8_000;
+const MAX_TRANSCRIPT_OUTPUT_LINES: usize = 160;
+const TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX: &str = "... earlier output omitted ...\n";
 const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
 const TRANSCRIPT_SELECTION_STEP: usize = 1;
 
@@ -334,6 +341,49 @@ enum ToolBlockStatus {
     Fail,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum LocalSlashCommand {
+    Clear,
+    Goal(GoalSlashCommand),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GoalSlashCommand {
+    Show,
+    Set(String),
+    Clear,
+    Pause,
+    Resume,
+    Edit,
+}
+
+impl LocalSlashCommand {
+    fn parse(text: &str) -> Option<Self> {
+        let trimmed = text.trim();
+        let mut parts = trimmed.splitn(2, char::is_whitespace);
+        let command = parts.next()?;
+        let args = parts.next().unwrap_or("").trim();
+        match command {
+            "/clear" if args.is_empty() => Some(Self::Clear),
+            "/goal" => Some(Self::Goal(GoalSlashCommand::parse(args))),
+            _ => None,
+        }
+    }
+}
+
+impl GoalSlashCommand {
+    fn parse(args: &str) -> Self {
+        match args {
+            "" => Self::Show,
+            "clear" => Self::Clear,
+            "pause" => Self::Pause,
+            "resume" => Self::Resume,
+            "edit" => Self::Edit,
+            objective => Self::Set(objective.to_string()),
+        }
+    }
+}
+
 impl TranscriptKind {
     fn label(self) -> &'static str {
         match self {
@@ -342,7 +392,7 @@ impl TranscriptKind {
             Self::Assistant => "codex",
             Self::Plan => "plan",
             Self::Tool => "tool",
-            Self::Diff => "diff",
+            Self::Diff => "edited",
             Self::Output => "output",
             Self::Status => "status",
             Self::Audit => "audit",
@@ -674,7 +724,10 @@ impl ShellState {
                 } else {
                     let prompt = self.composer.submission_text();
                     if !prompt.is_empty() {
-                        if self.active_turn_id.is_some() {
+                        if let Some(command) = LocalSlashCommand::parse(&prompt) {
+                            self.run_local_slash_command(command, prompt, app_server)
+                                .await?;
+                        } else if self.active_turn_id.is_some() {
                             self.steer_active_turn(app_server, prompt).await?;
                         } else {
                             self.submit_prompt(app_server, prompt).await?;
@@ -1519,6 +1572,134 @@ impl ShellState {
         self.push_system("visible transcript cleared");
     }
 
+    async fn run_local_slash_command<S>(
+        &mut self,
+        command: LocalSlashCommand,
+        prompt: String,
+        app_server: &mut S,
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        self.composer.remember_submission(&prompt);
+        self.composer.clear();
+        match command {
+            LocalSlashCommand::Clear => self.clear_visible_transcript(),
+            LocalSlashCommand::Goal(command) => {
+                self.run_goal_slash_command(command, app_server).await
+            }
+        }
+        Ok(())
+    }
+
+    async fn run_goal_slash_command<S>(&mut self, command: GoalSlashCommand, app_server: &mut S)
+    where
+        S: AppShellBackend,
+    {
+        match command {
+            GoalSlashCommand::Show => self.show_goal_status(app_server).await,
+            GoalSlashCommand::Set(objective) => {
+                self.set_goal_objective(app_server, objective).await
+            }
+            GoalSlashCommand::Clear => self.clear_goal(app_server).await,
+            GoalSlashCommand::Pause => {
+                self.update_goal_status(app_server, ThreadGoalStatus::Paused, "paused")
+                    .await;
+            }
+            GoalSlashCommand::Resume => {
+                self.update_goal_status(app_server, ThreadGoalStatus::Active, "resumed")
+                    .await;
+            }
+            GoalSlashCommand::Edit => {
+                self.push_status("use /goal <objective> to edit the current goal objective");
+            }
+        }
+    }
+
+    async fn show_goal_status<S>(&mut self, app_server: &mut S)
+    where
+        S: AppShellBackend,
+    {
+        match app_server.thread_goal_get(self.thread_id).await {
+            Ok(response) => {
+                self.active_goal = response.goal;
+                match &self.active_goal {
+                    Some(goal) => self.push_status(format!(
+                        "goal {}. {}",
+                        goal_status_label(goal.status),
+                        goal_usage_summary(goal)
+                    )),
+                    None => self.push_status(format!("no goal is currently set. {GOAL_USAGE}")),
+                }
+            }
+            Err(err) => self.push_error(format!("failed to read goal: {err}")),
+        }
+    }
+
+    async fn set_goal_objective<S>(&mut self, app_server: &mut S, objective: String)
+    where
+        S: AppShellBackend,
+    {
+        match app_server
+            .thread_goal_set(
+                self.thread_id,
+                Some(objective),
+                Some(ThreadGoalStatus::Active),
+                /*token_budget*/ None,
+            )
+            .await
+        {
+            Ok(response) => {
+                let objective = response.goal.objective.clone();
+                self.active_goal = Some(response.goal);
+                self.push_status(format!("goal set: {objective}"));
+            }
+            Err(err) => self.push_error(format!("failed to set goal: {err}")),
+        }
+    }
+
+    async fn clear_goal<S>(&mut self, app_server: &mut S)
+    where
+        S: AppShellBackend,
+    {
+        match app_server.thread_goal_clear(self.thread_id).await {
+            Ok(response) => {
+                self.active_goal = None;
+                if response.cleared {
+                    self.push_status("goal cleared");
+                } else {
+                    self.push_status("no goal is currently set");
+                }
+            }
+            Err(err) => self.push_error(format!("failed to clear goal: {err}")),
+        }
+    }
+
+    async fn update_goal_status<S>(
+        &mut self,
+        app_server: &mut S,
+        status: ThreadGoalStatus,
+        action: &str,
+    ) where
+        S: AppShellBackend,
+    {
+        match app_server
+            .thread_goal_set(
+                self.thread_id,
+                /*objective*/ None,
+                Some(status),
+                /*token_budget*/ None,
+            )
+            .await
+        {
+            Ok(response) => {
+                self.active_goal = Some(response.goal);
+                self.push_status(format!("goal {action}"));
+            }
+            Err(err) => self.push_error(format!("failed to update goal: {err}")),
+        }
+    }
+
     fn move_transcript_selection_up(&mut self, rows: usize) {
         let selected = self
             .transcript_selection
@@ -1988,9 +2169,11 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id, title, tool_status);
+                self.push_tool_with_status_for_item(id.clone(), title, tool_status);
                 if let Some(output) = aggregated_output.and_then(compact_output_text) {
-                    self.push_output_with_status(output, tool_status);
+                    self.push_output_with_status_for_item(id, output, tool_status);
+                } else {
+                    self.update_output_status_for_item(&id, tool_status);
                 }
             }
             ThreadItem::FileChange {
@@ -2215,6 +2398,55 @@ impl ShellState {
         self.push_line(TranscriptLine::new(TranscriptKind::Output, text).tool_status(status));
     }
 
+    fn push_output_with_status_for_item(
+        &mut self,
+        item_id: impl Into<String>,
+        text: impl Into<String>,
+        status: ToolBlockStatus,
+    ) {
+        self.upsert_line(
+            TranscriptLine::new(TranscriptKind::Output, text)
+                .tool_status(status)
+                .item_id(item_id),
+        );
+    }
+
+    fn push_output_delta_with_status_for_item(
+        &mut self,
+        item_id: impl Into<String>,
+        delta: impl Into<String>,
+        status: ToolBlockStatus,
+    ) {
+        let item_id = item_id.into();
+        let delta = delta.into();
+        if delta.trim().is_empty() {
+            return;
+        }
+
+        if let Some(existing) = self.transcript.iter_mut().find(|existing| {
+            existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(&item_id)
+        }) {
+            existing.text.push_str(&delta);
+            existing.text = compact_output_for_transcript(std::mem::take(&mut existing.text));
+            existing.tool_status = Some(status);
+            return;
+        }
+
+        self.push_output_with_status_for_item(
+            item_id,
+            compact_output_for_transcript(delta),
+            status,
+        );
+    }
+
+    fn update_output_status_for_item(&mut self, item_id: &str, status: ToolBlockStatus) {
+        if let Some(existing) = self.transcript.iter_mut().find(|existing| {
+            existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(item_id)
+        }) {
+            existing.tool_status = Some(status);
+        }
+    }
+
     fn push_status(&mut self, text: impl Into<String>) {
         self.push_line(TranscriptLine::new(TranscriptKind::Status, text));
     }
@@ -2374,7 +2606,7 @@ impl ShellState {
         shell.push_assistant("Started a fullscreen app shell backed by app-server turns.");
         shell.push_plan("1. Build shell\n2. Wire transcript\n3. Render dashboard");
         shell.push_tool("exec just test -p codex-tui");
-        shell.push_diff("diff 3 files +128 -24");
+        shell.push_diff("3 files +128 -24");
         shell
     }
 }
@@ -2627,7 +2859,7 @@ fn tool_status_from_str(status: &str) -> ToolBlockStatus {
 fn file_change_summary(changes: &[FileUpdateChange]) -> String {
     let summary = diff_summary_from_changes(changes);
     format!(
-        "diff {} files +{} -{}",
+        "{} files +{} -{}",
         summary.files, summary.additions, summary.removals
     )
 }
@@ -2747,8 +2979,44 @@ fn compact_output_text(text: String) -> Option<String> {
     if text.is_empty() {
         None
     } else {
-        Some(text.to_string())
+        Some(compact_output_for_transcript(text.to_string()))
     }
+}
+
+fn compact_output_for_transcript(text: String) -> String {
+    let was_compacted = text.starts_with(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX);
+    let source = if was_compacted {
+        &text[TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX.len()..]
+    } else {
+        text.as_str()
+    };
+    let needs_compaction = source.chars().count() > MAX_TRANSCRIPT_OUTPUT_CHARS
+        || source.split(['\n', '\r']).count() > MAX_TRANSCRIPT_OUTPUT_LINES;
+    if !needs_compaction {
+        return text;
+    }
+
+    let normalized = source.replace('\r', "\n");
+    let mut tail_lines = normalized
+        .lines()
+        .rev()
+        .take(MAX_TRANSCRIPT_OUTPUT_LINES)
+        .collect::<Vec<_>>();
+    tail_lines.reverse();
+    let mut compact = tail_lines.join("\n");
+    if compact.chars().count() > MAX_TRANSCRIPT_OUTPUT_CHARS {
+        let mut tail_chars = compact
+            .chars()
+            .rev()
+            .take(MAX_TRANSCRIPT_OUTPUT_CHARS)
+            .collect::<Vec<_>>();
+        tail_chars.reverse();
+        compact = tail_chars.into_iter().collect();
+    }
+    format!(
+        "{TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX}{}",
+        compact.trim_start_matches('\n')
+    )
 }
 
 fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {

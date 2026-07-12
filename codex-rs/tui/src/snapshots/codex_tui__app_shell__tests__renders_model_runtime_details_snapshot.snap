@@ -17,7 +17,7 @@ expression: "render_shell(&shell, area)"
                                                                        Model
  ▌ tool exec just test -p codex-tui                                    gpt-5.6-sol
                                                                        reasoning max
- ▌ diff diff 3 files +128 -24                                          tier priority
+ ▌ edited 3 files +128 -24                                             tier priority
 
  codex: The new shell owns the fullscreen surface.                     Tokens
                                                                        total 1,440

@@ -47,7 +47,7 @@ impl ShellState {
                 self.push_error(message);
             }
         }
-        if self.workspace_status_refresh_due {
+        if self.workspace_status_refresh_due && self.active_turn_id.is_none() {
             self.refresh_workspace_status(workspace_command_runner)
                 .await;
         }
@@ -131,15 +131,6 @@ impl ShellState {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.latest_diff = Some(super::diff_summary_from_unified_diff(&updated.diff));
                     self.workspace_status_refresh_due = true;
-                    if let Some(summary) = &self.latest_diff {
-                        self.push_diff_with_status(
-                            format!(
-                                "diff {} files +{} -{}",
-                                summary.files, summary.additions, summary.removals
-                            ),
-                            super::ToolBlockStatus::Running,
-                        );
-                    }
                 }
             }
             ServerNotification::TurnPlanUpdated(updated) => {
@@ -177,10 +168,12 @@ impl ShellState {
                 }
             }
             ServerNotification::CommandExecutionOutputDelta(delta) => {
-                if delta.thread_id == self.thread_id.to_string()
-                    && let Some(output) = super::compact_output_text(delta.delta)
-                {
-                    self.push_output_with_status(output, super::ToolBlockStatus::Running);
+                if delta.thread_id == self.thread_id.to_string() {
+                    self.push_output_delta_with_status_for_item(
+                        delta.item_id,
+                        delta.delta,
+                        super::ToolBlockStatus::Running,
+                    );
                 }
             }
             ServerNotification::FileChangePatchUpdated(updated) => {
@@ -224,13 +217,17 @@ impl ShellState {
                 }
             }
             ServerNotification::CommandExecOutputDelta(delta) => {
-                let output = base64::engine::general_purpose::STANDARD
+                let item_id = format!("command-exec:{}", delta.process_id);
+                if let Some(output) = base64::engine::general_purpose::STANDARD
                     .decode(delta.delta_base64)
                     .ok()
                     .and_then(|bytes| String::from_utf8(bytes).ok())
-                    .and_then(super::compact_output_text);
-                if let Some(output) = output {
-                    self.push_output_with_status(output, super::ToolBlockStatus::Running);
+                {
+                    self.push_output_delta_with_status_for_item(
+                        item_id,
+                        output,
+                        super::ToolBlockStatus::Running,
+                    );
                 }
             }
             ServerNotification::Error(error) => {

@@ -17,7 +17,7 @@ expression: "render_shell(&shell, area)"
                                                                                      input Tool input: tool-input-1
  ▌ tool exec just test -p codex-tui
                                                                                      Background
- ▌ diff diff 3 files +128 -24                                                        workspace refresh queued
+ ▌ edited 3 files +128 -24                                                           workspace refresh queued
  plan: 1. Route activity into dashboard panels
                                                                                      Tools
  codex: The new shell owns the fullscreen surface.                                   in progress exec just test -p c...
