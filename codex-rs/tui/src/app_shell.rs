@@ -706,10 +706,11 @@ impl ShellState {
             return Ok(false);
         }
         if let Some(route) = dashboard_route_from_key(key) {
+            let route_already_visible = self.dashboard_visible && self.dashboard_route == route;
             self.dashboard_visible = true;
             self.set_dashboard_route(route);
-            self.session_list.focused = route == DashboardRoute::Sessions;
-            self.settings.focused = route == DashboardRoute::Settings;
+            self.session_list.focused = route_already_visible && route == DashboardRoute::Sessions;
+            self.settings.focused = route_already_visible && route == DashboardRoute::Settings;
             if route == DashboardRoute::Sessions {
                 self.refresh_session_list(app_server).await;
             }
