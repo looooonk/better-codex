@@ -934,6 +934,113 @@ async fn exit_slash_command_requests_shell_exit_without_submitting_turn() {
 }
 
 #[tokio::test]
+async fn exit_keys_require_confirmation_while_ctrl_c_interrupts_immediately() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let ctrl_c = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL);
+    let esc = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+    let mut shell = ShellState::snapshot_fixture();
+
+    assert!(
+        !shell
+            .handle_key(ctrl_c, &config, &mut backend)
+            .await
+            .expect("first Ctrl+C should arm exit")
+    );
+    assert!(shell.exit_confirmation_pending);
+    assert!(
+        shell
+            .handle_key(ctrl_c, &config, &mut backend)
+            .await
+            .expect("second Ctrl+C should exit")
+    );
+
+    let mut shell = ShellState::snapshot_fixture();
+    assert!(
+        !shell
+            .handle_key(esc, &config, &mut backend)
+            .await
+            .expect("first Esc should arm exit")
+    );
+    assert!(shell.exit_confirmation_pending);
+    assert!(
+        shell
+            .handle_key(esc, &config, &mut backend)
+            .await
+            .expect("second Esc should exit")
+    );
+
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-active".to_string());
+    assert!(
+        !shell
+            .handle_key(ctrl_c, &config, &mut backend)
+            .await
+            .expect("Ctrl+C should interrupt the active turn")
+    );
+    assert!(!shell.exit_confirmation_pending);
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::Interrupt {
+            thread_id: shell.thread_id,
+            turn_id: "turn-active".to_string(),
+        }]
+    );
+}
+
+#[tokio::test]
+async fn shell_operator_executes_through_workspace_runner_without_submitting_turn() {
+    let config = test_config().await;
+    let runner = Arc::new(RecordingWorkspaceRunner::new(
+        crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "hello\n".to_string(),
+            stderr: "warning\n".to_string(),
+        },
+    ));
+    let mut shell = ShellState::snapshot_fixture();
+    shell.workspace_command_runner = Some(runner.clone());
+    shell.composer.set_text("! printf hello");
+    let transcript_len = shell.transcript.len();
+    let mut backend = RecordingBackend::default();
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("shell command should execute");
+
+    assert!(!should_exit);
+    assert_eq!(
+        runner.commands(),
+        vec![
+            ShellCommand::parse("! printf hello")
+                .expect("shell command should parse")
+                .workspace_command(std::path::Path::new(&shell.cwd))
+        ]
+    );
+    assert_eq!(
+        shell
+            .transcript
+            .iter()
+            .skip(transcript_len)
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![
+            TranscriptLine::new(TranscriptKind::Tool, "! printf hello exit 0")
+                .tool_status(ToolBlockStatus::Success),
+            TranscriptLine::new(TranscriptKind::Output, "hello\nwarning\n")
+                .tool_status(ToolBlockStatus::Success),
+        ]
+    );
+    assert_eq!(shell.composer.text(), "");
+    assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
 async fn goal_slash_command_sets_and_shows_thread_goal() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
@@ -2979,6 +3086,12 @@ fn dashboard_focus_dims_conversation_and_hides_composer_cursor() {
             .add_modifier
             .contains(Modifier::DIM)
     );
+    let background_x = conversation_x + "Conversation".len() as u16 + 1;
+    assert_eq!(buf[(background_x, conversation_row)].symbol(), " ");
+    assert_eq!(
+        buf[(background_x, conversation_row)].style().bg,
+        Some(design::MOCHA_MANTLE)
+    );
     assert!(
         !buf[(dashboard_x, dashboard_row)]
             .style()
@@ -3045,6 +3158,26 @@ fn composer_does_not_highlight_unknown_slash_commands() {
         .expect("slash-prefixed text should have an x position");
 
     assert_eq!(buf[(slash_x, row)].style().fg, Some(Color::Reset));
+}
+
+#[test]
+fn composer_highlights_shell_operator_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.set_text("! printf hello");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let view = ShellView { shell: &shell };
+    let buf = render_shell_buffer(&shell, area);
+    let input_area = view.input_area(area);
+    let row = row_containing(&buf, input_area, "! printf hello")
+        .expect("shell command should render in the composer");
+    let operator_x = row_needle_x(&buf, input_area, row, "! printf hello")
+        .expect("shell command should have an x position");
+
+    assert_eq!(buf[(operator_x, row)].style().fg, Some(Color::Cyan));
+    assert_eq!(buf[(operator_x + 1, row)].style().fg, Some(Color::Reset));
+    insta::assert_snapshot!(render_shell(&shell, area));
 }
 
 #[test]
@@ -5667,6 +5800,51 @@ impl backend::AppShellBackend for RecordingBackend {
 }
 
 struct NoopWorkspaceRunner;
+
+struct RecordingWorkspaceRunner {
+    commands: Mutex<Vec<crate::workspace_command::WorkspaceCommand>>,
+    output: crate::workspace_command::WorkspaceCommandOutput,
+}
+
+impl RecordingWorkspaceRunner {
+    fn new(output: crate::workspace_command::WorkspaceCommandOutput) -> Self {
+        Self {
+            commands: Mutex::new(Vec::new()),
+            output,
+        }
+    }
+
+    fn commands(&self) -> Vec<crate::workspace_command::WorkspaceCommand> {
+        self.commands
+            .lock()
+            .expect("workspace commands should lock")
+            .clone()
+    }
+}
+
+impl crate::workspace_command::WorkspaceCommandExecutor for RecordingWorkspaceRunner {
+    fn run(
+        &self,
+        command: crate::workspace_command::WorkspaceCommand,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        crate::workspace_command::WorkspaceCommandOutput,
+                        crate::workspace_command::WorkspaceCommandError,
+                    >,
+                > + Send
+                + '_,
+        >,
+    > {
+        self.commands
+            .lock()
+            .expect("workspace commands should lock")
+            .push(command);
+        let output = self.output.clone();
+        Box::pin(async move { Ok(output) })
+    }
+}
 
 impl crate::workspace_command::WorkspaceCommandExecutor for NoopWorkspaceRunner {
     fn run(

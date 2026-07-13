@@ -44,8 +44,8 @@ expression: "render_shell(&shell, area)"
 
                                                                                      Keys
                                                                                      Enter steer
-                                                                                     Ctrl+C interrupt, Esc exit
-                                                                                     Alt+Up select, Ctrl+O copy
+                                                                                     Ctrl+C interrupt, Esc twice to
+                                                                                     exit
 
 
 

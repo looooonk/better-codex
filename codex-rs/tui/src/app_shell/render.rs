@@ -86,7 +86,7 @@ impl ShellView<'_> {
         self.render_transcript(layout.transcript, buf);
         self.render_input(layout.input, buf);
         if self.shell.dashboard_focused() {
-            buf.set_style(layout.transcript, Style::new().dim());
+            buf.set_style(layout.transcript, Style::new().dim().bg(MOCHA_MANTLE));
             buf.set_style(layout.input, Style::new().dim());
         }
         if let Some(dashboard) = layout.dashboard {

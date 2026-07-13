@@ -33,7 +33,7 @@ pub(crate) type WorkspaceCommandRunner = Arc<dyn WorkspaceCommandExecutor>;
 /// user or repository data. `cwd` is interpreted by app-server relative to the workspace rules for
 /// the active session, which is what makes the same request shape work for embedded and remote
 /// app-server instances.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkspaceCommand {
     /// Program and arguments to execute without shell interpolation.
     pub(crate) argv: Vec<String>,

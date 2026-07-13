@@ -1,6 +1,7 @@
 use super::LocalSlashCommand;
 use super::design::body_rect_after_title;
 use super::design::pane_content_rect;
+use super::shell_command::ShellCommand;
 use crate::wrapping::RtOptions;
 use crate::wrapping::word_wrap_lines;
 use crate::wrapping::wrap_ranges;
@@ -77,22 +78,32 @@ fn composer_lines(text: &str, is_empty: bool) -> Vec<Line<'static>> {
 
         let prefix = if index == 0 { "> ".cyan() } else { "  ".dim() };
         let mut spans = vec![prefix];
-        if index == 0
-            && LocalSlashCommand::parse(text).is_some()
+        let command_range = if index != 0 {
+            None
+        } else if LocalSlashCommand::parse(text).is_some()
             && let Some(command_start) = logical_line.find('/')
         {
             let command_end = logical_line[command_start..]
                 .find(char::is_whitespace)
                 .map(|offset| command_start + offset)
                 .unwrap_or(logical_line.len());
-            spans.push(logical_line[..command_start].to_string().into());
+            Some(command_start..command_end)
+        } else if ShellCommand::parse(text).is_some()
+            && let Some(command_start) = logical_line.find('!')
+        {
+            Some(command_start..command_start + 1)
+        } else {
+            None
+        };
+        if let Some(command_range) = command_range {
+            spans.push(logical_line[..command_range.start].to_string().into());
             spans.push(
-                logical_line[command_start..command_end]
+                logical_line[command_range.clone()]
                     .to_string()
                     .cyan()
                     .bold(),
             );
-            spans.push(logical_line[command_end..].to_string().into());
+            spans.push(logical_line[command_range.end..].to_string().into());
         } else {
             spans.push(logical_line.to_string().into());
         }

@@ -21,6 +21,7 @@ use crate::token_usage::TokenUsage;
 use crate::tui;
 use crate::tui::TuiEvent;
 use crate::workspace_command::AppServerWorkspaceCommandRunner;
+use crate::workspace_command::WorkspaceCommandRunner;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
@@ -73,6 +74,7 @@ mod render;
 mod safety_buffering;
 mod sessions;
 mod settings;
+mod shell_command;
 mod startup;
 mod startup_availability_nux;
 mod startup_login;
@@ -106,6 +108,7 @@ use safety_buffering::SafetyBufferingState;
 use sessions::SessionListState;
 use settings::SettingsAction;
 use settings::SettingsState;
+use shell_command::ShellCommand;
 pub(crate) use startup::StartupOnboardingOutcome;
 pub(crate) use startup::run_startup_onboarding;
 pub(crate) use startup_login::LoginOnboardingOutcome;
@@ -199,6 +202,7 @@ pub(crate) async fn run(
         config.show_tooltips,
         config.multi_agent_v2.max_concurrent_threads_per_session,
     );
+    shell.workspace_command_runner = Some(workspace_command_runner.clone());
     shell.ingest_turn_history(started.turns);
     if let Some(message) = availability_nux {
         shell.push_system(message);
@@ -502,6 +506,8 @@ struct ShellState {
     codex_home: std::path::PathBuf,
     dashboard_route: DashboardRoute,
     composer: ComposerState,
+    workspace_command_runner: Option<WorkspaceCommandRunner>,
+    exit_confirmation_pending: bool,
     clipboard_lease: Option<ClipboardLease>,
     active_turn_id: Option<String>,
     pending_approval: Option<PendingApproval>,
@@ -581,6 +587,8 @@ impl ShellState {
             codex_home,
             dashboard_route,
             composer: ComposerState::default(),
+            workspace_command_runner: None,
+            exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: None,
             pending_approval: None,
@@ -659,12 +667,18 @@ impl ShellState {
         {
             return Ok(false);
         }
-        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
+        let is_ctrl_c =
+            key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c'));
+        if is_ctrl_c {
             if self.active_turn_id.is_some() {
+                self.exit_confirmation_pending = false;
                 self.interrupt_active_turn(app_server).await?;
                 return Ok(false);
             }
-            return Ok(true);
+            return Ok(self.confirm_exit());
+        }
+        if !matches!(key.code, KeyCode::Esc) {
+            self.exit_confirmation_pending = false;
         }
         if self.command_palette.is_some() {
             self.handle_command_palette_key(key, app_server).await?;
@@ -777,7 +791,7 @@ impl ShellState {
             return Ok(false);
         }
         match key.code {
-            KeyCode::Esc => Ok(true),
+            KeyCode::Esc => Ok(self.confirm_exit()),
             KeyCode::Enter => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
                     self.composer.insert_newline();
@@ -789,6 +803,8 @@ impl ShellState {
                                 .run_local_slash_command(command, prompt, app_server)
                                 .await?;
                             return Ok(outcome == LocalSlashCommandOutcome::Exit);
+                        } else if let Some(command) = ShellCommand::parse(&prompt) {
+                            self.run_shell_command(command, prompt).await;
                         } else if self.active_turn_id.is_some() {
                             self.steer_active_turn(app_server, prompt).await?;
                         } else {
@@ -1635,6 +1651,67 @@ impl ShellState {
         self.transcript_scroll = 0;
         self.transcript_selection = None;
         self.push_system("visible transcript cleared");
+    }
+
+    fn confirm_exit(&mut self) -> bool {
+        if self.exit_confirmation_pending {
+            return true;
+        }
+
+        self.exit_confirmation_pending = true;
+        self.push_status("press Esc or Ctrl+C again to exit");
+        false
+    }
+
+    async fn run_shell_command(&mut self, command: ShellCommand, prompt: String) {
+        self.composer.remember_submission(&prompt);
+        self.composer.clear();
+        if command.is_empty() {
+            self.push_error("shell command cannot be empty");
+            return;
+        }
+        let Some(runner) = self.workspace_command_runner.clone() else {
+            self.push_error("shell command runner is unavailable");
+            return;
+        };
+
+        let command_text = command.text().to_string();
+        self.status = "running shell command".to_string();
+        match runner
+            .run(command.workspace_command(std::path::Path::new(&self.cwd)))
+            .await
+        {
+            Ok(output) => {
+                let tool_status = if output.success() {
+                    ToolBlockStatus::Success
+                } else {
+                    ToolBlockStatus::Fail
+                };
+                self.push_tool_with_status(
+                    format!("! {command_text} exit {}", output.exit_code),
+                    tool_status,
+                );
+                let mut combined = output.stdout;
+                if !output.stderr.is_empty() {
+                    if !combined.is_empty() && !combined.ends_with('\n') {
+                        combined.push('\n');
+                    }
+                    combined.push_str(&output.stderr);
+                }
+                if !combined.is_empty() {
+                    self.push_output_with_status(
+                        compact_output_for_transcript(combined),
+                        tool_status,
+                    );
+                }
+                self.status = format!("shell exit {}", output.exit_code);
+            }
+            Err(err) => {
+                self.push_tool_with_status(format!("! {command_text}"), ToolBlockStatus::Fail);
+                self.push_error(format!("shell command failed: {err}"));
+                self.status = "shell command failed".to_string();
+            }
+        }
     }
 
     async fn run_local_slash_command<S>(
@@ -2650,6 +2727,8 @@ impl ShellState {
                 composer.set_text("Summarize the new shell architecture");
                 composer
             },
+            workspace_command_runner: None,
+            exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: None,
             pending_approval: None,
@@ -2886,6 +2965,8 @@ pub mod bench_support {
                 composer.set_text("Benchmark the app shell render path");
                 composer
             },
+            workspace_command_runner: None,
+            exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: Some("turn-bench-1234567890".to_string()),
             pending_approval: None,

@@ -23,23 +23,9 @@ expression: "render_shell(&shell, area)"
 
                                                                        Status
                                                                        thinking
-                                                                       turn turn-act...
 
                                                                        Plan
-                                                                       Build the standalone shell
-                                                                       in slices.
+ Composer ready 1:15                                                   Build the standalone shell
+ > ! printf hello                                                      in slices.
                                                                        x Shell frame
                                                                        > Transcript model
-
-                                                                       Keys
-                                                                       Enter steer
-                                                                       Ctrl+C interrupt, Esc twice
-                                                                       to exit
-
-
-
-
-
-
- Composer busy 1:37
- > Summarize the new shell architecture
