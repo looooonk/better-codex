@@ -9,6 +9,9 @@ building a full-screen TUI that feels like a standalone app inside the terminal.
 The product direction is closer to OpenCode, btop, or other dense terminal
 workspaces than to a prompt-first command-line assistant.
 
+Better Codex supports Linux and macOS. Windows, including WSL, is not a
+supported target for this fork.
+
 ## Direction
 
 - Build a terminal-native application with persistent layout, panels, keyboard

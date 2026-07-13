@@ -10,9 +10,9 @@ machines that should expose app-server with `remote_control` enabled.
 
 ## Platform support
 
-The current daemon implementation is Unix-only. It uses pidfile-backed
-daemonization plus Unix process and file-locking primitives, and does not yet
-support Windows lifecycle management.
+The current daemon implementation supports Linux and macOS. It uses
+pidfile-backed daemonization plus Unix process and file-locking primitives;
+Windows lifecycle management is not supported.
 
 ## Commands
 

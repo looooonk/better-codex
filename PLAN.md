@@ -88,15 +88,14 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 ## Stage 9: Hardening
 
 - [x] Add app-shell integration coverage for start, resume, fork, turn submit, streaming, approval, interruption, and shutdown.
-- [ ] Validate Linux, macOS, and Windows behavior, including alternate screen restoration after panic or fatal backend disconnect.
+- [ ] Validate Linux and macOS behavior, including alternate screen restoration after panic or fatal backend disconnect.
   - [x] Restore terminal modes and leave alternate screen from the TUI drop path, explicit exit path, and terminal restore guard.
   - [x] Install a terminal-restoring panic hook before forwarding to the previous panic hook.
   - [x] Add unit coverage for panic-hook restore ordering and the alternate-screen leave sequence.
   - [x] Surface app-server disconnection in the app shell as terminal status/transcript state and return a fatal exit when the backend event stream ends.
   - [x] Add an end-to-end terminal/PTY regression that proves alternate screen, raw mode, cursor, mouse, focus, and paste modes are restored after a panic.
   - [x] Add an end-to-end terminal/PTY regression that proves alternate screen and terminal modes are restored after a fatal backend disconnect.
-  - [ ] Run and record validation for the app shell on Linux, macOS, and Windows, including inline mode and alternate-screen mode.
-  - [ ] Confirm Windows virtual-terminal handling, input-buffer cleanup, and color probing still leave the terminal usable after fatal exits.
+  - [ ] Run and record validation for the app shell on Linux and macOS, including inline mode and alternate-screen mode.
 - [x] Add performance checks for large transcripts and long streaming turns.
 - [ ] Remove inherited upstream UI paths once the new app reaches feature parity for daily development.
   - [x] Route the normal TUI launch path into the new app-shell run loop instead of the inherited `App::run` chat UI.
@@ -114,4 +113,3 @@ Agents may continuously work through this plan until every unchecked item is com
 - [x] Fix "diff" boxes rendering multiple times when files are edited (especially in sequence). Diff boxes should show once every time a file edit happens, and the total diff should not be shown in the conversation log.
 - [ ] Fix bug where ALT + LEFT / ALT + RIGHT do not work on Ubuntu systems.
 - [ ] With small-width terminals that render the dashboard on the top of the screen, fix certain elements being smushed and not properly visible.
-

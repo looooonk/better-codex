@@ -342,7 +342,8 @@ closest `pyproject.toml`'s `requires-python` field to see what minimum runtime v
 
 ## Platform Support
 
-Tests and features must support Linux, macOS and Windows unless feature is explicitly OS-specific.
+Tests and features must support Linux and macOS unless a feature is explicitly OS-specific.
 
-Codex supports running connected app-server and exec-server on different operating systems. See the
-`$remote-tests` skill for details about integration testing these configurations.
+Better Codex supports connected app-server and exec-server deployments across
+Linux and macOS. See the `$remote-tests` skill for details about integration
+testing these configurations.
