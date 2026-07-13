@@ -114,6 +114,6 @@ Agents may continuously work through this plan until every unchecked item is com
 - [x] Fix bug where ALT + LEFT / ALT + RIGHT do not work on Ubuntu systems.
 - [x] With small-width terminals that render the dashboard on the top of the screen, fix certain elements being smushed and not properly visible.
 - [x] Highlight slash commands like /goal or /clear in a different color compared to standard text to show the user that their slash command is being properly parsed.
-- [ ] Support the /exit slash command.
-- [ ] Fix a bug where long 1-line prompts dislocate the cursor when wrapping to 2 visible lines.
-- [ ] Make it more visible that the dashboard is being focused, maybe by slightly graying out the main conversation window.
+- [x] Support the /exit slash command.
+- [x] Fix a bug where long 1-line prompts dislocate the cursor when wrapping to 2 visible lines.
+- [x] Make it more visible that the dashboard is being focused, maybe by slightly graying out the main conversation window.

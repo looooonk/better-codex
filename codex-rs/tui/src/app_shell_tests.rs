@@ -101,6 +101,7 @@ use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
+use ratatui::style::Modifier;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -886,6 +887,30 @@ async fn clear_slash_command_resets_visible_transcript_without_submitting_turn()
 
     shell.composer.move_up_or_recall_history();
     assert_eq!(shell.composer.text(), "/clear");
+}
+
+#[tokio::test]
+async fn exit_slash_command_requests_shell_exit_without_submitting_turn() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("/exit");
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("exit command should be handled locally");
+
+    assert!(should_exit);
+    assert_eq!(shell.composer.text(), "");
+    assert_eq!(backend.calls(), Vec::new());
+
+    shell.composer.move_up_or_recall_history();
+    assert_eq!(shell.composer.text(), "/exit");
 }
 
 #[tokio::test]
@@ -2834,6 +2859,65 @@ fn composer_cursor_position_tracks_text_end_without_synthetic_glyph() {
 }
 
 #[test]
+fn composer_cursor_tracks_word_wrapped_single_line_prompt() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.set_text(
+        "This deliberately long one-line prompt wraps before the final words on another row",
+    );
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let view = ShellView { shell: &shell };
+    let buf = render_shell_buffer(&shell, area);
+    let input_area = view.input_area(area);
+    let row = row_containing(&buf, input_area, "another row")
+        .expect("wrapped prompt tail should render on a visible row");
+    let tail_x = row_needle_x(&buf, input_area, row, "another row")
+        .expect("wrapped prompt tail should have an x position");
+    let cursor = view
+        .cursor_position(area)
+        .expect("composer cursor should be visible");
+
+    assert_eq!(cursor.y, row);
+    assert_eq!(cursor.x, tail_x + 11);
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn dashboard_focus_dims_conversation_and_hides_composer_cursor() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let view = ShellView { shell: &shell };
+    let buf = render_shell_buffer(&shell, area);
+    let conversation_row =
+        row_containing(&buf, area, "Conversation").expect("conversation title should render");
+    let conversation_x = row_needle_x(&buf, area, conversation_row, "Conversation")
+        .expect("conversation title should have an x position");
+    let dashboard_row =
+        row_containing(&buf, area, "Navigation").expect("dashboard navigation should render");
+    let dashboard_x = row_needle_x(&buf, area, dashboard_row, "Navigation")
+        .expect("dashboard title should have an x position");
+
+    assert!(
+        buf[(conversation_x, conversation_row)]
+            .style()
+            .add_modifier
+            .contains(Modifier::DIM)
+    );
+    assert!(
+        !buf[(dashboard_x, dashboard_row)]
+            .style()
+            .add_modifier
+            .contains(Modifier::DIM)
+    );
+    assert_eq!(view.cursor_position(area), None);
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn composer_highlights_recognized_slash_commands_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.composer.set_text("/goal Keep the dashboard compact");
@@ -2860,6 +2944,14 @@ fn composer_highlights_recognized_slash_commands_snapshot() {
         clear_buf[(clear_x, clear_row)].style().fg,
         Some(Color::Cyan)
     );
+
+    shell.composer.set_text("/exit");
+    let exit_buf = render_shell_buffer(&shell, area);
+    let exit_row = row_containing(&exit_buf, input_area, "/exit")
+        .expect("exit command should render in the composer");
+    let exit_x = row_needle_x(&exit_buf, input_area, exit_row, "/exit")
+        .expect("exit command should have an x position");
+    assert_eq!(exit_buf[(exit_x, exit_row)].style().fg, Some(Color::Cyan));
 
     shell.composer.set_text("/goal Keep the dashboard compact");
     insta::assert_snapshot!(render_shell(&shell, area));

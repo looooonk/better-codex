@@ -1,8 +1,10 @@
-use super::LocalSlashCommand;
 use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
 use super::TranscriptLine;
+use super::composer_render::composer_cursor_position;
+use super::composer_render::composer_visual_cursor_line;
+use super::composer_render::wrapped_composer_lines;
 use super::dashboard::DashboardPanel;
 use super::dashboard::dashboard_panels;
 use super::design::MOCHA_BASE;
@@ -84,6 +86,10 @@ impl ShellView<'_> {
         }
         self.render_transcript(layout.transcript, buf);
         self.render_input(layout.input, buf);
+        if self.shell.dashboard_focused() {
+            buf.set_style(layout.transcript, Style::new().dim());
+            buf.set_style(layout.input, Style::new().dim());
+        }
         if let Some(dashboard) = layout.dashboard {
             self.render_dashboard(dashboard, buf);
         }
@@ -137,6 +143,7 @@ impl ShellView<'_> {
             || self.shell.pending_mcp_management.is_some()
             || self.shell.pending_plugin_management.is_some()
             || self.shell.pending_user_input.is_some()
+            || self.shell.dashboard_focused()
         {
             return None;
         }
@@ -145,7 +152,6 @@ impl ShellView<'_> {
             self.input_area(area),
             self.shell.composer.text(),
             self.shell.composer.cursor(),
-            self.shell.composer.is_empty(),
         )
     }
 
@@ -168,6 +174,7 @@ impl ShellView<'_> {
                 area.height
                     .saturating_sub(HEADER_HEIGHT)
                     .saturating_sub(dashboard_height),
+                area.width,
             );
             let main = Layout::default()
                 .direction(Direction::Vertical)
@@ -191,7 +198,10 @@ impl ShellView<'_> {
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
             .split(area);
-        let input_height = self.input_panel_height(area.height.saturating_sub(HEADER_HEIGHT));
+        let input_height = self.input_panel_height(
+            area.height.saturating_sub(HEADER_HEIGHT),
+            horizontal[0].width,
+        );
         let main = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -311,11 +321,22 @@ impl ShellView<'_> {
         } else {
             format!("Composer ready {}:{}", line + 1, column + 1)
         };
-        let visible_height = usize::from(body_rect_after_title(pane_content_rect(area)).height);
-        let mut lines = composer_lines(self.shell.composer.text(), self.shell.composer.is_empty());
+        let body = body_rect_after_title(pane_content_rect(area));
+        let visible_height = usize::from(body.height);
+        let mut lines = wrapped_composer_lines(
+            self.shell.composer.text(),
+            self.shell.composer.is_empty(),
+            usize::from(body.width).max(1),
+        );
         if visible_height > 0 && lines.len() > visible_height {
             let max_start = lines.len().saturating_sub(visible_height);
-            let start = line
+            let cursor_line = composer_visual_cursor_line(
+                self.shell.composer.text(),
+                self.shell.composer.cursor(),
+                usize::from(body.width).max(1),
+            )
+            .unwrap_or(line);
+            let start = cursor_line
                 .saturating_add(1)
                 .saturating_sub(visible_height)
                 .min(max_start);
@@ -324,7 +345,7 @@ impl ShellView<'_> {
         self.render_titled_panel(area, &title, lines, MOCHA_SURFACE0, buf);
     }
 
-    fn input_panel_height(&self, available_height: u16) -> u16 {
+    fn input_panel_height(&self, available_height: u16, input_width: u16) -> u16 {
         if self.shell.pending_approval.is_some()
             || self.shell.pending_user_input.is_some()
             || self.shell.pending_elicitation.is_some()
@@ -332,8 +353,22 @@ impl ShellView<'_> {
             return available_height.min(INPUT_PANEL_MIN_HEIGHT);
         }
 
-        let composer_line_count =
-            u16::try_from(self.shell.composer.text().split('\n').count()).unwrap_or(u16::MAX);
+        let body_width = pane_content_rect(Rect::new(
+            /*x*/ 0,
+            /*y*/ 0,
+            input_width,
+            available_height,
+        ))
+        .width;
+        let composer_line_count = u16::try_from(
+            wrapped_composer_lines(
+                self.shell.composer.text(),
+                self.shell.composer.is_empty(),
+                usize::from(body_width).max(1),
+            )
+            .len(),
+        )
+        .unwrap_or(u16::MAX);
         let desired_height = composer_line_count
             .saturating_add(PANE_CHROME_HEIGHT)
             .clamp(INPUT_PANEL_MIN_HEIGHT, INPUT_PANEL_MAX_HEIGHT);
@@ -898,47 +933,6 @@ impl LineStyle {
     }
 }
 
-fn composer_lines(text: &str, is_empty: bool) -> Vec<Line<'static>> {
-    if is_empty {
-        return vec![Line::from(vec![
-            "> ".cyan(),
-            "Type a message, Shift+Enter for newline".dim(),
-        ])];
-    }
-
-    let mut lines = Vec::new();
-    for (index, logical_line) in text.split('\n').enumerate() {
-        if logical_line.is_empty() {
-            lines.push(Line::default());
-            continue;
-        }
-
-        let prefix = if index == 0 { "> ".cyan() } else { "  ".dim() };
-        let mut spans = vec![prefix];
-        if index == 0
-            && LocalSlashCommand::parse(text).is_some()
-            && let Some(command_start) = logical_line.find('/')
-        {
-            let command_end = logical_line[command_start..]
-                .find(char::is_whitespace)
-                .map(|offset| command_start + offset)
-                .unwrap_or(logical_line.len());
-            spans.push(logical_line[..command_start].to_string().into());
-            spans.push(
-                logical_line[command_start..command_end]
-                    .to_string()
-                    .cyan()
-                    .bold(),
-            );
-            spans.push(logical_line[command_end..].to_string().into());
-        } else {
-            spans.push(logical_line.to_string().into());
-        }
-        lines.push(Line::from(spans));
-    }
-    lines
-}
-
 fn approval_lines(pending: &super::PendingApproval) -> Vec<Line<'static>> {
     vec![
         Line::from(vec!["? ".cyan().bold(), pending.title().to_string().bold()]),
@@ -1031,57 +1025,4 @@ fn elicitation_lines(pending: &super::PendingElicitation) -> Vec<Line<'static>> 
         ]),
         Line::from(action_line),
     ]
-}
-
-fn composer_cursor_position(
-    input_area: Rect,
-    text: &str,
-    cursor: usize,
-    is_empty: bool,
-) -> Option<Position> {
-    let body = body_rect_after_title(pane_content_rect(input_area));
-    if body.width == 0 || body.height == 0 {
-        return None;
-    }
-
-    let cursor = cursor.min(text.len());
-    let line_start = text[..cursor]
-        .rfind('\n')
-        .map(|index| index + 1)
-        .unwrap_or(0);
-    let logical_line = text[..line_start].chars().filter(|ch| *ch == '\n').count();
-    let line_count = if is_empty {
-        1
-    } else {
-        text.split('\n').count()
-    };
-    let visible_height = usize::from(body.height);
-    let visible_start = if line_count > visible_height {
-        logical_line
-            .saturating_add(1)
-            .saturating_sub(visible_height)
-            .min(line_count.saturating_sub(visible_height))
-    } else {
-        0
-    };
-    let y = logical_line.checked_sub(visible_start)?;
-    if y >= visible_height {
-        return None;
-    }
-
-    let before_cursor = &text[line_start..cursor];
-    let unwrapped_column = 2usize.saturating_add(UnicodeWidthStr::width(before_cursor));
-    let body_width = usize::from(body.width).max(1);
-    let wrapped_y = y.saturating_add(unwrapped_column / body_width);
-    if wrapped_y >= visible_height {
-        return None;
-    }
-    let x = unwrapped_column % body_width;
-
-    Some(Position {
-        x: body.x.saturating_add(u16::try_from(x).unwrap_or(u16::MAX)),
-        y: body
-            .y
-            .saturating_add(u16::try_from(wrapped_y).unwrap_or(u16::MAX)),
-    })
 }

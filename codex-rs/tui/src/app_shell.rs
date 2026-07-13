@@ -53,6 +53,7 @@ mod approval;
 mod backend;
 mod command_palette;
 mod composer;
+mod composer_render;
 mod dashboard;
 mod dashboard_rate_limits;
 mod dashboard_workspace;
@@ -344,7 +345,14 @@ enum ToolBlockStatus {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum LocalSlashCommand {
     Clear,
+    Exit,
     Goal(GoalSlashCommand),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocalSlashCommandOutcome {
+    Continue,
+    Exit,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -365,6 +373,7 @@ impl LocalSlashCommand {
         let args = parts.next().unwrap_or("").trim();
         match command {
             "/clear" if args.is_empty() => Some(Self::Clear),
+            "/exit" if args.is_empty() => Some(Self::Exit),
             "/goal" => Some(Self::Goal(GoalSlashCommand::parse(args))),
             _ => None,
         }
@@ -725,8 +734,10 @@ impl ShellState {
                     let prompt = self.composer.submission_text();
                     if !prompt.is_empty() {
                         if let Some(command) = LocalSlashCommand::parse(&prompt) {
-                            self.run_local_slash_command(command, prompt, app_server)
+                            let outcome = self
+                                .run_local_slash_command(command, prompt, app_server)
                                 .await?;
+                            return Ok(outcome == LocalSlashCommandOutcome::Exit);
                         } else if self.active_turn_id.is_some() {
                             self.steer_active_turn(app_server, prompt).await?;
                         } else {
@@ -1577,19 +1588,24 @@ impl ShellState {
         command: LocalSlashCommand,
         prompt: String,
         app_server: &mut S,
-    ) -> Result<()>
+    ) -> Result<LocalSlashCommandOutcome>
     where
         S: AppShellBackend,
     {
         self.composer.remember_submission(&prompt);
         self.composer.clear();
-        match command {
-            LocalSlashCommand::Clear => self.clear_visible_transcript(),
-            LocalSlashCommand::Goal(command) => {
-                self.run_goal_slash_command(command, app_server).await
+        let outcome = match command {
+            LocalSlashCommand::Clear => {
+                self.clear_visible_transcript();
+                LocalSlashCommandOutcome::Continue
             }
-        }
-        Ok(())
+            LocalSlashCommand::Exit => LocalSlashCommandOutcome::Exit,
+            LocalSlashCommand::Goal(command) => {
+                self.run_goal_slash_command(command, app_server).await;
+                LocalSlashCommandOutcome::Continue
+            }
+        };
+        Ok(outcome)
     }
 
     async fn run_goal_slash_command<S>(&mut self, command: GoalSlashCommand, app_server: &mut S)
@@ -2494,6 +2510,10 @@ impl ShellState {
             .clone()
             .unwrap_or_else(|| self.thread_id.to_string());
         Some(format!("codex resume {thread}"))
+    }
+
+    fn dashboard_focused(&self) -> bool {
+        self.session_list.focused || self.settings.focused
     }
 
     #[cfg(test)]
