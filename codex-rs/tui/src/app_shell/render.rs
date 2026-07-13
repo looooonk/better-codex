@@ -906,9 +906,9 @@ fn approval_lines(pending: &super::PendingApproval) -> Vec<Line<'static>> {
         Line::from(vec!["  ".into(), pending.detail().to_string().dim()]),
         Line::from(vec![
             "  ".into(),
-            "a".green().bold(),
+            "enter/y".green().bold(),
             " approve  ".dim(),
-            "d".red().bold(),
+            "esc/n".red().bold(),
             " deny  ".dim(),
             "e".cyan().bold(),
             " edit  ".dim(),

@@ -2070,8 +2070,42 @@ fn approval_action_keys_cover_full_keyboard_flow() {
         Some(ApprovalAction::Explain)
     );
     assert_eq!(
+        approval_action_from_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        Some(ApprovalAction::Choose(ApprovalChoice::Approve))
+    );
+    assert_eq!(
+        approval_action_from_key(key_char('n')),
+        Some(ApprovalAction::Choose(ApprovalChoice::Deny))
+    );
+    assert_eq!(
         approval_action_from_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
         None
+    );
+}
+
+#[tokio::test]
+async fn approval_keys_take_priority_over_transcript_selection() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
+        .expect("approval request should be valid");
+    shell.transcript_selection = Some(0);
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("approval should resolve");
+
+    assert!(!should_exit);
+    assert_eq!(shell.pending_approval, None);
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::Resolve(RequestId::Integer(41))]
     );
 }
 

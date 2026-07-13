@@ -28,4 +28,4 @@ expression: "render_shell(&shell, area)"
  Approval                                                              thinking
  ? Run command: cargo test -p codex-tui
    Needs network access - /workspace/better-codex                      Plan
-   a approve  d deny  e edit  ? explain                                Build the standalone shell
+   enter/y approve  esc/n deny  e edit  ? explain                      Build the standalone shell

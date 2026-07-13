@@ -693,6 +693,13 @@ impl ShellState {
             self.handle_safety_buffering_key(key, app_server).await;
             return Ok(false);
         }
+        if self.pending_approval.is_some() {
+            if let Some(action) = approval_action_from_key(key) {
+                self.handle_pending_approval_action(app_server, action)
+                    .await?;
+            }
+            return Ok(false);
+        }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('d')) {
             self.dashboard_visible = !self.dashboard_visible;
             if !self.dashboard_visible {
@@ -741,13 +748,6 @@ impl ShellState {
             if matches!(key.code, KeyCode::Up) {
                 self.move_transcript_selection_up(TRANSCRIPT_SELECTION_STEP);
             }
-            return Ok(false);
-        }
-        if self.pending_approval.is_some()
-            && let Some(action) = approval_action_from_key(key)
-        {
-            self.handle_pending_approval_action(app_server, action)
-                .await?;
             return Ok(false);
         }
         if self.pending_elicitation.is_some()
@@ -3502,10 +3502,10 @@ fn approval_action_from_key(key: KeyEvent) -> Option<ApprovalAction> {
         return None;
     }
     match key.code {
-        KeyCode::Char('a') | KeyCode::Char('A') => {
+        KeyCode::Enter | KeyCode::Char('a' | 'A' | 'y' | 'Y') => {
             Some(ApprovalAction::Choose(ApprovalChoice::Approve))
         }
-        KeyCode::Char('d') | KeyCode::Char('D') => {
+        KeyCode::Esc | KeyCode::Char('d' | 'D' | 'n' | 'N') => {
             Some(ApprovalAction::Choose(ApprovalChoice::Deny))
         }
         KeyCode::Char('e') | KeyCode::Char('E') => Some(ApprovalAction::Edit),

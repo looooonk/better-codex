@@ -54,4 +54,4 @@ expression: "render_shell(&shell, area)"
  Approval
  ? Run command: cargo test -p codex-tui
    Needs network access - /workspace/better-codex
-   a approve  d deny  e edit  ? explain
+   enter/y approve  esc/n deny  e edit  ? explain
