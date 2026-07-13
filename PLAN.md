@@ -88,14 +88,15 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
 ## Stage 9: Hardening
 
 - [x] Add app-shell integration coverage for start, resume, fork, turn submit, streaming, approval, interruption, and shutdown.
-- [ ] Validate Linux and macOS behavior, including alternate screen restoration after panic or fatal backend disconnect.
+- [x] Validate Linux and macOS behavior, including alternate screen restoration after panic or fatal backend disconnect.
   - [x] Restore terminal modes and leave alternate screen from the TUI drop path, explicit exit path, and terminal restore guard.
   - [x] Install a terminal-restoring panic hook before forwarding to the previous panic hook.
   - [x] Add unit coverage for panic-hook restore ordering and the alternate-screen leave sequence.
   - [x] Surface app-server disconnection in the app shell as terminal status/transcript state and return a fatal exit when the backend event stream ends.
   - [x] Add an end-to-end terminal/PTY regression that proves alternate screen, raw mode, cursor, mouse, focus, and paste modes are restored after a panic.
   - [x] Add an end-to-end terminal/PTY regression that proves alternate screen and terminal modes are restored after a fatal backend disconnect.
-  - [ ] Run and record validation for the app shell on Linux and macOS, including inline mode and alternate-screen mode.
+  - [x] Run and record validation for the app shell on Linux and macOS, including inline mode and alternate-screen mode.
+    - Validation record (2026-07-13): macOS 26.5.1 arm64 and Ubuntu 26.04 LTS aarch64 both rendered and exited the app shell through `RUST_LOG=trace just codex` in alternate-screen mode and with `--no-alt-screen`. Captured terminal output confirmed alternate-screen entry only in the enabled mode and restoration on exit. `just test -p codex-tui --test all terminal_restore` passed all three PTY checks on both platforms, covering panic restoration, fatal-disconnect restoration, and unauthenticated inline startup.
 - [x] Add performance checks for large transcripts and long streaming turns.
 - [x] Remove inherited upstream UI paths once the new app reaches feature parity for daily development.
   - [x] Route the normal TUI launch path into the new app-shell run loop instead of the inherited `App::run` chat UI.

@@ -1,6 +1,7 @@
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
+use std::io::Write;
 use std::os::fd::AsRawFd;
 use std::os::fd::FromRawFd;
 use std::os::fd::OwnedFd;
@@ -34,6 +35,53 @@ fn fatal_disconnect_restores_terminal_modes_under_pty() {
     assert!(
         output.contains("ERROR: app-server disconnected"),
         "missing fatal disconnect message in pty output {output:?}"
+    );
+}
+
+#[test]
+fn unauthenticated_startup_honors_no_alt_screen_under_pty() {
+    let pty = open_pty();
+    let codex_tui = codex_utils_cargo_bin::cargo_bin("codex-tui").expect("codex-tui binary");
+    let codex_home = tempfile::tempdir().expect("temporary CODEX_HOME");
+    let log_dir = codex_home.path().join("logs");
+
+    let mut command = ProcessCommand::new(codex_tui);
+    command
+        .arg("--no-alt-screen")
+        .arg("-c")
+        .arg(format!("log_dir={:?}", log_dir.display().to_string()))
+        .env("CODEX_HOME", codex_home.path())
+        .env("RUST_LOG", "trace")
+        .env("TERM", "xterm-256color")
+        .stdin(Stdio::from(dup_file(pty.slave.as_raw_fd())))
+        .stdout(Stdio::from(dup_file(pty.slave.as_raw_fd())))
+        .stderr(Stdio::from(dup_file(pty.slave.as_raw_fd())));
+
+    let mut child = command.spawn().expect("spawn inline startup under pty");
+    let mut reader = dup_file(pty.master.as_raw_fd());
+    set_nonblocking(reader.as_raw_fd());
+    let mut output = Vec::new();
+    wait_for_pty_text(&mut child, &mut reader, &mut output, "Sign in");
+
+    let mut writer = dup_file(pty.master.as_raw_fd());
+    writer.write_all(b"3").expect("select startup exit");
+    writer.flush().expect("flush startup exit selection");
+    std::thread::sleep(Duration::from_millis(/*millis*/ 25));
+    writer.write_all(b"\r").expect("submit startup exit");
+    writer.flush().expect("flush startup exit submission");
+    let status = wait_for_child_with_pty_output(&mut child, &mut reader, &mut output);
+    assert!(status.success(), "inline startup should exit cleanly");
+
+    read_available_pty_bytes(&mut reader, &mut output);
+    let output = String::from_utf8_lossy(&output);
+    assert!(
+        output.contains("Better Codex") && output.contains("Sign in"),
+        "startup screen did not render in pty output {output:?}"
+    );
+    assert_missing_sequence(
+        &output,
+        crossterm::terminal::EnterAlternateScreen,
+        "enter alternate screen",
     );
 }
 
@@ -91,6 +139,12 @@ struct Pty {
 fn open_pty() -> Pty {
     let mut master = 0;
     let mut slave = 0;
+    let mut window_size = libc::winsize {
+        ws_row: 24,
+        ws_col: 80,
+        ws_xpixel: 0,
+        ws_ypixel: 0,
+    };
     // SAFETY: openpty initializes the provided file descriptors on success.
     let result = unsafe {
         libc::openpty(
@@ -98,7 +152,7 @@ fn open_pty() -> Pty {
             &mut slave,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-            std::ptr::null_mut(),
+            &mut window_size,
         )
     };
     assert_eq!(
@@ -142,13 +196,64 @@ fn wait_for_child(child: &mut std::process::Child) -> std::process::ExitStatus {
     }
 }
 
+fn wait_for_child_with_pty_output(
+    child: &mut std::process::Child,
+    reader: &mut File,
+    output: &mut Vec<u8>,
+) -> std::process::ExitStatus {
+    let deadline = Instant::now() + Duration::from_secs(/*secs*/ 15);
+    loop {
+        read_available_pty_bytes(reader, output);
+        if let Some(status) = child.try_wait().expect("poll inline startup") {
+            return status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            let output = String::from_utf8_lossy(output);
+            panic!("inline startup timed out while exiting: {output:?}");
+        }
+        std::thread::sleep(Duration::from_millis(/*millis*/ 25));
+    }
+}
+
 fn read_available_pty_output(master: OwnedFd) -> String {
     set_nonblocking(master.as_raw_fd());
     let mut master = File::from(master);
     let mut output = Vec::new();
+    read_available_pty_bytes(&mut master, &mut output);
+    String::from_utf8_lossy(&output).into_owned()
+}
+
+fn wait_for_pty_text(
+    child: &mut std::process::Child,
+    reader: &mut File,
+    output: &mut Vec<u8>,
+    expected: &str,
+) {
+    let deadline = Instant::now() + Duration::from_secs(/*secs*/ 20);
+    loop {
+        read_available_pty_bytes(reader, output);
+        if String::from_utf8_lossy(output).contains(expected) {
+            return;
+        }
+        if let Some(status) = child.try_wait().expect("poll inline startup") {
+            panic!("inline startup exited before rendering {expected:?}: {status}");
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            let output = String::from_utf8_lossy(output);
+            panic!("inline startup timed out waiting for {expected:?}: {output:?}");
+        }
+        std::thread::sleep(Duration::from_millis(/*millis*/ 25));
+    }
+}
+
+fn read_available_pty_bytes(reader: &mut File, output: &mut Vec<u8>) {
     let mut buffer = [0; 4096];
     loop {
-        match master.read(&mut buffer) {
+        match reader.read(&mut buffer) {
             Ok(0) => break,
             Ok(read) => output.extend_from_slice(&buffer[..read]),
             Err(err) if err.kind() == std::io::ErrorKind::Interrupted => {}
@@ -156,7 +261,6 @@ fn read_available_pty_output(master: OwnedFd) -> String {
             Err(err) => panic!("read helper pty output: {err}"),
         }
     }
-    String::from_utf8_lossy(&output).into_owned()
 }
 
 fn set_nonblocking(fd: i32) {
@@ -238,5 +342,16 @@ fn assert_contains_sequence(output: &str, command: impl Command, label: &str) {
     assert!(
         output.contains(&expected),
         "missing {label} sequence {expected:?} in pty output {output:?}"
+    );
+}
+
+fn assert_missing_sequence(output: &str, command: impl Command, label: &str) {
+    let mut unexpected = String::new();
+    command
+        .write_ansi(&mut unexpected)
+        .unwrap_or_else(|err| panic!("format {label} sequence: {err}"));
+    assert!(
+        !output.contains(&unexpected),
+        "unexpected {label} sequence {unexpected:?} in pty output {output:?}"
     );
 }

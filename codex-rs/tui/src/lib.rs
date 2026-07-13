@@ -1229,6 +1229,9 @@ async fn run_ratatui_app(
         initialized_terminal.enhanced_keys_supported,
         initialized_terminal.stderr_guard,
     );
+    let startup_uses_alt_screen =
+        determine_alt_screen_mode(cli.no_alt_screen, initial_config.tui_alternate_screen);
+    tui.set_alt_screen_enabled(startup_uses_alt_screen);
 
     #[cfg(not(debug_assertions))]
     {
