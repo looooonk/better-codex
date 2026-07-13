@@ -1,7 +1,6 @@
 use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
-use super::TranscriptLine;
 use super::composer_render::composer_cursor_position;
 use super::composer_render::composer_visual_cursor_line;
 use super::composer_render::wrapped_composer_lines;
@@ -233,17 +232,27 @@ impl ShellView<'_> {
         let body = body_rect_after_title(content);
         let cwd = std::path::Path::new(&self.shell.cwd);
         let mut text_body = body;
-        let mut lines = collect_transcript_lines(self.shell, body.width, cwd);
         let visible_count = usize::from(body.height);
-        let mut max_scroll = lines.len().saturating_sub(visible_count);
+        let mut layout = self.shell.transcript_render_cache.borrow_mut().layout(
+            self.shell,
+            text_body.width,
+            cwd,
+        );
+        let mut max_scroll = layout.total_lines.saturating_sub(visible_count);
         if max_scroll > 0 && body.width > 2 {
             text_body.width = text_body.width.saturating_sub(2);
-            lines = collect_transcript_lines(self.shell, text_body.width, cwd);
-            max_scroll = lines.len().saturating_sub(visible_count);
+            layout = self.shell.transcript_render_cache.borrow_mut().layout(
+                self.shell,
+                text_body.width,
+                cwd,
+            );
+            max_scroll = layout.total_lines.saturating_sub(visible_count);
         }
         self.shell.transcript_scroll_max.set(max_scroll);
         let scroll = self.shell.transcript_scroll.min(max_scroll);
-        let visible_from = lines.len().saturating_sub(visible_count + scroll);
+        let visible_from = layout
+            .total_lines
+            .saturating_sub(visible_count.saturating_add(scroll));
         let title = if let Some(selected) = self.shell.transcript_selection {
             format!(
                 "Conversation select {}/{}",
@@ -254,12 +263,12 @@ impl ShellView<'_> {
             "Conversation".to_string()
         };
         let scrollbar = transcript_scrollbar_metrics(
-            lines.len(),
+            layout.total_lines,
             body.height,
             visible_from,
             TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT,
         );
-        let visible_hyperlink_lines = lines.into_iter().skip(visible_from).collect::<Vec<_>>();
+        let visible_hyperlink_lines = layout.visible_hyperlink_lines(visible_from, visible_count);
         let visible_lines = visible_lines(visible_hyperlink_lines.clone());
         Paragraph::new(Line::from(title.bold()))
             .style(pane_style(MOCHA_BASE))
@@ -550,46 +559,6 @@ struct ShellLayout {
     dashboard: Option<Rect>,
 }
 
-fn collect_transcript_lines(
-    shell: &ShellState,
-    transcript_width: u16,
-    cwd: &std::path::Path,
-) -> Vec<HyperlinkLine> {
-    let mut lines = Vec::new();
-    let mut previous_kind = None;
-    for (index, line) in shell.transcript.iter().enumerate() {
-        push_transcript_lines(
-            &mut lines,
-            &mut previous_kind,
-            line,
-            transcript_width,
-            cwd,
-            shell.transcript_selection == Some(index),
-        );
-    }
-    if !shell.streaming_plan.is_empty() {
-        push_transcript_lines(
-            &mut lines,
-            &mut previous_kind,
-            &TranscriptLine::new(TranscriptKind::Plan, shell.streaming_plan.clone()),
-            transcript_width,
-            cwd,
-            /*selected*/ false,
-        );
-    }
-    if !shell.streaming_assistant.is_empty() {
-        push_transcript_lines(
-            &mut lines,
-            &mut previous_kind,
-            &TranscriptLine::new(TranscriptKind::Assistant, shell.streaming_assistant.clone()),
-            transcript_width,
-            cwd,
-            /*selected*/ false,
-        );
-    }
-    lines
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct TranscriptScrollbarMetrics {
     pub(super) thumb_top: u16,
@@ -652,59 +621,26 @@ fn render_transcript_scrollbar(
     }
 }
 
-fn push_transcript_lines(
-    lines: &mut Vec<HyperlinkLine>,
-    previous_kind: &mut Option<TranscriptKind>,
-    line: &TranscriptLine,
-    width: u16,
-    cwd: &std::path::Path,
-    selected: bool,
-) {
-    if should_separate_transcript_item(*previous_kind, line.kind) {
-        lines.push(HyperlinkLine::new(Line::default()));
-    }
-    lines.extend(transcript_lines(line, width, cwd, selected));
-    *previous_kind = Some(line.kind);
-}
-
-fn should_separate_transcript_item(
-    previous_kind: Option<TranscriptKind>,
-    current_kind: TranscriptKind,
-) -> bool {
-    let Some(previous_kind) = previous_kind else {
-        return false;
-    };
-    if previous_kind == TranscriptKind::System {
-        return false;
-    }
-    matches!(
-        current_kind,
-        TranscriptKind::User
-            | TranscriptKind::Assistant
-            | TranscriptKind::Tool
-            | TranscriptKind::Diff
-            | TranscriptKind::Output
-    )
-}
-
-fn transcript_lines(
-    line: &TranscriptLine,
+pub(super) fn render_transcript_line(
+    kind: TranscriptKind,
+    text: &str,
+    tool_status: Option<ToolBlockStatus>,
     width: u16,
     cwd: &std::path::Path,
     selected: bool,
 ) -> Vec<HyperlinkLine> {
-    if let Some(status) = line.tool_status
+    if let Some(status) = tool_status
         && matches!(
-            line.kind,
+            kind,
             TranscriptKind::Tool | TranscriptKind::Diff | TranscriptKind::Output
         )
     {
-        return tool_block_lines(line, width, status, selected);
+        return tool_block_lines(kind, text, width, status, selected);
     }
 
     let width = usize::from(width).max(12);
-    let label = line.kind.label();
-    let style = match line.kind {
+    let label = kind.label();
+    let style = match kind {
         TranscriptKind::System => LineStyle::Dim,
         TranscriptKind::User => LineStyle::Cyan,
         TranscriptKind::Assistant => LineStyle::Magenta,
@@ -722,29 +658,25 @@ fn transcript_lines(
     let initial_prefix = style.label_prefix(label, selected);
     let subsequent_prefix = " ".repeat(prefix_width).into();
 
-    let mut rendered_lines =
-        if matches!(line.kind, TranscriptKind::Assistant | TranscriptKind::Plan) {
-            let rendered = markdown::render_markdown_agent_with_links_and_cwd(
-                &line.text,
-                Some(body_width),
-                Some(cwd),
-            )
-            .into_iter()
-            .map(|line| line.style(style.line_style()))
-            .collect();
-            prefix_hyperlink_lines(rendered, initial_prefix, subsequent_prefix)
-        } else {
-            let options = textwrap::Options::new(body_width);
-            let wrapped_lines: Vec<HyperlinkLine> = textwrap::wrap(&line.text, options)
+    let mut rendered_lines = if matches!(kind, TranscriptKind::Assistant | TranscriptKind::Plan) {
+        let rendered =
+            markdown::render_markdown_agent_with_links_and_cwd(text, Some(body_width), Some(cwd))
                 .into_iter()
-                .map(|wrapped| {
-                    HyperlinkLine::new(
-                        Line::from(style.text(wrapped.into_owned())).style(style.line_style()),
-                    )
-                })
+                .map(|line| line.style(style.line_style()))
                 .collect();
-            prefix_hyperlink_lines(wrapped_lines, initial_prefix, subsequent_prefix)
-        };
+        prefix_hyperlink_lines(rendered, initial_prefix, subsequent_prefix)
+    } else {
+        let options = textwrap::Options::new(body_width);
+        let wrapped_lines: Vec<HyperlinkLine> = textwrap::wrap(text, options)
+            .into_iter()
+            .map(|wrapped| {
+                HyperlinkLine::new(
+                    Line::from(style.text(wrapped.into_owned())).style(style.line_style()),
+                )
+            })
+            .collect();
+        prefix_hyperlink_lines(wrapped_lines, initial_prefix, subsequent_prefix)
+    };
 
     if selected {
         rendered_lines = rendered_lines
@@ -756,19 +688,20 @@ fn transcript_lines(
 }
 
 fn tool_block_lines(
-    line: &TranscriptLine,
+    kind: TranscriptKind,
+    text: &str,
     width: u16,
     status: ToolBlockStatus,
     selected: bool,
 ) -> Vec<HyperlinkLine> {
     let width = usize::from(width).max(12);
-    let block_indent = if line.kind == TranscriptKind::Output {
+    let block_indent = if kind == TranscriptKind::Output {
         OUTPUT_BLOCK_INDENT.min(width.saturating_sub(1))
     } else {
         0
     };
     let block_width = width.saturating_sub(block_indent).max(1);
-    let block_background = match line.kind {
+    let block_background = match kind {
         TranscriptKind::Output => MOCHA_MANTLE,
         TranscriptKind::Tool | TranscriptKind::Diff => MOCHA_SURFACE0,
         TranscriptKind::System
@@ -779,10 +712,10 @@ fn tool_block_lines(
         | TranscriptKind::Audit
         | TranscriptKind::Error => MOCHA_SURFACE0,
     };
-    let label = line.kind.label();
+    let label = kind.label();
     let label_prefix_width = label.len() + 3;
     let content_width = block_width.saturating_sub(label_prefix_width).max(1);
-    let normalized_text = line.text.replace('\r', "\n").replace('\t', "    ");
+    let normalized_text = text.replace('\r', "\n").replace('\t', "    ");
     let visible_text = codex_ansi_escape::ansi_escape(&normalized_text);
     let visible_text_lines = if visible_text.lines.is_empty() {
         vec![String::new()]
@@ -807,7 +740,7 @@ fn tool_block_lines(
             wrapped.extend(line_wrapped.into_iter().map(std::borrow::Cow::into_owned));
         }
     }
-    if line.kind == TranscriptKind::Output && wrapped.len() > OUTPUT_BLOCK_MAX_LINES {
+    if kind == TranscriptKind::Output && wrapped.len() > OUTPUT_BLOCK_MAX_LINES {
         let hidden_lines = wrapped.len().saturating_sub(OUTPUT_BLOCK_MAX_LINES - 1);
         wrapped.truncate(OUTPUT_BLOCK_MAX_LINES);
         if let Some(last) = wrapped.last_mut() {
@@ -828,7 +761,7 @@ fn tool_block_lines(
             if block_indent > 0 {
                 spans.push(" ".repeat(block_indent).into());
             }
-            let accent_style = if line.kind == TranscriptKind::Output {
+            let accent_style = if kind == TranscriptKind::Output {
                 Style::new().fg(MOCHA_SURFACE1).bg(block_background)
             } else {
                 status.accent_style()

@@ -377,8 +377,7 @@ impl ShellState {
             .truncate(submitted.transcript_len_before_submit);
         self.transcript_selection = None;
         self.scroll_transcript_to_bottom();
-        self.streaming_assistant.clear();
-        self.streaming_plan.clear();
+        self.clear_streaming_transcript();
         self.tool_activity.clear();
         self.subagent_activity.clear();
         self.latest_diff = None;

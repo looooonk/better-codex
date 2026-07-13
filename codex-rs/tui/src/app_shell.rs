@@ -44,8 +44,12 @@ use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use std::cell::Cell;
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+use std::time::Duration;
 use tokio::select;
 use tokio_stream::StreamExt;
 
@@ -73,6 +77,7 @@ mod startup;
 mod startup_availability_nux;
 mod startup_login;
 mod startup_model_migration;
+mod transcript_render;
 mod user_input;
 mod workspace;
 use approval::ApprovalAction;
@@ -105,16 +110,25 @@ pub(crate) use startup::StartupOnboardingOutcome;
 pub(crate) use startup::run_startup_onboarding;
 pub(crate) use startup_login::LoginOnboardingOutcome;
 pub(crate) use startup_login::run_login_onboarding;
+use transcript_render::TranscriptRenderCache;
 use user_input::PendingUserInput;
 use user_input::UserInputAdvance;
 use workspace::WorkspaceGitStatus;
 
 const MAX_TRANSCRIPT_LINES: usize = 400;
-const MAX_TRANSCRIPT_OUTPUT_CHARS: usize = 8_000;
-const MAX_TRANSCRIPT_OUTPUT_LINES: usize = 160;
+const TRANSCRIPT_OUTPUT_HIGH_WATER_CHARS: usize = 8_000;
+const TRANSCRIPT_OUTPUT_HIGH_WATER_LINES: usize = 160;
+const TRANSCRIPT_OUTPUT_LOW_WATER_CHARS: usize = 6_000;
+const TRANSCRIPT_OUTPUT_LOW_WATER_LINES: usize = 120;
 const TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX: &str = "... earlier output omitted ...\n";
 const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
 const TRANSCRIPT_SELECTION_STEP: usize = 1;
+const APP_SERVER_FRAME_INTERVAL: Duration = Duration::from_millis(33);
+
+fn next_transcript_render_revision() -> u64 {
+    static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
+    NEXT_REVISION.fetch_add(1, Ordering::Relaxed)
+}
 
 pub(crate) async fn run(
     tui: &mut tui::Tui,
@@ -234,7 +248,8 @@ pub(crate) async fn run(
                                 event,
                             )
                             .await?;
-                        tui.frame_requester().schedule_frame();
+                        tui.frame_requester()
+                            .schedule_frame_in(APP_SERVER_FRAME_INTERVAL);
                     }
                     None => {
                         shell.push_system("app-server disconnected");
@@ -292,12 +307,13 @@ where
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug)]
 struct TranscriptLine {
     kind: TranscriptKind,
     text: String,
     tool_status: Option<ToolBlockStatus>,
     item_id: Option<String>,
+    render_revision: u64,
 }
 
 impl TranscriptLine {
@@ -307,11 +323,13 @@ impl TranscriptLine {
             text: text.into(),
             tool_status: None,
             item_id: None,
+            render_revision: next_transcript_render_revision(),
         }
     }
 
     fn tool_status(mut self, status: ToolBlockStatus) -> Self {
         self.tool_status = Some(status);
+        self.mark_render_changed();
         self
     }
 
@@ -319,7 +337,34 @@ impl TranscriptLine {
         self.item_id = Some(item_id.into());
         self
     }
+
+    fn mark_render_changed(&mut self) {
+        self.render_revision = next_transcript_render_revision();
+    }
 }
+
+impl Clone for TranscriptLine {
+    fn clone(&self) -> Self {
+        Self {
+            kind: self.kind,
+            text: self.text.clone(),
+            tool_status: self.tool_status,
+            item_id: self.item_id.clone(),
+            render_revision: next_transcript_render_revision(),
+        }
+    }
+}
+
+impl PartialEq for TranscriptLine {
+    fn eq(&self, other: &Self) -> bool {
+        self.kind == other.kind
+            && self.text == other.text
+            && self.tool_status == other.tool_status
+            && self.item_id == other.item_id
+    }
+}
+
+impl Eq for TranscriptLine {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TranscriptKind {
@@ -443,6 +488,7 @@ struct ShellState {
     transcript_scroll: usize,
     transcript_scroll_max: Cell<usize>,
     transcript_selection: Option<usize>,
+    transcript_render_cache: RefCell<TranscriptRenderCache>,
     session_list: SessionListState,
     settings: SettingsState,
     mcp_inventory: McpInventorySummary,
@@ -466,7 +512,9 @@ struct ShellState {
     pending_user_input: Option<PendingUserInput>,
     safety_buffering: SafetyBufferingState,
     streaming_assistant: String,
+    streaming_assistant_revision: u64,
     streaming_plan: String,
+    streaming_plan_revision: u64,
     plan_explanation: Option<String>,
     plan_steps: Vec<TurnPlanStep>,
     active_goal: Option<ThreadGoal>,
@@ -519,6 +567,7 @@ impl ShellState {
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
+            transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
@@ -542,7 +591,9 @@ impl ShellState {
             pending_user_input: None,
             safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: String::new(),
+            streaming_assistant_revision: next_transcript_render_revision(),
             streaming_plan: String::new(),
+            streaming_plan_revision: next_transcript_render_revision(),
             plan_explanation: None,
             plan_steps: Vec::new(),
             active_goal: None,
@@ -1356,8 +1407,8 @@ impl ShellState {
         self.transcript_scroll = 0;
         self.transcript_scroll_max.set(0);
         self.transcript_selection = None;
-        self.streaming_assistant.clear();
-        self.streaming_plan.clear();
+        self.transcript_render_cache.get_mut().clear();
+        self.clear_streaming_transcript();
         self.plan_explanation = None;
         self.plan_steps.clear();
         self.active_goal = None;
@@ -1540,7 +1591,10 @@ impl ShellState {
     }
 
     fn scroll_transcript_down(&mut self, rows: usize) {
-        self.transcript_scroll = self.transcript_scroll.saturating_sub(rows);
+        self.transcript_scroll = self
+            .transcript_scroll
+            .min(self.transcript_scroll_max.get())
+            .saturating_sub(rows);
     }
 
     fn scroll_transcript_to_top(&mut self) {
@@ -1576,8 +1630,8 @@ impl ShellState {
 
     fn clear_visible_transcript(&mut self) {
         self.transcript.clear();
-        self.streaming_assistant.clear();
-        self.streaming_plan.clear();
+        self.transcript_render_cache.get_mut().clear();
+        self.clear_streaming_transcript();
         self.transcript_scroll = 0;
         self.transcript_selection = None;
         self.push_system("visible transcript cleared");
@@ -1788,8 +1842,7 @@ impl ShellState {
         let transcript_len_before_submit = self.transcript.len();
         self.push_user(prompt.clone());
         self.status = "thinking".to_string();
-        self.streaming_assistant.clear();
-        self.streaming_plan.clear();
+        self.clear_streaming_transcript();
         let params = AppShellTurnStart {
             thread_id: self.thread_id,
             items: vec![UserInput::Text {
@@ -2111,6 +2164,7 @@ impl ShellState {
             return;
         }
         let message = std::mem::take(&mut self.streaming_assistant);
+        self.streaming_assistant_revision = next_transcript_render_revision();
         self.push_assistant(message);
     }
 
@@ -2119,7 +2173,45 @@ impl ShellState {
             return;
         }
         let plan = std::mem::take(&mut self.streaming_plan);
+        self.streaming_plan_revision = next_transcript_render_revision();
         self.push_plan(plan);
+    }
+
+    fn push_streaming_assistant_delta(&mut self, delta: &str) {
+        if delta.is_empty() {
+            return;
+        }
+        self.streaming_assistant.push_str(delta);
+        self.streaming_assistant_revision = next_transcript_render_revision();
+    }
+
+    fn push_streaming_plan_delta(&mut self, delta: &str) {
+        if delta.is_empty() {
+            return;
+        }
+        self.streaming_plan.push_str(delta);
+        self.streaming_plan_revision = next_transcript_render_revision();
+    }
+
+    fn clear_streaming_assistant(&mut self) {
+        if self.streaming_assistant.is_empty() {
+            return;
+        }
+        self.streaming_assistant.clear();
+        self.streaming_assistant_revision = next_transcript_render_revision();
+    }
+
+    fn clear_streaming_plan(&mut self) {
+        if self.streaming_plan.is_empty() {
+            return;
+        }
+        self.streaming_plan.clear();
+        self.streaming_plan_revision = next_transcript_render_revision();
+    }
+
+    fn clear_streaming_transcript(&mut self) {
+        self.clear_streaming_assistant();
+        self.clear_streaming_plan();
     }
 
     fn ingest_completed_item(&mut self, item: ThreadItem) {
@@ -2143,7 +2235,7 @@ impl ShellState {
             ThreadItem::AgentMessage { text, .. } => {
                 if !text.is_empty() {
                     if self.streaming_assistant == text {
-                        self.streaming_assistant.clear();
+                        self.clear_streaming_assistant();
                     }
                     self.push_assistant(text);
                 }
@@ -2151,7 +2243,7 @@ impl ShellState {
             ThreadItem::Plan { text, .. } => {
                 if !text.is_empty() {
                     if self.streaming_plan == text {
-                        self.streaming_plan.clear();
+                        self.clear_streaming_plan();
                     }
                     self.push_plan(text);
                 }
@@ -2439,12 +2531,13 @@ impl ShellState {
             return;
         }
 
-        if let Some(existing) = self.transcript.iter_mut().find(|existing| {
+        if let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
             existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(&item_id)
         }) {
             existing.text.push_str(&delta);
             existing.text = compact_output_for_transcript(std::mem::take(&mut existing.text));
             existing.tool_status = Some(status);
+            existing.mark_render_changed();
             return;
         }
 
@@ -2456,10 +2549,11 @@ impl ShellState {
     }
 
     fn update_output_status_for_item(&mut self, item_id: &str, status: ToolBlockStatus) {
-        if let Some(existing) = self.transcript.iter_mut().find(|existing| {
+        if let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
             existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(item_id)
         }) {
             existing.tool_status = Some(status);
+            existing.mark_render_changed();
         }
     }
 
@@ -2493,7 +2587,7 @@ impl ShellState {
 
     fn upsert_line(&mut self, line: TranscriptLine) {
         if let Some(item_id) = line.item_id.as_deref()
-            && let Some(existing) = self.transcript.iter_mut().find(|existing| {
+            && let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
                 existing.kind == line.kind && existing.item_id.as_deref() == Some(item_id)
             })
         {
@@ -2538,6 +2632,7 @@ impl ShellState {
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
+            transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
@@ -2565,7 +2660,9 @@ impl ShellState {
             pending_user_input: None,
             safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
+            streaming_assistant_revision: next_transcript_render_revision(),
             streaming_plan: String::new(),
+            streaming_plan_revision: next_transcript_render_revision(),
             plan_explanation: Some("Build the standalone shell in slices.".to_string()),
             plan_steps: vec![
                 TurnPlanStep {
@@ -2635,46 +2732,120 @@ impl ShellState {
 pub mod bench_support {
     use super::render::ShellView;
     use super::*;
+    use itertools::Itertools;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
 
     const BENCH_AREA: Rect = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 120, /*height*/ 40,
     );
+    const LONG_HISTORY_TURNS: usize = MAX_TRANSCRIPT_LINES / 2;
+    const APPROX_OUTPUT_TOKENS_PER_TURN: usize = 260;
+    const APPROX_STREAMING_OUTPUT_TOKENS: usize = 50_000;
+    const BENCH_TOOL_ITEM_ID: &str = "tool-output-bench";
 
-    pub fn render_large_transcript() -> String {
+    /// Reusable app-shell state for render benchmarks.
+    pub struct RenderFixture {
+        shell: ShellState,
+        next_tool_output_line: usize,
+    }
+
+    impl RenderFixture {
+        pub fn render(&self) -> String {
+            render_to_string(&self.shell)
+        }
+
+        pub fn scroll_and_render(&mut self) -> String {
+            self.toggle_scroll();
+            self.render()
+        }
+
+        pub fn append_tool_output_and_render(&mut self) -> String {
+            self.append_tool_output();
+            self.render()
+        }
+
+        pub fn append_tool_output_scroll_and_render(&mut self) -> String {
+            self.append_tool_output();
+            self.toggle_scroll();
+            self.render()
+        }
+
+        fn toggle_scroll(&mut self) {
+            if self.shell.transcript_scroll == 0 {
+                self.shell.scroll_transcript_up(TRANSCRIPT_PAGE_SCROLL_STEP);
+            } else {
+                self.shell
+                    .scroll_transcript_down(TRANSCRIPT_PAGE_SCROLL_STEP);
+            }
+        }
+
+        fn append_tool_output(&mut self) {
+            let line = self.next_tool_output_line;
+            self.next_tool_output_line = self.next_tool_output_line.saturating_add(1);
+            self.shell.push_output_delta_with_status_for_item(
+                BENCH_TOOL_ITEM_ID,
+                format!(
+                    "cargo build output line {line}: compiling a representative workspace dependency\n"
+                ),
+                ToolBlockStatus::Running,
+            );
+        }
+    }
+
+    pub fn long_history_fixture() -> RenderFixture {
         let mut shell = bench_fixture();
         shell.transcript.clear();
         shell.streaming_assistant.clear();
 
-        for index in 0..2_000 {
+        let assistant_output =
+            std::iter::repeat_n("response", APPROX_OUTPUT_TOKENS_PER_TURN).join(" ");
+        for index in 0..LONG_HISTORY_TURNS {
             shell.push_user(format!(
-                "large transcript user turn {index}: inspect the shell layout and dashboard state"
+                "long history user turn {index}: continue the benchmark conversation"
             ));
-            shell.push_assistant(format!(
-                "large transcript assistant turn {index}: rendered transcript item with enough text to wrap on a desktop viewport"
-            ));
-            if index % 10 == 0 {
-                shell.push_tool(format!("exec benchmark-step-{index} completed"));
-            }
+            shell.push_assistant(format!("turn {index}: {assistant_output}"));
         }
 
-        render_to_string(&shell)
+        RenderFixture {
+            shell,
+            next_tool_output_line: 0,
+        }
     }
 
-    pub fn render_long_streaming_turn() -> String {
+    pub fn long_streaming_turn_fixture() -> RenderFixture {
         let mut shell = bench_fixture();
         shell.transcript.clear();
-        shell.streaming_assistant = (0..1_000)
-            .map(|index| {
+        shell.streaming_assistant =
+            std::iter::repeat_n("streaming", APPROX_STREAMING_OUTPUT_TOKENS).join(" ");
+
+        RenderFixture {
+            shell,
+            next_tool_output_line: 0,
+        }
+    }
+
+    pub fn active_tool_output_fixture() -> RenderFixture {
+        let mut fixture = long_history_fixture();
+        fixture.shell.push_tool_with_status_for_item(
+            BENCH_TOOL_ITEM_ID,
+            "exec cargo build --workspace",
+            ToolBlockStatus::Running,
+        );
+        let initial_output = (0..TRANSCRIPT_OUTPUT_HIGH_WATER_LINES)
+            .map(|line| {
                 format!(
-                    "streaming chunk {index} keeps markdown wrapping and dashboard layout stable"
+                    "cargo build output line {line}: compiling a representative workspace dependency"
                 )
             })
-            .collect::<Vec<_>>()
-            .join(" ");
-
-        render_to_string(&shell)
+            .join("\n");
+        fixture.shell.push_output_with_status_for_item(
+            BENCH_TOOL_ITEM_ID,
+            compact_output_for_transcript(initial_output),
+            ToolBlockStatus::Running,
+        );
+        fixture.next_tool_output_line = TRANSCRIPT_OUTPUT_HIGH_WATER_LINES;
+        fixture
     }
 
     fn bench_fixture() -> ShellState {
@@ -2697,6 +2868,7 @@ pub mod bench_support {
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
+            transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
@@ -2724,7 +2896,9 @@ pub mod bench_support {
             pending_user_input: None,
             safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: String::new(),
+            streaming_assistant_revision: next_transcript_render_revision(),
             streaming_plan: String::new(),
+            streaming_plan_revision: next_transcript_render_revision(),
             plan_explanation: Some("Keep render performance bounded.".to_string()),
             plan_steps: vec![
                 TurnPlanStep {
@@ -3010,8 +3184,14 @@ fn compact_output_for_transcript(text: String) -> String {
     } else {
         text.as_str()
     };
-    let needs_compaction = source.chars().count() > MAX_TRANSCRIPT_OUTPUT_CHARS
-        || source.split(['\n', '\r']).count() > MAX_TRANSCRIPT_OUTPUT_LINES;
+    let needs_compaction = source
+        .chars()
+        .nth(TRANSCRIPT_OUTPUT_HIGH_WATER_CHARS)
+        .is_some()
+        || source
+            .split(['\n', '\r'])
+            .nth(TRANSCRIPT_OUTPUT_HIGH_WATER_LINES)
+            .is_some();
     if !needs_compaction {
         return text;
     }
@@ -3020,23 +3200,29 @@ fn compact_output_for_transcript(text: String) -> String {
     let mut tail_lines = normalized
         .lines()
         .rev()
-        .take(MAX_TRANSCRIPT_OUTPUT_LINES)
+        .take(TRANSCRIPT_OUTPUT_LOW_WATER_LINES)
         .collect::<Vec<_>>();
     tail_lines.reverse();
     let mut compact = tail_lines.join("\n");
-    if compact.chars().count() > MAX_TRANSCRIPT_OUTPUT_CHARS {
+    if compact
+        .chars()
+        .nth(TRANSCRIPT_OUTPUT_LOW_WATER_CHARS)
+        .is_some()
+    {
         let mut tail_chars = compact
             .chars()
             .rev()
-            .take(MAX_TRANSCRIPT_OUTPUT_CHARS)
+            .take(TRANSCRIPT_OUTPUT_LOW_WATER_CHARS)
             .collect::<Vec<_>>();
         tail_chars.reverse();
         compact = tail_chars.into_iter().collect();
     }
-    format!(
-        "{TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX}{}",
-        compact.trim_start_matches('\n')
-    )
+    let mut output = String::with_capacity(
+        TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX.len() + TRANSCRIPT_OUTPUT_HIGH_WATER_CHARS,
+    );
+    output.push_str(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX);
+    output.push_str(compact.trim_start_matches('\n'));
+    output
 }
 
 fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {

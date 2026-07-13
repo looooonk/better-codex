@@ -283,6 +283,26 @@ fn renders_output_blocks_as_inset_neutral_rectangles() {
 }
 
 #[test]
+fn renders_compacted_long_output_block_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let output = (0..=TRANSCRIPT_OUTPUT_HIGH_WATER_LINES)
+        .map(|line| format!("cargo build output line {line:03}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    shell.push_output_with_status(
+        compact_output_for_transcript(output),
+        ToolBlockStatus::Running,
+    );
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 20,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn renders_workspace_roots_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Workspace;
@@ -2242,10 +2262,57 @@ fn command_output_transcript_text_is_bounded() {
     assert!(output.starts_with(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX));
     assert!(
         output.chars().count()
-            <= MAX_TRANSCRIPT_OUTPUT_CHARS + TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX.len()
+            <= TRANSCRIPT_OUTPUT_HIGH_WATER_CHARS + TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX.len()
     );
     assert!(!output.contains("compile line 000"));
     assert!(output.contains("compile line 199"));
+}
+
+#[test]
+fn command_output_compaction_retains_the_low_water_line_tail() {
+    let output = (0..=TRANSCRIPT_OUTPUT_HIGH_WATER_LINES)
+        .map(|line| format!("compile line {line:03}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let retained_from = TRANSCRIPT_OUTPUT_HIGH_WATER_LINES
+        .saturating_add(1)
+        .saturating_sub(TRANSCRIPT_OUTPUT_LOW_WATER_LINES);
+    let retained = (retained_from..=TRANSCRIPT_OUTPUT_HIGH_WATER_LINES)
+        .map(|line| format!("compile line {line:03}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert_eq!(
+        compact_output_for_transcript(output),
+        format!("{TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX}{retained}")
+    );
+}
+
+#[test]
+fn command_output_compaction_waits_for_the_high_water_mark_after_trimming() {
+    let oversized = "a".repeat(TRANSCRIPT_OUTPUT_HIGH_WATER_CHARS + 1);
+    let compacted = compact_output_for_transcript(oversized);
+    let retained = compacted
+        .strip_prefix(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX)
+        .expect("oversized output should be marked as compacted");
+    assert_eq!(retained.chars().count(), TRANSCRIPT_OUTPUT_LOW_WATER_CHARS);
+
+    let delta = "b".repeat(TRANSCRIPT_OUTPUT_HIGH_WATER_CHARS - TRANSCRIPT_OUTPUT_LOW_WATER_CHARS);
+    let at_high_water = format!("{compacted}{delta}");
+    assert_eq!(
+        compact_output_for_transcript(at_high_water.clone()),
+        at_high_water
+    );
+
+    let compacted_again = compact_output_for_transcript(format!("{at_high_water}c"));
+    let retained_again = compacted_again
+        .strip_prefix(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX)
+        .expect("output above the high water mark should be compacted again");
+    assert_eq!(
+        retained_again.chars().count(),
+        TRANSCRIPT_OUTPUT_LOW_WATER_CHARS
+    );
+    assert!(retained_again.ends_with('c'));
 }
 
 #[test]
@@ -2509,6 +2576,11 @@ fn transcript_scroll_clamps_to_last_rendered_range() {
     shell.scroll_transcript_up(TRANSCRIPT_PAGE_SCROLL_STEP);
     assert_eq!(shell.transcript_scroll, 10);
 
+    shell.scroll_transcript_down(/*rows*/ 3);
+    assert_eq!(shell.transcript_scroll, 7);
+
+    shell.transcript_scroll = 100;
+    shell.transcript_scroll_max.set(10);
     shell.scroll_transcript_down(/*rows*/ 3);
     assert_eq!(shell.transcript_scroll, 7);
 

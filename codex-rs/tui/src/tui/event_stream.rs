@@ -133,6 +133,8 @@ impl EventSource for CrosstermEventSource {
     }
 }
 
+const MAX_TERMINAL_EVENTS_BEFORE_DRAW: usize = 8;
+
 /// TuiEventStream is a struct for reading TUI events (draws and user input).
 /// Each instance has its own draw subscription (the draw channel is broadcast, so
 /// multiple receivers are fine), while crossterm input is funneled through a
@@ -145,7 +147,7 @@ pub struct TuiEventStream<S: EventSource + Default + Unpin = CrosstermEventSourc
     draw_stream: BroadcastStream<()>,
     resume_stream: WatchStream<()>,
     terminal_focused: Arc<AtomicBool>,
-    poll_draw_first: bool,
+    terminal_events_since_draw: usize,
     #[cfg(unix)]
     suspend_context: crate::tui::job_control::SuspendContext,
     #[cfg(unix)]
@@ -166,7 +168,7 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
             draw_stream: BroadcastStream::new(draw_rx),
             resume_stream,
             terminal_focused,
-            poll_draw_first: false,
+            terminal_events_since_draw: 0,
             #[cfg(unix)]
             suspend_context,
             #[cfg(unix)]
@@ -294,24 +296,22 @@ impl<S: EventSource + Default + Unpin> Stream for TuiEventStream<S> {
     type Item = TuiEvent;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // approximate fairness + no starvation via round-robin.
-        let draw_first = self.poll_draw_first;
-        self.poll_draw_first = !self.poll_draw_first;
-
-        if draw_first {
-            if let Poll::Ready(event) = self.poll_draw_event(cx) {
-                return Poll::Ready(event);
-            }
-            if let Poll::Ready(event) = self.poll_crossterm_event(cx) {
-                return Poll::Ready(event);
-            }
-        } else {
-            if let Poll::Ready(event) = self.poll_crossterm_event(cx) {
-                return Poll::Ready(event);
-            }
-            if let Poll::Ready(event) = self.poll_draw_event(cx) {
-                return Poll::Ready(event);
-            }
+        // Coalesce a bounded burst of buffered terminal input before drawing. Scroll-wheel and
+        // key-repeat bursts otherwise force an expensive redraw between each input event, while
+        // the bound prevents sustained input from starving a queued redraw.
+        if self.terminal_events_since_draw >= MAX_TERMINAL_EVENTS_BEFORE_DRAW
+            && let Poll::Ready(event) = self.poll_draw_event(cx)
+        {
+            self.terminal_events_since_draw = 0;
+            return Poll::Ready(event);
+        }
+        if let Poll::Ready(event) = self.poll_crossterm_event(cx) {
+            self.terminal_events_since_draw = self.terminal_events_since_draw.saturating_add(1);
+            return Poll::Ready(event);
+        }
+        if let Poll::Ready(event) = self.poll_draw_event(cx) {
+            self.terminal_events_since_draw = 0;
+            return Poll::Ready(event);
         }
 
         Poll::Pending
@@ -439,33 +439,51 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn draw_and_key_events_yield_both() {
+    async fn buffered_keys_are_drained_before_draw() {
         let (broker, handle, draw_tx, draw_rx, terminal_focused) = setup();
         let mut stream = make_stream(broker, draw_rx, terminal_focused);
 
-        let expected_key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        let first_key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        let second_key = KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE);
         let _ = draw_tx.send(());
-        handle.send(Ok(Event::Key(expected_key)));
+        handle.send(Ok(Event::Key(first_key)));
+        handle.send(Ok(Event::Key(second_key)));
 
         let first = stream.next().await.unwrap();
         let second = stream.next().await.unwrap();
+        let third = stream.next().await.unwrap();
 
-        let mut saw_draw = false;
-        let mut saw_key = false;
-        for event in [first, second] {
-            match event {
-                TuiEvent::Draw => {
-                    saw_draw = true;
-                }
-                TuiEvent::Key(key) => {
-                    assert_eq!(key, expected_key);
-                    saw_key = true;
-                }
-                other => panic!("expected draw or key event, got {other:?}"),
-            }
+        assert!(matches!(first, TuiEvent::Key(key) if key == first_key));
+        assert!(matches!(second, TuiEvent::Key(key) if key == second_key));
+        assert!(matches!(third, TuiEvent::Draw));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn bounded_input_burst_yields_pending_draw() {
+        let (broker, handle, draw_tx, draw_rx, terminal_focused) = setup();
+        let mut stream = make_stream(broker, draw_rx, terminal_focused);
+        let key = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+
+        let _ = draw_tx.send(());
+        for _ in 0..=MAX_TERMINAL_EVENTS_BEFORE_DRAW {
+            handle.send(Ok(Event::Key(key)));
         }
 
-        assert!(saw_draw && saw_key, "expected both draw and key events");
+        for _ in 0..MAX_TERMINAL_EVENTS_BEFORE_DRAW {
+            assert!(matches!(stream.next().await, Some(TuiEvent::Key(event)) if event == key));
+        }
+        assert!(matches!(stream.next().await, Some(TuiEvent::Draw)));
+        assert!(matches!(stream.next().await, Some(TuiEvent::Key(event)) if event == key));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn draw_yields_when_no_terminal_input_is_ready() {
+        let (broker, _handle, draw_tx, draw_rx, terminal_focused) = setup();
+        let mut stream = make_stream(broker, draw_rx, terminal_focused);
+
+        let _ = draw_tx.send(());
+
+        assert!(matches!(stream.next().await, Some(TuiEvent::Draw)));
     }
 
     #[tokio::test(flavor = "current_thread")]

@@ -59,13 +59,13 @@ impl ShellState {
             ServerNotification::AgentMessageDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
-                    self.streaming_assistant.push_str(&delta.delta);
+                    self.push_streaming_assistant_delta(&delta.delta);
                 }
             }
             ServerNotification::PlanDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
-                    self.streaming_plan.push_str(&delta.delta);
+                    self.push_streaming_plan_delta(&delta.delta);
                 }
             }
             ServerNotification::ReasoningSummaryTextDelta(delta) => {
