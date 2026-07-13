@@ -28,7 +28,6 @@ pub(crate) use picker::KEYMAP_PICKER_VIEW_ID;
 pub(crate) use picker::build_keymap_picker_params;
 #[cfg(test)]
 pub(crate) use picker::build_keymap_picker_params_for_selected_action;
-pub(crate) use picker::build_keymap_picker_params_for_selected_action_with_filter;
 pub(crate) use picker::build_keymap_picker_params_with_filter;
 
 use codex_config::types::KeybindingSpec;
