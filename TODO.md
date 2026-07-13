@@ -8,4 +8,4 @@ This file tracks implementation tasks explicitly requested by users during live 
 - [x] When a Codex turn ends, add a thin horizontal separator.
 - [x] Implement a feature to allow the user to hide the dashboard. When the dashboard is hidden, make it so that some text like "CTRL + D Dashboard" is displayed somewhere. Note that the shortcut does not have to be CTRL + D, just whatever is most natural.
 - [x] When displaying the output of a tool that streams output, always display the last few lines, properly rendering newlines.
-- [ ] Update README.md to be user-focusing, mainly discussing: a short overview, supported (and unsupported) features, and an installation guide for both MacOS and Linux.
+- [x] Update README.md to be user-focusing, mainly discussing: a short overview, supported (and unsupported) features, and an installation guide for both MacOS and Linux.
