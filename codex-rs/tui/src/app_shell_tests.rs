@@ -1933,6 +1933,79 @@ async fn ctrl_d_hides_dashboard_and_reclaims_layout_snapshot() {
     assert_eq!(backend.calls(), Vec::new());
 }
 
+#[tokio::test]
+async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let ctrl_1 = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
+    let ctrl_3 = KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    shell
+        .handle_key(ctrl_3, &config, &mut backend)
+        .await
+        .expect("Ctrl+3 should select settings");
+
+    assert_eq!(
+        (
+            shell.dashboard_route,
+            shell.session_list.focused,
+            shell.settings.focused,
+        ),
+        (DashboardRoute::Settings, false, false)
+    );
+    assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
+    insta::assert_snapshot!(render_shell(&shell, area));
+
+    shell
+        .handle_key(ctrl_3, &config, &mut backend)
+        .await
+        .expect("Ctrl+3 should focus selected settings");
+
+    assert_eq!(
+        (
+            shell.dashboard_route,
+            shell.session_list.focused,
+            shell.settings.focused,
+        ),
+        (DashboardRoute::Settings, false, true)
+    );
+    assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
+
+    shell
+        .handle_key(ctrl_1, &config, &mut backend)
+        .await
+        .expect("Ctrl+1 should select sessions");
+
+    assert_eq!(
+        (
+            shell.dashboard_route,
+            shell.session_list.focused,
+            shell.settings.focused,
+        ),
+        (DashboardRoute::Sessions, false, false)
+    );
+    assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
+
+    shell
+        .handle_key(ctrl_1, &config, &mut backend)
+        .await
+        .expect("Ctrl+1 should focus selected sessions");
+
+    assert_eq!(
+        (
+            shell.dashboard_route,
+            shell.session_list.focused,
+            shell.settings.focused,
+        ),
+        (DashboardRoute::Sessions, true, false)
+    );
+    assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
+}
+
 #[test]
 fn bio_policy_error_renders_dedicated_safety_notice() {
     let mut shell = ShellState::snapshot_fixture();
