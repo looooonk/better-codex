@@ -1,29 +1,59 @@
-//! Status output formatting and display adapters for the TUI.
-//!
-//! This module turns protocol-level snapshots into stable display structures used by `/status`
-//! output and footer/status-line helpers, while keeping rendering concerns out of transport-facing
-//! code.
-//!
-//! `rate_limits` is the main integration point for status-line usage-limit items: it converts raw
-//! window snapshots into local-time labels and classifies data as available, stale, or missing.
-mod account;
-mod card;
-mod format;
-mod helpers;
-mod rate_limits;
-pub(crate) mod remote_connection;
+use dirs::home_dir;
+use std::path::Path;
+use unicode_width::UnicodeWidthStr;
 
-pub(crate) use account::StatusAccountDisplay;
-#[cfg(test)]
-pub(crate) use card::new_status_output;
-#[cfg(test)]
-pub(crate) use card::new_status_output_with_rate_limits;
-pub(crate) use card::new_status_output_with_rate_limits_handle;
-pub(crate) use helpers::format_directory_display;
-pub(crate) use helpers::format_tokens_compact;
-pub(crate) use helpers::plan_type_display_name;
-#[cfg(test)]
-pub(crate) use rate_limits::rate_limit_snapshot_display;
+pub(crate) fn format_tokens_compact(value: i64) -> String {
+    let value = value.max(0);
+    if value < 1_000 {
+        return value.to_string();
+    }
 
-#[cfg(test)]
-mod tests;
+    let value = value as f64;
+    let (scaled, suffix) = if value >= 1_000_000_000_000.0 {
+        (value / 1_000_000_000_000.0, "T")
+    } else if value >= 1_000_000_000.0 {
+        (value / 1_000_000_000.0, "B")
+    } else if value >= 1_000_000.0 {
+        (value / 1_000_000.0, "M")
+    } else {
+        (value / 1_000.0, "K")
+    };
+    let decimals = if scaled < 10.0 {
+        2
+    } else if scaled < 100.0 {
+        1
+    } else {
+        0
+    };
+    let mut formatted = format!("{scaled:.decimals$}");
+    while formatted.contains('.') && formatted.ends_with('0') {
+        formatted.pop();
+    }
+    if formatted.ends_with('.') {
+        formatted.pop();
+    }
+    format!("{formatted}{suffix}")
+}
+
+pub(crate) fn format_directory_display(directory: &Path, max_width: Option<usize>) -> String {
+    let formatted = home_dir()
+        .and_then(|home| directory.strip_prefix(home).ok().map(Path::to_path_buf))
+        .map_or_else(
+            || directory.display().to_string(),
+            |relative| {
+                if relative.as_os_str().is_empty() {
+                    "~".to_string()
+                } else {
+                    format!("~{}{}", std::path::MAIN_SEPARATOR, relative.display())
+                }
+            },
+        );
+
+    match max_width {
+        Some(0) => String::new(),
+        Some(max_width) if UnicodeWidthStr::width(formatted.as_str()) > max_width => {
+            crate::text_formatting::center_truncate_path(&formatted, max_width)
+        }
+        Some(_) | None => formatted,
+    }
+}

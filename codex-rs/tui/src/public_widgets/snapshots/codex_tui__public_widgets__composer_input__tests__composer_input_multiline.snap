@@ -1,0 +1,9 @@
+---
+source: tui/src/public_widgets/composer_input_tests.rs
+expression: "render(&composer, area)"
+---
+> first line
+> second line wraps across the
+  available width
+
+Enter send   Shift+Enter newline

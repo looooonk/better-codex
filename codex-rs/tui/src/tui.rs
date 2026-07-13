@@ -1,5 +1,4 @@
 use std::fmt;
-use std::future::Future;
 use std::io::IsTerminal;
 use std::io::Result;
 use std::io::Stdout;
@@ -35,25 +34,16 @@ use ratatui::crossterm::terminal::enable_raw_mode;
 use ratatui::layout::Offset;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
-use ratatui::text::Line;
 use tokio::sync::broadcast;
 use tokio_stream::Stream;
 
 pub use self::frame_requester::FrameRequester;
 use crate::custom_terminal;
 use crate::custom_terminal::Terminal as CustomTerminal;
-use crate::insert_history::HistoryLineWrapPolicy;
-use crate::insert_history::InsertHistoryMode;
-use crate::notifications::DesktopNotificationBackend;
-use crate::notifications::detect_backend;
-use crate::terminal_hyperlinks::HyperlinkLine;
-use crate::terminal_hyperlinks::plain_hyperlink_lines;
 use crate::tui::event_stream::EventBroker;
 use crate::tui::event_stream::TuiEventStream;
 #[cfg(unix)]
 use crate::tui::job_control::SuspendContext;
-use codex_config::types::NotificationCondition;
-use codex_config::types::NotificationMethod;
 
 mod event_stream;
 mod frame_rate_limiter;
@@ -81,19 +71,9 @@ pub(crate) fn running_in_vscode_terminal() -> bool {
     keyboard_modes::running_in_vscode_terminal()
 }
 
-fn should_emit_notification(condition: NotificationCondition, terminal_focused: bool) -> bool {
-    match condition {
-        NotificationCondition::Unfocused => !terminal_focused,
-        NotificationCondition::Always => true,
-    }
-}
-
 impl Drop for Tui {
     fn drop(&mut self) {
         let _ = self.leave_alt_screen();
-        if let Err(err) = self.clear_ambient_pet_image() {
-            tracing::debug!(error = %err, "failed to clear ambient pet image on TUI drop");
-        }
     }
 }
 
@@ -104,38 +84,12 @@ mod tests {
 
     use super::DisableAlternateScroll;
     use super::clear_for_viewport_change;
-    use super::should_emit_notification;
     use super::write_exit_alt_screen_restore;
     use crate::custom_terminal::Terminal as CustomTerminal;
     use crate::test_backend::VT100Backend;
-    use codex_config::types::NotificationCondition;
     use crossterm::terminal::LeaveAlternateScreen;
     use ratatui::layout::Position;
     use ratatui::layout::Rect;
-
-    #[test]
-    fn unfocused_notification_condition_is_suppressed_when_focused() {
-        assert!(!should_emit_notification(
-            NotificationCondition::Unfocused,
-            /*terminal_focused*/ true
-        ));
-    }
-
-    #[test]
-    fn always_notification_condition_emits_when_focused() {
-        assert!(should_emit_notification(
-            NotificationCondition::Always,
-            /*terminal_focused*/ true
-        ));
-    }
-
-    #[test]
-    fn unfocused_notification_condition_emits_when_unfocused() {
-        assert!(should_emit_notification(
-            NotificationCondition::Unfocused,
-            /*terminal_focused*/ false
-        ));
-    }
 
     #[test]
     fn first_viewport_change_clears_from_new_viewport_when_old_viewport_is_empty() {
@@ -270,12 +224,6 @@ impl Command for DisableAlternateScroll {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RawModeRestore {
-    Disable,
-    Keep,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KeyboardRestore {
     PopStack,
     ResetAfterExit,
@@ -303,10 +251,7 @@ impl Drop for TerminalModeCleanupGuard {
     }
 }
 
-fn restore_common(
-    raw_mode_restore: RawModeRestore,
-    keyboard_restore: KeyboardRestore,
-) -> Result<()> {
+fn restore_common(keyboard_restore: KeyboardRestore) -> Result<()> {
     let mut first_error = ensure_virtual_terminal_processing().err();
 
     match keyboard_restore {
@@ -319,9 +264,7 @@ fn restore_common(
     }
     let _ = execute!(stdout(), DisableFocusChange);
     let _ = execute!(stdout(), DisableMouseCapture);
-    if matches!(raw_mode_restore, RawModeRestore::Disable)
-        && let Err(err) = disable_raw_mode()
-    {
+    if let Err(err) = disable_raw_mode() {
         first_error.get_or_insert(err);
     }
     if let Err(err) = execute!(
@@ -338,8 +281,7 @@ fn restore_common(
 }
 
 fn restore_terminal_modes_after_exit() -> Result<()> {
-    let mut first_error =
-        restore_common(RawModeRestore::Disable, KeyboardRestore::ResetAfterExit).err();
+    let mut first_error = restore_common(KeyboardRestore::ResetAfterExit).err();
     if let Err(err) = write_exit_alt_screen_restore(&mut stdout()) {
         first_error.get_or_insert(err);
     }
@@ -358,7 +300,7 @@ fn write_exit_alt_screen_restore(writer: &mut impl Write) -> Result<()> {
 /// Restore the terminal to its original state.
 /// Inverse of `set_modes`.
 pub fn restore() -> Result<()> {
-    restore_common(RawModeRestore::Disable, KeyboardRestore::PopStack)
+    restore_common(KeyboardRestore::PopStack)
 }
 
 /// Force crossterm's cached raw-mode state back in sync with the terminal after `fg`.
@@ -428,27 +370,6 @@ fn enter_terminal_restore_helper_modes(label: &str) {
         SetCursorStyle::SteadyBar,
     ) {
         panic!("enter terminal modes for {label}: {err}");
-    }
-}
-
-/// Restore the terminal to its original state, but keep raw mode enabled.
-pub fn restore_keep_raw() -> Result<()> {
-    restore_common(RawModeRestore::Keep, KeyboardRestore::PopStack)
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RestoreMode {
-    #[allow(dead_code)]
-    Full, // Fully restore the terminal (disables raw mode).
-    KeepRaw, // Restore the terminal but keep raw mode enabled.
-}
-
-impl RestoreMode {
-    fn restore(self) -> Result<()> {
-        match self {
-            RestoreMode::Full => restore(),
-            RestoreMode::KeepRaw => restore_keep_raw(),
-        }
     }
 }
 
@@ -650,9 +571,6 @@ pub struct Tui {
     draw_tx: broadcast::Sender<()>,
     event_broker: Arc<EventBroker>,
     pub(crate) terminal: Terminal,
-    pending_history_lines: Vec<PendingHistoryLines>,
-    ambient_pet_image_state: crate::pets::PetImageRenderState,
-    pet_picker_preview_image_state: crate::pets::PetImageRenderState,
     alt_saved_viewport: Option<ratatui::layout::Rect>,
     #[cfg(unix)]
     suspend_context: SuspendContext,
@@ -660,20 +578,10 @@ pub struct Tui {
     alt_screen_active: Arc<AtomicBool>,
     // True when terminal/tab is focused; updated internally from crossterm events
     terminal_focused: Arc<AtomicBool>,
-    enhanced_keys_supported: bool,
-    notification_backend: Option<DesktopNotificationBackend>,
-    notification_condition: NotificationCondition,
-    // Raw terminal-wrapped history needs a non-scroll-region insertion path in Zellij.
-    is_zellij: bool,
     // When false, enter_alt_screen() becomes a no-op.
     alt_screen_enabled: bool,
     // Keeps unmanaged process stderr writes out of the inline viewport.
     _stderr_guard: terminal_stderr::TerminalStderrGuard,
-}
-
-struct PendingHistoryLines {
-    lines: Vec<HyperlinkLine>,
-    wrap_policy: HistoryLineWrapPolicy,
 }
 
 fn clear_for_viewport_change<B>(terminal: &mut CustomTerminal<B>, new_area: Rect) -> Result<()>
@@ -691,7 +599,7 @@ where
 impl Tui {
     pub(crate) fn new(
         terminal: Terminal,
-        enhanced_keys_supported: bool,
+        _enhanced_keys_supported: bool,
         stderr_guard: terminal_stderr::TerminalStderrGuard,
     ) -> Self {
         let (draw_tx, _) = broadcast::channel(1);
@@ -700,25 +608,16 @@ impl Tui {
         // Cache this to avoid contention with the event reader.
         supports_color::on_cached(supports_color::Stream::Stdout);
         let _ = crate::terminal_palette::default_colors();
-        let is_zellij = codex_terminal_detection::terminal_info().is_zellij();
-
         Self {
             frame_requester,
             draw_tx,
             event_broker: Arc::new(EventBroker::new()),
             terminal,
-            pending_history_lines: vec![],
-            ambient_pet_image_state: crate::pets::PetImageRenderState::default(),
-            pet_picker_preview_image_state: crate::pets::PetImageRenderState::default(),
             alt_saved_viewport: None,
             #[cfg(unix)]
             suspend_context: SuspendContext::new(),
             alt_screen_active: Arc::new(AtomicBool::new(false)),
             terminal_focused: Arc::new(AtomicBool::new(true)),
-            enhanced_keys_supported,
-            notification_backend: Some(detect_backend(NotificationMethod::default())),
-            notification_condition: NotificationCondition::default(),
-            is_zellij,
             alt_screen_enabled: true,
             _stderr_guard: stderr_guard,
         }
@@ -729,109 +628,12 @@ impl Tui {
         self.alt_screen_enabled = enabled;
     }
 
-    pub fn set_notification_settings(
-        &mut self,
-        method: NotificationMethod,
-        condition: NotificationCondition,
-    ) {
-        self.notification_backend = Some(detect_backend(method));
-        self.notification_condition = condition;
-    }
-
     pub fn frame_requester(&self) -> FrameRequester {
         self.frame_requester.clone()
     }
 
-    pub fn enhanced_keys_supported(&self) -> bool {
-        self.enhanced_keys_supported
-    }
-
     pub fn is_alt_screen_active(&self) -> bool {
         self.alt_screen_active.load(Ordering::Relaxed)
-    }
-
-    // Drop crossterm EventStream to avoid stdin conflicts with other processes.
-    pub fn pause_events(&mut self) {
-        self.event_broker.pause_events();
-    }
-
-    // Resume crossterm EventStream to resume stdin polling.
-    // Inverse of `pause_events`.
-    pub fn resume_events(&mut self) {
-        self.event_broker.resume_events();
-    }
-
-    /// Temporarily restore terminal state to run an external interactive program `f`.
-    ///
-    /// This pauses crossterm's stdin polling by dropping the underlying event stream, restores
-    /// terminal modes and stderr (optionally keeping raw mode enabled), then re-applies Codex TUI
-    /// modes and stderr suppression before resuming events.
-    pub async fn with_restored<R, F, Fut>(&mut self, mode: RestoreMode, f: F) -> R
-    where
-        F: FnOnce() -> Fut,
-        Fut: Future<Output = R>,
-    {
-        // Pause crossterm events to avoid stdin conflicts with external program `f`.
-        self.pause_events();
-
-        // Leave alt screen if active to avoid conflicts with external program `f`.
-        let was_alt_screen = self.is_alt_screen_active();
-        if was_alt_screen {
-            let _ = self.leave_alt_screen();
-        }
-
-        if let Err(err) = mode.restore() {
-            tracing::warn!("failed to restore terminal modes before external program: {err}");
-        }
-        if let Err(err) = terminal_stderr::pause() {
-            tracing::warn!("failed to restore terminal stderr before external program: {err}");
-        }
-
-        let output = f().await;
-
-        if let Err(err) = terminal_stderr::resume() {
-            tracing::warn!("failed to suppress terminal stderr after external program: {err}");
-        }
-        if let Err(err) = set_modes() {
-            tracing::warn!("failed to re-enable terminal modes after external program: {err}");
-        }
-        // After the external program `f` finishes, reset terminal state and flush any buffered keypresses.
-        flush_terminal_input_buffer();
-
-        if was_alt_screen {
-            let _ = self.enter_alt_screen();
-        }
-
-        self.resume_events();
-        output
-    }
-
-    /// Emit a desktop notification now if the terminal is unfocused.
-    /// Returns true if a notification was posted.
-    pub fn notify(&mut self, message: impl AsRef<str>) -> bool {
-        let terminal_focused = self.terminal_focused.load(Ordering::Relaxed);
-        if !should_emit_notification(self.notification_condition, terminal_focused) {
-            return false;
-        }
-
-        let Some(backend) = self.notification_backend.as_mut() else {
-            return false;
-        };
-
-        let message = message.as_ref().to_string();
-        match backend.notify(&message) {
-            Ok(()) => true,
-            Err(err) => {
-                let method = backend.method();
-                tracing::warn!(
-                    error = %err,
-                    method = %method,
-                    "Failed to emit terminal notification; disabling future notifications"
-                );
-                self.notification_backend = None;
-                false
-            }
-        }
     }
 
     pub fn event_stream(&self) -> Pin<Box<dyn Stream<Item = TuiEvent> + Send + 'static>> {
@@ -899,114 +701,6 @@ impl Tui {
         Ok(())
     }
 
-    pub fn insert_history_lines(&mut self, lines: Vec<Line<'static>>) {
-        self.insert_history_lines_with_wrap_policy(lines, HistoryLineWrapPolicy::PreWrap);
-    }
-
-    pub fn insert_history_lines_with_wrap_policy(
-        &mut self,
-        lines: Vec<Line<'static>>,
-        wrap_policy: HistoryLineWrapPolicy,
-    ) {
-        self.insert_history_hyperlink_lines_with_wrap_policy(
-            plain_hyperlink_lines(lines),
-            wrap_policy,
-        );
-    }
-
-    pub(crate) fn insert_history_hyperlink_lines_with_wrap_policy(
-        &mut self,
-        lines: Vec<HyperlinkLine>,
-        wrap_policy: HistoryLineWrapPolicy,
-    ) {
-        if lines.is_empty() {
-            return;
-        }
-        if let Some(last) = self.pending_history_lines.last_mut()
-            && last.wrap_policy == wrap_policy
-        {
-            last.lines.extend(lines);
-        } else {
-            self.pending_history_lines
-                .push(PendingHistoryLines { lines, wrap_policy });
-        }
-        self.frame_requester().schedule_frame();
-    }
-
-    pub fn clear_pending_history_lines(&mut self) {
-        self.pending_history_lines.clear();
-    }
-
-    /// Resize the inline viewport for the resize-reflow path.
-    ///
-    /// Unlike the legacy draw path, this path does not scroll rows above the viewport when the
-    /// terminal shrinks. Resize reflow owns rebuilding those rows from transcript source, so
-    /// scrolling here would move the viewport once and then replay history into the wrong row.
-    fn update_inline_viewport_for_resize_reflow(
-        terminal: &mut Terminal,
-        height: u16,
-    ) -> Result<bool> {
-        let size = terminal.size()?;
-        let terminal_height_shrank = size.height < terminal.last_known_screen_size.height;
-        let terminal_height_grew = size.height > terminal.last_known_screen_size.height;
-        let viewport_was_bottom_aligned =
-            terminal.viewport_area.bottom() == terminal.last_known_screen_size.height;
-        let previous_area = terminal.viewport_area;
-
-        let mut area = terminal.viewport_area;
-        area.height = height.min(size.height);
-        area.width = size.width;
-        let mut needs_full_repaint = false;
-
-        if area.bottom() > size.height {
-            let scroll_by = area.bottom() - size.height;
-            if !terminal_height_shrank {
-                terminal
-                    .backend_mut()
-                    .scroll_region_up(0..area.top(), scroll_by)?;
-            }
-            area.y = size.height - area.height;
-        } else if terminal_height_grew && viewport_was_bottom_aligned {
-            area.y = size.height - area.height;
-        }
-
-        if area != terminal.viewport_area {
-            let clear_position = Position::new(/*x*/ 0, previous_area.y.min(area.y));
-            terminal.set_viewport_area(area);
-            terminal.clear_after_position(clear_position)?;
-            needs_full_repaint = true;
-        }
-
-        Ok(needs_full_repaint)
-    }
-
-    /// Write any buffered history lines above the viewport and clear the buffer.
-    fn flush_pending_history_lines(
-        terminal: &mut Terminal,
-        pending_history_lines: &mut Vec<PendingHistoryLines>,
-        is_zellij: bool,
-    ) -> Result<()> {
-        if pending_history_lines.is_empty() {
-            return Ok(());
-        }
-
-        for batch in pending_history_lines.iter() {
-            let mode = if is_zellij && batch.wrap_policy == HistoryLineWrapPolicy::Terminal {
-                InsertHistoryMode::ZellijRaw
-            } else {
-                InsertHistoryMode::Standard
-            };
-            crate::insert_history::insert_history_hyperlink_lines_with_mode_and_wrap_policy(
-                terminal,
-                batch.lines.clone(),
-                mode,
-                batch.wrap_policy,
-            )?;
-        }
-        pending_history_lines.clear();
-        Ok(())
-    }
-
     pub fn draw(
         &mut self,
         height: u16,
@@ -1054,126 +748,6 @@ impl Tui {
                 // new viewport top so stale shell cells do not show through spaces.
                 clear_for_viewport_change(terminal, area)?;
                 terminal.set_viewport_area(area);
-            }
-
-            Self::flush_pending_history_lines(
-                terminal,
-                &mut self.pending_history_lines,
-                self.is_zellij,
-            )?;
-
-            // Update the y position for suspending so Ctrl-Z can place the cursor correctly.
-            #[cfg(unix)]
-            {
-                let area = terminal.viewport_area;
-                let inline_area_bottom = if self.alt_screen_active.load(Ordering::Relaxed) {
-                    self.alt_saved_viewport
-                        .map(|r| r.bottom().saturating_sub(1))
-                        .unwrap_or_else(|| area.bottom().saturating_sub(1))
-                } else {
-                    area.bottom().saturating_sub(1)
-                };
-                self.suspend_context.set_cursor_y(inline_area_bottom);
-            }
-
-            terminal.draw(|frame| {
-                draw_fn(frame);
-            })
-        })?
-    }
-
-    pub fn draw_ambient_pet_image(
-        &mut self,
-        request: Option<crate::pets::AmbientPetDraw>,
-    ) -> std::result::Result<(), crate::pets::PetImageRenderError> {
-        if let Err(err) = ensure_virtual_terminal_processing() {
-            return Err(crate::pets::PetImageRenderError::Terminal(err));
-        }
-
-        let terminal = &mut self.terminal;
-        let state = &mut self.ambient_pet_image_state;
-        stdout().sync_update(|_| {
-            match crate::pets::render_ambient_pet_image(terminal.backend_mut(), state, request) {
-                Ok(()) => Ok(Ok(())),
-                Err(crate::pets::PetImageRenderError::Terminal(err)) => Err(err),
-                Err(err @ crate::pets::PetImageRenderError::Asset(_)) => Ok(Err(err)),
-            }
-        })??
-    }
-
-    pub fn draw_pet_picker_preview_image(
-        &mut self,
-        request: Option<crate::pets::AmbientPetDraw>,
-    ) -> std::result::Result<(), crate::pets::PetImageRenderError> {
-        if let Err(err) = ensure_virtual_terminal_processing() {
-            return Err(crate::pets::PetImageRenderError::Terminal(err));
-        }
-
-        let terminal = &mut self.terminal;
-        let state = &mut self.pet_picker_preview_image_state;
-        stdout().sync_update(|_| {
-            match crate::pets::render_pet_picker_preview_image(
-                terminal.backend_mut(),
-                state,
-                request,
-            ) {
-                Ok(()) => Ok(Ok(())),
-                Err(crate::pets::PetImageRenderError::Terminal(err)) => Err(err),
-                Err(err @ crate::pets::PetImageRenderError::Asset(_)) => Ok(Err(err)),
-            }
-        })??
-    }
-
-    pub fn clear_ambient_pet_image(
-        &mut self,
-    ) -> std::result::Result<(), crate::pets::PetImageRenderError> {
-        if let Err(err) = ensure_virtual_terminal_processing() {
-            return Err(crate::pets::PetImageRenderError::Terminal(err));
-        }
-
-        crate::pets::render_ambient_pet_image(
-            self.terminal.backend_mut(),
-            &mut self.ambient_pet_image_state,
-            /*request*/ None,
-        )
-    }
-
-    /// Draw a frame using the resize-reflow viewport and history insertion rules.
-    ///
-    /// This is the feature-gated counterpart to `draw`. It intentionally skips
-    /// `pending_viewport_area`, whose cursor-position heuristic is part of the legacy path, and
-    /// instead lets transcript reflow rebuild scrollback before the frame is rendered.
-    pub fn draw_with_resize_reflow(
-        &mut self,
-        height: u16,
-        draw_fn: impl FnOnce(&mut custom_terminal::Frame),
-    ) -> Result<()> {
-        // If we are resuming from ^Z, we need to prepare the resume action now so we can apply it
-        // in the synchronized update.
-        #[cfg(unix)]
-        let mut prepared_resume = self
-            .suspend_context
-            .prepare_resume_action(&mut self.alt_saved_viewport);
-
-        ensure_virtual_terminal_processing()?;
-
-        stdout().sync_update(|_| {
-            #[cfg(unix)]
-            if let Some(prepared) = prepared_resume.take() {
-                prepared.apply(&mut self.terminal)?;
-            }
-
-            let terminal = &mut self.terminal;
-            let needs_full_repaint =
-                Self::update_inline_viewport_for_resize_reflow(terminal, height)?;
-            Self::flush_pending_history_lines(
-                terminal,
-                &mut self.pending_history_lines,
-                self.is_zellij,
-            )?;
-
-            if needs_full_repaint {
-                terminal.invalidate_viewport();
             }
 
             // Update the y position for suspending so Ctrl-Z can place the cursor correctly.

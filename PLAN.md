@@ -97,13 +97,13 @@ Panes should be borderless, non-rounded, differently-colored rectangles. Avoid b
   - [x] Add an end-to-end terminal/PTY regression that proves alternate screen and terminal modes are restored after a fatal backend disconnect.
   - [ ] Run and record validation for the app shell on Linux and macOS, including inline mode and alternate-screen mode.
 - [x] Add performance checks for large transcripts and long streaming turns.
-- [ ] Remove inherited upstream UI paths once the new app reaches feature parity for daily development.
+- [x] Remove inherited upstream UI paths once the new app reaches feature parity for daily development.
   - [x] Route the normal TUI launch path into the new app-shell run loop instead of the inherited `App::run` chat UI.
   - [x] Remove the inherited `App` and `ChatWidget` runtime implementation once no remaining launch, startup, or command path depends on it.
   - [x] Port or replace remaining inherited pre-shell UI flows, including login onboarding, model migration, external-agent migration, and startup hook review surfaces.
-  - [ ] Remove obsolete inherited slash-command, bottom-pane, history-cell, and transcript-rendering surfaces after equivalent app-shell behavior exists.
+  - [x] Remove obsolete inherited slash-command, bottom-pane, history-cell, and transcript-rendering surfaces after equivalent app-shell behavior exists.
   - [x] Migrate relevant tests and snapshots from legacy chat UI modules to app-shell coverage, then delete snapshots for removed surfaces.
-  - [ ] Prune unused modules, public exports, and dependencies left behind by the inherited UI removal.
+  - [x] Prune unused modules, public exports, and dependencies left behind by the inherited UI removal.
   - [x] Verify resume, fork, settings, approvals, MCP/plugin interactions, and session navigation still work after legacy UI removal.
 
 ## Live User Input

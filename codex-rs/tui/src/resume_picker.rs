@@ -16,15 +16,15 @@ use crate::keymap::PagerKeymap;
 use crate::keymap::RuntimeKeymap;
 use crate::legacy_core::config::Config;
 use crate::markdown::append_markdown;
-use crate::pager_overlay::Overlay;
 use crate::session_resume::resolve_session_thread_id;
+use crate::session_transcript::RawReasoningVisibility;
+use crate::session_transcript::TranscriptLines;
+use crate::session_transcript::load_session_transcript;
+use crate::session_transcript_overlay::SessionTranscriptOverlay;
 use crate::status::format_directory_display;
 use crate::terminal_palette::best_color;
 use crate::terminal_palette::default_bg;
 use crate::text_formatting::truncate_text;
-use crate::thread_transcript::RawReasoningVisibility;
-use crate::thread_transcript::TranscriptCells;
-use crate::thread_transcript::load_session_transcript;
 use crate::tui::FrameRequester;
 use crate::tui::Tui;
 use crate::tui::TuiEvent;
@@ -251,7 +251,7 @@ enum BackgroundEvent {
     },
     Transcript {
         thread_id: ThreadId,
-        transcript: std::io::Result<TranscriptCells>,
+        transcript: std::io::Result<TranscriptLines>,
     },
 }
 
@@ -662,7 +662,7 @@ struct PickerState {
     transcript_cells: HashMap<ThreadId, SessionTranscriptState>,
     pending_transcript_open: Option<ThreadId>,
     transcript_loading_frame_shown: bool,
-    overlay: Option<Overlay>,
+    overlay: Option<SessionTranscriptOverlay>,
     pager_keymap: PagerKeymap,
     list_keymap: ListKeymap,
 }
@@ -701,7 +701,7 @@ enum TranscriptPreviewState {
 
 enum SessionTranscriptState {
     Loading,
-    Loaded(TranscriptCells),
+    Loaded(TranscriptLines),
     Failed,
 }
 
@@ -970,7 +970,7 @@ impl PickerState {
         else {
             return;
         };
-        self.overlay = Some(Overlay::new_transcript(
+        self.overlay = Some(SessionTranscriptOverlay::new(
             cells.clone(),
             self.pager_keymap.clone(),
         ));
@@ -4335,8 +4335,6 @@ mod tests {
 
     #[tokio::test]
     async fn loaded_transcript_waits_for_loading_frame_before_opening_overlay() {
-        use crate::history_cell::PlainHistoryCell;
-
         let thread_id = ThreadId::new();
         let loader = page_only_loader(|_| {});
         let mut state = PickerState::new(
@@ -4348,13 +4346,12 @@ mod tests {
             SessionPickerAction::Resume,
         );
         state.pending_transcript_open = Some(thread_id);
-        let cells: TranscriptCells =
-            vec![Arc::new(PlainHistoryCell::new(vec!["transcript".into()]))];
+        let lines: TranscriptLines = vec!["transcript".into()];
 
         state
             .handle_background_event(BackgroundEvent::Transcript {
                 thread_id,
-                transcript: Ok(cells),
+                transcript: Ok(lines),
             })
             .await
             .unwrap();
@@ -4369,14 +4366,12 @@ mod tests {
         assert!(state.note_transcript_loading_frame_drawn());
         state.open_pending_transcript_if_ready();
 
-        assert!(matches!(state.overlay, Some(Overlay::Transcript(_))));
+        assert!(state.overlay.is_some());
         assert_eq!(state.pending_transcript_open, None);
     }
 
     #[tokio::test]
     async fn cached_transcript_still_shows_loading_frame_before_opening_overlay() {
-        use crate::history_cell::PlainHistoryCell;
-
         let thread_id = ThreadId::new();
         let loader = page_only_loader(|_| {});
         let mut state = PickerState::new(
@@ -4399,9 +4394,7 @@ mod tests {
         }];
         state.transcript_cells.insert(
             thread_id,
-            SessionTranscriptState::Loaded(vec![Arc::new(PlainHistoryCell::new(vec![
-                "transcript".into(),
-            ]))]),
+            SessionTranscriptState::Loaded(vec!["transcript".into()]),
         );
 
         state
@@ -4415,7 +4408,7 @@ mod tests {
         assert!(state.note_transcript_loading_frame_drawn());
         state.open_pending_transcript_if_ready();
 
-        assert!(matches!(state.overlay, Some(Overlay::Transcript(_))));
+        assert!(state.overlay.is_some());
         assert_eq!(state.pending_transcript_open, None);
     }
 
@@ -5768,8 +5761,8 @@ session_picker_view = "dense"
     }
 
     #[test]
-    fn thread_to_transcript_cells_renders_core_message_types() {
-        use crate::thread_transcript::thread_to_transcript_cells;
+    fn thread_to_transcript_lines_renders_core_message_types() {
+        use crate::session_transcript::thread_to_transcript_lines;
 
         let thread_id = ThreadId::new();
         let thread = Thread {
@@ -5826,22 +5819,21 @@ session_picker_view = "dense"
             }],
         };
 
-        let rendered = thread_to_transcript_cells(&thread, RawReasoningVisibility::Visible)
+        let rendered = thread_to_transcript_lines(&thread, RawReasoningVisibility::Visible)
             .into_iter()
-            .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
 
         assert!(rendered.contains("hello from user"));
         assert!(rendered.contains("hello from assistant"));
-        assert!(rendered.contains("Proposed Plan"));
+        assert!(rendered.contains("Plan"));
         assert!(rendered.contains("Do the thing"));
     }
 
     #[test]
-    fn thread_to_transcript_cells_hides_raw_reasoning_when_not_enabled() {
-        use crate::thread_transcript::thread_to_transcript_cells;
+    fn thread_to_transcript_lines_hides_raw_reasoning_when_not_enabled() {
+        use crate::session_transcript::thread_to_transcript_lines;
 
         let thread_id = ThreadId::new();
         let thread = Thread {
@@ -5883,15 +5875,13 @@ session_picker_view = "dense"
             }],
         };
 
-        let hidden = thread_to_transcript_cells(&thread, RawReasoningVisibility::Hidden)
+        let hidden = thread_to_transcript_lines(&thread, RawReasoningVisibility::Hidden)
             .into_iter()
-            .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
-        let visible = thread_to_transcript_cells(&thread, RawReasoningVisibility::Visible)
+        let visible = thread_to_transcript_lines(&thread, RawReasoningVisibility::Visible)
             .into_iter()
-            .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");
@@ -5901,8 +5891,8 @@ session_picker_view = "dense"
     }
 
     #[test]
-    fn thread_to_transcript_cells_shows_raw_reasoning_over_summary_when_enabled() {
-        use crate::thread_transcript::thread_to_transcript_cells;
+    fn thread_to_transcript_lines_shows_raw_reasoning_over_summary_when_enabled() {
+        use crate::session_transcript::thread_to_transcript_lines;
 
         let thread_id = ThreadId::new();
         let thread = Thread {
@@ -5944,9 +5934,8 @@ session_picker_view = "dense"
             }],
         };
 
-        let rendered = thread_to_transcript_cells(&thread, RawReasoningVisibility::Visible)
+        let rendered = thread_to_transcript_lines(&thread, RawReasoningVisibility::Visible)
             .into_iter()
-            .flat_map(|cell| cell.transcript_lines(/*width*/ 80))
             .map(|line| line.to_string())
             .collect::<Vec<_>>()
             .join("\n");

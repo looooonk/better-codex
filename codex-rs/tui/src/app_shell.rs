@@ -2162,7 +2162,7 @@ impl ShellState {
                 let text = if summary.is_empty() {
                     content.join("\n\n")
                 } else {
-                    crate::history_cell::split_reasoning_summary_parts(&summary).1
+                    crate::reasoning_summary::split_reasoning_summary_parts(&summary).1
                 };
                 let text = text.trim();
                 if !text.is_empty() {

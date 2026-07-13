@@ -6,12 +6,8 @@ use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 
-use crate::app_command::AppCommand;
 use crate::legacy_core::config::Config;
-use serde::Serialize;
 use serde_json::json;
-
-use crate::app_event::AppEvent;
 
 static LOGGER: LazyLock<SessionLogger> = LazyLock::new(SessionLogger::new);
 
@@ -119,104 +115,6 @@ pub(crate) fn maybe_init(config: &Config) {
     LOGGER.write_json_line(header);
 }
 
-pub(crate) fn log_inbound_app_event(event: &AppEvent) {
-    // Log only if enabled
-    if !LOGGER.is_enabled() {
-        return;
-    }
-
-    match event {
-        AppEvent::NewSession => {
-            let value = json!({
-                "ts": now_ts(),
-                "dir": "to_tui",
-                "kind": "new_session",
-            });
-            LOGGER.write_json_line(value);
-        }
-        AppEvent::ClearUi => {
-            let value = json!({
-                "ts": now_ts(),
-                "dir": "to_tui",
-                "kind": "clear_ui",
-            });
-            LOGGER.write_json_line(value);
-        }
-        AppEvent::InsertHistoryCell(cell) => {
-            let value = json!({
-                "ts": now_ts(),
-                "dir": "to_tui",
-                "kind": "insert_history_cell",
-                "lines": cell.transcript_lines(u16::MAX).len(),
-            });
-            LOGGER.write_json_line(value);
-        }
-        AppEvent::StartFileSearch(query) => {
-            let value = json!({
-                "ts": now_ts(),
-                "dir": "to_tui",
-                "kind": "file_search_start",
-                "query": query,
-            });
-            LOGGER.write_json_line(value);
-        }
-        AppEvent::FileSearchResult { query, matches } => {
-            let value = json!({
-                "ts": now_ts(),
-                "dir": "to_tui",
-                "kind": "file_search_result",
-                "query": query,
-                "matches": matches.len(),
-            });
-            LOGGER.write_json_line(value);
-        }
-        AppEvent::PetPreviewLoaded { request_id, result } => {
-            let value = json!({
-                "ts": now_ts(),
-                "dir": "to_tui",
-                "kind": "app_event",
-                "variant": "PetPreviewLoaded",
-                "request_id": request_id,
-                "ok": result.is_ok(),
-            });
-            LOGGER.write_json_line(value);
-        }
-        AppEvent::PetSelectionLoaded {
-            request_id,
-            pet_id,
-            result,
-        } => {
-            let value = json!({
-                "ts": now_ts(),
-                "dir": "to_tui",
-                "kind": "app_event",
-                "variant": "PetSelectionLoaded",
-                "request_id": request_id,
-                "pet_id": pet_id,
-                "ok": result.is_ok(),
-            });
-            LOGGER.write_json_line(value);
-        }
-        // Noise or control flow – record variant only
-        other => {
-            let value = json!({
-                "ts": now_ts(),
-                "dir": "to_tui",
-                "kind": "app_event",
-                "variant": format!("{other:?}").split('(').next().unwrap_or("app_event"),
-            });
-            LOGGER.write_json_line(value);
-        }
-    }
-}
-
-pub(crate) fn log_outbound_op(op: &AppCommand) {
-    if !LOGGER.is_enabled() {
-        return;
-    }
-    write_record("from_tui", "op", op);
-}
-
 pub(crate) fn log_session_end() {
     if !LOGGER.is_enabled() {
         return;
@@ -225,19 +123,6 @@ pub(crate) fn log_session_end() {
         "ts": now_ts(),
         "dir": "meta",
         "kind": "session_end",
-    });
-    LOGGER.write_json_line(value);
-}
-
-fn write_record<T>(dir: &str, kind: &str, obj: &T)
-where
-    T: Serialize,
-{
-    let value = json!({
-        "ts": now_ts(),
-        "dir": dir,
-        "kind": kind,
-        "payload": obj,
     });
     LOGGER.write_json_line(value);
 }

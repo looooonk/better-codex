@@ -97,83 +97,42 @@ pub fn run_terminal_restore_fatal_disconnect_helper_for_tests() -> ! {
     tui::run_terminal_restore_fatal_disconnect_helper_for_tests()
 }
 
-mod active_cell_transcript;
 mod additional_dirs;
-mod app_command;
-mod app_event;
-mod app_event_sender;
 mod app_exit;
-mod app_info;
 mod app_server_approval_conversions;
-mod app_server_requests;
 mod app_server_session;
 mod app_shell;
 #[doc(hidden)]
 pub use app_shell::bench_support as app_shell_bench_support;
-mod approval_events;
-mod ascii_animation;
-mod bottom_pane;
-mod branch_summary;
 mod cli;
 mod clipboard_copy;
 mod clipboard_paste;
-mod collaboration_modes;
 mod color;
-mod composer_input_types;
 mod config_update;
 pub(crate) mod custom_terminal;
-mod pets;
-pub use custom_terminal::Terminal;
-mod auto_review_denials;
 mod cwd_prompt;
-mod debug_config;
-mod diff_model;
-mod diff_render;
-mod exec_cell;
-mod exec_command;
-mod external_agent_config_migration;
 mod external_agent_config_migration_flow;
 mod external_agent_config_migration_model;
-mod external_editor;
-mod external_editor_state;
-mod file_search;
-mod frames;
-mod get_git_diff;
 mod git_action_directives;
 mod goal_display;
-mod goal_files;
-mod history_cell;
 mod hooks_rpc;
-mod ide_context;
-pub(crate) mod insert_history;
-pub use insert_history::insert_history_lines;
-mod interrupted_turn_notice;
 mod key_hint;
 mod keymap;
-mod keymap_setup;
 mod line_truncation;
-pub(crate) mod live_wrap;
-pub use live_wrap::RowBuilder;
 mod local_chatgpt_auth;
-mod managed_new_thread_defaults;
 mod markdown;
 mod markdown_render;
 mod markdown_stream;
 mod markdown_text_merge;
 mod mention_codec;
-mod model_catalog;
 mod model_migration;
-mod motion;
-mod multi_agents;
-mod notifications;
 #[cfg(any(not(debug_assertions), test))]
 mod npm_registry;
 mod oss_selection;
-mod pager_overlay;
 mod permission_compat;
 pub(crate) mod public_widgets;
+mod reasoning_summary;
 mod render;
-mod resize_reflow_cap;
 mod resume_picker;
 mod selection_list;
 mod service_tier_resolution;
@@ -181,30 +140,19 @@ mod session_archive_commands;
 mod session_log;
 mod session_resume;
 mod session_state;
-mod shimmer;
-mod skills_helpers;
-mod slash_command;
+mod session_transcript;
+mod session_transcript_overlay;
 mod startup_error;
 mod startup_hooks_review;
 mod status;
-mod status_indicator_widget;
-mod streaming;
 mod style;
 mod terminal_hyperlinks;
 mod terminal_palette;
 mod terminal_probe;
-mod terminal_title;
 mod terminal_visualization_instructions;
 mod text_formatting;
-mod theme_picker;
-mod thread_input_state;
-mod thread_replay;
-mod thread_transcript;
 mod token_usage;
-mod tooltips;
-mod transcript_reflow;
 mod tui;
-mod ui_consts;
 pub(crate) mod update_action;
 pub use update_action::UpdateAction;
 #[cfg(not(debug_assertions))]
@@ -215,13 +163,9 @@ mod update_versions;
 mod updates;
 #[cfg(any(not(debug_assertions), test))]
 mod updates_cache;
-mod user_message;
 mod version;
 mod width;
-#[cfg(any(target_os = "windows", test))]
-mod windows_sandbox;
 mod workspace_command;
-mod workspace_messages;
 
 mod wrapping;
 
@@ -1274,8 +1218,6 @@ async fn run_ratatui_app(
 ) -> color_eyre::Result<AppExitInfo> {
     let uses_remote_workspace = app_server_target.uses_remote_workspace();
     color_eyre::install()?;
-
-    tooltips::announcement::prewarm();
 
     install_terminal_restoring_panic_hook(restore);
     let mut initialized_terminal = tui::init()?;

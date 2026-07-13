@@ -8,38 +8,6 @@ use serde::Serialize;
 
 const BASELINE_TOKENS: i64 = 12000;
 
-/// Selects the aggregation represented by the token activity chart.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TokenActivityView {
-    Daily,
-    Weekly,
-    Cumulative,
-}
-
-impl TokenActivityView {
-    /// Parses the optional `/usage` argument into a supported chart view.
-    ///
-    /// An empty argument selects the daily view so `/usage` and `/usage daily`
-    /// behave identically. Returning `None` lets the slash-command dispatcher
-    /// report unsupported arguments instead of silently choosing a view.
-    pub(crate) fn parse(value: &str) -> Option<Self> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "" | "day" | "daily" => Some(Self::Daily),
-            "week" | "weekly" => Some(Self::Weekly),
-            "cumulative" => Some(Self::Cumulative),
-            _ => None,
-        }
-    }
-
-    pub(crate) fn label(self) -> &'static str {
-        match self {
-            Self::Daily => "Daily",
-            Self::Weekly => "Weekly",
-            Self::Cumulative => "Cumulative",
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsage {
     pub input_tokens: i64,
@@ -83,13 +51,6 @@ impl TokenUsage {
             .clamp(0.0, 100.0)
             .round() as i64
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct TokenUsageInfo {
-    pub(crate) total_token_usage: TokenUsage,
-    pub(crate) last_token_usage: TokenUsage,
-    pub(crate) model_context_window: Option<i64>,
 }
 
 impl fmt::Display for TokenUsage {

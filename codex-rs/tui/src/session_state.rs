@@ -56,23 +56,3 @@ pub(crate) struct ThreadSessionState {
     pub(crate) network_proxy: Option<SessionNetworkProxyRuntime>,
     pub(crate) rollout_path: Option<PathBuf>,
 }
-
-impl ThreadSessionState {
-    pub(crate) fn set_cwd_retargeting_implicit_runtime_workspace_root(
-        &mut self,
-        cwd: AbsolutePathBuf,
-    ) {
-        let previous_cwd = std::mem::replace(&mut self.cwd, cwd.clone());
-        if !self.runtime_workspace_roots.contains(&previous_cwd) {
-            return;
-        }
-
-        let previous_roots = std::mem::take(&mut self.runtime_workspace_roots);
-        self.runtime_workspace_roots.push(cwd);
-        for root in previous_roots {
-            if root != previous_cwd && !self.runtime_workspace_roots.contains(&root) {
-                self.runtime_workspace_roots.push(root);
-            }
-        }
-    }
-}

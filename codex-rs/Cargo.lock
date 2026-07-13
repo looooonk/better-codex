@@ -4123,7 +4123,6 @@ dependencies = [
  "codex-exec-server",
  "codex-features",
  "codex-feedback",
- "codex-file-search",
  "codex-git-utils",
  "codex-install-context",
  "codex-login",
@@ -4137,7 +4136,6 @@ dependencies = [
  "codex-protocol",
  "codex-rollout",
  "codex-sandboxing",
- "codex-shell-command",
  "codex-state",
  "codex-terminal-detection",
  "codex-utils-absolute-path",
@@ -4145,45 +4143,32 @@ dependencies = [
  "codex-utils-cargo-bin",
  "codex-utils-cli",
  "codex-utils-elapsed",
- "codex-utils-fuzzy-match",
  "codex-utils-home-dir",
  "codex-utils-oss",
  "codex-utils-path",
  "codex-utils-path-uri",
  "codex-utils-plugins",
- "codex-utils-sandbox-summary",
- "codex-utils-sleep-inhibitor",
  "codex-utils-string",
- "codex-windows-sandbox",
  "color-eyre",
  "core_test_support",
  "crossterm",
  "derive_more 2.1.1",
- "diffy",
  "dirs",
  "divan",
  "dunce",
- "image",
  "insta",
  "itertools 0.14.0",
- "lazy_static",
  "libc",
- "pathdiff",
  "pretty_assertions",
  "pulldown-cmark",
  "rand 0.9.3",
  "ratatui",
- "ratatui-macros",
  "regex-lite",
  "reqwest 0.12.28",
- "rmcp",
  "serde",
  "serde_json",
  "serial_test",
- "sha2 0.10.9",
  "shlex",
- "strum 0.27.2",
- "strum_macros 0.28.0",
  "supports-color 3.0.2",
  "syntect",
  "tempfile",
@@ -10124,12 +10109,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b867cad97c0791bbd3aaa6472142568c6c9e8f71937e98379f584cfb0cf35bec"
 
 [[package]]
-name = "pathdiff"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "df94ce210e5bc13cb6651479fa48d14f601d9858cfe0467f43ae157023b938d3"
-
-[[package]]
 name = "pbjson"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11272,15 +11251,6 @@ dependencies = [
  "unicode-segmentation",
  "unicode-truncate",
  "unicode-width 0.2.1",
-]
-
-[[package]]
-name = "ratatui-macros"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fef540f80dbe8a0773266fa6077788ceb65ef624cdbf36e131aaf90b4a52df4"
-dependencies = [
- "ratatui",
 ]
 
 [[package]]

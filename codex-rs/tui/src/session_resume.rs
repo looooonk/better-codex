@@ -24,7 +24,6 @@ use serde_json::Value;
 struct RolloutResumeState {
     thread_id: Option<ThreadId>,
     cwd: Option<PathBuf>,
-    model: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -36,7 +35,6 @@ struct SessionMetadata {
 #[derive(Deserialize)]
 struct TurnContextResumeState {
     cwd: PathBuf,
-    model: String,
 }
 
 #[derive(Deserialize)]
@@ -62,25 +60,6 @@ pub(crate) async fn resolve_session_thread_id(
             .ok()
             .and_then(|state| state.thread_id),
     }
-}
-
-pub(crate) async fn read_session_model(
-    state_db_ctx: Option<&StateRuntime>,
-    thread_id: ThreadId,
-    path: Option<&Path>,
-) -> Option<String> {
-    if let Some(state_db_ctx) = state_db_ctx
-        && let Ok(Some(metadata)) = state_db_ctx.get_thread(thread_id).await
-        && let Some(model) = metadata.model
-    {
-        return Some(model);
-    }
-
-    let path = path?;
-    read_rollout_resume_state(path)
-        .await
-        .ok()
-        .and_then(|state| state.model)
 }
 
 pub(crate) async fn resolve_cwd_for_resume_or_fork(
@@ -170,7 +149,6 @@ async fn read_rollout_resume_state(path: &Path) -> io::Result<RolloutResumeState
                 if let Ok(turn_context) = serde_json::from_value::<TurnContextResumeState>(payload)
                 {
                     state.cwd = Some(turn_context.cwd);
-                    state.model = Some(turn_context.model);
                 }
             }
             _ => {}
@@ -251,7 +229,6 @@ mod tests {
 
         assert_eq!(state.thread_id, Some(thread_id));
         assert_eq!(state.cwd, Some(latest));
-        assert_eq!(state.model, Some("latest".to_string()));
         Ok(())
     }
 
@@ -279,7 +256,6 @@ mod tests {
 
         assert_eq!(state.thread_id, Some(thread_id));
         assert_eq!(state.cwd, Some(cwd));
-        assert_eq!(state.model, None);
         Ok(())
     }
 

@@ -5,23 +5,18 @@
 
 mod fs;
 
-use crate::bottom_pane::FeedbackAudience;
 use crate::legacy_core::config::Config;
 use crate::permission_compat::legacy_compatible_permission_profile;
 use crate::service_tier_resolution;
 use crate::session_state::MessageHistoryMetadata;
 use crate::session_state::ThreadSessionState;
-use crate::status::StatusAccountDisplay;
-use crate::status::plan_type_display_name;
 use crate::terminal_visualization_instructions::with_terminal_visualization_instructions;
 use codex_app_server_client::AppServerClient;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::AppServerPath;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_client::TypedRequestError;
-use codex_app_server_protocol::Account;
 use codex_app_server_protocol::AskForApproval;
-use codex_app_server_protocol::AuthMode;
 use codex_app_server_protocol::CancelLoginAccountParams;
 use codex_app_server_protocol::CancelLoginAccountResponse;
 use codex_app_server_protocol::ClientRequest;
@@ -113,7 +108,6 @@ use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerParams;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput;
-use codex_otel::TelemetryAuthMode;
 use codex_protocol::ThreadId;
 use codex_protocol::approvals::GuardianAssessmentEvent;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
@@ -134,8 +128,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use std::time::Duration;
-use std::time::Instant;
 use uuid::Uuid;
 
 const JSONRPC_INVALID_REQUEST: i64 = -32600;
@@ -161,18 +153,7 @@ fn is_thread_settings_update_unsupported(source: &JSONRPCErrorError) -> bool {
 /// fetched asynchronously after bootstrap returns so that the TUI can render
 /// its first frame without waiting for the rate-limit round-trip.
 pub(crate) struct AppServerBootstrap {
-    pub(crate) duration: Duration,
-    pub(crate) account_email: Option<String>,
-    pub(crate) auth_mode: Option<TelemetryAuthMode>,
-    pub(crate) status_account_display: Option<StatusAccountDisplay>,
-    pub(crate) plan_type: Option<codex_protocol::account::PlanType>,
-    /// Whether the configured model provider needs OpenAI-style auth. Combined
-    /// with `has_chatgpt_account` to decide if a startup rate-limit prefetch
-    /// should be fired.
-    pub(crate) requires_openai_auth: bool,
     pub(crate) default_model: String,
-    pub(crate) feedback_audience: FeedbackAudience,
-    pub(crate) has_chatgpt_account: bool,
     pub(crate) available_models: Vec<ModelPreset>,
 }
 
@@ -266,8 +247,6 @@ impl AppServerSession {
     }
 
     pub(crate) async fn bootstrap(&mut self, config: &Config) -> Result<AppServerBootstrap> {
-        let started_at = Instant::now();
-        let account = self.read_account().await?;
         let requirements_request_id = self.next_request_id();
         let requirements: ConfigRequirementsReadResponse = self
             .client
@@ -317,58 +296,8 @@ impl AppServerSession {
         self.default_model = Some(default_model.clone());
         self.available_models = available_models.clone();
 
-        let (
-            account_email,
-            auth_mode,
-            status_account_display,
-            plan_type,
-            feedback_audience,
-            has_chatgpt_account,
-        ) = match account.account {
-            Some(Account::ApiKey {}) => (
-                None,
-                Some(TelemetryAuthMode::ApiKey),
-                Some(StatusAccountDisplay::ApiKey),
-                None,
-                FeedbackAudience::External,
-                false,
-            ),
-            Some(Account::Chatgpt { email, plan_type }) => {
-                let feedback_audience = if email
-                    .as_deref()
-                    .is_some_and(|email| email.ends_with("@openai.com"))
-                {
-                    FeedbackAudience::OpenAiEmployee
-                } else {
-                    FeedbackAudience::External
-                };
-                (
-                    email.clone(),
-                    Some(TelemetryAuthMode::Chatgpt),
-                    Some(StatusAccountDisplay::ChatGpt {
-                        email,
-                        plan: Some(plan_type_display_name(plan_type)),
-                    }),
-                    Some(plan_type),
-                    feedback_audience,
-                    true,
-                )
-            }
-            Some(Account::AmazonBedrock { .. }) => {
-                (None, None, None, None, FeedbackAudience::External, false)
-            }
-            None => (None, None, None, None, FeedbackAudience::External, false),
-        };
         Ok(AppServerBootstrap {
-            duration: started_at.elapsed(),
-            account_email,
-            auth_mode,
-            status_account_display,
-            plan_type,
-            requires_openai_auth: account.requires_openai_auth,
             default_model,
-            feedback_audience,
-            has_chatgpt_account,
             available_models,
         })
     }
@@ -1232,24 +1161,6 @@ pub(crate) async fn start_thread_with_request_handle(
         .await
         .map_err(|err| bootstrap_request_error("thread/start failed during TUI bootstrap", err))?;
     started_thread_from_start_response(response, &config, thread_params_mode).await
-}
-
-pub(crate) fn status_account_display_from_auth_mode(
-    auth_mode: Option<AuthMode>,
-    plan_type: Option<codex_protocol::account::PlanType>,
-) -> Option<StatusAccountDisplay> {
-    match auth_mode {
-        Some(AuthMode::ApiKey) => Some(StatusAccountDisplay::ApiKey),
-        Some(AuthMode::Chatgpt)
-        | Some(AuthMode::ChatgptAuthTokens)
-        | Some(AuthMode::AgentIdentity)
-        | Some(AuthMode::PersonalAccessToken) => Some(StatusAccountDisplay::ChatGpt {
-            email: None,
-            plan: plan_type.map(plan_type_display_name),
-        }),
-        Some(AuthMode::Headers) | Some(AuthMode::BedrockApiKey) => None,
-        None => None,
-    }
 }
 
 fn model_preset_from_api_model(model: ApiModel) -> ModelPreset {
@@ -2622,32 +2533,5 @@ mod tests {
         .expect("session should map");
 
         assert_eq!(session.forked_from_id, Some(forked_from_id));
-    }
-
-    #[test]
-    fn status_account_display_from_auth_mode_uses_remapped_plan_labels() {
-        let business = status_account_display_from_auth_mode(
-            Some(AuthMode::Chatgpt),
-            Some(codex_protocol::account::PlanType::EnterpriseCbpUsageBased),
-        );
-        assert!(matches!(
-            business,
-            Some(StatusAccountDisplay::ChatGpt {
-                email: None,
-                plan: Some(ref plan),
-            }) if plan == "Enterprise"
-        ));
-
-        let team = status_account_display_from_auth_mode(
-            Some(AuthMode::Chatgpt),
-            Some(codex_protocol::account::PlanType::SelfServeBusinessUsageBased),
-        );
-        assert!(matches!(
-            team,
-            Some(StatusAccountDisplay::ChatGpt {
-                email: None,
-                plan: Some(ref plan),
-            }) if plan == "Business"
-        ));
     }
 }

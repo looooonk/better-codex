@@ -18,7 +18,6 @@ codex_rust_crate(
     extra_binaries = [
         "//codex-rs/cli:codex",
     ],
-    integration_compile_data_extra = ["src/test_backend.rs"],
     rustc_flags_extra = MACOS_WEBRTC_RUSTC_LINK_FLAGS,
     test_data_extra = glob([
         "src/**/*.rs",

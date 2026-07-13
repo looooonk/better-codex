@@ -163,8 +163,6 @@ where
     /// Last known position of the cursor. Used to find the new area when the viewport is inlined
     /// and the terminal resized.
     pub last_known_cursor_pos: Position,
-    /// Count of visible history rows rendered above the viewport in inline mode.
-    visible_history_rows: u16,
 }
 
 impl<B> Drop for Terminal<B>
@@ -241,7 +239,6 @@ where
             ),
             last_known_screen_size: screen_size,
             last_known_cursor_pos: cursor_pos,
-            visible_history_rows: 0,
         }
     }
 
@@ -319,7 +316,6 @@ where
         self.current_buffer_mut().resize(area);
         self.previous_buffer_mut().resize(area);
         self.viewport_area = area;
-        self.visible_history_rows = self.visible_history_rows.min(area.top());
     }
 
     /// Queries the backend for size and resizes if it doesn't match the previous size.
@@ -492,74 +488,6 @@ where
         // Reset the back buffer to make sure the next update will redraw everything.
         self.previous_buffer_mut().reset();
         Ok(())
-    }
-
-    /// Force the next draw pass to repaint the entire viewport by resetting the
-    /// diff buffer. Call this after raw terminal operations that move screen
-    /// content outside ratatui's knowledge.
-    pub fn invalidate_viewport(&mut self) {
-        self.previous_buffer_mut().reset();
-    }
-
-    /// Clear terminal scrollback (if supported) and force a full redraw.
-    pub fn clear_scrollback(&mut self) -> io::Result<()> {
-        if self.viewport_area.is_empty() {
-            return Ok(());
-        }
-        let home = Position { x: 0, y: 0 };
-        // Use an explicit cursor-home around scrollback purge for terminals that
-        // are sensitive to inline viewport cursor placement (e.g. Terminal.app).
-        self.set_cursor_position(home)?;
-        queue!(self.backend, Clear(crossterm::terminal::ClearType::Purge))?;
-        self.set_cursor_position(home)?;
-        std::io::Write::flush(&mut self.backend)?;
-        self.previous_buffer_mut().reset();
-        Ok(())
-    }
-
-    /// Clear the entire visible screen (not just the viewport) and force a full redraw.
-    pub fn clear_visible_screen(&mut self) -> io::Result<()> {
-        let home = Position { x: 0, y: 0 };
-        // Some terminals (notably Terminal.app) behave more reliably if we pair ED2
-        // with an explicit cursor-home before/after, matching the common `clear`
-        // sequence (`CSI 2J` + `CSI H`).
-        self.set_cursor_position(home)?;
-        self.backend.clear_region(ClearType::All)?;
-        self.set_cursor_position(home)?;
-        std::io::Write::flush(&mut self.backend)?;
-        self.visible_history_rows = 0;
-        self.previous_buffer_mut().reset();
-        Ok(())
-    }
-
-    /// Hard-reset scrollback + visible screen using an explicit ANSI sequence.
-    ///
-    /// Some terminals behave more reliably when purge + clear are emitted as a
-    /// single ANSI sequence instead of separate backend commands.
-    pub fn clear_scrollback_and_visible_screen_ansi(&mut self) -> io::Result<()> {
-        if self.viewport_area.is_empty() {
-            return Ok(());
-        }
-
-        // Reset scroll region + style state, home cursor, clear screen, purge scrollback.
-        // The order matches the common shell `clear && printf '\\e[3J'` behavior.
-        write!(self.backend, "\x1b[r\x1b[0m\x1b[H\x1b[2J\x1b[3J\x1b[H")?;
-        std::io::Write::flush(&mut self.backend)?;
-        self.last_known_cursor_pos = Position { x: 0, y: 0 };
-        self.visible_history_rows = 0;
-        self.previous_buffer_mut().reset();
-        Ok(())
-    }
-
-    pub fn visible_history_rows(&self) -> u16 {
-        self.visible_history_rows
-    }
-
-    pub(crate) fn note_history_rows_inserted(&mut self, inserted_rows: u16) {
-        self.visible_history_rows = self
-            .visible_history_rows
-            .saturating_add(inserted_rows)
-            .min(self.viewport_area.top());
     }
 
     /// Clears the inactive buffer and swaps it with the current buffer
