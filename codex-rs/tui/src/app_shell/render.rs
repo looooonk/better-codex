@@ -1,11 +1,10 @@
+use super::LocalSlashCommand;
 use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
 use super::TranscriptLine;
 use super::dashboard::DashboardPanel;
 use super::dashboard::dashboard_panels;
-use super::dashboard::dashboard_value;
-use super::dashboard::format_usize;
 use super::design::MOCHA_BASE;
 use super::design::MOCHA_MANTLE;
 use super::design::MOCHA_SURFACE0;
@@ -19,6 +18,7 @@ use super::design::selection_style;
 use super::design::title_rect;
 use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_to_width;
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::markdown;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::mark_buffer_hyperlinks;
@@ -358,21 +358,7 @@ impl ShellView<'_> {
         let width = usize::from(content.width);
         let panels = dashboard_panels(self.shell, width);
         let body = body_rect_after_title(content);
-        let visible_count = panels.len().min(6);
-        let mut labels = panels
-            .iter()
-            .take(visible_count)
-            .map(|panel| panel.title.as_str())
-            .collect::<Vec<_>>()
-            .join("  ");
-        let hidden_count = panels.len().saturating_sub(visible_count);
-        if hidden_count > 0 {
-            labels.push_str(&format!("  +{} more", format_usize(hidden_count)));
-        }
-        let mut lines = vec![Line::from(
-            dashboard_value(&labels, width, /*prefix_width*/ 0).dim(),
-        )];
-        let available_panel_lines = usize::from(body.height.saturating_sub(1));
+        let mut lines = Vec::new();
         for title in [
             "Navigation",
             "Approvals",
@@ -391,7 +377,7 @@ impl ShellView<'_> {
             "Rate Limits",
             "Keys",
         ] {
-            if lines.len() > available_panel_lines {
+            if lines.len() >= usize::from(body.height) {
                 break;
             }
             if let Some(panel) = panels.iter().find(|panel| panel.title == title) {
@@ -406,21 +392,26 @@ impl ShellView<'_> {
                     })
                     .unwrap_or_else(|| "empty".to_string());
                 let title = panel.title.clone();
-                let prefix_width = title.chars().count() + 1;
-                lines.push(Line::from(vec![
-                    title.cyan().bold(),
-                    " ".dim(),
-                    dashboard_value(&summary, width, prefix_width).into(),
-                ]));
+                let line = Line::from(vec![title.cyan().bold(), " ".dim(), summary.into()]);
+                lines.push(truncate_line_with_ellipsis_if_overflow(line, width));
             }
         }
 
-        Paragraph::new(Line::from("Dashboard".bold()))
-            .style(pane_style(MOCHA_SURFACE0))
-            .render(title_rect(content), buf);
+        let route = match self.shell.dashboard_route {
+            super::navigation::DashboardRoute::Sessions => "Sessions",
+            super::navigation::DashboardRoute::Workspace => "Workspace",
+            super::navigation::DashboardRoute::Settings => "Settings",
+            super::navigation::DashboardRoute::Help => "Help",
+        };
+        Paragraph::new(Line::from(vec![
+            "Dashboard".bold(),
+            " · ".dim(),
+            route.cyan(),
+        ]))
+        .style(pane_style(MOCHA_SURFACE0))
+        .render(title_rect(content), buf);
         Paragraph::new(lines)
             .style(pane_style(MOCHA_SURFACE0))
-            .wrap(Wrap { trim: false })
             .render(body, buf);
     }
 
@@ -923,7 +914,27 @@ fn composer_lines(text: &str, is_empty: bool) -> Vec<Line<'static>> {
         }
 
         let prefix = if index == 0 { "> ".cyan() } else { "  ".dim() };
-        lines.push(Line::from(vec![prefix, logical_line.to_string().into()]));
+        let mut spans = vec![prefix];
+        if index == 0
+            && LocalSlashCommand::parse(text).is_some()
+            && let Some(command_start) = logical_line.find('/')
+        {
+            let command_end = logical_line[command_start..]
+                .find(char::is_whitespace)
+                .map(|offset| command_start + offset)
+                .unwrap_or(logical_line.len());
+            spans.push(logical_line[..command_start].to_string().into());
+            spans.push(
+                logical_line[command_start..command_end]
+                    .to_string()
+                    .cyan()
+                    .bold(),
+            );
+            spans.push(logical_line[command_end..].to_string().into());
+        } else {
+            spans.push(logical_line.to_string().into());
+        }
+        lines.push(Line::from(spans));
     }
     lines
 }

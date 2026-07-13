@@ -207,6 +207,16 @@ fn renders_narrow_shell_snapshot() {
 }
 
 #[test]
+fn renders_compact_top_dashboard_snapshot() {
+    let shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 24,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn renders_short_shell_snapshot() {
     let shell = ShellState::snapshot_fixture();
     let area = Rect::new(
@@ -1089,6 +1099,14 @@ fn composer_word_motion_key_mapping_covers_standard_shortcuts() {
         composer_word_motion_from_key(KeyEvent::new(KeyCode::Right, KeyModifiers::ALT)),
         Some(ComposerWordMotion::Right)
     );
+    assert_eq!(
+        composer_word_motion_from_key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT)),
+        Some(ComposerWordMotion::Left)
+    );
+    assert_eq!(
+        composer_word_motion_from_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT)),
+        Some(ComposerWordMotion::Right)
+    );
     assert_eq!(composer_word_motion_from_key(key_char('b')), None);
 }
 
@@ -1180,9 +1198,8 @@ async fn composer_backspace_repeat_deletes_continuously() {
     assert_eq!(backend.calls(), Vec::new());
 }
 
-#[cfg(target_os = "macos")]
 #[test]
-fn dashboard_route_step_matches_macos_option_arrow_fallbacks_only_when_allowed() {
+fn dashboard_route_step_matches_alt_arrow_fallbacks_only_when_allowed() {
     assert_eq!(
         dashboard_route_step_from_key(
             KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT),
@@ -1208,25 +1225,6 @@ fn dashboard_route_step_matches_macos_option_arrow_fallbacks_only_when_allowed()
         dashboard_route_step_from_key(
             KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
             /*allow_word_motion_fallback*/ false
-        ),
-        None
-    );
-}
-
-#[cfg(not(target_os = "macos"))]
-#[test]
-fn dashboard_route_step_matches_alt_arrows_only_off_macos() {
-    assert_eq!(
-        dashboard_route_step_from_key(
-            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT),
-            /*allow_word_motion_fallback*/ true
-        ),
-        None
-    );
-    assert_eq!(
-        dashboard_route_step_from_key(
-            KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT),
-            /*allow_word_motion_fallback*/ true
         ),
         None
     );
@@ -2833,6 +2831,56 @@ fn composer_cursor_position_tracks_text_end_without_synthetic_glyph() {
     assert_eq!(cursor.y, row);
     assert_eq!(cursor.x, text_x + 4);
     assert!(!buffer_contents(&buf, area).contains("beta▌"));
+}
+
+#[test]
+fn composer_highlights_recognized_slash_commands_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.set_text("/goal Keep the dashboard compact");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let view = ShellView { shell: &shell };
+    let buf = render_shell_buffer(&shell, area);
+    let input_area = view.input_area(area);
+    let row = row_containing(&buf, input_area, "/goal Keep the dashboard compact")
+        .expect("slash command should render in the composer");
+    let slash_x = row_needle_x(&buf, input_area, row, "/goal")
+        .expect("slash command should have an x position");
+
+    assert_eq!(buf[(slash_x, row)].style().fg, Some(Color::Cyan));
+
+    shell.composer.set_text("/clear");
+    let clear_buf = render_shell_buffer(&shell, area);
+    let clear_row = row_containing(&clear_buf, input_area, "/clear")
+        .expect("clear command should render in the composer");
+    let clear_x = row_needle_x(&clear_buf, input_area, clear_row, "/clear")
+        .expect("clear command should have an x position");
+    assert_eq!(
+        clear_buf[(clear_x, clear_row)].style().fg,
+        Some(Color::Cyan)
+    );
+
+    shell.composer.set_text("/goal Keep the dashboard compact");
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn composer_does_not_highlight_unknown_slash_commands() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.set_text("/unknown argument");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let view = ShellView { shell: &shell };
+    let buf = render_shell_buffer(&shell, area);
+    let input_area = view.input_area(area);
+    let row = row_containing(&buf, input_area, "/unknown argument")
+        .expect("unknown slash-prefixed text should render");
+    let slash_x = row_needle_x(&buf, input_area, row, "/unknown")
+        .expect("slash-prefixed text should have an x position");
+
+    assert_eq!(buf[(slash_x, row)].style().fg, Some(Color::Reset));
 }
 
 #[test]

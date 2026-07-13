@@ -1,6 +1,6 @@
 ---
 source: tui/src/app_shell_tests.rs
-expression: rendered
+expression: "render_shell(&shell, area)"
 ---
 
  Better Codex
@@ -11,20 +11,14 @@ expression: rendered
  Tools in progress exec just test -p codex-tui
  Sessions ctrl+1 focus active 0 shown
  Thread stage-one
- Status thinking
- Plan Build the standalone shell in slices.
 
 
  Conversation
- ▌ tool exec cargo test
-
-   ▌ output line 1
-   ▌        line 2
-   ▌        line 3    wide
-   ▌        ... 4 more output lines
-
-
-
+                                              │
+ ▌ edited 3 files +128 -24                    │
+                                              │
+ codex: The new shell owns the fullscreen     ┃
+        surface.                              ┃
 
 
  Composer ready 1:37

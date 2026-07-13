@@ -3127,8 +3127,10 @@ fn composer_word_motion_from_key(key: KeyEvent) -> Option<ComposerWordMotion> {
     }
 }
 
-#[cfg(target_os = "macos")]
 fn composer_word_motion_fallback(key: KeyEvent) -> Option<ComposerWordMotion> {
+    // Terminals without enhanced keyboard reporting can encode Alt+Left/Right as Alt+b/f.
+    // Recognize both forms on every platform so Ubuntu terminal configurations behave like the
+    // canonical arrow bindings.
     match key {
         KeyEvent {
             code: KeyCode::Char('b'),
@@ -3142,11 +3144,6 @@ fn composer_word_motion_fallback(key: KeyEvent) -> Option<ComposerWordMotion> {
         } => Some(ComposerWordMotion::Right),
         _ => None,
     }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn composer_word_motion_fallback(_key: KeyEvent) -> Option<ComposerWordMotion> {
-    None
 }
 
 fn dashboard_route_step_from_key(
@@ -3167,7 +3164,6 @@ fn dashboard_route_step_from_key(
     dashboard_route_word_motion_fallback(key, allow_word_motion_fallback)
 }
 
-#[cfg(target_os = "macos")]
 fn dashboard_route_word_motion_fallback(
     key: KeyEvent,
     allow_word_motion_fallback: bool,
@@ -3191,14 +3187,6 @@ fn dashboard_route_word_motion_fallback(
         } => Some(DashboardRouteStep::Next),
         _ => None,
     }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn dashboard_route_word_motion_fallback(
-    _key: KeyEvent,
-    _allow_word_motion_fallback: bool,
-) -> Option<DashboardRouteStep> {
-    None
 }
 
 fn approval_action_from_key(key: KeyEvent) -> Option<ApprovalAction> {
