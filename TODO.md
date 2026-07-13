@@ -5,7 +5,7 @@ This file tracks implementation tasks explicitly requested by users during live 
 - [x] Make it so that users must input ESC or CTRL + C twice to exist better-codex. Keep interrupts at one CTRL + C input.
 - [x] Implement running actual shell comands through the "!" operator. E.g. "! ls -a". When doing this, highlight the "!" with the same color as slash commands.
 - [x] When focused on the dashboard, change colors of the actual background of the conversation log as well, instead of just the text box etc. It should look "grayed out".
-- [ ] When a Codex turn ends, add a thin horizontal separator.
-- [ ] Implement a feature to allow the user to hide the dashboard. When the dashboard is hidden, make it so that some text like "CTRL + D Dashboard" is displayed somewhere. Note that the shortcut does not have to be CTRL + D, just whatever is most natural.
-- [ ] When displaying the output of a tool that streams output, always display the last few lines, properly rendering newlines.
+- [x] When a Codex turn ends, add a thin horizontal separator.
+- [x] Implement a feature to allow the user to hide the dashboard. When the dashboard is hidden, make it so that some text like "CTRL + D Dashboard" is displayed somewhere. Note that the shortcut does not have to be CTRL + D, just whatever is most natural.
+- [x] When displaying the output of a tool that streams output, always display the last few lines, properly rendering newlines.
 - [ ] Update README.md to be user-focusing, mainly discussing: a short overview, supported (and unsupported) features, and an installation guide for both MacOS and Linux.

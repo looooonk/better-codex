@@ -1,0 +1,23 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 20))"
+---
+
+ Better Codex                                                          Navigation
+                                                                       1S  2W  3Set  4Help
+
+ Conversation                                                          Sessions
+ codex: Turn complete.                                                 ctrl+1 focus active 0 shown
+ ────────────────────────────────────────────────────────────────────  loading sessions
+                                                                       r resume  f fork  a archi...
+                                                                       / search  v archived  esc
+
+                                                                       Background
+                                                                       workspace refresh queued
+
+                                                                       Tools
+                                                                       in progress exec just tes...
+ Composer ready 1:37                                                   completed file changes in...
+ > Summarize the new shell architecture
+                                                                       Thread
+                                                                       stage-one

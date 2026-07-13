@@ -18,10 +18,10 @@ expression: rendered
  Conversation
  ▌ tool exec cargo test
 
-   ▌ output line 1
-   ▌        line 2
-   ▌        line 3    wide
-   ▌        ... 4 more output lines
+   ▌ output ... 4 earlier output lines
+   ▌        line 5
+   ▌        line 6
+   ▌        line 7
 
 
 

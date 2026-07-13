@@ -245,24 +245,28 @@ fn renders_output_blocks_as_inset_neutral_rectangles() {
     let rendered = buffer_contents(&buf, area);
     let tool_row =
         row_containing(&buf, area, "tool exec cargo test").expect("tool row should render");
-    let output_row = row_containing(&buf, area, "output line 1").expect("output row should render");
-    let output_hidden_row =
-        row_containing(&buf, area, "... 4 more output lines").expect("output cap should render");
+    let output_row = row_containing(&buf, area, "output ... 4 earlier output lines")
+        .expect("output omission row should render");
+    let output_tail_row =
+        row_containing(&buf, area, "line 7").expect("latest output row should render");
     let tool_accent_x =
         accent_x_for_row(&buf, area, tool_row).expect("tool row should have an accent");
     let output_accent_x =
         accent_x_for_row(&buf, area, output_row).expect("output row should have an accent");
 
-    assert_eq!(output_hidden_row, output_row + 3);
+    assert_eq!(output_tail_row, output_row + 3);
     assert!(!rendered.contains("[31m"));
-    assert!(!rendered.contains("line 5"));
+    assert!(!rendered.contains("line 1"));
+    assert!(rendered.contains("line 5"));
+    assert!(rendered.contains("line 6"));
+    assert!(rendered.contains("line 7"));
     assert_eq!(output_accent_x, tool_accent_x + 2);
     assert_eq!(
         rightmost_bg_x_for_row(&buf, area, tool_row, Color::Rgb(49, 50, 68)),
         rightmost_bg_x_for_row(&buf, area, output_row, Color::Rgb(24, 24, 37)),
     );
     assert_eq!(
-        rightmost_bg_x_for_row(&buf, area, output_hidden_row, Color::Rgb(24, 24, 37)),
+        rightmost_bg_x_for_row(&buf, area, output_tail_row, Color::Rgb(24, 24, 37)),
         rightmost_bg_x_for_row(&buf, area, output_row, Color::Rgb(24, 24, 37)),
     );
     assert_eq!(
@@ -1864,6 +1868,72 @@ fn safety_buffering_hide_and_turn_completion_clear_the_modal() {
 }
 
 #[test]
+fn turn_completion_adds_one_separator_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.active_turn_id = Some("turn-separator".to_string());
+    shell.push_assistant("Turn complete.");
+
+    for _ in 0..2 {
+        shell.handle_notification(ServerNotification::TurnCompleted(
+            codex_app_server_protocol::TurnCompletedNotification {
+                thread_id: shell.thread_id.to_string(),
+                turn: test_turn("turn-separator", TurnStatus::Completed),
+            },
+        ));
+    }
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Assistant, "Turn complete."),
+            TranscriptLine::new(TranscriptKind::Separator, ""),
+        ])
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20
+        )
+    ));
+}
+
+#[tokio::test]
+async fn ctrl_d_hides_dashboard_and_reclaims_layout_snapshot() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    let mut backend = RecordingBackend::default();
+    let toggle = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL);
+
+    assert!(
+        !shell
+            .handle_key(toggle, &config, &mut backend)
+            .await
+            .expect("Ctrl+D should hide the dashboard")
+    );
+    assert!(!shell.dashboard_visible);
+    assert!(!shell.session_list.focused);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let rendered = render_shell(&shell, area);
+    assert!(rendered.contains("Ctrl+D Dashboard"));
+    assert!(!rendered.contains("Navigation"));
+    insta::assert_snapshot!(rendered);
+
+    assert!(
+        !shell
+            .handle_key(toggle, &config, &mut backend)
+            .await
+            .expect("Ctrl+D should restore the dashboard")
+    );
+    assert!(shell.dashboard_visible);
+    assert_eq!(backend.calls(), Vec::new());
+}
+
+#[test]
 fn bio_policy_error_renders_dedicated_safety_notice() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -2333,6 +2403,47 @@ fn command_output_deltas_update_one_output_block() {
                 .item_id("exec-1"),
         ])
     );
+}
+
+#[test]
+fn streaming_tool_output_renders_latest_lines_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    for delta in [
+        "line 1\nline 2\n",
+        "line 3\nline 4\n",
+        "line 5\nline 6\nline 7\n",
+    ] {
+        shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+            CommandExecutionOutputDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+                item_id: "exec-tail".to_string(),
+                delta: delta.to_string(),
+            },
+        ));
+    }
+
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+    let buf = render_shell_buffer(&shell, area);
+    let rendered = buffer_contents(&buf, area);
+    let omitted_row = row_containing(&buf, area, "output ... 4 earlier output lines")
+        .expect("output omission row should render");
+    let line_5_row = row_containing(&buf, area, "line 5").expect("line 5 should render");
+    let line_6_row = row_containing(&buf, area, "line 6").expect("line 6 should render");
+    let line_7_row = row_containing(&buf, area, "line 7").expect("line 7 should render");
+
+    assert_eq!(line_5_row, omitted_row + 1);
+    assert_eq!(line_6_row, omitted_row + 2);
+    assert_eq!(line_7_row, omitted_row + 3);
+    assert!(!rendered.contains("line 1"));
+    assert!(!rendered.contains("line 4"));
+    insta::assert_snapshot!(render_shell(&shell, area));
 }
 
 #[test]

@@ -379,6 +379,7 @@ enum TranscriptKind {
     Tool,
     Diff,
     Output,
+    Separator,
     Status,
     Audit,
     Error,
@@ -452,6 +453,7 @@ impl TranscriptKind {
             Self::Tool => "tool",
             Self::Diff => "edited",
             Self::Output => "output",
+            Self::Separator => "",
             Self::Status => "status",
             Self::Audit => "audit",
             Self::Error => "error",
@@ -505,6 +507,7 @@ struct ShellState {
     command_palette: Option<CommandPaletteState>,
     codex_home: std::path::PathBuf,
     dashboard_route: DashboardRoute,
+    dashboard_visible: bool,
     composer: ComposerState,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
     exit_confirmation_pending: bool,
@@ -586,6 +589,7 @@ impl ShellState {
             command_palette: None,
             codex_home,
             dashboard_route,
+            dashboard_visible: true,
             composer: ComposerState::default(),
             workspace_command_runner: None,
             exit_confirmation_pending: false,
@@ -634,6 +638,7 @@ impl ShellState {
             if let Some(error) = turn.error {
                 self.push_error(error.message);
             }
+            self.push_turn_separator();
         }
     }
 
@@ -688,11 +693,20 @@ impl ShellState {
             self.handle_safety_buffering_key(key, app_server).await;
             return Ok(false);
         }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('d')) {
+            self.dashboard_visible = !self.dashboard_visible;
+            if !self.dashboard_visible {
+                self.session_list.focused = false;
+                self.settings.focused = false;
+            }
+            return Ok(false);
+        }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('o')) {
             self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
             return Ok(false);
         }
         if let Some(route) = dashboard_route_from_key(key) {
+            self.dashboard_visible = true;
             self.set_dashboard_route(route);
             self.session_list.focused = route == DashboardRoute::Sessions;
             self.settings.focused = route == DashboardRoute::Settings;
@@ -2583,6 +2597,10 @@ impl ShellState {
         self.push_line(TranscriptLine::new(TranscriptKind::Output, text).tool_status(status));
     }
 
+    fn push_turn_separator(&mut self) {
+        self.push_line(TranscriptLine::new(TranscriptKind::Separator, ""));
+    }
+
     fn push_output_with_status_for_item(
         &mut self,
         item_id: impl Into<String>,
@@ -2684,7 +2702,7 @@ impl ShellState {
     }
 
     fn dashboard_focused(&self) -> bool {
-        self.session_list.focused || self.settings.focused
+        self.dashboard_visible && (self.session_list.focused || self.settings.focused)
     }
 
     #[cfg(test)]
@@ -2722,6 +2740,7 @@ impl ShellState {
             command_palette: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
+            dashboard_visible: true,
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Summarize the new shell architecture");
@@ -2960,6 +2979,7 @@ pub mod bench_support {
             command_palette: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
+            dashboard_visible: true,
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Benchmark the app shell render path");

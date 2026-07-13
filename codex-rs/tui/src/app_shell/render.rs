@@ -159,6 +159,25 @@ impl ShellView<'_> {
     }
 
     fn layout(&self, area: Rect) -> ShellLayout {
+        if !self.shell.dashboard_visible {
+            let input_height =
+                self.input_panel_height(area.height.saturating_sub(HEADER_HEIGHT), area.width);
+            let main = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(HEADER_HEIGHT),
+                    Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
+                    Constraint::Length(input_height),
+                ])
+                .split(area);
+            return ShellLayout {
+                header: main[0],
+                collapsed_dashboard: None,
+                transcript: main[1],
+                input: main[2],
+                dashboard: None,
+            };
+        }
         if area.width < DASHBOARD_COLLAPSE_WIDTH {
             let dashboard_height = if area.height >= 30 {
                 9
@@ -221,7 +240,16 @@ impl ShellView<'_> {
     fn render_header(&self, area: Rect, buf: &mut Buffer) {
         fill_rect(buf, area, MOCHA_MANTLE);
         let content = pane_content_rect(area);
-        Paragraph::new(Line::from("Better Codex".magenta().bold()))
+        let title = if self.shell.dashboard_visible {
+            Line::from("Better Codex".magenta().bold())
+        } else {
+            Line::from(vec![
+                "Better Codex".magenta().bold(),
+                "  ".into(),
+                "Ctrl+D Dashboard".cyan(),
+            ])
+        };
+        Paragraph::new(title)
             .style(pane_style(MOCHA_MANTLE))
             .render(content, buf);
     }
@@ -629,6 +657,11 @@ pub(super) fn render_transcript_line(
     cwd: &std::path::Path,
     selected: bool,
 ) -> Vec<HyperlinkLine> {
+    if kind == TranscriptKind::Separator {
+        return vec![HyperlinkLine::new(
+            Line::from("─".repeat(usize::from(width))).style(Style::new().dim()),
+        )];
+    }
     if let Some(status) = tool_status
         && matches!(
             kind,
@@ -648,6 +681,7 @@ pub(super) fn render_transcript_line(
         TranscriptKind::Tool => LineStyle::Cyan,
         TranscriptKind::Diff => LineStyle::Green,
         TranscriptKind::Output => LineStyle::Dim,
+        TranscriptKind::Separator => LineStyle::Dim,
         TranscriptKind::Status => LineStyle::Dim,
         TranscriptKind::Audit => LineStyle::Cyan,
         TranscriptKind::Error => LineStyle::Red,
@@ -708,6 +742,7 @@ fn tool_block_lines(
         | TranscriptKind::User
         | TranscriptKind::Assistant
         | TranscriptKind::Plan
+        | TranscriptKind::Separator
         | TranscriptKind::Status
         | TranscriptKind::Audit
         | TranscriptKind::Error => MOCHA_SURFACE0,
@@ -742,11 +777,10 @@ fn tool_block_lines(
     }
     if kind == TranscriptKind::Output && wrapped.len() > OUTPUT_BLOCK_MAX_LINES {
         let hidden_lines = wrapped.len().saturating_sub(OUTPUT_BLOCK_MAX_LINES - 1);
-        wrapped.truncate(OUTPUT_BLOCK_MAX_LINES);
-        if let Some(last) = wrapped.last_mut() {
-            let noun = if hidden_lines == 1 { "line" } else { "lines" };
-            *last = format!("... {hidden_lines} more output {noun}");
-        }
+        let mut tail = wrapped.split_off(hidden_lines);
+        let noun = if hidden_lines == 1 { "line" } else { "lines" };
+        wrapped = vec![format!("... {hidden_lines} earlier output {noun}")];
+        wrapped.append(&mut tail);
     }
     let mut rendered_lines = wrapped
         .into_iter()

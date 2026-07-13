@@ -12,9 +12,9 @@ expression: "render_shell(&shell, area)"
 
 
  Conversation
-   ▌        cargo build output line 041                                     ┃
-   ▌        cargo build output line 042                                     ┃
-   ▌        ... 118 more output lines                                       ┃
+   ▌        cargo build output line 158                                     ┃
+   ▌        cargo build output line 159                                     ┃
+   ▌        cargo build output line 160                                     ┃
 
 
  Composer ready 1:37

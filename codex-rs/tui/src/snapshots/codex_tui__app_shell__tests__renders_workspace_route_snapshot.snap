@@ -31,5 +31,5 @@ expression: "render_shell(&shell, area)"
                                                                        Enter send
                                                                        Ctrl+C/Esc twice to exit
                                                                        Alt+Up select, Ctrl+O copy
- Composer ready 1:37
+ Composer ready 1:37                                                   Ctrl+D hide dashboard
  > Summarize the new shell architecture

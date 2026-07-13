@@ -139,7 +139,11 @@ fn should_separate_transcript_item(
     let Some(previous_kind) = previous_kind else {
         return false;
     };
-    if previous_kind == TranscriptKind::System {
+    if matches!(
+        previous_kind,
+        TranscriptKind::System | TranscriptKind::Separator
+    ) || current_kind == TranscriptKind::Separator
+    {
         return false;
     }
     matches!(

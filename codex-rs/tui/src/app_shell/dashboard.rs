@@ -225,18 +225,21 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
             key_hint_line("Up/Down select"),
             key_hint_line("Enter copy"),
             key_hint_line("Esc composer"),
+            key_hint_line("Ctrl+D hide dashboard"),
         ]
     } else if shell.active_turn_id.is_some() {
         vec![
             key_hint_line("Enter steer"),
             key_hint_line("Ctrl+C interrupt, Esc twice to exit"),
             key_hint_line("Alt+Up select, Ctrl+O copy"),
+            key_hint_line("Ctrl+D hide dashboard"),
         ]
     } else {
         vec![
             key_hint_line("Enter send"),
             key_hint_line("Ctrl+C/Esc twice to exit"),
             key_hint_line("Alt+Up select, Ctrl+O copy"),
+            key_hint_line("Ctrl+D hide dashboard"),
         ]
     };
     panels.push(DashboardPanel::new("Keys", key_lines));

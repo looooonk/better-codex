@@ -35,7 +35,7 @@ expression: "render_shell(&shell, area)"
                                                                        Enter steer
                                                                        Ctrl+C interrupt, Esc twice
                                                                        to exit
-
+                                                                       Alt+Up select, Ctrl+O copy
 
 
 

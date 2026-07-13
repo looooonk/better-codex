@@ -1,0 +1,29 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+
+ Better Codex  Ctrl+D Dashboard
+
+
+ Conversation
+ system: Better Codex app shell
+ you: Create a divergent standalone TUI.
+
+ codex: Started a fullscreen app shell backed by app-server turns.
+ plan: 1. Build shell
+       2. Wire transcript
+       3. Render dashboard
+
+ ▌ tool exec just test -p codex-tui
+
+ ▌ edited 3 files +128 -24
+
+ codex: The new shell owns the fullscreen surface.
+
+
+
+
+
+ Composer ready 1:37
+ > Summarize the new shell architecture

@@ -89,10 +89,15 @@ impl ShellState {
             }
             ServerNotification::TurnCompleted(completed) => {
                 if completed.thread_id == self.thread_id.to_string() {
+                    let completed_active_turn =
+                        self.active_turn_id.as_deref() == Some(completed.turn.id.as_str());
+                    let turn_ended = !matches!(&completed.turn.status, TurnStatus::InProgress);
                     self.finish_streaming_plan();
                     self.finish_streaming_assistant();
                     self.clear_safety_buffering_for_turn_completion(&completed.turn.id);
-                    self.active_turn_id = None;
+                    if completed_active_turn {
+                        self.active_turn_id = None;
+                    }
                     self.workspace_status_refresh_due = true;
                     self.status = match completed.turn.status {
                         TurnStatus::Completed => "ready".to_string(),
@@ -100,6 +105,9 @@ impl ShellState {
                         TurnStatus::Interrupted => "interrupted".to_string(),
                         TurnStatus::InProgress => "thinking".to_string(),
                     };
+                    if completed_active_turn && turn_ended {
+                        self.push_turn_separator();
+                    }
                 }
             }
             ServerNotification::ThreadTokenUsageUpdated(usage) => {
