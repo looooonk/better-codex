@@ -513,7 +513,7 @@ fn renders_goal_progress_in_dashboard_snapshot() {
     shell.active_goal = Some(test_thread_goal(
         &shell.thread_id,
         ThreadGoalStatus::Active,
-        "Complete the unchecked PLAN.md dashboard progress item",
+        "Complete the unchecked dashboard progress item",
     ));
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 34,
