@@ -112,6 +112,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+const SNAPSHOT_THREAD_ID: &str = "01900000-0000-7000-8000-000000000001";
+
 #[test]
 fn renders_first_stage_shell_snapshot() {
     let shell = ShellState::snapshot_fixture();
@@ -1095,6 +1097,38 @@ async fn command_palette_opens_external_agent_import_review() {
 }
 
 #[tokio::test]
+async fn short_management_modal_keeps_keyboard_selection_visible() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut response = plugin_list_response_fixture();
+    response.marketplaces[0].plugins = (0..12)
+        .map(|index| {
+            plugin_summary_fixture(
+                &format!("plugin-{index:02}"),
+                &format!("Plugin {index:02}"),
+                /*installed*/ index % 2 == 0,
+                /*enabled*/ index % 2 == 0,
+            )
+        })
+        .collect();
+    shell.plugin_catalog = Some(response);
+    shell.open_plugin_management();
+    let mut backend = RecordingBackend::default();
+    for _ in 0..11 {
+        shell
+            .handle_plugin_management_key(key_char('j'), &mut backend)
+            .await
+            .expect("plugin selection should move");
+    }
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 12,
+    );
+    let rendered = render_shell(&shell, area);
+
+    assert!(rendered.contains("Plugin 11"));
+    insta::assert_snapshot!("short_plugin_management", rendered);
+}
+
+#[tokio::test]
 async fn interactive_requests_preempt_management_overlays() {
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::with_external_agent_items(external_agent_items());
@@ -1117,6 +1151,92 @@ async fn interactive_requests_preempt_management_overlays() {
     assert!(shell.pending_external_agent_import.is_none());
     assert!(shell.command_palette.is_none());
     assert!(shell.selector.is_none());
+}
+
+#[tokio::test]
+async fn interactive_requests_from_replaced_sessions_are_rejected() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "historical-agent".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: "01900000-0000-7000-8000-000000000099".to_string(),
+            agent_path: "/root/historical".to_string(),
+        });
+    let mut request = command_approval_request();
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
+        panic!("command approval fixture should keep its request type");
+    };
+    params.thread_id = "01900000-0000-7000-8000-000000000099".to_string();
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &NoopWorkspaceRunner,
+            AppServerEvent::ServerRequest(request),
+        )
+        .await
+        .expect("stale approval should be rejected");
+
+    assert_eq!(shell.pending_approval, None);
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::Reject {
+            request_id: RequestId::Integer(41),
+            message: "interactive request belongs to inactive thread 01900000-0000-7000-8000-000000000099".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn notifications_from_historical_inactive_agents_are_ignored() {
+    let mut shell = ShellState::snapshot_fixture();
+    let thread_id = "01900000-0000-7000-8000-000000000098";
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "historical-agent".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: thread_id.to_string(),
+            agent_path: "/root/historical".to_string(),
+        });
+    let before = shell.agent_activity.agent(thread_id).cloned();
+
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "stale-turn".to_string(),
+            item_id: "stale-message".to_string(),
+            delta: "old session output".to_string(),
+        },
+    ));
+
+    assert_eq!(shell.agent_activity.agent(thread_id), before.as_ref());
+}
+
+#[test]
+fn notifications_create_an_authorized_agent_before_history_catches_up() {
+    let mut shell = ShellState::snapshot_fixture();
+    let thread_id = "01900000-0000-7000-8000-000000000097";
+    shell.active_agent_thread_ids.insert(thread_id.to_string());
+
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "live-turn".to_string(),
+            item_id: "live-message".to_string(),
+            delta: "live output".to_string(),
+        },
+    ));
+
+    let agent = shell
+        .agent_activity
+        .agent(thread_id)
+        .expect("authorized agent should be created");
+    assert_eq!(agent.latest_message.as_deref(), Some("live output"));
+    assert_eq!(agent.status, agent_activity::AgentLifecycleStatus::Running);
 }
 
 #[tokio::test]
@@ -4835,7 +4955,7 @@ fn command_approval_request() -> ServerRequest {
     ServerRequest::CommandExecutionRequestApproval {
         request_id: RequestId::Integer(41),
         params: CommandExecutionRequestApprovalParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "exec-1".to_string(),
             started_at_ms: 0,
@@ -4860,7 +4980,7 @@ fn permissions_approval_request() -> ServerRequest {
     ServerRequest::PermissionsRequestApproval {
         request_id: RequestId::Integer(42),
         params: PermissionsRequestApprovalParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "permissions-1".to_string(),
             environment_id: None,
@@ -4881,7 +5001,7 @@ fn tool_user_input_request() -> ServerRequest {
     ServerRequest::ToolRequestUserInput {
         request_id: RequestId::Integer(43),
         params: ToolRequestUserInputParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "tool-input-1".to_string(),
             questions: vec![ToolRequestUserInputQuestion {
@@ -4910,7 +5030,7 @@ fn tool_free_form_user_input_request() -> ServerRequest {
     ServerRequest::ToolRequestUserInput {
         request_id: RequestId::Integer(44),
         params: ToolRequestUserInputParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "tool-input-2".to_string(),
             questions: vec![ToolRequestUserInputQuestion {
@@ -4930,7 +5050,7 @@ fn mcp_url_elicitation_request() -> ServerRequest {
     ServerRequest::McpServerElicitationRequest {
         request_id: RequestId::Integer(45),
         params: McpServerElicitationRequestParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: Some("turn-1".to_string()),
             server_name: "github".to_string(),
             request: McpServerElicitationRequest::Url {
@@ -4960,7 +5080,7 @@ fn mcp_rich_elicitation_request() -> ServerRequest {
     ServerRequest::McpServerElicitationRequest {
         request_id: RequestId::Integer(46),
         params: McpServerElicitationRequestParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: Some("turn-1".to_string()),
             server_name: "payments".to_string(),
             request: McpServerElicitationRequest::OpenAiForm {
@@ -5337,6 +5457,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
     let config = test_config().await;
     let resume_id = test_thread_id("01900000-0000-7000-8000-000000000401");
     let fork_id = test_thread_id("01900000-0000-7000-8000-000000000402");
+    let initial_id = test_thread_id(SNAPSHOT_THREAD_ID);
     let mut shell = ShellState::snapshot_fixture();
     shell.session_list.focused = true;
     let mut backend = RecordingBackend::with_threads(vec![
@@ -5365,6 +5486,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
                 search_term: None,
             },
             RecordedBackendCall::Resume(resume_id),
+            RecordedBackendCall::Unsubscribe(initial_id),
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
@@ -5374,6 +5496,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
                 search_term: None,
             },
             RecordedBackendCall::Fork(fork_id),
+            RecordedBackendCall::Unsubscribe(resume_id),
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
@@ -5384,6 +5507,124 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
         shell.thread_name,
         Some("forked".to_string()),
         "fork should replace the active shell session"
+    );
+}
+
+#[tokio::test]
+async fn session_switch_waits_for_the_active_turn_to_finish() {
+    let config = test_config().await;
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000403");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    shell.active_turn_id = Some("active-turn".to_string());
+    let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
+        target_id,
+        Some("switch target"),
+        "switch preview",
+    )]);
+    shell.refresh_session_list(&mut backend).await;
+
+    shell
+        .handle_session_list_key(key_char('r'), &config, &mut backend)
+        .await
+        .expect("blocked session switch should remain interactive");
+
+    assert_eq!(shell.thread_id, test_thread_id(SNAPSHOT_THREAD_ID));
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Status
+            && line.text == "finish or interrupt the active turn before switching sessions"
+    }));
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn session_switch_waits_for_pending_agent_input() {
+    let config = test_config().await;
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000404");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
+        target_id,
+        Some("switch target"),
+        "switch preview",
+    )]);
+    shell.refresh_session_list(&mut backend).await;
+
+    shell
+        .handle_session_list_key(key_char('r'), &config, &mut backend)
+        .await
+        .expect("blocked session switch should remain interactive");
+
+    assert_eq!(shell.thread_id, test_thread_id(SNAPSHOT_THREAD_ID));
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Status
+            && line.text == "resolve the pending request before switching sessions"
+    }));
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+        }]
+    );
+}
+
+#[test]
+fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
+    let root_id = test_thread_id("01900000-0000-7000-8000-000000000411");
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000412");
+    let mut started = started_thread("resumed", root_id, /*forked_from_id*/ None);
+    let mut child = thread_fixture(child_id, /*name*/ None, "child preview");
+    child.session_id = root_id.to_string();
+    child.parent_thread_id = Some(root_id.to_string());
+    child.source = SessionSource::SubAgent(codex_protocol::protocol::SubAgentSource::ThreadSpawn {
+        parent_thread_id: root_id,
+        depth: 1,
+        agent_path: Some(
+            codex_protocol::AgentPath::try_from("/root/alpha").expect("agent path should be valid"),
+        ),
+        agent_nickname: None,
+        agent_role: None,
+    });
+    child.thread_source = Some(codex_app_server_protocol::ThreadSource::Subagent);
+    let mut turn = test_turn("child-turn", TurnStatus::Completed);
+    turn.items.push(ThreadItem::AgentMessage {
+        id: "child-message".to_string(),
+        text: "private child result".to_string(),
+        phase: None,
+        memory_citation: None,
+    });
+    child.turns.push(turn);
+    started.agent_threads.push(child);
+    let mut shell = ShellState::snapshot_fixture();
+
+    shell.replace_started_session(started);
+
+    let agent = shell
+        .agent_activity
+        .agent(&child_id.to_string())
+        .expect("child agent should be restored");
+    assert_eq!(agent.display_name(), "alpha");
+    assert_eq!(
+        agent.latest_message.as_deref(),
+        Some("private child result")
+    );
+    assert_eq!(
+        agent.status,
+        agent_activity::AgentLifecycleStatus::Completed
+    );
+    assert!(
+        shell
+            .transcript
+            .iter()
+            .all(|line| !line.text.contains("private child result"))
     );
 }
 
@@ -7107,6 +7348,22 @@ impl backend::AppShellBackend for RecordingBackend {
         Ok(())
     }
 
+    async fn unsubscribe_threads(&self, thread_ids: Vec<codex_protocol::ThreadId>) {
+        for thread_id in thread_ids {
+            self.push(RecordedBackendCall::Unsubscribe(thread_id));
+        }
+    }
+
+    fn unsubscribe_threads_in_background(
+        &self,
+        thread_ids: Vec<codex_protocol::ThreadId>,
+    ) -> tokio::task::JoinHandle<()> {
+        for thread_id in thread_ids {
+            self.push(RecordedBackendCall::Unsubscribe(thread_id));
+        }
+        tokio::spawn(async {})
+    }
+
     async fn shutdown(self) -> std::io::Result<()> {
         self.push(RecordedBackendCall::Shutdown);
         Ok(())
@@ -7224,6 +7481,8 @@ fn started_thread(
             rollout_path: None,
         },
         turns: Vec::new(),
+        agent_threads: Vec::new(),
+        agent_history_task: None,
     }
 }
 

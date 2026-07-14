@@ -27,13 +27,13 @@ fn renders_bounded_agent_hierarchy_and_selected_inspector() {
         .collect::<Vec<_>>()
         .join("\n");
 
-    insta::assert_snapshot!(rendered, @r"
+    insta::assert_snapshot!(rendered, @"
     Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted  × 1 failed
       ● running  research
         └ ✓ completed  audit
       ! interrupted  test
     ›   └ × errored  failure
-    Inspector  failure  × errored
+    Inspector  failure  × errored  · Unit tests failed
     Path  /root/test/failure
     Task  Inspect the TUI flow.
     Runtime  gpt-5-codex · high reasoning

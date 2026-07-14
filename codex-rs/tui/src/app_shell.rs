@@ -5,6 +5,7 @@
 
 use crate::app_exit::AppExitInfo;
 use crate::app_exit::ExitReason;
+use crate::app_server_session::AgentHistoryTask;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
@@ -46,17 +47,20 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use std::cell::Cell;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::select;
+use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
 mod agent_activity;
 mod agent_activity_controller;
 mod agent_activity_render;
+mod agent_history;
 mod approval;
 mod backend;
 mod command_palette;
@@ -141,6 +145,7 @@ const TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX: &str = "... earlier output omitted ..
 const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
 const TRANSCRIPT_SELECTION_STEP: usize = 1;
 const APP_SERVER_FRAME_INTERVAL: Duration = Duration::from_millis(33);
+const AGENT_HISTORY_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 fn next_transcript_render_revision() -> u64 {
     static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
@@ -204,9 +209,15 @@ pub(crate) async fn run(
     ));
 
     let started = start_selected_session(&mut app_server, &config, session_selection).await?;
+    let AppServerStartedThread {
+        session,
+        turns,
+        agent_threads,
+        agent_history_task,
+    } = started;
     let route_state = AppShellRouteState::load(config.codex_home.as_path());
     let mut shell = ShellState::new(
-        started.session,
+        session,
         fallback_model,
         bootstrap.available_models,
         config.codex_home.to_path_buf(),
@@ -217,7 +228,8 @@ pub(crate) async fn run(
         config.multi_agent_v2.max_concurrent_threads_per_session,
     );
     shell.workspace_command_runner = Some(workspace_command_runner.clone());
-    shell.ingest_turn_history(started.turns);
+    shell.ingest_turn_history(turns);
+    shell.install_agent_history(agent_threads, agent_history_task);
     if let Some(message) = availability_nux {
         shell.push_system(message);
     }
@@ -228,29 +240,56 @@ pub(crate) async fn run(
     shell.refresh_goal_state(&mut app_server).await;
     shell.refresh_session_list(&mut app_server).await;
 
-    if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
-        shell.submit_prompt(&mut app_server, prompt).await?;
-        tui.frame_requester().schedule_frame();
-    }
+    let run_result: Result<ExitReason> = async {
+        if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
+            shell.submit_prompt(&mut app_server, prompt).await?;
+            tui.frame_requester().schedule_frame();
+        }
 
-    let mut tui_events = tui.event_stream();
-    let exit_reason = loop {
-        select! {
-            event = tui_events.next() => {
-                let Some(event) = event else {
-                    break ExitReason::UserRequested;
-                };
-                match event {
-                    TuiEvent::Key(key) => {
-                        if shell.handle_key(key, &config, &mut app_server).await? {
-                            break ExitReason::UserRequested;
+        let mut tui_events = tui.event_stream();
+        let mut agent_history_poll = tokio::time::interval(AGENT_HISTORY_POLL_INTERVAL);
+        agent_history_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let exit_reason = loop {
+            select! {
+                event = tui_events.next() => {
+                    let Some(event) = event else {
+                        break ExitReason::UserRequested;
+                    };
+                    match event {
+                        TuiEvent::Key(key) => {
+                            if shell.handle_key(key, &config, &mut app_server).await? {
+                                break ExitReason::UserRequested;
+                            }
+                            tui.frame_requester().schedule_frame();
                         }
-                        tui.frame_requester().schedule_frame();
-                    }
-                    TuiEvent::MouseClick(position) => {
-                        let size = tui.terminal.size()?;
-                        shell
-                            .handle_mouse_click(
+                        TuiEvent::MouseClick(position) => {
+                            let size = tui.terminal.size()?;
+                            shell
+                                .handle_mouse_click(
+                                    ratatui::layout::Rect::new(
+                                        /*x*/ 0,
+                                        /*y*/ 0,
+                                        size.width,
+                                        size.height,
+                                    ),
+                                    position,
+                                    &config,
+                                    &mut app_server,
+                                )
+                                .await?;
+                            tui.frame_requester().schedule_frame();
+                        }
+                        TuiEvent::MouseMove(position) => {
+                            if shell.set_pointer_position(position) {
+                                tui.frame_requester().schedule_frame();
+                            }
+                        }
+                        TuiEvent::MouseScroll {
+                            position,
+                            direction,
+                        } => {
+                            let size = tui.terminal.size()?;
+                            shell.handle_mouse_scroll(
                                 ratatui::layout::Rect::new(
                                     /*x*/ 0,
                                     /*y*/ 0,
@@ -258,76 +297,65 @@ pub(crate) async fn run(
                                     size.height,
                                 ),
                                 position,
-                                &config,
-                                &mut app_server,
-                            )
-                            .await?;
-                        tui.frame_requester().schedule_frame();
-                    }
-                    TuiEvent::MouseMove(position) => {
-                        if shell.set_pointer_position(position) {
+                                direction,
+                            );
                             tui.frame_requester().schedule_frame();
                         }
+                        TuiEvent::Paste(text) => {
+                            shell.insert_text(&text);
+                            tui.frame_requester().schedule_frame();
+                        }
+                        TuiEvent::Resize => {
+                            shell.clear_pointer_position();
+                            draw_shell(tui, &shell)?;
+                        }
+                        TuiEvent::Draw => {
+                            draw_shell(tui, &shell)?;
+                        }
                     }
-                    TuiEvent::MouseScroll {
-                        position,
-                        direction,
-                    } => {
-                        let size = tui.terminal.size()?;
-                        shell.handle_mouse_scroll(
-                            ratatui::layout::Rect::new(
-                                /*x*/ 0,
-                                /*y*/ 0,
-                                size.width,
-                                size.height,
-                            ),
-                            position,
-                            direction,
-                        );
+                }
+                event = app_server.next_event() => {
+                    match event {
+                        Some(event) => {
+                            shell
+                                .handle_app_server_event(
+                                    &mut app_server,
+                                    workspace_command_runner.as_ref(),
+                                    event,
+                                )
+                                .await?;
+                            tui.frame_requester()
+                                .schedule_frame_in(APP_SERVER_FRAME_INTERVAL);
+                        }
+                        None => {
+                            shell.push_system("app-server disconnected");
+                            break ExitReason::Fatal("app-server disconnected".to_string());
+                        }
+                    }
+                }
+                _ = agent_history_poll.tick(), if shell.has_pending_agent_history() => {
+                    if shell.poll_agent_history(&app_server).await {
                         tui.frame_requester().schedule_frame();
-                    }
-                    TuiEvent::Paste(text) => {
-                        shell.insert_text(&text);
-                        tui.frame_requester().schedule_frame();
-                    }
-                    TuiEvent::Resize => {
-                        shell.clear_pointer_position();
-                        draw_shell(tui, &shell)?;
-                    }
-                    TuiEvent::Draw => {
-                        draw_shell(tui, &shell)?;
                     }
                 }
             }
-            event = app_server.next_event() => {
-                match event {
-                    Some(event) => {
-                        shell
-                            .handle_app_server_event(
-                                &mut app_server,
-                                workspace_command_runner.as_ref(),
-                                event,
-                            )
-                            .await?;
-                        tui.frame_requester()
-                            .schedule_frame_in(APP_SERVER_FRAME_INTERVAL);
-                    }
-                    None => {
-                        shell.push_system("app-server disconnected");
-                        break ExitReason::Fatal("app-server disconnected".to_string());
-                    }
-                }
-            }
-        }
-    };
+        };
+        Ok(exit_reason)
+    }
+    .await;
 
-    let _ = app_server.unsubscribe_thread(shell.thread_id).await;
+    shell.cancel_agent_history().await;
+    shell.finish_subscription_cleanup().await;
+    app_server
+        .unsubscribe_threads(shell.tracked_thread_ids())
+        .await;
     shutdown_app_shell_backend(app_server)
         .await
         .inspect_err(|err| {
             tracing::warn!("app-server shutdown failed: {err}");
         })
         .ok();
+    let exit_reason = run_result?;
 
     Ok(AppExitInfo {
         token_usage: shell.token_usage.clone(),
@@ -589,6 +617,10 @@ struct ShellState {
     active_goal: Option<ThreadGoal>,
     tool_activity: VecDeque<ToolActivity>,
     agent_activity: AgentActivityState,
+    agent_history_task: Option<AgentHistoryTask>,
+    active_agent_thread_ids: HashSet<String>,
+    deferred_unsubscribe_thread_ids: Vec<ThreadId>,
+    subscription_cleanup_task: Option<JoinHandle<()>>,
     subagent_activity: VecDeque<ToolActivity>,
     latest_diff: Option<DiffSummary>,
     workspace_git_status: Option<WorkspaceGitStatus>,
@@ -675,6 +707,10 @@ impl ShellState {
             active_goal: None,
             tool_activity: VecDeque::new(),
             agent_activity: AgentActivityState::default(),
+            agent_history_task: None,
+            active_agent_thread_ids: HashSet::new(),
+            deferred_unsubscribe_thread_ids: Vec::new(),
+            subscription_cleanup_task: None,
             subagent_activity: VecDeque::new(),
             latest_diff: None,
             workspace_git_status: None,
@@ -1445,6 +1481,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.block_session_switch_if_busy() {
+            return Ok(());
+        }
         let Some(thread_id) = self.session_list.selected_thread_id() else {
             self.push_status("no session selected");
             return Ok(());
@@ -1453,8 +1492,12 @@ impl ShellState {
             self.push_status("session is already open");
             return Ok(());
         }
+        self.finish_subscription_cleanup().await;
         let started = app_server.resume_thread(config.clone(), thread_id).await?;
+        self.cancel_agent_history().await;
+        let previous_thread_ids = self.tracked_thread_ids();
         self.replace_started_session(started);
+        self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
         self.refresh_session_list(app_server).await;
         Ok(())
     }
@@ -1463,14 +1506,36 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.block_session_switch_if_busy() {
+            return Ok(());
+        }
         let Some(thread_id) = self.session_list.selected_thread_id() else {
             self.push_status("no session selected");
             return Ok(());
         };
+        self.finish_subscription_cleanup().await;
         let started = app_server.fork_thread(config.clone(), thread_id).await?;
+        self.cancel_agent_history().await;
+        let previous_thread_ids = self.tracked_thread_ids();
         self.replace_started_session(started);
+        self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
         self.refresh_session_list(app_server).await;
         Ok(())
+    }
+
+    fn block_session_switch_if_busy(&mut self) -> bool {
+        let message = if self.active_turn_id.is_some() {
+            "finish or interrupt the active turn before switching sessions"
+        } else if self.pending_approval.is_some()
+            || self.pending_elicitation.is_some()
+            || self.pending_user_input.is_some()
+        {
+            "resolve the pending request before switching sessions"
+        } else {
+            return false;
+        };
+        self.push_status(message);
+        true
     }
 
     async fn archive_selected_session<S>(&mut self, app_server: &mut S) -> Result<()>
@@ -1528,7 +1593,12 @@ impl ShellState {
     }
 
     fn replace_started_session(&mut self, started: AppServerStartedThread) {
-        let session = started.session;
+        let AppServerStartedThread {
+            session,
+            turns,
+            agent_threads,
+            agent_history_task,
+        } = started;
         self.thread_id = session.thread_id;
         self.thread_name = session.thread_name;
         if !session.model.is_empty() {
@@ -1553,6 +1623,8 @@ impl ShellState {
         self.plan_steps.clear();
         self.active_goal = None;
         self.agent_activity = AgentActivityState::default();
+        self.active_agent_thread_ids.clear();
+        self.deferred_unsubscribe_thread_ids.clear();
         self.active_turn_id = None;
         self.pending_approval = None;
         self.pending_elicitation = None;
@@ -1561,7 +1633,8 @@ impl ShellState {
         self.safety_buffering.clear();
         self.status = "ready".to_string();
         self.push_system("switched session");
-        self.ingest_turn_history(started.turns);
+        self.ingest_turn_history(turns);
+        self.install_agent_history(agent_threads, agent_history_task);
     }
 
     async fn execute_selected_command_palette_action<S>(&mut self, app_server: &mut S) -> Result<()>
@@ -2912,6 +2985,10 @@ impl ShellState {
                 },
             ]),
             agent_activity: AgentActivityState::default(),
+            agent_history_task: None,
+            active_agent_thread_ids: HashSet::new(),
+            deferred_unsubscribe_thread_ids: Vec::new(),
+            subscription_cleanup_task: None,
             subagent_activity: VecDeque::new(),
             latest_diff: Some(DiffSummary {
                 files: 3,
@@ -3144,6 +3221,10 @@ pub mod bench_support {
                 status: "running".to_string(),
             }]),
             agent_activity: AgentActivityState::default(),
+            agent_history_task: None,
+            active_agent_thread_ids: HashSet::new(),
+            deferred_unsubscribe_thread_ids: Vec::new(),
+            subscription_cleanup_task: None,
             subagent_activity: VecDeque::new(),
             latest_diff: Some(DiffSummary {
                 files: 4,

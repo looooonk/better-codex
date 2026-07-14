@@ -11,6 +11,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
+mod hydration;
 mod metadata;
 mod text;
 mod timeline;
@@ -46,6 +47,8 @@ pub(super) struct AgentActivity {
     pub(super) status: AgentLifecycleStatus,
     pub(super) latest_message: Option<String>,
     pub(super) timeline: VecDeque<AgentTimelineEntry>,
+    authoritative_state: bool,
+    live_state: bool,
 }
 
 impl AgentActivity {
@@ -61,6 +64,8 @@ impl AgentActivity {
             status: AgentLifecycleStatus::Unknown,
             latest_message: None,
             timeline: VecDeque::new(),
+            authoritative_state: false,
+            live_state: false,
         }
     }
 
@@ -102,6 +107,7 @@ impl AgentActivity {
 
     fn apply_state(&mut self, state: &CollabAgentState) {
         self.status = state.into();
+        self.authoritative_state = true;
         if let Some(message) = state.message.as_deref() {
             self.latest_message = bounded_text(message, MAX_LATEST_MESSAGE_CHARS);
         }
@@ -171,6 +177,16 @@ impl AgentActivityState {
 
     pub(super) fn is_known_thread(&self, thread_id: &str) -> bool {
         self.agents.contains_key(thread_id)
+    }
+
+    pub(super) fn ensure_thread(&mut self, thread_id: &str) {
+        self.ensure_agent(thread_id);
+    }
+
+    pub(super) fn mark_live_thread(&mut self, thread_id: &str) {
+        if let Some(agent) = self.agents.get_mut(thread_id) {
+            agent.live_state = true;
+        }
     }
 
     pub(super) fn record_child_item(
@@ -419,7 +435,8 @@ impl AgentActivityState {
     }
 
     fn ensure_agent(&mut self, thread_id: &str) -> &mut AgentActivity {
-        if !self.agents.contains_key(thread_id) {
+        let thread_id = thread_id.to_string();
+        if !self.agents.contains_key(&thread_id) {
             while self.agents.len() >= MAX_TRACKED_AGENTS {
                 let Some(oldest) = self.insertion_order.pop_front() else {
                     break;
@@ -429,17 +446,14 @@ impl AgentActivityState {
                     self.selected_thread_id = None;
                 }
             }
-            let thread_id = thread_id.to_string();
             self.insertion_order.push_back(thread_id.clone());
-            self.agents
-                .insert(thread_id.clone(), AgentActivity::new(thread_id));
             if self.selected_thread_id.is_none() {
                 self.selected_thread_id = self.insertion_order.back().cloned();
             }
         }
         self.agents
-            .get_mut(thread_id)
-            .expect("agent was inserted before access")
+            .entry(thread_id)
+            .or_insert_with_key(|thread_id| AgentActivity::new(thread_id.clone()))
     }
 
     fn move_selection(&mut self, offset: isize) {

@@ -3,7 +3,12 @@
 //! This module owns the typed JSON-RPC calls needed by the TUI and keeps
 //! request/response plumbing out of `App` and `ChatWidget`.
 
+mod agent_history;
 mod fs;
+
+pub(crate) use agent_history::AgentHistorySnapshot;
+pub(crate) use agent_history::AgentHistoryTask;
+pub(crate) use agent_history::AgentHistoryUpdate;
 
 use crate::legacy_core::config::Config;
 use crate::permission_compat::legacy_compatible_permission_profile;
@@ -188,6 +193,8 @@ impl ThreadParamsMode {
 pub(crate) struct AppServerStartedThread {
     pub(crate) session: ThreadSessionState,
     pub(crate) turns: Vec<Turn>,
+    pub(crate) agent_threads: Vec<Thread>,
+    pub(crate) agent_history_task: Option<AgentHistoryTask>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -474,10 +481,16 @@ impl AppServerSession {
         let fork_parent_title = self
             .fork_parent_title_from_app_server(response.thread.forked_from_id.as_deref())
             .await;
+        let session_id = response.thread.session_id.clone();
         let mut started =
             started_thread_from_resume_response(response, &config, self.thread_params_mode())
                 .await?;
         started.session.fork_parent_title = fork_parent_title;
+        started.agent_history_task = Some(self.spawn_resumed_agent_history(
+            started.session.thread_id,
+            session_id,
+            &started.turns,
+        ));
         Ok(started)
     }
 
@@ -1482,6 +1495,8 @@ async fn started_thread_from_start_response(
     Ok(AppServerStartedThread {
         session,
         turns: response.thread.turns,
+        agent_threads: Vec::new(),
+        agent_history_task: None,
     })
 }
 
@@ -1497,6 +1512,8 @@ async fn started_thread_from_resume_response(
     Ok(AppServerStartedThread {
         session,
         turns: response.thread.turns,
+        agent_threads: Vec::new(),
+        agent_history_task: None,
     })
 }
 
@@ -1512,6 +1529,8 @@ async fn started_thread_from_fork_response(
     Ok(AppServerStartedThread {
         session,
         turns: response.thread.turns,
+        agent_threads: Vec::new(),
+        agent_history_task: None,
     })
 }
 

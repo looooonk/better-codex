@@ -27,6 +27,7 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        self.drain_agent_history_updates();
         match event {
             AppServerEvent::Lagged { skipped } => {
                 self.push_system(format!("skipped {skipped} best-effort backend events"));
@@ -62,13 +63,14 @@ impl ShellState {
                 if delta.thread_id == self.thread_id.to_string() {
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     self.push_streaming_assistant_delta(&delta.delta);
-                } else {
+                } else if self.prepare_active_agent_thread(&delta.thread_id) {
                     self.agent_activity.record_child_progress(
                         &delta.thread_id,
                         &delta.item_id,
                         AgentChildEvent::Message,
                         &delta.delta,
                     );
+                    self.agent_activity.mark_live_thread(&delta.thread_id);
                 }
             }
             ServerNotification::PlanDelta(delta) => {
@@ -81,13 +83,14 @@ impl ShellState {
                 if delta.thread_id == self.thread_id.to_string() {
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     self.status = "reasoning".to_string();
-                } else {
+                } else if self.prepare_active_agent_thread(&delta.thread_id) {
                     self.agent_activity.record_child_progress(
                         &delta.thread_id,
                         &delta.item_id,
                         AgentChildEvent::Reasoning,
                         &delta.delta,
                     );
+                    self.agent_activity.mark_live_thread(&delta.thread_id);
                 }
             }
             ServerNotification::ReasoningTextDelta(delta) => {
@@ -124,12 +127,13 @@ impl ShellState {
                     if completed_active_turn && turn_ended {
                         self.push_turn_separator();
                     }
-                } else {
+                } else if self.prepare_active_agent_thread(&completed.thread_id) {
                     self.agent_activity.record_child_turn(
                         &completed.thread_id,
                         &completed.turn.id,
                         &completed.turn.status,
                     );
+                    self.agent_activity.mark_live_thread(&completed.thread_id);
                 }
             }
             ServerNotification::ThreadTokenUsageUpdated(usage) => {
@@ -181,7 +185,9 @@ impl ShellState {
             }
             ServerNotification::ItemStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
+                    self.mark_active_agent_threads(&started.item);
                     self.agent_activity.reduce_started(&started.item);
+                    self.mark_agent_item_live(&started.item);
                     if let Some(title) = item_activity_title(&started.item) {
                         let item_id = started.item.id().to_string();
                         self.record_item_activity(&started.item, title.clone(), "in progress");
@@ -191,29 +197,33 @@ impl ShellState {
                             super::ToolBlockStatus::Running,
                         );
                     }
-                } else {
-                    if self.agent_activity.is_known_thread(&started.thread_id) {
-                        self.agent_activity.reduce_started(&started.item);
-                    }
+                } else if self.prepare_active_agent_thread(&started.thread_id) {
+                    self.mark_active_agent_threads(&started.item);
+                    self.agent_activity.reduce_started(&started.item);
                     self.agent_activity.record_child_item(
                         &started.thread_id,
                         &started.item,
                         AgentItemPhase::Started,
                     );
+                    self.agent_activity.mark_live_thread(&started.thread_id);
+                    self.mark_agent_item_live(&started.item);
                 }
             }
             ServerNotification::ItemCompleted(completed) => {
                 if completed.thread_id == self.thread_id.to_string() {
-                    self.ingest_completed_item(completed.item);
-                } else {
-                    if self.agent_activity.is_known_thread(&completed.thread_id) {
-                        self.agent_activity.reduce_completed(&completed.item);
-                    }
+                    self.mark_active_agent_threads(&completed.item);
+                    self.ingest_completed_item(completed.item.clone());
+                    self.mark_agent_item_live(&completed.item);
+                } else if self.prepare_active_agent_thread(&completed.thread_id) {
+                    self.mark_active_agent_threads(&completed.item);
+                    self.agent_activity.reduce_completed(&completed.item);
                     self.agent_activity.record_child_item(
                         &completed.thread_id,
                         &completed.item,
                         AgentItemPhase::Completed,
                     );
+                    self.agent_activity.mark_live_thread(&completed.thread_id);
+                    self.mark_agent_item_live(&completed.item);
                 }
             }
             ServerNotification::CommandExecutionOutputDelta(delta) => {
@@ -223,13 +233,14 @@ impl ShellState {
                         delta.delta,
                         super::ToolBlockStatus::Running,
                     );
-                } else {
+                } else if self.prepare_active_agent_thread(&delta.thread_id) {
                     self.agent_activity.record_child_progress(
                         &delta.thread_id,
                         &delta.item_id,
                         AgentChildEvent::Output,
                         &delta.delta,
                     );
+                    self.agent_activity.mark_live_thread(&delta.thread_id);
                 }
             }
             ServerNotification::FileChangePatchUpdated(updated) => {
@@ -298,13 +309,14 @@ impl ShellState {
                         };
                         self.push_error(error.error.message);
                     }
-                } else {
+                } else if self.prepare_active_agent_thread(&error.thread_id) {
                     self.agent_activity.record_child_error(
                         &error.thread_id,
                         &error.turn_id,
                         &error.error.message,
                         error.will_retry,
                     );
+                    self.agent_activity.mark_live_thread(&error.thread_id);
                 }
             }
             ServerNotification::Warning(warning) => {
@@ -393,6 +405,18 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if let Some(thread_id) = request_thread_id(&request)
+            && thread_id != self.thread_id.to_string()
+            && !self.is_active_agent_thread(&thread_id)
+        {
+            self.reject_request_with_message(
+                app_server,
+                request.id().clone(),
+                format!("interactive request belongs to inactive thread {thread_id}"),
+            )
+            .await?;
+            return Ok(());
+        }
         match super::PendingApproval::from_request(&request) {
             Ok(Some(pending)) => {
                 let title = pending.title().to_string();
@@ -511,6 +535,28 @@ impl ShellState {
         self.pending_mcp_management = None;
         self.pending_plugin_management = None;
         self.safety_buffering.dismiss();
+    }
+}
+
+fn request_thread_id(request: &ServerRequest) -> Option<String> {
+    match request {
+        ServerRequest::CommandExecutionRequestApproval { params, .. } => {
+            Some(params.thread_id.clone())
+        }
+        ServerRequest::FileChangeRequestApproval { params, .. } => Some(params.thread_id.clone()),
+        ServerRequest::ToolRequestUserInput { params, .. } => Some(params.thread_id.clone()),
+        ServerRequest::McpServerElicitationRequest { params, .. } => Some(params.thread_id.clone()),
+        ServerRequest::PermissionsRequestApproval { params, .. } => Some(params.thread_id.clone()),
+        ServerRequest::DynamicToolCall { params, .. } => Some(params.thread_id.clone()),
+        ServerRequest::CurrentTimeRead { params, .. } => Some(params.thread_id.clone()),
+        ServerRequest::ApplyPatchApproval { params, .. } => {
+            Some(params.conversation_id.to_string())
+        }
+        ServerRequest::ExecCommandApproval { params, .. } => {
+            Some(params.conversation_id.to_string())
+        }
+        ServerRequest::ChatgptAuthTokensRefresh { .. }
+        | ServerRequest::AttestationGenerate { .. } => None,
     }
 }
 
