@@ -14,6 +14,7 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use unicode_width::UnicodeWidthStr;
 
 const VISIBLE_PLUGIN_ROWS: usize = 8;
 
@@ -43,12 +44,12 @@ impl ShellState {
     {
         match key.code {
             KeyCode::Esc => self.pending_plugin_management = None,
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(state) = &mut self.pending_plugin_management {
                     state.move_up();
                 }
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(state) = &mut self.pending_plugin_management {
                     state.move_down();
                 }
@@ -266,6 +267,7 @@ impl PluginManagementState {
                     .cyan()
                     .bold(),
                 " plugin catalog".into(),
+                "  ↑↓ / j k navigate".dim(),
             ]
             .into(),
             "Install / update ↵  Toggle e  Uninstall u  Refresh r"
@@ -327,9 +329,9 @@ impl PluginManagementState {
             .min(VISIBLE_PLUGIN_ROWS);
         if (2..visible + 2).contains(&line) {
             self.selected = start + line - 2;
-            return Some(KeyCode::Enter);
+            return Some(KeyCode::Null);
         }
-        (line == visible + 3).then_some(KeyCode::Enter)
+        None
     }
 }
 
@@ -461,8 +463,9 @@ fn line_to_plain_text(line: &Line<'_>) -> String {
 
 fn key_at_label(text: &str, column: usize, labels: &[(&str, KeyCode)]) -> Option<KeyCode> {
     labels.iter().find_map(|(label, key)| {
-        let start = text.find(label)?;
-        (start..start + label.chars().count())
+        let byte_start = text.find(label)?;
+        let start = UnicodeWidthStr::width(&text[..byte_start]);
+        (start..start + UnicodeWidthStr::width(*label))
             .contains(&column)
             .then_some(*key)
     })

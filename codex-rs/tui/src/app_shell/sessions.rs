@@ -1,7 +1,6 @@
 use super::dashboard::dashboard_value;
 use super::design::palette;
 use super::design::selection_style;
-use crate::text_formatting::truncate_text;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadListCwdFilter;
 use codex_app_server_protocol::ThreadListParams;
@@ -11,6 +10,7 @@ use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use std::path::PathBuf;
+use unicode_width::UnicodeWidthStr;
 
 const SESSION_LIST_LIMIT: u32 = 20;
 const SESSION_LIST_LINE_BUDGET: usize = 7;
@@ -429,9 +429,14 @@ fn row_line(
     let text = format!("{}{detail}", row.title);
     let prefix_width = 3usize.saturating_add(position_width);
     let visible = dashboard_value(&text, width, prefix_width);
-    let preview_width = width.saturating_sub(prefix_width + visible.chars().count() + 1);
+    let preview_width =
+        width.saturating_sub(prefix_width + UnicodeWidthStr::width(visible.as_str()) + 2);
     let preview = if preview_width > 8 {
-        format!("  {}", truncate_text(&row.preview, preview_width)).fg(palette::MUTED)
+        format!(
+            "  {}",
+            dashboard_value(&row.preview, preview_width, /*prefix_width*/ 0)
+        )
+        .fg(palette::MUTED)
     } else {
         "".into()
     };

@@ -1,0 +1,34 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
+---
+ ◆ BC                   gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+                                                              │────────────────────────────────━━━━━━━━━━━─────
+ ◆ CONVERSATION                                               │
+ ▎ SYSTEM  Better Codex app shell                             │▎◆ SETTINGS
+ ▎ YOU  Create a divergent standalone TUI.                    │▎● FOCUSED  MODEL  3 fields
+                                                              │▎▸ Model    Permissions
+ ▎ CODEX  Started a fullscreen app shell backed by app-server │▎  Appearance    Integrations
+          turns.                                              │▎› Model: gpt-5-codex
+ ▎ PLAN  1. Build shell                                       │▎  Reasoning: default
+         2. Wire transcript                                   │▎  Service tier: default
+         3. Render dashboard                                  │
+                                                              │▎◆ MODEL
+ ▌ tool exec just test -p codex-tui                           │▎gpt-5-codex
+                                                              │
+ ▌ edited 3 files +128 -24                                    │▎◆ TOKENS
+                                                              │▎total 1k
+ ▎ CODEX  The new shell owns the fullscreen surface.          │▎input 1k
+                                                              │▎output 240
+                                                              │▎Context 100% left
+                                                              │
+                                                              │▎◆ INTEGRATIONS
+                                                              │▎mcp not loaded
+                                                              │▎plugins not loaded
+╭────────────────────────────────────────────────────────────╮│
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37            ││▎◆ WORKSPACE
+│> Summarize the new shell architecture                      ││▎cwd /workspace/better-codex
+│                                                            ││▎profile managed
+│                                                            ││▎files restricted, net restricted
+╰────────────────────────────────────────────────────────────╯│

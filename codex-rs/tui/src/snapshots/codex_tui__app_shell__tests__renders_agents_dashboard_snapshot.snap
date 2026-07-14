@@ -1,0 +1,34 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
+---
+ ◆ BC                   gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+                                                              │───────────━━━━━━━━━────────────────────────────
+ ◆ CONVERSATION                                               │
+ ▎ SYSTEM  Better Codex app shell                             │▎◆ AGENTS
+ ▎ YOU  Create a divergent standalone TUI.                    │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
+                                                              │▎  × 1 failed
+ ▎ CODEX  Started a fullscreen app shell backed by app-server │▎  ● running  research
+          turns.                                              │▎    └ ✓ completed  visual
+ ▎ PLAN  1. Build shell                                       │▎  ! interrupted  testing
+         2. Wire transcript                                   │▎›   └ × errored  failure
+         3. Render dashboard                                  │▎Inspector  failure  × errored
+                                                              │▎Path  /root/testing/failure
+ ▌ tool exec just test -p codex-tui                           │▎Task  Review the new TUI flow and visual
+                                                              │▎      hierarchy.
+ ▌ edited 3 files +128 -24                                    │▎Runtime  gpt-5-codex · high reasoning
+                                                              │▎Latest  Compact flow failed
+ ▎ CODEX  The new shell owns the fullscreen surface.          │▎Recent
+                                                              │▎  • agent spawned
+                                                              │▎  • agent started
+                                                              │
+                                                              │
+                                                              │
+                                                              │
+╭────────────────────────────────────────────────────────────╮│
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37            ││
+│> Summarize the new shell architecture                      ││
+│                                                            ││
+│                                                            ││
+╰────────────────────────────────────────────────────────────╯│

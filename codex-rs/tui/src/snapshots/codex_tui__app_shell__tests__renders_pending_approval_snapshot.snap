@@ -2,30 +2,31 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                  Sessions
- you: Create a divergent standalone TUI.                         unfocused active 0 shown
-                                                                 loading sessions
- codex: Started a fullscreen app shell backed by app-server
-        turns.                                                   Approvals
- plan: 1. Build shell                                            approval Run command: cargo tes...
-       2. Wire transcript
-       3. Render dashboard                                       Tools
-                                                                 in progress exec just test -p c...
- ▌ tool exec just test -p codex-tui                              completed file changes in app_s...
-
- ▌ edited 3 files +128 -24                                       Thread
-                                                                 stage-one
- codex: The new shell owns the fullscreen surface.               id 01900000-0000-7000-8000-0000...
-                                                                 resume, fork, archive, delete in
-
-                                                                 Status
-                                                                 thinking
- Approval
- ? Run command: cargo test -p codex-tui                          Plan
-   Needs network access - /workspace/better-codex                Build the standalone shell in
-   enter/y approve  esc/n deny  e edit  ? explain                slices.
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+                                                  │━━━━━━━━━━━─────────────────────────────────────
+ ◆ CONVERSATION                                   │
+ ▎ SYSTEM  Better Codex app shell                 │▎◆ SESSIONS
+ ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎loading sessions
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ APPROVALS
+ ▎ PLAN  1. Build shell                           │▎approval Run command: cargo test -p codex-tui
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ TOOLS
+                                                  │▎in progress exec just test -p codex-tui
+ ▌ tool exec just test -p codex-tui               │▎completed file changes in app_shell
+                                                  │
+ ▌ edited 3 files +128 -24                        │▎◆ THREAD
+                                                  │▎stage-one
+ ▎ CODEX  The new shell owns the fullscreen       │▎id 01900000-0000-7000-8000-000000000001
+          surface.                                │▎resume, fork, archive, delete in session list
+                                                  │
+╭────────────────────────────────────────────────╮│▎◆ STATUS
+│◆ APPROVAL                                      ││▎thinking
+│? Run command: cargo test -p codex-tui          ││
+│  Needs network access - /workspace/better-codex││▎◆ PLAN
+│   Approve ↵   Deny n   Edit e   Explain ?      ││▎Build the standalone shell in slices.
+│                                                ││▎x Shell frame
+│                                                ││▎> Transcript model
+╰────────────────────────────────────────────────╯│

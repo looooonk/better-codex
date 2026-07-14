@@ -11,6 +11,7 @@ use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use unicode_width::UnicodeWidthStr;
 
 const VISIBLE_MCP_ROWS: usize = 8;
 
@@ -47,8 +48,10 @@ impl ShellState {
         }
         match key.code {
             KeyCode::Esc => self.pending_mcp_management = None,
-            KeyCode::Up => self.with_mcp_state(McpManagementState::move_up),
-            KeyCode::Down => self.with_mcp_state(McpManagementState::move_down),
+            KeyCode::Up | KeyCode::Char('k') => self.with_mcp_state(McpManagementState::move_up),
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.with_mcp_state(McpManagementState::move_down)
+            }
             KeyCode::Char('r') => {
                 self.reload_mcp_servers(app_server).await?;
             }
@@ -251,6 +254,7 @@ impl McpManagementState {
                     .cyan()
                     .bold(),
                 " mcp servers".into(),
+                "  ↑↓ / j k navigate".dim(),
             ]
             .into(),
             "Login ↵  Disable d  Remove x  Add a  Edit e  Reload r"
@@ -321,9 +325,9 @@ impl McpManagementState {
             .min(VISIBLE_MCP_ROWS);
         if (2..visible + 2).contains(&line) {
             self.selected = start + line - 2;
-            return Some(KeyCode::Enter);
+            return Some(KeyCode::Null);
         }
-        (line == visible + 3).then_some(KeyCode::Enter)
+        None
     }
 
     fn selected(&self) -> Option<&McpServerStatus> {
@@ -459,8 +463,9 @@ fn line_to_plain_text(line: &Line<'_>) -> String {
 
 fn key_at_label(text: &str, column: usize, labels: &[(&str, KeyCode)]) -> Option<KeyCode> {
     labels.iter().find_map(|(label, key)| {
-        let start = text.find(label)?;
-        (start..start + label.chars().count())
+        let byte_start = text.find(label)?;
+        let start = UnicodeWidthStr::width(&text[..byte_start]);
+        (start..start + UnicodeWidthStr::width(*label))
             .contains(&column)
             .then_some(*key)
     })

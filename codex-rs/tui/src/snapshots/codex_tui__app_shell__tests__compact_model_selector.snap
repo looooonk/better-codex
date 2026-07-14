@@ -1,0 +1,20 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 48, 16))"
+---
+ ◆ BC         gpt-5-0 ▾   default ▾  ● thinking
+────────────────────────────────────────────────
+  ╭ Select model ────────────────────────────╮
+  │ › 1 ● gpt-5-0  current                   │
+  │       gpt-5-0 - gpt-5-0 description      │
+  │   2 ○ gpt-5-1                            │
+ ◆│       gpt-5-1 - gpt-5-1 description      │
+ ▎│   3 ○ gpt-5-2                            │┃
+  │       gpt-5-2 - gpt-5-2 description      │┃
+  │   4 ○ gpt-5-3                            │
+╭─│       gpt-5-3 - gpt-5-3 description      │─╮
+│◆│                                          │ │
+│>│  wheel / j k  Enter  Esc  1/12 ↓         │ │
+│ ╰──────────────────────────────────────────╯ │
+│                                              │
+╰──────────────────────────────────────────────╯

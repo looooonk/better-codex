@@ -896,6 +896,17 @@ impl ShellState {
                     self.composer.insert_newline();
                 } else {
                     let prompt = self.composer.submission_text();
+                    if prompt.is_empty() && self.dashboard_visible {
+                        match self.dashboard_route {
+                            DashboardRoute::Sessions => self.session_list.focused = true,
+                            DashboardRoute::Agents => self.agents_focused = true,
+                            DashboardRoute::Settings => self.settings.focused = true,
+                            DashboardRoute::Workspace | DashboardRoute::Help => {}
+                        }
+                        if self.dashboard_focused() {
+                            return Ok(false);
+                        }
+                    }
                     if !prompt.is_empty() {
                         if let Some(command) = LocalSlashCommand::parse(&prompt) {
                             let outcome = self
@@ -988,200 +999,6 @@ impl ShellState {
             | KeyCode::Media(_)
             | KeyCode::Modifier(_) => Ok(false),
         }
-    }
-
-    async fn handle_mouse_click<S>(
-        &mut self,
-        area: ratatui::layout::Rect,
-        position: ratatui::layout::Position,
-        config: &Config,
-        app_server: &mut S,
-    ) -> Result<()>
-    where
-        S: AppShellBackend,
-    {
-        self.set_pointer_position(position);
-        if self
-            .handle_selector_click(area, position, app_server)
-            .await?
-        {
-            return Ok(());
-        }
-        if self.command_palette.is_some() {
-            let entry =
-                (render::ShellView { shell: self }).command_palette_entry_at(area, position);
-            if let Some(index) = entry {
-                let entries = self.command_palette_entries();
-                if let Some(palette) = &mut self.command_palette {
-                    palette.select(index, &entries);
-                }
-                self.execute_selected_command_palette_action(app_server)
-                    .await?;
-            } else {
-                self.close_command_palette();
-            }
-            return Ok(());
-        }
-        if self.pending_approval.is_some() {
-            if let Some(action) =
-                (render::ShellView { shell: self }).approval_action_at(area, position)
-            {
-                self.handle_pending_approval_action(app_server, action)
-                    .await?;
-            }
-            return Ok(());
-        }
-        if let Some(lines) = self.safety_buffering_modal_lines() {
-            let key = modal_view::modal_hit(area, position, &lines)
-                .and_then(|hit| self.safety_buffering_click_key(hit.line))
-                .unwrap_or(KeyCode::Esc);
-            self.handle_safety_buffering_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
-                .await;
-            return Ok(());
-        }
-        if let Some(lines) = self
-            .pending_external_agent_import
-            .as_ref()
-            .map(ExternalAgentImportState::lines)
-        {
-            let hit = modal_view::modal_hit(area, position, &lines);
-            let key = hit
-                .and_then(|hit| {
-                    self.pending_external_agent_import
-                        .as_mut()?
-                        .click_key_at(hit.line, hit.column)
-                })
-                .unwrap_or(KeyCode::Esc);
-            self.handle_external_agent_import_key(
-                KeyEvent::new(key, KeyModifiers::NONE),
-                app_server,
-            )
-            .await?;
-            return Ok(());
-        }
-        if let Some(lines) = self
-            .pending_mcp_management
-            .as_ref()
-            .map(McpManagementState::lines)
-        {
-            let hit = modal_view::modal_hit(area, position, &lines);
-            let key = hit
-                .and_then(|hit| {
-                    self.pending_mcp_management
-                        .as_mut()?
-                        .click_key_at(hit.line, hit.column)
-                })
-                .unwrap_or(KeyCode::Esc);
-            self.handle_mcp_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
-                .await?;
-            return Ok(());
-        }
-        if let Some(lines) = self
-            .pending_plugin_management
-            .as_ref()
-            .map(PluginManagementState::lines)
-        {
-            let hit = modal_view::modal_hit(area, position, &lines);
-            let key = hit
-                .and_then(|hit| {
-                    self.pending_plugin_management
-                        .as_mut()?
-                        .click_key_at(hit.line, hit.column)
-                })
-                .unwrap_or(KeyCode::Esc);
-            self.handle_plugin_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
-                .await?;
-            return Ok(());
-        }
-        if self.pending_elicitation.is_some() {
-            if let Some(choice) =
-                (render::ShellView { shell: self }).elicitation_choice_at(area, position)
-            {
-                self.resolve_pending_elicitation(app_server, choice).await?;
-            }
-            return Ok(());
-        }
-        if self.pending_user_input.is_some() {
-            if let Some(index) =
-                (render::ShellView { shell: self }).user_input_option_at(area, position)
-            {
-                self.composer.set_text((index + 1).to_string());
-                self.resolve_pending_user_input(app_server).await?;
-            }
-            return Ok(());
-        }
-        if let Some(control) = (render::ShellView { shell: self }).header_control_at(area, position)
-        {
-            match control {
-                header::HeaderControl::Dashboard => {
-                    self.dashboard_visible = !self.dashboard_visible;
-                    if !self.dashboard_visible {
-                        self.session_list.focused = false;
-                        self.settings.focused = false;
-                        self.agents_focused = false;
-                    }
-                }
-                header::HeaderControl::Model => self.open_model_selector(),
-                header::HeaderControl::ReasoningEffort => self.open_reasoning_selector(),
-            }
-            return Ok(());
-        }
-        if (render::ShellView { shell: self })
-            .input_area(area)
-            .contains(position)
-        {
-            self.session_list.focused = false;
-            self.settings.focused = false;
-            self.agents_focused = false;
-            self.clear_transcript_selection();
-            return Ok(());
-        }
-        if let Some(route) = (render::ShellView { shell: self }).dashboard_route_at(area, position)
-        {
-            self.set_dashboard_route(route);
-            self.session_list.focused = route == DashboardRoute::Sessions;
-            self.settings.focused = route == DashboardRoute::Settings;
-            self.agents_focused = route == DashboardRoute::Agents;
-            if route == DashboardRoute::Sessions {
-                self.refresh_session_list(app_server).await;
-            }
-            return Ok(());
-        }
-
-        let view = render::ShellView { shell: self };
-        if self.dashboard_route == DashboardRoute::Settings
-            && let Some(target) = view.dashboard_panel_position_at(area, position, "Settings")
-        {
-            if self.settings.select_at(target.line, target.column) {
-                self.activate_selected_setting(app_server).await?;
-            }
-            return Ok(());
-        }
-        if self.dashboard_route == DashboardRoute::Sessions
-            && let Some(target) = view.dashboard_panel_position_at(area, position, "Sessions")
-        {
-            if self.session_list.select_at_line(target.line) {
-                self.resume_selected_session(config, app_server).await?;
-            }
-            return Ok(());
-        }
-        if self.dashboard_route == DashboardRoute::Agents
-            && let Some(target) = view.dashboard_panel_position_at(area, position, "Agents")
-        {
-            self.agents_focused = true;
-            let thread_id = target.line.checked_sub(1).and_then(|line| {
-                agent_activity_render::agent_activity_thread_at_line(
-                    &self.agent_activity,
-                    line,
-                    /*line_budget*/ 24,
-                )
-                .map(ToString::to_string)
-            });
-            if let Some(thread_id) = thread_id {
-                self.agent_activity.select_thread(&thread_id);
-            }
-        }
-        Ok(())
     }
 
     async fn refresh_workspace_status(

@@ -4,6 +4,7 @@ use codex_app_server_protocol::McpServerElicitationRequestResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerRequest;
 use serde_json::Value;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ElicitationChoice {
@@ -111,8 +112,9 @@ impl PendingElicitation {
         ]
         .into_iter()
         .find_map(|(label, choice)| {
-            let start = text.find(label)?;
-            (start..start + label.chars().count())
+            let byte_start = text.find(label)?;
+            let start = UnicodeWidthStr::width(&text[..byte_start]);
+            (start..start + UnicodeWidthStr::width(label))
                 .contains(&column)
                 .then_some(choice)
         })

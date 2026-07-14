@@ -7,7 +7,7 @@ expression: "render_shell(&shell, area)"
                                                   │━━━━━━━━━━━─────────────────────────────────────
  ◆ CONVERSATION                                   │
  ▎ SYSTEM  Better Codex app shell                 │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ YOU  Create a divergent standalone TUI.        │▎● FOCUSED  ACTIVE  0 sessions
                                                   │▎loading sessions
  ▎ CODEX  Started a fullscreen app shell backed   │
           by app-server turns.                    │▎◆ TOOLS
@@ -25,8 +25,8 @@ expression: "render_shell(&shell, area)"
                                                   │▎◆ PLAN
                                                   │▎Build the standalone shell in slices.
 ╭────────────────────────────────────────────────╮│▎x Shell frame
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:15││▎> Transcript model
-│> ! printf hello                                ││▎- Approvals
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎> Transcript model
+│> Summarize the new shell architecture          ││▎- Approvals
 │                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

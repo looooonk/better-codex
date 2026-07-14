@@ -2,56 +2,57 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                                        ┌────────┬─────────┬────────┬────┐
-                                                                                     │Settings│Workspace│Sessions│Help│
-                                                                                     └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                                      Sessions
- you: Create a divergent standalone TUI.                                             unfocused active 0 shown
-                                                                                     loading sessions
- codex: Started a fullscreen app shell backed by app-server turns.
- plan: 1. Build shell                                                                Approvals
-       2. Wire transcript                                                            approval Run command: cargo tes...
-       3. Render dashboard                                                           input Tool input: tool-input-1
-
- ▌ tool exec just test -p codex-tui                                                  Background
-                                                                                     workspace refresh queued
- ▌ edited 3 files +128 -24
- plan: 1. Route activity into dashboard panels                                       Tools
-                                                                                     in progress exec just test -p c...
- codex: The new shell owns the fullscreen surface.                                   completed file changes in app_s...
-
-                                                                                     Subagents
-                                                                                     in progress agent SpawnAgent: 1...
-                                                                                     active subagent Started: review...
-
-                                                                                     Thread
-                                                                                     stage-one
-                                                                                     id 01900000-0000-7000-8000-0000...
-                                                                                     resume, fork, archive, delete in
-
-                                                                                     Status
-                                                                                     thinking
-                                                                                     turn turn-bac...
-
-                                                                                     Plan
-                                                                                     Build the standalone shell in
-                                                                                     slices.
-                                                                                     x Shell frame
-                                                                                     > Transcript model
-
-
-
-
-
-
-
-
-
-
-
- Approval
- ? Run command: cargo test -p codex-tui
-   Needs network access - /workspace/better-codex
-   enter/y approve  esc/n deny  e edit  ? explain
+ ◆ BETTER CODEX  better-codex   gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+                                                                      │━━━━━━━━━━━─────────────────────────────────────
+ ◆ CONVERSATION                                                       │
+ ▎ SYSTEM  Better Codex app shell                                     │▎◆ SESSIONS
+ ▎ YOU  Create a divergent standalone TUI.                            │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                                      │▎loading sessions
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │
+ ▎ PLAN  1. Build shell                                               │▎◆ APPROVALS
+         2. Wire transcript                                           │▎approval Run command: cargo test -p codex-tui
+         3. Render dashboard                                          │▎input Tool input: tool-input-1
+                                                                      │
+ ▌ tool exec just test -p codex-tui                                   │▎◆ BACKGROUND
+                                                                      │▎workspace refresh queued
+ ▌ edited 3 files +128 -24                                            │
+ ▎ PLAN  1. Route activity into dashboard panels                      │▎◆ TOOLS
+                                                                      │▎in progress exec just test -p codex-tui
+ ▎ CODEX  The new shell owns the fullscreen surface.                  │▎completed file changes in app_shell
+                                                                      │
+                                                                      │▎◆ THREAD
+                                                                      │▎stage-one
+                                                                      │▎id 01900000-0000-7000-8000-000000000001
+                                                                      │▎resume, fork, archive, delete in session list
+                                                                      │
+                                                                      │▎◆ STATUS
+                                                                      │▎thinking
+                                                                      │▎turn turn-bac...
+                                                                      │
+                                                                      │▎◆ PLAN
+                                                                      │▎Build the standalone shell in slices.
+                                                                      │▎x Shell frame
+                                                                      │▎> Transcript model
+                                                                      │▎- Approvals
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+╭────────────────────────────────────────────────────────────────────╮│
+│◆ APPROVAL                                                          ││
+│? Run command: cargo test -p codex-tui                              ││
+│  Needs network access - /workspace/better-codex                    ││
+│   Approve ↵   Deny n   Edit e   Explain ?                          ││
+│                                                                    ││
+│                                                                    ││
+╰────────────────────────────────────────────────────────────────────╯│

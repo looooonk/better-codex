@@ -33,17 +33,6 @@ pub(super) fn render_modal(screen: Rect, title: &str, lines: Vec<Line<'static>>,
     let lines = wrapped_lines(lines, body.width);
 
     buf.set_style(screen, Style::new().fg(palette::MUTED).bg(palette::DARK));
-    let shadow = Rect::new(
-        panel.x.saturating_add(1),
-        panel.y.saturating_add(1),
-        panel
-            .width
-            .min(screen.right().saturating_sub(panel.x.saturating_add(1))),
-        panel
-            .height
-            .min(screen.bottom().saturating_sub(panel.y.saturating_add(1))),
-    );
-    fill_rect(buf, shadow, palette::DARK);
     Clear.render(panel, buf);
     fill_rect(buf, panel, palette::ELEVATED);
     Block::default()

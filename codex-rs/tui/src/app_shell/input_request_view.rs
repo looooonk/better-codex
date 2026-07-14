@@ -101,7 +101,7 @@ pub(super) fn elicitation_lines(pending: &PendingElicitation) -> Vec<Line<'stati
         Line::from(vec!["? ".cyan().bold(), pending.title().to_string().bold()]),
         Line::from(vec![
             "  ".into(),
-            truncate_text(pending.detail(), /*max_graphemes*/ 62).dim(),
+            truncate_text(pending.detail(), /*max_graphemes*/ 42).dim(),
         ]),
         Line::from(action_line),
     ]

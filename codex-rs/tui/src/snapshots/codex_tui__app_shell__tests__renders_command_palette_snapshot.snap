@@ -2,30 +2,33 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                  Sessions
-
- Command Palette
-
- > Copy transcript item - Copy selection or latest ...
- Clear visible transcript
- Select latest transcript item
- Jump transcript to top
- Jump transcript to bottom
- Interrupt active turn
- Switch model
- Change permissions
- Resume thread
- Fork thread
- Import Claude Code setup
- Compact context
-
-
-
-                                                                 x Shell frame
- Composer ready 1:37                                             > Transcript model
- > Summarize the new shell architecture
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+                                                  │━━━━━━━━━━━─────────────────────────────────────
+ ◆ CONVERSATION                                   │
+ ▎ SYSTEM  Better Codex app shell                 │▎◆ SESSIONS
+ ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+              ╭──────────────────────────────────────────────────────────────────────╮
+ ▎ CODEX  Star│◆ ACTIONS  Ctrl+P                                                     │
+          by a│                                                                      │
+ ▎ PLAN  1. Bu│▌ Copy transcript item  Copy selection or latest assist...            │x-tui
+         2. Wi│  Clear visible transcript                                            │l
+         3. Re│  Select latest transcript item                                       │
+              │  Jump transcript to top                                              │
+ ▌ tool exec j│  Jump transcript to bottom                                           │
+              │  Interrupt active turn                                               │00001
+ ▌ edited 3 fi│  Switch model                                                        │ession list
+              │  Change permissions                                                  │
+ ▎ CODEX  The │  Resume thread                                                       │
+          surf│  Fork thread                                                         │
+              │  Import Claude Code setup                                            │
+              │  Compact context                                                     │
+              │↑↓ / j k navigate   Enter select   Esc close  1/12                    │es.
+              ╰──────────────────────────────────────────────────────────────────────╯
+                                                  │▎> Transcript model
+╭────────────────────────────────────────────────╮│▎- Approvals
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

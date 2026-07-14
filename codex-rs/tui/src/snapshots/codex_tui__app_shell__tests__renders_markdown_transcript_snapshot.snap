@@ -2,29 +2,31 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                                ┌────────┬─────────┬────────┬────┐
-                                                                             │Settings│Workspace│Sessions│Help│
-                                                                             └────────┴─────────┴────────┴────┘
- Conversation
- codex: # Result                                                             Sessions
-                                                                             unfocused active 0 shown
-        - Render assistant text as markdown.                                 loading sessions
-        - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.
-                                                                             Tools
-        fn transcript() -> &'static str {                                    in progress exec just test -p c...
-        "markdown"                                                           completed file changes in app_s...
-        }
-                                                                             Thread
-         Area     Status                                                     stage-one
-        ━━━━━━━  ━━━━━━━━                                                    id 01900000-0000-7000-8000-0000...
-         code     done                                                       resume, fork, archive, delete in
-        ───────  ────────
-         table    done                                                       Status
- plan: 1. Keep transcript rendering width-aware.                             thinking
-       2. Leave selection and copy mode for the next slice.
-                                                                             Plan
-                                                                             Build the standalone shell in
- Composer ready 1:1                                                          slices.
- > Type a message, Shift+Enter for newline                                   x Shell frame
-                                                                             > Transcript model
+ ◆ BC                   gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+                                                              │━━━━━━━━━━━─────────────────────────────────────
+ ◆ CONVERSATION                                               │
+ ▎ CODEX  # Result                                            │▎◆ SESSIONS
+                                                              │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+          - Render assistant text as markdown.                │▎loading sessions
+          - Preserve local links like codex-rs/tui/src/       │
+            app_shell/render.rs:1.                            │▎◆ TOOLS
+                                                              │▎in progress exec just test -p codex-tui
+          fn transcript() -> &'static str {                   │▎completed file changes in app_shell
+          "markdown"                                          │
+          }                                                   │▎◆ THREAD
+                                                              │▎stage-one
+           Area     Status                                    │▎id 01900000-0000-7000-8000-000000000001
+          ━━━━━━━  ━━━━━━━━                                   │▎resume, fork, archive, delete in session list
+           code     done                                      │
+          ───────  ────────                                   │▎◆ STATUS
+           table    done                                      │▎thinking
+ ▎ PLAN  1. Keep transcript rendering width-aware.            │
+         2. Leave selection and copy mode for the next slice. │▎◆ PLAN
+                                                              │▎Build the standalone shell in slices.
+╭────────────────────────────────────────────────────────────╮│▎x Shell frame
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:1             ││▎> Transcript model
+│> Type a message, Shift+Enter for newline                   ││▎- Approvals
+│                                                            ││
+│                                                            ││
+╰────────────────────────────────────────────────────────────╯│

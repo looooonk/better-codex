@@ -1,19 +1,19 @@
 ---
 source: tui/src/app_shell_tests.rs
-expression: "render_shell(&shell, area)"
+expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
 ---
  ◆ BETTER CODEX  better-codex           gpt-5-codex ▾   default ▾  ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
      Sessions    │    Agents    │   Workspace    │   Settings    │   Help
- ━━━━━━━━━━━━━━━━━───────────────────────────────────────────────────────────
- ▎◆ SESSIONS
- ▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎loading sessions
- ▎◆ TOOLS
- ▎in progress exec just test -p codex-tui
- ▎completed file changes in app_shell
-
+ ─────────────────────────────────────────────────━━━━━━━━━━━━━━━━───────────
+ ▎◆ SETTINGS
+ ▎● FOCUSED  MODEL  3 fields
+ ▎▸ Model    Permissions
+ ▎  Appearance    Integrations
+ ▎› Model: gpt-5-codex
+ ▎  Reasoning: default
+ ▎  Service tier: default
 
 
  ◆ CONVERSATION

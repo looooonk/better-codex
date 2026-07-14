@@ -66,21 +66,13 @@ impl<T> SelectorState<T> {
             );
             self.render_option(area, index, option, hovered == Some(index), buf);
         }
-        Paragraph::new(Line::from(vec![
-            " j/k ".fg(palette::FOCUS).bold(),
-            "move  ".fg(palette::MUTED),
-            " enter ".fg(palette::FOCUS).bold(),
-            "select  ".fg(palette::MUTED),
-            " esc ".fg(palette::FOCUS).bold(),
-            "cancel  ".fg(palette::MUTED),
-            format!(
-                "{}/{}",
-                self.selected.saturating_add(1).min(self.options.len()),
-                self.options.len()
-            )
-            .fg(palette::PURPLE)
-            .bold(),
-        ]))
+        Paragraph::new(selector_footer(
+            self.selected,
+            self.options.len(),
+            scroll,
+            geometry.visible_options,
+            geometry.footer.width,
+        ))
         .style(pane_style(palette::SURFACE))
         .render(geometry.footer, buf);
     }
@@ -156,6 +148,49 @@ impl<T> SelectorState<T> {
             .style(pane_style(background))
             .render(area, buf);
     }
+}
+
+fn selector_footer(
+    selected: usize,
+    option_count: usize,
+    scroll: usize,
+    visible_options: usize,
+    width: u16,
+) -> Line<'static> {
+    let before = if scroll > 0 { "↑ " } else { "" };
+    let after = if scroll.saturating_add(visible_options) < option_count {
+        " ↓"
+    } else {
+        ""
+    };
+    let position = format!(
+        "{before}{}/{}{after}",
+        selected.saturating_add(1).min(option_count),
+        option_count
+    );
+    let width = usize::from(width);
+    let hint = [
+        "wheel / j k  Enter select  Esc cancel",
+        "wheel / j k  Enter  Esc",
+        "j/k  Enter  Esc",
+        "↑↓  ↵",
+        "",
+    ]
+    .into_iter()
+    .find(|hint| {
+        let spacing = usize::from(!hint.is_empty()) * 3;
+        hint.chars().count() + spacing + position.chars().count() <= width
+    })
+    .unwrap_or_default();
+    let hint = if hint.is_empty() {
+        String::new()
+    } else {
+        format!(" {hint}  ")
+    };
+    Line::from(vec![
+        hint.fg(palette::MUTED),
+        position.fg(palette::PURPLE).bold(),
+    ])
 }
 
 pub(super) fn selector_geometry(area: Rect, option_count: usize) -> SelectorGeometry {

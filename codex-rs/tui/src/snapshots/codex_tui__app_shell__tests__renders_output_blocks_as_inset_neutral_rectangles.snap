@@ -2,20 +2,24 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
+ ◆ BETTER CODEX  better-codex           gpt-5-codex ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────
 
- Better Codex
+     Sessions    │    Agents    │   Workspace    │   Settings    │   Help
+ ━━━━━━━━━━━━━━━━━───────────────────────────────────────────────────────────
+ ▎◆ SESSIONS
+ ▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎loading sessions
+ ▎◆ TOOLS
+ ▎in progress exec just test -p codex-tui
+ ▎completed file changes in app_shell
+ ▎◆ THREAD
+ ▎stage-one
+ ▎id 01900000-0000-7000-8000-000000000001
+ ▎resume, fork, archive, delete in session list
 
 
- ┌────────────────────┬───────────────────┬──────────────────┬──────────────┐
- │      Settings      │     Workspace     │     Sessions     │     Help     │
- └────────────────────┴───────────────────┴──────────────────┴──────────────┘
- Tools in progress exec just test -p codex-tui
- Sessions unfocused active 0 shown
- Thread stage-one
- Status thinking
-
-
- Conversation
+ ◆ CONVERSATION
  ▌ tool exec cargo test
 
    ▌ output ... 4 earlier output lines
@@ -24,8 +28,9 @@ expression: rendered
    ▌        line 7
 
 
-
-
-
- Composer ready 1:37
- > Summarize the new shell architecture
+╭────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37                            │
+│> Summarize the new shell architecture                                      │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯

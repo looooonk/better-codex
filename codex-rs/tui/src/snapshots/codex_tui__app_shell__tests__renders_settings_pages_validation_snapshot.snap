@@ -2,34 +2,35 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                  Settings
- you: Create a divergent standalone TUI.                         focused appearance 3 fields
-                                                                 Model  Permissions
- codex: Started a fullscreen app shell backed by app-server      Appearance  Integrations
-        turns.                                                   edit theme missing-theme
- plan: 1. Build shell                                            unknown syntax theme `missing-t...
-       2. Wire transcript                                        > theme: default
-       3. Render dashboard                                         animations: on
-                                                                   tooltips: on
- ▌ tool exec just test -p codex-tui
-                                                                 Model
- ▌ edited 3 files +128 -24                                       gpt-5-codex
-
- codex: The new shell owns the fullscreen surface.               Tokens
-                                                                 total 1k
-                                                                 input 1k
-                                                                 output 240
-                                                                 Context 100% left
-
-                                                                 Integrations
-                                                                 mcp not loaded
-                                                                 plugins not loaded
- Composer ready 1:37
- > Summarize the new shell architecture                          Workspace
-                                                                 cwd /workspace/better-codex
-                                                                 profile managed
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+                                                  │────────────────────────────────━━━━━━━━━━━─────
+ ◆ CONVERSATION                                   │
+ ▎ SYSTEM  Better Codex app shell                 │▎◆ SETTINGS
+ ▎ YOU  Create a divergent standalone TUI.        │▎● FOCUSED  APPEARANCE  3 fields
+                                                  │▎  Model    Permissions
+ ▎ CODEX  Started a fullscreen app shell backed   │▎▸ Appearance    Integrations
+          by app-server turns.                    │▎edit Syntax theme missing-theme
+ ▎ PLAN  1. Build shell                           │▎unknown syntax theme `missing-theme`
+         2. Wire transcript                       │▎› Syntax theme: default
+         3. Render dashboard                      │▎  Animations: on
+                                                  │▎  Tooltips: on
+ ▌ tool exec just test -p codex-tui               │
+                                                  │▎◆ MODEL
+ ▌ edited 3 files +128 -24                        │▎gpt-5-codex
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ TOKENS
+          surface.                                │▎total 1k
+                                                  │▎input 1k
+                                                  │▎output 240
+                                                  │▎Context 100% left
+                                                  │
+                                                  │▎◆ INTEGRATIONS
+                                                  │▎mcp not loaded
+                                                  │▎plugins not loaded
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎◆ WORKSPACE
+│> Summarize the new shell architecture          ││▎cwd /workspace/better-codex
+│                                                ││▎profile managed
+│                                                ││▎files restricted, net restricted
+╰────────────────────────────────────────────────╯│

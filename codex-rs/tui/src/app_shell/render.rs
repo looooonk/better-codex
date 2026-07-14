@@ -1,4 +1,6 @@
 use super::ShellState;
+use super::agent_activity_render::agent_activity_overview_lines;
+use super::agent_activity_render::agent_activity_thread_at_line;
 use super::composer_render::composer_cursor_position;
 use super::composer_render::composer_visual_cursor_line;
 use super::composer_render::wrapped_composer_lines;
@@ -41,8 +43,8 @@ use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
 use unicode_width::UnicodeWidthStr;
 
-const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
-const DASHBOARD_MIN_WIDTH: u16 = 42;
+const DASHBOARD_COLLAPSE_WIDTH: u16 = 100;
+const DASHBOARD_MIN_WIDTH: u16 = 50;
 const DASHBOARD_MAX_WIDTH: u16 = 64;
 const DASHBOARD_PANEL_GAP: u16 = 1;
 const DASHBOARD_WIDTH_PERCENT: u16 = 34;
@@ -74,6 +76,7 @@ pub(super) struct ShellView<'a> {
 pub(super) struct DashboardPanelPosition {
     pub(super) line: usize,
     pub(super) column: usize,
+    pub(super) width: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -207,6 +210,11 @@ impl ShellView<'_> {
     ) -> Option<DashboardPanelPosition> {
         let layout = self.layout(area);
         let dashboard = layout.dashboard.or(layout.collapsed_dashboard)?;
+        let panel_gap = if layout.collapsed_dashboard.is_some() {
+            0
+        } else {
+            DASHBOARD_PANEL_GAP
+        };
         let content = pane_content_rect(dashboard);
         if !content.contains(position) {
             return None;
@@ -214,7 +222,11 @@ impl ShellView<'_> {
         let panels = dashboard_panels(self.shell, usize::from(content.width));
         let mut y = content.y;
         for panel in panels {
-            let height = panel.height().min(content.bottom().saturating_sub(y));
+            let available_height = content.bottom().saturating_sub(y);
+            if panel.show_title && available_height < 2 {
+                break;
+            }
+            let height = panel.height().min(available_height);
             let panel_area = Rect::new(content.x, y, content.width, height);
             if panel.title == title && panel_area.contains(position) {
                 let text_x = panel_area.x.saturating_add(u16::from(panel.show_title));
@@ -225,9 +237,10 @@ impl ShellView<'_> {
                 return Some(DashboardPanelPosition {
                     line: usize::from(position.y.saturating_sub(body_y)),
                     column: usize::from(position.x.saturating_sub(text_x)),
+                    width: usize::from(panel_area.width.saturating_sub(1)),
                 });
             }
-            y = y.saturating_add(height).saturating_add(DASHBOARD_PANEL_GAP);
+            y = y.saturating_add(height).saturating_add(panel_gap);
             if y >= content.bottom() {
                 break;
             }
@@ -244,12 +257,13 @@ impl ShellView<'_> {
         area: Rect,
         position: Position,
     ) -> Option<super::ApprovalAction> {
-        self.shell.pending_approval.as_ref()?;
-        let body = body_rect_after_title(pane_content_rect(self.input_area(area)));
-        if position.y != body.y.saturating_add(2) || !body.contains(position) {
+        let pending = self.shell.pending_approval.as_ref()?;
+        let lines = approval_lines(pending);
+        let hit = panel_line_at(self.input_area(area), position, &lines)?;
+        if hit.line != 2 {
             return None;
         }
-        match position.x.saturating_sub(body.x) {
+        match hit.column {
             2..=12 => Some(super::ApprovalAction::Choose(
                 super::ApprovalChoice::Approve,
             )),
@@ -296,8 +310,9 @@ impl ShellView<'_> {
             .enumerate()
             .find_map(|(index, option)| {
                 let label = format!("{} {}", index + 1, option.label);
-                let start = text.find(&label)?;
-                (start..start + label.chars().count())
+                let byte_start = text.find(&label)?;
+                let start = UnicodeWidthStr::width(&text[..byte_start]);
+                (start..start + UnicodeWidthStr::width(label.as_str()))
                     .contains(&hit.column)
                     .then_some(index)
             })
@@ -555,17 +570,23 @@ impl ShellView<'_> {
         let width = usize::from(content.width);
         let panels = dashboard_panels(self.shell, width);
 
-        self.render_dashboard_panels(content, &panels, buf);
+        self.render_dashboard_panels(content, &panels, DASHBOARD_PANEL_GAP, buf);
     }
 
     fn render_collapsed_dashboard(&self, area: Rect, buf: &mut Buffer) {
         fill_rect(buf, area, palette::DARK);
         let content = pane_content_rect(area);
         let panels = dashboard_panels(self.shell, usize::from(content.width));
-        self.render_dashboard_panels(content, &panels, buf);
+        self.render_dashboard_panels(content, &panels, /*panel_gap*/ 0, buf);
     }
 
-    fn render_dashboard_panels(&self, area: Rect, panels: &[DashboardPanel], buf: &mut Buffer) {
+    fn render_dashboard_panels(
+        &self,
+        area: Rect,
+        panels: &[DashboardPanel],
+        panel_gap: u16,
+        buf: &mut Buffer,
+    ) {
         let mut y = area.y;
         for (index, panel) in panels.iter().enumerate() {
             if y >= area.bottom() {
@@ -573,6 +594,9 @@ impl ShellView<'_> {
             }
             let desired_height = panel.height();
             let available_height = area.bottom().saturating_sub(y);
+            if panel.show_title && available_height < 2 {
+                break;
+            }
             let height = desired_height.min(available_height);
             if height == 0 {
                 break;
@@ -605,7 +629,7 @@ impl ShellView<'_> {
                 .wrap(Wrap { trim: false })
                 .render(text_area, buf);
             self.render_dashboard_hover(panel, panel_area, text_area, buf);
-            y = y.saturating_add(height).saturating_add(DASHBOARD_PANEL_GAP);
+            y = y.saturating_add(height).saturating_add(panel_gap);
         }
     }
 
@@ -650,6 +674,24 @@ impl ShellView<'_> {
                 | (DashboardRoute::Agents, "Agents")
                 | (DashboardRoute::Settings, "Settings")
         );
+        if panel.title == "Agents" && pointer.y > text_area.y {
+            let line = usize::from(pointer.y.saturating_sub(text_area.y.saturating_add(1)));
+            let overview_height = agent_activity_overview_lines(
+                &self.shell.agent_activity,
+                usize::from(text_area.width),
+            )
+            .len();
+            let agent_line = line.checked_sub(overview_height).and_then(|line| {
+                agent_activity_thread_at_line(
+                    &self.shell.agent_activity,
+                    line,
+                    /*line_budget*/ 24,
+                )
+            });
+            if agent_line.is_none() {
+                return;
+            }
+        }
         if interactive && pointer.y > text_area.y {
             buf.set_style(
                 Rect::new(text_area.x, pointer.y, text_area.width, 1),

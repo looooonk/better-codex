@@ -2,18 +2,19 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
-                                                              │  Sessions
- ▌ edited 3 files +128 -24                                    ┃  unfocused active 0 shown
- status: first checkpoint                                     ┃  loading sessions
- status: second checkpoint                                    │
-                                                                 Tools
-                                                                 in progress exec just test -p c...
- Composer ready 1:37                                             completed file changes in app_s...
- > Summarize the new shell architecture
-                                                                 Thread
-                                                                 stage-one
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+                                                  │━━━━━━━━━━━─────────────────────────────────────
+ ◆ CONVERSATION                                   │
+                                                │ │▎◆ SESSIONS
+ ▌ edited 3 files +128 -24                      │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ STATUS  first checkpoint                     ┃ │▎loading sessions
+ ▎ STATUS  second checkpoint                    ┃ │
+ ▎ STATUS  third checkpoint                     │ │▎◆ TOOLS
+                                                  │▎in progress exec just test -p codex-tui
+╭────────────────────────────────────────────────╮│▎completed file changes in app_shell
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││
+│> Summarize the new shell architecture          ││▎◆ THREAD
+│                                                ││▎stage-one
+│                                                ││▎id 01900000-0000-7000-8000-000000000001
+╰────────────────────────────────────────────────╯│

@@ -3,7 +3,6 @@ use super::design::palette;
 use super::design::selection_style;
 use super::integrations::McpInventorySummary;
 use super::integrations::PluginInventorySummary;
-use crate::text_formatting::truncate_text;
 use codex_app_server_protocol::AskForApproval;
 use codex_protocol::openai_models::ReasoningEffort;
 use ratatui::style::Styled;
@@ -171,25 +170,35 @@ impl SettingsState {
 
     pub(super) fn select_at(&mut self, line: usize, column: usize) -> bool {
         self.focused = true;
-        match line {
-            1 if column < 5 => {
-                self.set_page(SettingsPage::Model);
-                return false;
+        let first_width = |page: SettingsPage| page.label().chars().count() + 2;
+        let page = match line {
+            1 if column < first_width(SettingsPage::Model) => Some(SettingsPage::Model),
+            1 if (first_width(SettingsPage::Model) + 2
+                ..first_width(SettingsPage::Model)
+                    + 2
+                    + first_width(SettingsPage::Permissions))
+                .contains(&column) =>
+            {
+                Some(SettingsPage::Permissions)
             }
-            1 if (7..18).contains(&column) => {
-                self.set_page(SettingsPage::Permissions);
-                return false;
+            2 if column < first_width(SettingsPage::Appearance) => Some(SettingsPage::Appearance),
+            2 if (first_width(SettingsPage::Appearance) + 2
+                ..first_width(SettingsPage::Appearance)
+                    + 2
+                    + first_width(SettingsPage::Integrations))
+                .contains(&column) =>
+            {
+                Some(SettingsPage::Integrations)
             }
-            2 if column < 10 => {
-                self.set_page(SettingsPage::Appearance);
-                return false;
-            }
-            2 if (12..24).contains(&column) => {
-                self.set_page(SettingsPage::Integrations);
-                return false;
-            }
-            1 | 2 => return false,
-            _ => {}
+            1 | 2 => None,
+            _ => None,
+        };
+        if let Some(page) = page {
+            self.set_page(page);
+            return false;
+        }
+        if matches!(line, 1 | 2) {
+            return false;
         }
         if line < self.action_line_start() {
             return false;
@@ -376,7 +385,7 @@ fn setting_row(
     let line = Line::from(vec![
         marker,
         " ".into(),
-        truncate_text(&text, width.saturating_sub(2)).fg(if selected {
+        dashboard_value(&text, width, /*prefix_width*/ 2).fg(if selected {
             palette::TEXT
         } else {
             palette::MUTED

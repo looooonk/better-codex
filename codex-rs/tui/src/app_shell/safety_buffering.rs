@@ -204,10 +204,15 @@ impl SafetyBufferingState {
             };
             lines.push(vec![marker, " ".into(), label.into()].into());
         }
+        let shortcuts = if active.can_retry {
+            "↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss"
+        } else {
+            "↑↓ / j k select  Enter confirm  d / Esc dismiss"
+        };
         lines.extend([
             Line::default(),
             Line::from(SAFETY_BUFFERING_FOOTER.dim()),
-            Line::from("Up/Down select  Enter confirm  Esc dismiss".dim()),
+            Line::from(shortcuts.dim()),
         ]);
         Some(lines)
     }
@@ -244,7 +249,7 @@ impl SafetyBufferingState {
             .map(|_| SafetyBufferingAction::Retry)
     }
 
-    fn dismiss(&mut self) {
+    pub(super) fn dismiss(&mut self) {
         if let Some(active) = self.active.as_mut() {
             active.visible = false;
         }
@@ -304,6 +309,12 @@ impl ShellState {
         {
             self.command_palette = None;
             self.selector = None;
+            if self.pending_approval.is_some()
+                || self.pending_elicitation.is_some()
+                || self.pending_user_input.is_some()
+            {
+                self.safety_buffering.dismiss();
+            }
             self.status = if show_buffering_ui {
                 "waiting".to_string()
             } else {
@@ -325,11 +336,11 @@ impl ShellState {
         S: AppShellBackend,
     {
         let action = match key.code {
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 self.safety_buffering.move_selection(/*offset*/ -1);
                 return;
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 self.safety_buffering.move_selection(/*offset*/ 1);
                 return;
             }

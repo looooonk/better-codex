@@ -2,30 +2,31 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                  Settings
- you: Create a divergent standalone TUI.                         unfocused model 3 fields
-                                                                 Model  Permissions
- codex: Started a fullscreen app shell backed by app-server      Appearance  Integrations
-        turns.                                                   > model: gpt-5-codex
- plan: 1. Build shell                                              reasoning: default
-       2. Wire transcript                                          service tier: default
-       3. Render dashboard
-                                                                 Model
- ▌ tool exec just test -p codex-tui                              gpt-5-codex
-
- ▌ edited 3 files +128 -24                                       Tokens
-                                                                 total 1k
- codex: The new shell owns the fullscreen surface.               input 1k
-                                                                 output 240
-                                                                 Context 100% left
-
-                                                                 Integrations
- Composer ready 1:37                                             mcp not loaded
- > Summarize the new shell architecture                          plugins not loaded
-
-                                                                 Workspace
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+                                                  │────────────────────────────────━━━━━━━━━━━─────
+ ◆ CONVERSATION                                   │
+ ▎ SYSTEM  Better Codex app shell                 │▎◆ SETTINGS
+ ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  MODEL  3 fields
+                                                  │▎▸ Model    Permissions
+ ▎ CODEX  Started a fullscreen app shell backed   │▎  Appearance    Integrations
+          by app-server turns.                    │▎› Model: gpt-5-codex
+ ▎ PLAN  1. Build shell                           │▎  Reasoning: default
+         2. Wire transcript                       │▎  Service tier: default
+         3. Render dashboard                      │
+                                                  │▎◆ MODEL
+ ▌ tool exec just test -p codex-tui               │▎gpt-5-codex
+                                                  │
+ ▌ edited 3 files +128 -24                        │▎◆ TOKENS
+                                                  │▎total 1k
+ ▎ CODEX  The new shell owns the fullscreen       │▎input 1k
+          surface.                                │▎output 240
+                                                  │▎Context 100% left
+                                                  │
+                                                  │▎◆ INTEGRATIONS
+╭────────────────────────────────────────────────╮│▎mcp not loaded
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎plugins not loaded
+│> Summarize the new shell architecture          ││
+│                                                ││▎◆ WORKSPACE
+│                                                ││▎cwd /workspace/better-codex
+╰────────────────────────────────────────────────╯│

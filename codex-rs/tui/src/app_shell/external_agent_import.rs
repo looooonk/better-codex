@@ -18,6 +18,7 @@ use crossterm::event::KeyEvent;
 use ratatui::prelude::Stylize as _;
 use ratatui::text::Line;
 use std::path::PathBuf;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ExternalAgentImportState {
@@ -118,7 +119,11 @@ impl ExternalAgentImportState {
             lines.push(Line::from(vec!["      ".into(), detail.dim()]));
         }
         lines.push(Line::from(""));
-        lines.push("Enter import  Space toggle  Esc cancel".dim().into());
+        lines.push(
+            "↑↓ / j k move  Enter import  Space toggle  Esc cancel"
+                .dim()
+                .into(),
+        );
         lines
     }
 
@@ -134,7 +139,7 @@ impl ExternalAgentImportState {
             return None;
         }
         key_at_label(
-            "Enter import  Space toggle  Esc cancel",
+            "↑↓ / j k move  Enter import  Space toggle  Esc cancel",
             column,
             &[
                 ("Enter import", KeyCode::Enter),
@@ -204,13 +209,13 @@ impl ShellState {
                 self.push_status("Claude Code import cancelled");
                 Ok(true)
             }
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(pending) = &mut self.pending_external_agent_import {
                     pending.move_up();
                 }
                 Ok(true)
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(pending) = &mut self.pending_external_agent_import {
                     pending.move_down();
                 }
@@ -290,8 +295,9 @@ fn line_to_plain_text(line: &Line<'_>) -> String {
 
 fn key_at_label(text: &str, column: usize, labels: &[(&str, KeyCode)]) -> Option<KeyCode> {
     labels.iter().find_map(|(label, key)| {
-        let start = text.find(label)?;
-        (start..start + label.chars().count())
+        let byte_start = text.find(label)?;
+        let start = UnicodeWidthStr::width(&text[..byte_start]);
+        (start..start + UnicodeWidthStr::width(*label))
             .contains(&column)
             .then_some(*key)
     })

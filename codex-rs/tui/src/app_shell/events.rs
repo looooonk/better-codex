@@ -192,6 +192,9 @@ impl ShellState {
                         );
                     }
                 } else {
+                    if self.agent_activity.is_known_thread(&started.thread_id) {
+                        self.agent_activity.reduce_started(&started.item);
+                    }
                     self.agent_activity.record_child_item(
                         &started.thread_id,
                         &started.item,
@@ -203,6 +206,9 @@ impl ShellState {
                 if completed.thread_id == self.thread_id.to_string() {
                     self.ingest_completed_item(completed.item);
                 } else {
+                    if self.agent_activity.is_known_thread(&completed.thread_id) {
+                        self.agent_activity.reduce_completed(&completed.item);
+                    }
                     self.agent_activity.record_child_item(
                         &completed.thread_id,
                         &completed.item,
@@ -399,8 +405,7 @@ impl ShellState {
                     .await?;
                     return Ok(());
                 }
-                self.selector = None;
-                self.command_palette = None;
+                self.close_overlays_for_interactive_request();
                 self.pending_approval = Some(pending);
                 self.push_status(format!("approval requested: {title}"));
                 Ok(())
@@ -417,8 +422,7 @@ impl ShellState {
                         .await?;
                         return Ok(());
                     }
-                    self.selector = None;
-                    self.command_palette = None;
+                    self.close_overlays_for_interactive_request();
                     self.pending_elicitation = Some(pending);
                     self.push_status(format!("elicitation requested: {title}"));
                     Ok(())
@@ -433,8 +437,7 @@ impl ShellState {
                         .await?;
                         return Ok(());
                     }
-                    self.selector = None;
-                    self.command_palette = None;
+                    self.close_overlays_for_interactive_request();
                     self.pending_user_input = Some(pending);
                     self.push_status(format!("input requested: {title}"));
                     Ok(())
@@ -499,6 +502,15 @@ impl ShellState {
         self.pending_approval.is_some()
             || self.pending_elicitation.is_some()
             || self.pending_user_input.is_some()
+    }
+
+    fn close_overlays_for_interactive_request(&mut self) {
+        self.selector = None;
+        self.command_palette = None;
+        self.pending_external_agent_import = None;
+        self.pending_mcp_management = None;
+        self.pending_plugin_management = None;
+        self.safety_buffering.dismiss();
     }
 }
 

@@ -2,30 +2,31 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                  Sessions
-
- Safety review
- Our systems are thinking a bit more about this request before responding.
-
- Hang tight or retry with a faster model for a quicker response, though it may be less capable of
- handling complex requests.
-
- > Retry with a faster model
-   Dismiss and keep waiting
-   Learn more
-
- No action is required. Codex will keep waiting, and this menu will close when the response is
- ready.
- Up/Down select  Enter confirm  Esc dismiss
-
-
-                                                                 Plan
- Composer busy 1:1                                               Build the standalone shell in
- > Type a message, Shift+Enter for newline                       slices.
-                                                                 x Shell frame
-                                                                 > Transcript model
+ ◆ BC        gpt-5-codex ▾   default ▾  ● waiting │
+──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+                                                  │━━━━━━━━━━━─────────────────────────────────────
+ ◆ CONVERSATION                                   │
+ ▎ SYSTEM  Better Codex app shell                 │▎◆ SESSIONS
+ ▎ YOU  Create╭──────────────────────────────────────────────────────────────────────╮ns
+              │◆ SAFETY REVIEW                                                       │
+ ▎ CODEX  Star│Our systems are thinking a bit more about this request before         │
+          by a│responding.                                                           │
+ ▎ PLAN  1. Bu│                                                                      │x-tui
+         2. Wi│Hang tight or retry with a faster model for a quicker response, though│l
+         3. Re│it may be less capable of handling complex requests.                  │
+              │                                                                      │
+ ▌ tool exec j│> Retry with a faster model                                           │
+              │  Dismiss and keep waiting                                            │00001
+ ▌ edited 3 fi│  Learn more                                                          │ession list
+              │                                                                      │
+ ▎ YOU  Explai│No action is required. Codex will keep waiting, and this menu will    │
+              │close when the response is ready.                                     │
+              │↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss              │
+              │                                                                      │
+              ╰──────────────────────────────────────────────────────────────────────╯
+╭────────────────────────────────────────────────╮│▎Build the standalone shell in slices.
+│◆ MESSAGE  ● RUNNING  1:1                       ││▎x Shell frame
+│> Type a message, Shift+Enter for newline       ││▎> Transcript model
+│                                                ││▎- Approvals
+│                                                ││
+╰────────────────────────────────────────────────╯│

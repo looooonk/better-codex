@@ -6,6 +6,8 @@ use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
 use codex_app_server_protocol::AppSummary;
+use codex_app_server_protocol::CollabAgentState;
+use codex_app_server_protocol::CollabAgentStatus;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandExecOutputDeltaNotification;
@@ -179,9 +181,9 @@ fn renders_scrolled_session_list_snapshot() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("3/10 Session 03"));
-    assert!(rendered.contains(">  8/10 Session 08"));
-    assert!(!rendered.contains("1/10 Session 01"));
+    assert!(rendered.contains("3/10 Session 03"), "{rendered}");
+    assert!(rendered.contains("8/10 Session 08"), "{rendered}");
+    assert!(!rendered.contains("1/10 Session 01"), "{rendered}");
     insta::assert_snapshot!(rendered);
 }
 
@@ -241,7 +243,7 @@ fn renders_output_blocks_as_inset_neutral_rectangles() {
         ToolBlockStatus::Success,
     );
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 30,
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 32,
     );
 
     let buf = render_shell_buffer(&shell, area);
@@ -567,8 +569,8 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         "r resume, f fork, a/u archive",
         "v archived, d delete",
         "n rename, / search",
-        "Settings: Enter focus/select",
-        "Enter edit/cycle, Tab page",
+        "Settings: Tab page, Enter select",
+        "Selectors: j/k choose, Enter apply",
         "Esc return to composer",
     ];
     let mut leaked_guides = Vec::new();
@@ -714,6 +716,29 @@ fn renders_command_palette_snapshot() {
 }
 
 #[test]
+fn short_command_palette_keeps_the_selection_visible() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.open_command_palette();
+    let entries = shell.command_palette_entries();
+    shell
+        .command_palette
+        .as_mut()
+        .expect("command palette should be open")
+        .select_last(&entries);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 12,
+    );
+    let rendered = render_shell(&shell, area);
+    let compact = rendered_text_position(&rendered, "Compact context");
+
+    assert_eq!(
+        ShellView { shell: &shell }.command_palette_entry_at(area, compact),
+        Some(entries.len().saturating_sub(1))
+    );
+    insta::assert_snapshot!("short_command_palette", rendered);
+}
+
+#[test]
 fn renders_sessions_dashboard_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Sessions;
@@ -740,6 +765,40 @@ fn renders_sessions_dashboard_snapshot() {
 }
 
 #[test]
+fn session_rows_use_display_width_for_wide_characters() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Sessions;
+    shell.session_list.replace_threads(vec![
+        thread_fixture(
+            test_thread_id("01900000-0000-7000-8000-000000000021"),
+            Some("東京 UI"),
+            "鮮やかなテーマを確認する",
+        ),
+        thread_fixture(
+            test_thread_id("01900000-0000-7000-8000-000000000022"),
+            Some("検証 🌙"),
+            "マウスとキーボードのフロー",
+        ),
+    ]);
+    let width = 46;
+    let lines = shell.session_list.lines(width);
+
+    assert_eq!(
+        lines
+            .iter()
+            .map(line_text)
+            .filter(|line| line.contains("東京 UI") || line.contains("検証 🌙"))
+            .count(),
+        2
+    );
+    assert!(
+        lines.iter().all(|line| {
+            unicode_width::UnicodeWidthStr::width(line_text(line).as_str()) <= width
+        })
+    );
+}
+
+#[test]
 fn renders_agents_dashboard_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Agents;
@@ -748,6 +807,7 @@ fn renders_agents_dashboard_snapshot() {
         ("research", "/root/research"),
         ("visual", "/root/research/visual"),
         ("testing", "/root/testing"),
+        ("failure", "/root/testing/failure"),
     ] {
         shell
             .agent_activity
@@ -758,7 +818,49 @@ fn renders_agents_dashboard_snapshot() {
                 agent_path: path.to_string(),
             });
     }
-    shell.agent_activity.select_thread("visual");
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::CollabAgentToolCall {
+            id: "spawn-agents".to_string(),
+            tool: CollabAgentTool::SpawnAgent,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: "root-thread".to_string(),
+            receiver_thread_ids: vec![
+                "research".to_string(),
+                "visual".to_string(),
+                "testing".to_string(),
+                "failure".to_string(),
+            ],
+            prompt: Some("Review the new TUI flow and visual hierarchy.".to_string()),
+            model: Some("gpt-5-codex".to_string()),
+            reasoning_effort: Some(ReasoningEffort::High),
+            agents_states: [
+                ("research", CollabAgentStatus::Running, "Reviewing layout"),
+                (
+                    "visual",
+                    CollabAgentStatus::Completed,
+                    "Visual audit complete",
+                ),
+                (
+                    "testing",
+                    CollabAgentStatus::Interrupted,
+                    "Stopped after review",
+                ),
+                ("failure", CollabAgentStatus::Errored, "Compact flow failed"),
+            ]
+            .into_iter()
+            .map(|(thread_id, status, message)| {
+                (
+                    thread_id.to_string(),
+                    CollabAgentState {
+                        status,
+                        message: Some(message.to_string()),
+                    },
+                )
+            })
+            .collect(),
+        });
+    shell.agent_activity.select_thread("failure");
 
     insta::assert_snapshot!(render_shell(
         &shell,
@@ -766,6 +868,15 @@ fn renders_agents_dashboard_snapshot() {
             /*x*/ 0, /*y*/ 0, /*width*/ 112, /*height*/ 30
         )
     ));
+    insta::assert_snapshot!(
+        "compact_agents_dashboard",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24
+            )
+        )
+    );
 }
 
 #[test]
@@ -981,6 +1092,31 @@ async fn command_palette_opens_external_agent_import_review() {
             /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 32,
         )
     ));
+}
+
+#[tokio::test]
+async fn interactive_requests_preempt_management_overlays() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::with_external_agent_items(external_agent_items());
+    shell
+        .start_external_agent_import_review(&mut backend)
+        .await
+        .expect("external agent review should open");
+    assert!(shell.pending_external_agent_import.is_some());
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            &NoopWorkspaceRunner,
+            AppServerEvent::ServerRequest(command_approval_request()),
+        )
+        .await
+        .expect("approval request should preempt the management overlay");
+
+    assert!(shell.pending_approval.is_some());
+    assert!(shell.pending_external_agent_import.is_none());
+    assert!(shell.command_palette.is_none());
+    assert!(shell.selector.is_none());
 }
 
 #[tokio::test]
@@ -1229,6 +1365,38 @@ async fn exit_keys_require_confirmation_while_ctrl_c_interrupts_immediately() {
             turn_id: "turn-active".to_string(),
         }]
     );
+}
+
+#[tokio::test]
+async fn pointer_activity_clears_exit_confirmation() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let mut shell = ShellState::snapshot_fixture();
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Esc should arm exit confirmation");
+    assert!(shell.exit_confirmation_pending);
+
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let input = ShellView { shell: &shell }.input_area(area);
+    shell
+        .handle_mouse_click(
+            area,
+            Position::new(input.x.saturating_add(2), input.y.saturating_add(2)),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("composer click should succeed");
+
+    assert!(!shell.exit_confirmation_pending);
 }
 
 #[tokio::test]
@@ -2250,6 +2418,42 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
 }
 
 #[tokio::test]
+async fn empty_enter_focuses_the_active_interactive_dashboard() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.clear();
+
+    for route in [
+        DashboardRoute::Sessions,
+        DashboardRoute::Agents,
+        DashboardRoute::Settings,
+    ] {
+        shell.dashboard_route = route;
+        shell.session_list.focused = false;
+        shell.agents_focused = false;
+        shell.settings.focused = false;
+
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("empty Enter should focus the active dashboard");
+
+        assert_eq!(
+            shell.session_list.focused,
+            route == DashboardRoute::Sessions
+        );
+        assert_eq!(shell.agents_focused, route == DashboardRoute::Agents);
+        assert_eq!(shell.settings.focused, route == DashboardRoute::Settings);
+    }
+    assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
 async fn dashboard_tabs_click_and_focus_interactive_routes() {
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
@@ -2471,6 +2675,22 @@ async fn elicitation_and_tool_options_are_clickable() {
             RecordedBackendCall::Resolve(RequestId::Integer(45)),
             RecordedBackendCall::Resolve(RequestId::Integer(43)),
         ]
+    );
+}
+
+#[test]
+fn wrapped_approval_actions_keep_their_mouse_targets() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
+        .expect("approval request should be valid");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 20,
+    );
+    let explain = rendered_text_position(&render_shell(&shell, area), "Explain ?");
+
+    assert_eq!(
+        ShellView { shell: &shell }.approval_action_at(area, explain),
+        Some(ApprovalAction::Explain)
     );
 }
 
@@ -3048,6 +3268,69 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
         .expect("spawned agent should remain tracked");
     assert_eq!(agent.status, agent_activity::AgentLifecycleStatus::Errored);
     assert_eq!(agent.latest_message.as_deref(), Some("child failed"));
+}
+
+#[test]
+fn child_notifications_discover_nested_agents() {
+    let mut shell = ShellState::snapshot_fixture();
+    let root_thread_id = shell.thread_id.to_string();
+    let child_thread_id = "agent-child".to_string();
+    let grandchild_thread_id = "agent-grandchild".to_string();
+
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: root_thread_id,
+            turn_id: "root-turn".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::SubAgentActivity {
+                id: "child-started".to_string(),
+                kind: SubAgentActivityKind::Started,
+                agent_thread_id: child_thread_id.clone(),
+                agent_path: "/root/child".to_string(),
+            },
+        },
+    ));
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: child_thread_id.clone(),
+        turn_id: "child-turn".to_string(),
+        started_at_ms: 2,
+        item: ThreadItem::CollabAgentToolCall {
+            id: "nested-spawn".to_string(),
+            tool: CollabAgentTool::SpawnAgent,
+            status: CollabAgentToolCallStatus::InProgress,
+            sender_thread_id: child_thread_id.clone(),
+            receiver_thread_ids: vec![grandchild_thread_id.clone()],
+            prompt: Some("Inspect the nested flow.".to_string()),
+            model: Some("gpt-5-codex".to_string()),
+            reasoning_effort: Some(ReasoningEffort::High),
+            agents_states: Default::default(),
+        },
+    }));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: child_thread_id,
+            turn_id: "child-turn".to_string(),
+            completed_at_ms: 3,
+            item: ThreadItem::SubAgentActivity {
+                id: "grandchild-started".to_string(),
+                kind: SubAgentActivityKind::Started,
+                agent_thread_id: grandchild_thread_id.clone(),
+                agent_path: "/root/child/grandchild".to_string(),
+            },
+        },
+    ));
+
+    assert!(shell.agent_activity.is_known_thread(&grandchild_thread_id));
+    assert_eq!(
+        shell
+            .agent_activity
+            .agent(&grandchild_thread_id)
+            .and_then(|agent| agent.path.as_ref())
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("/root/child/grandchild")
+    );
+    assert_eq!(shell.agent_activity.counts().total, 2);
 }
 
 #[test]
@@ -4270,6 +4553,22 @@ fn mcp_elicitation_serializes_accept_decline_and_cancel() {
             "content": null,
             "_meta": null
         })
+    );
+}
+
+#[test]
+fn mcp_elicitation_mouse_columns_use_display_width() {
+    let pending = PendingElicitation::from_request(&mcp_url_elicitation_request())
+        .expect("request should be supported");
+    let actions = "   Accept ↵   Decline d   Cancel c ";
+    let decline = actions
+        .find("Decline d")
+        .expect("decline action should exist");
+    let column = unicode_width::UnicodeWidthStr::width(&actions[..decline]);
+
+    assert_eq!(
+        pending.choice_at(/*line*/ 2, column),
+        Some(ElicitationChoice::Decline)
     );
 }
 

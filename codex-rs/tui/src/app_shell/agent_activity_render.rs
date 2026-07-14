@@ -3,6 +3,8 @@ use super::agent_activity::AgentActivityState;
 use super::agent_activity::AgentLifecycleStatus;
 use super::design::palette;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
+use crate::wrapping::RtOptions;
+use crate::wrapping::word_wrap_lines;
 use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
@@ -46,10 +48,10 @@ pub(super) fn agent_activity_overview_lines(
             push_count(&mut spans, glyph, count, label, color);
         }
     }
-    vec![truncate_line_with_ellipsis_if_overflow(
-        Line::from(spans),
-        width,
-    )]
+    word_wrap_lines(
+        vec![Line::from(spans)],
+        RtOptions::new(width.max(1)).subsequent_indent(Line::from("  ")),
+    )
 }
 
 pub(super) fn agent_activity_inspector_lines(
@@ -226,17 +228,23 @@ fn agent_tree_line(agent: &AgentActivity, selected: bool, width: usize) -> Line<
 
 fn inspector_header(agent: &AgentActivity, width: usize) -> Line<'static> {
     let (glyph, color) = status_visual(agent.status);
-    truncate_line_with_ellipsis_if_overflow(
-        Line::from(vec![
-            "Inspector  ".fg(palette::CYAN).bold(),
-            agent.display_name().to_string().fg(palette::TEXT).bold(),
-            "  ".into(),
-            glyph.fg(color).bold(),
-            " ".into(),
-            agent.status.label().to_string().fg(color),
-        ]),
-        width,
-    )
+    let mut spans = vec![
+        "Inspector  ".fg(palette::CYAN).bold(),
+        agent.display_name().to_string().fg(palette::TEXT).bold(),
+        "  ".into(),
+        glyph.fg(color).bold(),
+        " ".into(),
+        agent.status.label().to_string().fg(color),
+    ];
+    if width >= 60
+        && let Some(latest_message) = &agent.latest_message
+    {
+        spans.extend([
+            "  · ".fg(palette::BORDER),
+            latest_message.clone().fg(palette::TEXT),
+        ]);
+    }
+    truncate_line_with_ellipsis_if_overflow(Line::from(spans), width)
 }
 
 fn append_field(

@@ -2,24 +2,27 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
+ ◆ BC     gpt-5-codex ▾   default ▾  ● thinking
+────────────────────────────────────────────────
 
- Better Codex
-
-
- ┌────────────┬─────────────┬──────────┬──────┐
- │  Settings  │  Workspace  │ Sessions │ Help │
- └────────────┴─────────────┴──────────┴──────┘
- Tools in progress exec just test -p codex-tui
- Sessions unfocused active 0 shown
-
-
- Conversation
-                                              │
- ▌ edited 3 files +128 -24                    │
-                                              │
- codex: The new shell owns the fullscreen     ┃
-        surface.                              ┃
+  Threads │ Agents │ Files  │ Config │  Help
+ ━━━━━━━━━━────────────────────────────────────
+ ▎◆ SESSIONS
+ ▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎loading sessions
+ ▎◆ TOOLS
+ ▎in progress exec just test -p codex-tui
+ ▎completed file changes in app_shell
 
 
- Composer ready 1:37
- > Summarize the new shell architecture
+
+ ◆ CONVERSATION
+ ▎ CODEX  The new shell owns the fullscreen   ┃
+          surface.                            ┃
+
+╭──────────────────────────────────────────────╮
+│◆ MESSAGE  ENTER SEND  1:37                   │
+│> Summarize the new shell architecture        │
+│                                              │
+│                                              │
+╰──────────────────────────────────────────────╯

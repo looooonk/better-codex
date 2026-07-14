@@ -11,6 +11,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 const STATE_FILE: &str = "app-shell-state.json";
+const COMPACT_TAB_WIDTH: u16 = 48;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +39,16 @@ impl DashboardRoute {
             Self::Agents => "Agents",
             Self::Workspace => "Workspace",
             Self::Settings => "Settings",
+            Self::Help => "Help",
+        }
+    }
+
+    fn compact_label(self) -> &'static str {
+        match self {
+            Self::Sessions => "Threads",
+            Self::Agents => "Agents",
+            Self::Workspace => "Files",
+            Self::Settings => "Config",
             Self::Help => "Help",
         }
     }
@@ -78,21 +89,17 @@ impl DashboardTabs {
             .sum::<u16>()
             .saturating_add(separator_width);
         let extra_width = width.saturating_sub(minimum_width);
-        let padding_pairs = extra_width / 2;
-        let base_padding_pairs = padding_pairs / tab_count;
-        let remainder_pairs = padding_pairs % tab_count;
-        let unpaired_width = extra_width % 2;
-        let use_label_widths = width >= minimum_width;
+        let base_extra_width = extra_width / tab_count;
+        let extra_width_remainder = extra_width % tab_count;
+        let use_label_widths = width >= minimum_width.max(COMPACT_TAB_WIDTH);
         let mut start = 0;
         let cells = std::array::from_fn(|index| {
             let route = DashboardRoute::ALL[index];
             let cell_width = if use_label_widths {
-                let padding_pairs =
-                    base_padding_pairs + u16::from(index < usize::from(remainder_pairs));
                 label_widths[index]
                     + u16::from(index + 1 < DashboardRoute::ALL.len())
-                    + padding_pairs.saturating_mul(2)
-                    + unpaired_width * u16::from(index + 1 == DashboardRoute::ALL.len())
+                    + base_extra_width
+                    + u16::from(index < usize::from(extra_width_remainder))
             } else {
                 width / tab_count + u16::from(index < usize::from(width % tab_count))
             };
@@ -108,13 +115,18 @@ impl DashboardTabs {
     }
 
     pub(super) fn lines(self, active_route: DashboardRoute) -> [Line<'static>; 2] {
+        let compact = self.width < COMPACT_TAB_WIDTH;
         let mut labels = Vec::new();
         let mut underline = Vec::new();
         for (index, cell) in self.cells.into_iter().enumerate() {
             if cell.width > 0 {
                 let has_separator = index + 1 < DashboardRoute::ALL.len() && cell.width > 1;
                 let label_width = cell.width.saturating_sub(u16::from(has_separator));
-                let label = cell.route.label();
+                let label = if compact {
+                    cell.route.compact_label()
+                } else {
+                    cell.route.label()
+                };
                 let label = crate::text_formatting::truncate_text(label, usize::from(label_width));
                 labels.push(tab_span(
                     format!("{label:^width$}", width = usize::from(label_width)),

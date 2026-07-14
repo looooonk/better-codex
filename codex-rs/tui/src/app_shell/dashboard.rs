@@ -12,7 +12,7 @@ use super::navigation::DashboardRoute;
 use super::navigation::DashboardTabs;
 use crate::goal_display::format_goal_elapsed_seconds;
 use crate::goal_display::goal_status_label;
-use crate::text_formatting::truncate_text;
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use codex_app_server_protocol::TurnPlanStepStatus;
 use ratatui::style::Color;
 use ratatui::style::Styled;
@@ -68,6 +68,7 @@ impl DashboardPanel {
 
 pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<DashboardPanel> {
     let mut panels = vec![dashboard_navigation_panel(shell.dashboard_route, width)];
+    let width = width.saturating_sub(1);
     panels.push(DashboardPanel::new(
         "Sessions",
         shell.session_list.lines(width),
@@ -101,7 +102,14 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
                 "id ".dim(),
                 dashboard_value(&shell.thread_id.to_string(), width, /*prefix_width*/ 3).cyan(),
             ]),
-            Line::from("resume, fork, archive, delete in session list".dim()),
+            Line::from(
+                dashboard_value(
+                    "resume, fork, archive, delete in session list",
+                    width,
+                    /*prefix_width*/ 0,
+                )
+                .dim(),
+            ),
         ],
     ));
     let mut model_lines = vec![Line::from(dashboard_value(
@@ -287,8 +295,8 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
 }
 
 pub(super) fn dashboard_value(text: &str, line_width: usize, prefix_width: usize) -> String {
-    let max_chars = line_width.saturating_sub(prefix_width).max(1);
-    truncate_text(text, max_chars)
+    let max_width = line_width.saturating_sub(prefix_width).max(1);
+    truncate_line_with_ellipsis_if_overflow(Line::from(text.to_string()), max_width).to_string()
 }
 
 pub(super) fn format_usize(value: usize) -> String {
