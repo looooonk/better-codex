@@ -1,5 +1,4 @@
 use super::design::MOCHA_MANTLE;
-use super::design::MOCHA_SURFACE0;
 use super::design::tab_span;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -68,14 +67,20 @@ impl DashboardTabs {
             .map(|route| u16::try_from(route.label().chars().count()).unwrap_or(u16::MAX));
         let minimum_width = label_widths.iter().copied().sum::<u16>();
         let extra_width = available_width.saturating_sub(minimum_width);
-        let base_width = extra_width / tab_count;
-        let remainder = extra_width % tab_count;
+        let padding_pairs = extra_width / 2;
+        let base_padding_pairs = padding_pairs / tab_count;
+        let remainder_pairs = padding_pairs % tab_count;
+        let unpaired_width = extra_width % 2;
         let use_label_widths = available_width >= minimum_width;
         let mut start = u16::from(width > 0);
         let cells = std::array::from_fn(|index| {
             let route = DashboardRoute::ALL[index];
             let cell_width = if use_label_widths {
-                label_widths[index] + base_width + u16::from(index < usize::from(remainder))
+                let padding_pairs =
+                    base_padding_pairs + u16::from(index < usize::from(remainder_pairs));
+                label_widths[index]
+                    + padding_pairs.saturating_mul(2)
+                    + unpaired_width * u16::from(index + 1 == DashboardRoute::ALL.len())
             } else {
                 available_width / tab_count
                     + u16::from(index < usize::from(available_width % tab_count))
@@ -98,18 +103,10 @@ impl DashboardTabs {
         let mut middle = Vec::new();
         let mut written = 0u16;
         if self.width > 0 {
-            middle.push(
-                Span::from("│")
-                    .dim()
-                    .bg(if active_route == self.cells[0].route {
-                        MOCHA_SURFACE0
-                    } else {
-                        MOCHA_MANTLE
-                    }),
-            );
+            middle.push(Span::from("│").dim());
             written += 1;
         }
-        for (index, cell) in self.cells.into_iter().enumerate() {
+        for cell in self.cells {
             if cell.width > 0 {
                 let label = cell.route.label();
                 let label = crate::text_formatting::truncate_text(label, usize::from(cell.width));
@@ -120,23 +117,14 @@ impl DashboardTabs {
                 written = written.saturating_add(cell.width);
             }
             if written < self.width {
-                let active_border = cell.route == active_route
-                    || self
-                        .cells
-                        .get(index + 1)
-                        .is_some_and(|cell| cell.route == active_route);
-                middle.push(Span::from("│").dim().bg(if active_border {
-                    MOCHA_SURFACE0
-                } else {
-                    MOCHA_MANTLE
-                }));
+                middle.push(Span::from("│").dim());
                 written += 1;
             }
         }
         [
-            self.border_line('┌', '┬', '┐', active_route),
+            self.border_line('┌', '┬', '┐'),
             Line::from(middle).bg(MOCHA_MANTLE),
-            self.border_line('└', '┴', '┘', active_route),
+            self.border_line('└', '┴', '┘'),
         ]
     }
 
@@ -151,13 +139,7 @@ impl DashboardTabs {
             .map(|cell| cell.route)
     }
 
-    fn border_line(
-        self,
-        left: char,
-        separator: char,
-        right: char,
-        active_route: DashboardRoute,
-    ) -> Line<'static> {
+    fn border_line(self, left: char, separator: char, right: char) -> Line<'static> {
         let mut border = String::new();
         if self.width > 0 {
             border.push(left);
@@ -176,32 +158,7 @@ impl DashboardTabs {
                 });
             }
         }
-        let active_cell = self
-            .cells
-            .iter()
-            .find(|cell| cell.route == active_route && cell.width > 0);
-        let Some(active_cell) = active_cell else {
-            return Line::from(border.dim()).bg(MOCHA_MANTLE);
-        };
-        let active_start = usize::from(active_cell.start.saturating_sub(1));
-        let active_width = usize::from(active_cell.width.saturating_add(2))
-            .min(usize::from(self.width).saturating_sub(active_start));
-        let before = border.chars().take(active_start).collect::<String>();
-        let active = border
-            .chars()
-            .skip(active_start)
-            .take(active_width)
-            .collect::<String>();
-        let after = border
-            .chars()
-            .skip(active_start.saturating_add(active_width))
-            .collect::<String>();
-        Line::from(vec![
-            before.dim(),
-            active.dim().bg(MOCHA_SURFACE0),
-            after.dim(),
-        ])
-        .bg(MOCHA_MANTLE)
+        Line::from(border.dim()).bg(MOCHA_MANTLE)
     }
 }
 
@@ -331,7 +288,7 @@ mod tests {
     #[test]
     fn dashboard_tabs_highlight_only_the_active_route() {
         insta::assert_debug_snapshot!(
-            DashboardTabs::new(/*width*/ 34).lines(DashboardRoute::Workspace)
+            DashboardTabs::new(/*width*/ 46).lines(DashboardRoute::Workspace)
         );
     }
 }

@@ -1,27 +1,19 @@
 ---
 source: tui/src/app_shell/navigation.rs
-expression: "DashboardTabs::new(34).lines(DashboardRoute::Workspace)"
+expression: "DashboardTabs::new(46).lines(DashboardRoute::Workspace)"
 ---
 [
+    Line::from(Span::from("┌────────────┬─────────────┬──────────┬──────┐").dim()).bg(Color::Rgb(24, 24, 37)),
     Line::from_iter([
-        Span::from("┌────────").dim(),
-        Span::from("┬─────────┬").bg(Color::Rgb(49, 50, 68)).dim(),
-        Span::from("────────┬────┐").dim(),
+        Span::from("│").dim(),
+        Span::from("  Settings  ").dim(),
+        Span::from("│").dim(),
+        Span::from("  Workspace  ").cyan().bold(),
+        Span::from("│").dim(),
+        Span::from(" Sessions ").dim(),
+        Span::from("│").dim(),
+        Span::from(" Help ").dim(),
+        Span::from("│").dim(),
     ]).bg(Color::Rgb(24, 24, 37)),
-    Line::from_iter([
-        Span::from("│").bg(Color::Rgb(24, 24, 37)).dim(),
-        Span::from("Settings").dim(),
-        Span::from("│").bg(Color::Rgb(49, 50, 68)).dim(),
-        Span::from("Workspace").cyan().bg(Color::Rgb(49, 50, 68)).bold(),
-        Span::from("│").bg(Color::Rgb(49, 50, 68)).dim(),
-        Span::from("Sessions").dim(),
-        Span::from("│").bg(Color::Rgb(24, 24, 37)).dim(),
-        Span::from("Help").dim(),
-        Span::from("│").bg(Color::Rgb(24, 24, 37)).dim(),
-    ]).bg(Color::Rgb(24, 24, 37)),
-    Line::from_iter([
-        Span::from("└────────").dim(),
-        Span::from("┴─────────┴").bg(Color::Rgb(49, 50, 68)).dim(),
-        Span::from("────────┴────┘").dim(),
-    ]).bg(Color::Rgb(24, 24, 37)),
+    Line::from(Span::from("└────────────┴─────────────┴──────────┴──────┘").dim()).bg(Color::Rgb(24, 24, 37)),
 ]

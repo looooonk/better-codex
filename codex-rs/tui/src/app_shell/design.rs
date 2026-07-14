@@ -75,7 +75,7 @@ pub(super) fn centered_band_rect(area: Rect, height: u16) -> Rect {
 
 pub(super) fn tab_span(label: String, active: bool) -> Span<'static> {
     if active {
-        tone_span(label, Tone::Focus).bg(MOCHA_SURFACE0).bold()
+        tone_span(label, Tone::Focus).bold()
     } else {
         tone_span(label, Tone::Dim)
     }

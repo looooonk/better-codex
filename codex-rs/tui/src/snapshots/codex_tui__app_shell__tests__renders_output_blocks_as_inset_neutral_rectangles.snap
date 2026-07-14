@@ -6,9 +6,9 @@ expression: rendered
  Better Codex
 
 
- ┌───────────────────┬────────────────────┬──────────────────┬──────────────┐
- │     Settings      │     Workspace      │     Sessions     │     Help     │
- └───────────────────┴────────────────────┴──────────────────┴──────────────┘
+ ┌────────────────────┬───────────────────┬──────────────────┬──────────────┐
+ │      Settings      │     Workspace     │     Sessions     │     Help     │
+ └────────────────────┴───────────────────┴──────────────────┴──────────────┘
  Tools in progress exec just test -p codex-tui
  Sessions unfocused active 0 shown
  Thread stage-one
