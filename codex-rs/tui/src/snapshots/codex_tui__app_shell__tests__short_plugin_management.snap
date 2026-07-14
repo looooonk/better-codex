@@ -1,0 +1,16 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+              ╭──────────────────────────────────────────────────────────────────────╮─────────────
+ ◆ CONVERSATIO│◆ PLUGINS                                                             │
+ ▎ CODEX  The │12/12 plugin catalog  ↑↓ / j k navigate                               │
+          surf│Install / update ↵  Toggle e  Uninstall u  Refresh r                  │ns
+              │> available  Plugin 11 (local)                                        │
+╭─────────────│                                                                      │
+│◆ MESSAGE  EN│Action: press i or Enter to install                                   │
+│> Summarize t╰──────────────────────────────────────────────────────────────────────╯x-tui
+│                                                ││▎completed file changes in app_shell
+╰────────────────────────────────────────────────╯│
