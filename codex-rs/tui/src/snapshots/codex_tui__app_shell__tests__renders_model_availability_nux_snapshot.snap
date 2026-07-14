@@ -3,27 +3,28 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        Navigation  Alt + Left / Right
-                                                                       1S   |  2W   | 3Set  |4Help
+ Better Codex                                                        ┌───────┬──────┬──────┬──────┐
+                                                                     │  1S   │  2W  │ 3Set │4Help │
+                                                                     └───────┴──────┴──────┴──────┘
+ Conversation
+ system: Better Codex app shell                                      Sessions
+ you: Create a divergent standalone TUI.                             unfocused active 0 shown
+                                                                     loading sessions
+ codex: Started a fullscreen app shell backed by app-server turns.
+ plan: 1. Build shell                                                Tools
+       2. Wire transcript                                            in progress exec just test ...
+       3. Render dashboard                                           completed file changes in a...
 
- Conversation                                                        Sessions
- system: Better Codex app shell                                      unfocused active 0 shown
- you: Create a divergent standalone TUI.                             loading sessions
-
- codex: Started a fullscreen app shell backed by app-server turns.   Tools
- plan: 1. Build shell                                                in progress exec just test ...
-       2. Wire transcript                                            completed file changes in a...
-       3. Render dashboard
-                                                                     Thread
- ▌ tool exec just test -p codex-tui                                  stage-one
-                                                                     id 01900000-0000-7000-8000-...
- ▌ edited 3 files +128 -24                                           resume, fork, archive, delete
- system: Our most capable model yet. GPT-5.6 Sol can tackle
-         complex code changes, dig into research, produce polished   Status
-         documents, and take on your most ambitious work. Sol is     thinking
-         highly capable at lower reasoning efforts—try starting
-         lower, then turn it up for harder jobs.                     Plan
+ ▌ tool exec just test -p codex-tui                                  Thread
+                                                                     stage-one
+ ▌ edited 3 files +128 -24                                           id 01900000-0000-7000-8000-...
+ system: Our most capable model yet. GPT-5.6 Sol can tackle          resume, fork, archive, delete
+         complex code changes, dig into research, produce polished
+         documents, and take on your most ambitious work. Sol is     Status
+         highly capable at lower reasoning efforts—try starting      thinking
+         lower, then turn it up for harder jobs.
+                                                                     Plan
                                                                      Build the standalone shell in
-                                                                     slices.
- Composer ready 1:37                                                 x Shell frame
- > Summarize the new shell architecture                              > Transcript model
+ Composer ready 1:37                                                 slices.
+ > Summarize the new shell architecture                              x Shell frame
+                                                                     > Transcript model

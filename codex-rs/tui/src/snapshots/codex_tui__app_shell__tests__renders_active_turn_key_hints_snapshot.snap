@@ -3,31 +3,31 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        Navigation  Alt + Left / Right
-                                                                       1S   |  2W   | 3Set  |4Help
-
- Conversation                                                        Keys
- system: Better Codex app shell                                      Enter steer
- you: Create a divergent standalone TUI.                             Ctrl+C interrupt, Esc x2 exit
-                                                                     Alt+Up select, Ctrl+O copy
- codex: Started a fullscreen app shell backed by app-server turns.   Ctrl+D hide dashboard
- plan: 1. Build shell                                                Sessions: Ctrl+1 select/focus
-       2. Wire transcript                                            r resume, f fork, a/u archive
-       3. Render dashboard                                           v archived, d delete
+ Better Codex                                                        ┌───────┬──────┬──────┬──────┐
+                                                                     │  1S   │  2W  │ 3Set │4Help │
+                                                                     └───────┴──────┴──────┴──────┘
+ Conversation
+ system: Better Codex app shell                                      Keys
+ you: Create a divergent standalone TUI.                             Alt + Left / Right
+                                                                     Enter steer
+ codex: Started a fullscreen app shell backed by app-server turns.   Ctrl+C interrupt, Esc x2 exit
+ plan: 1. Build shell                                                Alt+Up select, Ctrl+O copy
+       2. Wire transcript                                            Ctrl+D hide dashboard
+       3. Render dashboard                                           Sessions: Ctrl+1 select/focus
+                                                                     r resume, f fork, a/u archive
+ ▌ tool exec just test -p codex-tui                                  v archived, d delete
                                                                      n rename, / search
- ▌ tool exec just test -p codex-tui                                  Settings: Ctrl+3 select/focus
+ ▌ edited 3 files +128 -24                                           Settings: Ctrl+3 select/focus
                                                                      Enter edit/cycle, Tab page
- ▌ edited 3 files +128 -24                                           Esc return to composer
+ codex: The new shell owns the fullscreen surface.                   Esc return to composer
 
- codex: The new shell owns the fullscreen surface.                   Status
+                                                                     Status
                                                                      thinking
                                                                      turn turn-act...
 
                                                                      Tools
                                                                      in progress exec just test ...
                                                                      completed file changes in a...
-
-
 
 
 

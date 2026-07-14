@@ -3,21 +3,21 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        Navigation  Alt + Left / Right
-                                                                       1S   |  2W   | 3Set  |4Help
-
- Conversation                                                        Sessions
-   ▌ output ... 4 earlier output lines                               unfocused active 0 shown
-   ▌        line 5                                                   loading sessions
-   ▌        line 6
-   ▌        line 7                                                   Tools
+ Better Codex                                                        ┌───────┬──────┬──────┬──────┐
+                                                                     │  1S   │  2W  │ 3Set │4Help │
+                                                                     └───────┴──────┴──────┴──────┘
+ Conversation
+   ▌ output ... 4 earlier output lines                               Sessions
+   ▌        line 5                                                   unfocused active 0 shown
+   ▌        line 6                                                   loading sessions
+   ▌        line 7
+                                                                     Tools
                                                                      in progress exec just test ...
                                                                      completed file changes in a...
 
                                                                      Thread
                                                                      stage-one
-                                                                     id 01900000-0000-7000-8000-...
- Composer ready 1:37                                                 resume, fork, archive, delete
- > Summarize the new shell architecture
+ Composer ready 1:37                                                 id 01900000-0000-7000-8000-...
+ > Summarize the new shell architecture                              resume, fork, archive, delete
+
                                                                      Status
-                                                                     thinking

@@ -6,11 +6,11 @@ expression: "render_shell(&shell, area)"
  Better Codex
 
 
- Navigation  Alt + Left / Right
-         1S         |        2W        |       3Set       |      4Help
+ ┌──────────────────┬──────────────────┬──────────────────┬─────────────────┐
+ │        1S        │        2W        │       3Set       │      4Help      │
+ └──────────────────┴──────────────────┴──────────────────┴─────────────────┘
  Tools in progress exec just test -p codex-tui
  Sessions unfocused active 0 shown
- Thread stage-one
 
 
  Conversation

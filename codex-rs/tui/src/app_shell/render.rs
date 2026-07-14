@@ -466,13 +466,10 @@ impl ShellView<'_> {
         let content = pane_content_rect(area);
         let width = usize::from(content.width);
         let panels = dashboard_panels(self.shell, width);
-        let body = body_rect_after_title(content);
         let navigation = panels.iter().find(|panel| panel.title == "Navigation");
         let mut lines = navigation
-            .and_then(|panel| panel.lines.first())
-            .cloned()
-            .into_iter()
-            .collect::<Vec<_>>();
+            .map(|panel| panel.lines.clone())
+            .unwrap_or_default();
         for title in [
             "Approvals",
             "Background",
@@ -491,7 +488,7 @@ impl ShellView<'_> {
             "Rate Limits",
             "Keys",
         ] {
-            if lines.len() >= usize::from(body.height) {
+            if lines.len() >= usize::from(content.height) {
                 break;
             }
             if let Some(panel) = panels.iter().find(|panel| panel.title == title) {
@@ -511,15 +508,9 @@ impl ShellView<'_> {
             }
         }
 
-        let title = navigation
-            .map(DashboardPanel::title_line)
-            .unwrap_or_else(|| Line::from("Navigation".bold()));
-        Paragraph::new(title)
-            .style(pane_style(MOCHA_SURFACE0))
-            .render(title_rect(content), buf);
         Paragraph::new(lines)
             .style(pane_style(MOCHA_SURFACE0))
-            .render(body, buf);
+            .render(content, buf);
     }
 
     fn render_dashboard_panels(&self, area: Rect, panels: &[DashboardPanel], buf: &mut Buffer) {
@@ -536,7 +527,10 @@ impl ShellView<'_> {
             }
             let panel_area = Rect::new(area.x, y, area.width, height);
             fill_rect(buf, panel_area, panel.background(index));
-            let mut lines = vec![panel.title_line()];
+            let mut lines = Vec::new();
+            if panel.show_title {
+                lines.push(panel.title_line());
+            }
             lines.extend(panel.lines.clone());
             Paragraph::new(lines)
                 .style(pane_style(panel.background(index)))

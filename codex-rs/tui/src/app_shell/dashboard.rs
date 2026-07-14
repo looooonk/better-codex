@@ -23,6 +23,7 @@ pub(super) struct DashboardPanel {
     pub(super) title: String,
     pub(super) lines: Vec<Line<'static>>,
     title_hint: Option<String>,
+    pub(super) show_title: bool,
 }
 
 impl DashboardPanel {
@@ -31,6 +32,7 @@ impl DashboardPanel {
             title: title.into(),
             lines,
             title_hint: None,
+            show_title: true,
         }
     }
 
@@ -43,7 +45,12 @@ impl DashboardPanel {
     }
 
     pub(super) fn height(&self) -> u16 {
-        u16::try_from(self.lines.len().saturating_add(1)).unwrap_or(u16::MAX)
+        u16::try_from(
+            self.lines
+                .len()
+                .saturating_add(usize::from(self.show_title)),
+        )
+        .unwrap_or(u16::MAX)
     }
 
     pub(super) fn background(&self, index: usize) -> Color {
@@ -254,6 +261,7 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
             key_hint_line("Ctrl+D hide dashboard"),
         ]
     };
+    key_lines.insert(0, key_hint_line("Alt + Left / Right"));
     key_lines.extend([
         key_hint_line("Sessions: Ctrl+1 select/focus"),
         key_hint_line("r resume, f fork, a/u archive"),
@@ -346,8 +354,9 @@ fn dashboard_navigation_panel(active_route: DashboardRoute, width: usize) -> Das
     let width = u16::try_from(width).unwrap_or(u16::MAX);
     DashboardPanel {
         title: "Navigation".to_string(),
-        lines: vec![DashboardTabs::new(width).line(active_route)],
-        title_hint: Some("Alt + Left / Right".to_string()),
+        lines: DashboardTabs::new(width).lines(active_route).into(),
+        title_hint: None,
+        show_title: false,
     }
 }
 

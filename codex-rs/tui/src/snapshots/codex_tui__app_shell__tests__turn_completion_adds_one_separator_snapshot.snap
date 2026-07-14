@@ -3,12 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 20))"
 ---
 
- Better Codex                                                        Navigation  Alt + Left / Right
-                                                                       1S   |  2W   | 3Set  |4Help
-
- Conversation                                                        Sessions
- codex: Turn complete.                                               unfocused active 0 shown
- ──────────────────────────────────────────────────────────────────  loading sessions
+ Better Codex                                                        ┌───────┬──────┬──────┬──────┐
+                                                                     │  1S   │  2W  │ 3Set │4Help │
+                                                                     └───────┴──────┴──────┴──────┘
+ Conversation
+ codex: Turn complete.                                               Sessions
+ ──────────────────────────────────────────────────────────────────  unfocused active 0 shown
+                                                                     loading sessions
 
                                                                      Background
                                                                      workspace refresh queued
@@ -16,8 +17,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 20))"
                                                                      Tools
                                                                      in progress exec just test ...
                                                                      completed file changes in a...
-
- Composer ready 1:37                                                 Thread
- > Summarize the new shell architecture                              stage-one
+ Composer ready 1:37
+ > Summarize the new shell architecture                              Thread
+                                                                     stage-one
                                                                      id 01900000-0000-7000-8000-...
-                                                                     resume, fork, archive, delete

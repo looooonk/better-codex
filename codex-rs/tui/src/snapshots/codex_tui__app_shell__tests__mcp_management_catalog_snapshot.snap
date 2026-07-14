@@ -3,18 +3,18 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
 ---
 
- Better Codex                                                                 Navigation  Alt + Left / Right
-                                                                                1S   |  2W   | 3Set  | 4Help
+ Better Codex                                                                 ┌───────┬───────┬──────┬──────┐
+                                                                              │  1S   │  2W   │ 3Set │4Help │
+                                                                              └───────┴───────┴──────┴──────┘
+ Conversation
+ system: Better Codex app shell                                               Settings
+ you: Create a divergent standalone TUI.                                      focused integrations 2 fields
+                                                                              Model  Permissions
+ codex: Started a fullscreen app shell backed by app-server turns.            Appearance  Integrations
+ plan: 1. Build shell                                                         mcp inventory refreshed
+       2. Wire transcript                                                     > mcp servers: 2 servers / 3...
+       3. Render dashboard                                                      plugins: not loaded
 
- Conversation                                                                 Settings
- system: Better Codex app shell                                               focused integrations 2 fields
- you: Create a divergent standalone TUI.                                      Model  Permissions
-                                                                              Appearance  Integrations
- codex: Started a fullscreen app shell backed by app-server turns.            mcp inventory refreshed
- plan: 1. Build shell                                                         > mcp servers: 2 servers / 3...
-       2. Wire transcript                                                       plugins: not loaded
-       3. Render dashboard
-                                                                              Model
 
  MCP Servers
  1/2 mcp servers  Enter/l login  d disable  x remove  a add  e edit  r reload
@@ -24,6 +24,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
  Action: press Enter or l to start oauth login
 
 
+                                                                              Integrations
                                                                               mcp 2 servers / 3 tools / 1 ...
                                                                               plugins not loaded
                                                                               servers 2
@@ -32,6 +33,5 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
                                                                               Workspace
                                                                               cwd /workspace/better-codex
                                                                               profile managed
-                                                                              files restricted, net
- Composer ready 1:37                                                          restricted
- > Summarize the new shell architecture
+ Composer ready 1:37                                                          files restricted, net
+ > Summarize the new shell architecture                                       restricted

@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
 
- Better Codex                                                        Navigation  Alt + Left / Right
-                                                                       1S   |  2W   | 3Set  |4Help
-
- Conversation                                                        Sessions
- system: Better Codex app shell                                      unfocused active 0 shown
+ Better Codex                                                        ┌───────┬──────┬──────┬──────┐
+                                                                     │  1S   │  2W  │ 3Set │4Help │
+                                                                     └───────┴──────┴──────┴──────┘
+ Conversation
+ system: Better Codex app shell                                      Sessions
 
  Safety review
  Our systems are thinking a bit more about this request before responding.
@@ -24,7 +24,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
  Up/Down select  Enter confirm  Esc dismiss
 
 
-                                                                     Build the standalone shell in
- Composer busy 1:1                                                   slices.
- > Type a message, Shift+Enter for newline                           x Shell frame
+                                                                     Plan
+ Composer busy 1:1                                                   Build the standalone shell in
+ > Type a message, Shift+Enter for newline                           slices.
+                                                                     x Shell frame
                                                                      > Transcript model

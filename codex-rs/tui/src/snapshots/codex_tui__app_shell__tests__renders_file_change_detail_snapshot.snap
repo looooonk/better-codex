@@ -3,27 +3,28 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        Navigation  Alt + Left / Right
-                                                                       1S   |  2W   | 3Set  |4Help
-
- Conversation                                                        Sessions
-        turns.                                                    │  unfocused active 0 shown
- plan: 1. Build shell                                             │  loading sessions
-       2. Wire transcript                                         │
-       3. Render dashboard                                        ┃  Tools
-                                                                  ┃  in progress exec just test ...
- ▌ tool exec just test -p codex-tui                               ┃  completed file changes in a...
-                                                                  ┃
- ▌ edited 3 files +128 -24                                        ┃  Thread
-                                                                  ┃  stage-one
- ▌ edited 5 files +4 -3                                           ┃  id 01900000-0000-7000-8000-...
- ▌          M src/app.rs                                          ┃  resume, fork, archive, delete
- ▌          A src/new.rs                                          ┃
- ▌          D src/old.rs                                          ┃  Status
- ▌          R src/from.rs -> src/to.rs                            ┃  thinking
-                                                                  ┃
- codex: The new shell owns the fullscreen surface.                ┃  Plan
+ Better Codex                                                        ┌───────┬──────┬──────┬──────┐
+                                                                     │  1S   │  2W  │ 3Set │4Help │
+                                                                     └───────┴──────┴──────┴──────┘
+ Conversation
+        turns.                                                    │  Sessions
+ plan: 1. Build shell                                             │  unfocused active 0 shown
+       2. Wire transcript                                         │  loading sessions
+       3. Render dashboard                                        ┃
+                                                                  ┃  Tools
+ ▌ tool exec just test -p codex-tui                               ┃  in progress exec just test ...
+                                                                  ┃  completed file changes in a...
+ ▌ edited 3 files +128 -24                                        ┃
+                                                                  ┃  Thread
+ ▌ edited 5 files +4 -3                                           ┃  stage-one
+ ▌          M src/app.rs                                          ┃  id 01900000-0000-7000-8000-...
+ ▌          A src/new.rs                                          ┃  resume, fork, archive, delete
+ ▌          D src/old.rs                                          ┃
+ ▌          R src/from.rs -> src/to.rs                            ┃  Status
+                                                                  ┃  thinking
+ codex: The new shell owns the fullscreen surface.                ┃
+                                                                     Plan
                                                                      Build the standalone shell in
-                                                                     slices.
- Composer ready 1:37                                                 x Shell frame
- > Summarize the new shell architecture                              > Transcript model
+ Composer ready 1:37                                                 slices.
+ > Summarize the new shell architecture                              x Shell frame
+                                                                     > Transcript model

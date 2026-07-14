@@ -3,17 +3,17 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        Navigation  Alt + Left / Right
-                                                                       1S   |  2W   | 3Set  |4Help
-
- Conversation                                                        Sessions
-                                                                  │  unfocused active 0 shown
- ▌ edited 3 files +128 -24                                        ┃  loading sessions
- status: first checkpoint                                         ┃
- status: second checkpoint                                        │  Tools
+ Better Codex                                                        ┌───────┬──────┬──────┬──────┐
+                                                                     │  1S   │  2W  │ 3Set │4Help │
+                                                                     └───────┴──────┴──────┴──────┘
+ Conversation
+                                                                  │  Sessions
+ ▌ edited 3 files +128 -24                                        ┃  unfocused active 0 shown
+ status: first checkpoint                                         ┃  loading sessions
+ status: second checkpoint                                        │
+                                                                     Tools
                                                                      in progress exec just test ...
-                                                                     completed file changes in a...
- Composer ready 1:37
- > Summarize the new shell architecture                              Thread
+ Composer ready 1:37                                                 completed file changes in a...
+ > Summarize the new shell architecture
+                                                                     Thread
                                                                      stage-one
-                                                                     id 01900000-0000-7000-8000-...

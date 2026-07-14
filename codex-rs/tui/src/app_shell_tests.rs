@@ -575,11 +575,10 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         let has_keys = panels.iter().any(|panel| panel.title == "Keys");
         let has_route_shortcut = panels
             .iter()
-            .find(|panel| panel.title == "Navigation")
-            .expect("navigation should be visible on every dashboard route")
-            .title_line()
-            .spans
-            .iter()
+            .find(|panel| panel.title == "Keys")
+            .into_iter()
+            .flat_map(|panel| &panel.lines)
+            .flat_map(|line| &line.spans)
             .any(|span| span.content.contains("Alt + Left / Right"));
         if route != DashboardRoute::Help {
             let text = panels
@@ -602,9 +601,9 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
     assert_eq!(
         visibility,
         [
-            (DashboardRoute::Sessions, false, true),
-            (DashboardRoute::Workspace, false, true),
-            (DashboardRoute::Settings, false, true),
+            (DashboardRoute::Sessions, false, false),
+            (DashboardRoute::Workspace, false, false),
+            (DashboardRoute::Settings, false, false),
             (DashboardRoute::Help, true, true),
         ]
     );
@@ -2136,14 +2135,16 @@ async fn dashboard_tabs_click_without_focusing_wide_or_collapsed_routes() {
             /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
         ),
     ] {
+        shell.dashboard_route = DashboardRoute::Sessions;
         let rendered = render_shell(&shell, area);
-        assert!(rendered.contains("Navigation  Alt + Left / Right"));
+        assert!(!rendered.contains("Navigation"));
+        assert!(!rendered.contains("Alt + Left / Right"));
         let (tab_row_index, tab_row) = rendered
             .lines()
             .enumerate()
             .find(|(_, line)| line.contains("1S") && line.contains("4Help"))
             .expect("all dashboard tabs should share a visible row");
-        assert_eq!(tab_row.matches('|').count(), 3);
+        assert_eq!(tab_row.matches('│').count(), 5);
 
         for (route, label) in [
             (DashboardRoute::Sessions, "1S"),
@@ -2156,9 +2157,11 @@ async fn dashboard_tabs_click_without_focusing_wide_or_collapsed_routes() {
             let position = Position::new(
                 area.x.saturating_add(
                     u16::try_from(
-                        tab_row
+                        tab_row[..tab_row
                             .find(label)
-                            .expect("dashboard tab label should be visible"),
+                            .expect("dashboard tab label should be visible")]
+                            .chars()
+                            .count(),
                     )
                     .unwrap_or(u16::MAX),
                 ),
@@ -3469,10 +3472,9 @@ fn dashboard_focus_dims_conversation_and_hides_composer_cursor() {
         row_containing(&buf, area, "Conversation").expect("conversation title should render");
     let conversation_x = row_needle_x(&buf, area, conversation_row, "Conversation")
         .expect("conversation title should have an x position");
-    let dashboard_row =
-        row_containing(&buf, area, "Navigation").expect("dashboard navigation should render");
-    let dashboard_x = row_needle_x(&buf, area, dashboard_row, "Navigation")
-        .expect("dashboard title should have an x position");
+    let dashboard_row = row_containing(&buf, area, "1S").expect("dashboard tabs should render");
+    let dashboard_x = row_needle_x(&buf, area, dashboard_row, "1S")
+        .expect("active tab should have an x position");
 
     assert!(
         buf[(conversation_x, conversation_row)]

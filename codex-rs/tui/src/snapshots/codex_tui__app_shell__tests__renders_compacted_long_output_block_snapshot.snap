@@ -6,9 +6,9 @@ expression: "render_shell(&shell, area)"
  Better Codex
 
 
- Navigation  Alt + Left / Right
-         1S         |        2W        |       3Set       |      4Help
- Tools in progress exec just test -p codex-tui
+ ┌──────────────────┬──────────────────┬──────────────────┬─────────────────┐
+ │        1S        │        2W        │       3Set       │      4Help      │
+ └──────────────────┴──────────────────┴──────────────────┴─────────────────┘
 
 
  Conversation

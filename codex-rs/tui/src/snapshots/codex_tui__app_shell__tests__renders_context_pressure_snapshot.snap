@@ -3,29 +3,29 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        Navigation  Alt + Left / Right
-                                                                       1S   |  2W   | 3Set  |4Help
+ Better Codex                                                        ┌───────┬──────┬──────┬──────┐
+                                                                     │  1S   │  2W  │ 3Set │4Help │
+                                                                     └───────┴──────┴──────┴──────┘
+ Conversation
+ system: Better Codex app shell                                      Settings
+ you: Create a divergent standalone TUI.                             unfocused model 3 fields
+                                                                     Model  Permissions
+ codex: Started a fullscreen app shell backed by app-server turns.   Appearance  Integrations
+ plan: 1. Build shell                                                > model: gpt-5-codex
+       2. Wire transcript                                              reasoning: default
+       3. Render dashboard                                             service tier: default
 
- Conversation                                                        Settings
- system: Better Codex app shell                                      unfocused model 3 fields
- you: Create a divergent standalone TUI.                             Model  Permissions
-                                                                     Appearance  Integrations
- codex: Started a fullscreen app shell backed by app-server turns.   > model: gpt-5-codex
- plan: 1. Build shell                                                  reasoning: default
-       2. Wire transcript                                              service tier: default
-       3. Render dashboard
-                                                                     Model
- ▌ tool exec just test -p codex-tui                                  gpt-5-codex
-
- ▌ edited 3 files +128 -24                                           Tokens
-                                                                     total 280k
- codex: The new shell owns the fullscreen surface.                   input 260k
+ ▌ tool exec just test -p codex-tui                                  Model
+                                                                     gpt-5-codex
+ ▌ edited 3 files +128 -24
+                                                                     Tokens
+ codex: The new shell owns the fullscreen surface.                   total 280k
+                                                                     input 260k
                                                                      output 20k
                                                                      Context 26% left
 
                                                                      Integrations
-                                                                     mcp not loaded
- Composer ready 1:37                                                 plugins not loaded
- > Summarize the new shell architecture
+ Composer ready 1:37                                                 mcp not loaded
+ > Summarize the new shell architecture                              plugins not loaded
+
                                                                      Workspace
-                                                                     cwd /workspace/better-codex

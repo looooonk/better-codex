@@ -3,27 +3,28 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                                  Navigation  Alt + Left / Right
-                                                                                  1S   |  2W   | 3Set  | 4Help
-
- Conversation                                                                  Sessions
- codex: # Result                                                               unfocused active 0 shown
-                                                                               loading sessions
-        - Render assistant text as markdown.
-        - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.    Tools
-                                                                               in progress exec just test -p...
-        fn transcript() -> &'static str {                                      completed file changes in app...
-        "markdown"
-        }                                                                      Thread
-                                                                               stage-one
-         Area     Status                                                       id 01900000-0000-7000-8000-00...
-        ━━━━━━━  ━━━━━━━━                                                      resume, fork, archive, delete in
-         code     done
-        ───────  ────────                                                      Status
-         table    done                                                         thinking
- plan: 1. Keep transcript rendering width-aware.
-       2. Leave selection and copy mode for the next slice.                    Plan
+ Better Codex                                                                  ┌───────┬───────┬───────┬──────┐
+                                                                               │  1S   │  2W   │ 3Set  │4Help │
+                                                                               └───────┴───────┴───────┴──────┘
+ Conversation
+ codex: # Result                                                               Sessions
+                                                                               unfocused active 0 shown
+        - Render assistant text as markdown.                                   loading sessions
+        - Preserve local links like codex-rs/tui/src/app_shell/render.rs:1.
+                                                                               Tools
+        fn transcript() -> &'static str {                                      in progress exec just test -p...
+        "markdown"                                                             completed file changes in app...
+        }
+                                                                               Thread
+         Area     Status                                                       stage-one
+        ━━━━━━━  ━━━━━━━━                                                      id 01900000-0000-7000-8000-00...
+         code     done                                                         resume, fork, archive, delete in
+        ───────  ────────
+         table    done                                                         Status
+ plan: 1. Keep transcript rendering width-aware.                               thinking
+       2. Leave selection and copy mode for the next slice.
+                                                                               Plan
                                                                                Build the standalone shell in
-                                                                               slices.
- Composer ready 1:1                                                            x Shell frame
- > Type a message, Shift+Enter for newline                                     > Transcript model
+ Composer ready 1:1                                                            slices.
+ > Type a message, Shift+Enter for newline                                     x Shell frame
+                                                                               > Transcript model

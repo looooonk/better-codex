@@ -57,14 +57,14 @@ pub(super) struct DashboardTabs {
 
 impl DashboardTabs {
     pub(super) fn new(width: u16) -> Self {
-        let separator_count = u16::try_from(DashboardRoute::ALL.len().saturating_sub(1))
+        let border_count = u16::try_from(DashboardRoute::ALL.len().saturating_add(1))
             .unwrap_or(u16::MAX)
             .min(width);
-        let available_width = width.saturating_sub(separator_count);
+        let available_width = width.saturating_sub(border_count);
         let tab_count = u16::try_from(DashboardRoute::ALL.len()).unwrap_or(u16::MAX);
         let base_width = available_width / tab_count;
         let remainder = available_width % tab_count;
-        let mut start = 0;
+        let mut start = u16::from(width > 0);
         let cells = std::array::from_fn(|index| {
             let route = DashboardRoute::ALL[index];
             let cell_width = base_width + u16::from(index < usize::from(remainder));
@@ -82,22 +82,33 @@ impl DashboardTabs {
         Self { width, cells }
     }
 
-    pub(super) fn line(self, active_route: DashboardRoute) -> Line<'static> {
-        let mut spans = Vec::new();
+    pub(super) fn lines(self, active_route: DashboardRoute) -> [Line<'static>; 3] {
+        let mut middle = Vec::new();
+        let mut written = 0u16;
+        if self.width > 0 {
+            middle.push(Span::from("│").dim());
+            written += 1;
+        }
         for (index, cell) in self.cells.into_iter().enumerate() {
             if cell.width > 0 {
                 let label = format!("{}{}", index + 1, cell.route.short_label());
                 let label = crate::text_formatting::truncate_text(&label, usize::from(cell.width));
-                spans.push(tab_span(
+                middle.push(tab_span(
                     format!("{label:^width$}", width = usize::from(cell.width)),
                     cell.route == active_route,
                 ));
+                written = written.saturating_add(cell.width);
             }
-            if index + 1 < self.cells.len() && cell.start.saturating_add(cell.width) < self.width {
-                spans.push(Span::from("|").dim());
+            if written < self.width {
+                middle.push(Span::from("│").dim());
+                written += 1;
             }
         }
-        Line::from(spans)
+        [
+            self.border_line('┌', '┬', '┐'),
+            Line::from(middle),
+            self.border_line('└', '┴', '┘'),
+        ]
     }
 
     pub(super) fn route_at(self, column: u16) -> Option<DashboardRoute> {
@@ -105,6 +116,28 @@ impl DashboardTabs {
             .into_iter()
             .find(|cell| column >= cell.start && column < cell.start.saturating_add(cell.width))
             .map(|cell| cell.route)
+    }
+
+    fn border_line(self, left: char, separator: char, right: char) -> Line<'static> {
+        let mut border = String::new();
+        if self.width > 0 {
+            border.push(left);
+        }
+        for (index, cell) in self.cells.into_iter().enumerate() {
+            let remaining = usize::from(self.width).saturating_sub(border.chars().count());
+            border.extend(std::iter::repeat_n(
+                '─',
+                usize::from(cell.width).min(remaining),
+            ));
+            if border.chars().count() < usize::from(self.width) {
+                border.push(if index + 1 == self.cells.len() {
+                    right
+                } else {
+                    separator
+                });
+            }
+        }
+        Line::from(border.dim())
     }
 }
 
@@ -171,23 +204,29 @@ mod tests {
     }
 
     #[test]
-    fn dashboard_tabs_fill_width_and_leave_separators_unclickable() {
+    fn dashboard_tabs_fill_width_and_leave_borders_unclickable() {
         let tabs = DashboardTabs::new(/*width*/ 28);
-        let rendered = tabs
-            .line(DashboardRoute::Sessions)
-            .spans
-            .iter()
-            .map(|span| span.content.as_ref())
-            .collect::<String>();
+        let rendered = tabs.lines(DashboardRoute::Sessions).map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<String>()
+        });
 
-        assert_eq!(rendered.chars().count(), 28);
-        assert_eq!(rendered.matches('|').count(), 3);
+        assert_eq!(
+            rendered
+                .iter()
+                .map(|line| line.chars().count())
+                .collect::<Vec<_>>(),
+            vec![28; 3]
+        );
+        assert_eq!(rendered[1].matches('│').count(), 5);
         assert_eq!(
             (0..28)
                 .map(|column| tabs.route_at(column))
                 .collect::<Vec<_>>(),
             vec![
-                Some(DashboardRoute::Sessions),
+                None,
                 Some(DashboardRoute::Sessions),
                 Some(DashboardRoute::Sessions),
                 Some(DashboardRoute::Sessions),
@@ -214,7 +253,7 @@ mod tests {
                 Some(DashboardRoute::Help),
                 Some(DashboardRoute::Help),
                 Some(DashboardRoute::Help),
-                Some(DashboardRoute::Help),
+                None,
             ]
         );
     }
