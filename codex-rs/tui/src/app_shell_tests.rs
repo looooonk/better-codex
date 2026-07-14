@@ -61,6 +61,7 @@ use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::SkillMigration;
+use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadGoalClearResponse;
@@ -264,26 +265,26 @@ fn renders_output_blocks_as_inset_neutral_rectangles() {
     assert!(rendered.contains("line 7"));
     assert_eq!(output_accent_x, tool_accent_x + 2);
     assert_eq!(
-        rightmost_bg_x_for_row(&buf, area, tool_row, Color::Rgb(49, 50, 68)),
-        rightmost_bg_x_for_row(&buf, area, output_row, Color::Rgb(24, 24, 37)),
+        rightmost_bg_x_for_row(&buf, area, tool_row, design::palette::SURFACE),
+        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::DARK),
     );
     assert_eq!(
-        rightmost_bg_x_for_row(&buf, area, output_tail_row, Color::Rgb(24, 24, 37)),
-        rightmost_bg_x_for_row(&buf, area, output_row, Color::Rgb(24, 24, 37)),
+        rightmost_bg_x_for_row(&buf, area, output_tail_row, design::palette::DARK),
+        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::DARK),
     );
     assert_eq!(
         buf.cell((output_accent_x, output_row))
             .expect("output accent cell should exist")
             .style()
             .fg,
-        Some(Color::Rgb(69, 71, 90))
+        Some(design::palette::BORDER)
     );
     assert_eq!(
         buf.cell((tool_accent_x, tool_row))
             .expect("tool accent cell should exist")
             .style()
             .fg,
-        Some(Color::Green)
+        Some(design::palette::SUCCESS)
     );
     insta::assert_snapshot!(rendered);
 }
@@ -559,11 +560,13 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         "Tab page",
     ];
     let centralized_guides = [
-        "Sessions: Ctrl+3 select/focus",
+        "Ctrl+1 Sessions  Ctrl+2 Agents",
+        "Ctrl+3 Workspace Ctrl+4 Settings",
+        "Sessions: Enter focus, j/k move",
         "r resume, f fork, a/u archive",
         "v archived, d delete",
         "n rename, / search",
-        "Settings: Ctrl+1 select/focus",
+        "Settings: Enter focus/select",
         "Enter edit/cycle, Tab page",
         "Esc return to composer",
     ];
@@ -579,7 +582,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             .into_iter()
             .flat_map(|panel| &panel.lines)
             .flat_map(|line| &line.spans)
-            .any(|span| span.content.contains("Alt + Left / Right"));
+            .any(|span| span.content.contains("Alt+Left/Right"));
         if route != DashboardRoute::Help {
             let text = panels
                 .iter()
@@ -601,9 +604,10 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
     assert_eq!(
         visibility,
         [
-            (DashboardRoute::Settings, false, false),
-            (DashboardRoute::Workspace, false, false),
             (DashboardRoute::Sessions, false, false),
+            (DashboardRoute::Agents, false, false),
+            (DashboardRoute::Workspace, false, false),
+            (DashboardRoute::Settings, false, false),
             (DashboardRoute::Help, true, true),
         ]
     );
@@ -615,7 +619,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         .collect::<String>();
     assert_eq!(
         centralized_guides.map(|guide| help_text.contains(guide)),
-        [true; 7]
+        [true; 9]
     );
     let active_session_lines = shell
         .session_list
@@ -634,11 +638,11 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         (active_session_lines, archived_session_lines),
         (
             vec![
-                "unfocused active 0 shown".to_string(),
+                "○ CLICK TO FOCUS  ACTIVE  0 sessions".to_string(),
                 "loading sessions".to_string(),
             ],
             vec![
-                "unfocused archived 0 shown".to_string(),
+                "○ CLICK TO FOCUS  ARCHIVED  0 sessions".to_string(),
                 "loading sessions".to_string(),
             ],
         )
@@ -649,7 +653,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             .lines(&shell.settings_view(), /*width*/ 40)
             .first()
             .map(line_text),
-        Some("unfocused model 3 fields".to_string())
+        Some("○ CLICK TO FOCUS  MODEL  3 fields".to_string())
     );
 }
 
@@ -709,6 +713,124 @@ fn renders_command_palette_snapshot() {
 }
 
 #[test]
+fn renders_sessions_dashboard_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Sessions;
+    shell.session_list.focused = true;
+    shell.session_list.replace_threads(vec![
+        thread_fixture(
+            test_thread_id("01900000-0000-7000-8000-000000000011"),
+            Some("Tokyo Night polish"),
+            "Refining the application shell and mouse interactions",
+        ),
+        thread_fixture(
+            test_thread_id("01900000-0000-7000-8000-000000000012"),
+            Some("Agent activity"),
+            "Building a bounded subagent inspector",
+        ),
+    ]);
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 112, /*height*/ 30
+        )
+    ));
+}
+
+#[test]
+fn renders_agents_dashboard_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Agents;
+    shell.agents_focused = true;
+    for (thread_id, path) in [
+        ("research", "/root/research"),
+        ("visual", "/root/research/visual"),
+        ("testing", "/root/testing"),
+    ] {
+        shell
+            .agent_activity
+            .reduce_completed(&ThreadItem::SubAgentActivity {
+                id: format!("activity-{thread_id}"),
+                kind: SubAgentActivityKind::Started,
+                agent_thread_id: thread_id.to_string(),
+                agent_path: path.to_string(),
+            });
+    }
+    shell.agent_activity.select_thread("visual");
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 112, /*height*/ 30
+        )
+    ));
+}
+
+#[test]
+fn renders_settings_dashboard_at_wide_and_compact_sizes() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    shell.settings.focused = true;
+
+    insta::assert_snapshot!(
+        "wide_settings",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 112, /*height*/ 30
+            )
+        )
+    );
+    insta::assert_snapshot!(
+        "compact_settings",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24
+            )
+        )
+    );
+}
+
+#[test]
+fn renders_model_selector_at_wide_and_compact_sizes() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.available_models = (0..12)
+        .map(|index| {
+            model_preset_fixture(
+                &format!("gpt-5-{index}"),
+                /*show_in_picker*/ true,
+                ReasoningEffort::Medium,
+                &[ReasoningEffort::Low, ReasoningEffort::Medium],
+                &["fast"],
+            )
+        })
+        .collect();
+    shell.model = "gpt-5-0".to_string();
+    shell.open_model_selector();
+
+    insta::assert_snapshot!(
+        "wide_model_selector",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 30
+            )
+        )
+    );
+    insta::assert_snapshot!(
+        "compact_model_selector",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 16
+            )
+        )
+    );
+}
+
+#[test]
 fn command_palette_lists_common_actions() {
     let shell = ShellState::snapshot_fixture();
     let entries = shell.command_palette_entries();
@@ -749,7 +871,7 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Settings);
     assert!(shell.settings.focused);
-    assert!(shell.settings.editing());
+    assert!(shell.selector.is_some());
 
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::ChangePermissions);
@@ -760,7 +882,7 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Settings);
     assert!(shell.settings.focused);
-    assert!(!shell.settings.editing());
+    assert!(shell.selector.is_some());
     let rendered = render_shell(
         &shell,
         Rect::new(
@@ -768,8 +890,8 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
         ),
     );
     assert!(
-        rendered.contains("> approval: on-request"),
-        "permissions action should focus approval policy row, got:\n{rendered}"
+        rendered.contains("Select approval policy"),
+        "permissions action should open approval policy selector, got:\n{rendered}"
     );
 }
 
@@ -1287,11 +1409,11 @@ async fn goal_slash_command_pauses_resumes_and_clears_thread_goal() {
 fn dashboard_route_key_mapping_covers_native_routes() {
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Settings)
+        Some(DashboardRoute::Sessions)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Workspace)
+        Some(DashboardRoute::Agents)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::CONTROL)),
@@ -1299,10 +1421,14 @@ fn dashboard_route_key_mapping_covers_native_routes() {
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Sessions)
+        Some(DashboardRoute::Workspace)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL)),
+        Some(DashboardRoute::Settings)
+    );
+    assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::CONTROL)),
         Some(DashboardRoute::Help)
     );
     assert_eq!(
@@ -2054,16 +2180,16 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
+    let ctrl_4 = KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL);
     let ctrl_1 = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
-    let ctrl_3 = KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
 
     shell
-        .handle_key(ctrl_1, &config, &mut backend)
+        .handle_key(ctrl_4, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should select settings");
+        .expect("Ctrl+4 should select settings");
 
     assert_eq!(
         (
@@ -2077,9 +2203,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     insta::assert_snapshot!(render_shell(&shell, area));
 
     shell
-        .handle_key(ctrl_1, &config, &mut backend)
+        .handle_key(ctrl_4, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should focus selected settings");
+        .expect("Ctrl+4 should focus selected settings");
 
     assert_eq!(
         (
@@ -2092,9 +2218,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
 
     shell
-        .handle_key(ctrl_3, &config, &mut backend)
+        .handle_key(ctrl_1, &config, &mut backend)
         .await
-        .expect("Ctrl+3 should select sessions");
+        .expect("Ctrl+1 should select sessions");
 
     assert_eq!(
         (
@@ -2107,9 +2233,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
 
     shell
-        .handle_key(ctrl_3, &config, &mut backend)
+        .handle_key(ctrl_1, &config, &mut backend)
         .await
-        .expect("Ctrl+3 should focus selected sessions");
+        .expect("Ctrl+1 should focus selected sessions");
 
     assert_eq!(
         (
@@ -2123,9 +2249,10 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
 }
 
 #[tokio::test]
-async fn dashboard_tabs_click_without_focusing_wide_or_collapsed_routes() {
+async fn dashboard_tabs_click_and_focus_interactive_routes() {
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
+    let config = test_config().await;
 
     for area in [
         Rect::new(
@@ -2138,76 +2265,149 @@ async fn dashboard_tabs_click_without_focusing_wide_or_collapsed_routes() {
         shell.dashboard_route = DashboardRoute::Sessions;
         let rendered = render_shell(&shell, area);
         assert!(!rendered.contains("Navigation"));
-        assert!(!rendered.contains("Alt + Left / Right"));
+        assert!(!rendered.contains("Alt+Left/Right"));
         let (tab_row_index, tab_row) = rendered
             .lines()
             .enumerate()
-            .find(|(_, line)| line.contains("Settings") && line.contains("Help"))
+            .find(|(_, line)| line.contains("Sessions") && line.contains("Agents"))
             .expect("all dashboard tabs should share a visible row");
-        assert_eq!(tab_row.matches('│').count(), 5);
-        let tab_borders = tab_row
-            .match_indices('│')
-            .map(|(column, _)| u16::try_from(tab_row[..column].chars().count()).unwrap_or(u16::MAX))
-            .collect::<Vec<_>>();
         let tab_row_index = u16::try_from(tab_row_index).unwrap_or(u16::MAX);
 
-        for (index, route) in DashboardRoute::ALL.into_iter().enumerate() {
-            let left_edge = Position::new(
-                area.x.saturating_add(tab_borders[index]),
-                area.y.saturating_add(tab_row_index),
-            );
-            let center = Position::new(
-                area.x
-                    .saturating_add(tab_borders[index].saturating_add(tab_borders[index + 1]) / 2),
-                area.y.saturating_add(tab_row_index),
-            );
-            let view = ShellView { shell: &shell };
-
-            assert_eq!(view.dashboard_route_at(area, left_edge), Some(route));
-            assert_eq!(
-                view.dashboard_route_at(area, Position::new(center.x, center.y.saturating_sub(1))),
-                Some(route)
-            );
-            assert_eq!(
-                view.dashboard_route_at(area, Position::new(center.x, center.y.saturating_add(1))),
-                Some(route)
-            );
-        }
-
         for (route, label) in [
-            (DashboardRoute::Settings, "Settings"),
-            (DashboardRoute::Workspace, "Workspace"),
             (DashboardRoute::Sessions, "Sessions"),
+            (DashboardRoute::Agents, "Agents"),
+            (DashboardRoute::Workspace, "Workspace"),
+            (DashboardRoute::Settings, "Settings"),
             (DashboardRoute::Help, "Help"),
         ] {
             shell.session_list.focused = true;
             shell.settings.focused = true;
+            shell.agents_focused = true;
+            let label_start = tab_row
+                .find(label)
+                .expect("dashboard tab label should be visible");
             let position = Position::new(
                 area.x.saturating_add(
                     u16::try_from(
-                        tab_row[..tab_row
-                            .find(label)
-                            .expect("dashboard tab label should be visible")]
-                            .chars()
-                            .count(),
+                        tab_row[..label_start].chars().count() + label.chars().count() / 2,
                     )
                     .unwrap_or(u16::MAX),
                 ),
                 area.y.saturating_add(tab_row_index),
             );
 
-            shell.handle_mouse_click(area, position, &mut backend).await;
+            shell
+                .handle_mouse_click(area, position, &config, &mut backend)
+                .await
+                .expect("tab click should succeed");
 
             assert_eq!(
                 (
                     shell.dashboard_route,
                     shell.session_list.focused,
                     shell.settings.focused,
+                    shell.agents_focused,
                 ),
-                (route, false, false)
+                (
+                    route,
+                    route == DashboardRoute::Sessions,
+                    route == DashboardRoute::Settings,
+                    route == DashboardRoute::Agents,
+                )
             );
         }
     }
+}
+
+#[tokio::test]
+async fn clicking_the_composer_returns_focus_from_dashboard_panels() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.session_list.focused = true;
+    shell.settings.focused = true;
+    shell.agents_focused = true;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let input = ShellView { shell: &shell }.input_area(area);
+
+    shell
+        .handle_mouse_click(
+            area,
+            Position::new(input.x.saturating_add(2), input.y.saturating_add(2)),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("composer click should succeed");
+
+    assert_eq!(
+        (
+            shell.session_list.focused,
+            shell.settings.focused,
+            shell.agents_focused,
+            shell.transcript_selection,
+        ),
+        (false, false, false, None)
+    );
+    assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
+}
+
+#[tokio::test]
+async fn blocking_overlays_capture_keys_and_paste_before_the_composer() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("draft");
+    shell.pending_elicitation = PendingElicitation::from_request(&mcp_url_elicitation_request());
+
+    shell.insert_text(" pasted");
+    shell
+        .handle_key(key_char('x'), &config, &mut backend)
+        .await
+        .expect("modal key should be captured");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("modal shortcut should be captured");
+
+    assert_eq!(shell.composer.text(), "draft");
+    assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
+
+    shell.pending_elicitation = None;
+    shell.session_list.focused = true;
+    shell.insert_text(" hidden");
+    assert_eq!(shell.composer.text(), "draft");
+
+    shell.session_list.focused = false;
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    shell.insert_text(" answer");
+    assert_eq!(shell.composer.text(), "draft answer");
+}
+
+#[tokio::test]
+async fn escape_during_tool_input_does_not_exit_the_shell() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("escape should be captured");
+
+    assert!(!should_exit);
+    assert!(shell.pending_user_input.is_some());
 }
 
 #[test]
@@ -2417,15 +2617,15 @@ fn tool_transcript_blocks_use_status_accent_colors() {
 
     assert_eq!(
         accent_color_for_row(&buf, area, "exec just test"),
-        Some(Color::Cyan)
+        Some(design::palette::CYAN)
     );
     assert_eq!(
         accent_color_for_row(&buf, area, "exec true"),
-        Some(Color::Green)
+        Some(design::palette::SUCCESS)
     );
     assert_eq!(
         accent_color_for_row(&buf, area, "exec false"),
-        Some(Color::Red)
+        Some(design::palette::ERROR)
     );
 }
 
@@ -2482,7 +2682,7 @@ fn renders_activity_dashboard_panels_snapshot() {
 }
 
 #[test]
-fn narrow_dashboard_overlay_prioritizes_live_activity() {
+fn narrow_dashboard_keeps_the_active_route_interactive() {
     let mut shell = ShellState::snapshot_fixture();
     shell.pending_approval = PendingApproval::from_request(&command_approval_request())
         .expect("approval request should be valid");
@@ -2498,10 +2698,9 @@ fn narrow_dashboard_overlay_prioritizes_live_activity() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("Approvals approval Run command: cargo test"));
-    assert!(rendered.contains("Background workspace refresh queued"));
-    assert!(rendered.contains("Tools in progress exec just test"));
-    assert!(rendered.contains("Subagents"));
+    assert!(rendered.contains("Sessions"));
+    assert!(rendered.contains("CLICK TO FOCUS"));
+    assert!(rendered.contains("Run command: cargo test"));
 }
 
 #[test]
@@ -2527,7 +2726,6 @@ fn subagent_items_route_to_subagent_activity() {
             agents_states: Default::default(),
         },
     }));
-
     assert_eq!(shell.tool_activity, VecDeque::new());
     assert_eq!(
         shell.subagent_activity,
@@ -2537,6 +2735,169 @@ fn subagent_items_route_to_subagent_activity() {
             status: "in progress".to_string(),
         }])
     );
+}
+
+#[test]
+fn child_thread_events_update_the_agent_inspector_without_touching_the_transcript() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    let root_thread_id = shell.thread_id.to_string();
+    let child_thread_id = "agent-thread".to_string();
+
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: root_thread_id,
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: ThreadItem::CollabAgentToolCall {
+            id: "agent-tool-1".to_string(),
+            tool: CollabAgentTool::SpawnAgent,
+            status: CollabAgentToolCallStatus::InProgress,
+            sender_thread_id: "parent-thread".to_string(),
+            receiver_thread_ids: vec![child_thread_id.clone()],
+            prompt: Some("Inspect dashboard activity.".to_string()),
+            model: Some("gpt-5-codex".to_string()),
+            reasoning_effort: Some(ReasoningEffort::High),
+            agents_states: Default::default(),
+        },
+    }));
+    let root_transcript = shell.transcript.clone();
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "message-1".to_string(),
+            delta: "Review ".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "message-1".to_string(),
+            delta: "complete.".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: child_thread_id.clone(),
+        turn_id: "child-turn".to_string(),
+        started_at_ms: 1,
+        item: ThreadItem::Reasoning {
+            id: "reasoning-1".to_string(),
+            summary: Vec::new(),
+            content: Vec::new(),
+        },
+    }));
+    assert_eq!(
+        shell
+            .agent_activity
+            .agent(&child_thread_id)
+            .expect("spawned agent should be tracked")
+            .timeline
+            .back()
+            .map(agent_activity::AgentTimelineEntry::label),
+        Some("reasoning started".to_string())
+    );
+    shell.handle_notification(ServerNotification::ReasoningTextDelta(
+        codex_app_server_protocol::ReasoningTextDeltaNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "reasoning-1".to_string(),
+            delta: "private chain of thought".to_string(),
+            content_index: 0,
+        },
+    ));
+    let agent = shell
+        .agent_activity
+        .agent(&child_thread_id)
+        .expect("spawned agent should remain tracked");
+    assert_eq!(agent.latest_message.as_deref(), Some("Review complete."));
+    assert_eq!(
+        agent
+            .timeline
+            .back()
+            .map(agent_activity::AgentTimelineEntry::label),
+        Some("reasoning started".to_string())
+    );
+    shell.handle_notification(ServerNotification::ReasoningSummaryTextDelta(
+        codex_app_server_protocol::ReasoningSummaryTextDeltaNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "reasoning-1".to_string(),
+            delta: "checking constraints".to_string(),
+            summary_index: 0,
+        },
+    ));
+    shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+        CommandExecutionOutputDeltaNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "command-1".to_string(),
+            delta: "tests pass".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            completed_at_ms: 2,
+            item: ThreadItem::AgentMessage {
+                id: "message-1".to_string(),
+                text: "Review complete.".to_string(),
+                phase: None,
+                memory_citation: None,
+            },
+        },
+    ));
+
+    let agent = shell
+        .agent_activity
+        .agent(&child_thread_id)
+        .expect("spawned agent should remain tracked");
+    assert_eq!(shell.transcript, root_transcript);
+    assert_eq!(agent.latest_message.as_deref(), Some("Review complete."));
+    assert_eq!(
+        agent
+            .timeline
+            .iter()
+            .map(agent_activity::AgentTimelineEntry::label)
+            .collect::<Vec<_>>(),
+        vec![
+            "spawning agent".to_string(),
+            "message completed: Review complete.".to_string(),
+            "reasoning: checking constraints".to_string(),
+            "command output: tests pass".to_string(),
+        ]
+    );
+
+    shell.handle_notification(ServerNotification::TurnCompleted(
+        codex_app_server_protocol::TurnCompletedNotification {
+            thread_id: child_thread_id.clone(),
+            turn: test_turn("child-turn", TurnStatus::Completed),
+        },
+    ));
+    assert_eq!(
+        shell
+            .agent_activity
+            .agent(&child_thread_id)
+            .map(|agent| agent.status),
+        Some(agent_activity::AgentLifecycleStatus::Completed)
+    );
+    shell.handle_notification(ServerNotification::Error(ErrorNotification {
+        error: TurnError {
+            message: "child failed".to_string(),
+            codex_error_info: None,
+            additional_details: None,
+        },
+        will_retry: false,
+        thread_id: child_thread_id.clone(),
+        turn_id: "child-turn-2".to_string(),
+    }));
+    let agent = shell
+        .agent_activity
+        .agent(&child_thread_id)
+        .expect("spawned agent should remain tracked");
+    assert_eq!(agent.status, agent_activity::AgentLifecycleStatus::Errored);
+    assert_eq!(agent.latest_message.as_deref(), Some("child failed"));
 }
 
 #[test]
@@ -2605,7 +2966,7 @@ fn completed_tool_item_updates_existing_transcript_status() {
     let running_buf = render_shell_buffer(&shell, area);
     assert_eq!(
         accent_color_for_row(&running_buf, area, "exec cargo test"),
-        Some(Color::Cyan)
+        Some(design::palette::CYAN)
     );
 
     shell.handle_notification(ServerNotification::ItemCompleted(
@@ -2628,7 +2989,7 @@ fn completed_tool_item_updates_existing_transcript_status() {
     let completed_buf = render_shell_buffer(&shell, area);
     assert_eq!(
         accent_color_for_row(&completed_buf, area, "exec cargo test"),
-        Some(Color::Green)
+        Some(design::palette::SUCCESS)
     );
 }
 
@@ -3380,7 +3741,7 @@ async fn shift_enter_preserves_multiline_composer_when_typing() {
     let rendered = render_shell(&shell, area);
 
     assert!(
-        rendered.contains("Composer ready 2:2"),
+        rendered.contains("MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  2:2"),
         "composer should render the cursor on the second line"
     );
     assert!(
@@ -3427,8 +3788,12 @@ async fn repeated_shift_enter_keeps_blank_line_cursor_visible() {
     let view = ShellView { shell: &shell };
     let buf = render_shell_buffer(&shell, area);
     let input_area = view.input_area(area);
-    let title_row = row_containing(&buf, input_area, "Composer ready 9:1")
-        .expect("composer should render the ninth logical line");
+    let title_row = row_containing(
+        &buf,
+        input_area,
+        "MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  9:1",
+    )
+    .expect("composer should render the ninth logical line");
     let cursor = view
         .cursor_position(area)
         .expect("composer cursor should be visible");
@@ -3487,7 +3852,7 @@ fn composer_cursor_tracks_word_wrapped_single_line_prompt() {
 }
 
 #[test]
-fn dashboard_focus_dims_conversation_and_hides_composer_cursor() {
+fn dashboard_focus_keeps_context_readable_and_hides_composer_cursor() {
     let mut shell = ShellState::snapshot_fixture();
     shell.session_list.focused = true;
     let area = Rect::new(
@@ -3496,8 +3861,8 @@ fn dashboard_focus_dims_conversation_and_hides_composer_cursor() {
     let view = ShellView { shell: &shell };
     let buf = render_shell_buffer(&shell, area);
     let conversation_row =
-        row_containing(&buf, area, "Conversation").expect("conversation title should render");
-    let conversation_x = row_needle_x(&buf, area, conversation_row, "Conversation")
+        row_containing(&buf, area, "CONVERSATION").expect("conversation title should render");
+    let conversation_x = row_needle_x(&buf, area, conversation_row, "CONVERSATION")
         .expect("conversation title should have an x position");
     let dashboard_row =
         row_containing(&buf, area, "Sessions").expect("dashboard tabs should render");
@@ -3505,16 +3870,16 @@ fn dashboard_focus_dims_conversation_and_hides_composer_cursor() {
         .expect("active tab should have an x position");
 
     assert!(
-        buf[(conversation_x, conversation_row)]
+        !buf[(conversation_x, conversation_row)]
             .style()
             .add_modifier
             .contains(Modifier::DIM)
     );
-    let background_x = conversation_x + "Conversation".len() as u16 + 1;
+    let background_x = conversation_x + "CONVERSATION".len() as u16 + 1;
     assert_eq!(buf[(background_x, conversation_row)].symbol(), " ");
     assert_eq!(
         buf[(background_x, conversation_row)].style().bg,
-        Some(design::MOCHA_MANTLE)
+        Some(design::palette::BASE)
     );
     assert!(
         !buf[(dashboard_x, dashboard_row)]
@@ -3541,7 +3906,7 @@ fn composer_highlights_recognized_slash_commands_snapshot() {
     let slash_x = row_needle_x(&buf, input_area, row, "/goal")
         .expect("slash command should have an x position");
 
-    assert_eq!(buf[(slash_x, row)].style().fg, Some(Color::Cyan));
+    assert_eq!(buf[(slash_x, row)].style().fg, Some(design::palette::FOCUS));
 
     shell.composer.set_text("/clear");
     let clear_buf = render_shell_buffer(&shell, area);
@@ -3551,7 +3916,7 @@ fn composer_highlights_recognized_slash_commands_snapshot() {
         .expect("clear command should have an x position");
     assert_eq!(
         clear_buf[(clear_x, clear_row)].style().fg,
-        Some(Color::Cyan)
+        Some(design::palette::FOCUS)
     );
 
     shell.composer.set_text("/exit");
@@ -3560,7 +3925,10 @@ fn composer_highlights_recognized_slash_commands_snapshot() {
         .expect("exit command should render in the composer");
     let exit_x = row_needle_x(&exit_buf, input_area, exit_row, "/exit")
         .expect("exit command should have an x position");
-    assert_eq!(exit_buf[(exit_x, exit_row)].style().fg, Some(Color::Cyan));
+    assert_eq!(
+        exit_buf[(exit_x, exit_row)].style().fg,
+        Some(design::palette::FOCUS)
+    );
 
     shell.composer.set_text("/goal Keep the dashboard compact");
     insta::assert_snapshot!(render_shell(&shell, area));
@@ -3581,7 +3949,7 @@ fn composer_does_not_highlight_unknown_slash_commands() {
     let slash_x = row_needle_x(&buf, input_area, row, "/unknown")
         .expect("slash-prefixed text should have an x position");
 
-    assert_eq!(buf[(slash_x, row)].style().fg, Some(Color::Reset));
+    assert_eq!(buf[(slash_x, row)].style().fg, Some(design::palette::TEXT));
 }
 
 #[test]
@@ -3599,8 +3967,14 @@ fn composer_highlights_shell_operator_snapshot() {
     let operator_x = row_needle_x(&buf, input_area, row, "! printf hello")
         .expect("shell command should have an x position");
 
-    assert_eq!(buf[(operator_x, row)].style().fg, Some(Color::Cyan));
-    assert_eq!(buf[(operator_x + 1, row)].style().fg, Some(Color::Reset));
+    assert_eq!(
+        buf[(operator_x, row)].style().fg,
+        Some(design::palette::FOCUS)
+    );
+    assert_eq!(
+        buf[(operator_x + 1, row)].style().fg,
+        Some(design::palette::TEXT)
+    );
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
@@ -3882,8 +4256,10 @@ fn row_needle_x(buf: &Buffer, area: Rect, y: u16, needle: &str) -> Option<u16> {
             row.push_str(cell.symbol());
         }
     }
-    row.find(needle)
-        .and_then(|offset| area.x.checked_add(u16::try_from(offset).ok()?))
+    row.find(needle).and_then(|offset| {
+        area.x
+            .checked_add(u16::try_from(row[..offset].chars().count()).ok()?)
+    })
 }
 
 fn assert_adjacent_rows(rendered: &str, first: &str, second: &str) {
@@ -4930,7 +5306,21 @@ async fn native_settings_pages_write_config_and_validate_edits() {
             &mut backend,
         )
         .await
-        .expect("reasoning cycle should persist");
+        .expect("reasoning selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("low reasoning should be selected");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("low reasoning should persist");
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
@@ -4944,7 +5334,13 @@ async fn native_settings_pages_write_config_and_validate_edits() {
             &mut backend,
         )
         .await
-        .expect("approval cycle should persist");
+        .expect("approval selector should open");
+    for code in [KeyCode::Down, KeyCode::Down, KeyCode::Enter] {
+        shell
+            .handle_selector_key(KeyEvent::new(code, KeyModifiers::NONE), &mut backend)
+            .await
+            .expect("never approval policy should persist");
+    }
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
@@ -5062,6 +5458,20 @@ async fn ultra_reasoning_warns_about_configured_agent_concurrency() {
             &mut backend,
         )
         .await
+        .expect("reasoning selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("ultra reasoning should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
         .expect("ultra reasoning should be selected");
 
     assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Ultra));
@@ -5071,7 +5481,7 @@ async fn ultra_reasoning_warns_about_configured_agent_concurrency() {
 }
 
 #[tokio::test]
-async fn native_settings_cycle_models_and_service_tiers() {
+async fn native_settings_select_models_and_service_tiers() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Settings;
     shell.settings.focused = true;
@@ -5106,7 +5516,21 @@ async fn native_settings_cycle_models_and_service_tiers() {
             &mut backend,
         )
         .await
-        .expect("model should cycle");
+        .expect("model selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("visible model should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("visible model should be selected");
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
@@ -5127,21 +5551,63 @@ async fn native_settings_cycle_models_and_service_tiers() {
             &mut backend,
         )
         .await
-        .expect("service tier should cycle to first tier");
+        .expect("service tier selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("fast tier should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("fast tier should be selected");
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
             &mut backend,
         )
         .await
-        .expect("service tier should cycle to second tier");
+        .expect("service tier selector should reopen");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("batch tier should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("batch tier should be selected");
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
             &mut backend,
         )
         .await
-        .expect("service tier should cycle to default");
+        .expect("service tier selector should reopen");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("default tier should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("default tier should be selected");
 
     assert_eq!(shell.model, "gpt-5.5");
     assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Medium));
@@ -5196,84 +5662,8 @@ async fn native_settings_cycle_models_and_service_tiers() {
     );
 }
 
-#[test]
-fn native_settings_reasoning_cycle_follows_model_catalog() {
-    let sol = model_preset_fixture(
-        "gpt-5.6-sol",
-        /*show_in_picker*/ true,
-        ReasoningEffort::Low,
-        &[
-            ReasoningEffort::Low,
-            ReasoningEffort::Medium,
-            ReasoningEffort::High,
-            ReasoningEffort::XHigh,
-            ReasoningEffort::Max,
-            ReasoningEffort::Ultra,
-        ],
-        &["priority"],
-    );
-    let luna = model_preset_fixture(
-        "gpt-5.6-luna",
-        /*show_in_picker*/ true,
-        ReasoningEffort::Medium,
-        &[
-            ReasoningEffort::Low,
-            ReasoningEffort::Medium,
-            ReasoningEffort::High,
-            ReasoningEffort::XHigh,
-            ReasoningEffort::Max,
-        ],
-        &["priority"],
-    );
-
-    let mut effort = None;
-    let mut sol_cycle = Vec::new();
-    for _ in 0..7 {
-        effort = settings::next_reasoning_effort(effort.as_ref(), &sol);
-        sol_cycle.push(effort.clone());
-    }
-    assert_eq!(
-        sol_cycle,
-        vec![
-            Some(ReasoningEffort::Low),
-            Some(ReasoningEffort::Medium),
-            Some(ReasoningEffort::High),
-            Some(ReasoningEffort::XHigh),
-            Some(ReasoningEffort::Max),
-            Some(ReasoningEffort::Ultra),
-            None,
-        ]
-    );
-
-    let mut effort = None;
-    let mut luna_cycle = Vec::new();
-    for _ in 0..6 {
-        effort = settings::next_reasoning_effort(effort.as_ref(), &luna);
-        luna_cycle.push(effort.clone());
-    }
-    assert_eq!(
-        luna_cycle,
-        vec![
-            Some(ReasoningEffort::Low),
-            Some(ReasoningEffort::Medium),
-            Some(ReasoningEffort::High),
-            Some(ReasoningEffort::XHigh),
-            Some(ReasoningEffort::Max),
-            None,
-        ]
-    );
-    assert_eq!(
-        settings::reasoning_effort_label(&ReasoningEffort::Max),
-        "Max"
-    );
-    assert_eq!(
-        settings::reasoning_effort_label(&ReasoningEffort::XHigh),
-        "Extra high"
-    );
-}
-
 #[tokio::test]
-async fn native_settings_reasoning_wrap_resets_active_thread_to_model_default() {
+async fn native_settings_reasoning_selector_resets_active_thread_to_model_default() {
     let mut shell = ShellState::snapshot_fixture();
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::ReasoningEffort);
@@ -5305,7 +5695,21 @@ async fn native_settings_reasoning_wrap_resets_active_thread_to_model_default() 
             &mut backend,
         )
         .await
-        .expect("reasoning should wrap to the model default");
+        .expect("reasoning selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("default reasoning should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("default reasoning should be selected");
 
     assert_eq!(shell.reasoning_effort, None);
     assert_eq!(
@@ -5384,7 +5788,21 @@ async fn native_settings_model_switch_resets_unsupported_runtime_options() {
             &mut backend,
         )
         .await
-        .expect("model should switch");
+        .expect("model selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("luna model should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("luna model should be selected");
     shell
         .submit_prompt(&mut backend, "Use current settings".to_string())
         .await

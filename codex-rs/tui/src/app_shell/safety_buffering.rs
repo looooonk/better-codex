@@ -291,6 +291,7 @@ impl ShellState {
             .update(self.active_turn_id.as_deref(), notification)
         {
             self.command_palette = None;
+            self.selector = None;
             self.status = if show_buffering_ui {
                 "waiting".to_string()
             } else {
@@ -379,6 +380,7 @@ impl ShellState {
         self.scroll_transcript_to_bottom();
         self.clear_streaming_transcript();
         self.tool_activity.clear();
+        self.agent_activity = super::agent_activity::AgentActivityState::default();
         self.subagent_activity.clear();
         self.latest_diff = None;
         self.pending_approval = None;

@@ -1,10 +1,13 @@
 use super::dashboard::dashboard_value;
+use super::design::palette;
+use super::design::selection_style;
 use crate::text_formatting::truncate_text;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadListCwdFilter;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey;
 use codex_protocol::ThreadId;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use std::path::PathBuf;
@@ -35,7 +38,6 @@ pub(super) struct SessionRow {
     preview: String,
     cwd: PathBuf,
     branch: Option<String>,
-    updated_at: i64,
 }
 
 impl SessionListState {
@@ -90,6 +92,22 @@ impl SessionListState {
 
     pub(super) fn selected_thread_id(&self) -> Option<ThreadId> {
         self.rows.get(self.selected).map(|row| row.thread_id)
+    }
+
+    pub(super) fn select_at_line(&mut self, line: usize) -> bool {
+        self.focused = true;
+        let leading_lines = self.leading_line_count();
+        if line < leading_lines {
+            return false;
+        }
+        let visible_rows = SESSION_LIST_LINE_BUDGET.saturating_sub(leading_lines);
+        let scroll_top = self.normalized_scroll_top(visible_rows);
+        let index = scroll_top.saturating_add(line.saturating_sub(leading_lines));
+        if index >= self.rows.len() || index >= scroll_top.saturating_add(visible_rows) {
+            return false;
+        }
+        self.selected = index;
+        true
     }
 
     pub(super) fn selected_title(&self) -> Option<&str> {
@@ -212,18 +230,26 @@ impl SessionListState {
 
     pub(super) fn lines(&self, width: usize) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
-        let focus = if self.focused { "focused" } else { "unfocused" };
-        let mode = if self.show_archived {
-            "archived"
+        let focus = if self.focused {
+            "● FOCUSED"
         } else {
-            "active"
+            "○ CLICK TO FOCUS"
+        };
+        let mode = if self.show_archived {
+            "ARCHIVED"
+        } else {
+            "ACTIVE"
         };
         lines.push(Line::from(vec![
-            focus.cyan(),
-            " ".dim(),
-            mode.dim(),
-            " ".dim(),
-            format!("{} shown", self.rows.len()).dim(),
+            focus.fg(if self.focused {
+                palette::FOCUS
+            } else {
+                palette::MUTED
+            }),
+            "  ".into(),
+            mode.fg(palette::TEXT).bold(),
+            "  ".into(),
+            format!("{} sessions", self.rows.len()).fg(palette::MUTED),
         ]));
         if self.search_active || !self.search_query.is_empty() {
             let label = if self.search_active {
@@ -232,26 +258,26 @@ impl SessionListState {
                 "search"
             };
             lines.push(Line::from(vec![
-                label.cyan(),
-                " ".dim(),
-                dashboard_value(&self.search_query, width, label.len() + 1).into(),
+                label.fg(palette::CYAN),
+                " ".into(),
+                dashboard_value(&self.search_query, width, label.len() + 1).fg(palette::TEXT),
             ]));
         }
         if let Some(draft) = &self.rename_draft {
             lines.push(Line::from(vec![
-                "rename*".cyan(),
-                " ".dim(),
-                dashboard_value(draft, width, /*prefix_width*/ 8).into(),
+                "rename*".fg(palette::CYAN),
+                " ".into(),
+                dashboard_value(draft, width, /*prefix_width*/ 8).fg(palette::TEXT),
             ]));
         }
         if let Some(error) = &self.last_error {
             lines.push(Line::from(
-                dashboard_value(error, width, /*prefix_width*/ 0).red(),
+                dashboard_value(error, width, /*prefix_width*/ 0).fg(palette::ERROR),
             ));
         } else if !self.loaded {
-            lines.push(Line::from("loading sessions".dim()));
+            lines.push(Line::from("loading sessions".fg(palette::MUTED)));
         } else if self.rows.is_empty() {
-            lines.push(Line::from("no matching sessions".dim()));
+            lines.push(Line::from("no matching sessions".fg(palette::MUTED)));
         }
 
         let remaining = SESSION_LIST_LINE_BUDGET.saturating_sub(lines.len());
@@ -321,6 +347,17 @@ impl SessionListState {
 
         scroll_top
     }
+
+    fn leading_line_count(&self) -> usize {
+        1usize
+            .saturating_add(usize::from(
+                self.search_active || !self.search_query.is_empty(),
+            ))
+            .saturating_add(usize::from(self.rename_draft.is_some()))
+            .saturating_add(usize::from(
+                self.last_error.is_some() || !self.loaded || self.rows.is_empty(),
+            ))
+    }
 }
 
 impl SessionRow {
@@ -344,7 +381,6 @@ impl SessionRow {
             preview,
             cwd: thread.cwd.to_path_buf(),
             branch: thread.git_info.and_then(|git_info| git_info.branch),
-            updated_at: thread.updated_at,
         })
     }
 
@@ -367,18 +403,18 @@ fn row_line(
     width: usize,
 ) -> Line<'static> {
     let marker = if selected {
-        ">".cyan().bold()
+        "›".fg(palette::FOCUS).bold()
     } else {
-        " ".dim()
+        " ".into()
     };
     let total = total.max(1);
     let position_width = total.to_string().len();
     let position = format!("{:>position_width$}/{total}", index.saturating_add(1));
     let position_width = position.chars().count();
     let position = if selected {
-        position.cyan()
+        position.fg(palette::FOCUS)
     } else {
-        position.dim()
+        position.fg(palette::MUTED)
     };
     let mut detail = row
         .branch
@@ -390,26 +426,30 @@ fn row_line(
     {
         detail = format!(" [{cwd}]");
     }
-    let age = if row.updated_at > 0 {
-        format!(" {}", row.updated_at)
-    } else {
-        String::new()
-    };
-    let text = format!("{}{}{}", row.title, detail, age);
+    let text = format!("{}{detail}", row.title);
     let prefix_width = 3usize.saturating_add(position_width);
     let visible = dashboard_value(&text, width, prefix_width);
     let preview_width = width.saturating_sub(prefix_width + visible.chars().count() + 1);
     let preview = if preview_width > 8 {
-        format!(" {}", truncate_text(&row.preview, preview_width)).dim()
+        format!("  {}", truncate_text(&row.preview, preview_width)).fg(palette::MUTED)
     } else {
-        "".dim()
+        "".into()
     };
-    Line::from(vec![
+    let line = Line::from(vec![
         marker,
-        " ".dim(),
+        " ".into(),
         position,
-        " ".dim(),
-        visible.into(),
+        " ".into(),
+        visible.fg(if selected {
+            palette::TEXT
+        } else {
+            palette::MUTED
+        }),
         preview,
-    ])
+    ]);
+    if selected {
+        line.set_style(selection_style())
+    } else {
+        line
+    }
 }

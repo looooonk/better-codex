@@ -6,22 +6,20 @@ use super::composer_render::composer_visual_cursor_line;
 use super::composer_render::wrapped_composer_lines;
 use super::dashboard::DashboardPanel;
 use super::dashboard::dashboard_panels;
-use super::design::MOCHA_BASE;
-use super::design::MOCHA_MANTLE;
-use super::design::MOCHA_SURFACE0;
-use super::design::MOCHA_SURFACE1;
 use super::design::body_rect_after_title;
 use super::design::centered_band_rect;
 use super::design::fill_rect;
+use super::design::palette;
 use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::design::selection_style;
 use super::design::title_rect;
+use super::header::HeaderControl;
+use super::header::HeaderView;
 use super::navigation::DashboardRoute;
 use super::navigation::DashboardTabs;
 use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_to_width;
-use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use crate::markdown;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use crate::terminal_hyperlinks::mark_buffer_hyperlinks;
@@ -40,9 +38,13 @@ use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
+use ratatui::widgets::Block;
+use ratatui::widgets::BorderType;
+use ratatui::widgets::Borders;
 use ratatui::widgets::Clear;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
@@ -50,10 +52,11 @@ use ratatui::widgets::Wrap;
 use unicode_width::UnicodeWidthStr;
 
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
-const DASHBOARD_MIN_WIDTH: u16 = 36;
+const DASHBOARD_MIN_WIDTH: u16 = 42;
+const DASHBOARD_MAX_WIDTH: u16 = 64;
 const DASHBOARD_PANEL_GAP: u16 = 1;
-const DASHBOARD_WIDTH_PERCENT: u16 = 30;
-const HEADER_HEIGHT: u16 = 3;
+const DASHBOARD_WIDTH_PERCENT: u16 = 34;
+const HEADER_HEIGHT: u16 = 2;
 const INPUT_PANEL_MIN_HEIGHT: u16 = 6;
 const INPUT_PANEL_MAX_HEIGHT: u16 = 12;
 const PANE_CHROME_HEIGHT: u16 = 3;
@@ -79,9 +82,15 @@ pub(super) struct ShellView<'a> {
     pub(super) shell: &'a ShellState,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct DashboardPanelPosition {
+    pub(super) line: usize,
+    pub(super) column: usize,
+}
+
 impl ShellView<'_> {
     pub(super) fn render(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_BASE);
+        fill_rect(buf, area, palette::BASE);
         let layout = self.layout(area);
         self.render_header(layout.header, buf);
         if let Some(collapsed_dashboard) = layout.collapsed_dashboard {
@@ -89,10 +98,6 @@ impl ShellView<'_> {
         }
         self.render_transcript(layout.transcript, buf);
         self.render_input(layout.input, buf);
-        if self.shell.dashboard_focused() {
-            buf.set_style(layout.transcript, Style::new().dim().bg(MOCHA_MANTLE));
-            buf.set_style(layout.input, Style::new().dim());
-        }
         if let Some(dashboard) = layout.dashboard {
             self.render_dashboard(dashboard, buf);
         }
@@ -102,8 +107,14 @@ impl ShellView<'_> {
             let panel_height = line_count.saturating_add(4).min(area.height);
             let panel_area = centered_band_rect(area, panel_height);
             Clear.render(panel_area, buf);
-            fill_rect(buf, panel_area, MOCHA_SURFACE0);
-            self.render_titled_panel(panel_area, "Claude Code Import", lines, MOCHA_SURFACE0, buf);
+            fill_rect(buf, panel_area, palette::ELEVATED);
+            self.render_titled_panel(
+                panel_area,
+                "Claude Code Import",
+                lines,
+                palette::ELEVATED,
+                buf,
+            );
         }
         if let Some(pending) = &self.shell.pending_mcp_management {
             let lines = pending.lines();
@@ -111,8 +122,8 @@ impl ShellView<'_> {
             let panel_height = line_count.saturating_add(4).min(area.height);
             let panel_area = centered_band_rect(area, panel_height);
             Clear.render(panel_area, buf);
-            fill_rect(buf, panel_area, MOCHA_SURFACE0);
-            self.render_titled_panel(panel_area, "MCP Servers", lines, MOCHA_SURFACE0, buf);
+            fill_rect(buf, panel_area, palette::ELEVATED);
+            self.render_titled_panel(panel_area, "MCP Servers", lines, palette::ELEVATED, buf);
         }
         if let Some(pending) = &self.shell.pending_plugin_management {
             let lines = pending.lines();
@@ -120,8 +131,8 @@ impl ShellView<'_> {
             let panel_height = line_count.saturating_add(4).min(area.height);
             let panel_area = centered_band_rect(area, panel_height);
             Clear.render(panel_area, buf);
-            fill_rect(buf, panel_area, MOCHA_SURFACE0);
-            self.render_titled_panel(panel_area, "Plugins", lines, MOCHA_SURFACE0, buf);
+            fill_rect(buf, panel_area, palette::ELEVATED);
+            self.render_titled_panel(panel_area, "Plugins", lines, palette::ELEVATED, buf);
         }
         if let Some(lines) = self.shell.safety_buffering_modal_lines() {
             let lines = word_wrap_lines(
@@ -132,20 +143,25 @@ impl ShellView<'_> {
             let panel_height = line_count.saturating_add(4).min(area.height);
             let panel_area = centered_band_rect(area, panel_height);
             Clear.render(panel_area, buf);
-            fill_rect(buf, panel_area, MOCHA_SURFACE0);
-            self.render_titled_panel(panel_area, "Safety review", lines, MOCHA_SURFACE0, buf);
+            fill_rect(buf, panel_area, palette::ELEVATED);
+            self.render_titled_panel(panel_area, "Safety review", lines, palette::ELEVATED, buf);
         }
         self.render_command_palette(area, buf);
+        if let Some(selector) = &self.shell.selector {
+            selector.render(area, buf);
+        }
     }
 
     pub(super) fn cursor_position(&self, area: Rect) -> Option<Position> {
-        if self.shell.command_palette.is_some()
+        if self.shell.selector.is_some()
+            || self.shell.command_palette.is_some()
             || self.shell.pending_approval.is_some()
             || self.shell.pending_elicitation.is_some()
             || self.shell.pending_external_agent_import.is_some()
             || self.shell.pending_mcp_management.is_some()
             || self.shell.pending_plugin_management.is_some()
             || self.shell.pending_user_input.is_some()
+            || self.shell.safety_buffering_modal_lines().is_some()
             || self.shell.dashboard_focused()
         {
             return None;
@@ -173,11 +189,104 @@ impl ShellView<'_> {
         if content.height == 0 {
             return None;
         }
-        let tabs = Rect::new(content.x, content.y, content.width, content.height.min(3));
+        let tabs = Rect::new(content.x, content.y, content.width, content.height.min(2));
         if !tabs.contains(position) {
             return None;
         }
         DashboardTabs::new(tabs.width).route_at(position.x.saturating_sub(tabs.x))
+    }
+
+    pub(super) fn header_control_at(
+        &self,
+        area: Rect,
+        position: Position,
+    ) -> Option<HeaderControl> {
+        let effort = self
+            .shell
+            .reasoning_effort
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "default".to_string());
+        HeaderView {
+            cwd: &self.shell.cwd,
+            model: &self.shell.model,
+            reasoning_effort: &effort,
+            status: &self.shell.status,
+            dashboard_visible: self.shell.dashboard_visible,
+        }
+        .control_at(self.layout(area).header, position)
+    }
+
+    pub(super) fn dashboard_panel_position_at(
+        &self,
+        area: Rect,
+        position: Position,
+        title: &str,
+    ) -> Option<DashboardPanelPosition> {
+        let layout = self.layout(area);
+        let dashboard = layout.dashboard.or(layout.collapsed_dashboard)?;
+        let content = pane_content_rect(dashboard);
+        if !content.contains(position) {
+            return None;
+        }
+        let panels = dashboard_panels(self.shell, usize::from(content.width));
+        let mut y = content.y;
+        for panel in panels {
+            let height = panel.height().min(content.bottom().saturating_sub(y));
+            let panel_area = Rect::new(content.x, y, content.width, height);
+            if panel.title == title && panel_area.contains(position) {
+                let text_x = panel_area.x.saturating_add(u16::from(panel.show_title));
+                let body_y = panel_area.y.saturating_add(u16::from(panel.show_title));
+                if position.y < body_y || position.x < text_x {
+                    return None;
+                }
+                return Some(DashboardPanelPosition {
+                    line: usize::from(position.y.saturating_sub(body_y)),
+                    column: usize::from(position.x.saturating_sub(text_x)),
+                });
+            }
+            y = y.saturating_add(height).saturating_add(DASHBOARD_PANEL_GAP);
+            if y >= content.bottom() {
+                break;
+            }
+        }
+        None
+    }
+
+    pub(super) fn command_palette_entry_at(&self, area: Rect, position: Position) -> Option<usize> {
+        self.shell.command_palette.as_ref()?;
+        let entries = self.shell.command_palette_entries();
+        let palette_height = u16::try_from(entries.len())
+            .unwrap_or(u16::MAX)
+            .saturating_add(5)
+            .min(area.height);
+        let content = pane_content_rect(centered_band_rect(area, palette_height));
+        if !content.contains(position) {
+            return None;
+        }
+        let index = usize::from(position.y.saturating_sub(content.y)).checked_sub(2)?;
+        (index < entries.len()).then_some(index)
+    }
+
+    pub(super) fn approval_action_at(
+        &self,
+        area: Rect,
+        position: Position,
+    ) -> Option<super::ApprovalAction> {
+        self.shell.pending_approval.as_ref()?;
+        let body = body_rect_after_title(pane_content_rect(self.input_area(area)));
+        if position.y != body.y.saturating_add(2) || !body.contains(position) {
+            return None;
+        }
+        match position.x.saturating_sub(body.x) {
+            2..=12 => Some(super::ApprovalAction::Choose(
+                super::ApprovalChoice::Approve,
+            )),
+            14..=21 => Some(super::ApprovalAction::Choose(super::ApprovalChoice::Deny)),
+            23..=30 => Some(super::ApprovalAction::Edit),
+            32..=42 => Some(super::ApprovalAction::Explain),
+            _ => None,
+        }
     }
 
     fn layout(&self, area: Rect) -> ShellLayout {
@@ -201,15 +310,15 @@ impl ShellView<'_> {
             };
         }
         if area.width < DASHBOARD_COLLAPSE_WIDTH {
-            let dashboard_height = if area.height >= 30 {
-                9
-            } else if area.height >= 24 {
-                7
-            } else if area.height >= 18 {
-                5
-            } else {
-                3
-            };
+            let dashboard_height = area
+                .height
+                .saturating_sub(
+                    HEADER_HEIGHT
+                        .saturating_add(INPUT_PANEL_MIN_HEIGHT)
+                        .saturating_add(TRANSCRIPT_MIN_HEIGHT),
+                )
+                .min(14)
+                .max(3);
             let input_height = self.input_panel_height(
                 area.height
                     .saturating_sub(HEADER_HEIGHT)
@@ -240,6 +349,7 @@ impl ShellView<'_> {
             .try_into()
             .unwrap_or(u16::MAX)
             .max(DASHBOARD_MIN_WIDTH)
+            .min(DASHBOARD_MAX_WIDTH)
             .min(area.width);
         let horizontal = Layout::default()
             .direction(Direction::Horizontal)
@@ -270,24 +380,24 @@ impl ShellView<'_> {
     }
 
     fn render_header(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_MANTLE);
-        let content = pane_content_rect(area);
-        let title = if self.shell.dashboard_visible {
-            Line::from("Better Codex".magenta().bold())
-        } else {
-            Line::from(vec![
-                "Better Codex".magenta().bold(),
-                "  ".into(),
-                "Ctrl+D Dashboard".cyan(),
-            ])
-        };
-        Paragraph::new(title)
-            .style(pane_style(MOCHA_MANTLE))
-            .render(content, buf);
+        let effort = self
+            .shell
+            .reasoning_effort
+            .as_ref()
+            .map(ToString::to_string)
+            .unwrap_or_else(|| "default".to_string());
+        HeaderView {
+            cwd: &self.shell.cwd,
+            model: &self.shell.model,
+            reasoning_effort: &effort,
+            status: &self.shell.status,
+            dashboard_visible: self.shell.dashboard_visible,
+        }
+        .render(area, buf);
     }
 
     fn render_transcript(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_BASE);
+        fill_rect(buf, area, palette::BASE);
         let content = pane_content_rect(area);
         let body = body_rect_after_title(content);
         let cwd = std::path::Path::new(&self.shell.cwd);
@@ -315,12 +425,12 @@ impl ShellView<'_> {
             .saturating_sub(visible_count.saturating_add(scroll));
         let title = if let Some(selected) = self.shell.transcript_selection {
             format!(
-                "Conversation select {}/{}",
+                "CONVERSATION  SELECT {}/{}",
                 selected.saturating_add(1),
                 self.shell.transcript.len()
             )
         } else {
-            "Conversation".to_string()
+            "CONVERSATION".to_string()
         };
         let scrollbar = transcript_scrollbar_metrics(
             layout.total_lines,
@@ -330,11 +440,14 @@ impl ShellView<'_> {
         );
         let visible_hyperlink_lines = layout.visible_hyperlink_lines(visible_from, visible_count);
         let visible_lines = visible_lines(visible_hyperlink_lines.clone());
-        Paragraph::new(Line::from(title.bold()))
-            .style(pane_style(MOCHA_BASE))
-            .render(title_rect(content), buf);
+        Paragraph::new(Line::from(vec![
+            "◆ ".set_style(Style::new().fg(palette::FOCUS)),
+            title.set_style(Style::new().fg(palette::MUTED).bold()),
+        ]))
+        .style(pane_style(palette::BASE))
+        .render(title_rect(content), buf);
         Paragraph::new(visible_lines)
-            .style(pane_style(MOCHA_BASE))
+            .style(pane_style(palette::BASE))
             .render(text_body, buf);
         mark_buffer_hyperlinks(
             buf,
@@ -348,13 +461,24 @@ impl ShellView<'_> {
     }
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_SURFACE0);
+        fill_rect(buf, area, palette::SURFACE);
+        let border_color = if self.shell.dashboard_focused() {
+            palette::BORDER
+        } else {
+            palette::FOCUS
+        };
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::new().fg(border_color))
+            .style(pane_style(palette::SURFACE))
+            .render(area, buf);
         if let Some(pending) = &self.shell.pending_approval {
             self.render_titled_panel(
                 area,
-                "Approval",
+                "APPROVAL",
                 approval_lines(pending),
-                MOCHA_SURFACE0,
+                palette::SURFACE,
                 buf,
             );
             return;
@@ -362,9 +486,9 @@ impl ShellView<'_> {
         if let Some(pending) = &self.shell.pending_elicitation {
             self.render_titled_panel(
                 area,
-                "MCP Elicitation",
+                "MCP ELICITATION",
                 elicitation_lines(pending),
-                MOCHA_SURFACE0,
+                palette::SURFACE,
                 buf,
             );
             return;
@@ -372,24 +496,38 @@ impl ShellView<'_> {
         if let Some(pending) = &self.shell.pending_user_input {
             self.render_titled_panel(
                 area,
-                "Tool Input",
+                "TOOL INPUT",
                 user_input_lines(
                     pending,
                     self.shell.composer.text(),
                     self.shell.composer.is_empty(),
                 ),
-                MOCHA_SURFACE0,
+                palette::SURFACE,
                 buf,
             );
             return;
         }
 
         let (line, column) = self.shell.composer.cursor_position();
-        let title = if self.shell.active_turn_id.is_some() {
-            format!("Composer busy {}:{}", line + 1, column + 1)
+        let position = format!("{}:{}", line + 1, column + 1);
+        let title_width = usize::from(pane_content_rect(area).width).saturating_sub(2);
+        let titles = if self.shell.active_turn_id.is_some() {
+            [
+                format!("MESSAGE  ● RUNNING  {position}"),
+                format!("MESSAGE  ●  {position}"),
+                position.clone(),
+            ]
         } else {
-            format!("Composer ready {}:{}", line + 1, column + 1)
+            [
+                format!("MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  {position}"),
+                format!("MESSAGE  ENTER SEND  {position}"),
+                format!("MESSAGE  {position}"),
+            ]
         };
+        let title = titles
+            .into_iter()
+            .find(|title| UnicodeWidthStr::width(title.as_str()) <= title_width)
+            .unwrap_or(position);
         let body = body_rect_after_title(pane_content_rect(area));
         let visible_height = usize::from(body.height);
         let mut lines = wrapped_composer_lines(
@@ -411,7 +549,7 @@ impl ShellView<'_> {
                 .min(max_start);
             lines = lines.into_iter().skip(start).take(visible_height).collect();
         }
-        self.render_titled_panel(area, &title, lines, MOCHA_SURFACE0, buf);
+        self.render_titled_panel(area, &title, lines, palette::SURFACE, buf);
     }
 
     fn input_panel_height(&self, available_height: u16, input_width: u16) -> u16 {
@@ -448,7 +586,18 @@ impl ShellView<'_> {
     }
 
     fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_MANTLE);
+        fill_rect(buf, area, palette::DARK);
+        for y in area.y..area.bottom() {
+            if let Some(cell) = buf.cell_mut((area.x, y)) {
+                cell.set_symbol("│").set_style(Style::new().fg(
+                    if self.shell.dashboard_focused() {
+                        palette::FOCUS
+                    } else {
+                        palette::BORDER
+                    },
+                ));
+            }
+        }
         let content = pane_content_rect(area);
         let width = usize::from(content.width);
         let panels = dashboard_panels(self.shell, width);
@@ -457,55 +606,10 @@ impl ShellView<'_> {
     }
 
     fn render_collapsed_dashboard(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_SURFACE0);
+        fill_rect(buf, area, palette::DARK);
         let content = pane_content_rect(area);
-        let width = usize::from(content.width);
-        let panels = dashboard_panels(self.shell, width);
-        let navigation = panels.iter().find(|panel| panel.title == "Navigation");
-        let mut lines = navigation
-            .map(|panel| panel.lines.clone())
-            .unwrap_or_default();
-        for title in [
-            "Approvals",
-            "Background",
-            "Tools",
-            "Subagents",
-            "Sessions",
-            "Settings",
-            "Thread",
-            "Status",
-            "Model",
-            "Tokens",
-            "Goal",
-            "Plan",
-            "Workspace",
-            "Edits",
-            "Rate Limits",
-            "Keys",
-        ] {
-            if lines.len() >= usize::from(content.height) {
-                break;
-            }
-            if let Some(panel) = panels.iter().find(|panel| panel.title == title) {
-                let summary = panel
-                    .lines
-                    .first()
-                    .map(|line| {
-                        line.spans
-                            .iter()
-                            .map(|span| span.content.as_ref())
-                            .collect::<String>()
-                    })
-                    .unwrap_or_else(|| "empty".to_string());
-                let title = panel.title.clone();
-                let line = Line::from(vec![title.cyan().bold(), " ".dim(), summary.into()]);
-                lines.push(truncate_line_with_ellipsis_if_overflow(line, width));
-            }
-        }
-
-        Paragraph::new(lines)
-            .style(pane_style(MOCHA_SURFACE0))
-            .render(content, buf);
+        let panels = dashboard_panels(self.shell, usize::from(content.width));
+        self.render_dashboard_panels(content, &panels, buf);
     }
 
     fn render_dashboard_panels(&self, area: Rect, panels: &[DashboardPanel], buf: &mut Buffer) {
@@ -522,6 +626,22 @@ impl ShellView<'_> {
             }
             let panel_area = Rect::new(area.x, y, area.width, height);
             fill_rect(buf, panel_area, panel.background(index));
+            let text_area = if panel.show_title {
+                for rail_y in panel_area.y..panel_area.bottom() {
+                    if let Some(cell) = buf.cell_mut((panel_area.x, rail_y)) {
+                        cell.set_symbol("▎")
+                            .set_style(Style::new().fg(palette::BORDER));
+                    }
+                }
+                Rect::new(
+                    panel_area.x.saturating_add(1),
+                    panel_area.y,
+                    panel_area.width.saturating_sub(1),
+                    panel_area.height,
+                )
+            } else {
+                panel_area
+            };
             let mut lines = Vec::new();
             if panel.show_title {
                 lines.push(panel.title_line());
@@ -530,7 +650,7 @@ impl ShellView<'_> {
             Paragraph::new(lines)
                 .style(pane_style(panel.background(index)))
                 .wrap(Wrap { trim: false })
-                .render(panel_area, buf);
+                .render(text_area, buf);
             y = y.saturating_add(height).saturating_add(DASHBOARD_PANEL_GAP);
         }
     }
@@ -544,9 +664,14 @@ impl ShellView<'_> {
         buf: &mut Buffer,
     ) {
         let content = pane_content_rect(area);
-        Paragraph::new(Line::from(title.to_string().bold()))
-            .style(pane_style(background))
-            .render(title_rect(content), buf);
+        Paragraph::new(Line::from(vec![
+            "◆ ".set_style(Style::new().fg(palette::FOCUS)),
+            title
+                .to_string()
+                .set_style(Style::new().fg(palette::TEXT).bold()),
+        ]))
+        .style(pane_style(background))
+        .render(title_rect(content), buf);
         Paragraph::new(lines)
             .style(pane_style(background))
             .wrap(Wrap { trim: false })
@@ -560,27 +685,46 @@ impl ShellView<'_> {
         let entries = self.shell.command_palette_entries();
         let palette_height = u16::try_from(entries.len())
             .unwrap_or(u16::MAX)
-            .saturating_add(6)
+            .saturating_add(5)
             .min(area.height);
         let palette_area = centered_band_rect(area, palette_height);
         let content = pane_content_rect(palette_area);
+        buf.set_style(area, Style::new().fg(palette::MUTED).bg(palette::DARK));
+        let shadow = Rect::new(
+            palette_area.x.saturating_add(1),
+            palette_area.y.saturating_add(1),
+            palette_area
+                .width
+                .min(area.right().saturating_sub(palette_area.x + 1)),
+            palette_area
+                .height
+                .min(area.bottom().saturating_sub(palette_area.y + 1)),
+        );
+        fill_rect(buf, shadow, palette::DARK);
         Clear.render(palette_area, buf);
 
         let mut lines = Vec::new();
         for (index, entry) in entries.iter().enumerate() {
             let selected = index == palette.selected();
             let marker = if selected {
-                ">".cyan().bold()
+                "▌".set_style(Style::new().fg(palette::FOCUS))
             } else {
                 " ".into()
             };
             let title = if entry.enabled {
-                entry.title.to_string().into()
+                entry
+                    .title
+                    .to_string()
+                    .set_style(Style::new().fg(palette::TEXT))
             } else {
-                entry.title.to_string().dim()
+                entry
+                    .title
+                    .to_string()
+                    .set_style(Style::new().fg(palette::MUTED))
             };
             let detail = if selected {
-                format!(" - {}", truncate_text(entry.detail, /*max_graphemes*/ 28)).dim()
+                format!("  {}", truncate_text(entry.detail, /*max_graphemes*/ 34))
+                    .set_style(Style::new().fg(palette::MUTED))
             } else {
                 String::new().into()
             };
@@ -592,11 +736,28 @@ impl ShellView<'_> {
             }
         }
 
-        fill_rect(buf, palette_area, MOCHA_SURFACE0);
-        let mut palette_lines = vec![Line::from("Command Palette".bold()), Line::from("")];
+        fill_rect(buf, palette_area, palette::ELEVATED);
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::new().fg(palette::FOCUS))
+            .style(pane_style(palette::ELEVATED))
+            .render(palette_area, buf);
+        let mut palette_lines = vec![
+            Line::from(vec![
+                "◆ ".set_style(Style::new().fg(palette::PURPLE)),
+                "ACTIONS".set_style(Style::new().fg(palette::TEXT).bold()),
+                "  Ctrl+P".set_style(Style::new().fg(palette::MUTED)),
+            ]),
+            Line::from(""),
+        ];
         palette_lines.extend(lines);
+        palette_lines.push(Line::from(
+            "  ↑↓ / j k navigate   Enter select   Esc close"
+                .set_style(Style::new().fg(palette::MUTED)),
+        ));
         Paragraph::new(palette_lines)
-            .style(pane_style(MOCHA_SURFACE0))
+            .style(pane_style(palette::ELEVATED))
             .wrap(Wrap { trim: true })
             .render(content, buf);
     }
@@ -666,9 +827,11 @@ fn render_transcript_scrollbar(
     for y in body.y..body.bottom() {
         let cell = buf.cell_mut((x, y)).expect("scrollbar cell should exist");
         if (thumb_start..thumb_end).contains(&y) {
-            cell.set_symbol("┃").set_style(Style::new().cyan());
+            cell.set_symbol("┃")
+                .set_style(Style::new().fg(palette::FOCUS));
         } else {
-            cell.set_symbol("│").set_style(Style::new().dim());
+            cell.set_symbol("│")
+                .set_style(Style::new().fg(palette::BORDER));
         }
     }
 }
@@ -683,7 +846,7 @@ pub(super) fn render_transcript_line(
 ) -> Vec<HyperlinkLine> {
     if kind == TranscriptKind::Separator {
         return vec![HyperlinkLine::new(
-            Line::from("─".repeat(usize::from(width))).style(Style::new().dim()),
+            Line::from("─".repeat(usize::from(width))).style(Style::new().fg(palette::BORDER)),
         )];
     }
     if let Some(status) = tool_status
@@ -711,7 +874,7 @@ pub(super) fn render_transcript_line(
         TranscriptKind::Error => LineStyle::Red,
     };
 
-    let prefix_width = label.len() + if selected { 4 } else { 2 };
+    let prefix_width = label.len() + 4;
     let body_width = width.saturating_sub(prefix_width).max(1);
     let initial_prefix = style.label_prefix(label, selected);
     let subsequent_prefix = " ".repeat(prefix_width).into();
@@ -760,8 +923,8 @@ fn tool_block_lines(
     };
     let block_width = width.saturating_sub(block_indent).max(1);
     let block_background = match kind {
-        TranscriptKind::Output => MOCHA_MANTLE,
-        TranscriptKind::Tool | TranscriptKind::Diff => MOCHA_SURFACE0,
+        TranscriptKind::Output => palette::DARK,
+        TranscriptKind::Tool | TranscriptKind::Diff => palette::SURFACE,
         TranscriptKind::System
         | TranscriptKind::User
         | TranscriptKind::Assistant
@@ -769,7 +932,7 @@ fn tool_block_lines(
         | TranscriptKind::Separator
         | TranscriptKind::Status
         | TranscriptKind::Audit
-        | TranscriptKind::Error => MOCHA_SURFACE0,
+        | TranscriptKind::Error => palette::SURFACE,
     };
     let label = kind.label();
     let label_prefix_width = label.len() + 3;
@@ -820,7 +983,7 @@ fn tool_block_lines(
                 spans.push(" ".repeat(block_indent).into());
             }
             let accent_style = if kind == TranscriptKind::Output {
-                Style::new().fg(MOCHA_SURFACE1).bg(block_background)
+                Style::new().fg(palette::BORDER).bg(block_background)
             } else {
                 status.accent_style()
             };
@@ -869,9 +1032,9 @@ fn tool_block_lines(
 impl ToolBlockStatus {
     fn accent_style(self) -> Style {
         match self {
-            Self::Running => Style::new().cyan().bg(MOCHA_SURFACE0),
-            Self::Success => Style::new().green().bg(MOCHA_SURFACE0),
-            Self::Fail => Style::new().red().bg(MOCHA_SURFACE0),
+            Self::Running => Style::new().fg(palette::CYAN).bg(palette::SURFACE),
+            Self::Success => Style::new().fg(palette::SUCCESS).bg(palette::SURFACE),
+            Self::Fail => Style::new().fg(palette::ERROR).bg(palette::SURFACE),
         }
     }
 }
@@ -888,56 +1051,63 @@ enum LineStyle {
 impl LineStyle {
     fn label_prefix(self, text: &str, selected: bool) -> Span<'static> {
         if selected {
-            self.label(format!("> {text}: "))
+            self.label(format!("▶ {}  ", text.to_uppercase()))
         } else {
-            self.label(format!("{text}: "))
+            self.label(format!("▎ {}  ", text.to_uppercase()))
         }
     }
 
     fn label(self, text: String) -> Span<'static> {
-        match self {
-            Self::Cyan => text.cyan().bold(),
-            Self::Dim => text.dim().bold(),
-            Self::Green => text.green().bold(),
-            Self::Magenta => text.magenta().bold(),
-            Self::Red => text.red().bold(),
-        }
+        Span::styled(text, Style::new().fg(self.color()).bold())
     }
 
     fn text(self, text: String) -> Span<'static> {
-        match self {
-            Self::Cyan => text.into(),
-            Self::Dim => text.dim(),
-            Self::Green => text.green(),
-            Self::Magenta => text.into(),
-            Self::Red => text.red(),
-        }
+        Span::styled(text, Style::new().fg(self.text_color()))
     }
 
     fn line_style(self) -> Style {
+        Style::new().fg(self.text_color())
+    }
+
+    fn color(self) -> Color {
         match self {
-            Self::Cyan | Self::Magenta => Style::new(),
-            Self::Dim => Style::new().dim(),
-            Self::Green => Style::new().green(),
-            Self::Red => Style::new().red(),
+            Self::Cyan => palette::CYAN,
+            Self::Dim => palette::MUTED,
+            Self::Green => palette::SUCCESS,
+            Self::Magenta => palette::PURPLE,
+            Self::Red => palette::ERROR,
+        }
+    }
+
+    fn text_color(self) -> Color {
+        match self {
+            Self::Dim => palette::MUTED,
+            Self::Green => palette::SUCCESS,
+            Self::Red => palette::ERROR,
+            Self::Cyan | Self::Magenta => palette::TEXT,
         }
     }
 }
 
 fn approval_lines(pending: &super::PendingApproval) -> Vec<Line<'static>> {
     vec![
-        Line::from(vec!["? ".cyan().bold(), pending.title().to_string().bold()]),
-        Line::from(vec!["  ".into(), pending.detail().to_string().dim()]),
+        Line::from(vec![
+            "? ".fg(palette::WARNING).bold(),
+            pending.title().to_string().fg(palette::TEXT).bold(),
+        ]),
         Line::from(vec![
             "  ".into(),
-            "enter/y".green().bold(),
-            " approve  ".dim(),
-            "esc/n".red().bold(),
-            " deny  ".dim(),
-            "e".cyan().bold(),
-            " edit  ".dim(),
-            "?".bold(),
-            " explain".dim(),
+            pending.detail().to_string().fg(palette::MUTED),
+        ]),
+        Line::from(vec![
+            "  ".into(),
+            " Approve ↵ ".fg(palette::DARK).bg(palette::SUCCESS).bold(),
+            " ".into(),
+            " Deny n ".fg(palette::TEXT).bg(palette::ERROR).bold(),
+            " ".into(),
+            " Edit e ".fg(palette::TEXT).bg(palette::ELEVATED).bold(),
+            " ".into(),
+            " Explain ? ".fg(palette::TEXT).bg(palette::ELEVATED).bold(),
         ]),
     ]
 }

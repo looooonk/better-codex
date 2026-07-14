@@ -1,5 +1,6 @@
 use super::LocalSlashCommand;
 use super::design::body_rect_after_title;
+use super::design::palette;
 use super::design::pane_content_rect;
 use super::shell_command::ShellCommand;
 use crate::wrapping::RtOptions;
@@ -64,8 +65,8 @@ pub(super) fn composer_cursor_position(
 fn composer_lines(text: &str, is_empty: bool) -> Vec<Line<'static>> {
     if is_empty {
         return vec![Line::from(vec![
-            "> ".cyan(),
-            "Type a message, Shift+Enter for newline".dim(),
+            "> ".fg(palette::FOCUS),
+            "Type a message, Shift+Enter for newline".fg(palette::MUTED),
         ])];
     }
 
@@ -76,7 +77,11 @@ fn composer_lines(text: &str, is_empty: bool) -> Vec<Line<'static>> {
             continue;
         }
 
-        let prefix = if index == 0 { "> ".cyan() } else { "  ".dim() };
+        let prefix = if index == 0 {
+            "> ".fg(palette::FOCUS)
+        } else {
+            "  ".fg(palette::MUTED)
+        };
         let mut spans = vec![prefix];
         let command_range = if index != 0 {
             None
@@ -100,7 +105,7 @@ fn composer_lines(text: &str, is_empty: bool) -> Vec<Line<'static>> {
             spans.push(
                 logical_line[command_range.clone()]
                     .to_string()
-                    .cyan()
+                    .fg(palette::FOCUS)
                     .bold(),
             );
             spans.push(logical_line[command_range.end..].to_string().into());

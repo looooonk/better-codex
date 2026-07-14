@@ -52,6 +52,10 @@ impl CommandPaletteState {
         self.selected = entries.len().saturating_sub(1);
     }
 
+    pub(super) fn select(&mut self, index: usize, entries: &[CommandPaletteEntry]) {
+        self.selected = index.min(entries.len().saturating_sub(1));
+    }
+
     pub(super) fn selected_action(
         &self,
         entries: &[CommandPaletteEntry],

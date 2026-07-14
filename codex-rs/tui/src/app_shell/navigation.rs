@@ -1,8 +1,9 @@
-use super::design::MOCHA_MANTLE;
+use super::design::palette;
 use super::design::tab_span;
+use ratatui::style::Style;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
-use ratatui::text::Span;
 use serde::Deserialize;
 use serde::Serialize;
 use std::path::Path;
@@ -15,17 +16,25 @@ const STATE_FILE: &str = "app-shell-state.json";
 pub(super) enum DashboardRoute {
     #[default]
     Sessions,
+    Agents,
     Workspace,
     Settings,
     Help,
 }
 
 impl DashboardRoute {
-    pub(super) const ALL: [Self; 4] = [Self::Settings, Self::Workspace, Self::Sessions, Self::Help];
+    pub(super) const ALL: [Self; 5] = [
+        Self::Sessions,
+        Self::Agents,
+        Self::Workspace,
+        Self::Settings,
+        Self::Help,
+    ];
 
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Sessions => "Sessions",
+            Self::Agents => "Agents",
             Self::Workspace => "Workspace",
             Self::Settings => "Settings",
             Self::Help => "Help",
@@ -58,32 +67,33 @@ pub(super) struct DashboardTabs {
 
 impl DashboardTabs {
     pub(super) fn new(width: u16) -> Self {
-        let border_count = u16::try_from(DashboardRoute::ALL.len().saturating_add(1))
-            .unwrap_or(u16::MAX)
-            .min(width);
-        let available_width = width.saturating_sub(border_count);
         let tab_count = u16::try_from(DashboardRoute::ALL.len()).unwrap_or(u16::MAX);
         let label_widths = DashboardRoute::ALL
             .map(|route| u16::try_from(route.label().chars().count()).unwrap_or(u16::MAX));
-        let minimum_width = label_widths.iter().copied().sum::<u16>();
-        let extra_width = available_width.saturating_sub(minimum_width);
+        let separator_width = tab_count.saturating_sub(1);
+        let minimum_width = label_widths
+            .iter()
+            .copied()
+            .sum::<u16>()
+            .saturating_add(separator_width);
+        let extra_width = width.saturating_sub(minimum_width);
         let padding_pairs = extra_width / 2;
         let base_padding_pairs = padding_pairs / tab_count;
         let remainder_pairs = padding_pairs % tab_count;
         let unpaired_width = extra_width % 2;
-        let use_label_widths = available_width >= minimum_width;
-        let mut start = u16::from(width > 0);
+        let use_label_widths = width >= minimum_width;
+        let mut start = 0;
         let cells = std::array::from_fn(|index| {
             let route = DashboardRoute::ALL[index];
             let cell_width = if use_label_widths {
                 let padding_pairs =
                     base_padding_pairs + u16::from(index < usize::from(remainder_pairs));
                 label_widths[index]
+                    + u16::from(index + 1 < DashboardRoute::ALL.len())
                     + padding_pairs.saturating_mul(2)
                     + unpaired_width * u16::from(index + 1 == DashboardRoute::ALL.len())
             } else {
-                available_width / tab_count
-                    + u16::from(index < usize::from(available_width % tab_count))
+                width / tab_count + u16::from(index < usize::from(width % tab_count))
             };
             let cell = DashboardTabCell {
                 route,
@@ -91,40 +101,42 @@ impl DashboardTabs {
                 width: cell_width,
             };
             start = start.saturating_add(cell_width);
-            if index + 1 < DashboardRoute::ALL.len() && start < width {
-                start = start.saturating_add(1);
-            }
             cell
         });
         Self { width, cells }
     }
 
-    pub(super) fn lines(self, active_route: DashboardRoute) -> [Line<'static>; 3] {
-        let mut middle = Vec::new();
-        let mut written = 0u16;
-        if self.width > 0 {
-            middle.push(Span::from("│").dim());
-            written += 1;
-        }
-        for cell in self.cells {
+    pub(super) fn lines(self, active_route: DashboardRoute) -> [Line<'static>; 2] {
+        let mut labels = Vec::new();
+        let mut underline = Vec::new();
+        for (index, cell) in self.cells.into_iter().enumerate() {
             if cell.width > 0 {
+                let has_separator = index + 1 < DashboardRoute::ALL.len() && cell.width > 1;
+                let label_width = cell.width.saturating_sub(u16::from(has_separator));
                 let label = cell.route.label();
-                let label = crate::text_formatting::truncate_text(label, usize::from(cell.width));
-                middle.push(tab_span(
-                    format!("{label:^width$}", width = usize::from(cell.width)),
+                let label = crate::text_formatting::truncate_text(label, usize::from(label_width));
+                labels.push(tab_span(
+                    format!("{label:^width$}", width = usize::from(label_width)),
                     cell.route == active_route,
                 ));
-                written = written.saturating_add(cell.width);
-            }
-            if written < self.width {
-                middle.push(Span::from("│").dim());
-                written += 1;
+                if has_separator {
+                    labels.push("│".fg(palette::BORDER).bg(palette::DARK));
+                }
+                let rule = if cell.route == active_route {
+                    "━"
+                        .repeat(usize::from(cell.width))
+                        .set_style(Style::new().fg(palette::FOCUS).bg(palette::DARK).bold())
+                } else {
+                    "─"
+                        .repeat(usize::from(cell.width))
+                        .set_style(Style::new().fg(palette::BORDER).bg(palette::DARK))
+                };
+                underline.push(rule);
             }
         }
         [
-            self.border_line('┌', '┬', '┐'),
-            Line::from(middle).bg(MOCHA_MANTLE),
-            self.border_line('└', '┴', '┘'),
+            Line::from(labels).bg(palette::DARK),
+            Line::from(underline).bg(palette::DARK),
         ]
     }
 
@@ -135,30 +147,8 @@ impl DashboardTabs {
         self.cells
             .into_iter()
             .rev()
-            .find(|cell| cell.width > 0 && column >= cell.start.saturating_sub(1))
+            .find(|cell| cell.width > 0 && column >= cell.start)
             .map(|cell| cell.route)
-    }
-
-    fn border_line(self, left: char, separator: char, right: char) -> Line<'static> {
-        let mut border = String::new();
-        if self.width > 0 {
-            border.push(left);
-        }
-        for (index, cell) in self.cells.into_iter().enumerate() {
-            let remaining = usize::from(self.width).saturating_sub(border.chars().count());
-            border.extend(std::iter::repeat_n(
-                '─',
-                usize::from(cell.width).min(remaining),
-            ));
-            if border.chars().count() < usize::from(self.width) {
-                border.push(if index + 1 == self.cells.len() {
-                    right
-                } else {
-                    separator
-                });
-            }
-        }
-        Line::from(border.dim()).bg(MOCHA_MANTLE)
     }
 }
 
@@ -225,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn dashboard_tabs_fill_width_and_make_borders_clickable() {
+    fn dashboard_tabs_fill_width_and_make_cells_clickable() {
         let tabs = DashboardTabs::new(/*width*/ 34);
         let rendered = tabs.lines(DashboardRoute::Sessions).map(|line| {
             line.spans
@@ -239,49 +229,23 @@ mod tests {
                 .iter()
                 .map(|line| line.chars().count())
                 .collect::<Vec<_>>(),
-            vec![34; 3]
+            vec![34; 2]
         );
-        assert_eq!(rendered[1].matches('│').count(), 5);
+        let expected_routes = [
+            (DashboardRoute::Sessions, 7),
+            (DashboardRoute::Agents, 7),
+            (DashboardRoute::Workspace, 7),
+            (DashboardRoute::Settings, 7),
+            (DashboardRoute::Help, 6),
+        ]
+        .into_iter()
+        .flat_map(|(route, width)| std::iter::repeat_n(Some(route), width))
+        .collect::<Vec<_>>();
         assert_eq!(
             (0..34)
                 .map(|column| tabs.route_at(column))
                 .collect::<Vec<_>>(),
-            vec![
-                Some(DashboardRoute::Settings),
-                Some(DashboardRoute::Settings),
-                Some(DashboardRoute::Settings),
-                Some(DashboardRoute::Settings),
-                Some(DashboardRoute::Settings),
-                Some(DashboardRoute::Settings),
-                Some(DashboardRoute::Settings),
-                Some(DashboardRoute::Settings),
-                Some(DashboardRoute::Settings),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Help),
-                Some(DashboardRoute::Help),
-                Some(DashboardRoute::Help),
-                Some(DashboardRoute::Help),
-                Some(DashboardRoute::Help),
-                Some(DashboardRoute::Help),
-            ]
+            expected_routes
         );
     }
 

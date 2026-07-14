@@ -1,4 +1,6 @@
 use super::ShellState;
+use super::agent_activity::AgentChildEvent;
+use super::agent_activity::AgentItemPhase;
 use super::backend::AppShellBackend;
 use crate::token_usage::TokenUsage;
 use crate::workspace_command::WorkspaceCommandExecutor;
@@ -60,6 +62,13 @@ impl ShellState {
                 if delta.thread_id == self.thread_id.to_string() {
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     self.push_streaming_assistant_delta(&delta.delta);
+                } else {
+                    self.agent_activity.record_child_progress(
+                        &delta.thread_id,
+                        &delta.item_id,
+                        AgentChildEvent::Message,
+                        &delta.delta,
+                    );
                 }
             }
             ServerNotification::PlanDelta(delta) => {
@@ -72,6 +81,13 @@ impl ShellState {
                 if delta.thread_id == self.thread_id.to_string() {
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     self.status = "reasoning".to_string();
+                } else {
+                    self.agent_activity.record_child_progress(
+                        &delta.thread_id,
+                        &delta.item_id,
+                        AgentChildEvent::Reasoning,
+                        &delta.delta,
+                    );
                 }
             }
             ServerNotification::ReasoningTextDelta(delta) => {
@@ -108,6 +124,12 @@ impl ShellState {
                     if completed_active_turn && turn_ended {
                         self.push_turn_separator();
                     }
+                } else {
+                    self.agent_activity.record_child_turn(
+                        &completed.thread_id,
+                        &completed.turn.id,
+                        &completed.turn.status,
+                    );
                 }
             }
             ServerNotification::ThreadTokenUsageUpdated(usage) => {
@@ -158,21 +180,34 @@ impl ShellState {
                 }
             }
             ServerNotification::ItemStarted(started) => {
-                if started.thread_id == self.thread_id.to_string()
-                    && let Some(title) = item_activity_title(&started.item)
-                {
-                    let item_id = started.item.id().to_string();
-                    self.record_item_activity(&started.item, title.clone(), "in progress");
-                    self.push_tool_with_status_for_item(
-                        item_id,
-                        title,
-                        super::ToolBlockStatus::Running,
+                if started.thread_id == self.thread_id.to_string() {
+                    self.agent_activity.reduce_started(&started.item);
+                    if let Some(title) = item_activity_title(&started.item) {
+                        let item_id = started.item.id().to_string();
+                        self.record_item_activity(&started.item, title.clone(), "in progress");
+                        self.push_tool_with_status_for_item(
+                            item_id,
+                            title,
+                            super::ToolBlockStatus::Running,
+                        );
+                    }
+                } else {
+                    self.agent_activity.record_child_item(
+                        &started.thread_id,
+                        &started.item,
+                        AgentItemPhase::Started,
                     );
                 }
             }
             ServerNotification::ItemCompleted(completed) => {
                 if completed.thread_id == self.thread_id.to_string() {
                     self.ingest_completed_item(completed.item);
+                } else {
+                    self.agent_activity.record_child_item(
+                        &completed.thread_id,
+                        &completed.item,
+                        AgentItemPhase::Completed,
+                    );
                 }
             }
             ServerNotification::CommandExecutionOutputDelta(delta) => {
@@ -181,6 +216,13 @@ impl ShellState {
                         delta.item_id,
                         delta.delta,
                         super::ToolBlockStatus::Running,
+                    );
+                } else {
+                    self.agent_activity.record_child_progress(
+                        &delta.thread_id,
+                        &delta.item_id,
+                        AgentChildEvent::Output,
+                        &delta.delta,
                     );
                 }
             }
@@ -250,6 +292,13 @@ impl ShellState {
                         };
                         self.push_error(error.error.message);
                     }
+                } else {
+                    self.agent_activity.record_child_error(
+                        &error.thread_id,
+                        &error.turn_id,
+                        &error.error.message,
+                        error.will_retry,
+                    );
                 }
             }
             ServerNotification::Warning(warning) => {
@@ -350,6 +399,8 @@ impl ShellState {
                     .await?;
                     return Ok(());
                 }
+                self.selector = None;
+                self.command_palette = None;
                 self.pending_approval = Some(pending);
                 self.push_status(format!("approval requested: {title}"));
                 Ok(())
@@ -366,6 +417,8 @@ impl ShellState {
                         .await?;
                         return Ok(());
                     }
+                    self.selector = None;
+                    self.command_palette = None;
                     self.pending_elicitation = Some(pending);
                     self.push_status(format!("elicitation requested: {title}"));
                     Ok(())
@@ -380,6 +433,8 @@ impl ShellState {
                         .await?;
                         return Ok(());
                     }
+                    self.selector = None;
+                    self.command_palette = None;
                     self.pending_user_input = Some(pending);
                     self.push_status(format!("input requested: {title}"));
                     Ok(())

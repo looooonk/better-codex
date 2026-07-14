@@ -54,6 +54,9 @@ use std::time::Duration;
 use tokio::select;
 use tokio_stream::StreamExt;
 
+mod agent_activity;
+mod agent_activity_controller;
+mod agent_activity_render;
 mod approval;
 mod backend;
 mod command_palette;
@@ -66,12 +69,15 @@ mod design;
 mod elicitation;
 mod events;
 mod external_agent_import;
+mod header;
 mod integrations;
 mod mcp_management;
 mod navigation;
 mod plugin_management;
 mod render;
 mod safety_buffering;
+mod selector;
+mod selector_controller;
 mod sessions;
 mod settings;
 mod shell_command;
@@ -82,6 +88,7 @@ mod startup_model_migration;
 mod transcript_render;
 mod user_input;
 mod workspace;
+use agent_activity::AgentActivityState;
 use approval::ApprovalAction;
 use approval::ApprovalChoice;
 use approval::PendingApproval;
@@ -105,6 +112,8 @@ use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
 use render::draw_shell;
 use safety_buffering::SafetyBufferingState;
+use selector::SelectorState;
+use selector::SelectorValue;
 use sessions::SessionListState;
 use settings::SettingsAction;
 use settings::SettingsState;
@@ -244,9 +253,10 @@ pub(crate) async fn run(
                                     size.height,
                                 ),
                                 position,
+                                &config,
                                 &mut app_server,
                             )
-                            .await;
+                            .await?;
                         tui.frame_requester().schedule_frame();
                     }
                     TuiEvent::Paste(text) => {
@@ -521,9 +531,11 @@ struct ShellState {
     animations: bool,
     show_tooltips: bool,
     command_palette: Option<CommandPaletteState>,
+    selector: Option<SelectorState<SelectorValue>>,
     codex_home: std::path::PathBuf,
     dashboard_route: DashboardRoute,
     dashboard_visible: bool,
+    agents_focused: bool,
     composer: ComposerState,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
     exit_confirmation_pending: bool,
@@ -544,6 +556,7 @@ struct ShellState {
     plan_steps: Vec<TurnPlanStep>,
     active_goal: Option<ThreadGoal>,
     tool_activity: VecDeque<ToolActivity>,
+    agent_activity: AgentActivityState,
     subagent_activity: VecDeque<ToolActivity>,
     latest_diff: Option<DiffSummary>,
     workspace_git_status: Option<WorkspaceGitStatus>,
@@ -603,9 +616,11 @@ impl ShellState {
             animations,
             show_tooltips,
             command_palette: None,
+            selector: None,
             codex_home,
             dashboard_route,
             dashboard_visible: true,
+            agents_focused: false,
             composer: ComposerState::default(),
             workspace_command_runner: None,
             exit_confirmation_pending: false,
@@ -626,6 +641,7 @@ impl ShellState {
             plan_steps: Vec::new(),
             active_goal: None,
             tool_activity: VecDeque::new(),
+            agent_activity: AgentActivityState::default(),
             subagent_activity: VecDeque::new(),
             latest_diff: None,
             workspace_git_status: None,
@@ -701,6 +717,10 @@ impl ShellState {
         if !matches!(key.code, KeyCode::Esc) {
             self.exit_confirmation_pending = false;
         }
+        if self.selector.is_some() {
+            self.handle_selector_key(key, app_server).await?;
+            return Ok(false);
+        }
         if self.command_palette.is_some() {
             self.handle_command_palette_key(key, app_server).await?;
             return Ok(false);
@@ -716,11 +736,34 @@ impl ShellState {
             }
             return Ok(false);
         }
+        if self.pending_elicitation.is_some() {
+            if let Some(choice) = elicitation_choice_from_key(key) {
+                self.resolve_pending_elicitation(app_server, choice).await?;
+            }
+            return Ok(false);
+        }
+        if self.pending_external_agent_import.is_some() {
+            self.handle_external_agent_import_key(key, app_server)
+                .await?;
+            return Ok(false);
+        }
+        if self.pending_mcp_management.is_some() {
+            self.handle_mcp_management_key(key, app_server).await?;
+            return Ok(false);
+        }
+        if self.pending_plugin_management.is_some() {
+            self.handle_plugin_management_key(key, app_server).await?;
+            return Ok(false);
+        }
+        if self.pending_user_input.is_some() {
+            return self.handle_user_input_key(key, app_server).await;
+        }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('d')) {
             self.dashboard_visible = !self.dashboard_visible;
             if !self.dashboard_visible {
                 self.session_list.focused = false;
                 self.settings.focused = false;
+                self.agents_focused = false;
             }
             return Ok(false);
         }
@@ -734,6 +777,7 @@ impl ShellState {
             self.set_dashboard_route(route);
             self.session_list.focused = route_already_visible && route == DashboardRoute::Sessions;
             self.settings.focused = route_already_visible && route == DashboardRoute::Settings;
+            self.agents_focused = route_already_visible && route == DashboardRoute::Agents;
             if route == DashboardRoute::Sessions {
                 self.refresh_session_list(app_server).await;
             }
@@ -750,6 +794,7 @@ impl ShellState {
             self.set_dashboard_route(route);
             self.session_list.focused = false;
             self.settings.focused = false;
+            self.agents_focused = false;
             return Ok(false);
         }
         if self.transcript_selection.is_some()
@@ -766,32 +811,6 @@ impl ShellState {
             }
             return Ok(false);
         }
-        if self.pending_elicitation.is_some()
-            && let Some(choice) = elicitation_choice_from_key(key)
-        {
-            self.resolve_pending_elicitation(app_server, choice).await?;
-            return Ok(false);
-        }
-        if self.pending_external_agent_import.is_some()
-            && self
-                .handle_external_agent_import_key(key, app_server)
-                .await?
-        {
-            return Ok(false);
-        }
-        if self.pending_mcp_management.is_some()
-            && self.handle_mcp_management_key(key, app_server).await?
-        {
-            return Ok(false);
-        }
-        if self.pending_plugin_management.is_some()
-            && self.handle_plugin_management_key(key, app_server).await?
-        {
-            return Ok(false);
-        }
-        if self.pending_user_input.is_some() {
-            return self.handle_user_input_key(key, app_server).await;
-        }
         if self.dashboard_route == DashboardRoute::Sessions
             && self.session_list.focused
             && self
@@ -803,6 +822,14 @@ impl ShellState {
         if self.dashboard_route == DashboardRoute::Settings
             && self.settings.focused
             && self.handle_settings_key(key, app_server).await?
+        {
+            return Ok(false);
+        }
+        if self.handle_agent_activity_key(key) {
+            return Ok(false);
+        }
+        if self.dashboard_focused()
+            && matches!(key.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
         {
             return Ok(false);
         }
@@ -819,6 +846,14 @@ impl ShellState {
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('p')) {
             self.open_command_palette();
+            return Ok(false);
+        }
+        if key.modifiers.contains(KeyModifiers::ALT) && matches!(key.code, KeyCode::Char('m')) {
+            self.open_model_selector();
+            return Ok(false);
+        }
+        if key.modifiers.contains(KeyModifiers::ALT) && matches!(key.code, KeyCode::Char('e')) {
+            self.open_reasoning_selector();
             return Ok(false);
         }
         match key.code {
@@ -926,20 +961,123 @@ impl ShellState {
         &mut self,
         area: ratatui::layout::Rect,
         position: ratatui::layout::Position,
+        config: &Config,
         app_server: &mut S,
-    ) where
+    ) -> Result<()>
+    where
         S: AppShellBackend,
     {
-        let Some(route) = (render::ShellView { shell: self }).dashboard_route_at(area, position)
-        else {
-            return;
-        };
-        self.set_dashboard_route(route);
-        self.session_list.focused = false;
-        self.settings.focused = false;
-        if route == DashboardRoute::Sessions {
-            self.refresh_session_list(app_server).await;
+        if self
+            .handle_selector_click(area, position, app_server)
+            .await?
+        {
+            return Ok(());
         }
+        if self.command_palette.is_some() {
+            let entry =
+                (render::ShellView { shell: self }).command_palette_entry_at(area, position);
+            if let Some(index) = entry {
+                let entries = self.command_palette_entries();
+                if let Some(palette) = &mut self.command_palette {
+                    palette.select(index, &entries);
+                }
+                self.execute_selected_command_palette_action(app_server)
+                    .await?;
+            } else {
+                self.close_command_palette();
+            }
+            return Ok(());
+        }
+        if self.pending_approval.is_some() {
+            if let Some(action) =
+                (render::ShellView { shell: self }).approval_action_at(area, position)
+            {
+                self.handle_pending_approval_action(app_server, action)
+                    .await?;
+            }
+            return Ok(());
+        }
+        if self.pending_elicitation.is_some()
+            || self.pending_external_agent_import.is_some()
+            || self.pending_mcp_management.is_some()
+            || self.pending_plugin_management.is_some()
+            || self.pending_user_input.is_some()
+            || self.safety_buffering_modal_lines().is_some()
+        {
+            return Ok(());
+        }
+        if let Some(control) = (render::ShellView { shell: self }).header_control_at(area, position)
+        {
+            match control {
+                header::HeaderControl::Dashboard => {
+                    self.dashboard_visible = !self.dashboard_visible;
+                    if !self.dashboard_visible {
+                        self.session_list.focused = false;
+                        self.settings.focused = false;
+                        self.agents_focused = false;
+                    }
+                }
+                header::HeaderControl::Model => self.open_model_selector(),
+                header::HeaderControl::ReasoningEffort => self.open_reasoning_selector(),
+            }
+            return Ok(());
+        }
+        if (render::ShellView { shell: self })
+            .input_area(area)
+            .contains(position)
+        {
+            self.session_list.focused = false;
+            self.settings.focused = false;
+            self.agents_focused = false;
+            self.clear_transcript_selection();
+            return Ok(());
+        }
+        if let Some(route) = (render::ShellView { shell: self }).dashboard_route_at(area, position)
+        {
+            self.set_dashboard_route(route);
+            self.session_list.focused = route == DashboardRoute::Sessions;
+            self.settings.focused = route == DashboardRoute::Settings;
+            self.agents_focused = route == DashboardRoute::Agents;
+            if route == DashboardRoute::Sessions {
+                self.refresh_session_list(app_server).await;
+            }
+            return Ok(());
+        }
+
+        let view = render::ShellView { shell: self };
+        if self.dashboard_route == DashboardRoute::Settings
+            && let Some(target) = view.dashboard_panel_position_at(area, position, "Settings")
+        {
+            if self.settings.select_at(target.line, target.column) {
+                self.activate_selected_setting(app_server).await?;
+            }
+            return Ok(());
+        }
+        if self.dashboard_route == DashboardRoute::Sessions
+            && let Some(target) = view.dashboard_panel_position_at(area, position, "Sessions")
+        {
+            if self.session_list.select_at_line(target.line) {
+                self.resume_selected_session(config, app_server).await?;
+            }
+            return Ok(());
+        }
+        if self.dashboard_route == DashboardRoute::Agents
+            && let Some(target) = view.dashboard_panel_position_at(area, position, "Agents")
+        {
+            self.agents_focused = true;
+            let thread_id = target.line.checked_sub(1).and_then(|line| {
+                agent_activity_render::agent_activity_thread_at_line(
+                    &self.agent_activity,
+                    line,
+                    /*line_budget*/ 24,
+                )
+                .map(ToString::to_string)
+            });
+            if let Some(thread_id) = thread_id {
+                self.agent_activity.select_thread(&thread_id);
+            }
+        }
+        Ok(())
     }
 
     async fn refresh_workspace_status(
@@ -1078,8 +1216,19 @@ impl ShellState {
     }
 
     fn insert_text(&mut self, text: &str) {
+        if self.selector.is_some()
+            || self.command_palette.is_some()
+            || self.safety_buffering_modal_lines().is_some()
+            || self.pending_approval.is_some()
+            || self.pending_elicitation.is_some()
+            || self.pending_external_agent_import.is_some()
+            || self.pending_mcp_management.is_some()
+            || self.pending_plugin_management.is_some()
+            || self.dashboard_focused()
+        {
+            return;
+        }
         self.clear_transcript_selection();
-        self.close_command_palette();
         self.composer.insert_str(text);
     }
 
@@ -1099,13 +1248,13 @@ impl ShellState {
                 self.execute_selected_command_palette_action(app_server)
                     .await?;
             }
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 let entries = self.command_palette_entries();
                 if let Some(palette) = &mut self.command_palette {
                     palette.move_up(&entries);
                 }
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 let entries = self.command_palette_entries();
                 if let Some(palette) = &mut self.command_palette {
                     palette.move_down(&entries);
@@ -1172,12 +1321,16 @@ impl ShellState {
                 self.session_list.focused = false;
                 Ok(true)
             }
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 self.session_list.move_selection_up();
                 Ok(true)
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 self.session_list.move_selection_down();
+                Ok(true)
+            }
+            KeyCode::Enter => {
+                self.resume_selected_session(config, app_server).await?;
                 Ok(true)
             }
             KeyCode::Char('/') => {
@@ -1229,7 +1382,6 @@ impl ShellState {
             | KeyCode::Backspace
             | KeyCode::Left
             | KeyCode::Right
-            | KeyCode::Enter
             | KeyCode::Home
             | KeyCode::End
             | KeyCode::Delete
@@ -1479,10 +1631,12 @@ impl ShellState {
         self.plan_explanation = None;
         self.plan_steps.clear();
         self.active_goal = None;
+        self.agent_activity = AgentActivityState::default();
         self.active_turn_id = None;
         self.pending_approval = None;
         self.pending_elicitation = None;
         self.pending_user_input = None;
+        self.selector = None;
         self.safety_buffering.clear();
         self.status = "ready".to_string();
         self.push_system("switched session");
@@ -1532,14 +1686,15 @@ impl ShellState {
                 self.set_dashboard_route(DashboardRoute::Settings);
                 self.session_list.focused = false;
                 self.settings.focused = true;
-                self.settings
-                    .start_edit(SettingsAction::Model, self.model.clone());
+                self.settings.focus_action(SettingsAction::Model);
+                self.open_model_selector();
             }
             CommandPaletteAction::ChangePermissions => {
                 self.set_dashboard_route(DashboardRoute::Settings);
                 self.session_list.focused = false;
                 self.settings.focused = true;
                 self.settings.focus_action(SettingsAction::ApprovalPolicy);
+                self.open_approval_selector();
             }
             CommandPaletteAction::ResumeThread => {
                 self.set_dashboard_route(DashboardRoute::Sessions);
@@ -1564,6 +1719,7 @@ impl ShellState {
     }
 
     fn open_command_palette(&mut self) {
+        self.selector = None;
         self.command_palette = Some(CommandPaletteState::default());
         self.clear_transcript_selection();
     }
@@ -1577,6 +1733,9 @@ impl ShellState {
             return;
         }
 
+        self.session_list.focused = false;
+        self.settings.focused = false;
+        self.agents_focused = false;
         self.dashboard_route = route;
         let route_state = AppShellRouteState { route };
         if let Err(err) = route_state.save(&self.codex_home) {
@@ -2147,7 +2306,7 @@ impl ShellState {
         }
 
         match key.code {
-            KeyCode::Esc => Ok(true),
+            KeyCode::Esc => Ok(false),
             KeyCode::Enter => {
                 if key.modifiers.contains(KeyModifiers::SHIFT) {
                     self.composer.insert_newline();
@@ -2343,6 +2502,7 @@ impl ShellState {
     }
 
     fn ingest_completed_item(&mut self, item: ThreadItem) {
+        self.agent_activity.reduce_completed(&item);
         match item {
             ThreadItem::UserMessage { content, .. } => {
                 let text = format_user_inputs(&content);
@@ -2739,7 +2899,8 @@ impl ShellState {
     }
 
     fn dashboard_focused(&self) -> bool {
-        self.dashboard_visible && (self.session_list.focused || self.settings.focused)
+        self.dashboard_visible
+            && (self.session_list.focused || self.settings.focused || self.agents_focused)
     }
 
     #[cfg(test)]
@@ -2775,9 +2936,11 @@ impl ShellState {
             animations: true,
             show_tooltips: true,
             command_palette: None,
+            selector: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            agents_focused: false,
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Summarize the new shell architecture");
@@ -2826,6 +2989,7 @@ impl ShellState {
                     status: "completed".to_string(),
                 },
             ]),
+            agent_activity: AgentActivityState::default(),
             subagent_activity: VecDeque::new(),
             latest_diff: Some(DiffSummary {
                 files: 3,
@@ -3014,9 +3178,11 @@ pub mod bench_support {
             animations: true,
             show_tooltips: true,
             command_palette: None,
+            selector: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            agents_focused: false,
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Benchmark the app shell render path");
@@ -3054,6 +3220,7 @@ pub mod bench_support {
                 title: "render benchmark".to_string(),
                 status: "running".to_string(),
             }]),
+            agent_activity: AgentActivityState::default(),
             subagent_activity: VecDeque::new(),
             latest_diff: Some(DiffSummary {
                 files: 4,
@@ -3369,18 +3536,21 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
     }
 
     if key_hint::ctrl(KeyCode::Char('1')).is_press(key) {
-        return Some(DashboardRoute::Settings);
+        return Some(DashboardRoute::Sessions);
     }
     if key_hint::ctrl(KeyCode::Char('2')).is_press(key) {
-        return Some(DashboardRoute::Workspace);
+        return Some(DashboardRoute::Agents);
     }
     if key_hint::ctrl(KeyCode::Char(' ')).is_press(key) {
         return Some(DashboardRoute::Workspace);
     }
     if key_hint::ctrl(KeyCode::Char('3')).is_press(key) {
-        return Some(DashboardRoute::Sessions);
+        return Some(DashboardRoute::Workspace);
     }
     if key_hint::ctrl(KeyCode::Char('4')).is_press(key) {
+        return Some(DashboardRoute::Settings);
+    }
+    if key_hint::ctrl(KeyCode::Char('5')).is_press(key) {
         return Some(DashboardRoute::Help);
     }
 

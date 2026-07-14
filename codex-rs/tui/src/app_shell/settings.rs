@@ -1,10 +1,12 @@
 use super::dashboard::dashboard_value;
+use super::design::palette;
+use super::design::selection_style;
 use super::integrations::McpInventorySummary;
 use super::integrations::PluginInventorySummary;
 use crate::text_formatting::truncate_text;
 use codex_app_server_protocol::AskForApproval;
-use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ReasoningEffort;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -78,13 +80,21 @@ struct SettingsFeedback {
 impl SettingsState {
     pub(super) fn lines(&self, view: &SettingsView, width: usize) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
-        let focus = if self.focused { "focused" } else { "unfocused" };
+        let focus = if self.focused {
+            "● FOCUSED"
+        } else {
+            "○ CLICK TO FOCUS"
+        };
         lines.push(Line::from(vec![
-            focus.cyan(),
-            " ".dim(),
-            self.page.label().dim(),
-            " ".dim(),
-            format!("{} fields", self.actions().len()).dim(),
+            focus.fg(if self.focused {
+                palette::FOCUS
+            } else {
+                palette::MUTED
+            }),
+            "  ".into(),
+            self.page.label().to_uppercase().fg(palette::TEXT).bold(),
+            "  ".into(),
+            format!("{} fields", self.actions().len()).fg(palette::MUTED),
         ]));
         lines.push(Line::from(vec![
             tab("Model", self.page == SettingsPage::Model),
@@ -146,7 +156,7 @@ impl SettingsState {
 
     pub(super) fn previous_page(&mut self) {
         self.page = match self.page {
-            SettingsPage::Model => SettingsPage::Appearance,
+            SettingsPage::Model => SettingsPage::Integrations,
             SettingsPage::Permissions => SettingsPage::Model,
             SettingsPage::Appearance => SettingsPage::Permissions,
             SettingsPage::Integrations => SettingsPage::Appearance,
@@ -157,6 +167,41 @@ impl SettingsState {
 
     pub(super) fn selected_action(&self) -> SettingsAction {
         self.actions()[self.selected.min(self.actions().len().saturating_sub(1))]
+    }
+
+    pub(super) fn select_at(&mut self, line: usize, column: usize) -> bool {
+        self.focused = true;
+        match line {
+            1 if column < 5 => {
+                self.set_page(SettingsPage::Model);
+                return false;
+            }
+            1 if (7..18).contains(&column) => {
+                self.set_page(SettingsPage::Permissions);
+                return false;
+            }
+            2 if column < 10 => {
+                self.set_page(SettingsPage::Appearance);
+                return false;
+            }
+            2 if (12..24).contains(&column) => {
+                self.set_page(SettingsPage::Integrations);
+                return false;
+            }
+            1 | 2 => return false,
+            _ => {}
+        }
+        if line < self.action_line_start() {
+            return false;
+        }
+        let action_line = line.saturating_sub(self.action_line_start());
+        if action_line >= self.actions().len() {
+            return false;
+        }
+        self.selected = action_line;
+        self.edit = None;
+        self.feedback = None;
+        true
     }
 
     pub(super) fn start_edit(&mut self, action: SettingsAction, current_value: String) {
@@ -244,15 +289,30 @@ impl SettingsState {
             SettingsPage::Integrations => &[SettingsAction::McpServers, SettingsAction::Plugins],
         }
     }
+
+    fn action_line_start(&self) -> usize {
+        3usize
+            .saturating_add(usize::from(self.edit.is_some()))
+            .saturating_add(usize::from(self.feedback.is_some()))
+    }
+
+    fn set_page(&mut self, page: SettingsPage) {
+        if self.page != page {
+            self.page = page;
+            self.selected = 0;
+            self.edit = None;
+            self.feedback = None;
+        }
+    }
 }
 
 impl SettingsPage {
     fn label(self) -> &'static str {
         match self {
-            Self::Model => "model",
-            Self::Permissions => "permissions",
-            Self::Appearance => "appearance",
-            Self::Integrations => "integrations",
+            Self::Model => "Model",
+            Self::Permissions => "Permissions",
+            Self::Appearance => "Appearance",
+            Self::Integrations => "Integrations",
         }
     }
 }
@@ -260,24 +320,24 @@ impl SettingsPage {
 impl SettingsAction {
     fn label(self) -> &'static str {
         match self {
-            Self::Model => "model",
-            Self::ReasoningEffort => "reasoning",
-            Self::ServiceTier => "service tier",
-            Self::ApprovalPolicy => "approval",
-            Self::Theme => "theme",
-            Self::Animations => "animations",
-            Self::Tooltips => "tooltips",
-            Self::McpServers => "mcp servers",
-            Self::Plugins => "plugins",
+            Self::Model => "Model",
+            Self::ReasoningEffort => "Reasoning",
+            Self::ServiceTier => "Service tier",
+            Self::ApprovalPolicy => "Approval",
+            Self::Theme => "Syntax theme",
+            Self::Animations => "Animations",
+            Self::Tooltips => "Tooltips",
+            Self::McpServers => "MCP servers",
+            Self::Plugins => "Plugins",
         }
     }
 }
 
 fn tab(label: &'static str, active: bool) -> Span<'static> {
     if active {
-        label.cyan().bold()
+        format!("▸ {label}").fg(palette::FOCUS).bold()
     } else {
-        label.dim()
+        format!("  {label}").fg(palette::MUTED)
     }
 }
 
@@ -288,9 +348,9 @@ fn setting_row(
     width: usize,
 ) -> Line<'static> {
     let marker = if selected {
-        ">".cyan().bold()
+        "›".fg(palette::FOCUS).bold()
     } else {
-        " ".dim()
+        " ".into()
     };
     let label = action.label();
     let value = match action {
@@ -313,11 +373,20 @@ fn setting_row(
         SettingsAction::Plugins => view.plugin_inventory.label(),
     };
     let text = format!("{label}: {value}");
-    Line::from(vec![
+    let line = Line::from(vec![
         marker,
-        " ".dim(),
-        truncate_text(&text, width.saturating_sub(2)).into(),
-    ])
+        " ".into(),
+        truncate_text(&text, width.saturating_sub(2)).fg(if selected {
+            palette::TEXT
+        } else {
+            palette::MUTED
+        }),
+    ]);
+    if selected {
+        line.set_style(selection_style())
+    } else {
+        line
+    }
 }
 
 pub(super) fn approval_policy_label(policy: AskForApproval) -> &'static str {
@@ -326,14 +395,6 @@ pub(super) fn approval_policy_label(policy: AskForApproval) -> &'static str {
         AskForApproval::OnRequest => "on-request",
         AskForApproval::Never => "never",
         AskForApproval::Granular { .. } => "granular",
-    }
-}
-
-pub(super) fn next_approval_policy(policy: AskForApproval) -> AskForApproval {
-    match policy {
-        AskForApproval::UnlessTrusted => AskForApproval::OnRequest,
-        AskForApproval::OnRequest => AskForApproval::Never,
-        AskForApproval::Never | AskForApproval::Granular { .. } => AskForApproval::UnlessTrusted,
     }
 }
 
@@ -349,42 +410,6 @@ pub(super) fn reasoning_effort_label(effort: &ReasoningEffort) -> String {
         ReasoningEffort::Ultra => "Ultra".to_string(),
         ReasoningEffort::Custom(effort) => effort.clone(),
     }
-}
-
-pub(super) fn next_reasoning_effort(
-    effort: Option<&ReasoningEffort>,
-    preset: &ModelPreset,
-) -> Option<ReasoningEffort> {
-    if preset.supported_reasoning_efforts.is_empty() {
-        return match effort {
-            Some(effort) if effort == &preset.default_reasoning_effort => None,
-            None | Some(_) => Some(preset.default_reasoning_effort.clone()),
-        };
-    }
-
-    let Some(effort) = effort else {
-        return preset
-            .supported_reasoning_efforts
-            .first()
-            .map(|preset| preset.effort.clone());
-    };
-    if let Some(index) = preset
-        .supported_reasoning_efforts
-        .iter()
-        .position(|preset| &preset.effort == effort)
-    {
-        return preset
-            .supported_reasoning_efforts
-            .get(index + 1)
-            .map(|preset| preset.effort.clone());
-    }
-
-    preset
-        .supported_reasoning_efforts
-        .iter()
-        .find(|supported| supported.effort == preset.default_reasoning_effort)
-        .or_else(|| preset.supported_reasoning_efforts.first())
-        .map(|preset| preset.effort.clone())
 }
 
 pub(super) fn ultra_reasoning_concurrency_warning(
@@ -409,3 +434,7 @@ pub(super) fn ultra_reasoning_concurrency_warning(
 fn on_off(enabled: bool) -> &'static str {
     if enabled { "on" } else { "off" }
 }
+
+#[cfg(test)]
+#[path = "settings_tests.rs"]
+mod tests;

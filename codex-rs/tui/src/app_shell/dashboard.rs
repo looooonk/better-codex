@@ -1,12 +1,13 @@
 use super::ShellState;
 use super::ToolActivity;
+use super::agent_activity_render::agent_activity_inspector_lines;
+use super::agent_activity_render::agent_activity_overview_lines;
 use super::dashboard_rate_limits::rate_limit_lines;
 use super::dashboard_workspace::workspace_lines;
-use super::design::MOCHA_MANTLE;
-use super::design::MOCHA_SURFACE0;
 use super::design::Tone;
 use super::design::badge_span;
 use super::design::key_hint_line;
+use super::design::palette;
 use super::navigation::DashboardRoute;
 use super::navigation::DashboardTabs;
 use crate::goal_display::format_goal_elapsed_seconds;
@@ -14,6 +15,7 @@ use crate::goal_display::goal_status_label;
 use crate::text_formatting::truncate_text;
 use codex_app_server_protocol::TurnPlanStepStatus;
 use ratatui::style::Color;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -37,7 +39,12 @@ impl DashboardPanel {
     }
 
     pub(super) fn title_line(&self) -> Line<'static> {
-        let mut spans = vec![self.title.clone().bold()];
+        let mut spans = vec![
+            "◆ ".set_style(ratatui::style::Style::new().fg(palette::FOCUS)),
+            self.title
+                .to_uppercase()
+                .set_style(ratatui::style::Style::new().fg(palette::MUTED).bold()),
+        ];
         if let Some(hint) = &self.title_hint {
             spans.extend(["  ".into(), hint.clone().dim()]);
         }
@@ -54,11 +61,8 @@ impl DashboardPanel {
     }
 
     pub(super) fn background(&self, index: usize) -> Color {
-        if index.is_multiple_of(2) {
-            MOCHA_SURFACE0
-        } else {
-            MOCHA_MANTLE
-        }
+        let _ = index;
+        palette::DARK
     }
 }
 
@@ -227,12 +231,13 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
         "Tools",
         activity_lines(&shell.tool_activity, width, "idle"),
     ));
-    if !shell.subagent_activity.is_empty() {
-        panels.push(DashboardPanel::new(
-            "Subagents",
-            activity_lines(&shell.subagent_activity, width, "idle"),
-        ));
-    }
+    let mut agent_lines = agent_activity_overview_lines(&shell.agent_activity, width);
+    agent_lines.extend(agent_activity_inspector_lines(
+        &shell.agent_activity,
+        width,
+        /*line_budget*/ 24,
+    ));
+    panels.push(DashboardPanel::new("Agents", agent_lines));
 
     panels.push(DashboardPanel::new(
         "Workspace",
@@ -261,14 +266,19 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
             key_hint_line("Ctrl+D hide dashboard"),
         ]
     };
-    key_lines.insert(0, key_hint_line("Alt + Left / Right"));
+    key_lines.insert(0, key_hint_line("Alt+Left/Right switch views"));
     key_lines.extend([
-        key_hint_line("Sessions: Ctrl+3 select/focus"),
+        key_hint_line("Alt+M model, Alt+E effort"),
+        key_hint_line("Ctrl+1 Sessions  Ctrl+2 Agents"),
+        key_hint_line("Ctrl+3 Workspace Ctrl+4 Settings"),
+        key_hint_line("Ctrl+5 Help"),
+        key_hint_line("Sessions: Enter focus, j/k move"),
         key_hint_line("r resume, f fork, a/u archive"),
         key_hint_line("v archived, d delete"),
         key_hint_line("n rename, / search"),
-        key_hint_line("Settings: Ctrl+1 select/focus"),
-        key_hint_line("Enter edit/cycle, Tab page"),
+        key_hint_line("Agents: Enter focus, j/k inspect"),
+        key_hint_line("Settings: Tab page, Enter select"),
+        key_hint_line("Selectors: j/k choose, Enter apply"),
         key_hint_line("Esc return to composer"),
     ]);
     panels.push(DashboardPanel::new("Keys", key_lines));
@@ -311,12 +321,12 @@ fn route_dashboard_panels(
             "Approvals",
             "Background",
             "Tools",
-            "Subagents",
             "Thread",
             "Status",
             "Goal",
             "Plan",
         ],
+        DashboardRoute::Agents => &["Navigation", "Agents", "Approvals"],
         DashboardRoute::Workspace => &["Navigation", "Workspace", "Edits", "Tools"],
         DashboardRoute::Settings => &[
             "Navigation",
@@ -334,7 +344,6 @@ fn route_dashboard_panels(
             "Approvals",
             "Background",
             "Tools",
-            "Subagents",
         ],
     };
 
