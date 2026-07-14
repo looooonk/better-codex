@@ -224,7 +224,7 @@ fn rendering_uses_two_rows_and_marks_current_and_selected_choices() {
     let geometry = selector_geometry(area, state.options.len());
     let mut buf = Buffer::empty(area);
 
-    state.render(area, &mut buf);
+    state.render(area, /*pointer*/ None, &mut buf);
 
     let rendered = buffer_text(&buf, geometry.modal);
     assert!(rendered.contains("Choice 1  current"));

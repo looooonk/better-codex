@@ -225,6 +225,18 @@ impl SafetyBufferingState {
         Self::actions(active).get(active.selected).copied()
     }
 
+    fn click_key_at(&mut self, line: usize) -> Option<KeyCode> {
+        let active = self.active.as_mut().filter(|active| active.visible)?;
+        let actions = Self::actions(active);
+        let action_start = if active.can_retry { 4 } else { 2 };
+        let selected = line.checked_sub(action_start)?;
+        if selected >= actions.len() {
+            return None;
+        }
+        active.selected = selected;
+        Some(KeyCode::Enter)
+    }
+
     fn retry_action(&self) -> Option<SafetyBufferingAction> {
         self.active
             .as_ref()
@@ -302,6 +314,10 @@ impl ShellState {
 
     pub(super) fn safety_buffering_modal_lines(&self) -> Option<Vec<Line<'static>>> {
         self.safety_buffering.modal_lines()
+    }
+
+    pub(super) fn safety_buffering_click_key(&mut self, line: usize) -> Option<KeyCode> {
+        self.safety_buffering.click_key_at(line)
     }
 
     pub(super) async fn handle_safety_buffering_key<S>(&mut self, key: KeyEvent, app_server: &mut S)

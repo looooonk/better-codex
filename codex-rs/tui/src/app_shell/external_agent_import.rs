@@ -121,6 +121,28 @@ impl ExternalAgentImportState {
         lines.push("Enter import  Space toggle  Esc cancel".dim().into());
         lines
     }
+
+    pub(super) fn click_key_at(&mut self, line: usize, column: usize) -> Option<KeyCode> {
+        let item_start = 2 + usize::from(self.error.is_some()) * 2;
+        let item_end = item_start + self.items.len() * 2;
+        if (item_start..item_end).contains(&line) {
+            self.focused = (line - item_start) / 2;
+            return Some(KeyCode::Char(' '));
+        }
+        let footer_line = item_end + 1;
+        if line != footer_line {
+            return None;
+        }
+        key_at_label(
+            "Enter import  Space toggle  Esc cancel",
+            column,
+            &[
+                ("Enter import", KeyCode::Enter),
+                ("Space toggle", KeyCode::Char(' ')),
+                ("Esc cancel", KeyCode::Esc),
+            ],
+        )
+    }
 }
 
 impl ShellState {
@@ -264,4 +286,13 @@ fn line_to_plain_text(line: &Line<'_>) -> String {
         .iter()
         .map(|span| span.content.as_ref())
         .collect::<String>()
+}
+
+fn key_at_label(text: &str, column: usize, labels: &[(&str, KeyCode)]) -> Option<KeyCode> {
+    labels.iter().find_map(|(label, key)| {
+        let start = text.find(label)?;
+        (start..start + label.chars().count())
+            .contains(&column)
+            .then_some(*key)
+    })
 }

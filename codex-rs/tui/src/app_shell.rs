@@ -60,6 +60,7 @@ mod agent_activity_render;
 mod approval;
 mod backend;
 mod command_palette;
+mod command_palette_view;
 mod composer;
 mod composer_render;
 mod dashboard;
@@ -70,10 +71,13 @@ mod elicitation;
 mod events;
 mod external_agent_import;
 mod header;
+mod input_request_view;
 mod integrations;
 mod mcp_management;
+mod modal_view;
 mod navigation;
 mod plugin_management;
+mod pointer;
 mod render;
 mod safety_buffering;
 mod selector;
@@ -86,6 +90,7 @@ mod startup_availability_nux;
 mod startup_login;
 mod startup_model_migration;
 mod transcript_render;
+mod transcript_view;
 mod user_input;
 mod workspace;
 use agent_activity::AgentActivityState;
@@ -259,11 +264,37 @@ pub(crate) async fn run(
                             .await?;
                         tui.frame_requester().schedule_frame();
                     }
+                    TuiEvent::MouseMove(position) => {
+                        if shell.set_pointer_position(position) {
+                            tui.frame_requester().schedule_frame();
+                        }
+                    }
+                    TuiEvent::MouseScroll {
+                        position,
+                        direction,
+                    } => {
+                        let size = tui.terminal.size()?;
+                        shell.handle_mouse_scroll(
+                            ratatui::layout::Rect::new(
+                                /*x*/ 0,
+                                /*y*/ 0,
+                                size.width,
+                                size.height,
+                            ),
+                            position,
+                            direction,
+                        );
+                        tui.frame_requester().schedule_frame();
+                    }
                     TuiEvent::Paste(text) => {
                         shell.insert_text(&text);
                         tui.frame_requester().schedule_frame();
                     }
-                    TuiEvent::Resize | TuiEvent::Draw => {
+                    TuiEvent::Resize => {
+                        shell.clear_pointer_position();
+                        draw_shell(tui, &shell)?;
+                    }
+                    TuiEvent::Draw => {
                         draw_shell(tui, &shell)?;
                     }
                 }
@@ -535,6 +566,7 @@ struct ShellState {
     codex_home: std::path::PathBuf,
     dashboard_route: DashboardRoute,
     dashboard_visible: bool,
+    pointer_position: Option<ratatui::layout::Position>,
     agents_focused: bool,
     composer: ComposerState,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
@@ -620,6 +652,7 @@ impl ShellState {
             codex_home,
             dashboard_route,
             dashboard_visible: true,
+            pointer_position: None,
             agents_focused: false,
             composer: ComposerState::default(),
             workspace_command_runner: None,
@@ -967,6 +1000,7 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        self.set_pointer_position(position);
         if self
             .handle_selector_click(area, position, app_server)
             .await?
@@ -997,13 +1031,83 @@ impl ShellState {
             }
             return Ok(());
         }
-        if self.pending_elicitation.is_some()
-            || self.pending_external_agent_import.is_some()
-            || self.pending_mcp_management.is_some()
-            || self.pending_plugin_management.is_some()
-            || self.pending_user_input.is_some()
-            || self.safety_buffering_modal_lines().is_some()
+        if let Some(lines) = self.safety_buffering_modal_lines() {
+            let key = modal_view::modal_hit(area, position, &lines)
+                .and_then(|hit| self.safety_buffering_click_key(hit.line))
+                .unwrap_or(KeyCode::Esc);
+            self.handle_safety_buffering_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
+                .await;
+            return Ok(());
+        }
+        if let Some(lines) = self
+            .pending_external_agent_import
+            .as_ref()
+            .map(ExternalAgentImportState::lines)
         {
+            let hit = modal_view::modal_hit(area, position, &lines);
+            let key = hit
+                .and_then(|hit| {
+                    self.pending_external_agent_import
+                        .as_mut()?
+                        .click_key_at(hit.line, hit.column)
+                })
+                .unwrap_or(KeyCode::Esc);
+            self.handle_external_agent_import_key(
+                KeyEvent::new(key, KeyModifiers::NONE),
+                app_server,
+            )
+            .await?;
+            return Ok(());
+        }
+        if let Some(lines) = self
+            .pending_mcp_management
+            .as_ref()
+            .map(McpManagementState::lines)
+        {
+            let hit = modal_view::modal_hit(area, position, &lines);
+            let key = hit
+                .and_then(|hit| {
+                    self.pending_mcp_management
+                        .as_mut()?
+                        .click_key_at(hit.line, hit.column)
+                })
+                .unwrap_or(KeyCode::Esc);
+            self.handle_mcp_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
+                .await?;
+            return Ok(());
+        }
+        if let Some(lines) = self
+            .pending_plugin_management
+            .as_ref()
+            .map(PluginManagementState::lines)
+        {
+            let hit = modal_view::modal_hit(area, position, &lines);
+            let key = hit
+                .and_then(|hit| {
+                    self.pending_plugin_management
+                        .as_mut()?
+                        .click_key_at(hit.line, hit.column)
+                })
+                .unwrap_or(KeyCode::Esc);
+            self.handle_plugin_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
+                .await?;
+            return Ok(());
+        }
+        if self.pending_elicitation.is_some() {
+            if let Some(choice) =
+                (render::ShellView { shell: self }).elicitation_choice_at(area, position)
+            {
+                self.resolve_pending_elicitation(app_server, choice).await?;
+            }
+            return Ok(());
+        }
+        if self.pending_user_input.is_some() {
+            if let Some(index) =
+                (render::ShellView { shell: self }).user_input_option_at(area, position)
+            {
+                self.composer.set_text((index + 1).to_string());
+                self.resolve_pending_user_input(app_server).await?;
+            }
             return Ok(());
         }
         if let Some(control) = (render::ShellView { shell: self }).header_control_at(area, position)
@@ -2940,6 +3044,7 @@ impl ShellState {
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            pointer_position: None,
             agents_focused: false,
             composer: {
                 let mut composer = ComposerState::default();
@@ -3182,6 +3287,7 @@ pub mod bench_support {
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            pointer_position: None,
             agents_focused: false,
             composer: {
                 let mut composer = ComposerState::default();

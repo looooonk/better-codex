@@ -1,5 +1,5 @@
 use super::render::ShellView;
-use super::render::TranscriptScrollbarMetrics;
+use super::transcript_view::TranscriptScrollbarMetrics;
 use super::*;
 use base64::Engine;
 use codex_app_server_client::AppServerEvent;
@@ -562,6 +562,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
     let centralized_guides = [
         "Ctrl+1 Sessions  Ctrl+2 Agents",
         "Ctrl+3 Workspace Ctrl+4 Settings",
+        "Ctrl+5 Help",
         "Sessions: Enter focus, j/k move",
         "r resume, f fork, a/u archive",
         "v archived, d delete",
@@ -619,7 +620,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         .collect::<String>();
     assert_eq!(
         centralized_guides.map(|guide| help_text.contains(guide)),
-        [true; 9]
+        [true; 10]
     );
     let active_session_lines = shell
         .session_list
@@ -2161,7 +2162,7 @@ async fn ctrl_d_hides_dashboard_and_reclaims_layout_snapshot() {
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
     let rendered = render_shell(&shell, area);
-    assert!(rendered.contains("Ctrl+D Dashboard"));
+    assert!(rendered.contains("Panels"));
     assert!(!rendered.contains("Navigation"));
     insta::assert_snapshot!(rendered);
 
@@ -2352,6 +2353,155 @@ async fn clicking_the_composer_returns_focus_from_dashboard_panels() {
         (false, false, false, None)
     );
     assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
+}
+
+#[test]
+fn pointer_hover_uses_existing_header_hit_geometry() {
+    let mut shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let position = (area.x..area.right())
+        .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
+        .find(|position| {
+            ShellView { shell: &shell }.header_control_at(area, *position)
+                == Some(header::HeaderControl::Model)
+        })
+        .expect("model chip should be visible");
+    shell.pointer_position = Some(position);
+
+    let buf = render_shell_buffer(&shell, area);
+
+    assert_eq!(buf[position].style().bg, Some(design::palette::BORDER));
+}
+
+#[test]
+fn mouse_wheel_routes_to_the_pane_under_the_pointer() {
+    let mut shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    for index in 0..40 {
+        shell.push_assistant(format!("scrollable response {index}"));
+    }
+    render_shell(&shell, area);
+    let transcript_position = (area.x..area.right())
+        .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
+        .find(|position| {
+            ShellView { shell: &shell }.pointer_pane_at(area, *position)
+                == Some(render::PointerPane::Transcript)
+        })
+        .expect("transcript pane should exist");
+
+    shell.handle_mouse_scroll(area, transcript_position, tui::MouseScrollDirection::Up);
+    assert_eq!(shell.transcript_scroll, 3);
+
+    let input = ShellView { shell: &shell }.input_area(area);
+    shell.handle_mouse_scroll(
+        area,
+        Position::new(input.x, input.y),
+        tui::MouseScrollDirection::Down,
+    );
+    assert_eq!(shell.transcript_scroll, 3);
+
+    shell.pending_elicitation = PendingElicitation::from_request(&mcp_url_elicitation_request());
+    shell.handle_mouse_scroll(area, transcript_position, tui::MouseScrollDirection::Down);
+    assert_eq!(shell.transcript_scroll, 3);
+}
+
+#[test]
+fn mouse_wheel_moves_only_the_hovered_dashboard_selection() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let position = (area.x..area.right())
+        .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
+        .find(|position| {
+            ShellView { shell: &shell }
+                .dashboard_panel_position_at(area, *position, "Settings")
+                .is_some()
+        })
+        .expect("settings panel should be visible");
+
+    assert_eq!(shell.settings.selected_action(), SettingsAction::Model);
+    shell.handle_mouse_scroll(area, position, tui::MouseScrollDirection::Down);
+
+    assert_eq!(
+        shell.settings.selected_action(),
+        SettingsAction::ReasoningEffort
+    );
+    assert!(!shell.settings.focused);
+}
+
+#[tokio::test]
+async fn elicitation_and_tool_options_are_clickable() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    shell.pending_elicitation = PendingElicitation::from_request(&mcp_url_elicitation_request());
+    let accept = rendered_text_position(&render_shell(&shell, area), "Accept ↵");
+
+    shell
+        .handle_mouse_click(area, accept, &config, &mut backend)
+        .await
+        .expect("elicitation click should succeed");
+
+    assert!(shell.pending_elicitation.is_none());
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::Resolve(RequestId::Integer(45))]
+    );
+
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    let staging = rendered_text_position(&render_shell(&shell, area), "Staging");
+    shell
+        .handle_mouse_click(area, staging, &config, &mut backend)
+        .await
+        .expect("tool option click should succeed");
+
+    assert!(shell.pending_user_input.is_none());
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::Resolve(RequestId::Integer(45)),
+            RecordedBackendCall::Resolve(RequestId::Integer(43)),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn safety_modal_actions_are_clickable() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    shell
+        .submit_prompt(&mut backend, "Explain the request".to_string())
+        .await
+        .expect("turn should start");
+    shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &shell,
+            "turn-submit",
+            /*show_buffering_ui*/ true,
+            Some("faster-model"),
+        ),
+    ));
+    let dismiss = rendered_text_position(&render_shell(&shell, area), "Dismiss and keep waiting");
+
+    shell
+        .handle_mouse_click(area, dismiss, &config, &mut backend)
+        .await
+        .expect("safety action click should succeed");
+
+    assert!(shell.safety_buffering_modal_lines().is_none());
 }
 
 #[tokio::test]
@@ -3507,7 +3657,7 @@ fn transcript_selection_page_keys_scroll_without_changing_selection() {
 #[test]
 fn transcript_scrollbar_metrics_tracks_visible_range() {
     assert_eq!(
-        render::transcript_scrollbar_metrics(
+        transcript_view::transcript_scrollbar_metrics(
             /*total_lines*/ 40, /*visible_count*/ 10, /*visible_from*/ 0,
             /*min_thumb_height*/ 2
         ),
@@ -3517,7 +3667,7 @@ fn transcript_scrollbar_metrics_tracks_visible_range() {
         })
     );
     assert_eq!(
-        render::transcript_scrollbar_metrics(
+        transcript_view::transcript_scrollbar_metrics(
             /*total_lines*/ 40, /*visible_count*/ 10, /*visible_from*/ 30,
             /*min_thumb_height*/ 2
         ),
@@ -3531,7 +3681,7 @@ fn transcript_scrollbar_metrics_tracks_visible_range() {
 #[test]
 fn transcript_scrollbar_metrics_uses_minimum_thumb_height() {
     assert_eq!(
-        render::transcript_scrollbar_metrics(
+        transcript_view::transcript_scrollbar_metrics(
             /*total_lines*/ 1_000, /*visible_count*/ 10, /*visible_from*/ 500,
             /*min_thumb_height*/ 2
         ),
@@ -3541,7 +3691,7 @@ fn transcript_scrollbar_metrics_uses_minimum_thumb_height() {
         })
     );
     assert_eq!(
-        render::transcript_scrollbar_metrics(
+        transcript_view::transcript_scrollbar_metrics(
             /*total_lines*/ 8, /*visible_count*/ 10, /*visible_from*/ 0,
             /*min_thumb_height*/ 2
         ),
@@ -4170,6 +4320,22 @@ fn file_change_detail_caps_file_rows() {
 fn render_shell(shell: &ShellState, area: Rect) -> String {
     let buf = render_shell_buffer(shell, area);
     buffer_contents(&buf, area)
+}
+
+fn rendered_text_position(rendered: &str, needle: &str) -> Position {
+    rendered
+        .lines()
+        .enumerate()
+        .find_map(|(y, line)| {
+            let start = line.find(needle)?;
+            let x = unicode_width::UnicodeWidthStr::width(&line[..start])
+                + unicode_width::UnicodeWidthStr::width(needle) / 2;
+            Some(Position::new(
+                u16::try_from(x).unwrap_or(u16::MAX),
+                u16::try_from(y).unwrap_or(u16::MAX),
+            ))
+        })
+        .expect("rendered text should contain target")
 }
 
 fn line_text(line: &Line<'_>) -> String {

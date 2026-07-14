@@ -266,9 +266,11 @@ impl PluginManagementState {
                     .cyan()
                     .bold(),
                 " plugin catalog".into(),
-                "  Enter action  i install/update  e enable/disable  u uninstall  r refresh".dim(),
             ]
             .into(),
+            "Install / update ↵  Toggle e  Uninstall u  Refresh r"
+                .dim()
+                .into(),
         ];
         let start = visible_start(self.selected, self.entries.len());
         for (index, entry) in self
@@ -301,6 +303,33 @@ impl PluginManagementState {
             lines.push(vec!["Action: ".dim(), entry.action_hint().into()].into());
         }
         lines
+    }
+
+    pub(super) fn click_key_at(&mut self, line: usize, column: usize) -> Option<KeyCode> {
+        if line == 1 {
+            let text = line_to_plain_text(&self.lines()[1]);
+            return key_at_label(
+                &text,
+                column,
+                &[
+                    ("Install / update ↵", KeyCode::Enter),
+                    ("Toggle e", KeyCode::Char('e')),
+                    ("Uninstall u", KeyCode::Char('u')),
+                    ("Refresh r", KeyCode::Char('r')),
+                ],
+            );
+        }
+        let start = visible_start(self.selected, self.entries.len());
+        let visible = self
+            .entries
+            .len()
+            .saturating_sub(start)
+            .min(VISIBLE_PLUGIN_ROWS);
+        if (2..visible + 2).contains(&line) {
+            self.selected = start + line - 2;
+            return Some(KeyCode::Enter);
+        }
+        (line == visible + 3).then_some(KeyCode::Enter)
     }
 }
 
@@ -421,4 +450,20 @@ fn visible_start(selected: usize, total: usize) -> usize {
             .saturating_sub(VISIBLE_PLUGIN_ROWS / 2)
             .min(total.saturating_sub(VISIBLE_PLUGIN_ROWS))
     }
+}
+
+fn line_to_plain_text(line: &Line<'_>) -> String {
+    line.spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect()
+}
+
+fn key_at_label(text: &str, column: usize, labels: &[(&str, KeyCode)]) -> Option<KeyCode> {
+    labels.iter().find_map(|(label, key)| {
+        let start = text.find(label)?;
+        (start..start + label.chars().count())
+            .contains(&column)
+            .then_some(*key)
+    })
 }

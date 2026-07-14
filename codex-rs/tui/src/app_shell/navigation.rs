@@ -6,6 +6,7 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use serde::Deserialize;
 use serde::Serialize;
+use std::ops::Range;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -149,6 +150,13 @@ impl DashboardTabs {
             .rev()
             .find(|cell| cell.width > 0 && column >= cell.start)
             .map(|cell| cell.route)
+    }
+
+    pub(super) fn column_range(self, route: DashboardRoute) -> Option<Range<u16>> {
+        self.cells
+            .into_iter()
+            .find(|cell| cell.route == route && cell.width > 0)
+            .map(|cell| cell.start..cell.start.saturating_add(cell.width))
     }
 }
 

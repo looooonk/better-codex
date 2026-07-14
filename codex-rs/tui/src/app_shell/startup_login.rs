@@ -218,7 +218,9 @@ pub(crate) async fn run_login_onboarding(
                             tui.frame_requester().schedule_frame();
                         }
                     }
-                    TuiEvent::MouseClick(_) => {}
+                    TuiEvent::MouseClick(_)
+                    | TuiEvent::MouseMove(_)
+                    | TuiEvent::MouseScroll { .. } => {}
                     TuiEvent::Resize | TuiEvent::Draw => {
                         draw_login_onboarding(tui, &state)?;
                     }

@@ -6,8 +6,11 @@ use crate::key_hint::KeyBinding;
 use crate::key_hint::KeyBindingListExt;
 use crate::keymap::PagerKeymap;
 use crate::tui;
+use crate::tui::MouseScrollDirection;
 use crate::tui::TuiEvent;
+use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
+use crossterm::event::KeyModifiers;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Stylize as _;
@@ -46,7 +49,14 @@ impl SessionTranscriptOverlay {
                 tui.draw(u16::MAX, |frame| self.render(frame.area(), frame.buffer))?;
                 Ok(())
             }
-            TuiEvent::MouseClick(_) | TuiEvent::Paste(_) => Ok(()),
+            TuiEvent::MouseScroll { direction, .. } => {
+                let code = match direction {
+                    MouseScrollDirection::Up => KeyCode::PageUp,
+                    MouseScrollDirection::Down => KeyCode::PageDown,
+                };
+                self.handle_key(tui, KeyEvent::new(code, KeyModifiers::NONE))
+            }
+            TuiEvent::MouseClick(_) | TuiEvent::MouseMove(_) | TuiEvent::Paste(_) => Ok(()),
         }
     }
 

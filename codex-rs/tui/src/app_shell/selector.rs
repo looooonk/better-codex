@@ -1,6 +1,3 @@
-use super::design::fill_rect;
-use super::design::palette;
-use super::design::pane_style;
 use super::settings::reasoning_effort_label;
 use codex_app_server_protocol::AskForApproval;
 use codex_protocol::openai_models::ModelPreset;
@@ -11,25 +8,23 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
-use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
-use ratatui::style::Modifier;
-use ratatui::style::Style;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::widgets::Block;
-use ratatui::widgets::BorderType;
-use ratatui::widgets::Borders;
-use ratatui::widgets::Clear;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::Widget;
 
-const MODAL_MARGIN: u16 = 2;
-const MAX_MODAL_WIDTH: u16 = 68;
-const MAX_MODAL_HEIGHT: u16 = 24;
-const OPTION_HEIGHT: u16 = 2;
-const OPTION_PREFIX_WIDTH: usize = 6;
+#[path = "selector_view.rs"]
+mod view;
+
+use view::OPTION_HEIGHT;
+use view::selector_geometry;
+
+#[cfg(test)]
+use super::design::palette;
+#[cfg(test)]
+use ratatui::buffer::Buffer;
+#[cfg(test)]
+use view::MAX_MODAL_HEIGHT;
+#[cfg(test)]
+use view::MAX_MODAL_WIDTH;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum ReasoningEffortValue {
@@ -82,14 +77,6 @@ pub(super) enum SelectorOutcome<T> {
     Selected(T),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct SelectorGeometry {
-    pub(super) modal: Rect,
-    pub(super) options: Rect,
-    pub(super) footer: Rect,
-    pub(super) visible_options: usize,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SelectorState<T> {
     title: String,
@@ -124,127 +111,6 @@ impl<T> SelectorState<T> {
             .visible_scroll(geometry.visible_options)
             .saturating_add(visible_index);
         (index < self.options.len()).then_some(index)
-    }
-
-    pub(super) fn render(&self, area: Rect, buf: &mut Buffer) {
-        let geometry = selector_geometry(area, self.options.len());
-        buf.set_style(area, Style::new().add_modifier(Modifier::DIM));
-        Clear.render(geometry.modal, buf);
-        fill_rect(buf, geometry.modal, palette::SURFACE);
-
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::new().fg(palette::FOCUS))
-            .style(pane_style(palette::SURFACE))
-            .title(Line::from(format!(" {} ", self.title)).bold());
-        block.render(geometry.modal, buf);
-
-        let scroll = self.visible_scroll(geometry.visible_options);
-        for (visible_index, option) in self
-            .options
-            .iter()
-            .skip(scroll)
-            .take(geometry.visible_options)
-            .enumerate()
-        {
-            let index = scroll + visible_index;
-            let area = Rect::new(
-                geometry.options.x,
-                geometry.options.y.saturating_add(
-                    u16::try_from(visible_index).unwrap_or(u16::MAX) * OPTION_HEIGHT,
-                ),
-                geometry.options.width,
-                OPTION_HEIGHT,
-            );
-            self.render_option(area, index, option, buf);
-        }
-        Paragraph::new(Line::from(vec![
-            " j/k ".fg(palette::FOCUS).bold(),
-            "move  ".fg(palette::MUTED),
-            " enter ".fg(palette::FOCUS).bold(),
-            "select  ".fg(palette::MUTED),
-            " esc ".fg(palette::FOCUS).bold(),
-            "cancel  ".fg(palette::MUTED),
-            format!(
-                "{}/{}",
-                self.selected.saturating_add(1).min(self.options.len()),
-                self.options.len()
-            )
-            .fg(palette::PURPLE)
-            .bold(),
-        ]))
-        .style(pane_style(palette::SURFACE))
-        .render(geometry.footer, buf);
-    }
-
-    fn render_option(
-        &self,
-        area: Rect,
-        index: usize,
-        option: &SelectorOption<T>,
-        buf: &mut Buffer,
-    ) {
-        let selected = index == self.selected;
-        let background = if selected {
-            palette::ELEVATED
-        } else {
-            palette::SURFACE
-        };
-        fill_rect(buf, area, background);
-        let current_label = if option.current { "  current" } else { "" };
-        let label_width = usize::from(area.width)
-            .saturating_sub(OPTION_PREFIX_WIDTH + current_label.chars().count())
-            .max(1);
-        let label = first_wrapped_line(&option.label, label_width);
-        let detail_width = usize::from(area.width)
-            .saturating_sub(OPTION_PREFIX_WIDTH)
-            .max(1);
-        let detail = first_wrapped_line(&option.detail, detail_width);
-        let pointer = if selected {
-            "›".fg(palette::FOCUS).bold()
-        } else {
-            " ".into()
-        };
-        let shortcut = if index < 9 {
-            (index + 1).to_string().fg(palette::MUTED)
-        } else {
-            "·".fg(palette::MUTED)
-        };
-        let current = if option.current {
-            "●".fg(palette::SUCCESS)
-        } else {
-            "○".fg(palette::MUTED)
-        };
-        let label = if selected {
-            label.fg(palette::TEXT).bold()
-        } else {
-            label.fg(palette::TEXT)
-        };
-        let current_label = if option.current {
-            current_label.fg(palette::SUCCESS)
-        } else {
-            "".into()
-        };
-        let lines = vec![
-            Line::from(vec![
-                pointer,
-                " ".into(),
-                shortcut,
-                " ".into(),
-                current,
-                " ".into(),
-                label,
-                current_label,
-            ]),
-            Line::from(vec![
-                " ".repeat(OPTION_PREFIX_WIDTH).into(),
-                detail.fg(palette::MUTED),
-            ]),
-        ];
-        Paragraph::new(lines)
-            .style(pane_style(background))
-            .render(area, buf);
     }
 
     fn set_selected(&mut self, selected: usize) {
@@ -453,61 +319,6 @@ impl SelectorState<SelectorValue> {
             .collect();
         Self::new("Select approval policy", options)
     }
-}
-
-pub(super) fn selector_geometry(area: Rect, option_count: usize) -> SelectorGeometry {
-    let available_width = area.width.saturating_sub(MODAL_MARGIN.saturating_mul(2));
-    let available_height = area.height.saturating_sub(MODAL_MARGIN.saturating_mul(2));
-    let width = available_width.min(MAX_MODAL_WIDTH);
-    let option_count = u16::try_from(option_count.max(1)).unwrap_or(u16::MAX);
-    let desired_height = option_count.saturating_mul(OPTION_HEIGHT).saturating_add(3);
-    let height = desired_height
-        .min(MAX_MODAL_HEIGHT)
-        .min(available_height)
-        .max(available_height.min(5));
-    let modal = Rect::new(
-        area.x.saturating_add(area.width.saturating_sub(width) / 2),
-        area.y
-            .saturating_add(area.height.saturating_sub(height) / 2),
-        width,
-        height,
-    );
-    let inner = Rect::new(
-        modal.x.saturating_add(u16::from(modal.width > 1)),
-        modal.y.saturating_add(u16::from(modal.height > 1)),
-        modal.width.saturating_sub(2),
-        modal.height.saturating_sub(2),
-    );
-    let horizontal_padding = u16::from(inner.width > 2);
-    let content = Rect::new(
-        inner.x.saturating_add(horizontal_padding),
-        inner.y,
-        inner
-            .width
-            .saturating_sub(horizontal_padding.saturating_mul(2)),
-        inner.height,
-    );
-    let footer_height = u16::from(content.height > OPTION_HEIGHT);
-    let option_height = content.height.saturating_sub(footer_height);
-    let options = Rect::new(content.x, content.y, content.width, option_height);
-    let footer = Rect::new(
-        content.x,
-        content.y.saturating_add(option_height),
-        content.width,
-        footer_height,
-    );
-    SelectorGeometry {
-        modal,
-        options,
-        footer,
-        visible_options: usize::from(options.height / OPTION_HEIGHT),
-    }
-}
-
-fn first_wrapped_line(text: &str, width: usize) -> String {
-    textwrap::wrap(text, textwrap::Options::new(width.max(1)))
-        .first()
-        .map_or_else(String::new, |line| line.to_string())
 }
 
 #[cfg(test)]

@@ -94,4 +94,28 @@ impl PendingElicitation {
         })
         .map_err(|err| format!("failed to serialize MCP elicitation response: {err}"))
     }
+
+    pub(super) fn choice_at(&self, line: usize, column: usize) -> Option<ElicitationChoice> {
+        if line != 2 {
+            return None;
+        }
+        let text = if self.can_accept {
+            "   Accept ↵   Decline d   Cancel c "
+        } else {
+            "   Decline d   Cancel c "
+        };
+        [
+            ("Accept ↵", ElicitationChoice::Accept),
+            ("Decline d", ElicitationChoice::Decline),
+            ("Cancel c", ElicitationChoice::Cancel),
+        ]
+        .into_iter()
+        .find_map(|(label, choice)| {
+            let start = text.find(label)?;
+            (start..start + label.chars().count())
+                .contains(&column)
+                .then_some(choice)
+        })
+        .filter(|choice| *choice != ElicitationChoice::Accept || self.can_accept)
+    }
 }

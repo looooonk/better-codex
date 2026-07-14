@@ -7,6 +7,7 @@ use crate::text_formatting::truncate_text;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -32,7 +33,7 @@ pub(super) struct HeaderView<'a> {
 }
 
 impl HeaderView<'_> {
-    pub(super) fn render(&self, area: Rect, buf: &mut Buffer) {
+    pub(super) fn render(&self, area: Rect, hovered: Option<HeaderControl>, buf: &mut Buffer) {
         fill_rect(buf, area, palette::DARK);
         let content = pane_content_rect(area);
         let layout = self.control_layout(area);
@@ -43,17 +44,29 @@ impl HeaderView<'_> {
         if let Some(layout) = layout {
             if let Some(dashboard) = layout.dashboard {
                 Paragraph::new(self.dashboard_label())
-                    .style(Style::new().fg(palette::CYAN).bg(palette::ELEVATED))
+                    .style(
+                        Style::new()
+                            .fg(palette::CYAN)
+                            .bg(control_background(hovered, HeaderControl::Dashboard)),
+                    )
                     .render(dashboard, buf);
             }
             if let Some(model) = layout.model {
                 Paragraph::new(self.model_label())
-                    .style(Style::new().fg(palette::TEXT).bg(palette::ELEVATED))
+                    .style(
+                        Style::new()
+                            .fg(palette::TEXT)
+                            .bg(control_background(hovered, HeaderControl::Model)),
+                    )
                     .render(model, buf);
             }
             if let Some(effort) = layout.effort {
                 Paragraph::new(self.effort_label())
-                    .style(Style::new().fg(palette::PURPLE).bg(palette::ELEVATED))
+                    .style(
+                        Style::new()
+                            .fg(palette::PURPLE)
+                            .bg(control_background(hovered, HeaderControl::ReasoningEffort)),
+                    )
                     .render(effort, buf);
             }
             if let Some(status) = layout.status {
@@ -211,6 +224,14 @@ impl HeaderView<'_> {
             "● ".fg(color),
             self.status.to_string().fg(palette::TEXT).bold(),
         ])
+    }
+}
+
+fn control_background(hovered: Option<HeaderControl>, control: HeaderControl) -> Color {
+    if hovered == Some(control) {
+        palette::BORDER
+    } else {
+        palette::ELEVATED
     }
 }
 

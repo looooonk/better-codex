@@ -26,9 +26,6 @@ use std::task::Context;
 use std::task::Poll;
 
 use crossterm::event::Event;
-use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
-use crossterm::event::KeyModifiers;
 use crossterm::event::MouseButton;
 use crossterm::event::MouseEventKind;
 use ratatui::layout::Position;
@@ -39,6 +36,7 @@ use tokio_stream::wrappers::BroadcastStream;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::wrappers::errors::BroadcastStreamRecvError;
 
+use super::MouseScrollDirection;
 use super::TuiEvent;
 
 /// Result type produced by an event source.
@@ -180,7 +178,7 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
 
     /// Poll the shared crossterm stream for the next mapped `TuiEvent`.
     ///
-    /// This skips events we don't use (mouse events, etc.) and keeps polling until it yields
+    /// This skips unsupported terminal events and keeps polling until it yields
     /// a mapped event, hits `Pending`, or sees EOF/error. When the broker is paused, it drops
     /// the underlying stream and returns `Pending` to fully release stdin.
     pub fn poll_crossterm_event(&mut self, cx: &mut Context<'_>) -> Poll<Option<TuiEvent>> {
@@ -264,23 +262,26 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
             Event::Resize(_, _) => Some(TuiEvent::Resize),
             Event::Paste(pasted) => Some(TuiEvent::Paste(pasted)),
             Event::Mouse(mouse_event) => match mouse_event.kind {
-                MouseEventKind::ScrollUp => Some(TuiEvent::Key(KeyEvent::new(
-                    KeyCode::PageUp,
-                    KeyModifiers::NONE,
-                ))),
-                MouseEventKind::ScrollDown => Some(TuiEvent::Key(KeyEvent::new(
-                    KeyCode::PageDown,
-                    KeyModifiers::NONE,
-                ))),
+                MouseEventKind::ScrollUp => Some(TuiEvent::MouseScroll {
+                    position: Position::new(mouse_event.column, mouse_event.row),
+                    direction: MouseScrollDirection::Up,
+                }),
+                MouseEventKind::ScrollDown => Some(TuiEvent::MouseScroll {
+                    position: Position::new(mouse_event.column, mouse_event.row),
+                    direction: MouseScrollDirection::Down,
+                }),
                 MouseEventKind::Down(MouseButton::Left) => Some(TuiEvent::MouseClick(
                     Position::new(mouse_event.column, mouse_event.row),
                 )),
+                MouseEventKind::Moved => Some(TuiEvent::MouseMove(Position::new(
+                    mouse_event.column,
+                    mouse_event.row,
+                ))),
                 MouseEventKind::ScrollLeft
                 | MouseEventKind::ScrollRight
                 | MouseEventKind::Down(MouseButton::Right | MouseButton::Middle)
                 | MouseEventKind::Up(_)
-                | MouseEventKind::Drag(_)
-                | MouseEventKind::Moved => None,
+                | MouseEventKind::Drag(_) => None,
             },
             Event::FocusGained => {
                 self.terminal_focused.store(true, Ordering::Relaxed);
@@ -516,7 +517,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "current_thread")]
-    async fn mouse_scroll_maps_to_page_keys() {
+    async fn mouse_scroll_preserves_position_and_direction() {
         let (broker, handle, _draw_tx, draw_rx, terminal_focused) = setup();
         let mut stream = make_stream(broker, draw_rx, terminal_focused);
 
@@ -538,19 +539,35 @@ mod tests {
 
         assert!(matches!(
             first,
-            Some(TuiEvent::Key(KeyEvent {
-                code: KeyCode::PageUp,
-                modifiers: KeyModifiers::NONE,
-                ..
-            }))
+            Some(TuiEvent::MouseScroll {
+                position: Position { x: 10, y: 5 },
+                direction: MouseScrollDirection::Up,
+            })
         ));
         assert!(matches!(
             second,
-            Some(TuiEvent::Key(KeyEvent {
-                code: KeyCode::PageDown,
-                modifiers: KeyModifiers::NONE,
-                ..
-            }))
+            Some(TuiEvent::MouseScroll {
+                position: Position { x: 10, y: 5 },
+                direction: MouseScrollDirection::Down,
+            })
+        ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn mouse_move_preserves_position() {
+        let (broker, handle, _draw_tx, draw_rx, terminal_focused) = setup();
+        let mut stream = make_stream(broker, draw_rx, terminal_focused);
+
+        handle.send(Ok(Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Moved,
+            column: 23,
+            row: 11,
+            modifiers: KeyModifiers::NONE,
+        })));
+
+        assert!(matches!(
+            stream.next().await,
+            Some(TuiEvent::MouseMove(Position { x: 23, y: 11 }))
         ));
     }
 

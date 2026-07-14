@@ -173,7 +173,10 @@ pub(crate) async fn run_startup_onboarding(
                 }
                 StartupKeyAction::Ignored => {}
             },
-            TuiEvent::MouseClick(_) | TuiEvent::Paste(_) => {}
+            TuiEvent::MouseClick(_)
+            | TuiEvent::MouseMove(_)
+            | TuiEvent::MouseScroll { .. }
+            | TuiEvent::Paste(_) => {}
             TuiEvent::Resize | TuiEvent::Draw => {
                 draw_startup_onboarding(tui, &state)?;
             }

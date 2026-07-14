@@ -3,7 +3,7 @@
 use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
-use super::render::render_transcript_line;
+use super::transcript_view::render_transcript_line;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use std::collections::HashMap;
 use std::collections::VecDeque;

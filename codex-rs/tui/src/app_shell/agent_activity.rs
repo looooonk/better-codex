@@ -1,4 +1,5 @@
 use codex_app_server_protocol::CollabAgentState;
+#[cfg(test)]
 use codex_app_server_protocol::CollabAgentStatus;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
@@ -7,152 +8,31 @@ use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::TurnStatus;
 use codex_protocol::AgentPath;
 use codex_protocol::openai_models::ReasoningEffort;
-use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 
+mod metadata;
+mod text;
+mod timeline;
+
+use metadata::agent_order;
+use metadata::agent_parent_path;
+use metadata::agent_path_depth;
+use metadata::fallback_status;
+use text::MAX_LATEST_MESSAGE_CHARS;
+use text::MAX_MODEL_CHARS;
+use text::append_bounded;
+use text::bounded_text;
+use text::concise_summary;
+pub(super) use timeline::AgentChildEvent;
+pub(super) use timeline::AgentItemPhase;
+pub(super) use timeline::AgentLifecycleStatus;
+pub(super) use timeline::AgentTimelineEntry;
+pub(super) use timeline::AgentTimelineEvent;
+use timeline::child_item_summary;
+
 pub(super) const MAX_TRACKED_AGENTS: usize = 64;
 pub(super) const MAX_AGENT_TIMELINE_ENTRIES: usize = 12;
-const MAX_TASK_SUMMARY_CHARS: usize = 240;
-const MAX_LATEST_MESSAGE_CHARS: usize = 512;
-const MAX_MODEL_CHARS: usize = 128;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum AgentItemPhase {
-    Started,
-    Completed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum AgentChildEvent {
-    Message,
-    Reasoning,
-    Command,
-    Output,
-    Activity,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum AgentLifecycleStatus {
-    Unknown,
-    PendingInit,
-    Running,
-    Interrupted,
-    Completed,
-    Errored,
-    Shutdown,
-    NotFound,
-}
-
-impl AgentLifecycleStatus {
-    pub(super) fn label(self) -> &'static str {
-        match self {
-            Self::Unknown => "unknown",
-            Self::PendingInit => "starting",
-            Self::Running => "running",
-            Self::Interrupted => "interrupted",
-            Self::Completed => "completed",
-            Self::Errored => "errored",
-            Self::Shutdown => "stopped",
-            Self::NotFound => "not found",
-        }
-    }
-}
-
-impl From<&CollabAgentState> for AgentLifecycleStatus {
-    fn from(state: &CollabAgentState) -> Self {
-        match state.status {
-            CollabAgentStatus::PendingInit => Self::PendingInit,
-            CollabAgentStatus::Running => Self::Running,
-            CollabAgentStatus::Interrupted => Self::Interrupted,
-            CollabAgentStatus::Completed => Self::Completed,
-            CollabAgentStatus::Errored => Self::Errored,
-            CollabAgentStatus::Shutdown => Self::Shutdown,
-            CollabAgentStatus::NotFound => Self::NotFound,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(super) enum AgentTimelineEvent {
-    Collaboration {
-        tool: CollabAgentTool,
-        phase: AgentItemPhase,
-        status: CollabAgentToolCallStatus,
-    },
-    Activity(SubAgentActivityKind),
-    ChildItem {
-        event: AgentChildEvent,
-        phase: AgentItemPhase,
-    },
-    ChildProgress(AgentChildEvent),
-    Lifecycle {
-        status: AgentLifecycleStatus,
-        retrying: bool,
-    },
-}
-
-impl AgentTimelineEvent {
-    pub(super) fn label(&self) -> &'static str {
-        match self {
-            Self::Collaboration {
-                tool,
-                phase: AgentItemPhase::Started,
-                ..
-            } => match tool {
-                CollabAgentTool::SpawnAgent => "spawning agent",
-                CollabAgentTool::SendInput => "sending input",
-                CollabAgentTool::ResumeAgent => "resuming agent",
-                CollabAgentTool::Wait => "waiting for agent",
-                CollabAgentTool::CloseAgent => "stopping agent",
-            },
-            Self::Collaboration {
-                tool,
-                phase: AgentItemPhase::Completed,
-                status,
-            } => collaboration_result_label(tool, status),
-            Self::Activity(SubAgentActivityKind::Started) => "agent started",
-            Self::Activity(SubAgentActivityKind::Interacted) => "agent interacted",
-            Self::Activity(SubAgentActivityKind::Interrupted) => "agent interrupted",
-            Self::ChildItem { event, phase } => child_item_label(*event, *phase),
-            Self::ChildProgress(AgentChildEvent::Message) => "message",
-            Self::ChildProgress(AgentChildEvent::Reasoning) => "reasoning",
-            Self::ChildProgress(AgentChildEvent::Output) => "command output",
-            Self::ChildProgress(AgentChildEvent::Command | AgentChildEvent::Activity) => "activity",
-            Self::Lifecycle { retrying: true, .. } => "agent retrying",
-            Self::Lifecycle {
-                status,
-                retrying: false,
-            } => match status {
-                AgentLifecycleStatus::Unknown => "agent status unknown",
-                AgentLifecycleStatus::PendingInit => "agent starting",
-                AgentLifecycleStatus::Running => "agent running",
-                AgentLifecycleStatus::Interrupted => "agent interrupted",
-                AgentLifecycleStatus::Completed => "agent completed",
-                AgentLifecycleStatus::Errored => "agent failed",
-                AgentLifecycleStatus::Shutdown => "agent stopped",
-                AgentLifecycleStatus::NotFound => "agent not found",
-            },
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct AgentTimelineEntry {
-    pub(super) item_id: String,
-    pub(super) event: AgentTimelineEvent,
-    detail: Option<String>,
-}
-
-impl AgentTimelineEntry {
-    pub(super) fn label(&self) -> String {
-        let label = self.event.label();
-        self.detail
-            .as_deref()
-            .and_then(concise_summary)
-            .map_or_else(|| label.to_string(), |detail| format!("{label}: {detail}"))
-    }
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct AgentActivity {
@@ -577,152 +457,6 @@ impl AgentActivityState {
         let thread_id = ordered[index].thread_id.clone();
         self.selected_thread_id = Some(thread_id);
     }
-}
-
-fn agent_order(left: &AgentActivity, right: &AgentActivity) -> Ordering {
-    match (&left.path, &right.path) {
-        (Some(left), Some(right)) => left.cmp(right),
-        (Some(_), None) => Ordering::Less,
-        (None, Some(_)) => Ordering::Greater,
-        (None, None) => Ordering::Equal,
-    }
-    .then_with(|| left.thread_id.cmp(&right.thread_id))
-}
-
-fn fallback_status(
-    tool: &CollabAgentTool,
-    status: &CollabAgentToolCallStatus,
-) -> Option<AgentLifecycleStatus> {
-    match status {
-        CollabAgentToolCallStatus::Failed => Some(AgentLifecycleStatus::Errored),
-        CollabAgentToolCallStatus::InProgress => match tool {
-            CollabAgentTool::SpawnAgent => Some(AgentLifecycleStatus::PendingInit),
-            CollabAgentTool::SendInput | CollabAgentTool::ResumeAgent => {
-                Some(AgentLifecycleStatus::Running)
-            }
-            CollabAgentTool::Wait | CollabAgentTool::CloseAgent => None,
-        },
-        CollabAgentToolCallStatus::Completed => match tool {
-            CollabAgentTool::SpawnAgent
-            | CollabAgentTool::SendInput
-            | CollabAgentTool::ResumeAgent => Some(AgentLifecycleStatus::Running),
-            CollabAgentTool::CloseAgent => Some(AgentLifecycleStatus::Shutdown),
-            CollabAgentTool::Wait => None,
-        },
-    }
-}
-
-fn collaboration_result_label(
-    tool: &CollabAgentTool,
-    status: &CollabAgentToolCallStatus,
-) -> &'static str {
-    match status {
-        CollabAgentToolCallStatus::Failed => "agent operation failed",
-        CollabAgentToolCallStatus::InProgress => "agent operation pending",
-        CollabAgentToolCallStatus::Completed => match tool {
-            CollabAgentTool::SpawnAgent => "agent spawned",
-            CollabAgentTool::SendInput => "input delivered",
-            CollabAgentTool::ResumeAgent => "agent resumed",
-            CollabAgentTool::Wait => "wait complete",
-            CollabAgentTool::CloseAgent => "agent stopped",
-        },
-    }
-}
-
-fn child_item_label(event: AgentChildEvent, phase: AgentItemPhase) -> &'static str {
-    match (event, phase) {
-        (AgentChildEvent::Message, AgentItemPhase::Started) => "writing message",
-        (AgentChildEvent::Message, AgentItemPhase::Completed) => "message completed",
-        (AgentChildEvent::Reasoning, AgentItemPhase::Started) => "reasoning started",
-        (AgentChildEvent::Reasoning, AgentItemPhase::Completed) => "reasoning completed",
-        (AgentChildEvent::Command, AgentItemPhase::Started) => "running command",
-        (AgentChildEvent::Command, AgentItemPhase::Completed) => "command completed",
-        (AgentChildEvent::Output | AgentChildEvent::Activity, AgentItemPhase::Started) => {
-            "activity started"
-        }
-        (AgentChildEvent::Output | AgentChildEvent::Activity, AgentItemPhase::Completed) => {
-            "activity completed"
-        }
-    }
-}
-
-fn child_item_summary(item: &ThreadItem) -> (AgentChildEvent, Option<String>) {
-    match item {
-        ThreadItem::AgentMessage { text, .. } => (
-            AgentChildEvent::Message,
-            bounded_text(text, MAX_LATEST_MESSAGE_CHARS),
-        ),
-        ThreadItem::Reasoning { summary, .. } => (
-            AgentChildEvent::Reasoning,
-            summary
-                .last()
-                .and_then(|text| bounded_text(text, MAX_LATEST_MESSAGE_CHARS)),
-        ),
-        ThreadItem::CommandExecution {
-            command,
-            aggregated_output,
-            ..
-        } => (
-            AgentChildEvent::Command,
-            bounded_text(
-                aggregated_output.as_deref().unwrap_or(command),
-                MAX_LATEST_MESSAGE_CHARS,
-            ),
-        ),
-        _ => (AgentChildEvent::Activity, None),
-    }
-}
-
-fn agent_parent_path(path: &AgentPath) -> Option<AgentPath> {
-    let (parent, _) = path.as_str().rsplit_once('/')?;
-    AgentPath::try_from(parent).ok()
-}
-
-fn agent_path_depth(path: &AgentPath) -> usize {
-    path.as_str().matches('/').count().saturating_sub(1)
-}
-
-fn concise_summary(text: &str) -> Option<String> {
-    let summary = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    bounded_text(&summary, MAX_TASK_SUMMARY_CHARS)
-}
-
-fn bounded_text(text: &str, max_chars: usize) -> Option<String> {
-    let text = text.trim();
-    if text.is_empty() {
-        return None;
-    }
-    let mut chars = text.chars();
-    let bounded = chars.by_ref().take(max_chars).collect::<String>();
-    if chars.next().is_none() {
-        Some(bounded)
-    } else {
-        Some(format!(
-            "{}...",
-            bounded
-                .chars()
-                .take(max_chars.saturating_sub(3))
-                .collect::<String>()
-        ))
-    }
-}
-
-fn append_bounded(current: Option<&str>, delta: &str, max_chars: usize) -> Option<String> {
-    let combined = format!("{}{delta}", current.unwrap_or_default());
-    if combined.trim().is_empty() {
-        return None;
-    }
-    let char_count = combined.chars().count();
-    if char_count <= max_chars {
-        return Some(combined);
-    }
-    Some(format!(
-        "...{}",
-        combined
-            .chars()
-            .skip(char_count.saturating_sub(max_chars.saturating_sub(3)))
-            .collect::<String>()
-    ))
 }
 
 #[cfg(test)]
