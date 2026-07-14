@@ -170,19 +170,14 @@ impl ShellView<'_> {
         let layout = self.layout(area);
         let dashboard = layout.dashboard.or(layout.collapsed_dashboard)?;
         let content = pane_content_rect(dashboard);
-        if content.height < 2 {
+        if content.height == 0 {
             return None;
         }
-        let tab_row = Rect::new(
-            content.x,
-            content.y.saturating_add(1),
-            content.width,
-            /*height*/ 1,
-        );
-        if !tab_row.contains(position) {
+        let tabs = Rect::new(content.x, content.y, content.width, content.height.min(3));
+        if !tabs.contains(position) {
             return None;
         }
-        DashboardTabs::new(tab_row.width).route_at(position.x.saturating_sub(tab_row.x))
+        DashboardTabs::new(tabs.width).route_at(position.x.saturating_sub(tabs.x))
     }
 
     fn layout(&self, area: Rect) -> ShellLayout {

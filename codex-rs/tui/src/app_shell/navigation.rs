@@ -1,3 +1,4 @@
+use super::design::MOCHA_MANTLE;
 use super::design::tab_span;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -106,15 +107,19 @@ impl DashboardTabs {
         }
         [
             self.border_line('┌', '┬', '┐'),
-            Line::from(middle),
+            Line::from(middle).bg(MOCHA_MANTLE),
             self.border_line('└', '┴', '┘'),
         ]
     }
 
     pub(super) fn route_at(self, column: u16) -> Option<DashboardRoute> {
+        if column >= self.width {
+            return None;
+        }
         self.cells
             .into_iter()
-            .find(|cell| column >= cell.start && column < cell.start.saturating_add(cell.width))
+            .rev()
+            .find(|cell| cell.width > 0 && column >= cell.start.saturating_sub(1))
             .map(|cell| cell.route)
     }
 
@@ -137,7 +142,7 @@ impl DashboardTabs {
                 });
             }
         }
-        Line::from(border.dim())
+        Line::from(border.dim()).bg(MOCHA_MANTLE)
     }
 }
 
@@ -204,7 +209,7 @@ mod tests {
     }
 
     #[test]
-    fn dashboard_tabs_fill_width_and_leave_borders_unclickable() {
+    fn dashboard_tabs_fill_width_and_make_borders_clickable() {
         let tabs = DashboardTabs::new(/*width*/ 28);
         let rendered = tabs.lines(DashboardRoute::Sessions).map(|line| {
             line.spans
@@ -226,35 +231,42 @@ mod tests {
                 .map(|column| tabs.route_at(column))
                 .collect::<Vec<_>>(),
             vec![
-                None,
                 Some(DashboardRoute::Sessions),
                 Some(DashboardRoute::Sessions),
                 Some(DashboardRoute::Sessions),
                 Some(DashboardRoute::Sessions),
                 Some(DashboardRoute::Sessions),
                 Some(DashboardRoute::Sessions),
-                None,
+                Some(DashboardRoute::Sessions),
                 Some(DashboardRoute::Workspace),
                 Some(DashboardRoute::Workspace),
                 Some(DashboardRoute::Workspace),
                 Some(DashboardRoute::Workspace),
                 Some(DashboardRoute::Workspace),
                 Some(DashboardRoute::Workspace),
-                None,
+                Some(DashboardRoute::Workspace),
                 Some(DashboardRoute::Settings),
                 Some(DashboardRoute::Settings),
                 Some(DashboardRoute::Settings),
                 Some(DashboardRoute::Settings),
                 Some(DashboardRoute::Settings),
                 Some(DashboardRoute::Settings),
-                None,
+                Some(DashboardRoute::Settings),
                 Some(DashboardRoute::Help),
                 Some(DashboardRoute::Help),
                 Some(DashboardRoute::Help),
                 Some(DashboardRoute::Help),
                 Some(DashboardRoute::Help),
-                None,
+                Some(DashboardRoute::Help),
+                Some(DashboardRoute::Help),
             ]
+        );
+    }
+
+    #[test]
+    fn dashboard_tabs_highlight_only_the_active_route() {
+        insta::assert_debug_snapshot!(
+            DashboardTabs::new(/*width*/ 28).lines(DashboardRoute::Workspace)
         );
     }
 }

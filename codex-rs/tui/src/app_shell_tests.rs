@@ -2145,6 +2145,34 @@ async fn dashboard_tabs_click_without_focusing_wide_or_collapsed_routes() {
             .find(|(_, line)| line.contains("1S") && line.contains("4Help"))
             .expect("all dashboard tabs should share a visible row");
         assert_eq!(tab_row.matches('│').count(), 5);
+        let tab_borders = tab_row
+            .match_indices('│')
+            .map(|(column, _)| u16::try_from(tab_row[..column].chars().count()).unwrap_or(u16::MAX))
+            .collect::<Vec<_>>();
+        let tab_row_index = u16::try_from(tab_row_index).unwrap_or(u16::MAX);
+
+        for (index, route) in DashboardRoute::ALL.into_iter().enumerate() {
+            let left_edge = Position::new(
+                area.x.saturating_add(tab_borders[index]),
+                area.y.saturating_add(tab_row_index),
+            );
+            let center = Position::new(
+                area.x
+                    .saturating_add(tab_borders[index].saturating_add(tab_borders[index + 1]) / 2),
+                area.y.saturating_add(tab_row_index),
+            );
+            let view = ShellView { shell: &shell };
+
+            assert_eq!(view.dashboard_route_at(area, left_edge), Some(route));
+            assert_eq!(
+                view.dashboard_route_at(area, Position::new(center.x, center.y.saturating_sub(1))),
+                Some(route)
+            );
+            assert_eq!(
+                view.dashboard_route_at(area, Position::new(center.x, center.y.saturating_add(1))),
+                Some(route)
+            );
+        }
 
         for (route, label) in [
             (DashboardRoute::Sessions, "1S"),
@@ -2165,8 +2193,7 @@ async fn dashboard_tabs_click_without_focusing_wide_or_collapsed_routes() {
                     )
                     .unwrap_or(u16::MAX),
                 ),
-                area.y
-                    .saturating_add(u16::try_from(tab_row_index).unwrap_or(u16::MAX)),
+                area.y.saturating_add(tab_row_index),
             );
 
             shell.handle_mouse_click(area, position, &mut backend).await;
