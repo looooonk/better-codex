@@ -105,15 +105,15 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
     let token_lines = vec![
         Line::from(format!(
             "total {}",
-            format_i64(shell.token_usage.total_tokens)
+            format_token_count(shell.token_usage.total_tokens)
         )),
         Line::from(format!(
             "input {}",
-            format_i64(shell.token_usage.input_tokens)
+            format_token_count(shell.token_usage.input_tokens)
         )),
         Line::from(format!(
             "output {}",
-            format_i64(shell.token_usage.output_tokens)
+            format_token_count(shell.token_usage.output_tokens)
         )),
         match context_remaining_percent(&shell.context_token_usage, shell.model_context_window) {
             Some(percent) => Line::from(format!("Context {percent}% left")),
@@ -475,6 +475,25 @@ pub(super) fn format_i64(value: i64) -> String {
         format!("-{}", format_u64(value.unsigned_abs()))
     } else {
         format_u64(value as u64)
+    }
+}
+
+fn format_token_count(value: i64) -> String {
+    let sign = if value < 0 { "-" } else { "" };
+    let value = value.unsigned_abs();
+    if value >= 1_000_000 {
+        let tenths = (value + 50_000) / 100_000;
+        let whole = tenths / 10;
+        let decimal = tenths % 10;
+        if decimal == 0 {
+            format!("{sign}{whole}m")
+        } else {
+            format!("{sign}{whole}.{decimal}m")
+        }
+    } else if value >= 1_000 {
+        format!("{sign}{}k", (value + 500) / 1_000)
+    } else {
+        format!("{sign}{value}")
     }
 }
 

@@ -18,8 +18,8 @@ expression: "render_shell(&shell, area)"
  ▌ tool exec just test -p codex-tui                                    gpt-5-codex
 
  ▌ edited 3 files +128 -24                                             Tokens
-                                                                       total 1,440
- codex: The new shell owns the fullscreen surface.                     input 1,200
+                                                                       total 1k
+ codex: The new shell owns the fullscreen surface.                     input 1k
                                                                        output 240
                                                                        Context 100% left
 

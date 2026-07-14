@@ -2843,7 +2843,7 @@ fn dashboard_uses_available_width_for_long_values() {
 }
 
 #[test]
-fn dashboard_renders_large_numbers_with_commas() {
+fn dashboard_compacts_token_counts_and_groups_other_large_numbers() {
     let mut shell = ShellState::snapshot_fixture();
     shell.token_usage = TokenUsage {
         input_tokens: 1_234_567,
@@ -2877,9 +2877,9 @@ fn dashboard_renders_large_numbers_with_commas() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("total 1,469,134"));
-    assert!(rendered.contains("input 1,234,567"));
-    assert!(rendered.contains("output 234,567"));
+    assert!(rendered.contains("total 1.5m"));
+    assert!(rendered.contains("input 1.2m"));
+    assert!(rendered.contains("output 235k"));
     assert!(rendered.contains("Context 27% left"));
     shell.dashboard_route = DashboardRoute::Workspace;
     let rendered = render_shell(&shell, area);
