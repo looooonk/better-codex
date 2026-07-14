@@ -3369,7 +3369,7 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
     }
 
     if key_hint::ctrl(KeyCode::Char('1')).is_press(key) {
-        return Some(DashboardRoute::Sessions);
+        return Some(DashboardRoute::Settings);
     }
     if key_hint::ctrl(KeyCode::Char('2')).is_press(key) {
         return Some(DashboardRoute::Workspace);
@@ -3378,7 +3378,7 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
         return Some(DashboardRoute::Workspace);
     }
     if key_hint::ctrl(KeyCode::Char('3')).is_press(key) {
-        return Some(DashboardRoute::Settings);
+        return Some(DashboardRoute::Sessions);
     }
     if key_hint::ctrl(KeyCode::Char('4')).is_press(key) {
         return Some(DashboardRoute::Help);

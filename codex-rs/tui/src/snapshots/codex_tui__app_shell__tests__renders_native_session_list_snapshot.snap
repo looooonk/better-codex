@@ -3,31 +3,31 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        ┌───────┬──────┬──────┬──────┐
-                                                                     │  1S   │  2W  │ 3Set │4Help │
-                                                                     └───────┴──────┴──────┴──────┘
+ Better Codex                                                    ┌────────┬─────────┬────────┬────┐
+                                                                 │Settings│Workspace│Sessions│Help│
+                                                                 └────────┴─────────┴────────┴────┘
  Conversation
- system: Better Codex app shell                                      Sessions
- you: Create a divergent standalone TUI.                             focused active 2 shown
-                                                                     > 1/2 Refactor dashboard na...
- codex: Started a fullscreen app shell backed by app-server turns.     2/2 Investigate approval ...
- plan: 1. Build shell
-       2. Wire transcript                                            Tools
-       3. Render dashboard                                           in progress exec just test ...
-                                                                     completed file changes in a...
- ▌ tool exec just test -p codex-tui
-                                                                     Thread
- ▌ edited 3 files +128 -24                                           stage-one
-                                                                     id 01900000-0000-7000-8000-...
- codex: The new shell owns the fullscreen surface.                   resume, fork, archive, delete
+ system: Better Codex app shell                                  Sessions
+ you: Create a divergent standalone TUI.                         focused active 2 shown
+                                                                 > 1/2 Refactor dashboard naviga...
+ codex: Started a fullscreen app shell backed by app-server        2/2 Investigate approval rend...
+        turns.
+ plan: 1. Build shell                                            Tools
+       2. Wire transcript                                        in progress exec just test -p c...
+       3. Render dashboard                                       completed file changes in app_s...
 
-                                                                     Status
-                                                                     thinking
+ ▌ tool exec just test -p codex-tui                              Thread
+                                                                 stage-one
+ ▌ edited 3 files +128 -24                                       id 01900000-0000-7000-8000-0000...
+                                                                 resume, fork, archive, delete in
+ codex: The new shell owns the fullscreen surface.
+                                                                 Status
+                                                                 thinking
 
-                                                                     Plan
-                                                                     Build the standalone shell in
-                                                                     slices.
-                                                                     x Shell frame
-                                                                     > Transcript model
+                                                                 Plan
+                                                                 Build the standalone shell in
+                                                                 slices.
+                                                                 x Shell frame
+                                                                 > Transcript model
  Composer ready 1:37
  > Summarize the new shell architecture

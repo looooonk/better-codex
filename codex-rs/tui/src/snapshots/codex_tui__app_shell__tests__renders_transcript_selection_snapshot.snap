@@ -3,28 +3,28 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        ┌───────┬──────┬──────┬──────┐
-                                                                     │  1S   │  2W  │ 3Set │4Help │
-                                                                     └───────┴──────┴──────┴──────┘
+ Better Codex                                                    ┌────────┬─────────┬────────┬────┐
+                                                                 │Settings│Workspace│Sessions│Help│
+                                                                 └────────┴─────────┴────────┴────┘
  Conversation select 3/6
- system: Better Codex app shell                                      Sessions
- you: Create a divergent standalone TUI.                             unfocused active 0 shown
-                                                                     loading sessions
+ system: Better Codex app shell                                  Sessions
+ you: Create a divergent standalone TUI.                         unfocused active 0 shown
+                                                                 loading sessions
  > codex: Started a fullscreen app shell backed by app-server
-          turns.                                                     Tools
- plan: 1. Build shell                                                in progress exec just test ...
-       2. Wire transcript                                            completed file changes in a...
+          turns.                                                 Tools
+ plan: 1. Build shell                                            in progress exec just test -p c...
+       2. Wire transcript                                        completed file changes in app_s...
        3. Render dashboard
-                                                                     Thread
- ▌ tool exec just test -p codex-tui                                  stage-one
-                                                                     id 01900000-0000-7000-8000-...
- ▌ edited 3 files +128 -24                                           resume, fork, archive, delete
+                                                                 Thread
+ ▌ tool exec just test -p codex-tui                              stage-one
+                                                                 id 01900000-0000-7000-8000-0000...
+ ▌ edited 3 files +128 -24                                       resume, fork, archive, delete in
 
- codex: The new shell owns the fullscreen surface.                   Status
-                                                                     thinking
+ codex: The new shell owns the fullscreen surface.               Status
+                                                                 thinking
 
-                                                                     Plan
-                                                                     Build the standalone shell in
- Composer ready 1:37                                                 slices.
- > Summarize the new shell architecture                              x Shell frame
-                                                                     > Transcript model
+                                                                 Plan
+                                                                 Build the standalone shell in
+ Composer ready 1:37                                             slices.
+ > Summarize the new shell architecture                          x Shell frame
+                                                                 > Transcript model

@@ -1,4 +1,5 @@
 use super::design::MOCHA_MANTLE;
+use super::design::MOCHA_SURFACE0;
 use super::design::tab_span;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -21,13 +22,13 @@ pub(super) enum DashboardRoute {
 }
 
 impl DashboardRoute {
-    pub(super) const ALL: [Self; 4] = [Self::Sessions, Self::Workspace, Self::Settings, Self::Help];
+    pub(super) const ALL: [Self; 4] = [Self::Settings, Self::Workspace, Self::Sessions, Self::Help];
 
-    pub(super) fn short_label(self) -> &'static str {
+    pub(super) fn label(self) -> &'static str {
         match self {
-            Self::Sessions => "S",
-            Self::Workspace => "W",
-            Self::Settings => "Set",
+            Self::Sessions => "Sessions",
+            Self::Workspace => "Workspace",
+            Self::Settings => "Settings",
             Self::Help => "Help",
         }
     }
@@ -63,12 +64,22 @@ impl DashboardTabs {
             .min(width);
         let available_width = width.saturating_sub(border_count);
         let tab_count = u16::try_from(DashboardRoute::ALL.len()).unwrap_or(u16::MAX);
-        let base_width = available_width / tab_count;
-        let remainder = available_width % tab_count;
+        let label_widths = DashboardRoute::ALL
+            .map(|route| u16::try_from(route.label().chars().count()).unwrap_or(u16::MAX));
+        let minimum_width = label_widths.iter().copied().sum::<u16>();
+        let extra_width = available_width.saturating_sub(minimum_width);
+        let base_width = extra_width / tab_count;
+        let remainder = extra_width % tab_count;
+        let use_label_widths = available_width >= minimum_width;
         let mut start = u16::from(width > 0);
         let cells = std::array::from_fn(|index| {
             let route = DashboardRoute::ALL[index];
-            let cell_width = base_width + u16::from(index < usize::from(remainder));
+            let cell_width = if use_label_widths {
+                label_widths[index] + base_width + u16::from(index < usize::from(remainder))
+            } else {
+                available_width / tab_count
+                    + u16::from(index < usize::from(available_width % tab_count))
+            };
             let cell = DashboardTabCell {
                 route,
                 start,
@@ -87,13 +98,21 @@ impl DashboardTabs {
         let mut middle = Vec::new();
         let mut written = 0u16;
         if self.width > 0 {
-            middle.push(Span::from("│").dim());
+            middle.push(
+                Span::from("│")
+                    .dim()
+                    .bg(if active_route == self.cells[0].route {
+                        MOCHA_SURFACE0
+                    } else {
+                        MOCHA_MANTLE
+                    }),
+            );
             written += 1;
         }
         for (index, cell) in self.cells.into_iter().enumerate() {
             if cell.width > 0 {
-                let label = format!("{}{}", index + 1, cell.route.short_label());
-                let label = crate::text_formatting::truncate_text(&label, usize::from(cell.width));
+                let label = cell.route.label();
+                let label = crate::text_formatting::truncate_text(label, usize::from(cell.width));
                 middle.push(tab_span(
                     format!("{label:^width$}", width = usize::from(cell.width)),
                     cell.route == active_route,
@@ -101,14 +120,23 @@ impl DashboardTabs {
                 written = written.saturating_add(cell.width);
             }
             if written < self.width {
-                middle.push(Span::from("│").dim());
+                let active_border = cell.route == active_route
+                    || self
+                        .cells
+                        .get(index + 1)
+                        .is_some_and(|cell| cell.route == active_route);
+                middle.push(Span::from("│").dim().bg(if active_border {
+                    MOCHA_SURFACE0
+                } else {
+                    MOCHA_MANTLE
+                }));
                 written += 1;
             }
         }
         [
-            self.border_line('┌', '┬', '┐'),
+            self.border_line('┌', '┬', '┐', active_route),
             Line::from(middle).bg(MOCHA_MANTLE),
-            self.border_line('└', '┴', '┘'),
+            self.border_line('└', '┴', '┘', active_route),
         ]
     }
 
@@ -123,7 +151,13 @@ impl DashboardTabs {
             .map(|cell| cell.route)
     }
 
-    fn border_line(self, left: char, separator: char, right: char) -> Line<'static> {
+    fn border_line(
+        self,
+        left: char,
+        separator: char,
+        right: char,
+        active_route: DashboardRoute,
+    ) -> Line<'static> {
         let mut border = String::new();
         if self.width > 0 {
             border.push(left);
@@ -142,7 +176,32 @@ impl DashboardTabs {
                 });
             }
         }
-        Line::from(border.dim()).bg(MOCHA_MANTLE)
+        let active_cell = self
+            .cells
+            .iter()
+            .find(|cell| cell.route == active_route && cell.width > 0);
+        let Some(active_cell) = active_cell else {
+            return Line::from(border.dim()).bg(MOCHA_MANTLE);
+        };
+        let active_start = usize::from(active_cell.start.saturating_sub(1));
+        let active_width = usize::from(active_cell.width.saturating_add(2))
+            .min(usize::from(self.width).saturating_sub(active_start));
+        let before = border.chars().take(active_start).collect::<String>();
+        let active = border
+            .chars()
+            .skip(active_start)
+            .take(active_width)
+            .collect::<String>();
+        let after = border
+            .chars()
+            .skip(active_start.saturating_add(active_width))
+            .collect::<String>();
+        Line::from(vec![
+            before.dim(),
+            active.dim().bg(MOCHA_SURFACE0),
+            after.dim(),
+        ])
+        .bg(MOCHA_MANTLE)
     }
 }
 
@@ -210,7 +269,7 @@ mod tests {
 
     #[test]
     fn dashboard_tabs_fill_width_and_make_borders_clickable() {
-        let tabs = DashboardTabs::new(/*width*/ 28);
+        let tabs = DashboardTabs::new(/*width*/ 34);
         let rendered = tabs.lines(DashboardRoute::Sessions).map(|line| {
             line.spans
                 .iter()
@@ -223,28 +282,14 @@ mod tests {
                 .iter()
                 .map(|line| line.chars().count())
                 .collect::<Vec<_>>(),
-            vec![28; 3]
+            vec![34; 3]
         );
         assert_eq!(rendered[1].matches('│').count(), 5);
         assert_eq!(
-            (0..28)
+            (0..34)
                 .map(|column| tabs.route_at(column))
                 .collect::<Vec<_>>(),
             vec![
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Sessions),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
-                Some(DashboardRoute::Workspace),
                 Some(DashboardRoute::Settings),
                 Some(DashboardRoute::Settings),
                 Some(DashboardRoute::Settings),
@@ -252,7 +297,27 @@ mod tests {
                 Some(DashboardRoute::Settings),
                 Some(DashboardRoute::Settings),
                 Some(DashboardRoute::Settings),
-                Some(DashboardRoute::Help),
+                Some(DashboardRoute::Settings),
+                Some(DashboardRoute::Settings),
+                Some(DashboardRoute::Workspace),
+                Some(DashboardRoute::Workspace),
+                Some(DashboardRoute::Workspace),
+                Some(DashboardRoute::Workspace),
+                Some(DashboardRoute::Workspace),
+                Some(DashboardRoute::Workspace),
+                Some(DashboardRoute::Workspace),
+                Some(DashboardRoute::Workspace),
+                Some(DashboardRoute::Workspace),
+                Some(DashboardRoute::Workspace),
+                Some(DashboardRoute::Sessions),
+                Some(DashboardRoute::Sessions),
+                Some(DashboardRoute::Sessions),
+                Some(DashboardRoute::Sessions),
+                Some(DashboardRoute::Sessions),
+                Some(DashboardRoute::Sessions),
+                Some(DashboardRoute::Sessions),
+                Some(DashboardRoute::Sessions),
+                Some(DashboardRoute::Sessions),
                 Some(DashboardRoute::Help),
                 Some(DashboardRoute::Help),
                 Some(DashboardRoute::Help),
@@ -266,7 +331,7 @@ mod tests {
     #[test]
     fn dashboard_tabs_highlight_only_the_active_route() {
         insta::assert_debug_snapshot!(
-            DashboardTabs::new(/*width*/ 28).lines(DashboardRoute::Workspace)
+            DashboardTabs::new(/*width*/ 34).lines(DashboardRoute::Workspace)
         );
     }
 }

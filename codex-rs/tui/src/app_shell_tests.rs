@@ -559,11 +559,11 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         "Tab page",
     ];
     let centralized_guides = [
-        "Sessions: Ctrl+1 select/focus",
+        "Sessions: Ctrl+3 select/focus",
         "r resume, f fork, a/u archive",
         "v archived, d delete",
         "n rename, / search",
-        "Settings: Ctrl+3 select/focus",
+        "Settings: Ctrl+1 select/focus",
         "Enter edit/cycle, Tab page",
         "Esc return to composer",
     ];
@@ -601,9 +601,9 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
     assert_eq!(
         visibility,
         [
-            (DashboardRoute::Sessions, false, false),
-            (DashboardRoute::Workspace, false, false),
             (DashboardRoute::Settings, false, false),
+            (DashboardRoute::Workspace, false, false),
+            (DashboardRoute::Sessions, false, false),
             (DashboardRoute::Help, true, true),
         ]
     );
@@ -1287,7 +1287,7 @@ async fn goal_slash_command_pauses_resumes_and_clears_thread_goal() {
 fn dashboard_route_key_mapping_covers_native_routes() {
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Sessions)
+        Some(DashboardRoute::Settings)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL)),
@@ -1299,7 +1299,7 @@ fn dashboard_route_key_mapping_covers_native_routes() {
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Settings)
+        Some(DashboardRoute::Sessions)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL)),
@@ -2061,9 +2061,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     );
 
     shell
-        .handle_key(ctrl_3, &config, &mut backend)
+        .handle_key(ctrl_1, &config, &mut backend)
         .await
-        .expect("Ctrl+3 should select settings");
+        .expect("Ctrl+1 should select settings");
 
     assert_eq!(
         (
@@ -2077,9 +2077,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     insta::assert_snapshot!(render_shell(&shell, area));
 
     shell
-        .handle_key(ctrl_3, &config, &mut backend)
+        .handle_key(ctrl_1, &config, &mut backend)
         .await
-        .expect("Ctrl+3 should focus selected settings");
+        .expect("Ctrl+1 should focus selected settings");
 
     assert_eq!(
         (
@@ -2092,9 +2092,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
 
     shell
-        .handle_key(ctrl_1, &config, &mut backend)
+        .handle_key(ctrl_3, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should select sessions");
+        .expect("Ctrl+3 should select sessions");
 
     assert_eq!(
         (
@@ -2107,9 +2107,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
 
     shell
-        .handle_key(ctrl_1, &config, &mut backend)
+        .handle_key(ctrl_3, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should focus selected sessions");
+        .expect("Ctrl+3 should focus selected sessions");
 
     assert_eq!(
         (
@@ -2142,7 +2142,7 @@ async fn dashboard_tabs_click_without_focusing_wide_or_collapsed_routes() {
         let (tab_row_index, tab_row) = rendered
             .lines()
             .enumerate()
-            .find(|(_, line)| line.contains("1S") && line.contains("4Help"))
+            .find(|(_, line)| line.contains("Settings") && line.contains("Help"))
             .expect("all dashboard tabs should share a visible row");
         assert_eq!(tab_row.matches('│').count(), 5);
         let tab_borders = tab_row
@@ -2175,10 +2175,10 @@ async fn dashboard_tabs_click_without_focusing_wide_or_collapsed_routes() {
         }
 
         for (route, label) in [
-            (DashboardRoute::Sessions, "1S"),
-            (DashboardRoute::Workspace, "2W"),
-            (DashboardRoute::Settings, "3Set"),
-            (DashboardRoute::Help, "4Help"),
+            (DashboardRoute::Settings, "Settings"),
+            (DashboardRoute::Workspace, "Workspace"),
+            (DashboardRoute::Sessions, "Sessions"),
+            (DashboardRoute::Help, "Help"),
         ] {
             shell.session_list.focused = true;
             shell.settings.focused = true;
@@ -3499,8 +3499,9 @@ fn dashboard_focus_dims_conversation_and_hides_composer_cursor() {
         row_containing(&buf, area, "Conversation").expect("conversation title should render");
     let conversation_x = row_needle_x(&buf, area, conversation_row, "Conversation")
         .expect("conversation title should have an x position");
-    let dashboard_row = row_containing(&buf, area, "1S").expect("dashboard tabs should render");
-    let dashboard_x = row_needle_x(&buf, area, dashboard_row, "1S")
+    let dashboard_row =
+        row_containing(&buf, area, "Sessions").expect("dashboard tabs should render");
+    let dashboard_x = row_needle_x(&buf, area, dashboard_row, "Sessions")
         .expect("active tab should have an x position");
 
     assert!(

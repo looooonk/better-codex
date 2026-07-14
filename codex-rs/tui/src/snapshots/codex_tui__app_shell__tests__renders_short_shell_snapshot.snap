@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        ┌───────┬──────┬──────┬──────┐
-                                                                     │  1S   │  2W  │ 3Set │4Help │
-                                                                     └───────┴──────┴──────┴──────┘
+ Better Codex                                                    ┌────────┬─────────┬────────┬────┐
+                                                                 │Settings│Workspace│Sessions│Help│
+                                                                 └────────┴─────────┴────────┴────┘
  Conversation
-                                                                  ┃  Sessions
- codex: The new shell owns the fullscreen surface.                ┃  unfocused active 0 shown
-                                                                     loading sessions
+                                                              ┃  Sessions
+ codex: The new shell owns the fullscreen surface.            ┃  unfocused active 0 shown
+                                                                 loading sessions
 
- Composer ready 1:37                                                 Tools
- > Summarize the new shell architecture                              in progress exec just test ...
+ Composer ready 1:37                                             Tools
+ > Summarize the new shell architecture                          in progress exec just test -p c...

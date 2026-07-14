@@ -3,17 +3,17 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
 ---
 
- Better Codex                                                                 ┌───────┬───────┬──────┬──────┐
-                                                                              │  1S   │  2W   │ 3Set │4Help │
-                                                                              └───────┴───────┴──────┴──────┘
+ Better Codex                                                              ┌────────┬─────────┬────────┬────┐
+                                                                           │Settings│Workspace│Sessions│Help│
+                                                                           └────────┴─────────┴────────┴────┘
  Conversation
- system: Better Codex app shell                                               Settings
- you: Create a divergent standalone TUI.                                      focused integrations 2 fields
-                                                                              Model  Permissions
- codex: Started a fullscreen app shell backed by app-server turns.            Appearance  Integrations
- plan: 1. Build shell                                                         mcp inventory refreshed
-       2. Wire transcript                                                     > mcp servers: 2 servers / 3...
-       3. Render dashboard                                                      plugins: not loaded
+ system: Better Codex app shell                                            Settings
+ you: Create a divergent standalone TUI.                                   focused integrations 2 fields
+                                                                           Model  Permissions
+ codex: Started a fullscreen app shell backed by app-server turns.         Appearance  Integrations
+ plan: 1. Build shell                                                      mcp inventory refreshed
+       2. Wire transcript                                                  > mcp servers: 2 servers / 3 to...
+       3. Render dashboard                                                   plugins: not loaded
 
 
  MCP Servers
@@ -24,14 +24,14 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
  Action: press Enter or l to start oauth login
 
 
-                                                                              Integrations
-                                                                              mcp 2 servers / 3 tools / 1 ...
-                                                                              plugins not loaded
-                                                                              servers 2
-                                                                              tools 3
+                                                                           Integrations
+                                                                           mcp 2 servers / 3 tools / 1 log...
+                                                                           plugins not loaded
+                                                                           servers 2
+                                                                           tools 3
 
-                                                                              Workspace
-                                                                              cwd /workspace/better-codex
-                                                                              profile managed
- Composer ready 1:37                                                          files restricted, net
- > Summarize the new shell architecture                                       restricted
+                                                                           Workspace
+                                                                           cwd /workspace/better-codex
+                                                                           profile managed
+ Composer ready 1:37                                                       files restricted, net restricted
+ > Summarize the new shell architecture                                    roots none selected

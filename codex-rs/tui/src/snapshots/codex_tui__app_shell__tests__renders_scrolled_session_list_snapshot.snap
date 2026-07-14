@@ -3,33 +3,33 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
- Better Codex                                                        ┌───────┬──────┬──────┬──────┐
-                                                                     │  1S   │  2W  │ 3Set │4Help │
-                                                                     └───────┴──────┴──────┴──────┘
+ Better Codex                                                    ┌────────┬─────────┬────────┬────┐
+                                                                 │Settings│Workspace│Sessions│Help│
+                                                                 └────────┴─────────┴────────┴────┘
  Conversation
- system: Better Codex app shell                                      Sessions
- you: Create a divergent standalone TUI.                             focused active 10 shown
-                                                                        3/10 Session 03 [main] 1...
- codex: Started a fullscreen app shell backed by app-server turns.      4/10 Session 04 [main] 1...
- plan: 1. Build shell                                                   5/10 Session 05 [main] 1...
-       2. Wire transcript                                               6/10 Session 06 [main] 1...
-       3. Render dashboard                                              7/10 Session 07 [main] 1...
-                                                                     >  8/10 Session 08 [main] 1...
- ▌ tool exec just test -p codex-tui
-                                                                     Tools
- ▌ edited 3 files +128 -24                                           in progress exec just test ...
-                                                                     completed file changes in a...
- codex: The new shell owns the fullscreen surface.
-                                                                     Thread
-                                                                     stage-one
-                                                                     id 01900000-0000-7000-8000-...
-                                                                     resume, fork, archive, delete
+ system: Better Codex app shell                                  Sessions
+ you: Create a divergent standalone TUI.                         focused active 10 shown
+                                                                    3/10 Session 03 [main] 19000...
+ codex: Started a fullscreen app shell backed by app-server         4/10 Session 04 [main] 19000...
+        turns.                                                      5/10 Session 05 [main] 19000...
+ plan: 1. Build shell                                               6/10 Session 06 [main] 19000...
+       2. Wire transcript                                           7/10 Session 07 [main] 19000...
+       3. Render dashboard                                       >  8/10 Session 08 [main] 19000...
 
-                                                                     Status
-                                                                     thinking
+ ▌ tool exec just test -p codex-tui                              Tools
+                                                                 in progress exec just test -p c...
+ ▌ edited 3 files +128 -24                                       completed file changes in app_s...
 
-                                                                     Plan
- Composer ready 1:37                                                 Build the standalone shell in
- > Summarize the new shell architecture                              slices.
-                                                                     x Shell frame
-                                                                     > Transcript model
+ codex: The new shell owns the fullscreen surface.               Thread
+                                                                 stage-one
+                                                                 id 01900000-0000-7000-8000-0000...
+                                                                 resume, fork, archive, delete in
+
+                                                                 Status
+                                                                 thinking
+
+                                                                 Plan
+ Composer ready 1:37                                             Build the standalone shell in
+ > Summarize the new shell architecture                          slices.
+                                                                 x Shell frame
+                                                                 > Transcript model

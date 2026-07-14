@@ -3,20 +3,20 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        ┌───────┬──────┬──────┬──────┐
-                                                                     │  1S   │  2W  │ 3Set │4Help │
-                                                                     └───────┴──────┴──────┴──────┘
+ Better Codex                                                    ┌────────┬─────────┬────────┬────┐
+                                                                 │Settings│Workspace│Sessions│Help│
+                                                                 └────────┴─────────┴────────┴────┘
  Conversation
- ▌ tool exec cargo test                                              Sessions
-                                                                     unfocused active 0 shown
-   ▌ output pytest 40%                                               loading sessions
+ ▌ tool exec cargo test                                          Sessions
+                                                                 unfocused active 0 shown
+   ▌ output pytest 40%                                           loading sessions
    ▌        pytest 80%
-   ▌        pytest 100%                                              Tools
-                                                                     in progress exec just test ...
-                                                                     completed file changes in a...
-                                                                     in progress exec cargo test
+   ▌        pytest 100%                                          Tools
+                                                                 in progress exec just test -p c...
+                                                                 completed file changes in app_s...
+                                                                 in progress exec cargo test
 
-                                                                     Thread
- Composer ready 1:37                                                 stage-one
- > Summarize the new shell architecture                              id 01900000-0000-7000-8000-...
-                                                                     resume, fork, archive, delete
+                                                                 Thread
+ Composer ready 1:37                                             stage-one
+ > Summarize the new shell architecture                          id 01900000-0000-7000-8000-0000...
+                                                                 resume, fork, archive, delete in

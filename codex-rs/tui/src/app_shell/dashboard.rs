@@ -263,11 +263,11 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
     };
     key_lines.insert(0, key_hint_line("Alt + Left / Right"));
     key_lines.extend([
-        key_hint_line("Sessions: Ctrl+1 select/focus"),
+        key_hint_line("Sessions: Ctrl+3 select/focus"),
         key_hint_line("r resume, f fork, a/u archive"),
         key_hint_line("v archived, d delete"),
         key_hint_line("n rename, / search"),
-        key_hint_line("Settings: Ctrl+3 select/focus"),
+        key_hint_line("Settings: Ctrl+1 select/focus"),
         key_hint_line("Enter edit/cycle, Tab page"),
         key_hint_line("Esc return to composer"),
     ]);

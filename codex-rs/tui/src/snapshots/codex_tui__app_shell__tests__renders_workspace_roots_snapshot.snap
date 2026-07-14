@@ -3,26 +3,26 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        ┌───────┬──────┬──────┬──────┐
-                                                                     │  1S   │  2W  │ 3Set │4Help │
-                                                                     └───────┴──────┴──────┴──────┘
+ Better Codex                                                    ┌────────┬─────────┬────────┬────┐
+                                                                 │Settings│Workspace│Sessions│Help│
+                                                                 └────────┴─────────┴────────┴────┘
  Conversation
- system: Better Codex app shell                                      Workspace
- you: Create a divergent standalone TUI.                             cwd /workspace/better-codex
-                                                                     profile managed
- codex: Started a fullscreen app shell backed by app-server turns.   files restricted, net
- plan: 1. Build shell                                                restricted
-       2. Wire transcript                                            roots 4 writable
-       3. Render dashboard                                             /workspace/better-codex
-                                                                       /workspace/better-codex/c...
- ▌ tool exec just test -p codex-tui                                    /tmp/codex-cache
+ system: Better Codex app shell                                  Workspace
+ you: Create a divergent standalone TUI.                         cwd /workspace/better-codex
+                                                                 profile managed
+ codex: Started a fullscreen app shell backed by app-server      files restricted, net restricted
+        turns.                                                   roots 4 writable
+ plan: 1. Build shell                                              /workspace/better-codex
+       2. Wire transcript                                          /workspace/better-codex/codex-rs
+       3. Render dashboard                                         /tmp/codex-cache
+                                                                   +1 more
+ ▌ tool exec just test -p codex-tui
+                                                                 Edits
+ ▌ edited 3 files +128 -24                                       3 files +128 -24
 
- ▌ edited 3 files +128 -24                                           Edits
-                                                                     3 files +128 -24
- codex: The new shell owns the fullscreen surface.
-                                                                     Tools
-                                                                     in progress exec just test ...
-                                                                     completed file changes in a...
+ codex: The new shell owns the fullscreen surface.               Tools
+                                                                 in progress exec just test -p c...
+                                                                 completed file changes in app_s...
 
 
 

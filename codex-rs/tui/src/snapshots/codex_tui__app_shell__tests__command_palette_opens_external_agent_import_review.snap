@@ -3,15 +3,15 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
 ---
 
- Better Codex                                                        ┌───────┬──────┬──────┬──────┐
-                                                                     │  1S   │  2W  │ 3Set │4Help │
-                                                                     └───────┴──────┴──────┴──────┘
+ Better Codex                                                    ┌────────┬─────────┬────────┬────┐
+                                                                 │Settings│Workspace│Sessions│Help│
+                                                                 └────────┴─────────┴────────┴────┘
  Conversation
- system: Better Codex app shell                                      Sessions
- you: Create a divergent standalone TUI.                             unfocused active 0 shown
-                                                                     loading sessions
- codex: Started a fullscreen app shell backed by app-server turns.
- plan: 1. Build shell                                                Tools
+ system: Better Codex app shell                                  Sessions
+ you: Create a divergent standalone TUI.                         unfocused active 0 shown
+                                                                 loading sessions
+ codex: Started a fullscreen app shell backed by app-server
+        turns.                                                   Tools
 
  Claude Code Import
  Review Claude Code setup  Settings 1, Skills 1
@@ -24,10 +24,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
  Enter import  Space toggle  Esc cancel
 
 
-                                                                     Build the standalone shell in
-                                                                     slices.
-                                                                     x Shell frame
-                                                                     > Transcript model
+                                                                 Build the standalone shell in
+                                                                 slices.
+                                                                 x Shell frame
+                                                                 > Transcript model
 
  Composer ready 1:37
  > Summarize the new shell architecture

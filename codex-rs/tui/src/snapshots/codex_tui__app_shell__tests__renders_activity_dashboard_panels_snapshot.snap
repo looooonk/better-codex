@@ -3,9 +3,9 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                                        ┌────────┬───────┬───────┬───────┐
-                                                                                     │   1S   │  2W   │ 3Set  │ 4Help │
-                                                                                     └────────┴───────┴───────┴───────┘
+ Better Codex                                                                        ┌────────┬─────────┬────────┬────┐
+                                                                                     │Settings│Workspace│Sessions│Help│
+                                                                                     └────────┴─────────┴────────┴────┘
  Conversation
  system: Better Codex app shell                                                      Sessions
  you: Create a divergent standalone TUI.                                             unfocused active 0 shown

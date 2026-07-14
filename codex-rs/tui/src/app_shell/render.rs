@@ -50,7 +50,7 @@ use ratatui::widgets::Wrap;
 use unicode_width::UnicodeWidthStr;
 
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
-const DASHBOARD_MIN_WIDTH: u16 = 32;
+const DASHBOARD_MIN_WIDTH: u16 = 36;
 const DASHBOARD_PANEL_GAP: u16 = 1;
 const DASHBOARD_WIDTH_PERCENT: u16 = 30;
 const HEADER_HEIGHT: u16 = 3;

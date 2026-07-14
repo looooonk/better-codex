@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                        ┌───────┬──────┬──────┬──────┐
-                                                                     │  1S   │  2W  │ 3Set │4Help │
-                                                                     └───────┴──────┴──────┴──────┘
+ Better Codex                                                    ┌────────┬─────────┬────────┬────┐
+                                                                 │Settings│Workspace│Sessions│Help│
+                                                                 └────────┴─────────┴────────┴────┘
  Conversation
- system: Better Codex app shell                                      Workspace
- you: Create a divergent standalone TUI.                             cwd /workspace/better-codex
-                                                                     branch feature/app-shell-da...
- codex: Started a fullscreen app shell backed by app-server turns.   changes 13 files
- plan: 1. Build shell                                                  added 2
-       2. Wire transcript                                              modified 5
-       3. Render dashboard                                             deleted 1
-                                                                       renamed 1
- ▌ tool exec just test -p codex-tui                                    conflicted 1
-                                                                       untracked 3
- ▌ edited 3 files +128 -24                                           profile managed
-                                                                     files restricted, net
- codex: The new shell owns the fullscreen surface.                   restricted
+ system: Better Codex app shell                                  Workspace
+ you: Create a divergent standalone TUI.                         cwd /workspace/better-codex
+                                                                 branch feature/app-shell-dashboard
+ codex: Started a fullscreen app shell backed by app-server      changes 13 files
+        turns.                                                     added 2
+ plan: 1. Build shell                                              modified 5
+       2. Wire transcript                                          deleted 1
+       3. Render dashboard                                         renamed 1
+                                                                   conflicted 1
+ ▌ tool exec just test -p codex-tui                                untracked 3
+                                                                 profile managed
+ ▌ edited 3 files +128 -24                                       files restricted, net restricted
+                                                                 roots none selected
+ codex: The new shell owns the fullscreen surface.
+                                                                 Edits
+                                                                 3 files +128 -24
 
-                                                                     Edits
-                                                                     3 files +128 -24
-
-                                                                     Tools
-                                                                     in progress exec just test ...
-                                                                     completed file changes in a...
+                                                                 Tools
+                                                                 in progress exec just test -p c...
+                                                                 completed file changes in app_s...
 
 
 
