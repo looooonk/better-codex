@@ -146,7 +146,9 @@ fn render_transcript_scrollbar(
     let thumb_start = body.y.saturating_add(scrollbar.thumb_top);
     let thumb_end = thumb_start.saturating_add(scrollbar.thumb_height);
     for y in body.y..body.bottom() {
-        let cell = buf.cell_mut((x, y)).expect("scrollbar cell should exist");
+        let Some(cell) = buf.cell_mut((x, y)) else {
+            continue;
+        };
         if (thumb_start..thumb_end).contains(&y) {
             cell.set_symbol("┃")
                 .set_style(Style::new().fg(palette::FOCUS));

@@ -248,7 +248,7 @@ fn buffer_text(buf: &Buffer, area: Rect) -> String {
         .map(|y| {
             (area.x..area.right())
                 .filter_map(|x| buf.cell((x, y)))
-                .map(|cell| cell.symbol())
+                .map(ratatui::buffer::Cell::symbol)
                 .collect::<String>()
         })
         .collect::<Vec<_>>()

@@ -245,5 +245,5 @@ pub(super) fn selector_geometry(area: Rect, option_count: usize) -> SelectorGeom
 fn first_wrapped_line(text: &str, width: usize) -> String {
     textwrap::wrap(text, textwrap::Options::new(width.max(1)))
         .first()
-        .map_or_else(String::new, |line| line.to_string())
+        .map_or_else(String::new, std::string::ToString::to_string)
 }

@@ -346,8 +346,7 @@ impl ShellView<'_> {
                         .saturating_add(INPUT_PANEL_MIN_HEIGHT)
                         .saturating_add(TRANSCRIPT_MIN_HEIGHT),
                 )
-                .min(14)
-                .max(3);
+                .clamp(3, 14);
             let input_height = self.input_panel_height(
                 area.height
                     .saturating_sub(HEADER_HEIGHT)
@@ -377,8 +376,7 @@ impl ShellView<'_> {
             .div_ceil(100)
             .try_into()
             .unwrap_or(u16::MAX)
-            .max(DASHBOARD_MIN_WIDTH)
-            .min(DASHBOARD_MAX_WIDTH)
+            .clamp(DASHBOARD_MIN_WIDTH, DASHBOARD_MAX_WIDTH)
             .min(area.width);
         let horizontal = Layout::default()
             .direction(Direction::Horizontal)
