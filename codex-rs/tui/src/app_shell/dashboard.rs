@@ -7,8 +7,8 @@ use super::design::MOCHA_SURFACE0;
 use super::design::Tone;
 use super::design::badge_span;
 use super::design::key_hint_line;
-use super::design::tab_span;
 use super::navigation::DashboardRoute;
+use super::navigation::DashboardTabs;
 use crate::goal_display::format_goal_elapsed_seconds;
 use crate::goal_display::goal_status_label;
 use crate::text_formatting::truncate_text;
@@ -22,6 +22,7 @@ use std::collections::VecDeque;
 pub(super) struct DashboardPanel {
     pub(super) title: String,
     pub(super) lines: Vec<Line<'static>>,
+    title_hint: Option<String>,
 }
 
 impl DashboardPanel {
@@ -29,7 +30,16 @@ impl DashboardPanel {
         Self {
             title: title.into(),
             lines,
+            title_hint: None,
         }
+    }
+
+    pub(super) fn title_line(&self) -> Line<'static> {
+        let mut spans = vec![self.title.clone().bold()];
+        if let Some(hint) = &self.title_hint {
+            spans.extend(["  ".into(), hint.clone().dim()]);
+        }
+        Line::from(spans)
     }
 
     pub(super) fn height(&self) -> u16 {
@@ -46,7 +56,7 @@ impl DashboardPanel {
 }
 
 pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<DashboardPanel> {
-    let mut panels = vec![dashboard_navigation_panel(shell.dashboard_route)];
+    let mut panels = vec![dashboard_navigation_panel(shell.dashboard_route, width)];
     panels.push(DashboardPanel::new(
         "Sessions",
         shell.session_list.lines(width),
@@ -165,16 +175,15 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
     };
     panels.push(DashboardPanel::new("Edits", diff_lines));
 
-    let mut plan_lines = Vec::new();
     if let Some(goal) = &shell.active_goal {
-        plan_lines.push(Line::from(vec![
-            "goal ".dim(),
-            goal_status_span(goal.status),
-        ]));
-        plan_lines.push(Line::from(format!(
-            "  {}",
-            dashboard_value(&goal.objective, width, /*prefix_width*/ 2)
-        )));
+        let mut lines = vec![
+            Line::from(vec!["status ".dim(), goal_status_span(goal.status)]),
+            Line::from(dashboard_value(
+                &goal.objective,
+                width,
+                /*prefix_width*/ 0,
+            )),
+        ];
         let mut usage = Vec::new();
         if goal.time_used_seconds > 0 {
             usage.push(format_goal_elapsed_seconds(goal.time_used_seconds));
@@ -189,13 +198,16 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
             usage.push(format!("{} tokens", format_i64(goal.tokens_used)));
         }
         if !usage.is_empty() {
-            plan_lines.push(Line::from(format!("  {}", usage.join(" | ")).dim()));
+            lines.push(Line::from(usage.join(" | ").dim()));
         }
+        panels.push(DashboardPanel::new("Goal", lines));
     }
+
+    let mut plan_lines = Vec::new();
     if let Some(explanation) = &shell.plan_explanation {
         plan_lines.push(Line::from(explanation.clone().dim()));
     }
-    if shell.plan_steps.is_empty() && shell.active_goal.is_none() {
+    if shell.plan_steps.is_empty() {
         plan_lines.push(Line::from("no active plan".dim()));
     } else {
         for step in shell.plan_steps.iter().take(5) {
@@ -220,7 +232,7 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
         workspace_lines(shell, width),
     ));
 
-    let key_lines = if shell.transcript_selection.is_some() {
+    let mut key_lines = if shell.transcript_selection.is_some() {
         vec![
             key_hint_line("Up/Down select"),
             key_hint_line("Enter copy"),
@@ -230,7 +242,7 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
     } else if shell.active_turn_id.is_some() {
         vec![
             key_hint_line("Enter steer"),
-            key_hint_line("Ctrl+C interrupt, Esc twice to exit"),
+            key_hint_line("Ctrl+C interrupt, Esc x2 exit"),
             key_hint_line("Alt+Up select, Ctrl+O copy"),
             key_hint_line("Ctrl+D hide dashboard"),
         ]
@@ -242,6 +254,15 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
             key_hint_line("Ctrl+D hide dashboard"),
         ]
     };
+    key_lines.extend([
+        key_hint_line("Sessions: Ctrl+1 select/focus"),
+        key_hint_line("r resume, f fork, a/u archive"),
+        key_hint_line("v archived, d delete"),
+        key_hint_line("n rename, / search"),
+        key_hint_line("Settings: Ctrl+3 select/focus"),
+        key_hint_line("Enter edit/cycle, Tab page"),
+        key_hint_line("Esc return to composer"),
+    ]);
     panels.push(DashboardPanel::new("Keys", key_lines));
 
     route_dashboard_panels(shell.dashboard_route, panels)
@@ -285,10 +306,10 @@ fn route_dashboard_panels(
             "Subagents",
             "Thread",
             "Status",
+            "Goal",
             "Plan",
-            "Keys",
         ],
-        DashboardRoute::Workspace => &["Navigation", "Workspace", "Edits", "Tools", "Keys"],
+        DashboardRoute::Workspace => &["Navigation", "Workspace", "Edits", "Tools"],
         DashboardRoute::Settings => &[
             "Navigation",
             "Settings",
@@ -297,7 +318,6 @@ fn route_dashboard_panels(
             "Integrations",
             "Rate Limits",
             "Workspace",
-            "Keys",
         ],
         DashboardRoute::Help => &[
             "Navigation",
@@ -322,19 +342,13 @@ fn route_dashboard_panels(
         .collect()
 }
 
-fn dashboard_navigation_panel(active_route: DashboardRoute) -> DashboardPanel {
-    let mut spans = Vec::new();
-    for (index, route) in DashboardRoute::ALL.into_iter().enumerate() {
-        if index > 0 {
-            spans.push("  ".dim());
-        }
-        let label = format!("{}{}", index + 1, route.short_label());
-        spans.push(tab_span(label, route == active_route));
+fn dashboard_navigation_panel(active_route: DashboardRoute, width: usize) -> DashboardPanel {
+    let width = u16::try_from(width).unwrap_or(u16::MAX);
+    DashboardPanel {
+        title: "Navigation".to_string(),
+        lines: vec![DashboardTabs::new(width).line(active_route)],
+        title_hint: Some("Alt + Left / Right".to_string()),
     }
-    spans.push("  ".dim());
-    spans.push("Alt+Left/Right".dim());
-
-    DashboardPanel::new("Navigation", vec![Line::from(spans)])
 }
 
 fn status_line(status: &str) -> Line<'static> {

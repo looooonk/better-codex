@@ -78,11 +78,7 @@ struct SettingsFeedback {
 impl SettingsState {
     pub(super) fn lines(&self, view: &SettingsView, width: usize) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
-        let focus = if self.focused {
-            "focused"
-        } else {
-            "ctrl+3 focus"
-        };
+        let focus = if self.focused { "focused" } else { "unfocused" };
         lines.push(Line::from(vec![
             focus.cyan(),
             " ".dim(),
@@ -94,7 +90,8 @@ impl SettingsState {
             tab("Model", self.page == SettingsPage::Model),
             "  ".dim(),
             tab("Permissions", self.page == SettingsPage::Permissions),
-            "  ".dim(),
+        ]));
+        lines.push(Line::from(vec![
             tab("Appearance", self.page == SettingsPage::Appearance),
             "  ".dim(),
             tab("Integrations", self.page == SettingsPage::Integrations),
@@ -122,7 +119,6 @@ impl SettingsState {
         for (index, action) in self.actions().iter().take(remaining).enumerate() {
             lines.push(setting_row(*action, index == self.selected, view, width));
         }
-        lines.push(Line::from("Enter edit/cycle  Tab page  Esc composer".dim()));
         lines
     }
 

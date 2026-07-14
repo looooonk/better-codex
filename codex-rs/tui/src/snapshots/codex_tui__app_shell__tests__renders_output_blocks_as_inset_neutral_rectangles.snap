@@ -6,10 +6,10 @@ expression: rendered
  Better Codex
 
 
- Dashboard · Sessions
- Navigation 1S  2W  3Set  4Help  Alt+Left/Right
+ Navigation  Alt + Left / Right
+         1S         |        2W        |       3Set       |      4Help
  Tools in progress exec just test -p codex-tui
- Sessions ctrl+1 focus active 0 shown
+ Sessions unfocused active 0 shown
  Thread stage-one
  Status thinking
  Plan Build the standalone shell in slices.

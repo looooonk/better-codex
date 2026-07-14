@@ -99,9 +99,11 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
 use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;
+use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Modifier;
+use ratatui::text::Line;
 use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -530,11 +532,126 @@ fn renders_goal_progress_in_dashboard_snapshot() {
 fn renders_active_turn_key_hints_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.active_turn_id = Some("turn-active-1234567890".to_string());
+    shell.dashboard_route = DashboardRoute::Help;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 44,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn dashboard_shortcut_guides_only_appear_on_help_route() {
+    let mut shell = ShellState::snapshot_fixture();
+    let shortcut_guides = [
+        "ctrl+1 focus",
+        "r resume",
+        "f fork",
+        "u unarchive",
+        "a archive",
+        "d delete",
+        "n rename",
+        "/ search",
+        "v archived",
+        "esc composer",
+        "ctrl+3 focus",
+        "Enter edit/cycle",
+        "Tab page",
+    ];
+    let centralized_guides = [
+        "Sessions: Ctrl+1 select/focus",
+        "r resume, f fork, a/u archive",
+        "v archived, d delete",
+        "n rename, / search",
+        "Settings: Ctrl+3 select/focus",
+        "Enter edit/cycle, Tab page",
+        "Esc return to composer",
+    ];
+    let mut leaked_guides = Vec::new();
+
+    let visibility = DashboardRoute::ALL.map(|route| {
+        shell.dashboard_route = route;
+        let panels = dashboard::dashboard_panels(&shell, /*width*/ 40);
+        let has_keys = panels.iter().any(|panel| panel.title == "Keys");
+        let has_route_shortcut = panels
+            .iter()
+            .find(|panel| panel.title == "Navigation")
+            .expect("navigation should be visible on every dashboard route")
+            .title_line()
+            .spans
+            .iter()
+            .any(|span| span.content.contains("Alt + Left / Right"));
+        if route != DashboardRoute::Help {
+            let text = panels
+                .iter()
+                .flat_map(|panel| &panel.lines)
+                .flat_map(|line| &line.spans)
+                .map(|span| span.content.as_ref())
+                .collect::<String>();
+            leaked_guides.extend(
+                shortcut_guides
+                    .iter()
+                    .filter(|guide| text.contains(**guide))
+                    .map(|guide| (route, *guide)),
+            );
+        }
+        (route, has_keys, has_route_shortcut)
+    });
+
+    assert_eq!(leaked_guides, Vec::new());
+    assert_eq!(
+        visibility,
+        [
+            (DashboardRoute::Sessions, false, true),
+            (DashboardRoute::Workspace, false, true),
+            (DashboardRoute::Settings, false, true),
+            (DashboardRoute::Help, true, true),
+        ]
+    );
+    let help_text = dashboard::dashboard_panels(&shell, /*width*/ 40)
+        .into_iter()
+        .flat_map(|panel| panel.lines)
+        .flat_map(|line| line.spans)
+        .map(|span| span.content.into_owned())
+        .collect::<String>();
+    assert_eq!(
+        centralized_guides.map(|guide| help_text.contains(guide)),
+        [true; 7]
+    );
+    let active_session_lines = shell
+        .session_list
+        .lines(/*width*/ 40)
+        .iter()
+        .map(line_text)
+        .collect::<Vec<_>>();
+    shell.session_list.toggle_archived();
+    let archived_session_lines = shell
+        .session_list
+        .lines(/*width*/ 40)
+        .iter()
+        .map(line_text)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        (active_session_lines, archived_session_lines),
+        (
+            vec![
+                "unfocused active 0 shown".to_string(),
+                "loading sessions".to_string(),
+            ],
+            vec![
+                "unfocused archived 0 shown".to_string(),
+                "loading sessions".to_string(),
+            ],
+        )
+    );
+    assert_eq!(
+        shell
+            .settings
+            .lines(&shell.settings_view(), /*width*/ 40)
+            .first()
+            .map(line_text),
+        Some("unfocused model 3 fields".to_string())
+    );
 }
 
 #[test]
@@ -2006,6 +2123,63 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
 }
 
+#[tokio::test]
+async fn dashboard_tabs_click_without_focusing_wide_or_collapsed_routes() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+
+    for area in [
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        ),
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
+        ),
+    ] {
+        let rendered = render_shell(&shell, area);
+        assert!(rendered.contains("Navigation  Alt + Left / Right"));
+        let (tab_row_index, tab_row) = rendered
+            .lines()
+            .enumerate()
+            .find(|(_, line)| line.contains("1S") && line.contains("4Help"))
+            .expect("all dashboard tabs should share a visible row");
+        assert_eq!(tab_row.matches('|').count(), 3);
+
+        for (route, label) in [
+            (DashboardRoute::Sessions, "1S"),
+            (DashboardRoute::Workspace, "2W"),
+            (DashboardRoute::Settings, "3Set"),
+            (DashboardRoute::Help, "4Help"),
+        ] {
+            shell.session_list.focused = true;
+            shell.settings.focused = true;
+            let position = Position::new(
+                area.x.saturating_add(
+                    u16::try_from(
+                        tab_row
+                            .find(label)
+                            .expect("dashboard tab label should be visible"),
+                    )
+                    .unwrap_or(u16::MAX),
+                ),
+                area.y
+                    .saturating_add(u16::try_from(tab_row_index).unwrap_or(u16::MAX)),
+            );
+
+            shell.handle_mouse_click(area, position, &mut backend).await;
+
+            assert_eq!(
+                (
+                    shell.dashboard_route,
+                    shell.session_list.focused,
+                    shell.settings.focused,
+                ),
+                (route, false, false)
+            );
+        }
+    }
+}
+
 #[test]
 fn bio_policy_error_renders_dedicated_safety_notice() {
     let mut shell = ShellState::snapshot_fixture();
@@ -2237,9 +2411,11 @@ fn tool_transcript_block_background_spans_conversation_width() {
 
     let buf = render_shell_buffer(&shell, area);
     let row = row_containing(&buf, area, "exec short").expect("tool row should render");
+    let content = design::pane_content_rect(ShellView { shell: &shell }.input_area(area));
+    let right_edge = content.right().saturating_sub(1);
 
     assert_eq!(
-        buf.cell((68, row))
+        buf.cell((right_edge, row))
             .expect("right edge cell should exist")
             .style()
             .bg,
@@ -3590,6 +3766,13 @@ fn file_change_detail_caps_file_rows() {
 fn render_shell(shell: &ShellState, area: Rect) -> String {
     let buf = render_shell_buffer(shell, area);
     buffer_contents(&buf, area)
+}
+
+fn line_text(line: &Line<'_>) -> String {
+    line.spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect()
 }
 
 fn render_shell_buffer(shell: &ShellState, area: Rect) -> Buffer {

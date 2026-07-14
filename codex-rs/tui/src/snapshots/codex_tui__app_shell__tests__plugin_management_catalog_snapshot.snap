@@ -3,13 +3,13 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
 ---
 
- Better Codex                                                                 Navigation
-                                                                              1S  2W  3Set  4Help
+ Better Codex                                                                 Navigation  Alt + Left / Right
+                                                                                1S   |  2W   | 3Set  | 4Help
 
  Conversation                                                                 Settings
  system: Better Codex app shell                                               focused integrations 2 fields
- you: Create a divergent standalone TUI.                                      Model  Permissions  Appearance
-                                                                              Integrations
+ you: Create a divergent standalone TUI.                                      Model  Permissions
+                                                                              Appearance  Integrations
  codex: Started a fullscreen app shell backed by app-server turns.            plugin inventory refreshed
  plan: 1. Build shell                                                           mcp servers: not loaded
        2. Wire transcript                                                     > plugins: 1 installed / 2 a...
@@ -35,5 +35,3 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
                                                                               files restricted, net
  Composer ready 1:37                                                          restricted
  > Summarize the new shell architecture
-                                                                              Keys
-                                                                              Enter send

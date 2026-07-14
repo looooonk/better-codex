@@ -29,7 +29,9 @@ use crossterm::event::Event;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
+use crossterm::event::MouseButton;
 use crossterm::event::MouseEventKind;
+use ratatui::layout::Position;
 use tokio::sync::broadcast;
 use tokio::sync::watch;
 use tokio_stream::Stream;
@@ -270,9 +272,12 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
                     KeyCode::PageDown,
                     KeyModifiers::NONE,
                 ))),
+                MouseEventKind::Down(MouseButton::Left) => Some(TuiEvent::MouseClick(
+                    Position::new(mouse_event.column, mouse_event.row),
+                )),
                 MouseEventKind::ScrollLeft
                 | MouseEventKind::ScrollRight
-                | MouseEventKind::Down(_)
+                | MouseEventKind::Down(MouseButton::Right | MouseButton::Middle)
                 | MouseEventKind::Up(_)
                 | MouseEventKind::Drag(_)
                 | MouseEventKind::Moved => None,
@@ -546,6 +551,30 @@ mod tests {
                 modifiers: KeyModifiers::NONE,
                 ..
             }))
+        ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn left_mouse_down_maps_to_click_and_other_buttons_are_skipped() {
+        let (broker, handle, _draw_tx, draw_rx, terminal_focused) = setup();
+        let mut stream = make_stream(broker, draw_rx, terminal_focused);
+
+        handle.send(Ok(Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Right),
+            column: 4,
+            row: 2,
+            modifiers: KeyModifiers::NONE,
+        })));
+        handle.send(Ok(Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 17,
+            row: 6,
+            modifiers: KeyModifiers::NONE,
+        })));
+
+        assert!(matches!(
+            stream.next().await,
+            Some(TuiEvent::MouseClick(Position { x: 17, y: 6 }))
         ));
     }
 

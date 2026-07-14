@@ -3,29 +3,27 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Navigation
-                                                                       1S  2W  3Set  4Help
+ Better Codex                                                        Navigation  Alt + Left / Right
+                                                                       1S   |  2W   | 3Set  |4Help
 
- Conversation                                                          Sessions
- system: Better Codex app shell                                        ctrl+1 focus active 0 shown
- you: Create a divergent standalone TUI.                               loading sessions
-                                                                       r resume  f fork  a archi...
- codex: Started a fullscreen app shell backed by app-server turns.     / search  v archived  esc
- plan: 1. Build shell
-       2. Wire transcript                                              Tools
-       3. Render dashboard                                             in progress exec just tes...
-                                                                       completed file changes in...
- ▌ tool exec just test -p codex-tui
-                                                                       Thread
- ▌ edited 3 files +128 -24                                             stage-one
- system: Our most capable model yet. GPT-5.6 Sol can tackle complex    id 01900000-0000-7000-800...
-         code changes, dig into research, produce polished documents,  resume, fork, archive,
-         and take on your most ambitious work. Sol is highly capable
-         at lower reasoning efforts—try starting lower, then turn it   Status
-         up for harder jobs.                                           thinking
+ Conversation                                                        Sessions
+ system: Better Codex app shell                                      unfocused active 0 shown
+ you: Create a divergent standalone TUI.                             loading sessions
 
-                                                                       Plan
- Composer ready 1:37                                                   Build the standalone shell
- > Summarize the new shell architecture                                in slices.
-                                                                       x Shell frame
-                                                                       > Transcript model
+ codex: Started a fullscreen app shell backed by app-server turns.   Tools
+ plan: 1. Build shell                                                in progress exec just test ...
+       2. Wire transcript                                            completed file changes in a...
+       3. Render dashboard
+                                                                     Thread
+ ▌ tool exec just test -p codex-tui                                  stage-one
+                                                                     id 01900000-0000-7000-8000-...
+ ▌ edited 3 files +128 -24                                           resume, fork, archive, delete
+ system: Our most capable model yet. GPT-5.6 Sol can tackle
+         complex code changes, dig into research, produce polished   Status
+         documents, and take on your most ambitious work. Sol is     thinking
+         highly capable at lower reasoning efforts—try starting
+         lower, then turn it up for harder jobs.                     Plan
+                                                                     Build the standalone shell in
+                                                                     slices.
+ Composer ready 1:37                                                 x Shell frame
+ > Summarize the new shell architecture                              > Transcript model

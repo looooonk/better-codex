@@ -17,6 +17,8 @@ use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::design::selection_style;
 use super::design::title_rect;
+use super::navigation::DashboardRoute;
+use super::navigation::DashboardTabs;
 use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_to_width;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
@@ -48,7 +50,9 @@ use ratatui::widgets::Wrap;
 use unicode_width::UnicodeWidthStr;
 
 const DASHBOARD_COLLAPSE_WIDTH: u16 = 88;
+const DASHBOARD_MIN_WIDTH: u16 = 32;
 const DASHBOARD_PANEL_GAP: u16 = 1;
+const DASHBOARD_WIDTH_PERCENT: u16 = 30;
 const HEADER_HEIGHT: u16 = 3;
 const INPUT_PANEL_MIN_HEIGHT: u16 = 6;
 const INPUT_PANEL_MAX_HEIGHT: u16 = 12;
@@ -158,6 +162,29 @@ impl ShellView<'_> {
         self.layout(area).input
     }
 
+    pub(super) fn dashboard_route_at(
+        &self,
+        area: Rect,
+        position: Position,
+    ) -> Option<DashboardRoute> {
+        let layout = self.layout(area);
+        let dashboard = layout.dashboard.or(layout.collapsed_dashboard)?;
+        let content = pane_content_rect(dashboard);
+        if content.height < 2 {
+            return None;
+        }
+        let tab_row = Rect::new(
+            content.x,
+            content.y.saturating_add(1),
+            content.width,
+            /*height*/ 1,
+        );
+        if !tab_row.contains(position) {
+            return None;
+        }
+        DashboardTabs::new(tab_row.width).route_at(position.x.saturating_sub(tab_row.x))
+    }
+
     fn layout(&self, area: Rect) -> ShellLayout {
         if !self.shell.dashboard_visible {
             let input_height =
@@ -212,9 +239,19 @@ impl ShellView<'_> {
             };
         }
 
+        let dashboard_width = u32::from(area.width)
+            .saturating_mul(u32::from(DASHBOARD_WIDTH_PERCENT))
+            .div_ceil(100)
+            .try_into()
+            .unwrap_or(u16::MAX)
+            .max(DASHBOARD_MIN_WIDTH)
+            .min(area.width);
         let horizontal = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
+            .constraints([
+                Constraint::Length(area.width.saturating_sub(dashboard_width)),
+                Constraint::Length(dashboard_width),
+            ])
             .split(area);
         let input_height = self.input_panel_height(
             area.height.saturating_sub(HEADER_HEIGHT),
@@ -430,9 +467,13 @@ impl ShellView<'_> {
         let width = usize::from(content.width);
         let panels = dashboard_panels(self.shell, width);
         let body = body_rect_after_title(content);
-        let mut lines = Vec::new();
+        let navigation = panels.iter().find(|panel| panel.title == "Navigation");
+        let mut lines = navigation
+            .and_then(|panel| panel.lines.first())
+            .cloned()
+            .into_iter()
+            .collect::<Vec<_>>();
         for title in [
-            "Navigation",
             "Approvals",
             "Background",
             "Tools",
@@ -443,6 +484,7 @@ impl ShellView<'_> {
             "Status",
             "Model",
             "Tokens",
+            "Goal",
             "Plan",
             "Workspace",
             "Edits",
@@ -469,19 +511,12 @@ impl ShellView<'_> {
             }
         }
 
-        let route = match self.shell.dashboard_route {
-            super::navigation::DashboardRoute::Sessions => "Sessions",
-            super::navigation::DashboardRoute::Workspace => "Workspace",
-            super::navigation::DashboardRoute::Settings => "Settings",
-            super::navigation::DashboardRoute::Help => "Help",
-        };
-        Paragraph::new(Line::from(vec![
-            "Dashboard".bold(),
-            " · ".dim(),
-            route.cyan(),
-        ]))
-        .style(pane_style(MOCHA_SURFACE0))
-        .render(title_rect(content), buf);
+        let title = navigation
+            .map(DashboardPanel::title_line)
+            .unwrap_or_else(|| Line::from("Navigation".bold()));
+        Paragraph::new(title)
+            .style(pane_style(MOCHA_SURFACE0))
+            .render(title_rect(content), buf);
         Paragraph::new(lines)
             .style(pane_style(MOCHA_SURFACE0))
             .render(body, buf);
@@ -501,7 +536,7 @@ impl ShellView<'_> {
             }
             let panel_area = Rect::new(area.x, y, area.width, height);
             fill_rect(buf, panel_area, panel.background(index));
-            let mut lines = vec![Line::from(panel.title.clone().bold())];
+            let mut lines = vec![panel.title_line()];
             lines.extend(panel.lines.clone());
             Paragraph::new(lines)
                 .style(pane_style(panel.background(index)))

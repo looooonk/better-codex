@@ -200,7 +200,7 @@ pub(crate) async fn run_model_migration_onboarding(
                 }
                 ModelMigrationKeyAction::Ignored => {}
             },
-            TuiEvent::Paste(_) => {}
+            TuiEvent::MouseClick(_) | TuiEvent::Paste(_) => {}
             TuiEvent::Resize | TuiEvent::Draw => {
                 draw_model_migration_onboarding(tui, &state)?;
             }

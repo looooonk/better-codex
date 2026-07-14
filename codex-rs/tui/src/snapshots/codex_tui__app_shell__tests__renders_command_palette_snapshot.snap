@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Navigation
-                                                                       1S  2W  3Set  4Help
+ Better Codex                                                        Navigation  Alt + Left / Right
+                                                                       1S   |  2W   | 3Set  |4Help
 
- Conversation                                                          Sessions
- system: Better Codex app shell                                        ctrl+1 focus active 0 shown
+ Conversation                                                        Sessions
+ system: Better Codex app shell                                      unfocused active 0 shown
 
  Command Palette
 
@@ -26,8 +26,6 @@ expression: "render_shell(&shell, area)"
 
 
 
-                                                                       in slices.
- Composer ready 1:37                                                   x Shell frame
- > Summarize the new shell architecture                                > Transcript model
-
-                                                                       Keys
+                                                                     > Transcript model
+ Composer ready 1:37
+ > Summarize the new shell architecture

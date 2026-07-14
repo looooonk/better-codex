@@ -212,11 +212,7 @@ impl SessionListState {
 
     pub(super) fn lines(&self, width: usize) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
-        let focus = if self.focused {
-            "focused"
-        } else {
-            "ctrl+1 focus"
-        };
+        let focus = if self.focused { "focused" } else { "unfocused" };
         let mode = if self.show_archived {
             "archived"
         } else {
@@ -275,13 +271,6 @@ impl SessionListState {
                 width,
             ));
         }
-        let hints = if self.show_archived {
-            "r resume  f fork  u unarchive  d delete"
-        } else {
-            "r resume  f fork  a archive  d delete  n rename"
-        };
-        lines.push(Line::from(truncate_text(hints, width).dim()));
-        lines.push(Line::from("/ search  v archived  esc composer".dim()));
         lines
     }
 

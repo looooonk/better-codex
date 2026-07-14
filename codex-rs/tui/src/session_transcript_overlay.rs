@@ -46,7 +46,7 @@ impl SessionTranscriptOverlay {
                 tui.draw(u16::MAX, |frame| self.render(frame.area(), frame.buffer))?;
                 Ok(())
             }
-            TuiEvent::Paste(_) => Ok(()),
+            TuiEvent::MouseClick(_) | TuiEvent::Paste(_) => Ok(()),
         }
     }
 

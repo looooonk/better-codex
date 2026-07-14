@@ -3,31 +3,31 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex                                                          Navigation
-                                                                       1S  2W  3Set  4Help
+ Better Codex                                                        Navigation  Alt + Left / Right
+                                                                       1S   |  2W   | 3Set  |4Help
 
- Conversation                                                          Workspace
- system: Better Codex app shell                                        cwd /workspace/better-codex
- you: Create a divergent standalone TUI.                               profile managed
-                                                                       files restricted, net
- codex: Started a fullscreen app shell backed by app-server turns.     restricted
- plan: 1. Build shell                                                  roots 4 writable
-       2. Wire transcript                                                /workspace/better-codex
-       3. Render dashboard                                               /workspace/better-codex...
-                                                                         /tmp/codex-cache
+ Conversation                                                        Workspace
+ system: Better Codex app shell                                      cwd /workspace/better-codex
+ you: Create a divergent standalone TUI.                             profile managed
+                                                                     files restricted, net
+ codex: Started a fullscreen app shell backed by app-server turns.   restricted
+ plan: 1. Build shell                                                roots 4 writable
+       2. Wire transcript                                              /workspace/better-codex
+       3. Render dashboard                                             /workspace/better-codex/c...
+                                                                       /tmp/codex-cache
  ▌ tool exec just test -p codex-tui
-                                                                       Edits
- ▌ edited 3 files +128 -24                                             3 files +128 -24
+                                                                     Edits
+ ▌ edited 3 files +128 -24                                           3 files +128 -24
 
- codex: The new shell owns the fullscreen surface.                     Tools
-                                                                       in progress exec just tes...
-                                                                       completed file changes in...
+ codex: The new shell owns the fullscreen surface.                   Tools
+                                                                     in progress exec just test ...
+                                                                     completed file changes in a...
 
-                                                                       Keys
-                                                                       Enter send
-                                                                       Ctrl+C/Esc twice to exit
-                                                                       Alt+Up select, Ctrl+O copy
-                                                                       Ctrl+D hide dashboard
+
+
+
+
+
 
 
 

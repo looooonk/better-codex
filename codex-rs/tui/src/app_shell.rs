@@ -233,6 +233,22 @@ pub(crate) async fn run(
                         }
                         tui.frame_requester().schedule_frame();
                     }
+                    TuiEvent::MouseClick(position) => {
+                        let size = tui.terminal.size()?;
+                        shell
+                            .handle_mouse_click(
+                                ratatui::layout::Rect::new(
+                                    /*x*/ 0,
+                                    /*y*/ 0,
+                                    size.width,
+                                    size.height,
+                                ),
+                                position,
+                                &mut app_server,
+                            )
+                            .await;
+                        tui.frame_requester().schedule_frame();
+                    }
                     TuiEvent::Paste(text) => {
                         shell.insert_text(&text);
                         tui.frame_requester().schedule_frame();
@@ -903,6 +919,26 @@ impl ShellState {
             | KeyCode::KeypadBegin
             | KeyCode::Media(_)
             | KeyCode::Modifier(_) => Ok(false),
+        }
+    }
+
+    async fn handle_mouse_click<S>(
+        &mut self,
+        area: ratatui::layout::Rect,
+        position: ratatui::layout::Position,
+        app_server: &mut S,
+    ) where
+        S: AppShellBackend,
+    {
+        let Some(route) = (render::ShellView { shell: self }).dashboard_route_at(area, position)
+        else {
+            return;
+        };
+        self.set_dashboard_route(route);
+        self.session_list.focused = false;
+        self.settings.focused = false;
+        if route == DashboardRoute::Sessions {
+            self.refresh_session_list(app_server).await;
         }
     }
 
