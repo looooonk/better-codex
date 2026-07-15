@@ -3,24 +3,25 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
  ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │Help
+──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
                                                   │───────────────────────────────────────────━━━━━
  ◆ CONVERSATION                                   │
  ▎ SYSTEM  Better Codex app shell                 │▎◆ KEYS
  ▎ YOU  Create a divergent standalone TUI.        │▎Alt+Left/Right switch views
-                                                  │▎Enter steer
- ▎ CODEX  Started a fullscreen app shell backed   │▎Ctrl+C interrupt, Esc x2 exit
-          by app-server turns.                    │▎Alt+Up select, Ctrl+O copy
- ▎ PLAN  1. Build shell                           │▎Ctrl+D hide dashboard
-         2. Wire transcript                       │▎Alt+M model, Alt+E effort
-         3. Render dashboard                      │▎Ctrl+1 Sessions  Ctrl+2 Agents
-                                                  │▎Ctrl+3 Workspace Ctrl+4 Settings
- ▌ tool exec just test -p codex-tui               │▎Ctrl+5 Help
-                                                  │▎Sessions: Enter focus, j/k move
- ▌ edited 3 files +128 -24                        │▎r resume, f fork, a/u archive
-                                                  │▎v archived, d delete
- ▎ CODEX  The new shell owns the fullscreen       │▎n rename, / search
-          surface.                                │▎Agents: Enter focus, j/k inspect
+                                                  │▎Shift/Alt+Enter newline
+ ▎ CODEX  Started a fullscreen app shell backed   │▎Enter steer
+          by app-server turns.                    │▎Ctrl+C interrupt, Esc x2 exit
+ ▎ PLAN  1. Build shell                           │▎Alt+Up select, Ctrl+O copy
+         2. Wire transcript                       │▎Ctrl+D hide dashboard
+         3. Render dashboard                      │▎Alt+M model, Alt+E effort
+                                                  │▎Ctrl+1 Sessions  Ctrl+2 Agents
+ ▌ tool exec just test -p codex-tui               │▎Ctrl+3 Workspace Ctrl+4 Settings
+                                                  │▎Ctrl+5 Help
+ ▌ edited 3 files +128 -24                        │▎Sessions: Enter focus, j/k move
+                                                  │▎r resume, f fork, a/u archive
+ ▎ CODEX  The new shell owns the fullscreen       │▎v archived, d delete
+          surface.                                │▎n rename, / search
+                                                  │▎Agents: Enter focus, j/k inspect
                                                   │▎Settings: Tab page, Enter select
                                                   │▎Selectors: j/k choose, Enter apply
                                                   │▎Esc return to composer
@@ -32,7 +33,6 @@ expression: "render_shell(&shell, area)"
                                                   │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
                                                   │▎completed file changes in app_shell
-                                                  │
                                                   │
                                                   │
                                                   │

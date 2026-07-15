@@ -275,6 +275,7 @@ pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<Dashboar
         ]
     };
     key_lines.insert(0, key_hint_line("Alt+Left/Right switch views"));
+    key_lines.insert(1, key_hint_line("Shift/Alt+Enter newline"));
     key_lines.extend([
         key_hint_line("Alt+M model, Alt+E effort"),
         key_hint_line("Ctrl+1 Sessions  Ctrl+2 Agents"),

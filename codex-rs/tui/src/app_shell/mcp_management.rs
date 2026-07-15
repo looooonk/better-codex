@@ -353,7 +353,7 @@ impl McpManagementState {
         self.selected = (self.selected + 1).min(self.servers.len().saturating_sub(1));
     }
 
-    fn editing(&self) -> bool {
+    pub(super) fn editing(&self) -> bool {
         self.edit.is_some()
     }
 

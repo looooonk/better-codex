@@ -91,6 +91,7 @@ mod settings;
 mod shell_command;
 mod startup;
 mod startup_availability_nux;
+mod startup_layout;
 mod startup_login;
 mod startup_model_migration;
 mod transcript_render;
@@ -233,12 +234,18 @@ pub(crate) async fn run(
     if let Some(message) = availability_nux {
         shell.push_system(message);
     }
+    // Paint the restored conversation before secondary dashboard data is fetched. In
+    // particular, account rate limits may require a network round trip and should not leave the
+    // terminal looking stalled. Prioritize the session list so the default dashboard route is
+    // useful as soon as its first request completes.
+    draw_shell(tui, &shell)?;
+    shell.refresh_session_list(&mut app_server).await;
+    draw_shell(tui, &shell)?;
     shell
         .refresh_workspace_status(workspace_command_runner.as_ref())
         .await;
     shell.refresh_rate_limits(&mut app_server).await;
     shell.refresh_goal_state(&mut app_server).await;
-    shell.refresh_session_list(&mut app_server).await;
 
     let run_result: Result<ExitReason> = async {
         if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
@@ -755,7 +762,38 @@ impl ShellState {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return Ok(false);
         }
+        let is_plain_text_repeat = if key.kind == KeyEventKind::Repeat
+            && let KeyCode::Char(ch) = key.code
+            && !ch.is_control()
+            && matches!(key.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
+        {
+            if self.selector.is_some()
+                || self.command_palette.is_some()
+                || self.safety_buffering_modal_lines().is_some()
+                || self.pending_approval.is_some()
+                || self.pending_elicitation.is_some()
+                || self.pending_external_agent_import.is_some()
+            {
+                false
+            } else if let Some(mcp_management) = &self.pending_mcp_management {
+                mcp_management.editing()
+            } else if self.pending_plugin_management.is_some() {
+                false
+            } else if self.pending_user_input.is_some() {
+                true
+            } else if self.dashboard_route == DashboardRoute::Sessions && self.session_list.focused
+            {
+                self.session_list.search_active() || self.session_list.renaming()
+            } else if self.dashboard_route == DashboardRoute::Settings && self.settings.focused {
+                self.settings.editing()
+            } else {
+                !self.dashboard_focused() && self.transcript_selection.is_none()
+            }
+        } else {
+            false
+        };
         if key.kind == KeyEventKind::Repeat
+            && !is_plain_text_repeat
             && !matches!(
                 key.code,
                 KeyCode::Backspace
@@ -928,7 +966,7 @@ impl ShellState {
         match key.code {
             KeyCode::Esc => Ok(self.confirm_exit()),
             KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                if is_composer_newline_key(key) {
                     self.composer.insert_newline();
                 } else {
                     let prompt = self.composer.submission_text();
@@ -2302,7 +2340,7 @@ impl ShellState {
         match key.code {
             KeyCode::Esc => Ok(false),
             KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                if is_composer_newline_key(key) {
                     self.composer.insert_newline();
                 } else {
                     self.resolve_pending_user_input(app_server).await?;
@@ -3619,6 +3657,13 @@ fn composer_backspace_action_from_key(key: KeyEvent) -> Option<ComposerBackspace
     } else {
         Some(ComposerBackspaceAction::DeleteChar)
     }
+}
+
+fn is_composer_newline_key(key: KeyEvent) -> bool {
+    key.code == KeyCode::Enter
+        && key
+            .modifiers
+            .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT)
 }
 
 fn composer_word_motion_from_key(key: KeyEvent) -> Option<ComposerWordMotion> {

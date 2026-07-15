@@ -1,5 +1,5 @@
 ---
-source: tui/src/app_shell/startup_model_migration.rs
+source: tui/src/app_shell/startup_model_migration_tests.rs
 expression: terminal.backend().to_string()
 ---
 "                                                                                                    "
@@ -26,7 +26,7 @@ expression: terminal.backend().to_string()
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
+"                                                                                                    "
 " Enter continue  Up/Down choose  1/2/3 jump  Esc exit                                               "
 " The decision is saved through app-server config.                                                   "
-"                                                                                                    "
 "                                                                                                    "

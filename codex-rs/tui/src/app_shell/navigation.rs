@@ -128,10 +128,16 @@ impl DashboardTabs {
                     cell.route.label()
                 };
                 let label = crate::text_formatting::truncate_text(label, usize::from(label_width));
-                labels.push(tab_span(
-                    format!("{label:^width$}", width = usize::from(label_width)),
-                    cell.route == active_route,
-                ));
+                let label_padding = usize::from(label_width).saturating_sub(label.chars().count());
+                let label = if index + 1 == DashboardRoute::ALL.len() && label_padding == 1 {
+                    // Ratatui's surrounding pane already supplies the trailing outer margin. Put
+                    // a single odd padding cell before the final label so it does not run into
+                    // the preceding separator at the narrow edge of the wide-tab layout.
+                    format!("{label:>width$}", width = usize::from(label_width))
+                } else {
+                    format!("{label:^width$}", width = usize::from(label_width))
+                };
+                labels.push(tab_span(label, cell.route == active_route));
                 if has_separator {
                     labels.push("│".fg(palette::BORDER).bg(palette::DARK));
                 }
@@ -274,5 +280,18 @@ mod tests {
         insta::assert_debug_snapshot!(
             DashboardTabs::new(/*width*/ 46).lines(DashboardRoute::Workspace)
         );
+    }
+
+    #[test]
+    fn final_wide_tab_keeps_space_after_the_separator() {
+        let [labels, _underline] =
+            DashboardTabs::new(COMPACT_TAB_WIDTH).lines(DashboardRoute::Sessions);
+        let line = labels
+            .spans
+            .into_iter()
+            .map(|span| span.content.into_owned())
+            .collect::<String>();
+
+        assert_eq!(line, " Sessions │ Agents │ Workspace │ Settings │ Help");
     }
 }

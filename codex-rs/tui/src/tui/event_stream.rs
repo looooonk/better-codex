@@ -26,6 +26,7 @@ use std::task::Context;
 use std::task::Poll;
 
 use crossterm::event::Event;
+use crossterm::event::KeyEventKind;
 use crossterm::event::MouseButton;
 use crossterm::event::MouseEventKind;
 use ratatui::layout::Position;
@@ -242,6 +243,7 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
     /// Map a crossterm event to a [`TuiEvent`], skipping events we don't use.
     fn map_crossterm_event(&mut self, event: Event) -> Option<TuiEvent> {
         match event {
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Release => None,
             Event::Key(key_event) => {
                 #[cfg(unix)]
                 if crate::tui::job_control::SUSPEND_KEY.is_press(key_event) {
@@ -441,6 +443,34 @@ mod tests {
                 assert_eq!(key, KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE));
             }
             other => panic!("expected key event, got {other:?}"),
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn key_release_is_skipped_without_dropping_press_or_repeat() {
+        let (broker, handle, _draw_tx, draw_rx, terminal_focused) = setup();
+        let mut stream = make_stream(broker, draw_rx, terminal_focused);
+        let press = KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE);
+        let repeat = KeyEvent {
+            kind: KeyEventKind::Repeat,
+            ..press
+        };
+        let release = KeyEvent {
+            kind: KeyEventKind::Release,
+            ..press
+        };
+
+        handle.send(Ok(Event::Key(release)));
+        handle.send(Ok(Event::Key(press)));
+        handle.send(Ok(Event::Key(repeat)));
+
+        match stream.next().await {
+            Some(TuiEvent::Key(key)) => assert_eq!(key, press),
+            other => panic!("expected press event, got {other:?}"),
+        }
+        match stream.next().await {
+            Some(TuiEvent::Key(key)) => assert_eq!(key, repeat),
+            other => panic!("expected repeat event, got {other:?}"),
         }
     }
 

@@ -1885,6 +1885,173 @@ async fn composer_backspace_repeat_deletes_continuously() {
     assert_eq!(backend.calls(), Vec::new());
 }
 
+#[tokio::test]
+async fn printable_character_repeat_inserts_continuously_in_composer_inputs() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let repeat =
+        KeyEvent::new_with_kind(KeyCode::Char('x'), KeyModifiers::NONE, KeyEventKind::Repeat);
+    shell.composer.set_text("x");
+
+    for _ in 0..2 {
+        shell
+            .handle_key(repeat, &config, &mut backend)
+            .await
+            .expect("composer repeat should insert text");
+    }
+
+    assert_eq!(
+        (
+            shell.composer.text(),
+            shell.pending_user_input.is_some(),
+            backend.calls(),
+        ),
+        ("xxx", false, Vec::new())
+    );
+
+    shell.composer.clear();
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    for _ in 0..2 {
+        shell
+            .handle_key(repeat, &config, &mut backend)
+            .await
+            .expect("tool input repeat should insert text");
+    }
+
+    assert_eq!(
+        (
+            shell.composer.text(),
+            shell.pending_user_input.is_some(),
+            backend.calls(),
+        ),
+        ("xx", true, Vec::new())
+    );
+}
+
+#[tokio::test]
+async fn printable_character_repeat_reaches_text_entry_overlays() {
+    let config = test_config().await;
+    let repeat =
+        KeyEvent::new_with_kind(KeyCode::Char('x'), KeyModifiers::NONE, KeyEventKind::Repeat);
+    let mut backend = RecordingBackend::default();
+
+    let mut sessions = ShellState::snapshot_fixture();
+    sessions.composer.clear();
+    sessions.dashboard_route = DashboardRoute::Sessions;
+    sessions.session_list.focused = true;
+    sessions.session_list.start_search();
+    sessions
+        .handle_key(repeat, &config, &mut backend)
+        .await
+        .expect("session search repeat should insert text");
+    sessions.session_list.stop_search();
+    assert_eq!(
+        (
+            sessions.session_list.list_params().search_term,
+            sessions.composer.text(),
+        ),
+        (Some("x".to_string()), "")
+    );
+
+    let mut settings = ShellState::snapshot_fixture();
+    settings.composer.clear();
+    settings.dashboard_route = DashboardRoute::Settings;
+    settings.settings.focused = true;
+    settings
+        .settings
+        .start_edit(SettingsAction::Theme, String::new());
+    settings
+        .handle_key(repeat, &config, &mut backend)
+        .await
+        .expect("settings repeat should insert text");
+    assert_eq!(
+        (settings.settings.take_edit(), settings.composer.text(),),
+        (Some((SettingsAction::Theme, "x".to_string())), "")
+    );
+
+    let mut mcp = ShellState::snapshot_fixture();
+    mcp.composer.clear();
+    mcp.mcp_catalog = Some(ListMcpServerStatusResponse {
+        data: vec![mcp_status_fixture(
+            "github",
+            McpAuthStatus::NotLoggedIn,
+            ["search"],
+        )],
+        next_cursor: None,
+    });
+    mcp.open_mcp_management();
+    mcp.handle_key(key_char('a'), &config, &mut backend)
+        .await
+        .expect("MCP add mode should open");
+    mcp.handle_key(repeat, &config, &mut backend)
+        .await
+        .expect("MCP edit repeat should insert text");
+    let mcp_lines = mcp
+        .pending_mcp_management
+        .as_ref()
+        .expect("MCP manager should remain open")
+        .lines();
+    let mcp_draft = mcp_lines[3]
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+    assert_eq!(
+        (mcp_draft, mcp.composer.text(), backend.calls()),
+        ("x".to_string(), "", Vec::new())
+    );
+}
+
+#[tokio::test]
+async fn repeated_action_keys_do_not_toggle_submit_or_delete() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("prompt");
+
+    for key in [
+        KeyEvent::new_with_kind(KeyCode::Enter, KeyModifiers::NONE, KeyEventKind::Repeat),
+        KeyEvent::new_with_kind(
+            KeyCode::Char('d'),
+            KeyModifiers::CONTROL,
+            KeyEventKind::Repeat,
+        ),
+    ] {
+        shell
+            .handle_key(key, &config, &mut backend)
+            .await
+            .expect("repeated shortcut should be ignored");
+    }
+
+    let other_thread_id = test_thread_id("01900000-0000-7000-8000-000000000399");
+    shell.session_list.replace_threads(vec![thread_fixture(
+        other_thread_id,
+        Some("do not delete"),
+        "repeat guard",
+    )]);
+    shell.dashboard_route = DashboardRoute::Sessions;
+    shell.session_list.focused = true;
+    shell
+        .handle_key(
+            KeyEvent::new_with_kind(KeyCode::Char('d'), KeyModifiers::NONE, KeyEventKind::Repeat),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("repeated list action should be ignored");
+
+    assert_eq!(
+        (
+            shell.dashboard_visible,
+            shell.composer.text(),
+            shell.session_list.selected_thread_id(),
+            backend.calls(),
+        ),
+        (true, "prompt", Some(other_thread_id), Vec::new())
+    );
+}
+
 #[test]
 fn dashboard_route_step_matches_alt_arrow_fallbacks_only_when_allowed() {
     assert_eq!(
@@ -4313,6 +4480,57 @@ async fn shift_enter_preserves_multiline_composer_when_typing() {
 
     assert_eq!(cursor.y, row);
     assert_eq!(cursor.x, text_x + 1);
+}
+
+#[tokio::test]
+async fn alt_enter_inserts_a_newline_without_submitting() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("first");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("alt enter should insert a newline");
+
+    assert_eq!(
+        (shell.composer.text(), shell.composer.cursor_position()),
+        ("first\n", (1, 0))
+    );
+    assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
+async fn alt_enter_inserts_a_newline_during_tool_input() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    shell.composer.set_text("details");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("alt enter should insert a tool-input newline");
+
+    assert_eq!(
+        (
+            shell.pending_user_input.is_some(),
+            shell.composer.text(),
+            shell.composer.cursor_position(),
+            backend.calls(),
+        ),
+        (true, "details\n", (1, 0), Vec::new())
+    );
 }
 
 #[tokio::test]

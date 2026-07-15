@@ -5,6 +5,8 @@ use super::design::MOCHA_SURFACE0;
 use super::design::fill_rect;
 use super::design::pane_content_rect;
 use super::design::pane_style;
+use super::startup_layout::STARTUP_FOOTER_HEIGHT;
+use super::startup_layout::startup_panes;
 use crate::app_server_session::AppServerSession;
 use crate::config_update::build_model_migration_seen_edit;
 use crate::config_update::build_model_selection_edits;
@@ -425,12 +427,11 @@ struct ModelMigrationOnboardingView<'a> {
 impl ModelMigrationOnboardingView<'_> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
         fill_rect(buf, area, MOCHA_BASE);
-        let horizontal = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
-            .split(area);
-        self.render_main(horizontal[0], buf);
-        self.render_dashboard(horizontal[1], buf);
+        let panes = startup_panes(area);
+        self.render_main(panes.main, buf);
+        if let Some(sidebar) = panes.sidebar {
+            self.render_dashboard(sidebar, buf);
+        }
     }
 
     fn render_main(&self, area: Rect, buf: &mut Buffer) {
@@ -440,7 +441,7 @@ impl ModelMigrationOnboardingView<'_> {
             .constraints([
                 Constraint::Length(3),
                 Constraint::Min(8),
-                Constraint::Length(5),
+                Constraint::Length(STARTUP_FOOTER_HEIGHT),
             ])
             .split(area);
         fill_rect(buf, vertical[0], MOCHA_MANTLE);
