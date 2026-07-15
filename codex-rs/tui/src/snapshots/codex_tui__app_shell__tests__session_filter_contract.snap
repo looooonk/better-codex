@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
+---
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
+                                                  │━━━━━━━━━━━─────────────────────────────────────
+ ◆ CONVERSATION                                   │
+ ▎ SYSTEM  Better Codex app shell                 │▎◆ SESSIONS
+ ▎ YOU  Create a divergent standalone TUI.        │▎● FOCUSED  ACTIVE  0 shown / 20+ loaded
+                                                  │▎filter* needle  · Enter search all
+ ▎ CODEX  Started a fullscreen app shell backed   │▎no matching sessions
+          by app-server turns.                    │
+ ▎ PLAN  1. Build shell                           │▎◆ TOOLS
+         2. Wire transcript                       │▎in progress exec just test -p codex-tui
+         3. Render dashboard                      │▎completed file changes in app_shell
+                                                  │
+ ▌ tool exec just test -p codex-tui               │▎◆ THREAD
+                                                  │▎stage-one
+ ▌ edited 3 files +128 -24                        │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │▎◆ STATUS
+                                                  │▎thinking
+                                                  │
+                                                  │▎◆ PLAN
+╭────────────────────────────────────────────────╮│▎Build the standalone shell in slices.
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎x Shell frame
+│> Summarize the new shell architecture          ││▎> Transcript model
+│                                                ││▎- Approvals
+│                                                ││
+╰────────────────────────────────────────────────╯│

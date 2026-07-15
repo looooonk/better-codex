@@ -6252,6 +6252,130 @@ async fn native_session_list_search_archive_delete_and_rename() {
 }
 
 #[tokio::test]
+async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely() {
+    let config = test_config().await;
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000799");
+    let mut threads = (0..20)
+        .map(|index| {
+            let thread_id = test_thread_id(&format!("01900000-0000-7000-8000-{index:012x}"));
+            thread_fixture(
+                thread_id,
+                Some(&format!("session {index}")),
+                "ordinary preview",
+            )
+        })
+        .collect::<Vec<_>>();
+    threads[0].name = Some("Needle case mismatch".to_string());
+    threads[1]
+        .git_info
+        .as_mut()
+        .expect("thread should have git info")
+        .branch = Some("needle-branch-only".to_string());
+    threads[2].cwd = test_absolute_path("workspace/needle-cwd-only");
+    threads.push(thread_fixture(
+        target_id,
+        Some("needle target"),
+        "match beyond the initial page",
+    ));
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    let mut backend = RecordingBackend::with_threads(threads);
+
+    shell.refresh_session_list(&mut backend).await;
+    assert!(
+        shell.session_list.lines(/*width*/ 80)[0]
+            .to_string()
+            .contains("20+ sessions")
+    );
+    shell
+        .handle_session_list_key(key_char('/'), &config, &mut backend)
+        .await
+        .expect("search mode should start");
+    shell
+        .handle_session_list_key(
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("backspace on an empty query should be a no-op");
+    for ch in "needle".chars() {
+        shell
+            .handle_session_list_key(key_char(ch), &config, &mut backend)
+            .await
+            .expect("typing should filter locally");
+    }
+    assert_eq!(shell.session_list.selected_thread_id(), None);
+    assert!(
+        shell.session_list.lines(/*width*/ 80)[1]
+            .to_string()
+            .contains("filter* needle  · Enter search all")
+    );
+    insta::assert_snapshot!(
+        "session_filter_contract",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
+    );
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+        }]
+    );
+
+    shell
+        .handle_session_list_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("committed search should refresh from the backend");
+    assert_eq!(shell.session_list.selected_thread_id(), Some(target_id));
+    assert!(
+        shell.session_list.lines(/*width*/ 80)[1]
+            .to_string()
+            .contains("search needle  · server results")
+    );
+
+    shell
+        .handle_session_list_key(key_char('/'), &config, &mut backend)
+        .await
+        .expect("committed search should reopen");
+    shell
+        .handle_session_list_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("clearing search should restore the unfiltered page");
+    assert_ne!(shell.session_list.selected_thread_id(), Some(target_id));
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: Some("needle".to_string()),
+            },
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+        ]
+    );
+}
+
+#[tokio::test]
 async fn native_session_list_resume_and_fork_switch_shell_thread() {
     let config = test_config().await;
     let resume_id = test_thread_id("01900000-0000-7000-8000-000000000401");
@@ -7696,8 +7820,11 @@ impl backend::AppShellBackend for RecordingBackend {
             archived: params.archived,
             search_term: params.search_term.clone(),
         });
-        let search_term = params.search_term.unwrap_or_default().to_lowercase();
-        let data = self
+        let limit = params.limit.map_or(usize::MAX, |limit| {
+            usize::try_from(limit).unwrap_or(usize::MAX)
+        });
+        let search_term = params.search_term.unwrap_or_default();
+        let mut data = self
             .threads
             .lock()
             .expect("threads should lock")
@@ -7707,16 +7834,16 @@ impl backend::AppShellBackend for RecordingBackend {
                     || thread
                         .name
                         .as_deref()
-                        .unwrap_or(thread.preview.as_str())
-                        .to_lowercase()
-                        .contains(&search_term)
-                    || thread.preview.to_lowercase().contains(&search_term)
+                        .is_some_and(|name| name.contains(&search_term))
+                    || thread.preview.contains(&search_term)
             })
             .cloned()
-            .collect();
+            .collect::<Vec<_>>();
+        let next_cursor = (data.len() > limit).then(|| "more".to_string());
+        data.truncate(limit);
         Ok(ThreadListResponse {
             data,
-            next_cursor: None,
+            next_cursor,
             backwards_cursor: None,
         })
     }
