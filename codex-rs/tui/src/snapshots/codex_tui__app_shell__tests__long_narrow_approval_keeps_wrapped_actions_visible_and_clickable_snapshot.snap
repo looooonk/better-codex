@@ -1,0 +1,22 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+ ◆ BC                           Panels
+────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ CODEX  The new shell owns the      ┃
+          fullscreen surface.         ┃
+
+╭──────────────────────────────────────╮
+│◆ APPROVAL                            │
+│? Run command: cargo test --workspace │
+│--package codex-tui --features long-  │
+│running-integration-checks            │
+│  This command needs temporary network│
+│access to validate remote fixtures and│
+│download test metadata before the     │
+│   Approve ↵   Deny n   Edit e        │
+│Explain ?                             │
+╰──────────────────────────────────────╯

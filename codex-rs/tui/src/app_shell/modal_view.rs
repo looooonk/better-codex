@@ -76,21 +76,6 @@ pub(super) fn modal_hit(
     segment_hit(segments.get(index)?, body, position)
 }
 
-pub(super) fn panel_line_at(
-    panel: Rect,
-    position: Position,
-    lines: &[Line<'static>],
-) -> Option<ModalHit> {
-    let body = body_rect_after_title(pane_content_rect(panel));
-    if !body.contains(position) {
-        return None;
-    }
-
-    let segments = wrapped_segments(lines, body.width);
-    let index = usize::from(position.y.saturating_sub(body.y));
-    segment_hit(segments.get(index)?, body, position)
-}
-
 pub(super) fn modal_panel_area(screen: Rect, lines: &[Line<'static>]) -> Rect {
     let probe = centered_band_rect(screen, /*height*/ 5);
     let body_width = body_rect_after_title(pane_content_rect(probe)).width;

@@ -17,8 +17,10 @@ use super::header::HeaderControl;
 use super::header::HeaderView;
 use super::input_request_view::approval_lines;
 use super::input_request_view::elicitation_lines;
+use super::input_request_view::request_panel_hit;
+use super::input_request_view::request_panel_visual_line_count;
 use super::input_request_view::user_input_lines;
-use super::modal_view::panel_line_at;
+use super::input_request_view::visible_request_panel_lines;
 use super::modal_view::render_modal;
 use super::navigation::DashboardRoute;
 use super::navigation::DashboardTabs;
@@ -52,7 +54,7 @@ const DASHBOARD_WIDTH_PERCENT: u16 = 34;
 const HEADER_HEIGHT: u16 = 2;
 const INPUT_PANEL_MIN_HEIGHT: u16 = 6;
 const INPUT_PANEL_MAX_HEIGHT: u16 = 12;
-const INPUT_REQUEST_PANEL_HEIGHT: u16 = 8;
+const INPUT_REQUEST_PANEL_MIN_HEIGHT: u16 = 8;
 const PANE_CHROME_HEIGHT: u16 = 3;
 const TRANSCRIPT_MIN_HEIGHT: u16 = 5;
 
@@ -260,7 +262,7 @@ impl ShellView<'_> {
     ) -> Option<super::ApprovalAction> {
         let pending = self.shell.pending_approval.as_ref()?;
         let lines = approval_lines(pending);
-        let hit = panel_line_at(self.input_area(area), position, &lines)?;
+        let hit = request_panel_hit(self.input_area(area), position, &lines)?;
         if hit.line != 2 {
             return None;
         }
@@ -282,7 +284,7 @@ impl ShellView<'_> {
     ) -> Option<super::ElicitationChoice> {
         let pending = self.shell.pending_elicitation.as_ref()?;
         let lines = elicitation_lines(pending);
-        let hit = panel_line_at(self.input_area(area), position, &lines)?;
+        let hit = request_panel_hit(self.input_area(area), position, &lines)?;
         pending.choice_at(hit.line, hit.column)
     }
 
@@ -293,7 +295,7 @@ impl ShellView<'_> {
             self.shell.composer.text(),
             self.shell.composer.is_empty(),
         );
-        let hit = panel_line_at(self.input_area(area), position, &lines)?;
+        let hit = request_panel_hit(self.input_area(area), position, &lines)?;
         if hit.line != 2 {
             return None;
         }
@@ -455,7 +457,7 @@ impl ShellView<'_> {
             .style(pane_style(palette::SURFACE))
             .render(area, buf);
         if let Some(pending) = &self.shell.pending_approval {
-            self.render_titled_panel(
+            self.render_request_panel(
                 area,
                 "APPROVAL",
                 approval_lines(pending),
@@ -465,7 +467,7 @@ impl ShellView<'_> {
             return;
         }
         if let Some(pending) = &self.shell.pending_elicitation {
-            self.render_titled_panel(
+            self.render_request_panel(
                 area,
                 "MCP ELICITATION",
                 elicitation_lines(pending),
@@ -475,7 +477,7 @@ impl ShellView<'_> {
             return;
         }
         if let Some(pending) = &self.shell.pending_user_input {
-            self.render_titled_panel(
+            self.render_request_panel(
                 area,
                 "TOOL INPUT",
                 user_input_lines(
@@ -534,11 +536,34 @@ impl ShellView<'_> {
     }
 
     fn input_panel_height(&self, available_height: u16, input_width: u16) -> u16 {
-        if self.shell.pending_approval.is_some()
-            || self.shell.pending_user_input.is_some()
-            || self.shell.pending_elicitation.is_some()
-        {
-            return available_height.min(INPUT_REQUEST_PANEL_HEIGHT);
+        let request_lines = if let Some(pending) = &self.shell.pending_approval {
+            Some(approval_lines(pending))
+        } else if let Some(pending) = &self.shell.pending_elicitation {
+            Some(elicitation_lines(pending))
+        } else {
+            self.shell.pending_user_input.as_ref().map(|pending| {
+                user_input_lines(
+                    pending,
+                    self.shell.composer.text(),
+                    self.shell.composer.is_empty(),
+                )
+            })
+        };
+        if let Some(lines) = request_lines {
+            let body_width = pane_content_rect(Rect::new(
+                /*x*/ 0,
+                /*y*/ 0,
+                input_width,
+                available_height,
+            ))
+            .width;
+            let visual_line_count =
+                u16::try_from(request_panel_visual_line_count(&lines, body_width))
+                    .unwrap_or(u16::MAX);
+            let desired_height = visual_line_count
+                .saturating_add(PANE_CHROME_HEIGHT)
+                .clamp(INPUT_REQUEST_PANEL_MIN_HEIGHT, INPUT_PANEL_MAX_HEIGHT);
+            return desired_height.min(available_height);
         }
 
         let body_width = pane_content_rect(Rect::new(
@@ -747,6 +772,19 @@ impl ShellView<'_> {
             .style(pane_style(background))
             .wrap(Wrap { trim: false })
             .render(body_rect_after_title(content), buf);
+    }
+
+    fn render_request_panel(
+        &self,
+        area: Rect,
+        title: &str,
+        lines: Vec<Line<'static>>,
+        background: Color,
+        buf: &mut Buffer,
+    ) {
+        let body = body_rect_after_title(pane_content_rect(area));
+        let visible_lines = visible_request_panel_lines(&lines, body.width, body.height);
+        self.render_titled_panel(area, title, visible_lines, background, buf);
     }
 }
 

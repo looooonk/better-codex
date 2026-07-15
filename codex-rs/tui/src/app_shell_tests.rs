@@ -3593,14 +3593,25 @@ fn mouse_wheel_moves_only_the_hovered_dashboard_selection() {
 }
 
 #[tokio::test]
-async fn elicitation_and_tool_options_are_clickable() {
+async fn long_narrow_elicitation_and_tool_options_are_clickable() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 16,
     );
-    shell.pending_elicitation = PendingElicitation::from_request(&mcp_url_elicitation_request());
+    let mut elicitation_request = mcp_url_elicitation_request();
+    let ServerRequest::McpServerElicitationRequest { params, .. } = &mut elicitation_request else {
+        panic!("expected MCP elicitation request");
+    };
+    params.server_name = "github-enterprise-with-a-long-server-name".to_string();
+    let McpServerElicitationRequest::Url { message, url, .. } = &mut params.request else {
+        panic!("expected URL elicitation request");
+    };
+    *message =
+        "Open the authorization page after reviewing the extended security notice".to_string();
+    *url = "https://github.example.test/login/device/with/a/long/authorization/path".to_string();
+    shell.pending_elicitation = PendingElicitation::from_request(&elicitation_request);
     let accept = rendered_text_position(&render_shell(&shell, area), "Accept ↵");
 
     shell
@@ -3614,7 +3625,15 @@ async fn elicitation_and_tool_options_are_clickable() {
         vec![RecordedBackendCall::Resolve(RequestId::Integer(45))]
     );
 
-    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    let mut user_input_request = tool_user_input_request();
+    let ServerRequest::ToolRequestUserInput { params, .. } = &mut user_input_request else {
+        panic!("expected tool user input request");
+    };
+    params.item_id = "environment-selection-for-the-production-deployment".to_string();
+    let question = params.questions.first_mut().expect("tool input question");
+    question.header = "Deployment environment and release channel".to_string();
+    question.question = "Which environment should receive the carefully validated release after all preflight checks complete?".to_string();
+    shell.pending_user_input = PendingUserInput::from_request(&user_input_request);
     let staging = rendered_text_position(&render_shell(&shell, area), "Staging");
     shell
         .handle_mouse_click(area, staging, &config, &mut backend)
@@ -3632,19 +3651,34 @@ async fn elicitation_and_tool_options_are_clickable() {
 }
 
 #[test]
-fn wrapped_approval_actions_keep_their_mouse_targets() {
+fn long_narrow_approval_keeps_wrapped_actions_visible_and_clickable_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
-        .expect("approval request should be valid");
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 20,
+    shell.dashboard_visible = false;
+    let mut request = command_approval_request();
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
+        panic!("expected command approval request");
+    };
+    params.command = Some(
+        "cargo test --workspace --package codex-tui --features long-running-integration-checks"
+            .to_string(),
     );
-    let explain = rendered_text_position(&render_shell(&shell, area), "Explain ?");
+    params.reason = Some(
+        "This command needs temporary network access to validate remote fixtures and download test metadata before the release can continue"
+            .to_string(),
+    );
+    shell.pending_approval =
+        PendingApproval::from_request(&request).expect("approval request should be valid");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 18,
+    );
+    let rendered = render_shell(&shell, area);
+    let explain = rendered_text_position(&rendered, "Explain ?");
 
     assert_eq!(
         ShellView { shell: &shell }.approval_action_at(area, explain),
         Some(ApprovalAction::Explain)
     );
+    insta::assert_snapshot!(rendered);
 }
 
 #[tokio::test]
