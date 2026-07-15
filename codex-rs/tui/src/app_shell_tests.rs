@@ -4347,6 +4347,40 @@ fn command_output_deltas_update_one_output_block() {
 }
 
 #[test]
+fn command_output_deltas_preserve_newline_chunks() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    for delta in ["first", "\n", "second", ""] {
+        shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+            CommandExecutionOutputDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+                item_id: "exec-lines".to_string(),
+                delta: delta.to_string(),
+            },
+        ));
+    }
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from(
+            [TranscriptLine::new(TranscriptKind::Output, "first\nsecond")
+                .tool_status(ToolBlockStatus::Running)
+                .item_id("exec-lines"),]
+        )
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+        )
+    ));
+}
+
+#[test]
 fn streaming_tool_output_renders_latest_lines_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();

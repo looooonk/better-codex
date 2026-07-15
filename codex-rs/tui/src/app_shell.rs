@@ -2888,7 +2888,7 @@ impl ShellState {
     ) {
         let item_id = item_id.into();
         let delta = delta.into();
-        if delta.trim().is_empty() {
+        if delta.is_empty() {
             return;
         }
 
