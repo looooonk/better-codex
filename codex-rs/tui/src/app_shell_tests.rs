@@ -6375,6 +6375,20 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     );
 }
 
+async fn finish_session_hydration(shell: &mut ShellState) {
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        loop {
+            let _changed = shell.poll_session_hydration().await;
+            if !shell.has_pending_session_hydration() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("session hydration should finish");
+}
+
 #[tokio::test]
 async fn native_session_list_resume_and_fork_switch_shell_thread() {
     let config = test_config().await;
@@ -6382,25 +6396,42 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
     let fork_id = test_thread_id("01900000-0000-7000-8000-000000000402");
     let initial_id = test_thread_id(SNAPSHOT_THREAD_ID);
     let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
     shell.session_list.focused = true;
+    let runner = Arc::new(RecordingWorkspaceRunner::new(
+        crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "## hydrated\n M src/lib.rs\n".to_string(),
+            stderr: String::new(),
+        },
+    ));
+    shell.workspace_command_runner = Some(runner.clone());
     let mut backend = RecordingBackend::with_threads(vec![
         thread_fixture(resume_id, Some("resume target"), "resume preview"),
         thread_fixture(fork_id, Some("fork target"), "fork preview"),
     ]);
+    let resume_goal = test_thread_goal(&resume_id, ThreadGoalStatus::Active, "Resume goal");
+    *backend.active_goal.lock().expect("goal should lock") = Some(resume_goal.clone());
 
     shell.refresh_session_list(&mut backend).await;
     shell
         .handle_session_list_key(key_char('r'), &config, &mut backend)
         .await
         .expect("resume should resolve");
+    finish_session_hydration(&mut shell).await;
     assert_eq!(shell.thread_id, resume_id);
+    assert_eq!(shell.active_goal, Some(resume_goal));
 
     shell.refresh_session_list(&mut backend).await;
     shell.session_list.move_selection_down();
+    let forked_id = test_thread_id("01900000-0000-7000-8000-000000000202");
+    let fork_goal = test_thread_goal(&forked_id, ThreadGoalStatus::Paused, "Fork goal");
+    *backend.active_goal.lock().expect("goal should lock") = Some(fork_goal.clone());
     shell
         .handle_session_list_key(key_char('f'), &config, &mut backend)
         .await
         .expect("fork should resolve");
+    finish_session_hydration(&mut shell).await;
     assert_eq!(
         backend.calls(),
         vec![
@@ -6410,6 +6441,9 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
             },
             RecordedBackendCall::Resume(resume_id),
             RecordedBackendCall::Unsubscribe(initial_id),
+            RecordedBackendCall::GoalGet {
+                thread_id: resume_id,
+            },
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
@@ -6420,6 +6454,9 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
             },
             RecordedBackendCall::Fork(fork_id),
             RecordedBackendCall::Unsubscribe(resume_id),
+            RecordedBackendCall::GoalGet {
+                thread_id: forked_id,
+            },
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
@@ -6431,6 +6468,151 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
         Some("forked".to_string()),
         "fork should replace the active shell session"
     );
+    assert_eq!(shell.active_goal, Some(fork_goal));
+    assert_eq!(
+        shell.workspace_git_status,
+        Some(WorkspaceGitStatus {
+            branch: Some("hydrated".to_string()),
+            changes: workspace::WorkspaceChangeSummary {
+                modified: 1,
+                ..workspace::WorkspaceChangeSummary::default()
+            },
+        })
+    );
+    assert_eq!(
+        runner
+            .commands()
+            .into_iter()
+            .map(|command| (command.argv, command.cwd))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                vec![
+                    "git".to_string(),
+                    "status".to_string(),
+                    "--porcelain=v1".to_string(),
+                    "--branch".to_string(),
+                ],
+                Some(PathBuf::from("/workspace/better-codex")),
+            ),
+            (
+                vec![
+                    "git".to_string(),
+                    "status".to_string(),
+                    "--porcelain=v1".to_string(),
+                    "--branch".to_string(),
+                ],
+                Some(PathBuf::from("/workspace/better-codex")),
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn session_switch_hydration_is_nonblocking_and_preserves_newer_state() {
+    let config = test_config().await;
+    let initial_id = test_thread_id(SNAPSHOT_THREAD_ID);
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000405");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.session_list.focused = true;
+    let (runner, gate) =
+        RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "## stale\n M stale.rs\n".to_string(),
+            stderr: String::new(),
+        });
+    shell.workspace_command_runner = Some(Arc::new(runner));
+    let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
+        target_id,
+        Some("switch target"),
+        "switch preview",
+    )]);
+    *backend.active_goal.lock().expect("goal should lock") = Some(test_thread_goal(
+        &target_id,
+        ThreadGoalStatus::Active,
+        "Stale goal",
+    ));
+
+    shell.refresh_session_list(&mut backend).await;
+    tokio::time::timeout(
+        Duration::from_secs(/*secs*/ 1),
+        shell.handle_session_list_key(key_char('r'), &config, &mut backend),
+    )
+    .await
+    .expect("session switch should not wait for workspace hydration")
+    .expect("session switch should resolve");
+
+    assert!(shell.has_pending_session_hydration());
+    assert!(
+        backend
+            .calls()
+            .contains(&RecordedBackendCall::Unsubscribe(initial_id))
+    );
+    shell
+        .set_goal_objective(&mut backend, "Newer goal".to_string())
+        .await;
+    shell.active_turn_id = Some("new-turn".to_string());
+    shell.mark_workspace_status_refresh_due();
+
+    gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell).await;
+
+    assert_eq!(
+        shell
+            .active_goal
+            .as_ref()
+            .map(|goal| goal.objective.as_str()),
+        Some("Newer goal")
+    );
+    assert_eq!(shell.workspace_git_status, None);
+    assert!(shell.workspace_status_refresh_due);
+
+    shell.active_turn_id = None;
+    let fresh_runner =
+        RecordingWorkspaceRunner::new(crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "## fresh\n?? fresh.rs\n".to_string(),
+            stderr: String::new(),
+        });
+    shell.refresh_workspace_status(&fresh_runner).await;
+    assert_eq!(
+        shell.workspace_git_status,
+        Some(WorkspaceGitStatus {
+            branch: Some("fresh".to_string()),
+            changes: workspace::WorkspaceChangeSummary {
+                untracked: 1,
+                ..workspace::WorkspaceChangeSummary::default()
+            },
+        })
+    );
+    assert!(!shell.workspace_status_refresh_due);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn session_hydration_times_out_stalled_workspace_lookup() {
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000406");
+    let mut shell = ShellState::snapshot_fixture();
+    let (runner, _gate) =
+        RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "## never\n".to_string(),
+            stderr: String::new(),
+        });
+    shell.workspace_command_runner = Some(Arc::new(runner));
+    let backend = RecordingBackend::default();
+    shell.replace_started_session(started_thread(
+        "replacement",
+        target_id,
+        /*forked_from_id*/ None,
+    ));
+    shell.start_replaced_session_hydration(&backend);
+
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_secs(/*secs*/ 6)).await;
+    tokio::task::yield_now().await;
+    assert!(shell.poll_session_hydration().await);
+    assert!(!shell.has_pending_session_hydration());
 }
 
 #[tokio::test]
@@ -6499,6 +6681,40 @@ async fn session_switch_waits_for_pending_agent_input() {
     );
 }
 
+#[tokio::test]
+async fn session_switch_preserves_nonempty_composer_draft() {
+    let config = test_config().await;
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000407");
+    let mut shell = ShellState::snapshot_fixture();
+    let draft = shell.composer.text().to_string();
+    shell.session_list.focused = true;
+    let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
+        target_id,
+        Some("switch target"),
+        "switch preview",
+    )]);
+    shell.refresh_session_list(&mut backend).await;
+
+    shell
+        .handle_session_list_key(key_char('r'), &config, &mut backend)
+        .await
+        .expect("draft-blocked session switch should remain interactive");
+
+    assert_eq!(shell.thread_id, test_thread_id(SNAPSHOT_THREAD_ID));
+    assert_eq!(shell.composer.text(), draft);
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Status
+            && line.text == "send or clear the message draft before switching sessions"
+    }));
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+        }]
+    );
+}
+
 #[test]
 fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
     let root_id = test_thread_id("01900000-0000-7000-8000-000000000411");
@@ -6549,6 +6765,129 @@ fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
             .iter()
             .all(|line| !line.text.contains("private child result"))
     );
+}
+
+#[tokio::test]
+async fn replacing_session_clears_session_bound_surfaces() {
+    let next_id = test_thread_id("01900000-0000-7000-8000-000000000413");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.open_command_palette();
+    shell.exit_confirmation_pending = true;
+    shell.active_turn_id = Some("old-turn".to_string());
+    shell.active_goal = Some(test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::Active,
+        "Old goal",
+    ));
+    shell.agent_activity.ensure_thread("old-agent");
+    shell
+        .active_agent_thread_ids
+        .insert("old-agent".to_string());
+    shell.subagent_activity.push_back(ToolActivity {
+        id: "old-subagent".to_string(),
+        title: "old child work".to_string(),
+        status: "running".to_string(),
+    });
+    shell.workspace_git_status = Some(WorkspaceGitStatus {
+        branch: Some("old-branch".to_string()),
+        changes: workspace::WorkspaceChangeSummary {
+            modified: 1,
+            ..workspace::WorkspaceChangeSummary::default()
+        },
+    });
+    shell.workspace_status_refresh_due = true;
+
+    let mcp_response = ListMcpServerStatusResponse {
+        data: vec![mcp_status_fixture(
+            "github",
+            McpAuthStatus::OAuth,
+            ["search"],
+        )],
+        next_cursor: None,
+    };
+    shell.mcp_inventory = McpInventorySummary::from_response(&mcp_response);
+    shell.mcp_catalog = Some(mcp_response);
+    shell.open_mcp_management();
+    let plugin_response = plugin_list_response_fixture();
+    shell.plugin_inventory = PluginInventorySummary::from_response(&plugin_response);
+    shell.plugin_catalog = Some(plugin_response);
+    shell.open_plugin_management();
+    let mut backend = RecordingBackend::with_external_agent_items(external_agent_items());
+    shell
+        .start_external_agent_import_review(&mut backend)
+        .await
+        .expect("external agent review should open");
+
+    shell.replace_started_session(started_thread(
+        "replacement",
+        next_id,
+        /*forked_from_id*/ None,
+    ));
+
+    assert_eq!(
+        (
+            shell.composer.text(),
+            shell.command_palette,
+            shell.exit_confirmation_pending,
+            shell.pending_external_agent_import,
+            shell.pending_mcp_management,
+            shell.pending_plugin_management,
+        ),
+        ("", None, false, None, None, None)
+    );
+    assert_eq!(
+        (
+            shell.active_turn_id,
+            shell.active_goal,
+            shell.tool_activity,
+            shell.agent_activity,
+            shell.active_agent_thread_ids,
+            shell.subagent_activity,
+        ),
+        (
+            None,
+            None,
+            VecDeque::new(),
+            AgentActivityState::default(),
+            HashSet::new(),
+            VecDeque::new(),
+        )
+    );
+    assert_eq!(
+        (
+            shell.latest_diff,
+            shell.workspace_git_status,
+            shell.workspace_status_refresh_due,
+            shell.token_usage,
+            shell.context_token_usage,
+            shell.model_context_window,
+        ),
+        (
+            None,
+            None,
+            false,
+            TokenUsage::default(),
+            TokenUsage::default(),
+            None,
+        )
+    );
+    assert_eq!(
+        (
+            shell.mcp_inventory,
+            shell.mcp_catalog,
+            shell.plugin_inventory,
+            shell.plugin_catalog,
+        ),
+        (
+            McpInventorySummary::default(),
+            None,
+            PluginInventorySummary::default(),
+            None,
+        )
+    );
+    assert_eq!(shell.plan_explanation, None);
+    assert_eq!(shell.plan_steps, Vec::new());
+    assert_eq!(shell.status, "ready");
 }
 
 #[tokio::test]
@@ -7895,6 +8234,16 @@ impl backend::AppShellBackend for RecordingBackend {
         })
     }
 
+    fn thread_goal_get_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> impl std::future::Future<Output = color_eyre::Result<ThreadGoalGetResponse>> + Send + 'static
+    {
+        self.push(RecordedBackendCall::GoalGet { thread_id });
+        let goal = self.active_goal.lock().expect("goal should lock").clone();
+        async move { Ok(ThreadGoalGetResponse { goal }) }
+    }
+
     async fn thread_goal_set(
         &mut self,
         thread_id: codex_protocol::ThreadId,
@@ -8301,6 +8650,7 @@ struct NoopWorkspaceRunner;
 struct RecordingWorkspaceRunner {
     commands: Mutex<Vec<crate::workspace_command::WorkspaceCommand>>,
     output: crate::workspace_command::WorkspaceCommandOutput,
+    gate: Option<Arc<tokio::sync::Semaphore>>,
 }
 
 impl RecordingWorkspaceRunner {
@@ -8308,7 +8658,22 @@ impl RecordingWorkspaceRunner {
         Self {
             commands: Mutex::new(Vec::new()),
             output,
+            gate: None,
         }
+    }
+
+    fn blocked(
+        output: crate::workspace_command::WorkspaceCommandOutput,
+    ) -> (Self, Arc<tokio::sync::Semaphore>) {
+        let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+        (
+            Self {
+                commands: Mutex::new(Vec::new()),
+                output,
+                gate: Some(Arc::clone(&gate)),
+            },
+            gate,
+        )
     }
 
     fn commands(&self) -> Vec<crate::workspace_command::WorkspaceCommand> {
@@ -8339,7 +8704,13 @@ impl crate::workspace_command::WorkspaceCommandExecutor for RecordingWorkspaceRu
             .expect("workspace commands should lock")
             .push(command);
         let output = self.output.clone();
-        Box::pin(async move { Ok(output) })
+        let gate = self.gate.clone();
+        Box::pin(async move {
+            if let Some(gate) = gate {
+                let _permit = gate.acquire_owned().await;
+            }
+            Ok(output)
+        })
     }
 }
 

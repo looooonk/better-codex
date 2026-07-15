@@ -117,7 +117,7 @@ impl ShellState {
                     if completed_active_turn {
                         self.active_turn_id = None;
                     }
-                    self.workspace_status_refresh_due = true;
+                    self.mark_workspace_status_refresh_due();
                     self.status = match completed.turn.status {
                         TurnStatus::Completed => "ready".to_string(),
                         TurnStatus::Failed => "failed".to_string(),
@@ -150,7 +150,7 @@ impl ShellState {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.model = updated.thread_settings.model;
                     self.cwd = updated.thread_settings.cwd.to_string_lossy().to_string();
-                    self.workspace_status_refresh_due = true;
+                    self.mark_workspace_status_refresh_due();
                     self.approval_policy = updated.thread_settings.approval_policy;
                     self.approvals_reviewer =
                         approvals_reviewer_from_api(updated.thread_settings.approvals_reviewer);
@@ -164,7 +164,7 @@ impl ShellState {
             ServerNotification::TurnDiffUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.latest_diff = Some(super::diff_summary_from_unified_diff(&updated.diff));
-                    self.workspace_status_refresh_due = true;
+                    self.mark_workspace_status_refresh_due();
                 }
             }
             ServerNotification::TurnPlanUpdated(updated) => {
@@ -175,12 +175,12 @@ impl ShellState {
             }
             ServerNotification::ThreadGoalUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
-                    self.active_goal = Some(updated.goal);
+                    self.record_active_goal(Some(updated.goal));
                 }
             }
             ServerNotification::ThreadGoalCleared(cleared) => {
                 if cleared.thread_id == self.thread_id.to_string() {
-                    self.active_goal = None;
+                    self.record_active_goal(None);
                 }
             }
             ServerNotification::ItemStarted(started) => {
@@ -246,7 +246,7 @@ impl ShellState {
             ServerNotification::FileChangePatchUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.latest_diff = Some(super::diff_summary_from_changes(&updated.changes));
-                    self.workspace_status_refresh_due = true;
+                    self.mark_workspace_status_refresh_due();
                     let summary = super::file_change_summary(&updated.changes);
                     self.upsert_tool_activity(
                         updated.item_id.clone(),

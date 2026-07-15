@@ -87,6 +87,7 @@ mod render;
 mod safety_buffering;
 mod selector;
 mod selector_controller;
+mod session_hydration;
 mod sessions;
 mod settings;
 mod shell_command;
@@ -125,6 +126,7 @@ use render::draw_shell;
 use safety_buffering::SafetyBufferingState;
 use selector::SelectorState;
 use selector::SelectorValue;
+use session_hydration::SessionHydrationState;
 use sessions::SessionListState;
 use sessions::SessionSearchOutcome;
 use settings::SettingsAction;
@@ -342,8 +344,14 @@ pub(crate) async fn run(
                         }
                     }
                 }
-                _ = agent_history_poll.tick(), if shell.has_pending_agent_history() => {
-                    if shell.poll_agent_history(&app_server).await {
+                _ = agent_history_poll.tick(), if shell.has_pending_agent_history()
+                    || shell.has_pending_session_hydration() =>
+                {
+                    let mut changed = shell.poll_session_hydration().await;
+                    if shell.has_pending_agent_history() {
+                        changed |= shell.poll_agent_history(&app_server).await;
+                    }
+                    if changed {
                         tui.frame_requester().schedule_frame();
                     }
                 }
@@ -354,6 +362,7 @@ pub(crate) async fn run(
     .await;
 
     shell.cancel_agent_history().await;
+    shell.cancel_session_hydration();
     shell.finish_subscription_cleanup().await;
     app_server
         .unsubscribe_threads(shell.tracked_thread_ids())
@@ -607,6 +616,7 @@ struct ShellState {
     agents_focused: bool,
     composer: ComposerState,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
+    session_hydration: SessionHydrationState,
     exit_confirmation_pending: bool,
     clipboard_lease: Option<ClipboardLease>,
     active_turn_id: Option<String>,
@@ -697,6 +707,7 @@ impl ShellState {
             agents_focused: false,
             composer: ComposerState::default(),
             workspace_command_runner: None,
+            session_hydration: SessionHydrationState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: None,
@@ -1081,9 +1092,8 @@ impl ShellState {
         &mut self,
         runner: &dyn crate::workspace_command::WorkspaceCommandExecutor,
     ) {
-        self.workspace_git_status =
-            workspace::load_git_status(runner, std::path::Path::new(&self.cwd)).await;
-        self.workspace_status_refresh_due = false;
+        let status = workspace::load_git_status(runner, std::path::Path::new(&self.cwd)).await;
+        self.record_workspace_git_status(status);
     }
 
     async fn refresh_rate_limits(&mut self, app_server: &mut AppServerSession) {
@@ -1097,11 +1107,14 @@ impl ShellState {
         self.rate_limits = app_server_rate_limit_snapshots(response);
     }
 
-    async fn refresh_goal_state(&mut self, app_server: &mut AppServerSession) {
+    async fn refresh_goal_state<S>(&mut self, app_server: &mut S)
+    where
+        S: AppShellBackend,
+    {
         let Ok(response) = app_server.thread_goal_get(self.thread_id).await else {
             return;
         };
-        self.active_goal = response.goal;
+        self.record_active_goal(response.goal);
     }
 
     async fn refresh_session_list<S>(&mut self, app_server: &mut S)
@@ -1573,6 +1586,7 @@ impl ShellState {
         let previous_thread_ids = self.tracked_thread_ids();
         self.replace_started_session(started);
         self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
+        self.start_replaced_session_hydration(app_server);
         self.refresh_session_list(app_server).await;
         Ok(())
     }
@@ -1594,6 +1608,7 @@ impl ShellState {
         let previous_thread_ids = self.tracked_thread_ids();
         self.replace_started_session(started);
         self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
+        self.start_replaced_session_hydration(app_server);
         self.refresh_session_list(app_server).await;
         Ok(())
     }
@@ -1606,6 +1621,8 @@ impl ShellState {
             || self.pending_user_input.is_some()
         {
             "resolve the pending request before switching sessions"
+        } else if !self.composer.is_empty() {
+            "send or clear the message draft before switching sessions"
         } else {
             return false;
         };
@@ -1668,6 +1685,7 @@ impl ShellState {
     }
 
     fn replace_started_session(&mut self, started: AppServerStartedThread) {
+        self.invalidate_session_hydration();
         let AppServerStartedThread {
             session,
             turns,
@@ -1696,10 +1714,27 @@ impl ShellState {
         self.clear_streaming_transcript();
         self.plan_explanation = None;
         self.plan_steps.clear();
-        self.active_goal = None;
+        self.record_active_goal(None);
+        self.composer.clear();
+        self.command_palette = None;
+        self.exit_confirmation_pending = false;
+        self.pending_external_agent_import = None;
+        self.pending_mcp_management = None;
+        self.pending_plugin_management = None;
+        self.mcp_inventory = McpInventorySummary::default();
+        self.mcp_catalog = None;
+        self.plugin_inventory = PluginInventorySummary::default();
+        self.plugin_catalog = None;
+        self.tool_activity.clear();
         self.agent_activity = AgentActivityState::default();
         self.active_agent_thread_ids.clear();
         self.deferred_unsubscribe_thread_ids.clear();
+        self.subagent_activity.clear();
+        self.latest_diff = None;
+        self.record_workspace_git_status(None);
+        self.token_usage = TokenUsage::default();
+        self.context_token_usage = TokenUsage::default();
+        self.model_context_window = None;
         self.active_turn_id = None;
         self.pending_approval = None;
         self.pending_elicitation = None;
@@ -2048,7 +2083,7 @@ impl ShellState {
     {
         match app_server.thread_goal_get(self.thread_id).await {
             Ok(response) => {
-                self.active_goal = response.goal;
+                self.record_active_goal(response.goal);
                 match &self.active_goal {
                     Some(goal) => self.push_status(format!(
                         "goal {}. {}",
@@ -2077,7 +2112,7 @@ impl ShellState {
         {
             Ok(response) => {
                 let objective = response.goal.objective.clone();
-                self.active_goal = Some(response.goal);
+                self.record_active_goal(Some(response.goal));
                 self.push_status(format!("goal set: {objective}"));
             }
             Err(err) => self.push_error(format!("failed to set goal: {err}")),
@@ -2090,7 +2125,7 @@ impl ShellState {
     {
         match app_server.thread_goal_clear(self.thread_id).await {
             Ok(response) => {
-                self.active_goal = None;
+                self.record_active_goal(None);
                 if response.cleared {
                     self.push_status("goal cleared");
                 } else {
@@ -2119,7 +2154,7 @@ impl ShellState {
             .await
         {
             Ok(response) => {
-                self.active_goal = Some(response.goal);
+                self.record_active_goal(Some(response.goal));
                 self.push_status(format!("goal {action}"));
             }
             Err(err) => self.push_error(format!("failed to update goal: {err}")),
@@ -3017,6 +3052,7 @@ impl ShellState {
                 composer
             },
             workspace_command_runner: None,
+            session_hydration: SessionHydrationState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: None,
@@ -3264,6 +3300,7 @@ pub mod bench_support {
                 composer
             },
             workspace_command_runner: None,
+            session_hydration: SessionHydrationState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: Some("turn-bench-1234567890".to_string()),

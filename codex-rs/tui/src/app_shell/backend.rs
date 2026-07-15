@@ -28,6 +28,7 @@ use codex_app_server_protocol::PluginUninstallResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoalClearResponse;
+use codex_app_server_protocol::ThreadGoalGetParams;
 use codex_app_server_protocol::ThreadGoalGetResponse;
 use codex_app_server_protocol::ThreadGoalSetResponse;
 use codex_app_server_protocol::ThreadGoalStatus;
@@ -114,6 +115,12 @@ pub(super) trait AppShellBackend {
         &mut self,
         thread_id: ThreadId,
     ) -> impl std::future::Future<Output = Result<ThreadGoalGetResponse>> + Send;
+
+    /// Starts a goal lookup without borrowing the event-loop-owned backend.
+    fn thread_goal_get_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<ThreadGoalGetResponse>> + Send + 'static;
 
     fn thread_goal_set(
         &mut self,
@@ -323,6 +330,24 @@ impl AppShellBackend for AppServerSession {
 
     async fn thread_goal_get(&mut self, thread_id: ThreadId) -> Result<ThreadGoalGetResponse> {
         AppServerSession::thread_goal_get(self, thread_id).await
+    }
+
+    fn thread_goal_get_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<ThreadGoalGetResponse>> + Send + 'static {
+        let request_handle = AppServerSession::request_handle(self);
+        async move {
+            request_handle
+                .request_typed(ClientRequest::ThreadGoalGet {
+                    request_id: app_shell_request_id("app-shell-goal"),
+                    params: ThreadGoalGetParams {
+                        thread_id: thread_id.to_string(),
+                    },
+                })
+                .await
+                .map_err(Into::into)
+        }
     }
 
     async fn thread_goal_set(
