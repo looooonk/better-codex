@@ -2,25 +2,25 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
- ◆ BC        gpt-5-codex ▾   default ▾  ● waiting │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │━━━━━━━━━━━─────────────────────────────────────
- ◆ CONVERSATION                                   │
- ▎ SYSTEM  Better Codex app shell                 │▎◆ SESSIONS
- ▎ YOU  Create╭──────────────────────────────────────────────────────────────────────╮ns
-              │◆ SAFETY REVIEW                                                       │
- ▎ CODEX  Star│Our systems are thinking a bit more about this request before         │
-          by a│responding.                                                           │
- ▎ PLAN  1. Bu│                                                                      │x-tui
-         2. Wi│Hang tight or retry with a faster model for a quicker response, though│l
-         3. Re│it may be less capable of handling complex requests.                  │
-              │                                                                      │
- ▌ tool exec j│> Retry with a faster model                                           │
-              │  Dismiss and keep waiting                                            │00001
- ▌ edited 3 fi│  Learn more                                                          │ession list
-              │                                                                      │
- ▎ YOU  Explai│No action is required. Codex will keep waiting, and this menu will    │
-              │close when the response is ready.                                     │
+                                                  │
+ ◆ BC        gpt-5-codex ▾   default ▾  ● waiting │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│━━━━━━━━━━━─────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  Bet╭──────────────────────────────────────────────────────────────────────╮ns
+ ▎ YOU  Create│◆ SAFETY REVIEW                                                       │
+              │Our systems are thinking a bit more about this request before         │
+ ▎ CODEX  Star│responding.                                                           │
+          by a│                                                                      │x-tui
+ ▎ PLAN  1. Bu│Hang tight or retry with a faster model for a quicker response, though│l
+         2. Wi│it may be less capable of handling complex requests.                  │
+         3. Re│                                                                      │
+              │> Retry with a faster model                                           │
+ ▌ tool exec j│  Dismiss and keep waiting                                            │00001
+              │  Learn more                                                          │ession list
+ ▌ edited 3 fi│                                                                      │
+              │No action is required. Codex will keep waiting, and this menu will    │
+ ▎ YOU  Explai│close when the response is ready.                                     │
               │↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss              │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯

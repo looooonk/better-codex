@@ -2,26 +2,26 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │━━━━━━━━━━━─────────────────────────────────────
- ◆ CONVERSATION                                   │
- ▎ SYSTEM  Better Codex app shell                 │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎loading sessions
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ TOOLS
- ▎ PLAN  1. Build shell                           │▎in progress exec just test -p codex-tui
-         2. Wire transcript                       │▎completed file changes in app_shell
-         3. Render dashboard                      │
-                                                  │▎◆ THREAD
- ▌ tool exec just test -p codex-tui               │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
- ▌ edited 3 files +128 -24                        │▎resume, fork, archive, delete in session list
                                                   │
- ▎ CODEX  The new shell owns the fullscreen       │▎◆ STATUS
-          surface.                                │▎thinking
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│━━━━━━━━━━━─────────────────────────────────────
                                                   │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  Better Codex app shell                 │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ YOU  Create a divergent standalone TUI.        │▎loading sessions
+                                                  │
+ ▎ CODEX  Started a fullscreen app shell backed   │▎◆ TOOLS
+          by app-server turns.                    │▎in progress exec just test -p codex-tui
+ ▎ PLAN  1. Build shell                           │▎completed file changes in app_shell
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ THREAD
+                                                  │▎stage-one
+ ▌ tool exec just test -p codex-tui               │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
+ ▌ edited 3 files +128 -24                        │
+                                                  │▎◆ STATUS
+ ▎ CODEX  The new shell owns the fullscreen       │▎thinking
+          surface.                                │
                                                   │▎◆ GOAL
                                                   │▎status active
                                                   │▎Complete the unchecked dashboard progress item

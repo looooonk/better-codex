@@ -2,26 +2,26 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │━━━━━━━━━━━─────────────────────────────────────
- ◆ CONVERSATION                                   │
- ▎ SYSTEM  Better Codex app shell                 │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.        │▎● FOCUSED  ACTIVE  10 sessions
-                                                  │▎   3/10 Session 03 [main]  Preview for session…
- ▎ CODEX  Started a fullscreen app shell backed   │▎   4/10 Session 04 [main]  Preview for session…
-          by app-server turns.                    │▎   5/10 Session 05 [main]  Preview for session…
- ▎ PLAN  1. Build shell                           │▎   6/10 Session 06 [main]  Preview for session…
-         2. Wire transcript                       │▎   7/10 Session 07 [main]  Preview for session…
-         3. Render dashboard                      │▎›  8/10 Session 08 [main]  Preview for session…
                                                   │
- ▌ tool exec just test -p codex-tui               │▎◆ TOOLS
-                                                  │▎in progress exec just test -p codex-tui
- ▌ edited 3 files +128 -24                        │▎completed file changes in app_shell
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│━━━━━━━━━━━─────────────────────────────────────
                                                   │
- ▎ CODEX  The new shell owns the fullscreen       │▎◆ THREAD
-          surface.                                │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  ACTIVE  10 sessions
+ ▎ YOU  Create a divergent standalone TUI.        │▎   3/10 Session 03 [main]  Preview for session…
+                                                  │▎   4/10 Session 04 [main]  Preview for session…
+ ▎ CODEX  Started a fullscreen app shell backed   │▎   5/10 Session 05 [main]  Preview for session…
+          by app-server turns.                    │▎   6/10 Session 06 [main]  Preview for session…
+ ▎ PLAN  1. Build shell                           │▎   7/10 Session 07 [main]  Preview for session…
+         2. Wire transcript                       │▎›  8/10 Session 08 [main]  Preview for session…
+         3. Render dashboard                      │
+                                                  │▎◆ TOOLS
+ ▌ tool exec just test -p codex-tui               │▎in progress exec just test -p codex-tui
+                                                  │▎completed file changes in app_shell
+ ▌ edited 3 files +128 -24                        │
+                                                  │▎◆ THREAD
+ ▎ CODEX  The new shell owns the fullscreen       │▎stage-one
+          surface.                                │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
                                                   │
                                                   │▎◆ STATUS

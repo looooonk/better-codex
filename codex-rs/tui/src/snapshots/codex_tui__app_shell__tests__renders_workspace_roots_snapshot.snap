@@ -2,26 +2,26 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │────────────────────━━━━━━━━━━━━────────────────
- ◆ CONVERSATION                                   │
- ▎ SYSTEM  Better Codex app shell                 │▎◆ WORKSPACE
- ▎ YOU  Create a divergent standalone TUI.        │▎cwd /workspace/better-codex
-                                                  │▎profile managed
- ▎ CODEX  Started a fullscreen app shell backed   │▎files restricted, net restricted
-          by app-server turns.                    │▎roots 4 writable
- ▎ PLAN  1. Build shell                           │▎  /workspace/better-codex
-         2. Wire transcript                       │▎  /workspace/better-codex/codex-rs
-         3. Render dashboard                      │▎  /tmp/codex-cache
-                                                  │▎  +1 more
- ▌ tool exec just test -p codex-tui               │
-                                                  │▎◆ EDITS
- ▌ edited 3 files +128 -24                        │▎3 files +128 -24
                                                   │
- ▎ CODEX  The new shell owns the fullscreen       │▎◆ TOOLS
-          surface.                                │▎in progress exec just test -p codex-tui
-                                                  │▎completed file changes in app_shell
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│────────────────────━━━━━━━━━━━━────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ WORKSPACE
+ ▎ SYSTEM  Better Codex app shell                 │▎cwd /workspace/better-codex
+ ▎ YOU  Create a divergent standalone TUI.        │▎profile managed
+                                                  │▎files restricted, net restricted
+ ▎ CODEX  Started a fullscreen app shell backed   │▎roots 4 writable
+          by app-server turns.                    │▎  /workspace/better-codex
+ ▎ PLAN  1. Build shell                           │▎  /workspace/better-codex/codex-rs
+         2. Wire transcript                       │▎  /tmp/codex-cache
+         3. Render dashboard                      │▎  +1 more
+                                                  │
+ ▌ tool exec just test -p codex-tui               │▎◆ EDITS
+                                                  │▎3 files +128 -24
+ ▌ edited 3 files +128 -24                        │
+                                                  │▎◆ TOOLS
+ ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
+          surface.                                │▎completed file changes in app_shell
                                                   │
                                                   │
                                                   │

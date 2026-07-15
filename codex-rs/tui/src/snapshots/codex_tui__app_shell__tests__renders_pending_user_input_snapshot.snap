@@ -2,25 +2,25 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │━━━━━━━━━━━─────────────────────────────────────
- ◆ CONVERSATION                                   │
- ▎ SYSTEM  Better Codex app shell                 │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎loading sessions
- ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ APPROVALS
- ▎ PLAN  1. Build shell                           │▎input Tool input: tool-input-1
-         2. Wire transcript                       │
-         3. Render dashboard                      │▎◆ TOOLS
-                                                  │▎in progress exec just test -p codex-tui
- ▌ tool exec just test -p codex-tui               │▎completed file changes in app_shell
                                                   │
- ▌ edited 3 files +128 -24                        │▎◆ THREAD
-                                                  │▎stage-one
- ▎ CODEX  The new shell owns the fullscreen       │▎id 01900000-0000-7000-8000-000000000001
-          surface.                                │▎resume, fork, archive, delete in session list
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│━━━━━━━━━━━─────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ YOU  Create a divergent standalone TUI.      ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                ┃ │▎loading sessions
+ ▎ CODEX  Started a fullscreen app shell backed ┃ │
+          by app-server turns.                  ┃ │▎◆ APPROVALS
+ ▎ PLAN  1. Build shell                         ┃ │▎input Tool input: tool-input-1
+         2. Wire transcript                     ┃ │
+         3. Render dashboard                    ┃ │▎◆ TOOLS
+                                                ┃ │▎in progress exec just test -p codex-tui
+ ▌ tool exec just test -p codex-tui             ┃ │▎completed file changes in app_shell
+                                                ┃ │
+ ▌ edited 3 files +128 -24                      ┃ │▎◆ THREAD
+                                                ┃ │▎stage-one
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │▎id 01900000-0000-7000-8000-000000000001
+          surface.                              ┃ │▎resume, fork, archive, delete in session list
                                                   │
 ╭────────────────────────────────────────────────╮│▎◆ STATUS
 │◆ TOOL INPUT                                    ││▎thinking

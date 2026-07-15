@@ -2,26 +2,26 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │────────────────────────────────━━━━━━━━━━━─────
- ◆ CONVERSATION                                   │
- ▎ SYSTEM  Better Codex app shell                 │▎◆ SETTINGS
- ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  MODEL  3 fields
-                                                  │▎▸ Model    Permissions
- ▎ CODEX  Started a fullscreen app shell backed   │▎  Appearance    Integrations
-          by app-server turns.                    │▎› Model: gpt-5-codex
- ▎ PLAN  1. Build shell                           │▎  Reasoning: default
-         2. Wire transcript                       │▎  Service tier: default
-         3. Render dashboard                      │
-                                                  │▎◆ MODEL
- ▌ tool exec just test -p codex-tui               │▎gpt-5-codex
                                                   │
- ▌ edited 3 files +128 -24                        │▎◆ TOKENS
-                                                  │▎total 280k
- ▎ CODEX  The new shell owns the fullscreen       │▎input 260k
-          surface.                                │▎output 20k
-                                                  │▎Context 26% left
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━━─────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                 │▎○ CLICK TO FOCUS  MODEL  3 fields
+ ▎ YOU  Create a divergent standalone TUI.        │▎▸ Model    Permissions
+                                                  │▎  Appearance    Integrations
+ ▎ CODEX  Started a fullscreen app shell backed   │▎› Model: gpt-5-codex
+          by app-server turns.                    │▎  Reasoning: default
+ ▎ PLAN  1. Build shell                           │▎  Service tier: default
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ MODEL
+                                                  │▎gpt-5-codex
+ ▌ tool exec just test -p codex-tui               │
+                                                  │▎◆ TOKENS
+ ▌ edited 3 files +128 -24                        │▎total 280k
+                                                  │▎input 260k
+ ▎ CODEX  The new shell owns the fullscreen       │▎output 20k
+          surface.                                │▎Context 26% left
                                                   │
                                                   │▎◆ INTEGRATIONS
 ╭────────────────────────────────────────────────╮│▎mcp not loaded

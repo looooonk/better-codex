@@ -2,13 +2,13 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │━━━━━━━━━━━─────────────────────────────────────
- ◆ CONVERSATION                                   │
-                                                │ │▎◆ SESSIONS
- ▎ CODEX  Started a fullscreen app shell backed ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-          by app-server turns.                  ┃ │▎loading sessions
+                                                  │
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│━━━━━━━━━━━─────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ CODEX  Started a fullscreen app shell backed │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+          by app-server turns.                  │ │▎loading sessions
  ▎ PLAN  1. Build shell                         ┃ │
          2. Wire transcript                     ┃ │▎◆ TOOLS
          3. Render dashboard                    ┃ │▎in progress exec just test -p codex-tui

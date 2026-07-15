@@ -2,26 +2,26 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
- ◆ BC           gpt-5-0 ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │━━━━━━━━━━━─────────────────────────────────────
- ◆ CONVERSATION ╭ Select model ────────────────────────────────────────────────────╮
- ▎ SYSTEM  Bette│ › 1 ● gpt-5-0  current                                           │
- ▎ YOU  Create a│       gpt-5-0 - gpt-5-0 description                              │ions
-                │   2 ○ gpt-5-1                                                    │
- ▎ CODEX  Starte│       gpt-5-1 - gpt-5-1 description                              │
-          by app│   3 ○ gpt-5-2                                                    │
- ▎ PLAN  1. Buil│       gpt-5-2 - gpt-5-2 description                              │dex-tui
-         2. Wire│   4 ○ gpt-5-3                                                    │ell
-         3. Rend│       gpt-5-3 - gpt-5-3 description                              │
-                │   5 ○ gpt-5-4                                                    │
- ▌ tool exec jus│       gpt-5-4 - gpt-5-4 description                              │
-                │   6 ○ gpt-5-5                                                    │0000001
- ▌ edited 3 file│       gpt-5-5 - gpt-5-5 description                              │ session list
-                │   7 ○ gpt-5-6                                                    │
- ▎ CODEX  The ne│       gpt-5-6 - gpt-5-6 description                              │
-          surfac│   8 ○ gpt-5-7                                                    │
-                │       gpt-5-7 - gpt-5-7 description                              │
+                                                  │
+ ◆ BC           gpt-5-0 ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│━━━━━━━━━━━─────────────────────────────────────
+                ╭ Select model ────────────────────────────────────────────────────╮
+ ◆ CONVERSATION │ › 1 ● gpt-5-0  current                                           │
+ ▎ SYSTEM  Bette│       gpt-5-0 - gpt-5-0 description                              │ions
+ ▎ YOU  Create a│   2 ○ gpt-5-1                                                    │
+                │       gpt-5-1 - gpt-5-1 description                              │
+ ▎ CODEX  Starte│   3 ○ gpt-5-2                                                    │
+          by app│       gpt-5-2 - gpt-5-2 description                              │dex-tui
+ ▎ PLAN  1. Buil│   4 ○ gpt-5-3                                                    │ell
+         2. Wire│       gpt-5-3 - gpt-5-3 description                              │
+         3. Rend│   5 ○ gpt-5-4                                                    │
+                │       gpt-5-4 - gpt-5-4 description                              │
+ ▌ tool exec jus│   6 ○ gpt-5-5                                                    │0000001
+                │       gpt-5-5 - gpt-5-5 description                              │ session list
+ ▌ edited 3 file│   7 ○ gpt-5-6                                                    │
+                │       gpt-5-6 - gpt-5-6 description                              │
+ ▎ CODEX  The ne│   8 ○ gpt-5-7                                                    │
+          surfac│       gpt-5-7 - gpt-5-7 description                              │
                 │   9 ○ gpt-5-8                                                    │
                 │       gpt-5-8 - gpt-5-8 description                              │ices.
                 │   · ○ gpt-5-9                                                    │

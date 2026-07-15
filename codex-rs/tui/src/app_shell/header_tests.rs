@@ -12,7 +12,7 @@ fn view() -> HeaderView<'static> {
 
 #[test]
 fn control_hit_targets_match_visible_chips() {
-    let area = Rect::new(0, 0, 100, 2);
+    let area = Rect::new(0, 0, 100, 3);
     let layout = view().control_layout(area).expect("wide header");
 
     assert_eq!(
@@ -50,7 +50,7 @@ fn control_hit_targets_match_visible_chips() {
 #[test]
 fn compact_header_keeps_mouse_controls_visible() {
     let layout = view()
-        .control_layout(Rect::new(0, 0, 48, 2))
+        .control_layout(Rect::new(0, 0, 48, 3))
         .expect("compact controls");
 
     assert!(layout.compact_brand);
@@ -59,14 +59,14 @@ fn compact_header_keeps_mouse_controls_visible() {
 #[test]
 fn ultra_narrow_header_uses_compact_brand_without_controls() {
     for width in [20, 24, 28] {
-        let area = Rect::new(0, 0, width, 2);
+        let area = Rect::new(0, 0, width, 3);
         let view = view();
         let mut buf = Buffer::empty(area);
 
         view.render(area, /*hovered*/ None, &mut buf);
 
         let rendered_brand = (area.x..area.right())
-            .map(|x| buf[(x, area.y)].symbol())
+            .map(|x| buf[(x, area.y.saturating_add(1))].symbol())
             .collect::<String>();
         assert_eq!(rendered_brand.trim(), "◆ BC", "width {width}");
         assert_eq!(view.control_layout(area), None, "width {width}");
@@ -86,7 +86,7 @@ fn hidden_dashboard_exposes_a_mouse_restore_control() {
         dashboard_visible: false,
         ..view()
     };
-    let area = Rect::new(0, 0, 48, 2);
+    let area = Rect::new(0, 0, 48, 3);
     let layout = view.control_layout(area).expect("restore control");
     let dashboard = layout.dashboard.expect("dashboard control");
 

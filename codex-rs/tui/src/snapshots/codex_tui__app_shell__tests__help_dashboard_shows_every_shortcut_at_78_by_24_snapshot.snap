@@ -2,6 +2,7 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
+
  ◆ BETTER CODEX  better-codex           gpt-5-codex ▾   default ▾  ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
@@ -19,7 +20,6 @@ expression: rendered
  ▎Ctrl+3 Workspace Ctrl+4 Settings     │ Esc twice to exit
 
  ◆ CONVERSATION
- ▎ CODEX  The new shell owns the fullscreen surface.                        ┃
 ╭────────────────────────────────────────────────────────────────────────────╮
 │◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37                            │
 │> Summarize the new shell architecture                                      │

@@ -51,7 +51,9 @@ const DASHBOARD_MIN_WIDTH: u16 = 50;
 const DASHBOARD_MAX_WIDTH: u16 = 64;
 const DASHBOARD_PANEL_GAP: u16 = 1;
 const DASHBOARD_WIDTH_PERCENT: u16 = 34;
-const HEADER_HEIGHT: u16 = 2;
+const COMPACT_HEADER_HEIGHT: u16 = 2;
+const PADDED_HEADER_HEIGHT: u16 = 3;
+const PADDED_HEADER_MIN_SCREEN_HEIGHT: u16 = 17;
 const INPUT_PANEL_MIN_HEIGHT: u16 = 6;
 const INPUT_PANEL_MAX_HEIGHT: u16 = 12;
 const INPUT_REQUEST_PANEL_MIN_HEIGHT: u16 = 8;
@@ -322,13 +324,18 @@ impl ShellView<'_> {
     }
 
     fn layout(&self, area: Rect) -> ShellLayout {
+        let header_height = if area.height >= PADDED_HEADER_MIN_SCREEN_HEIGHT {
+            PADDED_HEADER_HEIGHT
+        } else {
+            COMPACT_HEADER_HEIGHT
+        };
         if !self.shell.dashboard_visible {
             let input_height =
-                self.input_panel_height(area.height.saturating_sub(HEADER_HEIGHT), area.width);
+                self.input_panel_height(area.height.saturating_sub(header_height), area.width);
             let main = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(HEADER_HEIGHT),
+                    Constraint::Length(header_height),
                     Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
                     Constraint::Length(input_height),
                 ])
@@ -349,12 +356,12 @@ impl ShellView<'_> {
                 // Help is the active content, not incidental status. At short terminal heights,
                 // give the shortcut reference priority while retaining a visible composer.
                 area.height
-                    .saturating_sub(HEADER_HEIGHT)
+                    .saturating_sub(header_height)
                     .min(if dense_help { 10 } else { 14 })
             } else {
                 area.height
                     .saturating_sub(
-                        HEADER_HEIGHT
+                        header_height
                             .saturating_add(INPUT_PANEL_MIN_HEIGHT)
                             .saturating_add(TRANSCRIPT_MIN_HEIGHT),
                     )
@@ -362,14 +369,14 @@ impl ShellView<'_> {
             };
             let input_height = self.input_panel_height(
                 area.height
-                    .saturating_sub(HEADER_HEIGHT)
+                    .saturating_sub(header_height)
                     .saturating_sub(dashboard_height),
                 area.width,
             );
             let main = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([
-                    Constraint::Length(HEADER_HEIGHT),
+                    Constraint::Length(header_height),
                     Constraint::Length(dashboard_height),
                     Constraint::Min(if help_is_primary_content {
                         0
@@ -403,13 +410,13 @@ impl ShellView<'_> {
             ])
             .split(area);
         let input_height = self.input_panel_height(
-            area.height.saturating_sub(HEADER_HEIGHT),
+            area.height.saturating_sub(header_height),
             horizontal[0].width,
         );
         let main = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(HEADER_HEIGHT),
+                Constraint::Length(header_height),
                 Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
                 Constraint::Length(input_height),
             ])

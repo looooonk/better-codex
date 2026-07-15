@@ -2,15 +2,15 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │━━━━━━━━━━━─────────────────────────────────────
- ◆ CONVERSATION                                   │
-   ▌ output ... 4 earlier output lines            │▎◆ SESSIONS
-   ▌        line 5                                │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   ▌        line 6                                │▎loading sessions
-   ▌        line 7                                │
-                                                  │▎◆ TOOLS
+                                                  │
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│━━━━━━━━━━━─────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+   ▌ output ... 4 earlier output lines            │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   ▌        line 5                                │▎loading sessions
+   ▌        line 6                                │
+   ▌        line 7                                │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
                                                   │▎completed file changes in app_shell
                                                   │

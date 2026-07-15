@@ -2,26 +2,26 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │━━━━━━━━━━━─────────────────────────────────────
- ◆ CONVERSATION                                   │
- ▎ SYSTEM  Better Codex app shell                 │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-              ╭──────────────────────────────────────────────────────────────────────╮
- ▎ CODEX  Star│◆ ACTIONS  Ctrl+P                                                     │
-          by a│                                                                      │
- ▎ PLAN  1. Bu│▌ Copy transcript item  Copy selection or latest assist...            │x-tui
-         2. Wi│  Clear visible transcript                                            │l
-         3. Re│  Select latest transcript item                                       │
-              │  Jump transcript to top                                              │
- ▌ tool exec j│  Jump transcript to bottom                                           │
-              │  Interrupt active turn                                               │00001
- ▌ edited 3 fi│  Switch model                                                        │ession list
-              │  Change permissions                                                  │
- ▎ CODEX  The │  Resume thread                                                       │
-          surf│  Fork thread                                                         │
-              │  Import Claude Code setup                                            │
+                                                  │
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│━━━━━━━━━━━─────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  Better Codex app shell                 │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ YOU  Create╭──────────────────────────────────────────────────────────────────────╮
+              │◆ ACTIONS  Ctrl+P                                                     │
+ ▎ CODEX  Star│                                                                      │
+          by a│▌ Copy transcript item  Copy selection or latest assist...            │x-tui
+ ▎ PLAN  1. Bu│  Clear visible transcript                                            │l
+         2. Wi│  Select latest transcript item                                       │
+         3. Re│  Jump transcript to top                                              │
+              │  Jump transcript to bottom                                           │
+ ▌ tool exec j│  Interrupt active turn                                               │00001
+              │  Switch model                                                        │ession list
+ ▌ edited 3 fi│  Change permissions                                                  │
+              │  Resume thread                                                       │
+ ▎ CODEX  The │  Fork thread                                                         │
+          surf│  Import Claude Code setup                                            │
               │  Compact context                                                     │
               │↑↓ / j k navigate   Enter select   Esc close  1/12                    │es.
               ╰──────────────────────────────────────────────────────────────────────╯

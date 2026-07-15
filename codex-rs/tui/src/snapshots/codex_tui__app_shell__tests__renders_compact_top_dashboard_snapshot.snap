@@ -2,6 +2,7 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
+
  ◆ BC     gpt-5-codex ▾   default ▾  ● thinking
 ────────────────────────────────────────────────
 
@@ -13,7 +14,6 @@ expression: "render_shell(&shell, area)"
  ▎◆ TOOLS
  ▎in progress exec just test -p codex-tui
  ▎completed file changes in app_shell
-
 
 
  ◆ CONVERSATION

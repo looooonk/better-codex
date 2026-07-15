@@ -2,16 +2,16 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │━━━━━━━━━━━─────────────────────────────────────
- ◆ CONVERSATION                                   │
- ▌ tool exec cargo test                           │▎◆ SESSIONS
-                                                  │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   ▌ output pytest 40%                            │▎loading sessions
-   ▌        pytest 80%                            │
-   ▌        pytest 100%                           │▎◆ TOOLS
-                                                  │▎in progress exec just test -p codex-tui
+                                                  │
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│━━━━━━━━━━━─────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▌ tool exec cargo test                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎loading sessions
+   ▌ output pytest 40%                            │
+   ▌        pytest 80%                            │▎◆ TOOLS
+   ▌        pytest 100%                           │▎in progress exec just test -p codex-tui
                                                   │▎completed file changes in app_shell
                                                   │▎in progress exec cargo test
                                                   │

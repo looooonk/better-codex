@@ -2,26 +2,26 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
- ◆ BC                  gpt-5-codex ▾   default ▾  │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
                                                   │
- ◆ CONVERSATION                                   │Alt+←/→ view  ^D hide  │ Sess ↵/j/k focus/nav
- ▎ SYSTEM  Better Codex app shell                 │Shift/Alt+↵ newline    │ r/f resume/fork
- ▎ YOU  Create a divergent standalone TUI.        │↵ send  ^C cancel/Esc×2│ a/u/v/d arc/show/del
-                                                  │Alt+↑/^O select/copy   │ n rename  / search
- ▎ CODEX  Started a fullscreen app shell backed   │Alt+M/E model/effort   │ Agent ↵/j/k focus/nav
-          by app-server turns.                    │^1 Session · ^2 Agent  │ Tab/j/k nav · ↵ apply
- ▎ PLAN  1. Build shell                           │^3/4/5 Work/Set/Help   │ Esc×2 exit
-         2. Wire transcript                       │
-         3. Render dashboard                      │▎◆ STATUS
-                                                  │▎running shell command
- ▌ tool exec just test -p codex-tui               │
-                                                  │▎◆ TOOLS
- ▌ edited 3 files +128 -24                        │▎in progress exec just test -p codex-tui
-                                                  │▎completed file changes in app_shell
+ ◆ BC                  gpt-5-codex ▾   default ▾  │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│
+                                                  │Alt+←/→ view  ^D hide  │ Sess ↵/j/k focus/nav
+ ◆ CONVERSATION                                   │Shift/Alt+↵ newline    │ r/f resume/fork
+ ▎ SYSTEM  Better Codex app shell                 │↵ send  ^C cancel/Esc×2│ a/u/v/d arc/show/del
+ ▎ YOU  Create a divergent standalone TUI.        │Alt+↑/^O select/copy   │ n rename  / search
+                                                  │Alt+M/E model/effort   │ Agent ↵/j/k focus/nav
+ ▎ CODEX  Started a fullscreen app shell backed   │^1 Session · ^2 Agent  │ Tab/j/k nav · ↵ apply
+          by app-server turns.                    │^3/4/5 Work/Set/Help   │ Esc×2 exit
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │▎◆ STATUS
+         3. Render dashboard                      │▎running shell command
+                                                  │
+ ▌ tool exec just test -p codex-tui               │▎◆ TOOLS
+                                                  │▎in progress exec just test -p codex-tui
+ ▌ edited 3 files +128 -24                        │▎completed file changes in app_shell
+                                                  │
  ▎ CODEX  The new shell owns the fullscreen       │
           surface.                                │
-                                                  │
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│

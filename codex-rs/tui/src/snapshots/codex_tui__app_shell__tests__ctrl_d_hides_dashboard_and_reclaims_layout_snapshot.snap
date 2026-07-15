@@ -2,6 +2,7 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
+
  ◆ BETTER CODEX  better-codex                        Panels   gpt-5-codex ▾   default ▾  ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -19,7 +20,6 @@ expression: rendered
  ▌ edited 3 files +128 -24
 
  ▎ CODEX  The new shell owns the fullscreen surface.
-
 
 
 

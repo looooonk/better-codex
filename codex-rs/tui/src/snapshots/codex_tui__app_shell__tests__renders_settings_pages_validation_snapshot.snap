@@ -2,26 +2,26 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │────────────────────────────────━━━━━━━━━━━─────
- ◆ CONVERSATION                                   │
- ▎ SYSTEM  Better Codex app shell                 │▎◆ SETTINGS
- ▎ YOU  Create a divergent standalone TUI.        │▎● FOCUSED  APPEARANCE  3 fields
-                                                  │▎  Model    Permissions
- ▎ CODEX  Started a fullscreen app shell backed   │▎▸ Appearance    Integrations
-          by app-server turns.                    │▎edit Syntax theme missing-theme
- ▎ PLAN  1. Build shell                           │▎unknown syntax theme `missing-theme`
-         2. Wire transcript                       │▎› Syntax theme: default
-         3. Render dashboard                      │▎  Animations: on
-                                                  │▎  Tooltips: on
- ▌ tool exec just test -p codex-tui               │
-                                                  │▎◆ MODEL
- ▌ edited 3 files +128 -24                        │▎gpt-5-codex
                                                   │
- ▎ CODEX  The new shell owns the fullscreen       │▎◆ TOKENS
-          surface.                                │▎total 1k
-                                                  │▎input 1k
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
+──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━━─────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  APPEARANCE  3 fields
+ ▎ YOU  Create a divergent standalone TUI.        │▎  Model    Permissions
+                                                  │▎▸ Appearance    Integrations
+ ▎ CODEX  Started a fullscreen app shell backed   │▎edit Syntax theme missing-theme
+          by app-server turns.                    │▎unknown syntax theme `missing-theme`
+ ▎ PLAN  1. Build shell                           │▎› Syntax theme: default
+         2. Wire transcript                       │▎  Animations: on
+         3. Render dashboard                      │▎  Tooltips: on
+                                                  │
+ ▌ tool exec just test -p codex-tui               │▎◆ MODEL
+                                                  │▎gpt-5-codex
+ ▌ edited 3 files +128 -24                        │
+                                                  │▎◆ TOKENS
+ ▎ CODEX  The new shell owns the fullscreen       │▎total 1k
+          surface.                                │▎input 1k
                                                   │▎output 240
                                                   │▎Context 100% left
                                                   │
