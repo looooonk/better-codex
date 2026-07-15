@@ -21,11 +21,81 @@ use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::CommandExecParams;
 use codex_app_server_protocol::CommandExecResponse;
+use codex_app_server_protocol::CommandExecTerminateParams;
+use codex_app_server_protocol::CommandExecTerminateResponse;
 use codex_app_server_protocol::RequestId;
+use tokio::sync::oneshot;
+use tokio::task::JoinHandle;
+use tokio::time::Instant;
 use uuid::Uuid;
+
+const TERMINATE_RETRY_INTERVAL: Duration = Duration::from_millis(/*millis*/ 25);
+const TERMINATE_RETRY_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 5);
+const TERMINATE_SETTLE_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 5);
 
 /// Shared handle for running workspace commands from TUI components.
 pub(crate) type WorkspaceCommandRunner = Arc<dyn WorkspaceCommandExecutor>;
+
+/// A workspace command that runs independently of the TUI event loop.
+///
+/// Dropping the handle requests cancellation. App-server-backed commands use a client-supplied
+/// process id, so cancellation reaches the process on the machine that owns the workspace rather
+/// than merely dropping the local response future.
+pub(crate) struct WorkspaceCommandExecution {
+    cancel_tx: Option<oneshot::Sender<()>>,
+    task: Option<JoinHandle<Result<WorkspaceCommandOutput, WorkspaceCommandError>>>,
+}
+
+impl WorkspaceCommandExecution {
+    /// Starts a command on the supplied workspace runner and returns immediately.
+    pub(crate) fn start(runner: WorkspaceCommandRunner, command: WorkspaceCommand) -> Self {
+        let process_id = format!("workspace-command-{}", Uuid::new_v4());
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+        let task = tokio::spawn(run_background_command(
+            runner, command, process_id, cancel_rx,
+        ));
+        Self {
+            cancel_tx: Some(cancel_tx),
+            task: Some(task),
+        }
+    }
+
+    /// Requests cancellation without waiting for the remote process to terminate.
+    ///
+    /// Returns `true` only for the first cancellation request.
+    pub(crate) fn cancel(&mut self) -> bool {
+        self.cancel_tx
+            .take()
+            .is_some_and(|cancel_tx| cancel_tx.send(()).is_ok())
+    }
+
+    /// Returns whether the background task has produced its final result.
+    pub(crate) fn is_finished(&self) -> bool {
+        self.task.as_ref().is_none_or(JoinHandle::is_finished)
+    }
+
+    /// Waits for the final command result.
+    pub(crate) async fn wait(mut self) -> Result<WorkspaceCommandOutput, WorkspaceCommandError> {
+        let Some(task) = self.task.take() else {
+            return Err(WorkspaceCommandError::new(
+                "workspace command task result was already consumed",
+            ));
+        };
+        let result = task.await.map_err(|err| {
+            WorkspaceCommandError::new(format!("workspace command task failed: {err}"))
+        })?;
+        let _ = self.cancel_tx.take();
+        result
+    }
+}
+
+impl Drop for WorkspaceCommandExecution {
+    fn drop(&mut self) {
+        if let Some(cancel_tx) = self.cancel_tx.take() {
+            let _ = cancel_tx.send(());
+        }
+    }
+}
 
 /// Describes a bounded non-interactive command to execute in the active workspace.
 ///
@@ -105,20 +175,34 @@ impl WorkspaceCommandOutput {
     }
 }
 
-/// Transport or protocol failure before a command result was available.
+/// Failure before a command result was available.
 ///
 /// Non-zero process exits are represented as `WorkspaceCommandOutput` so callers can distinguish
-/// a normal probe miss from an app-server request failure.
+/// a normal probe miss from an app-server request failure or explicit cancellation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct WorkspaceCommandError {
     message: String,
+    cancelled: bool,
 }
 
 impl WorkspaceCommandError {
     fn new(message: impl Into<String>) -> Self {
         Self {
             message: message.into(),
+            cancelled: false,
         }
+    }
+
+    fn cancelled() -> Self {
+        Self {
+            message: "workspace command cancelled".to_string(),
+            cancelled: true,
+        }
+    }
+
+    /// Returns whether the command ended because cancellation was requested.
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.cancelled
     }
 }
 
@@ -146,6 +230,49 @@ pub(crate) trait WorkspaceCommandExecutor: Send + Sync {
     ) -> Pin<
         Box<dyn Future<Output = Result<WorkspaceCommandOutput, WorkspaceCommandError>> + Send + '_>,
     >;
+
+    /// Runs a command under a caller-supplied process id that can later be terminated.
+    ///
+    /// Implementations that cannot address individual processes may use the default, which keeps
+    /// running through [`Self::run`]. Cancellation cannot stop those commands, so the background
+    /// handle continues waiting for their actual result.
+    fn run_cancellable(
+        &self,
+        command: WorkspaceCommand,
+        _process_id: String,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<WorkspaceCommandOutput, WorkspaceCommandError>> + Send + '_>,
+    > {
+        self.run(command)
+    }
+
+    /// Requests termination of a command previously started by [`Self::run_cancellable`].
+    fn terminate(
+        &self,
+        _process_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<WorkspaceCommandTermination, WorkspaceCommandError>>
+                + Send
+                + '_,
+        >,
+    > {
+        Box::pin(async { Ok(WorkspaceCommandTermination::Unsupported) })
+    }
+}
+
+/// Whether an executor accepted a request to terminate a workspace command.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum WorkspaceCommandTermination {
+    /// The executor forwarded termination to the process owner.
+    Requested,
+    /// This executor cannot address individual processes.
+    Unsupported,
+}
+
+enum WorkspaceCommandProcess {
+    ServerGenerated,
+    Client(String),
 }
 
 /// Workspace command runner that forwards every request to the active app-server.
@@ -173,20 +300,72 @@ impl WorkspaceCommandExecutor for AppServerWorkspaceCommandRunner {
     ) -> Pin<
         Box<dyn Future<Output = Result<WorkspaceCommandOutput, WorkspaceCommandError>> + Send + '_>,
     > {
+        self.run_with_process(command, WorkspaceCommandProcess::ServerGenerated)
+    }
+
+    fn run_cancellable(
+        &self,
+        command: WorkspaceCommand,
+        process_id: String,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<WorkspaceCommandOutput, WorkspaceCommandError>> + Send + '_>,
+    > {
+        self.run_with_process(command, WorkspaceCommandProcess::Client(process_id))
+    }
+
+    fn terminate(
+        &self,
+        process_id: String,
+    ) -> Pin<
+        Box<
+            dyn Future<Output = Result<WorkspaceCommandTermination, WorkspaceCommandError>>
+                + Send
+                + '_,
+        >,
+    > {
+        let request_handle = self.request_handle.clone();
         Box::pin(async move {
+            let _: CommandExecTerminateResponse = request_handle
+                .request_typed(ClientRequest::CommandExecTerminate {
+                    request_id: RequestId::String(format!(
+                        "workspace-command-terminate-{}",
+                        Uuid::new_v4()
+                    )),
+                    params: CommandExecTerminateParams { process_id },
+                })
+                .await
+                .map_err(|err| WorkspaceCommandError::new(err.to_string()))?;
+            Ok(WorkspaceCommandTermination::Requested)
+        })
+    }
+}
+
+impl AppServerWorkspaceCommandRunner {
+    fn run_with_process(
+        &self,
+        command: WorkspaceCommand,
+        process: WorkspaceCommandProcess,
+    ) -> Pin<
+        Box<dyn Future<Output = Result<WorkspaceCommandOutput, WorkspaceCommandError>> + Send + '_>,
+    > {
+        let request_handle = self.request_handle.clone();
+        Box::pin(async move {
+            let process_id = match process {
+                WorkspaceCommandProcess::ServerGenerated => None,
+                WorkspaceCommandProcess::Client(process_id) => Some(process_id),
+            };
             let timeout_ms = i64::try_from(command.timeout.as_millis()).unwrap_or(i64::MAX);
             let env = if command.env.is_empty() {
                 None
             } else {
                 Some(command.env)
             };
-            let response: CommandExecResponse = self
-                .request_handle
+            let response: CommandExecResponse = request_handle
                 .request_typed(ClientRequest::OneOffCommandExec {
                     request_id: RequestId::String(format!("workspace-command-{}", Uuid::new_v4())),
                     params: CommandExecParams {
                         command: command.argv,
-                        process_id: None,
+                        process_id,
                         tty: false,
                         stream_stdin: false,
                         stream_stdout_stderr: false,
@@ -213,3 +392,67 @@ impl WorkspaceCommandExecutor for AppServerWorkspaceCommandRunner {
         })
     }
 }
+
+async fn run_background_command(
+    runner: WorkspaceCommandRunner,
+    command: WorkspaceCommand,
+    process_id: String,
+    mut cancel_rx: oneshot::Receiver<()>,
+) -> Result<WorkspaceCommandOutput, WorkspaceCommandError> {
+    let execution = runner.run_cancellable(command, process_id.clone());
+    tokio::pin!(execution);
+
+    let cancellation = tokio::select! {
+        result = &mut execution => return result,
+        cancellation = &mut cancel_rx => cancellation,
+    };
+    if cancellation.is_err() {
+        return execution.await;
+    }
+
+    let retry_deadline = Instant::now() + TERMINATE_RETRY_TIMEOUT;
+    loop {
+        let terminate = runner.terminate(process_id.clone());
+        let termination = tokio::select! {
+            result = &mut execution => return result,
+            termination = terminate => Some(termination),
+            () = tokio::time::sleep_until(retry_deadline) => None,
+        };
+        let Some(termination) = termination else {
+            return Err(WorkspaceCommandError::new(
+                "workspace command cancellation timed out",
+            ));
+        };
+        match termination {
+            Ok(WorkspaceCommandTermination::Requested) => {
+                return tokio::select! {
+                    _ = &mut execution => Err(WorkspaceCommandError::cancelled()),
+                    () = tokio::time::sleep(TERMINATE_SETTLE_TIMEOUT) => Err(
+                        WorkspaceCommandError::new(
+                            "workspace command termination was accepted but did not finish",
+                        )
+                    ),
+                };
+            }
+            Ok(WorkspaceCommandTermination::Unsupported) => {
+                return execution.await;
+            }
+            Err(err) if Instant::now() >= retry_deadline => {
+                return Err(WorkspaceCommandError::new(format!(
+                    "workspace command cancellation failed: {err}"
+                )));
+            }
+            Err(_) => {
+                let retry_at = (Instant::now() + TERMINATE_RETRY_INTERVAL).min(retry_deadline);
+                tokio::select! {
+                    result = &mut execution => return result,
+                    () = tokio::time::sleep_until(retry_at) => {}
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "workspace_command_tests.rs"]
+mod tests;
