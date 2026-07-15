@@ -227,6 +227,91 @@ async fn state_db_init_backfills_before_returning() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+async fn load_rollout_items_handles_flattened_token_count_event() -> std::io::Result<()> {
+    let home = TempDir::new().expect("temp dir");
+    let rollout_path = home.path().join("rollout.jsonl");
+    let thread_id = ThreadId::new();
+    let ts = "2026-07-13T05:27:00.476Z";
+    let token_count_item = serde_json::json!({
+        "type": "event_msg",
+        "payload": {
+            "type": "token_count",
+            "info": {
+                "total_token_usage": {
+                    "input_tokens": 21775,
+                    "cached_input_tokens": 9984,
+                    "output_tokens": 312,
+                    "reasoning_output_tokens": 157,
+                    "total_tokens": 22087,
+                },
+                "last_token_usage": {
+                    "input_tokens": 21775,
+                    "cached_input_tokens": 9984,
+                    "output_tokens": 312,
+                    "reasoning_output_tokens": 157,
+                    "total_tokens": 22087,
+                },
+                "model_context_window": 258400,
+            },
+            "rate_limits": {
+                "limit_id": "codex",
+                "limit_name": null,
+                "primary": {
+                    "used_percent": 0.0,
+                    "window_minutes": 10080,
+                    "resets_at": 1784525191,
+                },
+                "secondary": null,
+                "credits": null,
+                "individual_limit": null,
+                "plan_type": "pro",
+                "rate_limit_reached_type": null,
+            },
+        },
+    });
+    let lines = [
+        serde_json::json!({
+            "timestamp": ts,
+            "type": "session_meta",
+            "payload": {
+                "session_id": thread_id,
+                "id": thread_id,
+                "timestamp": ts,
+                "cwd": ".",
+                "originator": "test_originator",
+                "cli_version": "test_version",
+                "source": "cli",
+                "model_provider": "test-provider",
+            },
+        }),
+        serde_json::json!({
+            "timestamp": ts,
+            "type": token_count_item["type"],
+            "payload": token_count_item["payload"],
+        }),
+    ];
+    let serialized_lines = lines
+        .iter()
+        .map(serde_json::to_string)
+        .collect::<Result<Vec<_>, _>>()?;
+    assert!(
+        serde_json::from_str::<RolloutLine>(&serialized_lines[1]).is_err(),
+        "fixture should exercise direct flattened token-count deserialization"
+    );
+    let contents = serialized_lines.join("\n");
+    fs::write(&rollout_path, format!("{contents}\n"))?;
+
+    let (items, loaded_thread_id, parse_errors) =
+        RolloutRecorder::load_rollout_items(&rollout_path).await?;
+
+    assert_eq!(loaded_thread_id, Some(thread_id));
+    assert_eq!(parse_errors, 0);
+    assert_eq!(items.len(), 2);
+    assert_eq!(serde_json::to_value(&items[1])?, token_count_item,);
+    Ok(())
+}
+
+#[tokio::test]
 async fn load_rollout_items_defaults_legacy_session_id() -> std::io::Result<()> {
     let home = TempDir::new().expect("temp dir");
     let rollout_path = home.path().join("rollout.jsonl");
@@ -251,22 +336,20 @@ async fn load_rollout_items_defaults_legacy_session_id() -> std::io::Result<()> 
             },
         })
     )?;
-    writeln!(
-        file,
-        "{}",
-        serde_json::json!({
-            "timestamp": ts,
-            "type": "response_item",
-            "payload": {
-                "type": "ghost_snapshot",
-                "ghost_commit": {
-                    "id": "deadbeef",
-                    "preexisting_untracked_dirs": [],
-                    "preexisting_untracked_files": [],
-                },
+    let escaped_ghost_line = serde_json::to_string(&serde_json::json!({
+        "timestamp": ts,
+        "type": "response_item",
+        "payload": {
+            "type": "ghost_snapshot",
+            "ghost_commit": {
+                "id": "deadbeef",
+                "preexisting_untracked_dirs": [],
+                "preexisting_untracked_files": [],
             },
-        })
-    )?;
+        },
+    }))?
+    .replace("ghost_snapshot", "ghost\\u005fsnapshot");
+    writeln!(file, "{escaped_ghost_line}")?;
     writeln!(
         file,
         "{}",
@@ -431,37 +514,35 @@ async fn load_rollout_items_filters_legacy_ghost_snapshots_from_compaction_histo
             },
         })
     )?;
-    writeln!(
-        file,
-        "{}",
-        serde_json::json!({
-            "timestamp": ts,
-            "type": "compacted",
-            "payload": {
-                "message": "summary",
-                "replacement_history": [
-                    {
-                        "type": "message",
-                        "role": "assistant",
-                        "content": [
-                            {
-                                "type": "output_text",
-                                "text": "kept",
-                            }
-                        ],
+    let escaped_compaction_line = serde_json::to_string(&serde_json::json!({
+        "timestamp": ts,
+        "type": "compacted",
+        "payload": {
+            "message": "summary",
+            "replacement_history": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "output_text",
+                            "text": "kept",
+                        }
+                    ],
+                },
+                {
+                    "type": "ghost_snapshot",
+                    "ghost_commit": {
+                        "id": "deadbeef",
+                        "preexisting_untracked_dirs": [],
+                        "preexisting_untracked_files": [],
                     },
-                    {
-                        "type": "ghost_snapshot",
-                        "ghost_commit": {
-                            "id": "deadbeef",
-                            "preexisting_untracked_dirs": [],
-                            "preexisting_untracked_files": [],
-                        },
-                    }
-                ],
-            },
-        })
-    )?;
+                }
+            ],
+        },
+    }))?
+    .replace("ghost_snapshot", "ghost\\u005fsnapshot");
+    writeln!(file, "{escaped_compaction_line}")?;
 
     let (items, loaded_thread_id, parse_errors) =
         RolloutRecorder::load_rollout_items(&rollout_path).await?;

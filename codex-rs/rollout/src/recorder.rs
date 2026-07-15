@@ -19,6 +19,7 @@ use codex_protocol::ThreadId;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::BaseInstructions;
+use codex_protocol::models::ResponseItem;
 use serde_json::Value;
 use time::OffsetDateTime;
 use time::format_description::FormatItem;
@@ -951,21 +952,80 @@ impl RolloutRecorder {
                 continue;
             }
             saw_non_empty_line = true;
-            let mut v: Value = match serde_json::from_str(&line) {
-                Ok(v) => v,
-                Err(e) => {
-                    warn!("failed to parse line as JSON: {line:?}, error: {e}");
-                    parse_errors = parse_errors.saturating_add(1);
+            // Canonical records deserialize directly into `RolloutLine`. Token-count events use
+            // the value path because Serde's direct deserializer does not handle their nested
+            // floating-point rate-limit fields through RolloutLine's flattened item
+            // representation. Legacy ghost snapshots deserialize as `ResponseItem::Other`; when
+            // the typed result contains one, reparse as a mutable value and remove it below.
+            let requires_value_deserialization = line.contains("\"token_count\"");
+            let parsed = if requires_value_deserialization {
+                let mut value: Value = match serde_json::from_str(&line) {
+                    Ok(value) => value,
+                    Err(err) => {
+                        warn!("failed to parse line as JSON: {line:?}, error: {err}");
+                        parse_errors = parse_errors.saturating_add(1);
+                        continue;
+                    }
+                };
+                if strip_legacy_ghost_snapshot_rollout_line(&mut value) {
+                    trace!("skipping legacy ghost_snapshot rollout line");
                     continue;
                 }
+                if thread_id.is_none() {
+                    // Preserve the explicit error for an unknown history mode before moving the
+                    // value into typed deserialization.
+                    reject_unknown_thread_history_mode(&value)?;
+                }
+                serde_json::from_value::<RolloutLine>(value)
+            } else {
+                match serde_json::from_str::<RolloutLine>(&line) {
+                    Ok(rollout_line)
+                        if matches!(
+                            &rollout_line.item,
+                            RolloutItem::ResponseItem(ResponseItem::Other)
+                        ) || matches!(
+                            &rollout_line.item,
+                            RolloutItem::Compacted(compacted)
+                                if compacted.replacement_history.as_ref().is_some_and(|history| {
+                                    history.iter().any(|item| matches!(item, ResponseItem::Other))
+                                })
+                        ) =>
+                    {
+                        let mut value = match serde_json::from_str::<Value>(&line) {
+                            Ok(value) => value,
+                            Err(err) => {
+                                warn!("failed to parse line as JSON: {line:?}, error: {err}");
+                                parse_errors = parse_errors.saturating_add(1);
+                                continue;
+                            }
+                        };
+                        if strip_legacy_ghost_snapshot_rollout_line(&mut value) {
+                            trace!("skipping legacy ghost_snapshot rollout line");
+                            continue;
+                        }
+                        if thread_id.is_none() {
+                            reject_unknown_thread_history_mode(&value)?;
+                        }
+                        serde_json::from_value::<RolloutLine>(value)
+                    }
+                    Ok(rollout_line) => Ok(rollout_line),
+                    Err(direct_err) => match serde_json::from_str::<Value>(&line) {
+                        Ok(mut value) => {
+                            if strip_legacy_ghost_snapshot_rollout_line(&mut value) {
+                                trace!("skipping legacy ghost_snapshot rollout line");
+                                continue;
+                            }
+                            if thread_id.is_none() {
+                                reject_unknown_thread_history_mode(&value)?;
+                            }
+                            serde_json::from_value::<RolloutLine>(value)
+                        }
+                        Err(_) => Err(direct_err),
+                    },
+                }
             };
-            if strip_legacy_ghost_snapshot_rollout_line(&mut v) {
-                trace!("skipping legacy ghost_snapshot rollout line");
-                continue;
-            }
 
-            // Parse the rollout line structure
-            match serde_json::from_value::<RolloutLine>(v.clone()) {
+            match parsed {
                 Ok(rollout_line) => {
                     let item = rollout_line.item;
                     // Use the FIRST SessionMeta encountered in the file as the canonical
@@ -977,14 +1037,12 @@ impl RolloutRecorder {
                     }
                     items.push(item);
                 }
-                Err(e) => {
-                    if thread_id.is_none() {
-                        // The first SessionMeta belongs to this rollout. Later SessionMeta lines
-                        // can be copied from fork history, so only validate unknown history modes
-                        // before we have parsed the rollout's own SessionMeta.
-                        reject_unknown_thread_history_mode(&v)?;
+                Err(err) => {
+                    if err.is_syntax() || err.is_eof() {
+                        warn!("failed to parse line as JSON: {line:?}, error: {err}");
+                    } else {
+                        trace!("failed to parse rollout line: {err}");
                     }
-                    trace!("failed to parse rollout line: {e}");
                     parse_errors = parse_errors.saturating_add(1);
                 }
             }
