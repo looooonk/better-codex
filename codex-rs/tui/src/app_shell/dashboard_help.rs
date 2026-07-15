@@ -65,6 +65,13 @@ fn wide_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
             "Alt+Up select, Ctrl+O copy",
             "Ctrl+D hide dashboard",
         ]
+    } else if shell.has_pending_shell_command() {
+        [
+            "Enter send",
+            "Ctrl+C cancel shell, Esc x2 exit",
+            "Alt+Up select, Ctrl+O copy",
+            "Ctrl+D hide dashboard",
+        ]
     } else {
         [
             "Enter send",
@@ -114,6 +121,13 @@ fn compact_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
             "Alt+↑ select  ^O copy",
             "Ctrl+D hide dashboard",
         ]
+    } else if shell.has_pending_shell_command() {
+        [
+            "↵ send",
+            "^C cancel shell · Esc×2 exit",
+            "Alt+↑ select  ^O copy",
+            "Ctrl+D hide dashboard",
+        ]
     } else {
         [
             "↵ send",
@@ -159,6 +173,12 @@ fn dense_key_hint_labels(shell: &ShellState) -> [&'static str; 14] {
         [
             "Alt+←/→ view  ^D hide",
             "↵ steer  ^C stop/Esc×2",
+            "Alt+↑/^O select/copy",
+        ]
+    } else if shell.has_pending_shell_command() {
+        [
+            "Alt+←/→ view  ^D hide",
+            "↵ send  ^C cancel/Esc×2",
             "Alt+↑/^O select/copy",
         ]
     } else {

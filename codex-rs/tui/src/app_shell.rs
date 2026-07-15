@@ -9,7 +9,6 @@ use crate::app_server_session::AgentHistoryTask;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
-use crate::app_server_session::app_server_rate_limit_snapshots;
 use crate::clipboard_copy::ClipboardLease;
 use crate::goal_display::GOAL_USAGE;
 use crate::goal_display::goal_status_label;
@@ -131,6 +130,7 @@ use sessions::SessionListState;
 use sessions::SessionSearchOutcome;
 use settings::SettingsAction;
 use settings::SettingsState;
+use shell_command::PendingShellCommand;
 use shell_command::ShellCommand;
 pub(crate) use startup::StartupOnboardingOutcome;
 pub(crate) use startup::run_startup_onboarding;
@@ -238,22 +238,24 @@ pub(crate) async fn run(
     if let Some(message) = availability_nux {
         shell.push_system(message);
     }
-    // Paint the restored conversation before secondary dashboard data is fetched. In
-    // particular, account rate limits may require a network round trip and should not leave the
-    // terminal looking stalled. Prioritize the session list so the default dashboard route is
-    // useful as soon as its first request completes.
+    // Paint the restored conversation and start accepting input before secondary dashboard data
+    // completes. These lookups can cross a remote app-server boundary, so their results are
+    // revision-guarded and applied from the event loop as they become available.
+    let has_initial_prompt = initial_prompt
+        .as_deref()
+        .is_some_and(|prompt| !prompt.trim().is_empty());
     draw_shell(tui, &shell)?;
-    shell.refresh_session_list(&mut app_server).await;
-    draw_shell(tui, &shell)?;
-    shell
-        .refresh_workspace_status(workspace_command_runner.as_ref())
-        .await;
-    shell.refresh_rate_limits(&mut app_server).await;
-    shell.refresh_goal_state(&mut app_server).await;
+    shell.start_initial_dashboard_hydration(&app_server);
+    if !has_initial_prompt {
+        shell.start_initial_goal_hydration(&app_server);
+    }
 
     let run_result: Result<ExitReason> = async {
         if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
             shell.submit_prompt(&mut app_server, prompt).await?;
+            // Goal reads and turn starts serialize by thread id. Start this lookup only after the
+            // initial turn is accepted so a slow goal read cannot delay the user's first prompt.
+            shell.start_initial_goal_hydration(&app_server);
             tui.frame_requester().schedule_frame();
         }
 
@@ -331,7 +333,6 @@ pub(crate) async fn run(
                             shell
                                 .handle_app_server_event(
                                     &mut app_server,
-                                    workspace_command_runner.as_ref(),
                                     event,
                                 )
                                 .await?;
@@ -345,9 +346,11 @@ pub(crate) async fn run(
                     }
                 }
                 _ = agent_history_poll.tick(), if shell.has_pending_agent_history()
-                    || shell.has_pending_session_hydration() =>
+                    || shell.has_pending_session_hydration()
+                    || shell.has_pending_shell_command() =>
                 {
-                    let mut changed = shell.poll_session_hydration().await;
+                    let mut changed = shell.poll_shell_command().await;
+                    changed |= shell.poll_session_hydration(&app_server).await;
                     if shell.has_pending_agent_history() {
                         changed |= shell.poll_agent_history(&app_server).await;
                     }
@@ -361,6 +364,7 @@ pub(crate) async fn run(
     }
     .await;
 
+    shell.cancel_shell_command();
     shell.cancel_agent_history().await;
     shell.cancel_session_hydration();
     shell.finish_subscription_cleanup().await;
@@ -616,6 +620,7 @@ struct ShellState {
     agents_focused: bool,
     composer: ComposerState,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
+    pending_shell_command: Option<PendingShellCommand>,
     session_hydration: SessionHydrationState,
     exit_confirmation_pending: bool,
     clipboard_lease: Option<ClipboardLease>,
@@ -707,6 +712,7 @@ impl ShellState {
             agents_focused: false,
             composer: ComposerState::default(),
             workspace_command_runner: None,
+            pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,
@@ -830,6 +836,11 @@ impl ShellState {
             if self.active_turn_id.is_some() {
                 self.exit_confirmation_pending = false;
                 self.interrupt_active_turn(app_server).await?;
+                return Ok(false);
+            }
+            if self.has_pending_shell_command() {
+                self.cancel_shell_command();
+                self.exit_confirmation_pending = false;
                 return Ok(false);
             }
             return Ok(self.confirm_exit());
@@ -1001,7 +1012,7 @@ impl ShellState {
                                 .await?;
                             return Ok(outcome == LocalSlashCommandOutcome::Exit);
                         } else if let Some(command) = ShellCommand::parse(&prompt) {
-                            self.run_shell_command(command, prompt).await;
+                            self.start_shell_command(command, prompt);
                         } else if self.active_turn_id.is_some() {
                             self.steer_active_turn(app_server, prompt).await?;
                         } else {
@@ -1096,41 +1107,16 @@ impl ShellState {
         self.record_workspace_git_status(status);
     }
 
-    async fn refresh_rate_limits(&mut self, app_server: &mut AppServerSession) {
-        let Ok(response) = app_server.account_rate_limits().await else {
-            return;
-        };
-        self.rate_limit_reset_credits = response
-            .rate_limit_reset_credits
-            .as_ref()
-            .map(|credits| credits.available_count);
-        self.rate_limits = app_server_rate_limit_snapshots(response);
-    }
-
-    async fn refresh_goal_state<S>(&mut self, app_server: &mut S)
-    where
-        S: AppShellBackend,
-    {
-        let Ok(response) = app_server.thread_goal_get(self.thread_id).await else {
-            return;
-        };
-        self.record_active_goal(response.goal);
-    }
-
     async fn refresh_session_list<S>(&mut self, app_server: &mut S)
     where
         S: AppShellBackend,
     {
-        match app_server
+        let revision = self.begin_session_list_refresh();
+        let result = app_server
             .thread_list(self.session_list.list_params())
             .await
-        {
-            Ok(response) => self.session_list.replace_thread_page(
-                response.data,
-                /*has_more*/ response.next_cursor.is_some(),
-            ),
-            Err(err) => self.session_list.set_error(err.to_string()),
-        }
+            .map_err(|err| err.to_string());
+        let _applied = self.finish_session_list_refresh(revision, result);
     }
 
     async fn refresh_mcp_inventory<S>(&mut self, app_server: &mut S)
@@ -1208,6 +1194,7 @@ impl ShellState {
     }
 
     fn apply_rate_limit_update(&mut self, snapshot: RateLimitSnapshot) {
+        self.mark_rate_limits_updated();
         let Some(limit_id) = snapshot.limit_id.as_deref() else {
             if self.rate_limits.is_empty() {
                 self.rate_limits.push(snapshot);
@@ -1616,6 +1603,8 @@ impl ShellState {
     fn block_session_switch_if_busy(&mut self) -> bool {
         let message = if self.active_turn_id.is_some() {
             "finish or interrupt the active turn before switching sessions"
+        } else if self.pending_shell_command.is_some() {
+            "finish or cancel the shell command before switching sessions"
         } else if self.pending_approval.is_some()
             || self.pending_elicitation.is_some()
             || self.pending_user_input.is_some()
@@ -1716,6 +1705,7 @@ impl ShellState {
         self.plan_steps.clear();
         self.record_active_goal(None);
         self.composer.clear();
+        self.pending_shell_command = None;
         self.command_palette = None;
         self.exit_confirmation_pending = false;
         self.pending_external_agent_import = None;
@@ -1975,57 +1965,6 @@ impl ShellState {
         self.exit_confirmation_pending = true;
         self.push_status("press Esc or Ctrl+C again to exit");
         false
-    }
-
-    async fn run_shell_command(&mut self, command: ShellCommand, prompt: String) {
-        self.composer.remember_submission(&prompt);
-        self.composer.clear();
-        if command.is_empty() {
-            self.push_error("shell command cannot be empty");
-            return;
-        }
-        let Some(runner) = self.workspace_command_runner.clone() else {
-            self.push_error("shell command runner is unavailable");
-            return;
-        };
-
-        let command_text = command.text().to_string();
-        self.status = "running shell command".to_string();
-        match runner
-            .run(command.workspace_command(std::path::Path::new(&self.cwd)))
-            .await
-        {
-            Ok(output) => {
-                let tool_status = if output.success() {
-                    ToolBlockStatus::Success
-                } else {
-                    ToolBlockStatus::Fail
-                };
-                self.push_tool_with_status(
-                    format!("! {command_text} exit {}", output.exit_code),
-                    tool_status,
-                );
-                let mut combined = output.stdout;
-                if !output.stderr.is_empty() {
-                    if !combined.is_empty() && !combined.ends_with('\n') {
-                        combined.push('\n');
-                    }
-                    combined.push_str(&output.stderr);
-                }
-                if !combined.is_empty() {
-                    self.push_output_with_status(
-                        compact_output_for_transcript(combined),
-                        tool_status,
-                    );
-                }
-                self.status = format!("shell exit {}", output.exit_code);
-            }
-            Err(err) => {
-                self.push_tool_with_status(format!("! {command_text}"), ToolBlockStatus::Fail);
-                self.push_error(format!("shell command failed: {err}"));
-                self.status = "shell command failed".to_string();
-            }
-        }
     }
 
     async fn run_local_slash_command<S>(
@@ -3052,6 +2991,7 @@ impl ShellState {
                 composer
             },
             workspace_command_runner: None,
+            pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,
@@ -3300,6 +3240,7 @@ pub mod bench_support {
                 composer
             },
             workspace_command_runner: None,
+            pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,

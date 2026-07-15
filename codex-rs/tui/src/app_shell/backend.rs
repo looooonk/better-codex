@@ -13,6 +13,7 @@ use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::ExternalAgentConfigDetectParams;
 use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
+use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::McpServerOauthLoginParams;
@@ -89,6 +90,17 @@ pub(super) trait AppShellBackend {
         &mut self,
         params: ThreadListParams,
     ) -> impl std::future::Future<Output = Result<ThreadListResponse>> + Send;
+
+    /// Starts a session-list lookup without borrowing the event-loop-owned backend.
+    fn thread_list_in_background(
+        &self,
+        params: ThreadListParams,
+    ) -> impl std::future::Future<Output = Result<ThreadListResponse>> + Send + 'static;
+
+    /// Starts an account rate-limit lookup without borrowing the event-loop-owned backend.
+    fn account_rate_limits_in_background(
+        &self,
+    ) -> impl std::future::Future<Output = Result<GetAccountRateLimitsResponse>> + Send + 'static;
 
     fn thread_archive(
         &mut self,
@@ -310,6 +322,38 @@ impl AppShellBackend for AppServerSession {
 
     async fn thread_list(&mut self, params: ThreadListParams) -> Result<ThreadListResponse> {
         AppServerSession::thread_list(self, params).await
+    }
+
+    fn thread_list_in_background(
+        &self,
+        params: ThreadListParams,
+    ) -> impl std::future::Future<Output = Result<ThreadListResponse>> + Send + 'static {
+        let request_handle = AppServerSession::request_handle(self);
+        async move {
+            request_handle
+                .request_typed(ClientRequest::ThreadList {
+                    request_id: app_shell_request_id("app-shell-session-list"),
+                    params,
+                })
+                .await
+                .map_err(Into::into)
+        }
+    }
+
+    fn account_rate_limits_in_background(
+        &self,
+    ) -> impl std::future::Future<Output = Result<GetAccountRateLimitsResponse>> + Send + 'static
+    {
+        let request_handle = AppServerSession::request_handle(self);
+        async move {
+            request_handle
+                .request_typed(ClientRequest::GetAccountRateLimits {
+                    request_id: app_shell_request_id("app-shell-rate-limits"),
+                    params: None,
+                })
+                .await
+                .map_err(Into::into)
+        }
     }
 
     async fn thread_archive(&mut self, thread_id: ThreadId) -> Result<()> {

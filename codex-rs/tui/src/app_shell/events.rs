@@ -3,7 +3,6 @@ use super::agent_activity::AgentChildEvent;
 use super::agent_activity::AgentItemPhase;
 use super::backend::AppShellBackend;
 use crate::token_usage::TokenUsage;
-use crate::workspace_command::WorkspaceCommandExecutor;
 use base64::Engine;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_protocol::JSONRPCErrorError;
@@ -21,7 +20,6 @@ impl ShellState {
     pub(super) async fn handle_app_server_event<S>(
         &mut self,
         app_server: &mut S,
-        workspace_command_runner: &dyn WorkspaceCommandExecutor,
         event: AppServerEvent,
     ) -> Result<()>
     where
@@ -51,8 +49,7 @@ impl ShellState {
             }
         }
         if self.workspace_status_refresh_due && self.active_turn_id.is_none() {
-            self.refresh_workspace_status(workspace_command_runner)
-                .await;
+            self.start_workspace_status_refresh();
         }
         Ok(())
     }
