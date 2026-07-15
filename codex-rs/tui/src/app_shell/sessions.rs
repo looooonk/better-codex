@@ -206,6 +206,8 @@ impl SessionListState {
         self.rows.clear();
         self.selected = 0;
         self.scroll_top = 0;
+        self.last_error = None;
+        self.loaded = false;
         self.has_more = false;
     }
 

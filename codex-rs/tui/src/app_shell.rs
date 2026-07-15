@@ -910,7 +910,7 @@ impl ShellState {
             self.settings.focused = route_already_visible && route == DashboardRoute::Settings;
             self.agents_focused = route_already_visible && route == DashboardRoute::Agents;
             if route == DashboardRoute::Sessions {
-                self.refresh_session_list(app_server).await;
+                self.start_session_list_refresh(app_server);
             }
             return Ok(false);
         }
@@ -1105,18 +1105,6 @@ impl ShellState {
     ) {
         let status = workspace::load_git_status(runner, std::path::Path::new(&self.cwd)).await;
         self.record_workspace_git_status(status);
-    }
-
-    async fn refresh_session_list<S>(&mut self, app_server: &mut S)
-    where
-        S: AppShellBackend,
-    {
-        let revision = self.begin_session_list_refresh();
-        let result = app_server
-            .thread_list(self.session_list.list_params())
-            .await
-            .map_err(|err| err.to_string());
-        let _applied = self.finish_session_list_refresh(revision, result);
     }
 
     async fn refresh_mcp_inventory<S>(&mut self, app_server: &mut S)
@@ -1318,7 +1306,7 @@ impl ShellState {
         }
         if self.session_list.search_active() {
             if self.handle_session_search_key(key) == SessionSearchOutcome::RefreshList {
-                self.refresh_session_list(app_server).await;
+                self.start_session_list_refresh(app_server);
             }
             return Ok(true);
         }
@@ -1357,7 +1345,7 @@ impl ShellState {
             }
             KeyCode::Char('v') => {
                 self.session_list.toggle_archived();
-                self.refresh_session_list(app_server).await;
+                self.start_session_list_refresh(app_server);
                 Ok(true)
             }
             KeyCode::Char('r') => {
@@ -1506,6 +1494,7 @@ impl ShellState {
                     return Ok(());
                 }
                 app_server.thread_set_name(thread_id, name.clone()).await?;
+                self.invalidate_session_list_refresh();
                 self.session_list.rename_selected(name.clone());
                 if thread_id == self.thread_id {
                     self.thread_name = Some(name.clone());
@@ -1574,7 +1563,7 @@ impl ShellState {
         self.replace_started_session(started);
         self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
         self.start_replaced_session_hydration(app_server);
-        self.refresh_session_list(app_server).await;
+        self.start_session_list_refresh(app_server);
         Ok(())
     }
 
@@ -1596,7 +1585,7 @@ impl ShellState {
         self.replace_started_session(started);
         self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
         self.start_replaced_session_hydration(app_server);
-        self.refresh_session_list(app_server).await;
+        self.start_session_list_refresh(app_server);
         Ok(())
     }
 
@@ -1632,6 +1621,7 @@ impl ShellState {
             return Ok(());
         }
         app_server.thread_archive(thread_id).await?;
+        self.invalidate_session_list_refresh();
         let title = self
             .session_list
             .remove_selected()
@@ -1650,6 +1640,7 @@ impl ShellState {
             return Ok(());
         };
         app_server.thread_unarchive(thread_id).await?;
+        self.invalidate_session_list_refresh();
         self.session_list.remove_selected();
         self.push_status(format!("unarchived session {thread_id}"));
         Ok(())
@@ -1668,6 +1659,7 @@ impl ShellState {
             return Ok(());
         }
         app_server.thread_delete(thread_id).await?;
+        self.invalidate_session_list_refresh();
         self.session_list.remove_selected();
         self.push_status(format!("deleted session {thread_id}"));
         Ok(())
@@ -1794,14 +1786,14 @@ impl ShellState {
                 self.set_dashboard_route(DashboardRoute::Sessions);
                 self.settings.focused = false;
                 self.session_list.focused = true;
-                self.refresh_session_list(app_server).await;
+                self.start_session_list_refresh(app_server);
                 self.push_status("press r to resume selected session");
             }
             CommandPaletteAction::ForkThread => {
                 self.set_dashboard_route(DashboardRoute::Sessions);
                 self.settings.focused = false;
                 self.session_list.focused = true;
-                self.refresh_session_list(app_server).await;
+                self.start_session_list_refresh(app_server);
                 self.push_status("press f to fork selected session");
             }
             CommandPaletteAction::ImportExternalAgentConfig => {

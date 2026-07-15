@@ -164,6 +164,34 @@ fn renders_native_session_list_snapshot() {
 }
 
 #[test]
+fn renders_loading_archived_session_list_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Sessions;
+    shell.session_list.focused = true;
+    shell.session_list.replace_threads(vec![thread_fixture(
+        test_thread_id("01900000-0000-7000-8000-000000000503"),
+        Some("active session"),
+        "should disappear while archived sessions load",
+    )]);
+    shell.session_list.set_error("stale active-session error");
+    shell.session_list.toggle_archived();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(rendered.contains("ARCHIVED  0 sessions"), "{rendered}");
+    assert!(rendered.contains("loading sessions"), "{rendered}");
+    assert!(
+        !rendered.contains("stale active-session error"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("no matching sessions"), "{rendered}");
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn renders_scrolled_session_list_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.session_list.focused = true;
@@ -1064,6 +1092,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
         .execute_selected_command_palette_action(&mut backend)
         .await
         .expect("resume action should open sessions");
+    finish_session_hydration(&mut shell, &backend).await;
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
     assert!(shell.session_list.focused);
@@ -1082,6 +1111,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
         .execute_selected_command_palette_action(&mut backend)
         .await
         .expect("fork action should open sessions");
+    finish_session_hydration(&mut shell, &backend).await;
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
     assert!(shell.session_list.focused);
@@ -3287,6 +3317,57 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
         (DashboardRoute::Sessions, true, false)
     );
     assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
+}
+
+#[tokio::test]
+async fn blocked_session_list_refresh_does_not_block_dashboard_input() {
+    let config = test_config().await;
+    let session_id = test_thread_id("01900000-0000-7000-8000-000000000798");
+    let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let mut backend = RecordingBackend {
+        threads: Arc::new(Mutex::new(vec![thread_fixture(
+            session_id,
+            Some("background session"),
+            "loaded after input",
+        )])),
+        thread_list_gate: Some(gate.clone()),
+        ..RecordingBackend::default()
+    };
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    let ctrl_1 = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
+    let ctrl_4 = KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL);
+
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        shell
+            .handle_key(ctrl_1, &config, &mut backend)
+            .await
+            .expect("Ctrl+1 should start loading sessions");
+        shell
+            .handle_key(ctrl_1, &config, &mut backend)
+            .await
+            .expect("repeated Ctrl+1 should coalesce with the pending load");
+        shell
+            .handle_key(ctrl_4, &config, &mut backend)
+            .await
+            .expect("other dashboard input should stay responsive");
+    })
+    .await
+    .expect("dashboard input should not wait for thread/list");
+
+    assert!(shell.has_pending_session_hydration());
+    assert_eq!(shell.dashboard_route, DashboardRoute::Settings);
+    gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(shell.session_list.selected_thread_id(), Some(session_id));
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+        }]
+    );
 }
 
 #[tokio::test]
@@ -6310,7 +6391,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
         thread_fixture(other_id, Some("feature search"), "other preview"),
     ]);
 
-    shell.refresh_session_list(&mut backend).await;
+    refresh_session_list(&mut shell, &backend).await;
     shell
         .handle_session_list_key(key_char('/'), &config, &mut backend)
         .await
@@ -6334,6 +6415,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
         )
         .await
         .expect("search should finish");
+    finish_session_hydration(&mut shell, &backend).await;
     shell
         .handle_session_list_key(key_char('a'), &config, &mut backend)
         .await
@@ -6342,6 +6424,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
         .handle_session_list_key(key_char('v'), &config, &mut backend)
         .await
         .expect("archived view should load");
+    finish_session_hydration(&mut shell, &backend).await;
     shell
         .handle_session_list_key(key_char('u'), &config, &mut backend)
         .await
@@ -6350,6 +6433,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
         .handle_session_list_key(key_char('v'), &config, &mut backend)
         .await
         .expect("active view should reload");
+    finish_session_hydration(&mut shell, &backend).await;
     shell
         .handle_session_list_key(key_char('n'), &config, &mut backend)
         .await
@@ -6411,7 +6495,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     shell.session_list.focused = true;
     let mut backend = RecordingBackend::with_threads(threads);
 
-    shell.refresh_session_list(&mut backend).await;
+    refresh_session_list(&mut shell, &backend).await;
     assert!(
         shell.session_list.lines(/*width*/ 80)[0]
             .to_string()
@@ -6466,6 +6550,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
         )
         .await
         .expect("committed search should refresh from the backend");
+    finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(shell.session_list.selected_thread_id(), Some(target_id));
     assert!(
         shell.session_list.lines(/*width*/ 80)[1]
@@ -6485,6 +6570,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
         )
         .await
         .expect("clearing search should restore the unfiltered page");
+    finish_session_hydration(&mut shell, &backend).await;
     assert_ne!(shell.session_list.selected_thread_id(), Some(target_id));
     assert_eq!(
         backend.calls(),
@@ -6503,6 +6589,14 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
             },
         ]
     );
+}
+
+async fn refresh_session_list<S>(shell: &mut ShellState, app_server: &S)
+where
+    S: backend::AppShellBackend,
+{
+    shell.start_session_list_refresh(app_server);
+    finish_session_hydration(shell, app_server).await;
 }
 
 async fn finish_session_hydration<S>(shell: &mut ShellState, app_server: &S)
@@ -6546,7 +6640,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
     let resume_goal = test_thread_goal(&resume_id, ThreadGoalStatus::Active, "Resume goal");
     *backend.active_goal.lock().expect("goal should lock") = Some(resume_goal.clone());
 
-    shell.refresh_session_list(&mut backend).await;
+    refresh_session_list(&mut shell, &backend).await;
     shell
         .handle_session_list_key(key_char('r'), &config, &mut backend)
         .await
@@ -6555,7 +6649,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
     assert_eq!(shell.thread_id, resume_id);
     assert_eq!(shell.active_goal, Some(resume_goal));
 
-    shell.refresh_session_list(&mut backend).await;
+    refresh_session_list(&mut shell, &backend).await;
     shell.session_list.move_selection_down();
     let forked_id = test_thread_id("01900000-0000-7000-8000-000000000202");
     let fork_goal = test_thread_goal(&forked_id, ThreadGoalStatus::Paused, "Fork goal");
@@ -6577,6 +6671,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
             RecordedBackendCall::GoalGet {
                 thread_id: resume_id,
             },
+            RecordedBackendCall::RateLimits,
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
@@ -6667,7 +6762,7 @@ async fn session_switch_hydration_is_nonblocking_and_preserves_newer_state() {
         "Stale goal",
     ));
 
-    shell.refresh_session_list(&mut backend).await;
+    refresh_session_list(&mut shell, &backend).await;
     tokio::time::timeout(
         Duration::from_secs(/*secs*/ 1),
         shell.handle_session_list_key(key_char('r'), &config, &mut backend),
@@ -6827,6 +6922,103 @@ fn newer_session_list_refresh_rejects_an_older_completion() {
     ));
 
     assert_eq!(shell.session_list.selected_thread_id(), Some(current_id));
+}
+
+#[tokio::test]
+async fn changed_session_list_query_supersedes_a_blocked_refresh() {
+    let stale_id = test_thread_id("01900000-0000-7000-8000-000000000413");
+    let current_id = test_thread_id("01900000-0000-7000-8000-000000000414");
+    let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let backend = RecordingBackend {
+        threads: Arc::new(Mutex::new(vec![thread_fixture(
+            stale_id,
+            Some("stale"),
+            "superseded result",
+        )])),
+        thread_list_gate: Some(gate.clone()),
+        ..RecordingBackend::default()
+    };
+    let mut shell = ShellState::snapshot_fixture();
+
+    shell.start_session_list_refresh(&backend);
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        while backend.calls().len() != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the first list request should start");
+
+    *backend.threads.lock().expect("threads should lock") = vec![thread_fixture(
+        current_id,
+        Some("current"),
+        "replacement result",
+    )];
+    shell.session_list.toggle_archived();
+    shell.start_session_list_refresh(&backend);
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        while backend.calls().len() != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the replacement list request should start");
+
+    gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(shell.session_list.selected_thread_id(), Some(current_id));
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::ThreadList {
+                archived: Some(true),
+                search_term: None,
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn completed_list_refresh_cannot_restore_a_deleted_session() {
+    let config = test_config().await;
+    let session_id = test_thread_id("01900000-0000-7000-8000-000000000415");
+    let thread = thread_fixture(session_id, Some("delete me"), "stale server result");
+    let backend_threads = vec![thread.clone()];
+    let mut backend = RecordingBackend::with_threads(backend_threads);
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    shell.session_list.replace_threads(vec![thread]);
+
+    shell.start_session_list_refresh(&backend);
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        while backend.calls().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the stale list request should complete");
+    shell
+        .handle_session_list_key(key_char('d'), &config, &mut backend)
+        .await
+        .expect("delete should succeed");
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(shell.session_list.selected_thread_id(), None);
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::Delete(session_id),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -7028,7 +7220,7 @@ async fn session_switch_waits_for_the_active_turn_to_finish() {
         Some("switch target"),
         "switch preview",
     )]);
-    shell.refresh_session_list(&mut backend).await;
+    refresh_session_list(&mut shell, &backend).await;
 
     shell
         .handle_session_list_key(key_char('r'), &config, &mut backend)
@@ -7061,7 +7253,7 @@ async fn session_switch_waits_for_pending_agent_input() {
         Some("switch target"),
         "switch preview",
     )]);
-    shell.refresh_session_list(&mut backend).await;
+    refresh_session_list(&mut shell, &backend).await;
 
     shell
         .handle_session_list_key(key_char('r'), &config, &mut backend)
@@ -7094,7 +7286,7 @@ async fn session_switch_preserves_nonempty_composer_draft() {
         Some("switch target"),
         "switch preview",
     )]);
-    shell.refresh_session_list(&mut backend).await;
+    refresh_session_list(&mut shell, &backend).await;
 
     shell
         .handle_session_list_key(key_char('r'), &config, &mut backend)
@@ -8339,6 +8531,7 @@ struct RecordingBackend {
     external_agent_items: Arc<Mutex<Vec<ExternalAgentConfigMigrationItem>>>,
     external_agent_import_in_progress: Arc<Mutex<bool>>,
     active_goal: Arc<Mutex<Option<ThreadGoal>>>,
+    thread_list_gate: Option<Arc<tokio::sync::Semaphore>>,
     rate_limits_gate: Option<Arc<tokio::sync::Semaphore>>,
     rate_limits_used_percent: Arc<Mutex<i32>>,
     remote_workspace: bool,
@@ -8359,6 +8552,7 @@ impl Default for RecordingBackend {
             external_agent_items: Arc::new(Mutex::new(Vec::new())),
             external_agent_import_in_progress: Arc::new(Mutex::new(false)),
             active_goal: Arc::new(Mutex::new(None)),
+            thread_list_gate: None,
             rate_limits_gate: None,
             rate_limits_used_percent: Arc::new(Mutex::new(73)),
             remote_workspace: false,
@@ -8588,11 +8782,18 @@ impl backend::AppShellBackend for RecordingBackend {
             .collect::<Vec<_>>();
         let next_cursor = (data.len() > limit).then(|| "more".to_string());
         data.truncate(limit);
-        Ok(ThreadListResponse {
+        let response = ThreadListResponse {
             data,
             next_cursor,
             backwards_cursor: None,
-        })
+        };
+        if let Some(gate) = self.thread_list_gate.clone() {
+            gate.acquire_owned()
+                .await
+                .expect("session-list gate should remain open")
+                .forget();
+        }
+        Ok(response)
     }
 
     fn thread_list_in_background(

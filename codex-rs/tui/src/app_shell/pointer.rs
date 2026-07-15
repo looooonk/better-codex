@@ -191,7 +191,7 @@ impl ShellState {
             self.settings.focused = route == DashboardRoute::Settings;
             self.agents_focused = route == DashboardRoute::Agents;
             if route == DashboardRoute::Sessions {
-                self.refresh_session_list(app_server).await;
+                self.start_session_list_refresh(app_server);
             }
             return Ok(());
         }

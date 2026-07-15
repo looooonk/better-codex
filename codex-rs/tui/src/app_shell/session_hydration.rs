@@ -5,6 +5,7 @@ use super::workspace::WorkspaceGitStatus;
 use crate::app_server_session::app_server_rate_limit_snapshots;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::ThreadGoal;
+use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_protocol::ThreadId;
 use std::time::Duration;
@@ -26,6 +27,7 @@ pub(super) struct SessionHydrationState {
     rate_limits_refresh_due: bool,
     goal_task: LookupTask<Option<ThreadGoal>>,
     workspace_task: LookupTask<Option<WorkspaceGitStatus>>,
+    session_list_params: Option<ThreadListParams>,
     session_list_task: LookupTask<ThreadListResponse>,
     rate_limits_task: LookupTask<GetAccountRateLimitsResponse>,
 }
@@ -60,12 +62,33 @@ impl ShellState {
         S: AppShellBackend,
     {
         self.start_workspace_hydration();
+        self.start_session_list_refresh(app_server);
+        self.start_rate_limits_hydration(app_server);
+    }
+
+    pub(super) fn start_session_list_refresh<S>(&mut self, app_server: &S)
+    where
+        S: AppShellBackend,
+    {
+        let params = self.session_list.list_params();
+        if self
+            .session_hydration
+            .session_list_task
+            .as_ref()
+            .is_some_and(|task| !task.is_finished())
+            && self.session_hydration.session_list_params.as_ref() == Some(&params)
+        {
+            return;
+        }
+        if let Some(task) = self.session_hydration.session_list_task.take() {
+            task.abort();
+        }
+
         let generation = self.session_hydration.generation;
         let thread_id = self.thread_id;
-
-        debug_assert!(self.session_hydration.session_list_task.is_none());
         let revision = self.begin_session_list_refresh();
-        let lookup = app_server.thread_list_in_background(self.session_list.list_params());
+        let lookup = app_server.thread_list_in_background(params.clone());
+        self.session_hydration.session_list_params = Some(params);
         self.session_hydration.session_list_task = Some(tokio::spawn(async move {
             let value = match timeout(SESSION_HYDRATION_LOOKUP_TIMEOUT, lookup).await {
                 Ok(Ok(response)) => Ok(response),
@@ -79,8 +102,6 @@ impl ShellState {
                 value,
             }
         }));
-
-        self.start_rate_limits_hydration(app_server);
     }
 
     fn start_rate_limits_hydration<S>(&mut self, app_server: &S)
@@ -262,6 +283,7 @@ impl ShellState {
             .is_some_and(JoinHandle::is_finished)
             && let Some(task) = self.session_hydration.session_list_task.take()
         {
+            self.session_hydration.session_list_params = None;
             let lookup = match task.await {
                 Ok(lookup) => Some(lookup),
                 Err(err) => {
@@ -335,9 +357,19 @@ impl ShellState {
         if let Some(task) = self.session_hydration.session_list_task.take() {
             task.abort();
         }
+        self.session_hydration.session_list_params = None;
         if let Some(task) = self.session_hydration.rate_limits_task.take() {
             task.abort();
         }
+    }
+
+    pub(super) fn invalidate_session_list_refresh(&mut self) {
+        if let Some(task) = self.session_hydration.session_list_task.take() {
+            task.abort();
+        }
+        self.session_hydration.session_list_params = None;
+        self.session_hydration.session_list_revision =
+            self.session_hydration.session_list_revision.wrapping_add(1);
     }
 
     pub(super) fn record_active_goal(&mut self, goal: Option<ThreadGoal>) {

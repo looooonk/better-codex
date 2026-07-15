@@ -1,0 +1,28 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+ ◆ BETTER CODEX  better-codex           gpt-5-codex ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────
+
+     Sessions    │    Agents    │   Workspace    │   Settings    │   Help
+ ━━━━━━━━━━━━━━━━━───────────────────────────────────────────────────────────
+ ▎◆ SESSIONS
+ ▎● FOCUSED  ARCHIVED  0 sessions
+ ▎loading sessions
+ ▎◆ TOOLS
+ ▎in progress exec just test -p codex-tui
+ ▎completed file changes in app_shell
+
+
+
+ ◆ CONVERSATION
+                                                                            ┃
+ ▎ CODEX  The new shell owns the fullscreen surface.                        ┃
+
+╭────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37                            │
+│> Summarize the new shell architecture                                      │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯
