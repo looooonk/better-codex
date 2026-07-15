@@ -12,16 +12,20 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 const MAX_RENDER_VARIANTS_PER_ITEM: usize = 4;
+const MAX_LAYOUT_VARIANTS: usize = 4;
 
 /// Width-aware rendered transcript state retained across terminal frames.
 ///
 /// Completed items are keyed by their stable render revision. Each item keeps a
-/// small set of variants so the normal content and scrollbar widths can coexist
-/// without letting resize or working-directory changes grow the cache without
-/// bound.
+/// small set of variants so the normal content and scrollbar widths can coexist.
+/// Complete layouts are also retained by their ordered revisions, width,
+/// working directory, and selection so unchanged frames avoid rebuilding every
+/// chunk. Both caches are bounded to prevent resize or directory changes from
+/// growing them without limit.
 #[derive(Default)]
 pub(super) struct TranscriptRenderCache {
     items: HashMap<u64, CachedTranscriptItem>,
+    layouts: VecDeque<CachedTranscriptLayout>,
 }
 
 impl TranscriptRenderCache {
@@ -30,7 +34,18 @@ impl TranscriptRenderCache {
         shell: &ShellState,
         width: u16,
         cwd: &Path,
-    ) -> TranscriptLayout {
+    ) -> Arc<TranscriptLayout> {
+        if let Some(index) = self
+            .layouts
+            .iter()
+            .position(|cached| cached.matches(shell, width, cwd))
+            && let Some(cached) = self.layouts.remove(index)
+        {
+            let layout = Arc::clone(&cached.layout);
+            self.layouts.push_back(cached);
+            return layout;
+        }
+
         let mut previous_items = std::mem::take(&mut self.items);
         let mut current_items = HashMap::with_capacity(
             shell.transcript.len()
@@ -95,12 +110,52 @@ impl TranscriptRenderCache {
         }
 
         self.items = current_items;
-        TranscriptLayout::new(chunks)
+        let layout = Arc::new(TranscriptLayout::new(chunks));
+        self.layouts.push_back(CachedTranscriptLayout {
+            width,
+            cwd: cwd.to_path_buf(),
+            selected: shell.transcript_selection,
+            revisions: render_revisions(shell).collect(),
+            layout: Arc::clone(&layout),
+        });
+        while self.layouts.len() > MAX_LAYOUT_VARIANTS {
+            self.layouts.pop_front();
+        }
+        layout
     }
 
     pub(super) fn clear(&mut self) {
         self.items.clear();
+        self.layouts.clear();
     }
+}
+
+struct CachedTranscriptLayout {
+    width: u16,
+    cwd: PathBuf,
+    selected: Option<usize>,
+    revisions: Vec<u64>,
+    layout: Arc<TranscriptLayout>,
+}
+
+impl CachedTranscriptLayout {
+    fn matches(&self, shell: &ShellState, width: u16, cwd: &Path) -> bool {
+        self.width == width
+            && self.cwd == cwd
+            && self.selected == shell.transcript_selection
+            && self.revisions.iter().copied().eq(render_revisions(shell))
+    }
+}
+
+fn render_revisions(shell: &ShellState) -> impl Iterator<Item = u64> + '_ {
+    shell
+        .transcript
+        .iter()
+        .map(|item| item.render_revision)
+        .chain((!shell.streaming_plan.is_empty()).then_some(shell.streaming_plan_revision))
+        .chain(
+            (!shell.streaming_assistant.is_empty()).then_some(shell.streaming_assistant_revision),
+        )
 }
 
 struct CachedSource<'a> {

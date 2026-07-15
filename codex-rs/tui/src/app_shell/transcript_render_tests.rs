@@ -32,6 +32,7 @@ fn unchanged_items_reuse_rendered_lines() {
         .expect("completed item should remain laid out")
         .lines;
 
+    assert!(Arc::ptr_eq(&first, &second));
     assert!(Arc::ptr_eq(first_lines, second_lines));
 }
 
@@ -47,6 +48,7 @@ fn unchanged_streaming_item_reuses_rendered_lines_until_the_next_delta() {
 
     let first = cache.layout(&shell, WIDTH, &cwd);
     let second = cache.layout(&shell, WIDTH, &cwd);
+    assert!(Arc::ptr_eq(&first, &second));
     assert!(Arc::ptr_eq(
         chunk_lines(&first, first_revision),
         chunk_lines(&second, first_revision)
@@ -54,12 +56,31 @@ fn unchanged_streaming_item_reuses_rendered_lines_until_the_next_delta() {
 
     shell.push_streaming_assistant_delta(" with another delta");
     let third = cache.layout(&shell, WIDTH, &cwd);
+    assert!(!Arc::ptr_eq(&second, &third));
     assert!(
         third
             .chunks
             .iter()
             .all(|chunk| chunk.revision != first_revision)
     );
+}
+
+#[test]
+fn complete_layout_cache_tracks_selection() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.push_assistant("Selectable response");
+    let cwd = PathBuf::from(&shell.cwd);
+    let mut cache = TranscriptRenderCache::default();
+
+    let unselected = cache.layout(&shell, WIDTH, &cwd);
+    shell.transcript_selection = Some(0);
+    let selected = cache.layout(&shell, WIDTH, &cwd);
+    let selected_again = cache.layout(&shell, WIDTH, &cwd);
+
+    assert!(!Arc::ptr_eq(&unselected, &selected));
+    assert!(Arc::ptr_eq(&selected, &selected_again));
 }
 
 #[test]
@@ -134,6 +155,7 @@ fn item_variants_stay_bounded_across_width_and_cwd_changes() {
     }
 
     assert_eq!(cache.items.len(), 1);
+    assert_eq!(cache.layouts.len(), MAX_LAYOUT_VARIANTS);
     assert_eq!(
         cache
             .items
