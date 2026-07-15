@@ -68,6 +68,7 @@ mod command_palette_view;
 mod composer;
 mod composer_render;
 mod dashboard;
+mod dashboard_help;
 mod dashboard_rate_limits;
 mod dashboard_workspace;
 mod design;

@@ -4,35 +4,35 @@ expression: "render_shell(&shell, area)"
 ---
  ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
 ──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │───────────────────────────────────────────━━━━━
- ◆ CONVERSATION                                   │
- ▎ SYSTEM  Better Codex app shell                 │▎◆ KEYS
- ▎ YOU  Create a divergent standalone TUI.        │▎Alt+Left/Right switch views
-                                                  │▎Shift/Alt+Enter newline
- ▎ CODEX  Started a fullscreen app shell backed   │▎Enter steer
-          by app-server turns.                    │▎Ctrl+C interrupt, Esc x2 exit
- ▎ PLAN  1. Build shell                           │▎Alt+Up select, Ctrl+O copy
-         2. Wire transcript                       │▎Ctrl+D hide dashboard
-         3. Render dashboard                      │▎Alt+M model, Alt+E effort
-                                                  │▎Ctrl+1 Sessions  Ctrl+2 Agents
- ▌ tool exec just test -p codex-tui               │▎Ctrl+3 Workspace Ctrl+4 Settings
-                                                  │▎Ctrl+5 Help
- ▌ edited 3 files +128 -24                        │▎Sessions: Enter focus, j/k move
-                                                  │▎r resume, f fork, a/u archive
- ▎ CODEX  The new shell owns the fullscreen       │▎v archived, d delete
-          surface.                                │▎n rename, / search
-                                                  │▎Agents: Enter focus, j/k inspect
-                                                  │▎Settings: Tab page, Enter select
-                                                  │▎Selectors: j/k choose, Enter apply
-                                                  │▎Esc return to composer
                                                   │
-                                                  │▎◆ STATUS
+ ◆ CONVERSATION                                   │Alt+←/→ view  ^D hide  │ Sess ↵/j/k focus/nav
+ ▎ SYSTEM  Better Codex app shell                 │Shift/Alt+↵ newline    │ r/f resume/fork
+ ▎ YOU  Create a divergent standalone TUI.        │↵ steer  ^C stop/Esc×2 │ a/u/v/d arc/show/del
+                                                  │Alt+↑/^O select/copy   │ n rename  / search
+ ▎ CODEX  Started a fullscreen app shell backed   │Alt+M/E model/effort   │ Agent ↵/j/k focus/nav
+          by app-server turns.                    │^1 Session · ^2 Agent  │ Tab/j/k nav · ↵ apply
+ ▎ PLAN  1. Build shell                           │^3/4/5 Work/Set/Help   │ Esc×2 exit
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ STATUS
                                                   │▎thinking
-                                                  │▎turn turn-act...
+ ▌ tool exec just test -p codex-tui               │▎turn turn-act...
                                                   │
-                                                  │▎◆ TOOLS
+ ▌ edited 3 files +128 -24                        │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
-                                                  │▎completed file changes in app_shell
+ ▎ CODEX  The new shell owns the fullscreen       │▎completed file changes in app_shell
+          surface.                                │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
                                                   │
                                                   │
                                                   │

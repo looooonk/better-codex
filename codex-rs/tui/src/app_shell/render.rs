@@ -6,6 +6,7 @@ use super::composer_render::composer_visual_cursor_line;
 use super::composer_render::wrapped_composer_lines;
 use super::dashboard::DashboardPanel;
 use super::dashboard::dashboard_panels;
+use super::dashboard_help;
 use super::design::body_rect_after_title;
 use super::design::fill_rect;
 use super::design::palette;
@@ -339,14 +340,24 @@ impl ShellView<'_> {
             };
         }
         if area.width < DASHBOARD_COLLAPSE_WIDTH {
-            let dashboard_height = area
-                .height
-                .saturating_sub(
-                    HEADER_HEIGHT
-                        .saturating_add(INPUT_PANEL_MIN_HEIGHT)
-                        .saturating_add(TRANSCRIPT_MIN_HEIGHT),
-                )
-                .clamp(3, 14);
+            let help_is_primary_content = self.shell.dashboard_route == DashboardRoute::Help;
+            let dense_help = help_is_primary_content
+                && dashboard_help::uses_dense_layout(usize::from(pane_content_rect(area).width));
+            let dashboard_height = if help_is_primary_content {
+                // Help is the active content, not incidental status. At short terminal heights,
+                // give the shortcut reference priority while retaining a visible composer.
+                area.height
+                    .saturating_sub(HEADER_HEIGHT)
+                    .min(if dense_help { 10 } else { 14 })
+            } else {
+                area.height
+                    .saturating_sub(
+                        HEADER_HEIGHT
+                            .saturating_add(INPUT_PANEL_MIN_HEIGHT)
+                            .saturating_add(TRANSCRIPT_MIN_HEIGHT),
+                    )
+                    .clamp(3, 14)
+            };
             let input_height = self.input_panel_height(
                 area.height
                     .saturating_sub(HEADER_HEIGHT)
@@ -358,7 +369,11 @@ impl ShellView<'_> {
                 .constraints([
                     Constraint::Length(HEADER_HEIGHT),
                     Constraint::Length(dashboard_height),
-                    Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
+                    Constraint::Min(if help_is_primary_content {
+                        0
+                    } else {
+                        TRANSCRIPT_MIN_HEIGHT
+                    }),
                     Constraint::Length(input_height),
                 ])
                 .split(area);

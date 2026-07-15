@@ -1,0 +1,20 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+ ◆ BC     gpt-5-codex ▾   default ▾  ● thinking
+────────────────────────────────────────────────
+
+  Threads │ Agents │ Files  │ Config │  Help
+ Alt+←/→ view  ^D hide │ Sess ↵/j/k focus/nav
+ Shift/Alt+↵ newline   │ r/f resume/fork
+ ↵ send  ^C/Esc×2 exit │ a/u/v/d arc/show/del
+ Alt+↑/^O select/copy  │ n rename  / search
+ Alt+M/E model/effort  │ Agent ↵/j/k focus/nav
+ ^1 Session · ^2 Agent │ Tab/j/k nav · ↵ apply
+ ^3/4/5 Work/Set/Help  │ Esc×2 exit
+
+╭──────────────────────────────────────────────╮
+│◆ MESSAGE  ENTER SEND  1:37                   │
+│> Summarize the new shell architecture        │
+╰──────────────────────────────────────────────╯

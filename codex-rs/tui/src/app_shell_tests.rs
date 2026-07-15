@@ -573,13 +573,13 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         "n rename, / search",
         "Settings: Tab page, Enter select",
         "Selectors: j/k choose, Enter apply",
-        "Esc return to composer",
+        "Esc twice to exit",
     ];
     let mut leaked_guides = Vec::new();
 
     let visibility = DashboardRoute::ALL.map(|route| {
         shell.dashboard_route = route;
-        let panels = dashboard::dashboard_panels(&shell, /*width*/ 40);
+        let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
         let has_keys = panels.iter().any(|panel| panel.title == "Keys");
         let has_route_shortcut = panels
             .iter()
@@ -616,7 +616,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             (DashboardRoute::Help, true, true),
         ]
     );
-    let help_text = dashboard::dashboard_panels(&shell, /*width*/ 40)
+    let help_text = dashboard::dashboard_panels(&shell, /*width*/ 80)
         .into_iter()
         .flat_map(|panel| panel.lines)
         .flat_map(|line| line.spans)
@@ -3869,6 +3869,42 @@ fn narrow_dashboard_keeps_the_active_route_interactive() {
     assert!(rendered.contains("Sessions"));
     assert!(rendered.contains("CLICK TO FOCUS"));
     assert!(rendered.contains("Run command: cargo test"));
+}
+
+#[test]
+fn help_dashboard_shows_every_shortcut_at_78_by_24_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Help;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(
+        rendered.contains("Esc twice to exit"),
+        "shortcut tail should remain visible:\n{rendered}"
+    );
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn help_dashboard_shows_every_shortcut_at_48_by_16_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Help;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 16,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(
+        rendered.contains("Esc×2 exit"),
+        "shortcut tail should remain visible:\n{rendered}"
+    );
+    assert!(rendered.contains("> Summarize the new shell architecture"));
+    assert!(!rendered.contains("Esc composer"));
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]
