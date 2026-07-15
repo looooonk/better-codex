@@ -740,6 +740,42 @@ fn short_command_palette_keeps_the_selection_visible() {
     insta::assert_snapshot!("short_command_palette", rendered);
 }
 
+#[tokio::test]
+async fn command_palette_ignores_inside_chrome_and_closes_on_outside_click() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    shell.open_command_palette();
+    let panel = command_palette_view::palette_area(area, shell.command_palette_entries().len());
+    let content = design::pane_content_rect(panel);
+    let title = rendered_text_position(&render_shell(&shell, area), "ACTIONS");
+    let blank_row = Position::new(content.x, content.y.saturating_add(1));
+
+    for position in [title, blank_row] {
+        shell
+            .handle_mouse_click(area, position, &config, &mut backend)
+            .await
+            .expect("inside palette click should succeed");
+        assert!(shell.command_palette.is_some());
+    }
+
+    shell
+        .handle_mouse_click(
+            area,
+            Position::new(panel.x.saturating_sub(1), panel.y),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("outside palette click should succeed");
+
+    assert!(shell.command_palette.is_none());
+    assert_eq!(backend.calls(), Vec::new());
+}
+
 #[test]
 fn renders_sessions_dashboard_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
@@ -3432,6 +3468,58 @@ async fn safety_modal_actions_are_clickable() {
         .expect("safety action click should succeed");
 
     assert!(shell.safety_buffering_modal_lines().is_none());
+}
+
+#[tokio::test]
+async fn safety_modal_ignores_inside_chrome_and_closes_on_outside_click() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    shell
+        .submit_prompt(&mut backend, "Explain the request".to_string())
+        .await
+        .expect("turn should start");
+    shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &shell,
+            "turn-submit",
+            /*show_buffering_ui*/ true,
+            Some("faster-model"),
+        ),
+    ));
+    let lines = shell
+        .safety_buffering_modal_lines()
+        .expect("safety modal should be open");
+    let panel = modal_view::modal_panel_area(area, &lines);
+    let rendered = render_shell(&shell, area);
+    let title = rendered_text_position(&rendered, "SAFETY REVIEW");
+    let explanation = rendered_text_position(&rendered, "Our systems are thinking");
+    let calls = backend.calls();
+
+    for position in [title, explanation] {
+        shell
+            .handle_mouse_click(area, position, &config, &mut backend)
+            .await
+            .expect("inside safety modal click should succeed");
+        assert!(shell.safety_buffering_modal_lines().is_some());
+        assert_eq!(backend.calls(), calls);
+    }
+
+    shell
+        .handle_mouse_click(
+            area,
+            Position::new(panel.x.saturating_sub(1), panel.y),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("outside safety modal click should succeed");
+
+    assert!(shell.safety_buffering_modal_lines().is_none());
+    assert_eq!(backend.calls(), calls);
 }
 
 #[tokio::test]

@@ -91,7 +91,7 @@ pub(super) fn panel_line_at(
     segment_hit(segments.get(index)?, body, position)
 }
 
-fn modal_panel_area(screen: Rect, lines: &[Line<'static>]) -> Rect {
+pub(super) fn modal_panel_area(screen: Rect, lines: &[Line<'static>]) -> Rect {
     let probe = centered_band_rect(screen, /*height*/ 5);
     let body_width = body_rect_after_title(pane_content_rect(probe)).width;
     let height = u16::try_from(wrapped_lines(lines.to_vec(), body_width).len())

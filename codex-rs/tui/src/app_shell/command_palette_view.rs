@@ -113,7 +113,7 @@ pub(super) fn render(shell: &ShellState, area: Rect, buf: &mut Buffer) {
         .render(content, buf);
 }
 
-fn palette_area(area: Rect, entry_count: usize) -> Rect {
+pub(super) fn palette_area(area: Rect, entry_count: usize) -> Rect {
     let height = u16::try_from(entry_count)
         .unwrap_or(u16::MAX)
         .saturating_add(5)

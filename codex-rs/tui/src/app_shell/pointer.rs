@@ -1,6 +1,7 @@
 use super::ShellState;
 use super::agent_activity_render;
 use super::backend::AppShellBackend;
+use super::command_palette_view;
 use super::external_agent_import::ExternalAgentImportState;
 use super::header::HeaderControl;
 use super::mcp_management::McpManagementState;
@@ -19,6 +20,19 @@ use ratatui::layout::Position;
 use ratatui::layout::Rect;
 
 const TRANSCRIPT_WHEEL_SCROLL_STEP: usize = 3;
+
+fn modal_click_key(
+    area: Rect,
+    position: Position,
+    lines: &[ratatui::text::Line<'static>],
+    click_key_at: impl FnOnce(modal_view::ModalHit) -> Option<KeyCode>,
+) -> Option<KeyCode> {
+    match modal_view::modal_hit(area, position, lines) {
+        Some(hit) => click_key_at(hit),
+        None if !modal_view::modal_panel_area(area, lines).contains(position) => Some(KeyCode::Esc),
+        None => None,
+    }
+}
 
 impl ShellState {
     pub(super) async fn handle_mouse_click<S>(
@@ -48,7 +62,12 @@ impl ShellState {
                 }
                 self.execute_selected_command_palette_action(app_server)
                     .await?;
-            } else {
+            } else if !command_palette_view::palette_area(
+                area,
+                self.command_palette_entries().len(),
+            )
+            .contains(position)
+            {
                 self.close_command_palette();
             }
             return Ok(());
@@ -61,11 +80,16 @@ impl ShellState {
             return Ok(());
         }
         if let Some(lines) = self.safety_buffering_modal_lines() {
-            let key = modal_view::modal_hit(area, position, &lines)
-                .and_then(|hit| self.safety_buffering_click_key(hit.line))
-                .unwrap_or(KeyCode::Esc);
-            self.handle_safety_buffering_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
+            let key = modal_click_key(area, position, &lines, |hit| {
+                self.safety_buffering_click_key(hit.line)
+            });
+            if let Some(key) = key {
+                self.handle_safety_buffering_key(
+                    KeyEvent::new(key, KeyModifiers::NONE),
+                    app_server,
+                )
                 .await;
+            }
             return Ok(());
         }
         if let Some(lines) = self
@@ -73,19 +97,18 @@ impl ShellState {
             .as_ref()
             .map(ExternalAgentImportState::lines)
         {
-            let hit = modal_view::modal_hit(area, position, &lines);
-            let key = hit
-                .and_then(|hit| {
-                    self.pending_external_agent_import
-                        .as_mut()?
-                        .click_key_at(hit.line, hit.column)
-                })
-                .unwrap_or(KeyCode::Esc);
-            self.handle_external_agent_import_key(
-                KeyEvent::new(key, KeyModifiers::NONE),
-                app_server,
-            )
-            .await?;
+            let key = modal_click_key(area, position, &lines, |hit| {
+                self.pending_external_agent_import
+                    .as_mut()?
+                    .click_key_at(hit.line, hit.column)
+            });
+            if let Some(key) = key {
+                self.handle_external_agent_import_key(
+                    KeyEvent::new(key, KeyModifiers::NONE),
+                    app_server,
+                )
+                .await?;
+            }
             return Ok(());
         }
         if let Some(lines) = self
@@ -93,16 +116,15 @@ impl ShellState {
             .as_ref()
             .map(McpManagementState::lines)
         {
-            let hit = modal_view::modal_hit(area, position, &lines);
-            let key = hit
-                .and_then(|hit| {
-                    self.pending_mcp_management
-                        .as_mut()?
-                        .click_key_at(hit.line, hit.column)
-                })
-                .unwrap_or(KeyCode::Esc);
-            self.handle_mcp_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
-                .await?;
+            let key = modal_click_key(area, position, &lines, |hit| {
+                self.pending_mcp_management
+                    .as_mut()?
+                    .click_key_at(hit.line, hit.column)
+            });
+            if let Some(key) = key {
+                self.handle_mcp_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
+                    .await?;
+            }
             return Ok(());
         }
         if let Some(lines) = self
@@ -110,16 +132,18 @@ impl ShellState {
             .as_ref()
             .map(PluginManagementState::lines)
         {
-            let hit = modal_view::modal_hit(area, position, &lines);
-            let key = hit
-                .and_then(|hit| {
-                    self.pending_plugin_management
-                        .as_mut()?
-                        .click_key_at(hit.line, hit.column)
-                })
-                .unwrap_or(KeyCode::Esc);
-            self.handle_plugin_management_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
+            let key = modal_click_key(area, position, &lines, |hit| {
+                self.pending_plugin_management
+                    .as_mut()?
+                    .click_key_at(hit.line, hit.column)
+            });
+            if let Some(key) = key {
+                self.handle_plugin_management_key(
+                    KeyEvent::new(key, KeyModifiers::NONE),
+                    app_server,
+                )
                 .await?;
+            }
             return Ok(());
         }
         if self.pending_elicitation.is_some() {
