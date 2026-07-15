@@ -57,8 +57,27 @@ fn compact_header_keeps_mouse_controls_visible() {
 }
 
 #[test]
-fn controls_hide_when_even_compact_chips_cannot_fit() {
-    assert_eq!(view().control_layout(Rect::new(0, 0, 28, 2)), None);
+fn ultra_narrow_header_uses_compact_brand_without_controls() {
+    for width in [20, 24, 28] {
+        let area = Rect::new(0, 0, width, 2);
+        let view = view();
+        let mut buf = Buffer::empty(area);
+
+        view.render(area, /*hovered*/ None, &mut buf);
+
+        let rendered_brand = (area.x..area.right())
+            .map(|x| buf[(x, area.y)].symbol())
+            .collect::<String>();
+        assert_eq!(rendered_brand.trim(), "◆ BC", "width {width}");
+        assert_eq!(view.control_layout(area), None, "width {width}");
+        for x in area.x..area.right() {
+            assert_eq!(
+                view.control_at(area, Position::new(x, area.y)),
+                None,
+                "width {width}, x {x}"
+            );
+        }
+    }
 }
 
 #[test]

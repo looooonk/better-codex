@@ -37,7 +37,7 @@ impl HeaderView<'_> {
         fill_rect(buf, area, palette::DARK);
         let content = pane_content_rect(area);
         let layout = self.control_layout(area);
-        Paragraph::new(self.brand_line(layout.is_some_and(|layout| layout.compact_brand)))
+        Paragraph::new(self.brand_line(layout.is_none_or(|layout| layout.compact_brand)))
             .style(pane_style(palette::DARK))
             .render(Rect::new(content.x, content.y, content.width, 1), buf);
 
