@@ -1,0 +1,40 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
+──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
+                                                  │━━━━━━━━━━━─────────────────────────────────────
+ ◆ CONVERSATION                                   │
+ ▎ SYSTEM  Better Codex app shell                 │▎◆ SESSIONS
+ ▎ YOU  Create a divergent standalone TUI.        │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎loading sessions
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ TOOLS
+ ▎ PLAN  1. Build shell                           │▎in progress exec just test -p codex-tui
+         2. Wire transcript                       │▎completed file changes in app_shell
+         3. Render dashboard                      │
+                                                  │▎◆ THREAD
+ ▌ tool exec just test -p codex-tui               │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
+ ▌ edited 3 files +128 -24                        │▎resume, fork, archive, delete in session list
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ STATUS
+          surface.                                │▎thinking
+                                                  │
+                                                  │▎◆ PLAN
+                                                  │▎This deliberately long plan explanation must s…
+                                                  │▎x Inspect measurement
+                                                  │▎x Truncate styled lines
+                                                  │▎> Preserve hit targets
+                                                  │▎- Verify narrow rendering
+                                                  │▎- Final plan row remains visible
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

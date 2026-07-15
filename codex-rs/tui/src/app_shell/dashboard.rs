@@ -79,6 +79,15 @@ impl DashboardPanel {
         )
         .unwrap_or(u16::MAX)
     }
+
+    pub(super) fn render_lines(&self, width: usize) -> Vec<Line<'static>> {
+        self.show_title
+            .then(|| self.title_line())
+            .into_iter()
+            .chain(self.lines.iter().cloned())
+            .map(|line| truncate_line_with_ellipsis_if_overflow(line, width))
+            .collect()
+    }
 }
 
 pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<DashboardPanel> {

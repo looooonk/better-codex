@@ -656,14 +656,8 @@ impl ShellView<'_> {
             } else {
                 panel_area
             };
-            let mut lines = Vec::new();
-            if panel.show_title {
-                lines.push(panel.title_line());
-            }
-            lines.extend(panel.lines.clone());
-            Paragraph::new(lines)
+            Paragraph::new(panel.render_lines(usize::from(text_area.width)))
                 .style(Style::new().fg(palette::TEXT))
-                .wrap(Wrap { trim: false })
                 .render(text_area, buf);
             self.render_dashboard_hover(panel, panel_area, text_area, buf);
             y = y.saturating_add(height).saturating_add(panel_gap);

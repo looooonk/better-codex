@@ -565,6 +565,61 @@ fn renders_goal_progress_in_dashboard_snapshot() {
 }
 
 #[test]
+fn narrow_dashboard_truncates_long_plan_lines_without_clipping_steps_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.plan_explanation = Some(
+        "This deliberately long plan explanation must stay on one visual dashboard row so every later plan step keeps its measured position."
+            .to_string(),
+    );
+    shell.plan_steps = vec![
+        codex_app_server_protocol::TurnPlanStep {
+            step: "Inspect measurement".to_string(),
+            status: codex_app_server_protocol::TurnPlanStepStatus::Completed,
+        },
+        codex_app_server_protocol::TurnPlanStep {
+            step: "Truncate styled lines".to_string(),
+            status: codex_app_server_protocol::TurnPlanStepStatus::Completed,
+        },
+        codex_app_server_protocol::TurnPlanStep {
+            step: "Preserve hit targets".to_string(),
+            status: codex_app_server_protocol::TurnPlanStepStatus::InProgress,
+        },
+        codex_app_server_protocol::TurnPlanStep {
+            step: "Verify narrow rendering".to_string(),
+            status: codex_app_server_protocol::TurnPlanStepStatus::Pending,
+        },
+        codex_app_server_protocol::TurnPlanStep {
+            step: "Final plan row remains visible".to_string(),
+            status: codex_app_server_protocol::TurnPlanStepStatus::Pending,
+        },
+    ];
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 36,
+    );
+
+    let buf = render_shell_buffer(&shell, area);
+    let rendered = buffer_contents(&buf, area);
+    let explanation_row = row_containing(&buf, area, "This deliberately long plan explanation")
+        .expect("truncated plan explanation should render");
+    let ellipsis_x = (area.x..area.right())
+        .find(|x| buf[(*x, explanation_row)].symbol() == "…")
+        .expect("long plan explanation should end with an ellipsis");
+
+    assert!(
+        rendered.contains("Final plan row remains visible"),
+        "{rendered}"
+    );
+    assert!(
+        buf[(ellipsis_x, explanation_row)]
+            .style()
+            .add_modifier
+            .contains(Modifier::DIM),
+        "the ellipsis should preserve the explanation style"
+    );
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn renders_active_turn_key_hints_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.active_turn_id = Some("turn-active-1234567890".to_string());
