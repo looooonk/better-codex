@@ -4,6 +4,7 @@ use super::*;
 use base64::Engine;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
+use codex_app_server_protocol::AccountRateLimitsUpdatedNotification;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
 use codex_app_server_protocol::AppSummary;
 use codex_app_server_protocol::CollabAgentState;
@@ -27,6 +28,7 @@ use codex_app_server_protocol::ExternalAgentConfigImportTypeResult;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
 use codex_app_server_protocol::FileChangePatchUpdatedNotification;
+use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::ImageGenerationItem;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
@@ -58,6 +60,7 @@ use codex_app_server_protocol::PluginSource;
 use codex_app_server_protocol::PluginSummary;
 use codex_app_server_protocol::PluginUninstallParams;
 use codex_app_server_protocol::PluginUninstallResponse;
+use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
@@ -1177,7 +1180,6 @@ async fn interactive_requests_preempt_management_overlays() {
     shell
         .handle_app_server_event(
             &mut backend,
-            &NoopWorkspaceRunner,
             AppServerEvent::ServerRequest(command_approval_request()),
         )
         .await
@@ -1208,11 +1210,7 @@ async fn interactive_requests_from_replaced_sessions_are_rejected() {
     params.thread_id = "01900000-0000-7000-8000-000000000099".to_string();
 
     shell
-        .handle_app_server_event(
-            &mut backend,
-            &NoopWorkspaceRunner,
-            AppServerEvent::ServerRequest(request),
-        )
+        .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request))
         .await
         .expect("stale approval should be rejected");
 
@@ -1303,7 +1301,6 @@ async fn external_agent_import_starts_selected_items_and_reports_completion() {
     shell
         .handle_app_server_event(
             &mut backend,
-            &NoopWorkspaceRunner,
             AppServerEvent::ServerNotification(
                 ServerNotification::ExternalAgentConfigImportCompleted(
                     external_agent_import_completed_notification(),
@@ -1581,6 +1578,8 @@ async fn shell_operator_executes_through_workspace_runner_without_submitting_tur
         .expect("shell command should execute");
 
     assert!(!should_exit);
+    assert!(shell.has_pending_shell_command());
+    finish_pending_shell_command(&mut shell).await;
     assert_eq!(
         runner.commands(),
         vec![
@@ -1605,6 +1604,133 @@ async fn shell_operator_executes_through_workspace_runner_without_submitting_tur
     );
     assert_eq!(shell.composer.text(), "");
     assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
+async fn shell_operator_remains_interactive_while_command_is_running() {
+    let config = test_config().await;
+    let (runner, _gate) =
+        RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "finished\n".to_string(),
+            stderr: String::new(),
+        });
+    let runner = Arc::new(runner);
+    let mut shell = ShellState::snapshot_fixture();
+    shell.workspace_command_runner = Some(runner.clone());
+    shell.composer.set_text("! long-running-task");
+    let transcript_len = shell.transcript.len();
+    let mut backend = RecordingBackend::default();
+
+    tokio::time::timeout(
+        Duration::from_secs(/*secs*/ 1),
+        shell.handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        ),
+    )
+    .await
+    .expect("starting a shell command must not block the event loop")
+    .expect("shell command should start");
+
+    assert!(shell.has_pending_shell_command());
+    assert_eq!(shell.status, "running shell command");
+    assert_eq!(shell.transcript.len(), transcript_len);
+    for panel_width in [50, 60, 80] {
+        let help = super::dashboard_help::key_hint_lines(&shell, panel_width)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            help.contains("cancel"),
+            "running-command help should explain cancellation at width {panel_width}:\n{help}"
+        );
+    }
+    shell.dashboard_route = DashboardRoute::Help;
+    insta::assert_snapshot!(
+        "running_shell_command",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
+    );
+
+    shell.composer.set_text("! second-task");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("second shell command should be rejected without blocking");
+    assert_eq!(shell.composer.text(), "! second-task");
+    assert!(shell.block_session_switch_if_busy());
+    assert_eq!(
+        shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Status,
+            "finish or cancel the shell command before switching sessions",
+        ))
+    );
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Ctrl+C should request shell command cancellation");
+    assert_eq!(shell.status, "cancelling shell command");
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("repeated Ctrl+C should remain scoped to the shell command");
+    assert!(!should_exit);
+    assert!(!shell.exit_confirmation_pending);
+
+    finish_pending_shell_command(&mut shell).await;
+    assert!(!shell.has_pending_shell_command());
+    assert_eq!(shell.status, "shell command cancelled");
+    assert_eq!(
+        shell.transcript.back(),
+        Some(
+            &TranscriptLine::new(TranscriptKind::Tool, "! long-running-task cancelled")
+                .tool_status(ToolBlockStatus::Fail)
+        )
+    );
+    assert_eq!(runner.run_process_ids(), runner.terminate_process_ids());
+    assert_eq!(runner.run_process_ids().len(), 1);
+    assert!(shell.workspace_status_refresh_due);
+
+    assert!(!shell.poll_session_hydration(&backend).await);
+    finish_session_hydration(&mut shell, &backend).await;
+    assert!(!shell.workspace_status_refresh_due);
+    assert_eq!(runner.commands().len(), 2);
+}
+
+async fn finish_pending_shell_command(shell: &mut ShellState) {
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        loop {
+            let _changed = shell.poll_shell_command().await;
+            if !shell.has_pending_shell_command() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("shell command should finish");
 }
 
 #[tokio::test]
@@ -4539,6 +4665,7 @@ fn legacy_command_exec_output_deltas_update_one_output_block() {
 #[tokio::test]
 async fn workspace_refresh_waits_until_active_turn_finishes() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.workspace_command_runner = Some(Arc::new(NoopWorkspaceRunner));
     let mut backend = RecordingBackend::default();
     let thread_id = shell.thread_id.to_string();
     shell.active_turn_id = Some("turn-1".to_string());
@@ -4547,7 +4674,6 @@ async fn workspace_refresh_waits_until_active_turn_finishes() {
     shell
         .handle_app_server_event(
             &mut backend,
-            &NoopWorkspaceRunner,
             AppServerEvent::ServerNotification(ServerNotification::TurnDiffUpdated(
                 TurnDiffUpdatedNotification {
                     thread_id: thread_id.clone(),
@@ -4565,7 +4691,6 @@ async fn workspace_refresh_waits_until_active_turn_finishes() {
     shell
         .handle_app_server_event(
             &mut backend,
-            &NoopWorkspaceRunner,
             AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(
                 codex_app_server_protocol::TurnCompletedNotification {
                     thread_id,
@@ -4574,9 +4699,15 @@ async fn workspace_refresh_waits_until_active_turn_finishes() {
             )),
         )
         .await
-        .expect("turn completion should refresh workspace status");
+        .expect("turn completion should schedule workspace status refresh");
 
-    assert_eq!(shell.workspace_status_refresh_due, false);
+    assert!(shell.workspace_status_refresh_due);
+    assert!(shell.has_pending_session_hydration());
+    assert_eq!(shell.workspace_git_status, None);
+
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert!(!shell.workspace_status_refresh_due);
     assert_eq!(
         shell.workspace_git_status,
         Some(WorkspaceGitStatus::default())
@@ -4913,7 +5044,6 @@ async fn token_usage_notification_uses_last_usage_for_context_pressure() {
     shell
         .handle_app_server_event(
             &mut backend,
-            &NoopWorkspaceRunner,
             AppServerEvent::ServerNotification(ServerNotification::ThreadTokenUsageUpdated(
                 codex_app_server_protocol::ThreadTokenUsageUpdatedNotification {
                     thread_id: shell.thread_id.to_string(),
@@ -6375,10 +6505,13 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     );
 }
 
-async fn finish_session_hydration(shell: &mut ShellState) {
+async fn finish_session_hydration<S>(shell: &mut ShellState, app_server: &S)
+where
+    S: backend::AppShellBackend,
+{
     tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
         loop {
-            let _changed = shell.poll_session_hydration().await;
+            let _changed = shell.poll_session_hydration(app_server).await;
             if !shell.has_pending_session_hydration() {
                 return;
             }
@@ -6418,7 +6551,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
         .handle_session_list_key(key_char('r'), &config, &mut backend)
         .await
         .expect("resume should resolve");
-    finish_session_hydration(&mut shell).await;
+    finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(shell.thread_id, resume_id);
     assert_eq!(shell.active_goal, Some(resume_goal));
 
@@ -6431,7 +6564,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
         .handle_session_list_key(key_char('f'), &config, &mut backend)
         .await
         .expect("fork should resolve");
-    finish_session_hydration(&mut shell).await;
+    finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(
         backend.calls(),
         vec![
@@ -6556,7 +6689,7 @@ async fn session_switch_hydration_is_nonblocking_and_preserves_newer_state() {
     shell.mark_workspace_status_refresh_due();
 
     gate.add_permits(/*n*/ 1);
-    finish_session_hydration(&mut shell).await;
+    finish_session_hydration(&mut shell, &backend).await;
 
     assert_eq!(
         shell
@@ -6589,6 +6722,274 @@ async fn session_switch_hydration_is_nonblocking_and_preserves_newer_state() {
     assert!(!shell.workspace_status_refresh_due);
 }
 
+#[tokio::test]
+async fn initial_hydration_applies_fast_lookups_while_workspace_is_still_loading() {
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000408");
+    let mut shell = ShellState::snapshot_fixture();
+    let (runner, gate) =
+        RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "## startup\n".to_string(),
+            stderr: String::new(),
+        });
+    shell.workspace_command_runner = Some(Arc::new(runner));
+    let backend = RecordingBackend::with_threads(vec![thread_fixture(
+        target_id,
+        Some("startup target"),
+        "loaded without blocking input",
+    )]);
+    let goal = test_thread_goal(&shell.thread_id, ThreadGoalStatus::Active, "Startup goal");
+    *backend.active_goal.lock().expect("goal should lock") = Some(goal.clone());
+
+    shell.start_initial_dashboard_hydration(&backend);
+
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        loop {
+            let _changed = shell.poll_session_hydration(&backend).await;
+            if shell.session_list.selected_thread_id() == Some(target_id)
+                && !shell.rate_limits.is_empty()
+            {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("fast startup lookups should finish independently");
+
+    assert_eq!(shell.active_goal, None);
+    assert!(
+        !backend
+            .calls()
+            .iter()
+            .any(|call| matches!(call, RecordedBackendCall::GoalGet { .. }))
+    );
+
+    shell.start_initial_goal_hydration(&backend);
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        loop {
+            let _changed = shell.poll_session_hydration(&backend).await;
+            if shell.active_goal.as_ref() == Some(&goal) {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("goal lookup should finish independently");
+
+    assert!(shell.has_pending_session_hydration());
+    assert_eq!(shell.active_goal, Some(goal.clone()));
+    assert_eq!(
+        shell
+            .rate_limits
+            .first()
+            .and_then(|limit| limit.limit_id.as_deref()),
+        Some("codex")
+    );
+
+    gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(shell.active_goal, Some(goal));
+    assert_eq!(
+        shell.workspace_git_status,
+        Some(WorkspaceGitStatus {
+            branch: Some("startup".to_string()),
+            changes: workspace::WorkspaceChangeSummary::default(),
+        })
+    );
+}
+
+#[test]
+fn newer_session_list_refresh_rejects_an_older_completion() {
+    let mut shell = ShellState::snapshot_fixture();
+    let stale_id = test_thread_id("01900000-0000-7000-8000-000000000409");
+    let current_id = test_thread_id("01900000-0000-7000-8000-000000000410");
+    let stale_revision = shell.begin_session_list_refresh();
+    let current_revision = shell.begin_session_list_refresh();
+
+    assert!(shell.finish_session_list_refresh(
+        current_revision,
+        Ok(ThreadListResponse {
+            data: vec![thread_fixture(current_id, Some("current"), "newer result")],
+            next_cursor: None,
+            backwards_cursor: None,
+        })
+    ));
+    assert!(!shell.finish_session_list_refresh(
+        stale_revision,
+        Ok(ThreadListResponse {
+            data: vec![thread_fixture(stale_id, Some("stale"), "older result")],
+            next_cursor: None,
+            backwards_cursor: None,
+        })
+    ));
+
+    assert_eq!(shell.session_list.selected_thread_id(), Some(current_id));
+}
+
+#[tokio::test]
+async fn rate_limit_notification_during_startup_baseline_triggers_a_refetch() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    shell.start_initial_dashboard_hydration(&backend);
+    shell.handle_notification(ServerNotification::AccountRateLimitsUpdated(
+        AccountRateLimitsUpdatedNotification {
+            rate_limits: RateLimitSnapshot {
+                limit_id: Some("codex".to_string()),
+                limit_name: Some("Codex".to_string()),
+                primary: Some(codex_app_server_protocol::RateLimitWindow {
+                    used_percent: 73,
+                    window_duration_mins: Some(300),
+                    resets_at: None,
+                }),
+                secondary: None,
+                credits: None,
+                individual_limit: None,
+                plan_type: None,
+                rate_limit_reached_type: None,
+            },
+        },
+    ));
+
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        loop {
+            let _changed = shell.poll_session_hydration(&backend).await;
+            let refreshes = backend
+                .calls()
+                .into_iter()
+                .filter(|call| matches!(call, RecordedBackendCall::RateLimits))
+                .count();
+            if refreshes == 2 && !shell.has_pending_session_hydration() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("stale startup baseline should be refetched");
+
+    assert_eq!(
+        shell
+            .rate_limits
+            .first()
+            .and_then(|limit| limit.primary.as_ref())
+            .map(|window| window.used_percent),
+        Some(73)
+    );
+}
+
+#[tokio::test]
+async fn rate_limit_notification_after_baseline_fetches_canonical_state() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    shell.start_initial_dashboard_hydration(&backend);
+    finish_session_hydration(&mut shell, &backend).await;
+    backend.set_rate_limits_used_percent(/*used_percent*/ 41);
+
+    shell.handle_notification(ServerNotification::AccountRateLimitsUpdated(
+        AccountRateLimitsUpdatedNotification {
+            rate_limits: RateLimitSnapshot {
+                limit_id: Some("codex".to_string()),
+                limit_name: Some("Codex".to_string()),
+                primary: Some(codex_app_server_protocol::RateLimitWindow {
+                    used_percent: 92,
+                    window_duration_mins: Some(300),
+                    resets_at: None,
+                }),
+                secondary: None,
+                credits: None,
+                individual_limit: None,
+                plan_type: None,
+                rate_limit_reached_type: None,
+            },
+        },
+    ));
+
+    assert_eq!(
+        shell.rate_limits[0]
+            .primary
+            .as_ref()
+            .map(|window| window.used_percent),
+        Some(92)
+    );
+    assert!(shell.has_pending_session_hydration());
+    finish_session_hydration(&mut shell, &backend).await;
+    assert_eq!(
+        shell.rate_limits[0]
+            .primary
+            .as_ref()
+            .map(|window| window.used_percent),
+        Some(41)
+    );
+    assert_eq!(
+        backend
+            .calls()
+            .into_iter()
+            .filter(|call| matches!(call, RecordedBackendCall::RateLimits))
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn session_switch_restarts_an_in_flight_rate_limit_baseline() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let backend = RecordingBackend {
+        rate_limits_gate: Some(Arc::clone(&gate)),
+        ..RecordingBackend::default()
+    };
+    let mut shell = ShellState::snapshot_fixture();
+    shell.start_initial_dashboard_hydration(&backend);
+    tokio::task::yield_now().await;
+
+    shell.replace_started_session(started_thread(
+        "replacement",
+        test_thread_id("01900000-0000-7000-8000-000000000411"),
+        /*forked_from_id*/ None,
+    ));
+    shell.start_replaced_session_hydration(&backend);
+
+    assert_eq!(
+        backend
+            .calls()
+            .into_iter()
+            .filter(|call| matches!(call, RecordedBackendCall::RateLimits))
+            .count(),
+        2
+    );
+    assert!(shell.has_pending_session_hydration());
+
+    gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell, &backend).await;
+    assert_eq!(
+        shell
+            .rate_limits
+            .first()
+            .and_then(|limit| limit.primary.as_ref())
+            .map(|window| window.used_percent),
+        Some(73)
+    );
+
+    shell.replace_started_session(started_thread(
+        "second replacement",
+        test_thread_id("01900000-0000-7000-8000-000000000412"),
+        /*forked_from_id*/ None,
+    ));
+    shell.start_replaced_session_hydration(&backend);
+    finish_session_hydration(&mut shell, &backend).await;
+    assert_eq!(
+        backend
+            .calls()
+            .into_iter()
+            .filter(|call| matches!(call, RecordedBackendCall::RateLimits))
+            .count(),
+        2,
+        "a loaded account baseline should survive later session switches"
+    );
+}
+
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn session_hydration_times_out_stalled_workspace_lookup() {
     let target_id = test_thread_id("01900000-0000-7000-8000-000000000406");
@@ -6611,7 +7012,7 @@ async fn session_hydration_times_out_stalled_workspace_lookup() {
     tokio::task::yield_now().await;
     tokio::time::advance(Duration::from_secs(/*secs*/ 6)).await;
     tokio::task::yield_now().await;
-    assert!(shell.poll_session_hydration().await);
+    assert!(shell.poll_session_hydration(&backend).await);
     assert!(!shell.has_pending_session_hydration());
 }
 
@@ -7827,7 +8228,6 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell.streaming_plan.clear();
     shell.active_turn_id = None;
     let mut backend = RecordingBackend::default();
-    let workspace_runner = NoopWorkspaceRunner;
 
     shell
         .submit_prompt(&mut backend, "hello app shell".to_string())
@@ -7836,7 +8236,6 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell
         .handle_app_server_event(
             &mut backend,
-            &workspace_runner,
             AppServerEvent::ServerNotification(ServerNotification::AgentMessageDelta(
                 codex_app_server_protocol::AgentMessageDeltaNotification {
                     thread_id: shell.thread_id.to_string(),
@@ -7851,7 +8250,6 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell
         .handle_app_server_event(
             &mut backend,
-            &workspace_runner,
             AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(
                 codex_app_server_protocol::TurnCompletedNotification {
                     thread_id: shell.thread_id.to_string(),
@@ -7865,7 +8263,6 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell
         .handle_app_server_event(
             &mut backend,
-            &workspace_runner,
             AppServerEvent::ServerRequest(command_approval_request()),
         )
         .await
@@ -7883,7 +8280,6 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell
         .handle_app_server_event(
             &mut backend,
-            &workspace_runner,
             AppServerEvent::Disconnected {
                 message: "backend closed".to_string(),
             },
@@ -7943,6 +8339,8 @@ struct RecordingBackend {
     external_agent_items: Arc<Mutex<Vec<ExternalAgentConfigMigrationItem>>>,
     external_agent_import_in_progress: Arc<Mutex<bool>>,
     active_goal: Arc<Mutex<Option<ThreadGoal>>>,
+    rate_limits_gate: Option<Arc<tokio::sync::Semaphore>>,
+    rate_limits_used_percent: Arc<Mutex<i32>>,
     remote_workspace: bool,
     embedded_app_server: bool,
 }
@@ -7961,6 +8359,8 @@ impl Default for RecordingBackend {
             external_agent_items: Arc::new(Mutex::new(Vec::new())),
             external_agent_import_in_progress: Arc::new(Mutex::new(false)),
             active_goal: Arc::new(Mutex::new(None)),
+            rate_limits_gate: None,
+            rate_limits_used_percent: Arc::new(Mutex::new(73)),
             remote_workspace: false,
             embedded_app_server: true,
         }
@@ -8014,6 +8414,13 @@ impl RecordingBackend {
             .lock()
             .expect("plugin install response should lock") = response;
     }
+
+    fn set_rate_limits_used_percent(&self, used_percent: i32) {
+        *self
+            .rate_limits_used_percent
+            .lock()
+            .expect("rate-limit percentage should lock") = used_percent;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -8025,6 +8432,7 @@ enum RecordedBackendCall {
         archived: Option<bool>,
         search_term: Option<String>,
     },
+    RateLimits,
     Archive(codex_protocol::ThreadId),
     Unarchive(codex_protocol::ThreadId),
     Delete(codex_protocol::ThreadId),
@@ -8185,6 +8593,54 @@ impl backend::AppShellBackend for RecordingBackend {
             next_cursor,
             backwards_cursor: None,
         })
+    }
+
+    fn thread_list_in_background(
+        &self,
+        params: ThreadListParams,
+    ) -> impl std::future::Future<Output = color_eyre::Result<ThreadListResponse>> + Send + 'static
+    {
+        let mut backend = self.clone();
+        async move { backend.thread_list(params).await }
+    }
+
+    fn account_rate_limits_in_background(
+        &self,
+    ) -> impl std::future::Future<Output = color_eyre::Result<GetAccountRateLimitsResponse>>
+    + Send
+    + 'static {
+        self.push(RecordedBackendCall::RateLimits);
+        let gate = self.rate_limits_gate.clone();
+        let used_percent = *self
+            .rate_limits_used_percent
+            .lock()
+            .expect("rate-limit percentage should lock");
+        async move {
+            if let Some(gate) = gate {
+                gate.acquire_owned()
+                    .await
+                    .expect("rate-limit gate should remain open")
+                    .forget();
+            }
+            Ok(GetAccountRateLimitsResponse {
+                rate_limits: RateLimitSnapshot {
+                    limit_id: Some("codex".to_string()),
+                    limit_name: Some("Codex".to_string()),
+                    primary: Some(codex_app_server_protocol::RateLimitWindow {
+                        used_percent,
+                        window_duration_mins: Some(300),
+                        resets_at: None,
+                    }),
+                    secondary: None,
+                    credits: None,
+                    individual_limit: None,
+                    plan_type: None,
+                    rate_limit_reached_type: None,
+                },
+                rate_limits_by_limit_id: None,
+                rate_limit_reset_credits: None,
+            })
+        }
     }
 
     async fn thread_archive(
@@ -8649,6 +9105,8 @@ struct NoopWorkspaceRunner;
 
 struct RecordingWorkspaceRunner {
     commands: Mutex<Vec<crate::workspace_command::WorkspaceCommand>>,
+    run_process_ids: Mutex<Vec<String>>,
+    terminate_process_ids: Mutex<Vec<String>>,
     output: crate::workspace_command::WorkspaceCommandOutput,
     gate: Option<Arc<tokio::sync::Semaphore>>,
 }
@@ -8657,6 +9115,8 @@ impl RecordingWorkspaceRunner {
     fn new(output: crate::workspace_command::WorkspaceCommandOutput) -> Self {
         Self {
             commands: Mutex::new(Vec::new()),
+            run_process_ids: Mutex::new(Vec::new()),
+            terminate_process_ids: Mutex::new(Vec::new()),
             output,
             gate: None,
         }
@@ -8669,6 +9129,8 @@ impl RecordingWorkspaceRunner {
         (
             Self {
                 commands: Mutex::new(Vec::new()),
+                run_process_ids: Mutex::new(Vec::new()),
+                terminate_process_ids: Mutex::new(Vec::new()),
                 output,
                 gate: Some(Arc::clone(&gate)),
             },
@@ -8680,6 +9142,20 @@ impl RecordingWorkspaceRunner {
         self.commands
             .lock()
             .expect("workspace commands should lock")
+            .clone()
+    }
+
+    fn run_process_ids(&self) -> Vec<String> {
+        self.run_process_ids
+            .lock()
+            .expect("workspace run process ids should lock")
+            .clone()
+    }
+
+    fn terminate_process_ids(&self) -> Vec<String> {
+        self.terminate_process_ids
+            .lock()
+            .expect("workspace terminate process ids should lock")
             .clone()
     }
 }
@@ -8710,6 +9186,56 @@ impl crate::workspace_command::WorkspaceCommandExecutor for RecordingWorkspaceRu
                 let _permit = gate.acquire_owned().await;
             }
             Ok(output)
+        })
+    }
+
+    fn run_cancellable(
+        &self,
+        command: crate::workspace_command::WorkspaceCommand,
+        process_id: String,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        crate::workspace_command::WorkspaceCommandOutput,
+                        crate::workspace_command::WorkspaceCommandError,
+                    >,
+                > + Send
+                + '_,
+        >,
+    > {
+        self.run_process_ids
+            .lock()
+            .expect("workspace run process ids should lock")
+            .push(process_id);
+        self.run(command)
+    }
+
+    fn terminate(
+        &self,
+        process_id: String,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        crate::workspace_command::WorkspaceCommandTermination,
+                        crate::workspace_command::WorkspaceCommandError,
+                    >,
+                > + Send
+                + '_,
+        >,
+    > {
+        self.terminate_process_ids
+            .lock()
+            .expect("workspace terminate process ids should lock")
+            .push(process_id);
+        let gate = self.gate.clone();
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            if let Some(gate) = gate {
+                gate.add_permits(/*n*/ 1);
+            }
+            Ok(crate::workspace_command::WorkspaceCommandTermination::Requested)
         })
     }
 }
