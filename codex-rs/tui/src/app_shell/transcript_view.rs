@@ -2,7 +2,6 @@ use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
 use super::design::body_rect_after_title;
-use super::design::fill_rect;
 use super::design::palette;
 use super::design::pane_content_rect;
 use super::design::pane_style;
@@ -32,7 +31,6 @@ const OUTPUT_BLOCK_INDENT: usize = 2;
 const OUTPUT_BLOCK_MAX_LINES: usize = 4;
 
 pub(super) fn render_transcript(shell: &ShellState, area: Rect, buf: &mut Buffer) {
-    fill_rect(buf, area, palette::BASE);
     let content = pane_content_rect(area);
     let body = body_rect_after_title(content);
     let cwd = std::path::Path::new(&shell.cwd);
