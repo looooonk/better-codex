@@ -43,13 +43,13 @@ fn referenced_threads_are_deduplicated_across_agent_items() {
 
     assert_eq!(
         referenced_agent_thread_ids(&turns),
-        vec!["agent-a".to_string(), "agent-b".to_string()]
+        vec!["agent-b".to_string(), "agent-a".to_string()]
     );
 }
 
 #[test]
-fn pending_thread_queue_excludes_root_and_uses_a_separate_candidate_cap() {
-    let root = "agent-00".to_string();
+fn pending_thread_queue_prioritizes_recent_agents_under_the_candidate_cap() {
+    let root = "agent-149".to_string();
     let turns = vec![turn(
         (0..150)
             .map(|index| activity(&format!("activity-{index}"), &format!("agent-{index:02}")))
@@ -61,7 +61,69 @@ fn pending_thread_queue_excludes_root_and_uses_a_separate_candidate_cap() {
     enqueue_referenced_agent_threads(&turns, &mut seen, &mut pending);
 
     assert_eq!(pending.len(), MAX_RESUMED_AGENT_THREAD_CANDIDATES);
-    assert!(!pending.iter().any(|thread_id| thread_id == "agent-00"));
+    assert_eq!(pending.front().map(String::as_str), Some("agent-148"));
+    assert_eq!(pending.back().map(String::as_str), Some("agent-21"));
+    assert!(!pending.iter().any(|thread_id| thread_id == "agent-149"));
+    assert!(!pending.iter().any(|thread_id| thread_id == "agent-20"));
+}
+
+#[test]
+fn child_metadata_waits_until_its_parent_is_accepted() {
+    let root = thread_id("01900000-0000-7000-8000-000000000201");
+    let parent = thread_id("01900000-0000-7000-8000-000000000202");
+    let child = thread_id("01900000-0000-7000-8000-000000000203");
+    let parent_thread = metadata_thread(parent, &root.to_string(), Some(root), Some(root));
+    let child_thread = metadata_thread(child, &root.to_string(), Some(parent), Some(parent));
+    let mut accepted = HashSet::from([root.to_string()]);
+    let mut deferred = VecDeque::from([(parent.to_string(), child_thread.clone())]);
+
+    assert_eq!(
+        agent_lineage(
+            &child_thread,
+            &child.to_string(),
+            &root.to_string(),
+            &accepted,
+        ),
+        AgentLineage::WaitingForParent(parent.to_string())
+    );
+    assert_eq!(
+        agent_lineage(
+            &parent_thread,
+            &parent.to_string(),
+            &root.to_string(),
+            &accepted,
+        ),
+        AgentLineage::Accepted
+    );
+
+    accepted.insert(parent.to_string());
+
+    assert_eq!(
+        take_ready_deferred_agent_threads(&mut deferred, &accepted, /*limit*/ 8),
+        vec![child_thread]
+    );
+    assert!(deferred.is_empty());
+}
+
+#[test]
+fn required_parent_is_prioritized_when_the_recent_candidate_cap_is_full() {
+    let root = "root".to_string();
+    let mut pending = (0..MAX_RESUMED_AGENT_THREAD_CANDIDATES)
+        .map(|index| format!("agent-{index}"))
+        .collect::<VecDeque<_>>();
+    let mut seen = pending.iter().cloned().collect::<HashSet<_>>();
+    seen.insert(root);
+
+    prioritize_agent_thread_ids(vec!["required-parent".to_string()], &mut seen, &mut pending);
+
+    assert_eq!(pending.front().map(String::as_str), Some("required-parent"));
+    assert_eq!(pending.len(), MAX_RESUMED_AGENT_THREAD_CANDIDATES);
+    assert!(!pending.iter().any(|thread_id| thread_id == "agent-127"));
+    assert!(!seen.contains("agent-127"));
+    let mut attempted = 0;
+    let batch = take_candidate_batch(&mut pending, &mut attempted, /*accepted*/ 0);
+    assert_eq!(batch.first().map(String::as_str), Some("required-parent"));
+    assert_eq!(attempted, MAX_CONCURRENT_AGENT_THREAD_REQUESTS);
 }
 
 #[test]
@@ -244,22 +306,18 @@ fn lineage_accepts_current_and_legacy_thread_spawn_sessions() {
     );
     let legacy = metadata_thread(child, &child.to_string(), Some(root), Some(root));
 
-    assert!(has_valid_agent_lineage(
-        &current,
-        &child.to_string(),
-        &root.to_string(),
-        &accepted
-    ));
-    assert!(has_valid_agent_lineage(
-        &legacy,
-        &child.to_string(),
-        &root.to_string(),
-        &accepted
-    ));
+    assert_eq!(
+        agent_lineage(&current, &child.to_string(), &root.to_string(), &accepted),
+        AgentLineage::Accepted
+    );
+    assert_eq!(
+        agent_lineage(&legacy, &child.to_string(), &root.to_string(), &accepted),
+        AgentLineage::Accepted
+    );
 }
 
 #[test]
-fn lineage_rejects_unaccepted_conflicting_and_non_spawn_parents() {
+fn lineage_waits_for_unaccepted_parents_and_rejects_invalid_metadata() {
     let root = thread_id("01900000-0000-7000-8000-000000000011");
     let child = thread_id("01900000-0000-7000-8000-000000000012");
     let outsider = thread_id("01900000-0000-7000-8000-000000000013");
@@ -288,10 +346,14 @@ fn lineage_rejects_unaccepted_conflicting_and_non_spawn_parents() {
             foreign_session,
             orphan_current,
         ]
-        .map(|thread| {
-            has_valid_agent_lineage(&thread, &child.to_string(), &root.to_string(), &accepted)
-        }),
-        [false, false, false, false, false]
+        .map(|thread| { agent_lineage(&thread, &child.to_string(), &root.to_string(), &accepted) }),
+        [
+            AgentLineage::WaitingForParent(outsider.to_string()),
+            AgentLineage::Invalid,
+            AgentLineage::Invalid,
+            AgentLineage::Invalid,
+            AgentLineage::Invalid,
+        ]
     );
 }
 

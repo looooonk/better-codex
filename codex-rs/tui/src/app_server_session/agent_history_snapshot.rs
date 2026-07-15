@@ -5,7 +5,7 @@ use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::Turn;
 use codex_protocol::protocol::SubAgentSource;
 use codex_utils_path_uri::LegacyAppPathString;
-use std::collections::BTreeSet;
+use std::collections::HashSet;
 use std::mem;
 use std::path::Path;
 
@@ -44,34 +44,42 @@ impl AgentHistorySnapshot {
 }
 
 pub(super) fn referenced_agent_thread_ids(turns: &[Turn]) -> Vec<String> {
-    let mut thread_ids = BTreeSet::new();
-    for item in turns.iter().flat_map(|turn| &turn.items) {
+    let mut seen = HashSet::with_capacity(MAX_REFERENCED_AGENT_THREADS);
+    let mut thread_ids = Vec::with_capacity(MAX_REFERENCED_AGENT_THREADS);
+    // Candidate loading is bounded, so preserve the most recently encountered agents first.
+    for item in turns.iter().rev().flat_map(|turn| turn.items.iter().rev()) {
         match item {
             ThreadItem::CollabAgentToolCall {
                 receiver_thread_ids,
                 agents_states,
                 ..
             } => {
-                for thread_id in receiver_thread_ids.iter().chain(agents_states.keys()) {
-                    if insert_reference(&mut thread_ids, thread_id) {
-                        return thread_ids.into_iter().collect();
+                let mut state_thread_ids = agents_states.keys().collect::<Vec<_>>();
+                state_thread_ids.sort_unstable();
+                for thread_id in receiver_thread_ids.iter().chain(state_thread_ids) {
+                    if insert_reference(&mut thread_ids, &mut seen, thread_id) {
+                        return thread_ids;
                     }
                 }
             }
             ThreadItem::SubAgentActivity {
                 agent_thread_id, ..
-            } if insert_reference(&mut thread_ids, agent_thread_id) => {
-                return thread_ids.into_iter().collect();
+            } if insert_reference(&mut thread_ids, &mut seen, agent_thread_id) => {
+                return thread_ids;
             }
             _ => {}
         }
     }
-    thread_ids.into_iter().collect()
+    thread_ids
 }
 
-fn insert_reference(thread_ids: &mut BTreeSet<String>, thread_id: &str) -> bool {
-    if thread_id.len() <= MAX_ITEM_ID_CHARS {
-        thread_ids.insert(thread_id.to_string());
+fn insert_reference<'a>(
+    thread_ids: &mut Vec<String>,
+    seen: &mut HashSet<&'a str>,
+    thread_id: &'a str,
+) -> bool {
+    if thread_id.len() <= MAX_ITEM_ID_CHARS && seen.insert(thread_id) {
+        thread_ids.push(thread_id.to_string());
     }
     thread_ids.len() >= MAX_REFERENCED_AGENT_THREADS
 }

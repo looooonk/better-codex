@@ -91,64 +91,82 @@ async fn load_resumed_agent_threads(
     let mut seen = HashSet::from([root_thread_id.clone()]);
     let mut accepted_thread_ids = HashSet::from([root_thread_id]);
     let mut pending = VecDeque::new();
+    let mut deferred = VecDeque::new();
     enqueue_agent_thread_ids(referenced_thread_ids, &mut seen, &mut pending);
 
     let mut accepted = 0;
     let mut attempted = 0;
     let deadline = Instant::now() + AGENT_HISTORY_LOAD_TIMEOUT;
     while accepted < MAX_RESUMED_AGENT_THREADS {
-        let batch = take_candidate_batch(&mut pending, &mut attempted, accepted);
-        if batch.is_empty() {
-            break;
-        }
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        let metadata = match timeout(
-            remaining,
-            read_agent_thread_metadata_batch(request_handle.clone(), batch),
-        )
-        .await
-        {
-            Ok(results) => results,
-            Err(_) => {
-                tracing::warn!(
-                    timeout = ?AGENT_HISTORY_LOAD_TIMEOUT,
-                    "resumed agent history hydration timed out"
-                );
+        let mut candidates = take_ready_deferred_agent_threads(
+            &mut deferred,
+            &accepted_thread_ids,
+            MAX_CONCURRENT_AGENT_THREAD_REQUESTS
+                .min(MAX_RESUMED_AGENT_THREADS.saturating_sub(accepted)),
+        );
+        if candidates.is_empty() {
+            let batch = take_candidate_batch(&mut pending, &mut attempted, accepted);
+            if batch.is_empty() {
                 break;
             }
-        };
-        let mut candidates = Vec::new();
-        for (thread_id, result) in metadata {
-            let thread = match result {
-                Ok(thread) => thread,
-                Err(err) => {
-                    tracing::warn!(%thread_id, %err, "failed to read resumed agent metadata");
-                    continue;
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let metadata = match timeout(
+                remaining,
+                read_agent_thread_metadata_batch(request_handle.clone(), batch),
+            )
+            .await
+            {
+                Ok(results) => results,
+                Err(_) => {
+                    tracing::warn!(
+                        timeout = ?AGENT_HISTORY_LOAD_TIMEOUT,
+                        "resumed agent history hydration timed out"
+                    );
+                    break;
                 }
             };
-            if !has_valid_agent_lineage(&thread, &thread_id, &session_id, &accepted_thread_ids) {
-                tracing::warn!(
-                    %thread_id,
-                    root_session_id = %session_id,
-                    candidate_session_id = %thread.session_id,
-                    "ignoring resumed thread outside the agent lineage"
-                );
-                seen.remove(&thread_id);
-                continue;
+            let mut parent_thread_ids = Vec::new();
+            for (thread_id, result) in metadata {
+                let thread = match result {
+                    Ok(thread) => thread,
+                    Err(err) => {
+                        tracing::warn!(%thread_id, %err, "failed to read resumed agent metadata");
+                        continue;
+                    }
+                };
+                match agent_lineage(&thread, &thread_id, &session_id, &accepted_thread_ids) {
+                    AgentLineage::Accepted => candidates.push(thread),
+                    AgentLineage::WaitingForParent(parent_thread_id) => {
+                        parent_thread_ids.push(parent_thread_id.clone());
+                        deferred.push_back((parent_thread_id, thread));
+                    }
+                    AgentLineage::Invalid => {
+                        tracing::warn!(
+                            %thread_id,
+                            root_session_id = %session_id,
+                            candidate_session_id = %thread.session_id,
+                            "ignoring resumed thread outside the agent lineage"
+                        );
+                        seen.remove(&thread_id);
+                    }
+                }
             }
+            prioritize_agent_thread_ids(parent_thread_ids, &mut seen, &mut pending);
+        }
+        if candidates.is_empty() {
+            continue;
+        }
+
+        for thread in &candidates {
             if updates_tx
                 .send(AgentHistoryUpdate::Discovered(
-                    AgentHistorySnapshot::metadata(&thread),
+                    AgentHistorySnapshot::metadata(thread),
                 ))
                 .await
                 .is_err()
             {
                 return;
             }
-            candidates.push(thread);
-        }
-        if candidates.is_empty() {
-            continue;
         }
 
         let remaining = deadline.saturating_duration_since(Instant::now());
@@ -173,7 +191,9 @@ async fn load_resumed_agent_threads(
             }
         };
         for (thread_id, thread) in results {
-            if !has_valid_agent_lineage(&thread, &thread_id, &session_id, &accepted_thread_ids) {
+            if agent_lineage(&thread, &thread_id, &session_id, &accepted_thread_ids)
+                != AgentLineage::Accepted
+            {
                 tracing::warn!(
                     %thread_id,
                     root_session_id = %session_id,
@@ -221,6 +241,47 @@ fn enqueue_agent_thread_ids(
             pending.push_back(thread_id);
         }
     }
+}
+
+fn prioritize_agent_thread_ids(
+    thread_ids: Vec<String>,
+    seen: &mut HashSet<String>,
+    pending: &mut VecDeque<String>,
+) {
+    for thread_id in thread_ids.into_iter().rev() {
+        if seen.insert(thread_id.clone()) {
+            if pending.len() >= MAX_RESUMED_AGENT_THREAD_CANDIDATES
+                && let Some(evicted_thread_id) = pending.pop_back()
+            {
+                seen.remove(&evicted_thread_id);
+            }
+            pending.push_front(thread_id);
+        } else if let Some(index) = pending
+            .iter()
+            .position(|pending_id| pending_id == &thread_id)
+            && let Some(thread_id) = pending.remove(index)
+        {
+            pending.push_front(thread_id);
+        }
+    }
+}
+
+fn take_ready_deferred_agent_threads(
+    deferred: &mut VecDeque<(String, Thread)>,
+    accepted_thread_ids: &HashSet<String>,
+    limit: usize,
+) -> Vec<Thread> {
+    let mut ready = Vec::new();
+    let mut waiting = VecDeque::with_capacity(deferred.len());
+    while let Some((parent_thread_id, thread)) = deferred.pop_front() {
+        if ready.len() < limit && accepted_thread_ids.contains(&parent_thread_id) {
+            ready.push(thread);
+        } else {
+            waiting.push_back((parent_thread_id, thread));
+        }
+    }
+    *deferred = waiting;
+    ready
 }
 
 fn take_candidate_batch(
@@ -415,14 +476,21 @@ fn chronological_turns(mut turns: Vec<Turn>) -> Vec<Turn> {
     turns
 }
 
-fn has_valid_agent_lineage(
+#[derive(Debug, PartialEq, Eq)]
+enum AgentLineage {
+    Accepted,
+    WaitingForParent(String),
+    Invalid,
+}
+
+fn agent_lineage(
     thread: &Thread,
     expected_thread_id: &str,
     root_session_id: &str,
     accepted_thread_ids: &HashSet<String>,
-) -> bool {
+) -> AgentLineage {
     if thread.id != expected_thread_id {
-        return false;
+        return AgentLineage::Invalid;
     }
     let source_parent_id = match &thread.source {
         SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
@@ -446,19 +514,24 @@ fn has_valid_agent_lineage(
         source_parent_id.as_deref(),
     ) && parent_thread_id != source_parent_id
     {
-        return false;
+        return AgentLineage::Invalid;
     }
     let parent_thread_id = source_parent_id
         .as_deref()
         .or(thread.parent_thread_id.as_deref());
     let Some(parent_thread_id) = parent_thread_id else {
-        return false;
+        return AgentLineage::Invalid;
     };
-    if !accepted_thread_ids.contains(parent_thread_id) {
-        return false;
+    if thread.session_id != root_session_id
+        && !(thread.session_id == thread.id && source_parent_id.is_some())
+    {
+        return AgentLineage::Invalid;
     }
-    thread.session_id == root_session_id
-        || (thread.session_id == thread.id && source_parent_id.is_some())
+    if accepted_thread_ids.contains(parent_thread_id) {
+        AgentLineage::Accepted
+    } else {
+        AgentLineage::WaitingForParent(parent_thread_id.to_string())
+    }
 }
 
 #[cfg(test)]
