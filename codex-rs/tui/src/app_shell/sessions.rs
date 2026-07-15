@@ -16,6 +16,12 @@ const SESSION_LIST_LIMIT: u32 = 20;
 const SESSION_LIST_LINE_BUDGET: usize = 7;
 const SESSION_LIST_DEFAULT_VISIBLE_ROWS: usize = 6;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SessionSearchOutcome {
+    LocalFilterOnly,
+    RefreshList,
+}
+
 #[derive(Debug, Clone, Default)]
 pub(super) struct SessionListState {
     all_rows: Vec<SessionRow>,
@@ -29,6 +35,7 @@ pub(super) struct SessionListState {
     rename_draft: Option<String>,
     last_error: Option<String>,
     loaded: bool,
+    has_more: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,10 +69,15 @@ impl SessionListState {
     }
 
     pub(super) fn replace_threads(&mut self, threads: Vec<Thread>) {
+        self.replace_thread_page(threads, /*has_more*/ false);
+    }
+
+    pub(super) fn replace_thread_page(&mut self, threads: Vec<Thread>, has_more: bool) {
         self.all_rows = threads
             .into_iter()
             .filter_map(SessionRow::from_thread)
             .collect();
+        self.has_more = has_more;
         self.apply_search_filter();
         self.normalize_selection_and_scroll();
         self.loaded = true;
@@ -160,10 +172,17 @@ impl SessionListState {
         self.normalize_selection_and_scroll();
     }
 
-    pub(super) fn backspace_search(&mut self) {
-        self.search_query.pop();
+    pub(super) fn backspace_search(&mut self) -> SessionSearchOutcome {
+        if self.search_query.pop().is_none() {
+            return SessionSearchOutcome::LocalFilterOnly;
+        }
         self.apply_search_filter();
         self.normalize_selection_and_scroll();
+        if self.search_query.is_empty() {
+            SessionSearchOutcome::RefreshList
+        } else {
+            SessionSearchOutcome::LocalFilterOnly
+        }
     }
 
     pub(super) fn clear_search(&mut self) {
@@ -187,6 +206,7 @@ impl SessionListState {
         self.rows.clear();
         self.selected = 0;
         self.scroll_top = 0;
+        self.has_more = false;
     }
 
     pub(super) fn show_archived(&self) -> bool {
@@ -240,6 +260,20 @@ impl SessionListState {
         } else {
             "ACTIVE"
         };
+        let count = if self.search_active && !self.search_query.trim().is_empty() {
+            format!(
+                "{} shown / {}{} loaded",
+                self.rows.len(),
+                self.all_rows.len(),
+                if self.has_more { "+" } else { "" }
+            )
+        } else {
+            format!(
+                "{}{} sessions",
+                self.rows.len(),
+                if self.has_more { "+" } else { "" }
+            )
+        };
         lines.push(Line::from(vec![
             focus.fg(if self.focused {
                 palette::FOCUS
@@ -249,18 +283,24 @@ impl SessionListState {
             "  ".into(),
             mode.fg(palette::TEXT).bold(),
             "  ".into(),
-            format!("{} sessions", self.rows.len()).fg(palette::MUTED),
+            count.fg(palette::MUTED),
         ]));
         if self.search_active || !self.search_query.is_empty() {
-            let label = if self.search_active {
-                "search*"
+            let (label, hint) = if self.search_active {
+                ("filter*", "  · Enter search all")
             } else {
-                "search"
+                ("search", "  · server results")
             };
             lines.push(Line::from(vec![
                 label.fg(palette::CYAN),
                 " ".into(),
-                dashboard_value(&self.search_query, width, label.len() + 1).fg(palette::TEXT),
+                dashboard_value(
+                    &self.search_query,
+                    width,
+                    label.len() + 1 + UnicodeWidthStr::width(hint),
+                )
+                .fg(palette::TEXT),
+                hint.fg(palette::MUTED),
             ]));
         }
         if let Some(draft) = &self.rename_draft {
@@ -312,11 +352,10 @@ impl SessionListState {
             return;
         }
 
-        let query = query.to_lowercase();
         self.rows = self
             .all_rows
             .iter()
-            .filter(|row| row.matches_search(&query))
+            .filter(|row| row.matches_search(query))
             .cloned()
             .collect();
     }
@@ -385,13 +424,7 @@ impl SessionRow {
     }
 
     fn matches_search(&self, query: &str) -> bool {
-        self.title.to_lowercase().contains(query)
-            || self.preview.to_lowercase().contains(query)
-            || self
-                .branch
-                .as_deref()
-                .is_some_and(|branch| branch.to_lowercase().contains(query))
-            || self.cwd.to_string_lossy().to_lowercase().contains(query)
+        self.title.contains(query) || self.preview.contains(query)
     }
 }
 

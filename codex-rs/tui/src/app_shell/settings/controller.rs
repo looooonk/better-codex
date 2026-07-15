@@ -1,5 +1,8 @@
 use super::super::ShellState;
 use super::super::backend::AppShellBackend;
+use super::super::is_unmodified_action_key;
+use super::super::is_unmodified_key_event;
+use super::super::is_unmodified_key_press;
 use super::SettingsAction;
 use super::SettingsView;
 use super::approval_policy_label;
@@ -18,6 +21,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use color_eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
+use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 
 impl ShellState {
@@ -45,6 +49,23 @@ impl ShellState {
     {
         if self.settings.editing() {
             return self.handle_settings_edit_key(key, app_server).await;
+        }
+        let is_shift_back_tab = key.kind == KeyEventKind::Press
+            && key.code == KeyCode::BackTab
+            && key.modifiers == KeyModifiers::SHIFT;
+        if !is_unmodified_action_key(key) && !is_shift_back_tab {
+            return Ok(matches!(
+                key.code,
+                KeyCode::Esc
+                    | KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::Tab
+                    | KeyCode::Right
+                    | KeyCode::BackTab
+                    | KeyCode::Left
+                    | KeyCode::Enter
+                    | KeyCode::Char('k' | 'j' | 'l' | 'h' | ' ')
+            ));
         }
         match key.code {
             KeyCode::Esc => {
@@ -109,6 +130,11 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if (matches!(key.code, KeyCode::Esc | KeyCode::Enter) && !is_unmodified_key_press(key))
+            || (key.code == KeyCode::Backspace && !is_unmodified_key_event(key))
+        {
+            return Ok(true);
+        }
         match key.code {
             KeyCode::Esc => {
                 self.settings.cancel_edit();

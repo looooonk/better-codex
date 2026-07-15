@@ -2003,6 +2003,429 @@ async fn printable_character_repeat_reaches_text_entry_overlays() {
     );
 }
 
+#[test]
+fn action_mode_keys_require_unmodified_input_and_ignore_repeated_actions() {
+    let cases = [
+        (KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE), true),
+        (
+            KeyEvent::new_with_kind(KeyCode::Down, KeyModifiers::NONE, KeyEventKind::Repeat),
+            true,
+        ),
+        (
+            KeyEvent::new_with_kind(KeyCode::Char('d'), KeyModifiers::NONE, KeyEventKind::Repeat),
+            false,
+        ),
+        (
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
+            false,
+        ),
+        (KeyEvent::new(KeyCode::Char('d'), KeyModifiers::ALT), false),
+        (
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::SUPER),
+            false,
+        ),
+    ];
+
+    for (key, expected) in cases {
+        assert_eq!(is_unmodified_action_key(key), expected, "key: {key:?}");
+    }
+}
+
+#[tokio::test]
+async fn modified_keys_do_not_trigger_focused_session_settings_or_plugin_actions() {
+    let config = test_config().await;
+    let modifiers = [
+        KeyModifiers::CONTROL,
+        KeyModifiers::ALT,
+        KeyModifiers::SUPER,
+    ];
+
+    let session_id = test_thread_id("01900000-0000-7000-8000-000000000398");
+    let mut sessions = ShellState::snapshot_fixture();
+    sessions.dashboard_route = DashboardRoute::Sessions;
+    sessions.session_list.focused = true;
+    sessions.session_list.replace_threads(vec![thread_fixture(
+        session_id,
+        Some("keep this session"),
+        "modifier guard",
+    )]);
+    let mut session_backend = RecordingBackend::default();
+    for modifier in modifiers {
+        sessions
+            .handle_key(
+                KeyEvent::new(KeyCode::Char('a'), modifier),
+                &config,
+                &mut session_backend,
+            )
+            .await
+            .expect("modified archive key should be consumed");
+        assert_eq!(sessions.session_list.selected_thread_id(), Some(session_id));
+        assert_eq!(session_backend.calls(), Vec::new());
+    }
+    sessions
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            &config,
+            &mut session_backend,
+        )
+        .await
+        .expect("Ctrl+P should remain available from a focused action mode");
+    assert!(sessions.command_palette.is_some());
+    sessions.command_palette = None;
+    sessions
+        .handle_key(key_char('a'), &config, &mut session_backend)
+        .await
+        .expect("plain archive key should work");
+    assert!(
+        session_backend
+            .calls()
+            .contains(&RecordedBackendCall::Archive(session_id))
+    );
+
+    let mut settings = ShellState::snapshot_fixture();
+    settings.dashboard_route = DashboardRoute::Settings;
+    settings.settings.focused = true;
+    settings.settings.focus_action(SettingsAction::Animations);
+    let initial_animations = settings.animations;
+    let mut settings_backend = RecordingBackend::default();
+    for modifier in modifiers {
+        settings
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, modifier),
+                &config,
+                &mut settings_backend,
+            )
+            .await
+            .expect("modified activation key should be consumed");
+        assert_eq!(settings.animations, initial_animations);
+        assert_eq!(settings_backend.calls(), Vec::new());
+    }
+    settings
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut settings_backend,
+        )
+        .await
+        .expect("plain activation key should work");
+    assert_eq!(settings.animations, !initial_animations);
+    assert!(matches!(
+        settings_backend.calls().as_slice(),
+        [RecordedBackendCall::ConfigWrite(_)]
+    ));
+
+    let mut back_tab = ShellState::snapshot_fixture();
+    back_tab.dashboard_route = DashboardRoute::Settings;
+    back_tab.settings.focused = true;
+    let mut back_tab_backend = RecordingBackend::default();
+    back_tab
+        .handle_key(
+            KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT),
+            &config,
+            &mut back_tab_backend,
+        )
+        .await
+        .expect("terminal-encoded Shift+BackTab should change settings pages");
+    assert_eq!(
+        back_tab.settings.selected_action(),
+        SettingsAction::McpServers
+    );
+    assert_eq!(back_tab_backend.calls(), Vec::new());
+
+    let mut plugins = ShellState::snapshot_fixture();
+    plugins.plugin_catalog = Some(plugin_list_response_fixture());
+    plugins.open_plugin_management();
+    let initial_plugin_state = plugins.pending_plugin_management.clone();
+    let mut plugin_backend = RecordingBackend::default();
+    for modifier in modifiers {
+        plugins
+            .handle_key(
+                KeyEvent::new(KeyCode::Char('u'), modifier),
+                &config,
+                &mut plugin_backend,
+            )
+            .await
+            .expect("modified uninstall key should be consumed");
+        assert_eq!(plugins.pending_plugin_management, initial_plugin_state);
+        assert_eq!(plugin_backend.calls(), Vec::new());
+    }
+    plugins
+        .handle_key(key_char('u'), &config, &mut plugin_backend)
+        .await
+        .expect("plain uninstall key should work");
+    assert!(
+        plugin_backend
+            .calls()
+            .iter()
+            .any(|call| matches!(call, RecordedBackendCall::PluginUninstall { .. }))
+    );
+}
+
+#[tokio::test]
+async fn modified_keys_do_not_trigger_mcp_safety_or_import_actions() {
+    let config = test_config().await;
+
+    let mut mcp = ShellState::snapshot_fixture();
+    mcp.mcp_catalog = Some(ListMcpServerStatusResponse {
+        data: vec![mcp_status_fixture(
+            "github",
+            McpAuthStatus::NotLoggedIn,
+            ["search"],
+        )],
+        next_cursor: None,
+    });
+    mcp.open_mcp_management();
+    let initial_mcp_state = mcp.pending_mcp_management.clone();
+    let mut mcp_backend = RecordingBackend::default();
+    mcp.handle_key(
+        KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+        &config,
+        &mut mcp_backend,
+    )
+    .await
+    .expect("Ctrl+U should not remove the selected MCP server");
+    assert_eq!(mcp.pending_mcp_management, initial_mcp_state);
+    assert_eq!(mcp_backend.calls(), Vec::new());
+    mcp.handle_key(key_char('u'), &config, &mut mcp_backend)
+        .await
+        .expect("plain remove key should work");
+    assert!(mcp_backend.calls().iter().any(|call| matches!(
+        call,
+        RecordedBackendCall::McpServerWriteConfig {
+            value: serde_json::Value::Null,
+            merge_strategy: MergeStrategy::Replace,
+            ..
+        }
+    )));
+
+    let mut safety = ShellState::snapshot_fixture();
+    let mut safety_backend = RecordingBackend::default();
+    safety
+        .submit_prompt(&mut safety_backend, "Explain the request".to_string())
+        .await
+        .expect("turn should start");
+    safety.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &safety,
+            "turn-submit",
+            /*show_buffering_ui*/ true,
+            Some("faster-model"),
+        ),
+    ));
+    let initial_safety_calls = safety_backend.calls();
+    let initial_safety_transcript = safety.transcript.clone();
+    safety
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL),
+            &config,
+            &mut safety_backend,
+        )
+        .await
+        .expect("Ctrl+R should not retry a safety-buffered turn");
+    assert!(safety.safety_buffering_modal_lines().is_some());
+    assert_eq!(safety.transcript, initial_safety_transcript);
+    assert_eq!(safety_backend.calls(), initial_safety_calls);
+    safety
+        .handle_key(key_char('r'), &config, &mut safety_backend)
+        .await
+        .expect("plain retry key should work");
+    assert!(safety.safety_buffering_modal_lines().is_none());
+    assert!(
+        safety_backend
+            .calls()
+            .iter()
+            .any(|call| matches!(call, RecordedBackendCall::Rollback { .. }))
+    );
+
+    let items = external_agent_items();
+    let mut import = ShellState::snapshot_fixture();
+    let mut import_backend = RecordingBackend::with_external_agent_items(items.clone());
+    import
+        .start_external_agent_import_review(&mut import_backend)
+        .await
+        .expect("external agent import review should open");
+    let initial_import_state = import.pending_external_agent_import.clone();
+    let initial_import_calls = import_backend.calls();
+    import
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL),
+            &config,
+            &mut import_backend,
+        )
+        .await
+        .expect("modified Enter should not start import");
+    assert_eq!(import.pending_external_agent_import, initial_import_state);
+    assert_eq!(import_backend.calls(), initial_import_calls);
+    import
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut import_backend,
+        )
+        .await
+        .expect("plain Enter should start import");
+    assert!(
+        import_backend
+            .calls()
+            .contains(&RecordedBackendCall::ExternalAgentConfigImport(items))
+    );
+}
+
+#[tokio::test]
+async fn modified_enter_does_not_commit_editors_or_command_palette_actions() {
+    let config = test_config().await;
+    let modifiers = [
+        KeyModifiers::CONTROL,
+        KeyModifiers::ALT,
+        KeyModifiers::SUPER,
+        KeyModifiers::SHIFT,
+    ];
+
+    let session_id = test_thread_id("01900000-0000-7000-8000-000000000397");
+    let mut sessions = ShellState::snapshot_fixture();
+    sessions.dashboard_route = DashboardRoute::Sessions;
+    sessions.session_list.focused = true;
+    sessions.session_list.replace_threads(vec![thread_fixture(
+        session_id,
+        Some("rename draft"),
+        "modified Enter guard",
+    )]);
+    let mut session_backend = RecordingBackend::default();
+    sessions
+        .handle_key(key_char('n'), &config, &mut session_backend)
+        .await
+        .expect("rename mode should open");
+    for modifier in modifiers {
+        sessions
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, modifier),
+                &config,
+                &mut session_backend,
+            )
+            .await
+            .expect("modified Enter should not commit a session rename");
+        assert!(sessions.session_list.renaming());
+        assert_eq!(sessions.session_list.selected_title(), Some("rename draft"));
+        assert_eq!(session_backend.calls(), Vec::new());
+    }
+
+    sessions
+        .handle_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &config,
+            &mut session_backend,
+        )
+        .await
+        .expect("plain Esc should cancel rename mode");
+    sessions
+        .handle_key(key_char('/'), &config, &mut session_backend)
+        .await
+        .expect("search mode should open");
+    sessions
+        .handle_key(key_char('x'), &config, &mut session_backend)
+        .await
+        .expect("search text should be accepted");
+    for modifier in modifiers {
+        sessions
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, modifier),
+                &config,
+                &mut session_backend,
+            )
+            .await
+            .expect("modified Enter should not stop search mode");
+        assert!(sessions.session_list.search_active());
+    }
+    sessions
+        .handle_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::ALT),
+            &config,
+            &mut session_backend,
+        )
+        .await
+        .expect("modified Esc should not cancel search mode");
+    assert!(sessions.session_list.search_active());
+    sessions
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut session_backend,
+        )
+        .await
+        .expect("plain Enter should stop search mode");
+    assert_eq!(
+        sessions.session_list.list_params().search_term,
+        Some("x".to_string())
+    );
+
+    let mut settings = ShellState::snapshot_fixture();
+    settings.dashboard_route = DashboardRoute::Settings;
+    settings.settings.focused = true;
+    settings
+        .settings
+        .start_edit(SettingsAction::Theme, "theme-draft".to_string());
+    let mut settings_backend = RecordingBackend::default();
+    for modifier in modifiers {
+        settings
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, modifier),
+                &config,
+                &mut settings_backend,
+            )
+            .await
+            .expect("modified Enter should not commit a settings edit");
+        assert!(settings.settings.editing());
+        assert_eq!(settings_backend.calls(), Vec::new());
+    }
+
+    let mut mcp = ShellState::snapshot_fixture();
+    mcp.mcp_catalog = Some(ListMcpServerStatusResponse {
+        data: vec![mcp_status_fixture(
+            "github",
+            McpAuthStatus::NotLoggedIn,
+            ["search"],
+        )],
+        next_cursor: None,
+    });
+    mcp.open_mcp_management();
+    let mut mcp_backend = RecordingBackend::default();
+    mcp.handle_key(key_char('e'), &config, &mut mcp_backend)
+        .await
+        .expect("MCP edit mode should open");
+    let initial_mcp_state = mcp.pending_mcp_management.clone();
+    for modifier in modifiers {
+        mcp.handle_key(
+            KeyEvent::new(KeyCode::Enter, modifier),
+            &config,
+            &mut mcp_backend,
+        )
+        .await
+        .expect("modified Enter should not commit an MCP edit");
+        assert_eq!(mcp.pending_mcp_management, initial_mcp_state);
+        assert_eq!(mcp_backend.calls(), Vec::new());
+    }
+
+    let mut palette = ShellState::snapshot_fixture();
+    palette.open_command_palette();
+    select_command_palette_action(&mut palette, CommandPaletteAction::ResumeThread);
+    let initial_palette_state = palette.command_palette.clone();
+    let initial_route = palette.dashboard_route;
+    let mut palette_backend = RecordingBackend::default();
+    for modifier in modifiers {
+        palette
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, modifier),
+                &config,
+                &mut palette_backend,
+            )
+            .await
+            .expect("modified Enter should not execute a command palette action");
+        assert_eq!(palette.command_palette, initial_palette_state);
+        assert_eq!(palette.dashboard_route, initial_route);
+        assert_eq!(palette_backend.calls(), Vec::new());
+    }
+}
+
 #[tokio::test]
 async fn repeated_action_keys_do_not_toggle_submit_or_delete() {
     let config = test_config().await;

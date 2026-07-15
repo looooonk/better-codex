@@ -5,11 +5,11 @@ use super::TranscriptKind;
 use super::TranscriptLine;
 use super::backend::AppShellBackend;
 use super::backend::AppShellTurnStart;
+use super::is_unmodified_action_key;
 use codex_app_server_protocol::ModelSafetyBufferingUpdatedNotification;
 use codex_protocol::openai_models::ReasoningEffort;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
-use crossterm::event::KeyModifiers;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
@@ -335,6 +335,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if !is_unmodified_action_key(key) {
+            return;
+        }
         let action = match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
                 self.safety_buffering.move_selection(/*offset*/ -1);
@@ -347,7 +350,6 @@ impl ShellState {
             KeyCode::Esc | KeyCode::Char('d') => Some(SafetyBufferingAction::Dismiss),
             KeyCode::Char('r') => self.safety_buffering.retry_action(),
             KeyCode::Enter => self.safety_buffering.selected_action(),
-            _ if key.modifiers == KeyModifiers::NONE => None,
             _ => None,
         };
         match action {

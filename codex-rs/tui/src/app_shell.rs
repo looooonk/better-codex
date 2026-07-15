@@ -125,6 +125,7 @@ use safety_buffering::SafetyBufferingState;
 use selector::SelectorState;
 use selector::SelectorValue;
 use sessions::SessionListState;
+use sessions::SessionSearchOutcome;
 use settings::SettingsAction;
 use settings::SettingsState;
 use shell_command::ShellCommand;
@@ -1110,7 +1111,10 @@ impl ShellState {
             .thread_list(self.session_list.list_params())
             .await
         {
-            Ok(response) => self.session_list.replace_threads(response.data),
+            Ok(response) => self.session_list.replace_thread_page(
+                response.data,
+                /*has_more*/ response.next_cursor.is_some(),
+            ),
             Err(err) => self.session_list.set_error(err.to_string()),
         }
     }
@@ -1235,6 +1239,13 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if key_hint::ctrl(KeyCode::Char('p')).is_press(key) {
+            self.close_command_palette();
+            return Ok(());
+        }
+        if !is_unmodified_action_key(key) {
+            return Ok(());
+        }
         match key.code {
             KeyCode::Esc => {
                 self.close_command_palette();
@@ -1263,9 +1274,6 @@ impl ShellState {
                 if let Some(palette) = &mut self.command_palette {
                     palette.select_last(&entries);
                 }
-            }
-            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.close_command_palette();
             }
             KeyCode::Char(_)
             | KeyCode::Backspace
@@ -1308,8 +1316,22 @@ impl ShellState {
                 .map(|()| true);
         }
         if self.session_list.search_active() {
-            self.handle_session_search_key(key);
+            if self.handle_session_search_key(key) == SessionSearchOutcome::RefreshList {
+                self.refresh_session_list(app_server).await;
+            }
             return Ok(true);
+        }
+        if !is_unmodified_action_key(key) {
+            return Ok(matches!(
+                key.code,
+                KeyCode::Esc
+                    | KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::Enter
+                    | KeyCode::Char('k' | 'j' | '/' | 'v' | 'r' | 'f' | 'a' | 'u' | 'd' | 'n')
+                    | KeyCode::PageUp
+                    | KeyCode::PageDown
+            ));
         }
         match key.code {
             KeyCode::Esc => {
@@ -1397,28 +1419,37 @@ impl ShellState {
         }
     }
 
-    fn handle_session_search_key(&mut self, key: KeyEvent) {
+    fn handle_session_search_key(&mut self, key: KeyEvent) -> SessionSearchOutcome {
+        if (matches!(key.code, KeyCode::Esc | KeyCode::Enter) && !is_unmodified_key_press(key))
+            || (key.code == KeyCode::Backspace && !is_unmodified_key_event(key))
+            || (matches!(key.code, KeyCode::Up | KeyCode::Down) && !is_unmodified_action_key(key))
+        {
+            return SessionSearchOutcome::LocalFilterOnly;
+        }
         match key.code {
             KeyCode::Esc => {
                 self.session_list.clear_search();
+                SessionSearchOutcome::RefreshList
             }
             KeyCode::Enter => {
                 self.session_list.stop_search();
+                SessionSearchOutcome::RefreshList
             }
-            KeyCode::Backspace => {
-                self.session_list.backspace_search();
-            }
+            KeyCode::Backspace => self.session_list.backspace_search(),
             KeyCode::Char(ch)
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
             {
                 self.session_list.push_search_char(ch);
+                SessionSearchOutcome::LocalFilterOnly
             }
-            KeyCode::Char(_) => {}
+            KeyCode::Char(_) => SessionSearchOutcome::LocalFilterOnly,
             KeyCode::Up => {
                 self.session_list.move_selection_up();
+                SessionSearchOutcome::LocalFilterOnly
             }
             KeyCode::Down => {
                 self.session_list.move_selection_down();
+                SessionSearchOutcome::LocalFilterOnly
             }
             KeyCode::Left
             | KeyCode::Right
@@ -1440,7 +1471,7 @@ impl ShellState {
             | KeyCode::Tab
             | KeyCode::BackTab
             | KeyCode::PageUp
-            | KeyCode::PageDown => {}
+            | KeyCode::PageDown => SessionSearchOutcome::LocalFilterOnly,
         }
     }
 
@@ -1452,6 +1483,11 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if (matches!(key.code, KeyCode::Esc | KeyCode::Enter) && !is_unmodified_key_press(key))
+            || (key.code == KeyCode::Backspace && !is_unmodified_key_event(key))
+        {
+            return Ok(());
+        }
         match key.code {
             KeyCode::Esc => {
                 self.session_list.cancel_rename();
@@ -3616,6 +3652,32 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
         } if modifiers.contains(KeyModifiers::CONTROL) => Some(DashboardRoute::Settings),
         _ => None,
     }
+}
+
+fn is_unmodified_action_key(key: KeyEvent) -> bool {
+    is_unmodified_key_event(key)
+        && (is_unmodified_key_press(key)
+            || key.kind == KeyEventKind::Repeat
+                && matches!(
+                    key.code,
+                    KeyCode::Up
+                        | KeyCode::Down
+                        | KeyCode::Left
+                        | KeyCode::Right
+                        | KeyCode::Home
+                        | KeyCode::End
+                        | KeyCode::PageUp
+                        | KeyCode::PageDown
+                ))
+}
+
+fn is_unmodified_key_event(key: KeyEvent) -> bool {
+    key.modifiers == KeyModifiers::NONE
+        && matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+}
+
+fn is_unmodified_key_press(key: KeyEvent) -> bool {
+    key.modifiers == KeyModifiers::NONE && key.kind == KeyEventKind::Press
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

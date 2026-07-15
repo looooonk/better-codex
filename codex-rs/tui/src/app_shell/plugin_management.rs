@@ -1,5 +1,6 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::is_unmodified_action_key;
 use codex_app_server_protocol::PluginAvailability;
 use codex_app_server_protocol::PluginInstallParams;
 use codex_app_server_protocol::PluginInstallPolicy;
@@ -42,6 +43,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if !is_unmodified_action_key(key) {
+            return Ok(true);
+        }
         match key.code {
             KeyCode::Esc => self.pending_plugin_management = None,
             KeyCode::Up | KeyCode::Char('k') => {

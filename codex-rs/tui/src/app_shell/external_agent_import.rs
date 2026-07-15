@@ -1,5 +1,6 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::is_unmodified_action_key;
 use crate::app_server_session::EXTERNAL_AGENT_CONFIG_IMPORT_IN_PROGRESS_MESSAGE;
 use crate::external_agent_config_migration_flow::EXTERNAL_AGENT_CONFIG_MIGRATION_DAEMON_UNAVAILABLE_MESSAGE;
 use crate::external_agent_config_migration_flow::EXTERNAL_AGENT_CONFIG_MIGRATION_NO_ITEMS_MESSAGE;
@@ -203,6 +204,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if !is_unmodified_action_key(key) {
+            return Ok(true);
+        }
         match key.code {
             KeyCode::Esc => {
                 self.pending_external_agent_import = None;

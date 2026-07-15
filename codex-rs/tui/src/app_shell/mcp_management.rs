@@ -1,5 +1,8 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::is_unmodified_action_key;
+use super::is_unmodified_key_event;
+use super::is_unmodified_key_press;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::McpAuthStatus;
 use codex_app_server_protocol::McpServerOauthLoginParams;
@@ -8,6 +11,7 @@ use codex_app_server_protocol::MergeStrategy;
 use color_eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
+use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -46,6 +50,9 @@ impl ShellState {
         {
             return self.handle_mcp_edit_key(key, app_server).await;
         }
+        if !is_unmodified_action_key(key) {
+            return Ok(true);
+        }
         match key.code {
             KeyCode::Esc => self.pending_mcp_management = None,
             KeyCode::Up | KeyCode::Char('k') => self.with_mcp_state(McpManagementState::move_up),
@@ -75,6 +82,16 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        let is_shift_back_tab = key.kind == KeyEventKind::Press
+            && key.code == KeyCode::BackTab
+            && key.modifiers == KeyModifiers::SHIFT;
+        if (matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Tab)
+            && !is_unmodified_key_press(key))
+            || (key.code == KeyCode::Backspace && !is_unmodified_key_event(key))
+            || (key.code == KeyCode::BackTab && !is_unmodified_key_press(key) && !is_shift_back_tab)
+        {
+            return Ok(true);
+        }
         match key.code {
             KeyCode::Esc => self.with_mcp_state(McpManagementState::cancel_edit),
             KeyCode::Enter => self.apply_mcp_edit(app_server).await?,
