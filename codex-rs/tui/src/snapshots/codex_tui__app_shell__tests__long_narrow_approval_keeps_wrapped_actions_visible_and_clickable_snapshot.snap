@@ -15,8 +15,8 @@ expression: rendered
 │--package codex-tui --features long-  │
 │running-integration-checks            │
 │  This command needs temporary network│
-│access to validate remote fixtures and│
-│download test metadata before the     │
+│  access to validate remote fixtures  │
+│  and download test metadata before   │
 │   Approve ↵   Deny n   Edit e        │
-│Explain ?                             │
+│  Explain ?                           │
 ╰──────────────────────────────────────╯

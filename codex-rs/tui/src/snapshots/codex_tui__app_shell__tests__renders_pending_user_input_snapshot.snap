@@ -26,7 +26,7 @@ expression: "render_shell(&shell, area)"
 │◆ TOOL INPUT                                    ││▎thinking
 │? Tool input: tool-input-1 (1/1)                ││
 │  Environment: Which environment should the tool││▎◆ PLAN
-│use?                                            ││▎Build the standalone shell in slices.
+│  use?                                          ││▎Build the standalone shell in slices.
 │> 2  1 Production  2 Staging                    ││▎x Shell frame
 │                                                ││▎> Transcript model
 ╰────────────────────────────────────────────────╯│

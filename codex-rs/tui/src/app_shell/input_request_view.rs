@@ -25,6 +25,7 @@ struct RequestPanelSegment {
     content: Line<'static>,
     logical_line: usize,
     source_column: usize,
+    display_prefix_width: usize,
 }
 
 pub(super) fn request_panel_visual_line_count(lines: &[Line<'static>], width: u16) -> usize {
@@ -54,11 +55,11 @@ pub(super) fn request_panel_hit(
 
     let segments = visible_segments(lines, body.width, body.height);
     let segment = segments.get(usize::from(position.y.saturating_sub(body.y)))?;
+    let display_column = usize::from(position.x.saturating_sub(body.x));
+    let source_offset = display_column.checked_sub(segment.display_prefix_width)?;
     Some(RequestPanelHit {
         line: segment.logical_line,
-        column: segment
-            .source_column
-            .saturating_add(usize::from(position.x.saturating_sub(body.x))),
+        column: segment.source_column.saturating_add(source_offset),
     })
 }
 
@@ -125,20 +126,44 @@ fn wrapped_segments(lines: &[Line<'static>], width: u16) -> Vec<RequestPanelSegm
         .enumerate()
         .flat_map(|(logical_line, line)| {
             let text = line_text(line);
-            let mut ranges = wrap_ranges_trim(&text, width);
+            let continuation_indent = continuation_indent(line);
+            let display_prefix_width = UnicodeWidthStr::width(continuation_indent.as_str());
+            let range_options =
+                textwrap::Options::new(width).subsequent_indent(&continuation_indent);
+            let mut ranges = wrap_ranges_trim(&text, range_options);
             if ranges.is_empty() {
                 ranges.push(0..0);
             }
-            word_wrap_lines(vec![line.clone()], RtOptions::new(width))
-                .into_iter()
-                .zip(ranges)
-                .map(move |(content, range)| RequestPanelSegment {
+            word_wrap_lines(
+                vec![line.clone()],
+                RtOptions::new(width).subsequent_indent(Line::from(continuation_indent)),
+            )
+            .into_iter()
+            .zip(ranges)
+            .enumerate()
+            .map(
+                move |(segment_index, (content, range))| RequestPanelSegment {
                     content,
                     logical_line,
                     source_column: UnicodeWidthStr::width(&text[..range.start]),
-                })
+                    display_prefix_width: if segment_index == 0 {
+                        0
+                    } else {
+                        display_prefix_width
+                    },
+                },
+            )
         })
         .collect()
+}
+
+fn continuation_indent(line: &Line<'_>) -> String {
+    line.spans
+        .first()
+        .map(|span| span.content.as_ref())
+        .filter(|prefix| !prefix.is_empty() && prefix.chars().all(char::is_whitespace))
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn line_text(line: &Line<'_>) -> String {
@@ -248,3 +273,7 @@ pub(super) fn elicitation_lines(pending: &PendingElicitation) -> Vec<Line<'stati
         Line::from(action_line),
     ]
 }
+
+#[cfg(test)]
+#[path = "input_request_view_tests.rs"]
+mod tests;
