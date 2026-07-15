@@ -626,7 +626,7 @@ impl ShellView<'_> {
         buf: &mut Buffer,
     ) {
         let mut y = area.y;
-        for (index, panel) in panels.iter().enumerate() {
+        for panel in panels {
             if y >= area.bottom() {
                 break;
             }
@@ -640,7 +640,6 @@ impl ShellView<'_> {
                 break;
             }
             let panel_area = Rect::new(area.x, y, area.width, height);
-            fill_rect(buf, panel_area, panel.background(index));
             let text_area = if panel.show_title {
                 for rail_y in panel_area.y..panel_area.bottom() {
                     if let Some(cell) = buf.cell_mut((panel_area.x, rail_y)) {
@@ -663,7 +662,7 @@ impl ShellView<'_> {
             }
             lines.extend(panel.lines.clone());
             Paragraph::new(lines)
-                .style(pane_style(panel.background(index)))
+                .style(Style::new().fg(palette::TEXT))
                 .wrap(Wrap { trim: false })
                 .render(text_area, buf);
             self.render_dashboard_hover(panel, panel_area, text_area, buf);

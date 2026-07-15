@@ -13,7 +13,6 @@ use crate::goal_display::format_goal_elapsed_seconds;
 use crate::goal_display::goal_status_label;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use codex_app_server_protocol::TurnPlanStepStatus;
-use ratatui::style::Color;
 use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -79,11 +78,6 @@ impl DashboardPanel {
                 .saturating_add(usize::from(self.show_title)),
         )
         .unwrap_or(u16::MAX)
-    }
-
-    pub(super) fn background(&self, index: usize) -> Color {
-        let _ = index;
-        palette::DARK
     }
 }
 
