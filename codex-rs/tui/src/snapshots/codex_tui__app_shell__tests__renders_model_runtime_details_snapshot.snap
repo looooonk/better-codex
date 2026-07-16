@@ -21,12 +21,12 @@ expression: "render_shell(&shell, area)"
  ▌ edited 3 files +128 -24                        │
                                                   │▎◆ TOOLS
  ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
-          surface.                                │▎completed file changes in app_shell
-                                                  │
+          surface.                                │
                                                   │▎◆ EDITS
-╭────────────────────────────────────────────────╮│▎3 files +128 -24
-│◆ MESSAGE  1:37                                 ││
-│> Summarize the new shell architecture          ││▎◆ WORKSPACE
-│                                                ││▎cwd /workspace/better-codex
+                                                  │▎3 files +128 -24
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││▎◆ WORKSPACE
+│> Summarize the new shell architecture          ││▎cwd /workspace/better-codex
 │                                                ││▎profile managed
+│                                                ││▎files restricted, net restricted
 ╰────────────────────────────────────────────────╯│

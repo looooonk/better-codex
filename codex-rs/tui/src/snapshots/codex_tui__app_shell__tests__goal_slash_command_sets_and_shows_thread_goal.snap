@@ -26,7 +26,7 @@ expression: "render_shell(&shell, area)"
                                                   │
 ╭────────────────────────────────────────────────╮│▎◆ TOOLS
 │◆ MESSAGE  1:1                                  ││▎in progress exec just test -p codex-tui
-│> Type a message, Shift+Enter for newline       ││▎completed file changes in app_shell
-│                                                ││
-│                                                ││
+│> Type a message, Shift+Enter for newline       ││
+│                                                ││▎◆ EDITS
+│                                                ││▎3 files +128 -24
 ╰────────────────────────────────────────────────╯│

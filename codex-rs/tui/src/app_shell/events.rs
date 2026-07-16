@@ -196,10 +196,7 @@ impl ShellState {
                     if let Some(title) = item_activity_title(&started.item) {
                         let item_id = started.item.id().to_string();
                         self.record_item_activity(&started.item, title.clone(), "in progress");
-                        if !matches!(
-                            &started.item,
-                            ThreadItem::FileChange { .. } | ThreadItem::SubAgentActivity { .. }
-                        ) {
+                        if !matches!(&started.item, ThreadItem::SubAgentActivity { .. }) {
                             self.push_tool_with_status_for_item(
                                 item_id,
                                 title,
@@ -260,12 +257,6 @@ impl ShellState {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.latest_diff = Some(super::diff_summary_from_changes(&updated.changes));
                     self.mark_workspace_status_refresh_due();
-                    let summary = super::file_change_summary(&updated.changes);
-                    self.upsert_tool_activity(
-                        updated.item_id.clone(),
-                        summary,
-                        "in progress".to_string(),
-                    );
                     self.push_diff_with_status_for_item(
                         updated.item_id,
                         super::file_change_detail(&updated.changes),
@@ -596,14 +587,12 @@ pub(super) fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) 
         | codex_app_server_protocol::ThreadItem::AgentMessage { .. }
         | codex_app_server_protocol::ThreadItem::Plan { .. }
         | codex_app_server_protocol::ThreadItem::Reasoning { .. }
+        | codex_app_server_protocol::ThreadItem::FileChange { .. }
         | codex_app_server_protocol::ThreadItem::EnteredReviewMode { .. }
         | codex_app_server_protocol::ThreadItem::ExitedReviewMode { .. }
         | codex_app_server_protocol::ThreadItem::ContextCompaction { .. } => None,
         codex_app_server_protocol::ThreadItem::CommandExecution { command, .. } => {
             Some(format!("exec {command}"))
-        }
-        codex_app_server_protocol::ThreadItem::FileChange { changes, .. } => {
-            Some(super::file_change_summary(changes))
         }
         codex_app_server_protocol::ThreadItem::McpToolCall { server, tool, .. } => {
             Some(format!("mcp {server}/{tool}"))

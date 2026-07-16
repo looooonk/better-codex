@@ -21,20 +21,20 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
  ▌ edited 3 files +│Install / update ↵  Toggle e  Uninstall u  Refresh r                  │
  ▎ STATUS  plugin m│> enabled    Calendar (local)                                         │
                    │  available  Drive (local)                                            │ codex-tui
- ▎ CODEX  The new s│                                                                      │_shell
+ ▎ CODEX  The new s│                                                                      │
                    │Action: press i or Enter to update from the marketplace               │
                    │                                                                      │
                    ╰──────────────────────────────────────────────────────────────────────╯
-                                                            │
                                                             │▎◆ WORKSPACE
                                                             │▎cwd /workspace/better-codex
                                                             │▎profile managed
                                                             │▎files restricted, net restricted
                                                             │▎roots none selected
                                                             │
-╭──────────────────────────────────────────────────────────╮│▎◆ TOKENS
-│◆ MESSAGE  1:37                                           ││▎input 1k | output 240
-│> Summarize the new shell architecture                    ││▎Context 100% left
+                                                            │▎◆ TOKENS
+╭──────────────────────────────────────────────────────────╮│▎input 1k | output 240
+│◆ MESSAGE  1:37                                           ││▎Context 100% left
+│> Summarize the new shell architecture                    ││
 │                                                          ││
 │                                                          ││
 ╰──────────────────────────────────────────────────────────╯│

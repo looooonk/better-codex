@@ -2705,13 +2705,7 @@ impl ShellState {
                 changes,
                 status,
             } => {
-                let summary = file_change_summary(&changes);
                 self.latest_diff = Some(diff_summary_from_changes(&changes));
-                self.upsert_tool_activity(
-                    id.clone(),
-                    summary,
-                    format!("{status:?}").to_lowercase(),
-                );
                 self.push_diff_with_status_for_item(
                     id,
                     file_change_detail(&changes),
@@ -2856,6 +2850,7 @@ impl ShellState {
             ThreadItem::CollabAgentToolCall { .. } | ThreadItem::SubAgentActivity { .. } => {
                 self.upsert_subagent_activity(id, title, status.to_string());
             }
+            ThreadItem::FileChange { .. } => {}
             _ => self.upsert_tool_activity(id, title, status.to_string()),
         }
     }
@@ -3161,18 +3156,11 @@ impl ShellState {
                 },
             ],
             active_goal: None,
-            tool_activity: VecDeque::from([
-                ToolActivity {
-                    id: "tool-1".to_string(),
-                    title: "exec just test -p codex-tui".to_string(),
-                    status: "in progress".to_string(),
-                },
-                ToolActivity {
-                    id: "tool-2".to_string(),
-                    title: "file changes in app_shell".to_string(),
-                    status: "completed".to_string(),
-                },
-            ]),
+            tool_activity: VecDeque::from([ToolActivity {
+                id: "tool-1".to_string(),
+                title: "exec just test -p codex-tui".to_string(),
+                status: "in progress".to_string(),
+            }]),
             agent_activity: AgentActivityState::default(),
             agent_log: None,
             tool_output: None,

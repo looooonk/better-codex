@@ -26,13 +26,13 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
-                                                  │▎completed file changes in app_shell
                                                   │
                                                   │▎◆ EDITS
                                                   │▎3 files +128 -24
-╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││▎◆ WORKSPACE
-│> Summarize the new shell architecture          ││▎cwd /workspace/better-codex
-│                                                ││▎profile managed
+                                                  │
+╭────────────────────────────────────────────────╮│▎◆ WORKSPACE
+│◆ MESSAGE  1:37                                 ││▎cwd /workspace/better-codex
+│> Summarize the new shell architecture          ││▎profile managed
 │                                                ││▎files restricted, net restricted
+│                                                ││▎roots none selected
 ╰────────────────────────────────────────────────╯│

@@ -5663,6 +5663,7 @@ fn file_change_patch_updates_one_diff_box_per_item() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.streaming_assistant.clear();
+    shell.tool_activity.clear();
     let thread_id = shell.thread_id.to_string();
 
     for diff in ["+first\n", "+second\n"] {
@@ -5689,6 +5690,7 @@ fn file_change_patch_updates_one_diff_box_per_item() {
         .tool_status(ToolBlockStatus::Running)
         .item_id("file-1")])
     );
+    assert_eq!(shell.tool_activity, VecDeque::new());
 }
 
 #[test]
@@ -5696,6 +5698,7 @@ fn file_change_notifications_render_only_the_edited_log_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.streaming_assistant.clear();
+    shell.tool_activity.clear();
     let thread_id = shell.thread_id.to_string();
     let changes = sample_file_changes();
 
@@ -5730,6 +5733,7 @@ fn file_change_notifications_render_only_the_edited_log_snapshot() {
                 .item_id("file-1")
         ])
     );
+    assert_eq!(shell.tool_activity, VecDeque::new());
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
     );

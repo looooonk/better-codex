@@ -21,8 +21,7 @@ expression: "render_shell(&shell, area)"
  ▌ edited 3 files +128 -24                        │
                                                   │▎◆ TOOLS
  ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
-          surface.                                │▎completed file changes in app_shell
-                                                  │
+          surface.                                │
                                                   │▎◆ EDITS
                                                   │▎3 files +128 -24
                                                   │
@@ -38,9 +37,10 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │▎◆ RATE LIMITS
                                                   │▎Codex 82% 5h
-╭────────────────────────────────────────────────╮│▎  secondary 18% 7d
-│◆ MESSAGE  1:37                                 ││▎credits $12.34
-│> Summarize the new shell architecture          ││▎spend 75% left
-│                                                ││▎Background 95% 1h
+                                                  │▎  secondary 18% 7d
+╭────────────────────────────────────────────────╮│▎credits $12.34
+│◆ MESSAGE  1:37                                 ││▎spend 75% left
+│> Summarize the new shell architecture          ││▎Background 95% 1h
 │                                                ││▎limited RateLimitReached
+│                                                ││▎reset credits 2
 ╰────────────────────────────────────────────────╯│

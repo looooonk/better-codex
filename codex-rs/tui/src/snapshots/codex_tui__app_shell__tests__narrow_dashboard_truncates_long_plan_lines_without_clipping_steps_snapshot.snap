@@ -23,7 +23,6 @@ expression: rendered
  ▎ CODEX  The new shell owns the fullscreen       │
           surface.                                │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
-                                                  │▎completed file changes in app_shell
                                                   │
                                                   │▎◆ EDITS
                                                   │▎3 files +128 -24
@@ -32,9 +31,10 @@ expression: rendered
                                                   │▎cwd /workspace/better-codex
                                                   │▎profile managed
                                                   │▎files restricted, net restricted
-╭────────────────────────────────────────────────╮│▎roots none selected
-│◆ MESSAGE  1:37                                 ││
-│> Summarize the new shell architecture          ││▎◆ TOKENS
-│                                                ││▎input 1k | output 240
+                                                  │▎roots none selected
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││▎◆ TOKENS
+│> Summarize the new shell architecture          ││▎input 1k | output 240
 │                                                ││▎Context 100% left
+│                                                ││
 ╰────────────────────────────────────────────────╯│
