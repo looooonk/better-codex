@@ -22,12 +22,14 @@ pub(super) enum HeaderControl {
     Dashboard,
     Model,
     ReasoningEffort,
+    ServiceTier,
 }
 
 pub(super) struct HeaderView<'a> {
     pub(super) cwd: &'a str,
     pub(super) model: &'a str,
     pub(super) reasoning_effort: &'a str,
+    pub(super) service_tier: &'a str,
     pub(super) status: &'a str,
     pub(super) dashboard_visible: bool,
 }
@@ -69,6 +71,15 @@ impl HeaderView<'_> {
                     )
                     .render(effort, buf);
             }
+            if let Some(service_tier) = layout.service_tier {
+                Paragraph::new(self.service_tier_label())
+                    .style(
+                        Style::new()
+                            .fg(palette::PURPLE)
+                            .bg(control_background(hovered, HeaderControl::ServiceTier)),
+                    )
+                    .render(service_tier, buf);
+            }
             if let Some(status) = layout.status {
                 Paragraph::new(self.status_line())
                     .style(pane_style(palette::DARK))
@@ -94,6 +105,11 @@ impl HeaderView<'_> {
             Some(HeaderControl::Model)
         } else if layout.effort.is_some_and(|area| area.contains(position)) {
             Some(HeaderControl::ReasoningEffort)
+        } else if layout
+            .service_tier
+            .is_some_and(|area| area.contains(position))
+        {
+            Some(HeaderControl::ServiceTier)
         } else {
             None
         }
@@ -103,6 +119,7 @@ impl HeaderView<'_> {
         let content = pane_content_rect(area);
         let model_width = text_width(&self.model_label());
         let effort_width = text_width(&self.effort_label());
+        let service_tier_width = text_width(&self.service_tier_label());
         let dashboard_width = if self.dashboard_visible {
             None
         } else {
@@ -111,6 +128,7 @@ impl HeaderView<'_> {
         let status_width = line_width(&self.status_line());
         let model_width = u16::try_from(model_width).ok()?;
         let effort_width = u16::try_from(effort_width).ok()?;
+        let service_tier_width = u16::try_from(service_tier_width).ok()?;
         let status_width = u16::try_from(status_width).ok()?;
         for (compact_brand, include_status) in [(false, true), (true, true), (true, false)] {
             let status_and_gap = if include_status {
@@ -125,6 +143,8 @@ impl HeaderView<'_> {
                 .saturating_add(model_width)
                 .saturating_add(CONTROL_GAP)
                 .saturating_add(effort_width)
+                .saturating_add(CONTROL_GAP)
+                .saturating_add(service_tier_width)
                 .saturating_add(status_and_gap);
             let required_width = line_width(&self.brand_line(compact_brand))
                 .saturating_add(usize::from(BRAND_CONTROL_GAP))
@@ -138,10 +158,13 @@ impl HeaderView<'_> {
             let effort_x = model_x
                 .saturating_add(model_width)
                 .saturating_add(CONTROL_GAP);
+            let service_tier_x = effort_x
+                .saturating_add(effort_width)
+                .saturating_add(CONTROL_GAP);
             let status = include_status.then(|| {
                 Rect::new(
-                    effort_x
-                        .saturating_add(effort_width)
+                    service_tier_x
+                        .saturating_add(service_tier_width)
                         .saturating_add(CONTROL_GAP),
                     content.y,
                     status_width,
@@ -152,6 +175,7 @@ impl HeaderView<'_> {
                 dashboard,
                 model: Some(Rect::new(model_x, content.y, model_width, 1)),
                 effort: Some(Rect::new(effort_x, content.y, effort_width, 1)),
+                service_tier: Some(Rect::new(service_tier_x, content.y, service_tier_width, 1)),
                 status,
                 compact_brand,
             });
@@ -171,6 +195,7 @@ impl HeaderView<'_> {
                     )),
                     model: None,
                     effort: None,
+                    service_tier: None,
                     status: None,
                     compact_brand,
                 });
@@ -213,6 +238,13 @@ impl HeaderView<'_> {
         )
     }
 
+    fn service_tier_label(&self) -> String {
+        format!(
+            " {} ▾ ",
+            truncate_text(self.service_tier, /*max_graphemes*/ 12)
+        )
+    }
+
     fn status_line(&self) -> Line<'static> {
         let color = match self.status {
             "ready" => palette::SUCCESS,
@@ -240,6 +272,7 @@ struct HeaderControlLayout {
     dashboard: Option<Rect>,
     model: Option<Rect>,
     effort: Option<Rect>,
+    service_tier: Option<Rect>,
     status: Option<Rect>,
     compact_brand: bool,
 }

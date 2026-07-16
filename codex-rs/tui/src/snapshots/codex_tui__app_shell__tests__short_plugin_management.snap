@@ -2,7 +2,7 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │
 ──────────────────────────────────────────────────│ Settings │ Agents │ Workspace │ Sessions │ Help
               ╭──────────────────────────────────────────────────────────────────────╮━━━━━━━──────
  ◆ CONVERSATIO│◆ PLUGINS                                                             │

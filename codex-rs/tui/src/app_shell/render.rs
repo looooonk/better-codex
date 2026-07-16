@@ -219,10 +219,17 @@ impl ShellView<'_> {
             .as_ref()
             .map(ToString::to_string)
             .unwrap_or_else(|| "default".to_string());
+        let service_tier = self
+            .shell
+            .service_tier
+            .as_deref()
+            .filter(|service_tier| !service_tier.trim().is_empty())
+            .unwrap_or("default");
         HeaderView {
             cwd: &self.shell.cwd,
             model: &self.shell.model,
             reasoning_effort: &effort,
+            service_tier,
             status: &self.shell.status,
             dashboard_visible: self.shell.dashboard_visible,
         }
@@ -459,10 +466,17 @@ impl ShellView<'_> {
             .as_ref()
             .map(ToString::to_string)
             .unwrap_or_else(|| "default".to_string());
+        let service_tier = self
+            .shell
+            .service_tier
+            .as_deref()
+            .filter(|service_tier| !service_tier.trim().is_empty())
+            .unwrap_or("default");
         let view = HeaderView {
             cwd: &self.shell.cwd,
             model: &self.shell.model,
             reasoning_effort: &effort,
+            service_tier,
             status: &self.shell.status,
             dashboard_visible: self.shell.dashboard_visible,
         };

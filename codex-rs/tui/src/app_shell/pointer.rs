@@ -184,6 +184,7 @@ impl ShellState {
                 }
                 HeaderControl::Model => self.open_model_selector(),
                 HeaderControl::ReasoningEffort => self.open_reasoning_selector(),
+                HeaderControl::ServiceTier => self.open_service_tier_selector(),
             }
             return Ok(());
         }

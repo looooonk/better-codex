@@ -2,7 +2,7 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 48, 16))"
 ---
- ◆ BC         gpt-5-0 ▾   default ▾  ● thinking
+ ◆ BC        gpt-5-0 ▾   default ▾   default ▾
 ────────────────────────────────────────────────
   ╭ Select model ────────────────────────────╮
   │ › 1 ● gpt-5-0  current                   │

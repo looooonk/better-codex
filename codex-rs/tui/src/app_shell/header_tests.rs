@@ -5,6 +5,7 @@ fn view() -> HeaderView<'static> {
         cwd: "/workspace/better-codex",
         model: "gpt-5-codex",
         reasoning_effort: "high",
+        service_tier: "priority",
         status: "ready",
         dashboard_visible: true,
     }
@@ -39,11 +40,48 @@ fn control_hit_targets_match_visible_chips() {
         view().control_at(
             area,
             Position::new(
+                layout.service_tier.expect("service tier chip").x,
+                layout.service_tier.expect("service tier chip").y
+            )
+        ),
+        Some(HeaderControl::ServiceTier)
+    );
+    assert_eq!(
+        view().control_at(
+            area,
+            Position::new(
                 layout.status.expect("wide status").x,
                 layout.status.expect("wide status").y
             )
         ),
         None
+    );
+}
+
+#[test]
+fn effort_and_service_tier_chips_share_the_same_accent() {
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 3,
+    );
+    let view = view();
+    let layout = view.control_layout(area).expect("wide header");
+    let mut buf = Buffer::empty(area);
+
+    view.render(area, /*hovered*/ None, &mut buf);
+
+    assert_eq!(
+        (
+            buf[layout.effort.expect("effort chip").as_position()]
+                .style()
+                .fg,
+            buf[layout
+                .service_tier
+                .expect("service tier chip")
+                .as_position()]
+            .style()
+            .fg,
+        ),
+        (Some(palette::PURPLE), Some(palette::PURPLE))
     );
 }
 

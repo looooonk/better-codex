@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
- ◆ BETTER CODEX  better-codex                        Panels   gpt-5-codex ▾   default ▾  ● thinking
+ ◆ BETTER CODEX  better-codex            Panels   gpt-5-codex ▾   default ▾   default ▾  ● thinking
 ────────────────────────────────────────────────────────────────────────────────────────────────────
 
  ◆ CONVERSATION

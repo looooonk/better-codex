@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- ◆ BETTER CODEX  better-codex           gpt-5-codex ▾   default ▾  ● thinking
+ ◆ BC                       gpt-5-codex ▾   default ▾   default ▾  ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
      Settings    │    Agents    │   Workspace    │   Sessions    │   Help
