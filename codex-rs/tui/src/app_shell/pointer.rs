@@ -47,6 +47,12 @@ impl ShellState {
     {
         self.exit_confirmation_pending = false;
         self.set_pointer_position(position);
+        if self.tool_output.is_some() {
+            if !super::tool_output_view::tool_output_panel_area(area).contains(position) {
+                self.close_tool_output();
+            }
+            return Ok(());
+        }
         if self.agent_log.is_some() {
             if !super::agent_log_view::agent_log_panel_area(area).contains(position) {
                 self.close_agent_log();
@@ -181,6 +187,10 @@ impl ShellState {
             }
             return Ok(());
         }
+        if let Some(index) = (ShellView { shell: self }).transcript_output_at(area, position) {
+            self.open_tool_output_at(index);
+            return Ok(());
+        }
         if (ShellView { shell: self })
             .input_area(area)
             .contains(position)
@@ -268,6 +278,13 @@ impl ShellState {
             MouseScrollDirection::Up => KeyCode::Up,
             MouseScrollDirection::Down => KeyCode::Down,
         };
+        if self.tool_output.is_some() {
+            match direction {
+                MouseScrollDirection::Up => self.scroll_tool_output_up(),
+                MouseScrollDirection::Down => self.scroll_tool_output_down(),
+            }
+            return;
+        }
         if self.agent_log.is_some() {
             match direction {
                 MouseScrollDirection::Up => self.scroll_agent_log_up(),
@@ -313,7 +330,8 @@ impl ShellState {
     }
 
     fn has_blocking_overlay(&self) -> bool {
-        self.agent_log.is_some()
+        self.tool_output.is_some()
+            || self.agent_log.is_some()
             || self.pending_approval.is_some()
             || self.pending_elicitation.is_some()
             || self.pending_external_agent_import.is_some()

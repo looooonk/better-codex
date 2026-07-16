@@ -7,8 +7,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 20,))"
 ──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
-   ▌ output first                                 │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   ▌        second                                │▎loading sessions
+   ▌ output ↗ first                               │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   ▌          second                              │▎loading sessions
                                                   │
                                                   │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui

@@ -364,6 +364,7 @@ impl ShellState {
                 self.on_model_safety_buffering_updated(updated);
                 if self.safety_buffering_modal_lines().is_some() {
                     self.close_agent_log();
+                    self.close_tool_output();
                 }
             }
             ServerNotification::ProcessOutputDelta(_)
@@ -543,6 +544,7 @@ impl ShellState {
 
     fn close_overlays_for_interactive_request(&mut self) {
         self.close_agent_log();
+        self.close_tool_output();
         self.selector = None;
         self.command_palette = None;
         self.pending_external_agent_import = None;

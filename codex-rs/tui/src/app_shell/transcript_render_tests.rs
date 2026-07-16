@@ -142,6 +142,42 @@ fn visible_rows_are_bounded_to_the_viewport() {
 }
 
 #[test]
+fn logical_rows_resolve_to_stored_transcript_sources() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_assistant();
+    shell.push_assistant("stored response");
+    shell.push_output_with_status_for_item(
+        "exec-1",
+        "first output line\nsecond output line",
+        ToolBlockStatus::Running,
+    );
+    shell.push_streaming_assistant_delta("streaming response");
+    let cwd = Path::new(&shell.cwd);
+    let layout = TranscriptRenderCache::default().layout(&shell, WIDTH, cwd);
+
+    let mut expected = Vec::new();
+    for chunk in &layout.chunks {
+        if chunk.separator_before {
+            expected.push(None);
+        }
+        expected.extend(std::iter::repeat_n(
+            chunk.transcript_index,
+            chunk.lines.len(),
+        ));
+    }
+    let actual = (0..layout.total_lines)
+        .map(|row| layout.transcript_index_at_row(row))
+        .collect::<Vec<_>>();
+
+    assert_eq!(actual, expected);
+    assert_eq!(layout.transcript_index_at_row(layout.total_lines), None);
+    assert_eq!(actual.iter().filter(|index| **index == Some(0)).count(), 1);
+    assert_eq!(actual.iter().filter(|index| **index == Some(1)).count(), 2);
+    assert!(actual.ends_with(&[None, None]));
+}
+
+#[test]
 fn item_variants_stay_bounded_across_width_and_cwd_changes() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();

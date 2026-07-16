@@ -285,7 +285,7 @@ fn renders_output_blocks_as_inset_neutral_rectangles() {
     let rendered = buffer_contents(&buf, area);
     let tool_row =
         row_containing(&buf, area, "tool exec cargo test").expect("tool row should render");
-    let output_row = row_containing(&buf, area, "output ... 4 earlier output lines")
+    let output_row = row_containing(&buf, area, "output ↗ ... 4 earlier output lines")
         .expect("output omission row should render");
     let output_tail_row =
         row_containing(&buf, area, "line 7").expect("latest output row should render");
@@ -335,10 +335,7 @@ fn renders_compacted_long_output_block_snapshot() {
         .map(|line| format!("cargo build output line {line:03}"))
         .collect::<Vec<_>>()
         .join("\n");
-    shell.push_output_with_status(
-        compact_output_for_transcript(output),
-        ToolBlockStatus::Running,
-    );
+    shell.push_output_with_status(output, ToolBlockStatus::Running);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 20,
     );
@@ -1953,8 +1950,15 @@ async fn shell_operator_executes_through_workspace_runner_without_submitting_tur
         vec![
             TranscriptLine::new(TranscriptKind::Tool, "! printf hello exit 0")
                 .tool_status(ToolBlockStatus::Success),
-            TranscriptLine::new(TranscriptKind::Output, "hello\nwarning\n")
-                .tool_status(ToolBlockStatus::Success),
+            TranscriptLine::output(
+                "hello\nwarning\n",
+                ToolBlockStatus::Success,
+                shell
+                    .transcript
+                    .back()
+                    .and_then(|line| line.item_id.clone())
+                    .expect("local output should have a stable id"),
+            ),
         ]
     );
     assert_eq!(shell.composer.text(), "");
@@ -5058,12 +5062,11 @@ fn command_output_deltas_update_one_output_block() {
             TranscriptLine::new(TranscriptKind::Tool, "exec cargo test")
                 .tool_status(ToolBlockStatus::Running)
                 .item_id("exec-1"),
-            TranscriptLine::new(
-                TranscriptKind::Output,
-                "pytest 40%\rpytest 80%\rpytest 100%\n"
-            )
-            .tool_status(ToolBlockStatus::Running)
-            .item_id("exec-1"),
+            TranscriptLine::output(
+                "pytest 40%\rpytest 80%\rpytest 100%\n",
+                ToolBlockStatus::Running,
+                "exec-1".to_string(),
+            ),
         ])
     );
     let area = Rect::new(
@@ -5093,15 +5096,19 @@ fn command_output_deltas_update_one_output_block() {
         },
     ));
 
+    let mut completed_output = TranscriptLine::output(
+        "pytest 100%\n",
+        ToolBlockStatus::Success,
+        "exec-1".to_string(),
+    );
+    completed_output.full_text = Some("pytest 40%\rpytest 80%\rpytest 100%\n".to_string());
     assert_eq!(
         shell.transcript,
         VecDeque::from([
             TranscriptLine::new(TranscriptKind::Tool, "exec cargo test exit 0 42ms")
                 .tool_status(ToolBlockStatus::Success)
                 .item_id("exec-1"),
-            TranscriptLine::new(TranscriptKind::Output, "pytest 100%")
-                .tool_status(ToolBlockStatus::Success)
-                .item_id("exec-1"),
+            completed_output,
         ])
     );
 }
@@ -5126,11 +5133,11 @@ fn command_output_deltas_preserve_newline_chunks() {
 
     assert_eq!(
         shell.transcript,
-        VecDeque::from(
-            [TranscriptLine::new(TranscriptKind::Output, "first\nsecond")
-                .tool_status(ToolBlockStatus::Running)
-                .item_id("exec-lines"),]
-        )
+        VecDeque::from([TranscriptLine::output(
+            "first\nsecond",
+            ToolBlockStatus::Running,
+            "exec-lines".to_string(),
+        )])
     );
     insta::assert_snapshot!(render_shell(
         &shell,
@@ -5167,7 +5174,7 @@ fn streaming_tool_output_renders_latest_lines_snapshot() {
     );
     let buf = render_shell_buffer(&shell, area);
     let rendered = buffer_contents(&buf, area);
-    let omitted_row = row_containing(&buf, area, "output ... 4 earlier output lines")
+    let omitted_row = row_containing(&buf, area, "output ↗ ... 4 earlier output lines")
         .expect("output omission row should render");
     let line_5_row = row_containing(&buf, area, "line 5").expect("line 5 should render");
     let line_6_row = row_containing(&buf, area, "line 6").expect("line 6 should render");
@@ -5188,13 +5195,16 @@ fn command_output_transcript_text_is_bounded() {
     shell.streaming_assistant.clear();
     let thread_id = shell.thread_id.to_string();
 
-    for index in 0..200 {
+    let full_output = (0..200)
+        .map(|index| format!("compile line {index:03}: {}\n", "x".repeat(96)))
+        .collect::<String>();
+    for delta in full_output.split_inclusive('\n') {
         shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
             CommandExecutionOutputDeltaNotification {
                 thread_id: thread_id.clone(),
                 turn_id: "turn-1".to_string(),
                 item_id: "exec-1".to_string(),
-                delta: format!("compile line {index:03}: {}\n", "x".repeat(96)),
+                delta: delta.to_string(),
             },
         ));
     }
@@ -5205,13 +5215,12 @@ fn command_output_transcript_text_is_bounded() {
         .expect("output line should be present")
         .text
         .clone();
+    let mut expected = TranscriptLine::new(TranscriptKind::Output, output.clone())
+        .tool_status(ToolBlockStatus::Running)
+        .item_id("exec-1");
+    expected.full_text = Some(full_output);
 
-    assert_eq!(
-        shell.transcript,
-        VecDeque::from([TranscriptLine::new(TranscriptKind::Output, output.clone())
-            .tool_status(ToolBlockStatus::Running)
-            .item_id("exec-1")])
-    );
+    assert_eq!(shell.transcript, VecDeque::from([expected]));
     assert!(output.starts_with(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX));
     assert!(
         output.chars().count()
@@ -5219,6 +5228,110 @@ fn command_output_transcript_text_is_bounded() {
     );
     assert!(!output.contains("compile line 000"));
     assert!(output.contains("compile line 199"));
+}
+
+#[tokio::test]
+async fn clicking_running_output_opens_a_live_full_output_popup() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: thread_id.clone(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: command_execution_item("exec-live", CommandExecutionStatus::InProgress, None),
+    }));
+    let initial_output = (0..200)
+        .map(|index| format!("compile line {index:03}: checking workspace\n"))
+        .collect::<String>();
+    shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+        CommandExecutionOutputDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            item_id: "exec-live".to_string(),
+            delta: initial_output.clone(),
+        },
+    ));
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+    let output_index = shell
+        .transcript
+        .iter()
+        .position(|line| line.kind == TranscriptKind::Output)
+        .expect("output card should exist");
+    let position = (area.y..area.bottom())
+        .flat_map(|y| (area.x..area.right()).map(move |x| Position::new(x, y)))
+        .find(|position| {
+            (ShellView { shell: &shell }).transcript_output_at(area, *position)
+                == Some(output_index)
+        })
+        .expect("output card should expose a click target");
+
+    shell
+        .handle_mouse_click(area, position, &config, &mut backend)
+        .await
+        .expect("output click should succeed");
+
+    let open = shell
+        .tool_output
+        .as_ref()
+        .expect("output popup should open");
+    assert!(open.output().contains("compile line 000"));
+    assert!(open.output().contains("compile line 199"));
+    assert_eq!(open.target.status, ToolBlockStatus::Running);
+
+    shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+        CommandExecutionOutputDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            item_id: "exec-live".to_string(),
+            delta: "compile line 200: finished\n".to_string(),
+        },
+    ));
+    let open = shell
+        .tool_output
+        .as_ref()
+        .expect("live output popup should remain open");
+    assert!(open.output().ends_with("compile line 200: finished\n"));
+
+    let completed_output = format!("{initial_output}compile line 200: finished\n");
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::CommandExecution {
+                id: "exec-live".to_string(),
+                command: "cargo test".to_string(),
+                cwd: LegacyAppPathString::from_abs_path(&test_absolute_path(
+                    "workspace/better-codex",
+                )),
+                process_id: None,
+                source: CommandExecutionSource::Agent,
+                status: CommandExecutionStatus::Completed,
+                command_actions: Vec::new(),
+                aggregated_output: Some(completed_output.clone()),
+                exit_code: Some(0),
+                duration_ms: Some(42),
+            },
+        },
+    ));
+    let open = shell
+        .tool_output
+        .as_ref()
+        .expect("completed output popup should remain open");
+    assert_eq!(open.output(), completed_output);
+    assert_eq!(open.target.status, ToolBlockStatus::Success);
+
+    shell
+        .handle_mouse_click(area, Position::new(/*x*/ 0, /*y*/ 0), &config, &mut backend)
+        .await
+        .expect("outside click should succeed");
+    assert!(shell.tool_output.is_none());
 }
 
 #[test]
@@ -5287,12 +5400,11 @@ fn legacy_command_exec_output_deltas_update_one_output_block() {
 
     assert_eq!(
         shell.transcript,
-        VecDeque::from([TranscriptLine::new(
-            TranscriptKind::Output,
-            "tqdm 1/3\rtqdm 2/3\rtqdm 3/3\n"
-        )
-        .tool_status(ToolBlockStatus::Running)
-        .item_id("command-exec:process-1")])
+        VecDeque::from([TranscriptLine::output(
+            "tqdm 1/3\rtqdm 2/3\rtqdm 3/3\n",
+            ToolBlockStatus::Running,
+            "command-exec:process-1".to_string(),
+        )])
     );
 }
 

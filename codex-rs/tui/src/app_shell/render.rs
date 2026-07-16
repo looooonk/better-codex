@@ -125,12 +125,16 @@ impl ShellView<'_> {
         if let Some(log) = &self.shell.agent_log {
             super::agent_log_view::render_agent_log(log, area, buf);
         }
+        if let Some(output) = &self.shell.tool_output {
+            super::tool_output_view::render_tool_output(output, area, buf);
+        }
     }
 
     pub(super) fn cursor_position(&self, area: Rect) -> Option<Position> {
         if self.shell.selector.is_some()
             || self.shell.command_palette.is_some()
             || self.shell.agent_log.is_some()
+            || self.shell.tool_output.is_some()
             || self.shell.pending_approval.is_some()
             || self.shell.pending_elicitation.is_some()
             || self.shell.pending_external_agent_import.is_some()
@@ -152,6 +156,14 @@ impl ShellView<'_> {
 
     pub(super) fn input_area(&self, area: Rect) -> Rect {
         self.layout(area).input
+    }
+
+    pub(super) fn transcript_output_at(&self, area: Rect, position: Position) -> Option<usize> {
+        super::transcript_view::transcript_output_at(
+            self.shell,
+            self.layout(area).transcript,
+            position,
+        )
     }
 
     pub(super) fn pointer_pane_at(&self, area: Rect, position: Position) -> Option<PointerPane> {
@@ -769,6 +781,7 @@ impl ShellView<'_> {
         let blocked = self.shell.selector.is_some()
             || self.shell.command_palette.is_some()
             || self.shell.agent_log.is_some()
+            || self.shell.tool_output.is_some()
             || self.shell.pending_approval.is_some()
             || self.shell.pending_elicitation.is_some()
             || self.shell.pending_external_agent_import.is_some()

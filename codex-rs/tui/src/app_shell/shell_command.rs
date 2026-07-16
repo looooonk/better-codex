@@ -1,6 +1,5 @@
 use super::ShellState;
 use super::ToolBlockStatus;
-use super::compact_output_for_transcript;
 use crate::workspace_command::WorkspaceCommand;
 use crate::workspace_command::WorkspaceCommandExecution;
 use std::path::Path;
@@ -112,10 +111,7 @@ impl ShellState {
                     combined.push_str(&output.stderr);
                 }
                 if !combined.is_empty() {
-                    self.push_output_with_status(
-                        compact_output_for_transcript(combined),
-                        tool_status,
-                    );
+                    self.push_output_with_status(combined, tool_status);
                 }
                 self.status = format!("shell exit {}", output.exit_code);
             }

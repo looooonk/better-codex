@@ -9,9 +9,9 @@ expression: "render_shell(&shell, area)"
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▌ tool exec cargo test                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                   │▎loading sessions
-   ▌ output pytest 40%                            │
-   ▌        pytest 80%                            │▎◆ TOOLS
-   ▌        pytest 100%                           │▎in progress exec just test -p codex-tui
+   ▌ output ↗ pytest 40%                          │
+   ▌          pytest 80%                          │▎◆ TOOLS
+   ▌          pytest 100%                         │▎in progress exec just test -p codex-tui
                                                   │▎completed file changes in app_shell
                                                   │▎in progress exec cargo test
                                                   │

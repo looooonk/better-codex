@@ -87,6 +87,7 @@ mod plugin_management;
 mod pointer;
 mod render;
 mod safety_buffering;
+mod scrollback_view;
 mod selector;
 mod selector_controller;
 mod session_hydration;
@@ -98,6 +99,8 @@ mod startup_availability_nux;
 mod startup_layout;
 mod startup_login;
 mod startup_model_migration;
+mod tool_output;
+mod tool_output_view;
 mod transcript_render;
 mod transcript_view;
 mod user_input;
@@ -139,6 +142,7 @@ pub(crate) use startup::StartupOnboardingOutcome;
 pub(crate) use startup::run_startup_onboarding;
 pub(crate) use startup_login::LoginOnboardingOutcome;
 pub(crate) use startup_login::run_login_onboarding;
+use tool_output::ToolOutputState;
 use transcript_render::TranscriptRenderCache;
 use user_input::PendingUserInput;
 use user_input::UserInputAdvance;
@@ -158,6 +162,12 @@ const AGENT_HISTORY_POLL_INTERVAL: Duration = Duration::from_millis(50);
 fn next_transcript_render_revision() -> u64 {
     static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
     NEXT_REVISION.fetch_add(1, Ordering::Relaxed)
+}
+
+fn next_local_output_item_id() -> String {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    format!("local-output:{id}")
 }
 
 pub(crate) async fn run(
@@ -371,6 +381,7 @@ pub(crate) async fn run(
 
     shell.cancel_shell_command();
     shell.close_agent_log();
+    shell.close_tool_output();
     shell.cancel_agent_history().await;
     shell.cancel_session_hydration();
     shell.finish_subscription_cleanup().await;
@@ -428,6 +439,7 @@ where
 struct TranscriptLine {
     kind: TranscriptKind,
     text: String,
+    full_text: Option<String>,
     tool_status: Option<ToolBlockStatus>,
     item_id: Option<String>,
     render_revision: u64,
@@ -438,8 +450,21 @@ impl TranscriptLine {
         Self {
             kind,
             text: text.into(),
+            full_text: None,
             tool_status: None,
             item_id: None,
+            render_revision: next_transcript_render_revision(),
+        }
+    }
+
+    fn output(text: impl Into<String>, status: ToolBlockStatus, item_id: String) -> Self {
+        let full_text = text.into();
+        Self {
+            kind: TranscriptKind::Output,
+            text: compact_output_for_transcript(full_text.clone()),
+            full_text: Some(full_text),
+            tool_status: Some(status),
+            item_id: Some(item_id),
             render_revision: next_transcript_render_revision(),
         }
     }
@@ -465,6 +490,7 @@ impl Clone for TranscriptLine {
         Self {
             kind: self.kind,
             text: self.text.clone(),
+            full_text: self.full_text.clone(),
             tool_status: self.tool_status,
             item_id: self.item_id.clone(),
             render_revision: next_transcript_render_revision(),
@@ -476,6 +502,7 @@ impl PartialEq for TranscriptLine {
     fn eq(&self, other: &Self) -> bool {
         self.kind == other.kind
             && self.text == other.text
+            && self.full_text == other.full_text
             && self.tool_status == other.tool_status
             && self.item_id == other.item_id
     }
@@ -648,6 +675,7 @@ struct ShellState {
     tool_activity: VecDeque<ToolActivity>,
     agent_activity: AgentActivityState,
     agent_log: Option<AgentLogState>,
+    tool_output: Option<ToolOutputState>,
     agent_history_task: Option<AgentHistoryTask>,
     active_agent_thread_ids: HashSet<String>,
     deferred_unsubscribe_thread_ids: Vec<ThreadId>,
@@ -746,6 +774,7 @@ impl ShellState {
             tool_activity: VecDeque::new(),
             agent_activity: AgentActivityState::default(),
             agent_log: None,
+            tool_output: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),
@@ -802,6 +831,7 @@ impl ShellState {
             if self.selector.is_some()
                 || self.command_palette.is_some()
                 || self.agent_log.is_some()
+                || self.tool_output.is_some()
                 || self.safety_buffering_modal_lines().is_some()
                 || self.pending_approval.is_some()
                 || self.pending_elicitation.is_some()
@@ -861,6 +891,10 @@ impl ShellState {
         }
         if !matches!(key.code, KeyCode::Esc) {
             self.exit_confirmation_pending = false;
+        }
+        if self.tool_output.is_some() {
+            self.handle_tool_output_key(key);
+            return Ok(false);
         }
         if self.agent_log.is_some() {
             if key.kind == KeyEventKind::Press
@@ -1241,6 +1275,7 @@ impl ShellState {
         if self.selector.is_some()
             || self.command_palette.is_some()
             || self.agent_log.is_some()
+            || self.tool_output.is_some()
             || self.safety_buffering_modal_lines().is_some()
             || self.pending_approval.is_some()
             || self.pending_elicitation.is_some()
@@ -1703,6 +1738,7 @@ impl ShellState {
     fn replace_started_session(&mut self, started: AppServerStartedThread) {
         self.invalidate_session_hydration();
         self.close_agent_log();
+        self.close_tool_output();
         let AppServerStartedThread {
             session,
             turns,
@@ -1842,6 +1878,7 @@ impl ShellState {
 
     fn open_command_palette(&mut self) {
         self.close_agent_log();
+        self.close_tool_output();
         self.selector = None;
         self.command_palette = Some(CommandPaletteState::default());
         self.clear_transcript_selection();
@@ -1877,7 +1914,9 @@ impl ShellState {
                 Some(false)
             }
             KeyCode::Enter => {
-                self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+                if !self.open_selected_tool_output() {
+                    self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+                }
                 Some(false)
             }
             KeyCode::Up => {
@@ -2169,9 +2208,18 @@ impl ShellState {
 
     fn selected_transcript_copy_text(&self) -> Option<(TranscriptKind, &str)> {
         let selected = self.transcript_selection?;
-        self.transcript
-            .get(selected)
-            .map(|line| (line.kind, line.text.as_str()))
+        self.transcript.get(selected).map(|line| {
+            (
+                line.kind,
+                line.full_text.as_deref().unwrap_or(line.text.as_str()),
+            )
+        })
+    }
+
+    fn selected_transcript_is_output(&self) -> bool {
+        self.transcript_selection
+            .and_then(|selected| self.transcript.get(selected))
+            .is_some_and(|line| line.kind == TranscriptKind::Output)
     }
 
     fn transcript_copy_text(&self) -> Option<(TranscriptKind, &str)> {
@@ -2634,7 +2682,7 @@ impl ShellState {
                     format!("{status:?}").to_lowercase(),
                 );
                 self.push_tool_with_status_for_item(id.clone(), title, tool_status);
-                if let Some(output) = aggregated_output.and_then(compact_output_text) {
+                if let Some(output) = aggregated_output.and_then(nonempty_output_text) {
                     self.push_output_with_status_for_item(id, output, tool_status);
                 } else {
                     self.update_output_status_for_item(&id, tool_status);
@@ -2830,6 +2878,9 @@ impl ShellState {
         text: impl Into<String>,
         status: ToolBlockStatus,
     ) {
+        let item_id = item_id.into();
+        let text = text.into();
+        self.update_open_tool_output_title(&item_id, &text, status);
         self.upsert_line(
             TranscriptLine::new(TranscriptKind::Tool, text)
                 .tool_status(status)
@@ -2865,7 +2916,7 @@ impl ShellState {
     }
 
     fn push_output_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
-        self.push_line(TranscriptLine::new(TranscriptKind::Output, text).tool_status(status));
+        self.push_output_with_status_for_item(next_local_output_item_id(), text, status);
     }
 
     fn push_turn_separator(&mut self) {
@@ -2878,11 +2929,38 @@ impl ShellState {
         text: impl Into<String>,
         status: ToolBlockStatus,
     ) {
-        self.upsert_line(
-            TranscriptLine::new(TranscriptKind::Output, text)
-                .tool_status(status)
-                .item_id(item_id),
-        );
+        let item_id = item_id.into();
+        let text = text.into();
+        let existing_full_text = self
+            .transcript
+            .iter()
+            .rev()
+            .find(|existing| {
+                existing.kind == TranscriptKind::Output
+                    && existing.item_id.as_deref() == Some(&item_id)
+                    && existing.tool_status == Some(ToolBlockStatus::Running)
+            })
+            .map(|existing| existing.full_text.as_deref().unwrap_or(&existing.text))
+            .or_else(|| {
+                self.tool_output
+                    .as_ref()
+                    .filter(|output| {
+                        output.target.item_id == item_id
+                            && output.target.status == ToolBlockStatus::Running
+                    })
+                    .map(ToolOutputState::output)
+            });
+        let full_text = if status != ToolBlockStatus::Running {
+            existing_full_text
+                .filter(|existing| existing.len() > text.len())
+                .map_or_else(|| text.clone(), str::to_string)
+        } else {
+            text.clone()
+        };
+        self.replace_open_tool_output(&item_id, full_text.clone(), status);
+        let mut line = TranscriptLine::output(text, status, item_id);
+        line.full_text = Some(full_text);
+        self.upsert_line(line);
     }
 
     fn push_output_delta_with_status_for_item(
@@ -2897,9 +2975,15 @@ impl ShellState {
             return;
         }
 
+        self.append_open_tool_output(&item_id, &delta, status);
+
         if let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
             existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(&item_id)
         }) {
+            existing
+                .full_text
+                .get_or_insert_with(|| existing.text.clone())
+                .push_str(&delta);
             existing.text.push_str(&delta);
             existing.text = compact_output_for_transcript(std::mem::take(&mut existing.text));
             existing.tool_status = Some(status);
@@ -2907,14 +2991,16 @@ impl ShellState {
             return;
         }
 
-        self.push_output_with_status_for_item(
-            item_id,
-            compact_output_for_transcript(delta),
-            status,
-        );
+        let output = self
+            .tool_output
+            .as_ref()
+            .filter(|output| output.target.item_id == item_id)
+            .map_or(delta, |output| output.output().to_string());
+        self.push_output_with_status_for_item(item_id, output, status);
     }
 
     fn update_output_status_for_item(&mut self, item_id: &str, status: ToolBlockStatus) {
+        self.update_open_tool_output_status(item_id, status);
         if let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
             existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(item_id)
         }) {
@@ -3068,6 +3154,7 @@ impl ShellState {
             ]),
             agent_activity: AgentActivityState::default(),
             agent_log: None,
+            tool_output: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),
@@ -3222,7 +3309,7 @@ pub mod bench_support {
             .join("\n");
         fixture.shell.push_output_with_status_for_item(
             BENCH_TOOL_ITEM_ID,
-            compact_output_for_transcript(initial_output),
+            initial_output,
             ToolBlockStatus::Running,
         );
         fixture.next_tool_output_line = TRANSCRIPT_OUTPUT_HIGH_WATER_LINES;
@@ -3307,6 +3394,7 @@ pub mod bench_support {
             }]),
             agent_activity: AgentActivityState::default(),
             agent_log: None,
+            tool_output: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),
@@ -3563,12 +3651,11 @@ fn compact_multiline(text: String) -> Option<String> {
     Some(compact)
 }
 
-fn compact_output_text(text: String) -> Option<String> {
-    let text = text.trim();
-    if text.is_empty() {
+fn nonempty_output_text(text: String) -> Option<String> {
+    if text.trim().is_empty() {
         None
     } else {
-        Some(compact_output_for_transcript(text.to_string()))
+        Some(text)
     }
 }
 

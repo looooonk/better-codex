@@ -7,6 +7,7 @@ use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::design::selection_style;
 use super::design::title_rect;
+use super::transcript_render::TranscriptLayout;
 use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_to_width;
 use crate::markdown;
@@ -15,6 +16,7 @@ use crate::terminal_hyperlinks::mark_buffer_hyperlinks;
 use crate::terminal_hyperlinks::prefix_hyperlink_lines;
 use crate::terminal_hyperlinks::visible_lines;
 use ratatui::buffer::Buffer;
+use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
@@ -24,6 +26,7 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
+use std::sync::Arc;
 use unicode_width::UnicodeWidthStr;
 
 const TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT: u16 = 2;
@@ -31,6 +34,76 @@ const OUTPUT_BLOCK_INDENT: usize = 2;
 const OUTPUT_BLOCK_MAX_LINES: usize = 4;
 
 pub(super) fn render_transcript(shell: &ShellState, area: Rect, buf: &mut Buffer) {
+    let viewport = transcript_viewport(shell, area);
+    let title = if let Some(selected) = shell.transcript_selection {
+        format!(
+            "CONVERSATION  SELECT {}/{}",
+            selected.saturating_add(1),
+            shell.transcript.len()
+        )
+    } else {
+        "CONVERSATION".to_string()
+    };
+    let visible_hyperlink_lines = viewport
+        .layout
+        .visible_hyperlink_lines(viewport.visible_from, viewport.visible_count);
+    let visible_lines = visible_lines(visible_hyperlink_lines.clone());
+    Paragraph::new(Line::from(vec![
+        "◆ ".set_style(Style::new().fg(palette::FOCUS)),
+        title.set_style(Style::new().fg(palette::MUTED).bold()),
+    ]))
+    .style(pane_style(palette::BASE))
+    .render(title_rect(viewport.content), buf);
+    Paragraph::new(visible_lines)
+        .style(pane_style(palette::BASE))
+        .render(viewport.text_body, buf);
+    mark_buffer_hyperlinks(
+        buf,
+        viewport.text_body,
+        &visible_hyperlink_lines,
+        /*scroll_rows*/ 0,
+    );
+    if let Some(scrollbar) = viewport.scrollbar {
+        render_transcript_scrollbar(buf, viewport.body, scrollbar);
+    }
+}
+
+pub(super) fn transcript_output_at(
+    shell: &ShellState,
+    area: Rect,
+    position: Position,
+) -> Option<usize> {
+    let viewport = transcript_viewport(shell, area);
+    let output_indent = u16::try_from(OUTPUT_BLOCK_INDENT).unwrap_or(u16::MAX);
+    let output_body = Rect::new(
+        viewport.text_body.x.saturating_add(output_indent),
+        viewport.text_body.y,
+        viewport.text_body.width.saturating_sub(output_indent),
+        viewport.text_body.height,
+    );
+    if !output_body.contains(position) {
+        return None;
+    }
+
+    let logical_row = viewport
+        .visible_from
+        .saturating_add(usize::from(position.y.saturating_sub(viewport.text_body.y)));
+    let transcript_index = viewport.layout.transcript_index_at_row(logical_row)?;
+    let item = shell.transcript.get(transcript_index)?;
+    (item.kind == TranscriptKind::Output && item.tool_status.is_some()).then_some(transcript_index)
+}
+
+struct TranscriptViewport {
+    content: Rect,
+    body: Rect,
+    text_body: Rect,
+    layout: Arc<TranscriptLayout>,
+    visible_from: usize,
+    visible_count: usize,
+    scrollbar: Option<TranscriptScrollbarMetrics>,
+}
+
+fn transcript_viewport(shell: &ShellState, area: Rect) -> TranscriptViewport {
     let content = pane_content_rect(area);
     let body = body_rect_after_title(content);
     let cwd = std::path::Path::new(&shell.cwd);
@@ -54,40 +127,20 @@ pub(super) fn render_transcript(shell: &ShellState, area: Rect, buf: &mut Buffer
     let visible_from = layout
         .total_lines
         .saturating_sub(visible_count.saturating_add(scroll));
-    let title = if let Some(selected) = shell.transcript_selection {
-        format!(
-            "CONVERSATION  SELECT {}/{}",
-            selected.saturating_add(1),
-            shell.transcript.len()
-        )
-    } else {
-        "CONVERSATION".to_string()
-    };
     let scrollbar = transcript_scrollbar_metrics(
         layout.total_lines,
         body.height,
         visible_from,
         TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT,
     );
-    let visible_hyperlink_lines = layout.visible_hyperlink_lines(visible_from, visible_count);
-    let visible_lines = visible_lines(visible_hyperlink_lines.clone());
-    Paragraph::new(Line::from(vec![
-        "◆ ".set_style(Style::new().fg(palette::FOCUS)),
-        title.set_style(Style::new().fg(palette::MUTED).bold()),
-    ]))
-    .style(pane_style(palette::BASE))
-    .render(title_rect(content), buf);
-    Paragraph::new(visible_lines)
-        .style(pane_style(palette::BASE))
-        .render(text_body, buf);
-    mark_buffer_hyperlinks(
-        buf,
+    TranscriptViewport {
+        content,
+        body,
         text_body,
-        &visible_hyperlink_lines,
-        /*scroll_rows*/ 0,
-    );
-    if let Some(scrollbar) = scrollbar {
-        render_transcript_scrollbar(buf, body, scrollbar);
+        layout,
+        visible_from,
+        visible_count,
+        scrollbar,
     }
 }
 
@@ -255,8 +308,13 @@ fn tool_block_lines(
         | TranscriptKind::Audit
         | TranscriptKind::Error => palette::SURFACE,
     };
-    let label = kind.label();
-    let label_prefix_width = label.len() + 3;
+    let label = if kind == TranscriptKind::Output {
+        "output ↗"
+    } else {
+        kind.label()
+    };
+    let label_width = label.width();
+    let label_prefix_width = label_width + 3;
     let content_width = block_width.saturating_sub(label_prefix_width).max(1);
     let normalized_text = text.replace('\r', "\n").replace('\t', "    ");
     let visible_text = codex_ansi_escape::ansi_escape(&normalized_text);
@@ -295,9 +353,14 @@ fn tool_block_lines(
         .enumerate()
         .map(|(index, wrapped)| {
             let label_span = if index == 0 {
-                format!("{label} ").bold()
+                let label = format!("{label} ").bold();
+                if kind == TranscriptKind::Output {
+                    label.fg(palette::CYAN)
+                } else {
+                    label
+                }
             } else {
-                " ".repeat(label.len() + 1).dim()
+                " ".repeat(label_width + 1).dim()
             };
             let mut spans = Vec::new();
             if block_indent > 0 {
@@ -409,3 +472,7 @@ impl LineStyle {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "transcript_view_tests.rs"]
+mod tests;

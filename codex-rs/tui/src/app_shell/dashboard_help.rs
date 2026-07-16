@@ -54,7 +54,11 @@ fn wide_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
     let contextual = if shell.transcript_selection.is_some() {
         [
             "Up/Down select",
-            "Enter copy",
+            if shell.selected_transcript_is_output() {
+                "Enter open output"
+            } else {
+                "Enter copy"
+            },
             "Esc composer",
             "Ctrl+D hide dashboard",
         ]
@@ -110,7 +114,11 @@ fn compact_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
     let contextual = if shell.transcript_selection.is_some() {
         [
             "↑/↓ select",
-            "↵ copy",
+            if shell.selected_transcript_is_output() {
+                "↵ open output"
+            } else {
+                "↵ copy"
+            },
             "Esc composer",
             "Ctrl+D hide dashboard",
         ]
@@ -166,7 +174,11 @@ fn dense_key_hint_labels(shell: &ShellState) -> [&'static str; 14] {
     let contextual = if shell.transcript_selection.is_some() {
         [
             "Alt+←/→ switch views",
-            "↑/↓ select  ↵ copy",
+            if shell.selected_transcript_is_output() {
+                "↑/↓ select  ↵ open"
+            } else {
+                "↑/↓ select  ↵ copy"
+            },
             "Ctrl+D hide dashboard",
         ]
     } else if shell.active_turn_id.is_some() {

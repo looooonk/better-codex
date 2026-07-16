@@ -95,6 +95,7 @@ impl ShellState {
 
     fn open_selector(&mut self, selector: SelectorState<SelectorValue>) {
         self.close_agent_log();
+        self.close_tool_output();
         self.command_palette = None;
         self.selector = Some(selector);
         self.clear_transcript_selection();

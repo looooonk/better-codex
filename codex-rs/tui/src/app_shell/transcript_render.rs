@@ -63,6 +63,7 @@ impl TranscriptRenderCache {
                 &mut previous_items,
                 &mut current_items,
                 CachedSource {
+                    transcript_index: Some(index),
                     revision: item.render_revision,
                     kind: item.kind,
                     text: &item.text,
@@ -81,6 +82,7 @@ impl TranscriptRenderCache {
                 &mut previous_items,
                 &mut current_items,
                 CachedSource {
+                    transcript_index: None,
                     revision: shell.streaming_plan_revision,
                     kind: TranscriptKind::Plan,
                     text: &shell.streaming_plan,
@@ -98,6 +100,7 @@ impl TranscriptRenderCache {
                 &mut previous_items,
                 &mut current_items,
                 CachedSource {
+                    transcript_index: None,
                     revision: shell.streaming_assistant_revision,
                     kind: TranscriptKind::Assistant,
                     text: &shell.streaming_assistant,
@@ -159,6 +162,7 @@ fn render_revisions(shell: &ShellState) -> impl Iterator<Item = u64> + '_ {
 }
 
 struct CachedSource<'a> {
+    transcript_index: Option<usize>,
     revision: u64,
     kind: TranscriptKind,
     text: &'a str,
@@ -179,6 +183,7 @@ fn push_cached_chunk(
     let mut cached = previous_items.remove(&source.revision).unwrap_or_default();
     let lines = cached.lines(&source, width, cwd, selected);
     chunks.push(TranscriptChunk {
+        transcript_index: source.transcript_index,
         revision: source.revision,
         separator_before,
         lines,
@@ -263,6 +268,7 @@ struct CachedRenderVariant {
 }
 
 struct TranscriptChunk {
+    transcript_index: Option<usize>,
     #[cfg_attr(not(test), allow(dead_code))]
     revision: u64,
     separator_before: bool,
@@ -322,6 +328,32 @@ impl TranscriptLayout {
             }
         }
         visible
+    }
+
+    /// Return the stored transcript item that owns a rendered logical row.
+    ///
+    /// Separator rows and streaming-only chunks have no stored transcript
+    /// source, so they intentionally return `None`.
+    pub(super) fn transcript_index_at_row(&self, row: usize) -> Option<usize> {
+        let mut logical_row = 0usize;
+        for chunk in &self.chunks {
+            if chunk.separator_before {
+                if logical_row == row {
+                    return None;
+                }
+                logical_row = logical_row.saturating_add(1);
+            }
+
+            let chunk_end = logical_row.saturating_add(chunk.lines.len());
+            if (logical_row..chunk_end).contains(&row) {
+                return chunk.transcript_index;
+            }
+            logical_row = chunk_end;
+            if logical_row > row {
+                break;
+            }
+        }
+        None
     }
 }
 
