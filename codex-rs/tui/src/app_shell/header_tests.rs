@@ -1,4 +1,5 @@
 use super::*;
+use pretty_assertions::assert_eq;
 
 fn view() -> HeaderView<'static> {
     HeaderView {
@@ -7,6 +8,7 @@ fn view() -> HeaderView<'static> {
         reasoning_effort: "high",
         service_tier: "priority",
         status: "ready",
+        status_spinner_frame: None,
         dashboard_visible: true,
     }
 }
@@ -132,4 +134,36 @@ fn hidden_dashboard_exposes_a_mouse_restore_control() {
         view.control_at(area, Position::new(dashboard.x, dashboard.y)),
         Some(HeaderControl::Dashboard)
     );
+}
+
+#[test]
+fn running_status_spinner_rotates_without_changing_width() {
+    let frames = (0..STATUS_SPINNER_FRAMES.len())
+        .map(|status_spinner_frame| HeaderView {
+            status: "thinking",
+            status_spinner_frame: Some(status_spinner_frame),
+            ..view()
+        })
+        .map(|view| view.status_line().to_string())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        frames,
+        vec![
+            "◐ thinking".to_string(),
+            "◓ thinking".to_string(),
+            "◑ thinking".to_string(),
+            "◒ thinking".to_string(),
+        ]
+    );
+    assert!(
+        frames
+            .iter()
+            .all(|frame| unicode_width::UnicodeWidthStr::width(frame.as_str()) == 10)
+    );
+}
+
+#[test]
+fn ready_status_keeps_static_indicator() {
+    assert_eq!(view().status_line().to_string(), "● ready");
 }

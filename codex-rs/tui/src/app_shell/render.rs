@@ -231,6 +231,10 @@ impl ShellView<'_> {
             reasoning_effort: &effort,
             service_tier,
             status: &self.shell.status,
+            status_spinner_frame: self
+                .shell
+                .status_spinner_active()
+                .then_some(self.shell.status_spinner_frame),
             dashboard_visible: self.shell.dashboard_visible,
         }
         .control_at(self.layout(area).header, position)
@@ -478,6 +482,10 @@ impl ShellView<'_> {
             reasoning_effort: &effort,
             service_tier,
             status: &self.shell.status,
+            status_spinner_frame: self
+                .shell
+                .status_spinner_active()
+                .then_some(self.shell.status_spinner_frame),
             dashboard_visible: self.shell.dashboard_visible,
         };
         let hovered = self

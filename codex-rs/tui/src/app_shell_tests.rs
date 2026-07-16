@@ -248,6 +248,38 @@ fn renders_narrow_shell_snapshot() {
 }
 
 #[test]
+fn renders_running_status_spinner_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-spinner".to_string());
+    shell.status_spinner_frame = 2;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn status_spinner_only_runs_during_active_codex_work() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-spinner".to_string());
+    let running_states = ["thinking", "reasoning", "retrying", "waiting"].map(|status| {
+        shell.status = status.to_string();
+        shell.status_spinner_active()
+    });
+    shell.status = "ready".to_string();
+    let ready = shell.status_spinner_active();
+    shell.animations = false;
+    shell.status = "thinking".to_string();
+    let animations_disabled = shell.status_spinner_active();
+
+    assert_eq!(
+        (running_states, ready, animations_disabled),
+        ([true; 4], false, false)
+    );
+}
+
+#[test]
 fn renders_compact_top_dashboard_snapshot() {
     let shell = ShellState::snapshot_fixture();
     let area = Rect::new(

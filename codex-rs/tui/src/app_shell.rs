@@ -158,6 +158,7 @@ const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
 const TRANSCRIPT_SELECTION_STEP: usize = 1;
 const APP_SERVER_FRAME_INTERVAL: Duration = Duration::from_millis(33);
 const AGENT_HISTORY_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const STATUS_SPINNER_FRAME_INTERVAL: Duration = Duration::from_millis(120);
 
 fn next_transcript_render_revision() -> u64 {
     static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
@@ -273,6 +274,8 @@ pub(crate) async fn run(
         let mut tui_events = tui.event_stream();
         let mut agent_history_poll = tokio::time::interval(AGENT_HISTORY_POLL_INTERVAL);
         agent_history_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut status_spinner = tokio::time::interval(STATUS_SPINNER_FRAME_INTERVAL);
+        status_spinner.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let exit_reason = loop {
             select! {
                 event = tui_events.next() => {
@@ -370,6 +373,12 @@ pub(crate) async fn run(
                         changed |= shell.poll_agent_log().await;
                     }
                     if changed {
+                        tui.frame_requester().schedule_frame();
+                    }
+                }
+                _ = status_spinner.tick() => {
+                    if shell.status_spinner_active() {
+                        shell.status_spinner_frame = shell.status_spinner_frame.wrapping_add(1);
                         tui.frame_requester().schedule_frame();
                     }
                 }
@@ -687,6 +696,7 @@ struct ShellState {
     rate_limits: Vec<RateLimitSnapshot>,
     rate_limit_reset_credits: Option<i64>,
     status: String,
+    status_spinner_frame: usize,
     token_usage: TokenUsage,
     context_token_usage: TokenUsage,
     model_context_window: Option<i64>,
@@ -786,6 +796,7 @@ impl ShellState {
             rate_limits: Vec::new(),
             rate_limit_reset_credits: None,
             status: "ready".to_string(),
+            status_spinner_frame: 0,
             token_usage: TokenUsage::default(),
             context_token_usage: TokenUsage::default(),
             model_context_window: None,
@@ -3063,6 +3074,15 @@ impl ShellState {
             && (self.session_list.focused || self.settings.focused || self.agents_focused)
     }
 
+    fn status_spinner_active(&self) -> bool {
+        self.animations
+            && self.active_turn_id.is_some()
+            && matches!(
+                self.status.as_str(),
+                "thinking" | "reasoning" | "retrying" | "waiting"
+            )
+    }
+
     #[cfg(test)]
     fn snapshot_fixture() -> Self {
         let mut shell = Self {
@@ -3170,6 +3190,7 @@ impl ShellState {
             rate_limits: Vec::new(),
             rate_limit_reset_credits: None,
             status: "thinking".to_string(),
+            status_spinner_frame: 0,
             token_usage: TokenUsage {
                 input_tokens: 1200,
                 cached_input_tokens: 300,
@@ -3410,6 +3431,7 @@ pub mod bench_support {
             rate_limits: Vec::new(),
             rate_limit_reset_credits: None,
             status: "benchmarking".to_string(),
+            status_spinner_frame: 0,
             token_usage: TokenUsage {
                 input_tokens: 120_000,
                 cached_input_tokens: 30_000,

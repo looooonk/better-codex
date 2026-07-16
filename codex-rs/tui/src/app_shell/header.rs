@@ -16,6 +16,7 @@ use ratatui::widgets::Widget;
 
 const CONTROL_GAP: u16 = 1;
 const BRAND_CONTROL_GAP: u16 = 2;
+const STATUS_SPINNER_FRAMES: [&str; 4] = ["◐", "◓", "◑", "◒"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum HeaderControl {
@@ -31,6 +32,7 @@ pub(super) struct HeaderView<'a> {
     pub(super) reasoning_effort: &'a str,
     pub(super) service_tier: &'a str,
     pub(super) status: &'a str,
+    pub(super) status_spinner_frame: Option<usize>,
     pub(super) dashboard_visible: bool,
 }
 
@@ -252,8 +254,12 @@ impl HeaderView<'_> {
             "interrupted" => palette::WARNING,
             _ => palette::CYAN,
         };
+        let indicator = self
+            .status_spinner_frame
+            .map(|frame| STATUS_SPINNER_FRAMES[frame % STATUS_SPINNER_FRAMES.len()])
+            .unwrap_or("●");
         Line::from(vec![
-            "● ".fg(color),
+            format!("{indicator} ").fg(color),
             self.status.to_string().fg(palette::TEXT).bold(),
         ])
     }
