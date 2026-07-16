@@ -5,8 +5,6 @@ use super::super::is_unmodified_key_event;
 use super::super::is_unmodified_key_press;
 use super::SettingsAction;
 use super::SettingsView;
-use super::approval_policy_label;
-use super::reasoning_effort_label;
 use super::ultra_reasoning_concurrency_warning;
 use crate::config_update::build_model_selection_edits;
 use crate::config_update::build_service_tier_selection_edits;
@@ -205,14 +203,6 @@ impl ShellState {
                         serde_json::json!(self.animations),
                     )])
                     .await?;
-                self.settings.set_info(format!(
-                    "animations {}",
-                    if self.animations {
-                        "enabled"
-                    } else {
-                        "disabled"
-                    }
-                ));
             }
             SettingsAction::Tooltips => {
                 self.show_tooltips = !self.show_tooltips;
@@ -222,14 +212,6 @@ impl ShellState {
                         serde_json::json!(self.show_tooltips),
                     )])
                     .await?;
-                self.settings.set_info(format!(
-                    "startup tooltips {}",
-                    if self.show_tooltips {
-                        "enabled"
-                    } else {
-                        "disabled"
-                    }
-                ));
             }
             SettingsAction::McpServers => {
                 if self.mcp_catalog.is_some() {
@@ -293,8 +275,6 @@ impl ShellState {
                     None => clear_config_value("tui.theme"),
                 };
                 app_server.write_config(vec![edit]).await?;
-                let label = theme.as_deref().unwrap_or("default");
-                self.settings.set_info(format!("theme set to {label}"));
             }
             SettingsAction::ReasoningEffort
             | SettingsAction::ApprovalPolicy
@@ -356,10 +336,9 @@ impl ShellState {
                 /*developer_instructions*/ None,
             );
         }
-        self.model = model.clone();
+        self.model = model;
         self.reasoning_effort = effort;
         self.service_tier = service_tier;
-        self.settings.set_info(format!("model set to {model}"));
         Ok(())
     }
 
@@ -382,9 +361,6 @@ impl ShellState {
                 Some(service_tier.clone()),
             ))
             .await?;
-        let label = service_tier.as_deref().unwrap_or("default");
-        self.settings
-            .set_info(format!("service tier set to {label}"));
         Ok(())
     }
 
@@ -426,11 +402,6 @@ impl ShellState {
         ) {
             self.push_status(warning);
         }
-        let label = effort
-            .as_ref()
-            .map(reasoning_effort_label)
-            .unwrap_or_else(|| "default".to_string());
-        self.settings.set_info(format!("reasoning set to {label}"));
         Ok(())
     }
 
@@ -454,10 +425,6 @@ impl ShellState {
                 /*model*/ None, /*effort*/ None, /*service_tier*/ None,
             ))
             .await?;
-        self.settings.set_info(format!(
-            "approval policy set to {}",
-            approval_policy_label(policy)
-        ));
         Ok(())
     }
 

@@ -15,6 +15,7 @@ mod tabs;
 pub(super) use tabs::SettingsTabs;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
+const SETTINGS_PAGE_LINE_COUNT: usize = 5;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct SettingsState {
@@ -103,6 +104,9 @@ impl SettingsState {
         let remaining = 8usize.saturating_sub(lines.len());
         for (index, action) in self.actions().iter().take(remaining).enumerate() {
             lines.push(setting_row(*action, index == self.selected, view, width));
+        }
+        if lines.len() < SETTINGS_PAGE_LINE_COUNT {
+            lines.resize_with(SETTINGS_PAGE_LINE_COUNT, Line::default);
         }
         lines
     }

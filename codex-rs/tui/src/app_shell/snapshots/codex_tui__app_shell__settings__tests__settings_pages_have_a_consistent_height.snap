@@ -1,0 +1,30 @@
+---
+source: tui/src/app_shell/settings_tests.rs
+expression: "rendered_pages.join(\"\\n\\n\")"
+---
+Model
+ Model │ Permissions │ Appearance │ Integrations
+━━━━━━━──────────────────────────────────────────
+› Model: gpt-5-codex
+  Reasoning: default
+  Service tier: default
+
+Permissions
+ Model │ Permissions │ Appearance │ Integrations
+────────━━━━━━━━━━━━━────────────────────────────
+› Approval: on-request
+
+
+
+Appearance
+ Model │ Permissions │ Appearance │ Integrations
+──────────────────────━━━━━━━━━━━━───────────────
+› Syntax theme: default
+  Animations: on
+  Tooltips: on
+
+Integrations
+ Model │ Permissions │ Appearance │ Integrations
+───────────────────────────────────━━━━━━━━━━━━━━
+› MCP servers: not loaded
+  Plugins: not loaded

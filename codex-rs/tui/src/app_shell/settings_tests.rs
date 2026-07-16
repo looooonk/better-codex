@@ -70,3 +70,47 @@ fn action_rows_select_only_the_clicked_action() {
     assert!(settings.select_at(line, /*column*/ 0, /*width*/ 49));
     assert_eq!(settings.selected_action(), SettingsAction::ServiceTier);
 }
+
+#[test]
+fn settings_pages_have_a_consistent_height() {
+    let view = SettingsView {
+        model: "gpt-5-codex".to_string(),
+        reasoning_effort: None,
+        service_tier: None,
+        approval_policy: AskForApproval::OnRequest,
+        theme: None,
+        animations: true,
+        show_tooltips: true,
+        mcp_inventory: McpInventorySummary::default(),
+        plugin_inventory: PluginInventorySummary::default(),
+    };
+    let mut settings = SettingsState::default();
+    let mut line_counts = Vec::new();
+    let mut rendered_pages = Vec::new();
+    for page in SettingsPage::ALL {
+        settings.set_page(page);
+        let lines = settings.lines(&view, /*width*/ 49);
+        line_counts.push(lines.len());
+        rendered_pages.push(format!(
+            "{}\n{}",
+            page.label(),
+            lines
+                .iter()
+                .map(|line| line
+                    .spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string())
+                .collect::<Vec<_>>()
+                .join("\n")
+        ));
+    }
+
+    assert_eq!(
+        line_counts,
+        vec![SETTINGS_PAGE_LINE_COUNT; SettingsPage::ALL.len()]
+    );
+    insta::assert_snapshot!(rendered_pages.join("\n\n"));
+}
