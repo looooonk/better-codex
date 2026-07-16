@@ -20,6 +20,36 @@ fn settings_tabs_fill_the_strip_and_select_the_clicked_page() {
 }
 
 #[test]
+fn settings_tabs_center_labels_with_symmetric_delimiters() {
+    let tabs = SettingsTabs::new(/*width*/ 77);
+    let lines = tabs.lines(SettingsPage::Model);
+    let labels = lines[0]
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+
+    assert_eq!(
+        labels,
+        "    Model     │     Permissions    │    Appearance     │     Integrations    "
+    );
+    assert_eq!(labels.chars().count(), 77);
+}
+
+#[test]
+fn settings_tab_ranges_exclude_delimiters() {
+    let tabs = SettingsTabs::new(/*width*/ 49);
+
+    assert_eq!(tabs.column_range(SettingsPage::Model), Some(0..7));
+    assert_eq!(tabs.column_range(SettingsPage::Permissions), Some(8..21));
+    assert_eq!(tabs.column_range(SettingsPage::Appearance), Some(22..34));
+    assert_eq!(tabs.column_range(SettingsPage::Integrations), Some(35..49));
+    assert_eq!(tabs.page_at(/*column*/ 7), None);
+    assert_eq!(tabs.page_at(/*column*/ 21), None);
+    assert_eq!(tabs.page_at(/*column*/ 34), None);
+}
+
+#[test]
 fn settings_tabs_have_transparent_backgrounds() {
     let backgrounds = SettingsTabs::new(/*width*/ 49)
         .lines(SettingsPage::Model)

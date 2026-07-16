@@ -3876,6 +3876,81 @@ fn pointer_hover_uses_existing_header_hit_geometry() {
 }
 
 #[test]
+fn settings_tab_hover_uses_content_only_geometry() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Settings;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let baseline = render_shell_buffer(&shell, area);
+    let label_y =
+        row_containing(&baseline, area, "Permissions").expect("settings tabs should be visible");
+    let pointer = Position::new(
+        row_needle_x(&baseline, area, label_y, "Permissions")
+            .expect("permissions tab should be visible"),
+        label_y,
+    );
+    let panel_position = ShellView { shell: &shell }
+        .dashboard_panel_position_at(area, pointer, "Settings")
+        .expect("pointer should be inside the settings panel");
+    let strip_x = pointer
+        .x
+        .saturating_sub(u16::try_from(panel_position.column).unwrap_or(u16::MAX));
+    let columns = settings::SettingsTabs::new(panel_position.width)
+        .column_range(settings::SettingsPage::Permissions)
+        .expect("permissions tab should have a content range");
+
+    shell.pointer_position = Some(pointer);
+    let hovered = render_shell_buffer(&shell, area);
+    let actual_backgrounds = (0..panel_position.width)
+        .map(|column| {
+            hovered[(
+                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
+                label_y,
+            )]
+                .style()
+                .bg
+        })
+        .collect::<Vec<_>>();
+    let mut expected_backgrounds = (0..panel_position.width)
+        .map(|column| {
+            baseline[(
+                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
+                label_y,
+            )]
+                .style()
+                .bg
+        })
+        .collect::<Vec<_>>();
+    expected_backgrounds[columns.clone()].fill(Some(design::palette::BORDER));
+    assert_eq!(actual_backgrounds, expected_backgrounds);
+
+    let underline_y = label_y.saturating_add(1);
+    let actual_foregrounds = (0..panel_position.width)
+        .map(|column| {
+            hovered[(
+                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
+                underline_y,
+            )]
+                .style()
+                .fg
+        })
+        .collect::<Vec<_>>();
+    let mut expected_foregrounds = (0..panel_position.width)
+        .map(|column| {
+            baseline[(
+                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
+                underline_y,
+            )]
+                .style()
+                .fg
+        })
+        .collect::<Vec<_>>();
+    expected_foregrounds[columns].fill(Some(design::palette::FOCUS));
+    assert_eq!(actual_foregrounds, expected_foregrounds);
+}
+
+#[test]
 fn mouse_wheel_routes_to_the_pane_under_the_pointer() {
     let mut shell = ShellState::snapshot_fixture();
     let area = Rect::new(

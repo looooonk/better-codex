@@ -12,7 +12,7 @@ use ratatui::text::Line;
 mod controller;
 mod tabs;
 
-use tabs::SettingsTabs;
+pub(super) use tabs::SettingsTabs;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
 

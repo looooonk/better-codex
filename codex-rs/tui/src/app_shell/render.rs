@@ -24,6 +24,7 @@ use super::input_request_view::visible_request_panel_lines;
 use super::modal_view::render_modal;
 use super::navigation::DashboardRoute;
 use super::navigation::DashboardTabs;
+use super::settings::SettingsTabs;
 use super::transcript_view::render_transcript;
 use crate::tui;
 use crossterm::cursor::SetCursorStyle;
@@ -701,6 +702,32 @@ impl ShellView<'_> {
             if panel_area.height > 1 {
                 buf.set_style(
                     Rect::new(x, panel_area.y.saturating_add(1), width, 1),
+                    Style::new().fg(palette::FOCUS),
+                );
+            }
+            return;
+        }
+        if panel.title == "Settings" && matches!(pointer.y.saturating_sub(text_area.y), 1 | 2) {
+            let tabs = SettingsTabs::new(usize::from(text_area.width));
+            let column = usize::from(pointer.x.saturating_sub(text_area.x));
+            let Some(page) = tabs.page_at(column) else {
+                return;
+            };
+            let Some(columns) = tabs.column_range(page) else {
+                return;
+            };
+            let x = text_area
+                .x
+                .saturating_add(u16::try_from(columns.start).unwrap_or(u16::MAX));
+            let width =
+                u16::try_from(columns.end.saturating_sub(columns.start)).unwrap_or(u16::MAX);
+            buf.set_style(
+                Rect::new(x, text_area.y.saturating_add(1), width, 1),
+                Style::new().bg(palette::BORDER),
+            );
+            if text_area.y.saturating_add(2) < panel_area.bottom() {
+                buf.set_style(
+                    Rect::new(x, text_area.y.saturating_add(2), width, 1),
                     Style::new().fg(palette::FOCUS),
                 );
             }
