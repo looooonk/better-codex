@@ -4,7 +4,7 @@ expression: "render_shell(&shell, area)"
 ---
                                                   │
  ◆ BC           gpt-5.6-sol ▾   max ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━━─────
+──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS
  ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │ Integrations

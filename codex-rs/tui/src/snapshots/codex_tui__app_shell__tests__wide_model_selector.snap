@@ -4,7 +4,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
  ◆ BC           gpt-5-0 ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
-──────────────────────────────────────────────────│━━━━━━━━━━━─────────────────────────────────────
+──────────────────────────────────────────────────│━━━━━━━━━━──────────────────────────────────────
                 ╭ Select model ────────────────────────────────────────────────────╮
  ◆ CONVERSATION │ › 1 ● gpt-5-0  current                                           │
  ▎ SYSTEM  Bette│       gpt-5-0 - gpt-5-0 description                              │ions

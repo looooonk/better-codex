@@ -7,7 +7,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
 ──────────────────────────────────────────────────────────────────────────────
 
      Sessions    │    Agents    │   Workspace    │   Settings    │   Help
- ─────────────────━━━━━━━━━━━━━━━────────────────────────────────────────────
+ ─────────────────━━━━━━━━━━━━━━─────────────────────────────────────────────
  ▎◆ AGENTS
  ▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted  × 1 failed
  ▎  ● running  research

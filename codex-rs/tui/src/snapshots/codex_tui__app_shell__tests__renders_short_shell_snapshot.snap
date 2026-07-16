@@ -4,7 +4,7 @@ expression: "render_shell(&shell, area)"
 ---
  ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
 ──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │━━━━━━━━━━━─────────────────────────────────────
+                                                  │━━━━━━━━━━──────────────────────────────────────
  ◆ CONVERSATION                                   │
  ▎ CODEX  The new shell owns the fullscreen     ┃ │▎◆ SESSIONS
           surface.                              ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions

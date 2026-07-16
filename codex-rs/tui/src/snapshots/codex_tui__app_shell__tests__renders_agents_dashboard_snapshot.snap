@@ -4,7 +4,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
 ---
                                                               │
  ◆ BC                   gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
-──────────────────────────────────────────────────────────────│───────────━━━━━━━━━────────────────────────────
+──────────────────────────────────────────────────────────────│───────────━━━━━━━━─────────────────────────────
                                                               │
  ◆ CONVERSATION                                               │▎◆ AGENTS
  ▎ SYSTEM  Better Codex app shell                             │▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted

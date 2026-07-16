@@ -120,8 +120,9 @@ impl DashboardTabs {
         let mut underline = Vec::new();
         for (index, cell) in self.cells.into_iter().enumerate() {
             if cell.width > 0 {
-                let has_separator = index + 1 < DashboardRoute::ALL.len() && cell.width > 1;
-                let label_width = cell.width.saturating_sub(u16::from(has_separator));
+                let separator_width = cell.separator_width();
+                let has_separator = separator_width > 0;
+                let label_width = cell.content_width();
                 let label = if compact {
                     cell.route.compact_label()
                 } else {
@@ -143,14 +144,17 @@ impl DashboardTabs {
                 }
                 let rule = if cell.route == active_route {
                     "━"
-                        .repeat(usize::from(cell.width))
+                        .repeat(usize::from(label_width))
                         .set_style(Style::new().fg(palette::FOCUS).bg(palette::DARK).bold())
                 } else {
                     "─"
-                        .repeat(usize::from(cell.width))
+                        .repeat(usize::from(label_width))
                         .set_style(Style::new().fg(palette::BORDER).bg(palette::DARK))
                 };
                 underline.push(rule);
+                if has_separator {
+                    underline.push("─".fg(palette::BORDER).bg(palette::DARK));
+                }
             }
         }
         [
@@ -166,7 +170,11 @@ impl DashboardTabs {
         self.cells
             .into_iter()
             .rev()
-            .find(|cell| cell.width > 0 && column >= cell.start)
+            .find(|cell| {
+                cell.content_width() > 0
+                    && (cell.start..cell.start.saturating_add(cell.content_width()))
+                        .contains(&column)
+            })
             .map(|cell| cell.route)
     }
 
@@ -174,7 +182,17 @@ impl DashboardTabs {
         self.cells
             .into_iter()
             .find(|cell| cell.route == route && cell.width > 0)
-            .map(|cell| cell.start..cell.start.saturating_add(cell.width))
+            .map(|cell| cell.start..cell.start.saturating_add(cell.content_width()))
+    }
+}
+
+impl DashboardTabCell {
+    fn separator_width(self) -> u16 {
+        u16::from(self.route != DashboardRoute::Help && self.width > 1)
+    }
+
+    fn content_width(self) -> u16 {
+        self.width.saturating_sub(self.separator_width())
     }
 }
 
@@ -241,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn dashboard_tabs_fill_width_and_make_cells_clickable() {
+    fn dashboard_tabs_fill_width_and_leave_delimiters_outside_hit_areas() {
         let tabs = DashboardTabs::new(/*width*/ 34);
         let rendered = tabs.lines(DashboardRoute::Sessions).map(|line| {
             line.spans
@@ -258,20 +276,40 @@ mod tests {
             vec![34; 2]
         );
         let expected_routes = [
-            (DashboardRoute::Sessions, 7),
-            (DashboardRoute::Agents, 7),
-            (DashboardRoute::Workspace, 7),
-            (DashboardRoute::Settings, 7),
-            (DashboardRoute::Help, 6),
+            (Some(DashboardRoute::Sessions), 6),
+            (None, 1),
+            (Some(DashboardRoute::Agents), 6),
+            (None, 1),
+            (Some(DashboardRoute::Workspace), 6),
+            (None, 1),
+            (Some(DashboardRoute::Settings), 6),
+            (None, 1),
+            (Some(DashboardRoute::Help), 6),
         ]
         .into_iter()
-        .flat_map(|(route, width)| std::iter::repeat_n(Some(route), width))
+        .flat_map(|(route, width)| std::iter::repeat_n(route, width))
         .collect::<Vec<_>>();
         assert_eq!(
             (0..34)
                 .map(|column| tabs.route_at(column))
                 .collect::<Vec<_>>(),
             expected_routes
+        );
+    }
+
+    #[test]
+    fn dashboard_tab_ranges_exclude_their_trailing_delimiters() {
+        let tabs = DashboardTabs::new(COMPACT_TAB_WIDTH);
+
+        assert_eq!(
+            DashboardRoute::ALL.map(|route| tabs.column_range(route)),
+            [
+                Some(0..10),
+                Some(11..19),
+                Some(20..31),
+                Some(32..42),
+                Some(43..48),
+            ]
         );
     }
 
