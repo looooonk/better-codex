@@ -196,7 +196,10 @@ impl ShellState {
                     if let Some(title) = item_activity_title(&started.item) {
                         let item_id = started.item.id().to_string();
                         self.record_item_activity(&started.item, title.clone(), "in progress");
-                        if !matches!(&started.item, ThreadItem::SubAgentActivity { .. }) {
+                        if !matches!(
+                            &started.item,
+                            ThreadItem::FileChange { .. } | ThreadItem::SubAgentActivity { .. }
+                        ) {
                             self.push_tool_with_status_for_item(
                                 item_id,
                                 title,

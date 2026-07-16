@@ -5692,6 +5692,51 @@ fn file_change_patch_updates_one_diff_box_per_item() {
 }
 
 #[test]
+fn file_change_notifications_render_only_the_edited_log_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+    let changes = sample_file_changes();
+
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: thread_id.clone(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: ThreadItem::FileChange {
+            id: "file-1".to_string(),
+            changes: changes.clone(),
+            status: codex_app_server_protocol::PatchApplyStatus::InProgress,
+        },
+    }));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::FileChange {
+                id: "file-1".to_string(),
+                changes: changes.clone(),
+                status: codex_app_server_protocol::PatchApplyStatus::Completed,
+            },
+        },
+    ));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Diff, file_change_detail(&changes))
+                .tool_status(ToolBlockStatus::Success)
+                .item_id("file-1")
+        ])
+    );
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn transcript_newlines_render_as_single_row_breaks() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
