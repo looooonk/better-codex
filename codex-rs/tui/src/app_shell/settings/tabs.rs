@@ -4,8 +4,8 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use std::ops::Range;
 
-// Grow the outer delimiter gaps before the center one so odd-sized additions alternate their
-// label bias. Each internal gap is shared by the tabs on both sides of its delimiter.
+// Grow the outer delimiter gaps before the center one. Each internal gap contributes equally to
+// the tabs on both sides of its delimiter, keeping cell widths balanced as space is added.
 const EXTRA_GAP_ORDER: [usize; SettingsPage::ALL.len() - 1] = [1, 3, 2];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -13,7 +13,6 @@ struct SettingsTabCell {
     page: SettingsPage,
     start: usize,
     width: usize,
-    left_padding: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,20 +51,10 @@ impl SettingsTabs {
             } else {
                 width / tab_count + usize::from(index < width % tab_count)
             };
-            let separator_width = usize::from(index + 1 < tab_count && cell_width > 1);
-            let left_padding = if use_label_widths {
-                gap_widths[index]
-            } else {
-                cell_width
-                    .saturating_sub(separator_width)
-                    .saturating_sub(label_widths[index])
-                    / 2
-            };
             let cell = SettingsTabCell {
                 page,
                 start,
                 width: cell_width,
-                left_padding,
             };
             start = start.saturating_add(cell_width);
             cell
@@ -86,7 +75,7 @@ impl SettingsTabs {
             let label_width = cell.content_width();
             let label = crate::text_formatting::truncate_text(cell.page.label(), label_width);
             let label_padding = label_width.saturating_sub(label.chars().count());
-            let left_padding = cell.left_padding.min(label_padding);
+            let left_padding = label_padding / 2;
             let right_padding = label_padding.saturating_sub(left_padding);
             let label = format!(
                 "{}{}{}",

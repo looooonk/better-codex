@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC           gpt-5.6-sol ▾   max ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC           gpt-5.6-sol ▾   max ▾  ● thinking │ Settings │ Agents │ Workspace │ Sessions │ Help
+──────────────────────────────────────────────────│━━━━━━━━━━──────────────────────────────────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │ Integrations
+ ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
  ▎ YOU  Create a divergent standalone TUI.        │▎━━━━━━─────────────────────────────────────────
                                                   │▎› Model: gpt-5.6-sol
  ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: Max

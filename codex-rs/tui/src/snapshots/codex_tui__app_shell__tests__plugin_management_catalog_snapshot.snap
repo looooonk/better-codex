@@ -3,11 +3,11 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
 ---
                                                             │
- ◆ BC                 gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
-────────────────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC                 gpt-5-codex ▾   default ▾  ● thinking │ Settings │ Agents │ Workspace │ Sessions │ Help
+────────────────────────────────────────────────────────────│━━━━━━━━━━──────────────────────────────────────
                                                             │
  ◆ CONVERSATION                                             │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                           │▎Model │ Permissions │ Appearance │ Integrations
+ ▎ SYSTEM  Better Codex app shell                           │▎Model │ Permissions │ Appearance │Integrations
  ▎ YOU  Create a divergent standalone TUI.                  │▎──────────────────────────────────━━━━━━━━━━━━━
                                                             │▎plugin inventory refreshed
  ▎ CODEX  Started a fullscreen app shell backed by app-     │▎  MCP servers: not loaded

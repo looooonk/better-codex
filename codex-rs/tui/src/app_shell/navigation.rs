@@ -17,19 +17,19 @@ const COMPACT_TAB_WIDTH: u16 = 48;
 #[serde(rename_all = "camelCase")]
 pub(super) enum DashboardRoute {
     #[default]
-    Sessions,
+    Settings,
     Agents,
     Workspace,
-    Settings,
+    Sessions,
     Help,
 }
 
 impl DashboardRoute {
     pub(super) const ALL: [Self; 5] = [
-        Self::Sessions,
+        Self::Settings,
         Self::Agents,
         Self::Workspace,
-        Self::Settings,
+        Self::Sessions,
         Self::Help,
     ];
 
@@ -247,7 +247,7 @@ mod tests {
     }
 
     #[test]
-    fn invalid_route_state_falls_back_to_sessions() {
+    fn invalid_route_state_falls_back_to_settings() {
         let temp = tempfile::tempdir().expect("create temp codex home");
         std::fs::write(state_path(temp.path()), b"{\"route\":\"missing\"}")
             .expect("write invalid route state");
@@ -276,13 +276,13 @@ mod tests {
             vec![34; 2]
         );
         let expected_routes = [
-            (Some(DashboardRoute::Sessions), 6),
+            (Some(DashboardRoute::Settings), 6),
             (None, 1),
             (Some(DashboardRoute::Agents), 6),
             (None, 1),
             (Some(DashboardRoute::Workspace), 6),
             (None, 1),
-            (Some(DashboardRoute::Settings), 6),
+            (Some(DashboardRoute::Sessions), 6),
             (None, 1),
             (Some(DashboardRoute::Help), 6),
         ]
@@ -330,6 +330,6 @@ mod tests {
             .map(|span| span.content.into_owned())
             .collect::<String>();
 
-        assert_eq!(line, " Sessions │ Agents │ Workspace │ Settings │ Help");
+        assert_eq!(line, " Settings │ Agents │ Workspace │ Sessions │ Help");
     }
 }

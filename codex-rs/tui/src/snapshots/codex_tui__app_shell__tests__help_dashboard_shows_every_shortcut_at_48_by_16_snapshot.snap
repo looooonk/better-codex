@@ -5,7 +5,7 @@ expression: rendered
  ◆ BC     gpt-5-codex ▾   default ▾  ● thinking
 ────────────────────────────────────────────────
 
-  Threads │ Agents │ Files  │ Config │  Help
+  Config  │ Agents │ Files  │Threads │  Help
  Alt+←/→ view  ^D hide │ Sess ↵/j/k focus/nav
  Shift/Alt+↵ newline   │ r/f resume/fork
  ↵ send  ^C/Esc×2 exit │ a/u/v/d arc/show/del

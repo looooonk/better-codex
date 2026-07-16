@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
                                                   │
- ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Sessions │ Agents │ Workspace │ Settings │ Help
-──────────────────────────────────────────────────│━━━━━━━━━━──────────────────────────────────────
+ ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │ Settings │ Agents │ Workspace │ Sessions │ Help
+──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  ACTIVE  10 sessions

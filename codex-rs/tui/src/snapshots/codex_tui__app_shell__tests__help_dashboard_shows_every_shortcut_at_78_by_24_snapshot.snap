@@ -6,7 +6,7 @@ expression: rendered
  ◆ BETTER CODEX  better-codex           gpt-5-codex ▾   default ▾  ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
-     Sessions    │    Agents    │   Workspace    │   Settings    │   Help
+     Settings    │    Agents    │   Workspace    │   Sessions    │   Help
  ─────────────────────────────────────────────────────────────────━━━━━━━━━━━
  ▎◆ KEYS
  ▎Alt+Left/Right switch views          │ Ctrl+5 Help
@@ -16,8 +16,8 @@ expression: rendered
  ▎Alt+Up select, Ctrl+O copy           │ n rename, / search
  ▎Ctrl+D hide dashboard                │ Agents: Enter focus/log, j/k inspect
  ▎Alt+M model, Alt+E effort            │ Settings: Tab page, Enter select
- ▎Ctrl+1 Sessions  Ctrl+2 Agents       │ Selectors: j/k choose, Enter apply
- ▎Ctrl+3 Workspace Ctrl+4 Settings     │ Esc twice to exit
+ ▎Ctrl+1 Settings  Ctrl+2 Agents       │ Selectors: j/k choose, Enter apply
+ ▎Ctrl+3 Workspace Ctrl+4 Sessions     │ Esc twice to exit
 
  ◆ CONVERSATION
 ╭────────────────────────────────────────────────────────────────────────────╮

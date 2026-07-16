@@ -6,10 +6,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
  ◆ BETTER CODEX  better-codex           gpt-5-codex ▾   default ▾  ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
-     Sessions    │    Agents    │   Workspace    │   Settings    │   Help
- ─────────────────────────────────────────────────━━━━━━━━━━━━━━━────────────
+     Settings    │    Agents    │   Workspace    │   Sessions    │   Help
+ ━━━━━━━━━━━━━━━━────────────────────────────────────────────────────────────
  ▎◆ SETTINGS
- ▎    Model     │     Permissions    │    Appearance    │    Integrations
+ ▎    Model     │    Permissions     │    Appearance    │    Integrations
  ▎━━━━━━━━━━━━━━─────────────────────────────────────────────────────────────
  ▎› Model: gpt-5-codex
  ▎  Reasoning: default

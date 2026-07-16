@@ -20,7 +20,7 @@ fn settings_tabs_fill_the_strip_and_select_the_clicked_page() {
 }
 
 #[test]
-fn settings_tabs_center_labels_with_symmetric_delimiters() {
+fn settings_tabs_center_labels() {
     let tabs = SettingsTabs::new(/*width*/ 77);
     let lines = tabs.lines(SettingsPage::Model);
     let labels = lines[0]
@@ -31,7 +31,7 @@ fn settings_tabs_center_labels_with_symmetric_delimiters() {
 
     assert_eq!(
         labels,
-        "    Model     │     Permissions    │    Appearance     │     Integrations    "
+        "    Model     │    Permissions     │    Appearance     │    Integrations     "
     );
     assert_eq!(labels.chars().count(), 77);
 }

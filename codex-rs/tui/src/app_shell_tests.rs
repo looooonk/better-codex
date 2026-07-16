@@ -652,8 +652,8 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         "Tab page",
     ];
     let centralized_guides = [
-        "Ctrl+1 Sessions  Ctrl+2 Agents",
-        "Ctrl+3 Workspace Ctrl+4 Settings",
+        "Ctrl+1 Settings  Ctrl+2 Agents",
+        "Ctrl+3 Workspace Ctrl+4 Sessions",
         "Ctrl+5 Help",
         "Sessions: Enter focus, j/k move",
         "r resume, f fork, a/u archive",
@@ -697,10 +697,10 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
     assert_eq!(
         visibility,
         [
-            (DashboardRoute::Sessions, false, false),
+            (DashboardRoute::Settings, false, false),
             (DashboardRoute::Agents, false, false),
             (DashboardRoute::Workspace, false, false),
-            (DashboardRoute::Settings, false, false),
+            (DashboardRoute::Sessions, false, false),
             (DashboardRoute::Help, true, true),
         ]
     );
@@ -2215,7 +2215,7 @@ async fn goal_slash_command_pauses_resumes_and_clears_thread_goal() {
 fn dashboard_route_key_mapping_covers_native_routes() {
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Sessions)
+        Some(DashboardRoute::Settings)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL)),
@@ -2231,7 +2231,7 @@ fn dashboard_route_key_mapping_covers_native_routes() {
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Settings)
+        Some(DashboardRoute::Sessions)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::CONTROL)),
@@ -3594,16 +3594,16 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
-    let ctrl_4 = KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL);
-    let ctrl_1 = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
+    let ctrl_settings = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
+    let ctrl_sessions = KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
 
     shell
-        .handle_key(ctrl_4, &config, &mut backend)
+        .handle_key(ctrl_settings, &config, &mut backend)
         .await
-        .expect("Ctrl+4 should select settings");
+        .expect("Ctrl+1 should select settings");
 
     assert_eq!(
         (
@@ -3617,9 +3617,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     insta::assert_snapshot!(render_shell(&shell, area));
 
     shell
-        .handle_key(ctrl_4, &config, &mut backend)
+        .handle_key(ctrl_settings, &config, &mut backend)
         .await
-        .expect("Ctrl+4 should focus selected settings");
+        .expect("Ctrl+1 should focus selected settings");
 
     assert_eq!(
         (
@@ -3632,9 +3632,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
 
     shell
-        .handle_key(ctrl_1, &config, &mut backend)
+        .handle_key(ctrl_sessions, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should select sessions");
+        .expect("Ctrl+4 should select sessions");
 
     assert_eq!(
         (
@@ -3647,9 +3647,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
 
     shell
-        .handle_key(ctrl_1, &config, &mut backend)
+        .handle_key(ctrl_sessions, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should focus selected sessions");
+        .expect("Ctrl+4 should focus selected sessions");
 
     assert_eq!(
         (
@@ -3678,20 +3678,20 @@ async fn blocked_session_list_refresh_does_not_block_dashboard_input() {
     };
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Settings;
-    let ctrl_1 = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
-    let ctrl_4 = KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL);
+    let ctrl_sessions = KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL);
+    let ctrl_settings = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
 
     tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
         shell
-            .handle_key(ctrl_1, &config, &mut backend)
+            .handle_key(ctrl_sessions, &config, &mut backend)
             .await
-            .expect("Ctrl+1 should start loading sessions");
+            .expect("Ctrl+4 should start loading sessions");
         shell
-            .handle_key(ctrl_1, &config, &mut backend)
+            .handle_key(ctrl_sessions, &config, &mut backend)
             .await
-            .expect("repeated Ctrl+1 should coalesce with the pending load");
+            .expect("repeated Ctrl+4 should coalesce with the pending load");
         shell
-            .handle_key(ctrl_4, &config, &mut backend)
+            .handle_key(ctrl_settings, &config, &mut backend)
             .await
             .expect("other dashboard input should stay responsive");
     })
@@ -4196,7 +4196,7 @@ async fn blocking_overlays_capture_keys_and_paste_before_the_composer() {
         .expect("modal key should be captured");
     shell
         .handle_key(
-            KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL),
+            KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL),
             &config,
             &mut backend,
         )

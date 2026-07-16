@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
                                                   │
- ◆ BC        gpt-5-codex ▾   default ▾  ● waiting │ Sessions │ Agents │ Workspace │ Settings │ Help
-──────────────────────────────────────────────────│━━━━━━━━━━──────────────────────────────────────
+ ◆ BC        gpt-5-codex ▾   default ▾  ● waiting │ Settings │ Agents │ Workspace │ Sessions │ Help
+──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ SYSTEM  Bet╭──────────────────────────────────────────────────────────────────────╮ns

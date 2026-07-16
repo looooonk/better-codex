@@ -6,8 +6,8 @@ expression: "render_shell(&shell, area)"
  ◆ BC     gpt-5-codex ▾   default ▾  ● thinking
 ────────────────────────────────────────────────
 
-  Threads │ Agents │ Files  │ Config │  Help
- ━━━━━━━━━─────────────────────────────────────
+  Config  │ Agents │ Files  │Threads │  Help
+ ────────────────────────────━━━━━━━━──────────
  ▎◆ SESSIONS
  ▎○ CLICK TO FOCUS  ACTIVE  0 sessions
  ▎loading sessions

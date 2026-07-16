@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
  ◆ BC       gpt-5-codex ▾   default ▾  ● thinking │
-──────────────────────────────────────────────────│ Sessions │ Agents │ Workspace │ Settings │ Help
-                                                  │━━━━━━━━━━──────────────────────────────────────
+──────────────────────────────────────────────────│ Settings │ Agents │ Workspace │ Sessions │ Help
+                                                  │────────────────────────────────━━━━━━━━━━──────
  ◆ CONVERSATION                                   │
                                                 │ │▎◆ SESSIONS
  ▌ edited 3 files +128 -24                      │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
