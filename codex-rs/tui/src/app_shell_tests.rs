@@ -3768,7 +3768,7 @@ async fn empty_enter_focuses_the_active_interactive_dashboard() {
 }
 
 #[tokio::test]
-async fn dashboard_tabs_click_and_focus_interactive_routes() {
+async fn dashboard_tab_clicks_select_routes_without_focusing_panels() {
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
     let config = test_config().await;
@@ -3827,13 +3827,15 @@ async fn dashboard_tabs_click_and_focus_interactive_routes() {
                     shell.settings.focused,
                     shell.agents_focused,
                 ),
-                (
-                    route,
-                    route == DashboardRoute::Sessions,
-                    route == DashboardRoute::Settings,
-                    route == DashboardRoute::Agents,
-                )
+                (route, false, false, false)
             );
+            if area.width == 100 && route == DashboardRoute::Settings {
+                assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
+                insta::assert_snapshot!(
+                    "dashboard_settings_tab_click_without_focus",
+                    render_shell(&shell, area)
+                );
+            }
         }
     }
 }

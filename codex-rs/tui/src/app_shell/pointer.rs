@@ -193,9 +193,9 @@ impl ShellState {
         }
         if let Some(route) = (ShellView { shell: self }).dashboard_route_at(area, position) {
             self.set_dashboard_route(route);
-            self.session_list.focused = route == DashboardRoute::Sessions;
-            self.settings.focused = route == DashboardRoute::Settings;
-            self.agents_focused = route == DashboardRoute::Agents;
+            self.session_list.focused = false;
+            self.settings.focused = false;
+            self.agents_focused = false;
             if route == DashboardRoute::Sessions {
                 self.start_session_list_refresh(app_server);
             }
