@@ -7,26 +7,26 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━━─────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                 │▎○ CLICK TO FOCUS  MODEL  3 fields
- ▎ YOU  Create a divergent standalone TUI.        │▎Model │ Permissions │ Appearance │ Integrations
-                                                  │▎━━━━━━━────────────────────────────────────────
- ▎ CODEX  Started a fullscreen app shell backed   │▎› Model: gpt-5-codex
-          by app-server turns.                    │▎  Reasoning: default
- ▎ PLAN  1. Build shell                           │▎  Service tier: default
-         2. Wire transcript                       │
-         3. Render dashboard                      │▎◆ MODEL
-                                                  │▎gpt-5-codex
- ▌ tool exec just test -p codex-tui               │
-                                                  │▎◆ TOKENS
- ▌ edited 3 files +128 -24                        │▎total 1k
-                                                  │▎input 1k
- ▎ CODEX  The new shell owns the fullscreen       │▎output 240
-          surface.                                │▎Context 100% left
+ ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │ Integrations
+ ▎ YOU  Create a divergent standalone TUI.        │▎━━━━━━━────────────────────────────────────────
+                                                  │▎› Model: gpt-5-codex
+ ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
+          by app-server turns.                    │▎  Service tier: default
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │▎◆ MODEL
+         3. Render dashboard                      │▎gpt-5-codex
                                                   │
+ ▌ tool exec just test -p codex-tui               │▎◆ TOKENS
+                                                  │▎total 1k
+ ▌ edited 3 files +128 -24                        │▎input 1k
+                                                  │▎output 240
+ ▎ CODEX  The new shell owns the fullscreen       │▎Context 100% left
+          surface.                                │
                                                   │▎◆ INTEGRATIONS
-╭────────────────────────────────────────────────╮│▎mcp not loaded
-│◆ MESSAGE  1:37                                 ││▎plugins not loaded
-│> Summarize the new shell architecture          ││
-│                                                ││▎◆ WORKSPACE
+                                                  │▎mcp not loaded
+╭────────────────────────────────────────────────╮│▎plugins not loaded
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││▎◆ WORKSPACE
 │                                                ││▎cwd /workspace/better-codex
+│                                                ││▎profile managed
 ╰────────────────────────────────────────────────╯│

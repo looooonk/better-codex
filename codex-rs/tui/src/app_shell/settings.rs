@@ -80,24 +80,7 @@ struct SettingsFeedback {
 
 impl SettingsState {
     pub(super) fn lines(&self, view: &SettingsView, width: usize) -> Vec<Line<'static>> {
-        let mut lines = Vec::new();
-        let focus = if self.focused {
-            "● FOCUSED"
-        } else {
-            "○ CLICK TO FOCUS"
-        };
-        lines.push(Line::from(vec![
-            focus.fg(if self.focused {
-                palette::FOCUS
-            } else {
-                palette::MUTED
-            }),
-            "  ".into(),
-            self.page.label().to_uppercase().fg(palette::TEXT).bold(),
-            "  ".into(),
-            format!("{} fields", self.actions().len()).fg(palette::MUTED),
-        ]));
-        lines.extend(SettingsTabs::new(width).lines(self.page));
+        let mut lines = SettingsTabs::new(width).lines(self.page).to_vec();
 
         if let Some(edit) = &self.edit {
             let label = format!("edit {}", edit.action.label());
@@ -163,14 +146,14 @@ impl SettingsState {
 
     pub(super) fn select_at(&mut self, line: usize, column: usize, width: usize) -> bool {
         self.focused = true;
-        let page = matches!(line, 1 | 2)
+        let page = matches!(line, 0 | 1)
             .then(|| SettingsTabs::new(width).page_at(column))
             .flatten();
         if let Some(page) = page {
             self.set_page(page);
             return false;
         }
-        if matches!(line, 1 | 2) {
+        if matches!(line, 0 | 1) {
             return false;
         }
         if line < self.action_line_start() {
@@ -273,7 +256,7 @@ impl SettingsState {
     }
 
     fn action_line_start(&self) -> usize {
-        3usize
+        2usize
             .saturating_add(usize::from(self.edit.is_some()))
             .saturating_add(usize::from(self.feedback.is_some()))
     }

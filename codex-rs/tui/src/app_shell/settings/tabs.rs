@@ -1,7 +1,5 @@
 use super::SettingsPage;
 use crate::app_shell::design::palette;
-use ratatui::style::Style;
-use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
@@ -79,12 +77,12 @@ impl SettingsTabs {
             };
             let active = cell.page == active_page;
             labels.push(if active {
-                label.fg(palette::FOCUS).bg(palette::ELEVATED).bold()
+                label.fg(palette::FOCUS).bold()
             } else {
-                label.fg(palette::MUTED).bg(palette::SURFACE)
+                label.fg(palette::MUTED)
             });
             if has_separator {
-                labels.push("│".fg(palette::BORDER).bg(palette::SURFACE));
+                labels.push("│".fg(palette::BORDER));
             }
 
             let rule = if active { "━" } else { "─" };
@@ -93,16 +91,10 @@ impl SettingsTabs {
             } else {
                 palette::BORDER
             };
-            underline.push(
-                rule.repeat(cell.width)
-                    .set_style(Style::new().fg(color).bg(palette::SURFACE)),
-            );
+            underline.push(rule.repeat(cell.width).fg(color));
         }
 
-        [
-            Line::from(labels).bg(palette::SURFACE),
-            Line::from(underline).bg(palette::SURFACE),
-        ]
+        [Line::from(labels), Line::from(underline)]
     }
 
     pub(super) fn page_at(self, column: usize) -> Option<SettingsPage> {

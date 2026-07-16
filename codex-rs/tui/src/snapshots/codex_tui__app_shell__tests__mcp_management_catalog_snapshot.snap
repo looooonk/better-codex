@@ -7,14 +7,14 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
 ────────────────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━━─────
                                                             │
  ◆ CONVERSATION                                             │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                           │▎● FOCUSED  INTEGRATIONS  2 fields
- ▎ YOU  Create a divergent standalone TUI.                  │▎Model │ Permissions │ Appearance │ Integrations
-                                                            │▎──────────────────────────────────━━━━━━━━━━━━━
- ▎ CODEX  Started a fullscreen app shell backed by app-     │▎mcp inventory refreshed
-          server turns.                                     │▎› MCP servers: 2 servers / 3 tools / 1 login n…
- ▎ PLAN  1. Build shell                                     │▎  Plugins: not loaded
-         2. Wire transcript                                 │
-         3. Render dashboard                                │▎◆ MODEL
+ ▎ SYSTEM  Better Codex app shell                           │▎Model │ Permissions │ Appearance │ Integrations
+ ▎ YOU  Create a divergent standalone TUI.                  │▎──────────────────────────────────━━━━━━━━━━━━━
+                                                            │▎mcp inventory refreshed
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │▎› MCP servers: 2 servers / 3 tools / 1 login n…
+          server turns.                                     │▎  Plugins: not loaded
+ ▎ PLAN  1. Build shell                                     │
+         2. Wire transcript                                 │▎◆ MODEL
+         3. Render dashboard                                │▎gpt-5-codex
                    ╭──────────────────────────────────────────────────────────────────────╮
  ▌ tool exec just t│◆ MCP SERVERS                                                         │
                    │1/2 mcp servers  ↑↓ / j k navigate                                    │
@@ -23,17 +23,17 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
                    │  bearer       linear 1 tools                                         │
  ▎ CODEX  The new s│                                                                      │
                    │Action: press Enter or l to start oauth login                         │
-                   │                                                                      │
-                   ╰──────────────────────────────────────────────────────────────────────╯ogin needed
-                                                            │▎plugins not loaded
+                   │                                                                      │ogin needed
+                   ╰──────────────────────────────────────────────────────────────────────╯
                                                             │▎servers 2
                                                             │▎tools 3
                                                             │
                                                             │▎◆ WORKSPACE
                                                             │▎cwd /workspace/better-codex
                                                             │▎profile managed
-╭──────────────────────────────────────────────────────────╮│▎files restricted, net restricted
-│◆ MESSAGE  1:37                                           ││▎roots none selected
+                                                            │▎files restricted, net restricted
+╭──────────────────────────────────────────────────────────╮│▎roots none selected
+│◆ MESSAGE  1:37                                           ││
 │> Summarize the new shell architecture                    ││
 │                                                          ││
 │                                                          ││

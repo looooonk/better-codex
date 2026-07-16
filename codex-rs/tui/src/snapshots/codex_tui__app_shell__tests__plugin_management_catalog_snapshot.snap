@@ -7,14 +7,14 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
 ────────────────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━━─────
                                                             │
  ◆ CONVERSATION                                             │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                           │▎● FOCUSED  INTEGRATIONS  2 fields
- ▎ YOU  Create a divergent standalone TUI.                  │▎Model │ Permissions │ Appearance │ Integrations
-                                                            │▎──────────────────────────────────━━━━━━━━━━━━━
- ▎ CODEX  Started a fullscreen app shell backed by app-     │▎plugin inventory refreshed
-          server turns.                                     │▎  MCP servers: not loaded
- ▎ PLAN  1. Build shell                                     │▎› Plugins: 1 installed / 2 available
-         2. Wire transcript                                 │
-         3. Render dashboard                                │▎◆ MODEL
+ ▎ SYSTEM  Better Codex app shell                           │▎Model │ Permissions │ Appearance │ Integrations
+ ▎ YOU  Create a divergent standalone TUI.                  │▎──────────────────────────────────━━━━━━━━━━━━━
+                                                            │▎plugin inventory refreshed
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │▎  MCP servers: not loaded
+          server turns.                                     │▎› Plugins: 1 installed / 2 available
+ ▎ PLAN  1. Build shell                                     │
+         2. Wire transcript                                 │▎◆ MODEL
+         3. Render dashboard                                │▎gpt-5-codex
                    ╭──────────────────────────────────────────────────────────────────────╮
  ▌ tool exec just t│◆ PLUGINS                                                             │
                    │1/2 plugin catalog  ↑↓ / j k navigate                                 │
@@ -24,16 +24,16 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
  ▎ CODEX  The new s│                                                                      │
                    │Action: press i or Enter to update from the marketplace               │
                    │                                                                      │
-                   ╰──────────────────────────────────────────────────────────────────────╯
-                                                            │▎plugins 1 installed / 2 available
+                   ╰──────────────────────────────────────────────────────────────────────╯able
                                                             │▎marketplaces 1
                                                             │▎plugins 2
                                                             │
                                                             │▎◆ WORKSPACE
                                                             │▎cwd /workspace/better-codex
                                                             │▎profile managed
-╭──────────────────────────────────────────────────────────╮│▎files restricted, net restricted
-│◆ MESSAGE  1:37                                           ││▎roots none selected
+                                                            │▎files restricted, net restricted
+╭──────────────────────────────────────────────────────────╮│▎roots none selected
+│◆ MESSAGE  1:37                                           ││
 │> Summarize the new shell architecture                    ││
 │                                                          ││
 │                                                          ││

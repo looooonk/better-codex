@@ -7,26 +7,26 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━━─────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS
- ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  MODEL  3 fields
- ▎ YOU  Create a divergent standalone TUI.        │▎Model │ Permissions │ Appearance │ Integrations
-                                                  │▎━━━━━━━────────────────────────────────────────
- ▎ CODEX  Started a fullscreen app shell backed   │▎› Model: gpt-5.6-sol
-          by app-server turns.                    │▎  Reasoning: Max
- ▎ PLAN  1. Build shell                           │▎  Service tier: priority
-         2. Wire transcript                       │
-         3. Render dashboard                      │▎◆ MODEL
-                                                  │▎gpt-5.6-sol
- ▌ tool exec just test -p codex-tui               │▎reasoning max
-                                                  │▎tier priority
- ▌ edited 3 files +128 -24                        │
-                                                  │▎◆ TOKENS
- ▎ CODEX  The new shell owns the fullscreen       │▎total 1k
-          surface.                                │▎input 1k
-                                                  │▎output 240
+ ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │ Integrations
+ ▎ YOU  Create a divergent standalone TUI.        │▎━━━━━━━────────────────────────────────────────
+                                                  │▎› Model: gpt-5.6-sol
+ ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: Max
+          by app-server turns.                    │▎  Service tier: priority
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │▎◆ MODEL
+         3. Render dashboard                      │▎gpt-5.6-sol
+                                                  │▎reasoning max
+ ▌ tool exec just test -p codex-tui               │▎tier priority
+                                                  │
+ ▌ edited 3 files +128 -24                        │▎◆ TOKENS
+                                                  │▎total 1k
+ ▎ CODEX  The new shell owns the fullscreen       │▎input 1k
+          surface.                                │▎output 240
                                                   │▎Context 100% left
-╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││▎◆ INTEGRATIONS
-│> Summarize the new shell architecture          ││▎mcp not loaded
-│                                                ││▎plugins not loaded
+                                                  │
+╭────────────────────────────────────────────────╮│▎◆ INTEGRATIONS
+│◆ MESSAGE  1:37                                 ││▎mcp not loaded
+│> Summarize the new shell architecture          ││▎plugins not loaded
+│                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

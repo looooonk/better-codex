@@ -9,11 +9,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
      Sessions    │    Agents    │   Workspace    │   Settings    │   Help
  ─────────────────────────────────────────────────━━━━━━━━━━━━━━━━───────────
  ▎◆ SETTINGS
- ▎● FOCUSED  MODEL  3 fields
  ▎    Model    │    Permissions     │    Appearance     │    Integrations
  ▎━━━━━━━━━━━━━━─────────────────────────────────────────────────────────────
  ▎› Model: gpt-5-codex
  ▎  Reasoning: default
+ ▎  Service tier: default
 
 
  ◆ CONVERSATION

@@ -746,7 +746,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             .lines(&shell.settings_view(), /*width*/ 40)
             .first()
             .map(line_text),
-        Some("○ CLICK TO FOCUS  MODEL  3 fields".to_string())
+        Some("  Model  │Permis...│Appear...│Integra...".to_string())
     );
 }
 
