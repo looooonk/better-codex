@@ -1,0 +1,36 @@
+---
+source: tui/src/app_shell/diff_view_view_tests.rs
+expression: "render(&wide, 140, 34)"
+---
+
+
+  ╭ Session edits ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+  │ CHANGED FILES                   │OLD FILE                                         │NEW FILE                                          │
+  │                                 │src/app_shell/diff_view.rs                       │src/app_shell/diff_view.rs                        │
+  │ > M src/app_shell/diff_view.rs  │        @@ -1,8 +1,8 @@                          │        @@ -1,8 +1,8 @@                           │
+  │   A src/app_shell/new_file.rs   │    1   use ratatui::buffer::Buffer;             │    1   use ratatui::buffer::Buffer;              │
+  │   D src/app_shell/old_file.rs   │    2 - const VALUE: &str = "stale value";       │    2 + const VALUE: &str = "fresh value";        │
+  │   R before.rs -> after.rs       │    3                                            │    3                                             │
+  │                                 │    4   fn render() {                            │    4   fn render() {                             │
+  │                                 │    5       draw();                              │    5       draw();                               │
+  │                                 │    6   }                                        │    6   }                                         │
+  │                                 │    7   context six                              │    7   context six                               │
+  │                                 │    8   context seven                            │    8   context seven                             │
+  │                                 │    9   context eight                            │    9   context eight                             │
+  │                                 │        @@ -20,4 +20,8 @@                        │        @@ -20,4 +20,8 @@                         │
+  │                                 │   20 - old tail one                             │   20 + new tail one                              │
+  │                                 │   21 - old tail two                             │   21 + new tail two                              │
+  │                                 │                                                 │   22 + new tail three                            │
+  │                                 │   22   context tail                             │   23   context tail                              │
+  │                                 │                                                 │                                                  │
+  │                                 │                                                 │                                                  │
+  │                                 │                                                 │                                                  │
+  │                                 │                                                 │                                                  │
+  │                                 │                                                 │                                                  │
+  │                                 │                                                 │                                                  │
+  │                                 │                                                 │                                                  │
+  │                                 │                                                 │                                                  │
+  │                                 │                                                 │                                                  │
+  │                                 │                                                 │                                                  │
+  │  ←/→ files  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  file 1/4  1-15/15                                                       │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

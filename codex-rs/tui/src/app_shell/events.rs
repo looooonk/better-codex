@@ -168,6 +168,7 @@ impl ShellState {
             }
             ServerNotification::TurnDiffUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
+                    self.record_turn_diff(&updated.turn_id, &updated.diff);
                     self.latest_diff = Some(super::diff_summary_from_unified_diff(&updated.diff));
                     self.mark_workspace_status_refresh_due();
                 }
@@ -219,7 +220,8 @@ impl ShellState {
             ServerNotification::ItemCompleted(completed) => {
                 if completed.thread_id == self.thread_id.to_string() {
                     self.mark_active_agent_threads(&completed.item);
-                    self.ingest_completed_item(
+                    self.ingest_completed_item_for_turn(
+                        &completed.turn_id,
                         completed.item.clone(),
                         super::CompletedItemOrigin::Live,
                     );
@@ -255,6 +257,12 @@ impl ShellState {
             }
             ServerNotification::FileChangePatchUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
+                    self.record_file_changes(
+                        &updated.turn_id,
+                        &updated.item_id,
+                        &updated.changes,
+                        codex_app_server_protocol::PatchApplyStatus::InProgress,
+                    );
                     self.latest_diff = Some(super::diff_summary_from_changes(&updated.changes));
                     self.mark_workspace_status_refresh_due();
                     self.push_diff_with_status_for_item(
@@ -359,6 +367,7 @@ impl ShellState {
                 if self.safety_buffering_modal_lines().is_some() {
                     self.close_agent_log();
                     self.close_tool_output();
+                    self.close_diff_view();
                 }
             }
             ServerNotification::ProcessOutputDelta(_)
@@ -539,6 +548,7 @@ impl ShellState {
     fn close_overlays_for_interactive_request(&mut self) {
         self.close_agent_log();
         self.close_tool_output();
+        self.close_diff_view();
         self.selector = None;
         self.command_palette = None;
         self.pending_external_agent_import = None;

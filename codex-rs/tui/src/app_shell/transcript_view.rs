@@ -69,10 +69,42 @@ pub(super) fn render_transcript(
         &visible_hyperlink_lines,
         /*scroll_rows*/ 0,
     );
-    render_output_hover(shell, &viewport, hover_position, buf);
+    render_card_hover(shell, &viewport, hover_position, buf);
     if let Some(scrollbar) = viewport.scrollbar {
         render_transcript_scrollbar(buf, viewport.body, scrollbar);
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum TranscriptCardHit {
+    ToolOutput { transcript_index: usize },
+    Diff { transcript_index: usize },
+}
+
+impl TranscriptCardHit {
+    pub(super) fn transcript_index(self) -> usize {
+        match self {
+            Self::ToolOutput { transcript_index } | Self::Diff { transcript_index } => {
+                transcript_index
+            }
+        }
+    }
+
+    fn block_indent(self) -> usize {
+        match self {
+            Self::ToolOutput { .. } => OUTPUT_BLOCK_INDENT,
+            Self::Diff { .. } => 0,
+        }
+    }
+}
+
+pub(super) fn transcript_card_at(
+    shell: &ShellState,
+    area: Rect,
+    position: Position,
+) -> Option<TranscriptCardHit> {
+    let viewport = transcript_viewport(shell, area);
+    transcript_card_hit_at(shell, &viewport, position)
 }
 
 pub(super) fn transcript_output_at(
@@ -80,23 +112,18 @@ pub(super) fn transcript_output_at(
     area: Rect,
     position: Position,
 ) -> Option<usize> {
-    let viewport = transcript_viewport(shell, area);
-    transcript_output_index_at(shell, &viewport, position)
+    match transcript_card_at(shell, area, position) {
+        Some(TranscriptCardHit::ToolOutput { transcript_index }) => Some(transcript_index),
+        Some(TranscriptCardHit::Diff { .. }) | None => None,
+    }
 }
 
-fn transcript_output_index_at(
+fn transcript_card_hit_at(
     shell: &ShellState,
     viewport: &TranscriptViewport,
     position: Position,
-) -> Option<usize> {
-    let output_indent = u16::try_from(OUTPUT_BLOCK_INDENT).unwrap_or(u16::MAX);
-    let output_body = Rect::new(
-        viewport.text_body.x.saturating_add(output_indent),
-        viewport.text_body.y,
-        viewport.text_body.width.saturating_sub(output_indent),
-        viewport.text_body.height,
-    );
-    if !output_body.contains(position) {
+) -> Option<TranscriptCardHit> {
+    if !viewport.text_body.contains(position) {
         return None;
     }
 
@@ -105,20 +132,36 @@ fn transcript_output_index_at(
         .saturating_add(usize::from(position.y.saturating_sub(viewport.text_body.y)));
     let transcript_index = viewport.layout.transcript_index_at_row(logical_row)?;
     let item = shell.transcript.get(transcript_index)?;
-    (item.kind == TranscriptKind::Output && item.tool_status.is_some()).then_some(transcript_index)
+    item.tool_status?;
+    let hit = match item.kind {
+        TranscriptKind::Output => TranscriptCardHit::ToolOutput { transcript_index },
+        TranscriptKind::Diff => TranscriptCardHit::Diff { transcript_index },
+        TranscriptKind::System
+        | TranscriptKind::User
+        | TranscriptKind::Assistant
+        | TranscriptKind::Plan
+        | TranscriptKind::Tool
+        | TranscriptKind::Separator
+        | TranscriptKind::Status
+        | TranscriptKind::Audit
+        | TranscriptKind::Error => return None,
+    };
+    let block_indent = u16::try_from(hit.block_indent()).unwrap_or(u16::MAX);
+    (position.x >= viewport.text_body.x.saturating_add(block_indent)).then_some(hit)
 }
 
-fn render_output_hover(
+fn render_card_hover(
     shell: &ShellState,
     viewport: &TranscriptViewport,
     hover_position: Option<Position>,
     buf: &mut Buffer,
 ) {
-    let Some(transcript_index) =
-        hover_position.and_then(|position| transcript_output_index_at(shell, viewport, position))
+    let Some(hit) =
+        hover_position.and_then(|position| transcript_card_hit_at(shell, viewport, position))
     else {
         return;
     };
+    let transcript_index = hit.transcript_index();
     let Some(rows) = viewport.layout.transcript_row_range(transcript_index) else {
         return;
     };
@@ -129,7 +172,7 @@ fn render_output_hover(
         return;
     }
 
-    let block_indent = u16::try_from(OUTPUT_BLOCK_INDENT).unwrap_or(u16::MAX);
+    let block_indent = u16::try_from(hit.block_indent()).unwrap_or(u16::MAX);
     let y_offset =
         u16::try_from(hover_start.saturating_sub(viewport.visible_from)).unwrap_or(u16::MAX);
     let height = u16::try_from(hover_end.saturating_sub(hover_start)).unwrap_or(u16::MAX);

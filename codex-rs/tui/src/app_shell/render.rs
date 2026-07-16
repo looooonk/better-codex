@@ -133,6 +133,9 @@ impl ShellView<'_> {
         if let Some(output) = &self.shell.tool_output {
             super::tool_output_view::render_tool_output(output, area, buf);
         }
+        if let Some(diff) = &self.shell.diff_view {
+            super::diff_view_view::render_diff_view(diff, area, buf);
+        }
     }
 
     pub(super) fn cursor_position(&self, area: Rect) -> Option<Position> {
@@ -140,6 +143,7 @@ impl ShellView<'_> {
             || self.shell.command_palette.is_some()
             || self.shell.agent_log.is_some()
             || self.shell.tool_output.is_some()
+            || self.shell.diff_view.is_some()
             || self.shell.pending_approval.is_some()
             || self.shell.pending_elicitation.is_some()
             || self.shell.pending_external_agent_import.is_some()
@@ -163,8 +167,12 @@ impl ShellView<'_> {
         self.layout(area).input
     }
 
-    pub(super) fn transcript_output_at(&self, area: Rect, position: Position) -> Option<usize> {
-        super::transcript_view::transcript_output_at(
+    pub(super) fn transcript_card_at(
+        &self,
+        area: Rect,
+        position: Position,
+    ) -> Option<super::transcript_view::TranscriptCardHit> {
+        super::transcript_view::transcript_card_at(
             self.shell,
             self.layout(area).transcript,
             position,
@@ -772,12 +780,16 @@ impl ShellView<'_> {
             }
             return;
         }
-        let interactive = matches!(
-            (self.shell.dashboard_route, panel.title.as_str()),
+        let interactive = match (self.shell.dashboard_route, panel.title.as_str()) {
             (DashboardRoute::Sessions, "Sessions")
-                | (DashboardRoute::Agents, "Agents")
-                | (DashboardRoute::Status, "Settings")
-        );
+            | (DashboardRoute::Agents, "Agents")
+            | (DashboardRoute::Status, "Settings") => true,
+            (DashboardRoute::Status, "Edits") => self.shell.diff_store.has_session_edits(),
+            (DashboardRoute::Sessions, _)
+            | (DashboardRoute::Agents, _)
+            | (DashboardRoute::Status, _)
+            | (DashboardRoute::Help, _) => false,
+        };
         if panel.title == "Agents" && pointer.y > text_area.y {
             let line = usize::from(pointer.y.saturating_sub(text_area.y.saturating_add(1)));
             let overview_height = agent_activity_overview_lines(
@@ -809,6 +821,7 @@ impl ShellView<'_> {
             || self.shell.command_palette.is_some()
             || self.shell.agent_log.is_some()
             || self.shell.tool_output.is_some()
+            || self.shell.diff_view.is_some()
             || self.shell.pending_approval.is_some()
             || self.shell.pending_elicitation.is_some()
             || self.shell.pending_external_agent_import.is_some()

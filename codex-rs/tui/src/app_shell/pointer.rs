@@ -11,6 +11,7 @@ use super::plugin_management::PluginManagementState;
 use super::render::PointerPane;
 use super::render::ShellView;
 use super::sessions::SessionListHit;
+use super::transcript_view::TranscriptCardHit;
 use crate::legacy_core::config::Config;
 use crate::tui::MouseScrollDirection;
 use color_eyre::Result;
@@ -48,6 +49,18 @@ impl ShellState {
     {
         self.exit_confirmation_pending = false;
         self.set_pointer_position(position);
+        if self.diff_view.is_some() {
+            let selected = self
+                .diff_view
+                .as_ref()
+                .and_then(|view| super::diff_view_view::diff_view_file_at(view, area, position));
+            if let Some(index) = selected {
+                self.select_diff_file(index);
+            } else if !super::diff_view_view::diff_view_panel_area(area).contains(position) {
+                self.close_diff_view();
+            }
+            return Ok(());
+        }
         if self.tool_output.is_some() {
             if !super::tool_output_view::tool_output_panel_area(area).contains(position) {
                 self.close_tool_output();
@@ -189,8 +202,15 @@ impl ShellState {
             }
             return Ok(());
         }
-        if let Some(index) = (ShellView { shell: self }).transcript_output_at(area, position) {
-            self.open_tool_output_at(index);
+        if let Some(card) = (ShellView { shell: self }).transcript_card_at(area, position) {
+            match card {
+                TranscriptCardHit::ToolOutput { transcript_index } => {
+                    self.open_tool_output_at(transcript_index);
+                }
+                TranscriptCardHit::Diff { transcript_index } => {
+                    self.open_diff_view_at(transcript_index);
+                }
+            }
             return Ok(());
         }
         if (ShellView { shell: self })
@@ -224,6 +244,14 @@ impl ShellState {
             {
                 self.activate_selected_setting(app_server).await?;
             }
+            return Ok(());
+        }
+        if self.dashboard_route == DashboardRoute::Status
+            && view
+                .dashboard_panel_position_at(area, position, "Edits")
+                .is_some()
+        {
+            self.open_session_diff_view();
             return Ok(());
         }
         if self.dashboard_route == DashboardRoute::Sessions
@@ -286,6 +314,13 @@ impl ShellState {
             MouseScrollDirection::Up => KeyCode::Up,
             MouseScrollDirection::Down => KeyCode::Down,
         };
+        if self.diff_view.is_some() {
+            match direction {
+                MouseScrollDirection::Up => self.scroll_diff_view_up(),
+                MouseScrollDirection::Down => self.scroll_diff_view_down(),
+            }
+            return;
+        }
         if self.tool_output.is_some() {
             match direction {
                 MouseScrollDirection::Up => self.scroll_tool_output_up(),
@@ -338,7 +373,8 @@ impl ShellState {
     }
 
     fn has_blocking_overlay(&self) -> bool {
-        self.tool_output.is_some()
+        self.diff_view.is_some()
+            || self.tool_output.is_some()
             || self.agent_log.is_some()
             || self.pending_approval.is_some()
             || self.pending_elicitation.is_some()

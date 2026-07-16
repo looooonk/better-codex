@@ -168,6 +168,7 @@ impl ShellState {
             .map_or_else(|| "Tool output".to_string(), |line| line.text.clone());
 
         self.close_agent_log();
+        self.close_diff_view();
         self.command_palette = None;
         self.selector = None;
         self.clear_transcript_selection();

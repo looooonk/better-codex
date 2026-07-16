@@ -1,4 +1,5 @@
 use super::render::ShellView;
+use super::transcript_view::TranscriptCardHit;
 use super::transcript_view::TranscriptScrollbarMetrics;
 use super::*;
 use base64::Engine;
@@ -5494,8 +5495,10 @@ async fn clicking_running_output_opens_a_live_full_output_popup() {
     let position = (area.y..area.bottom())
         .flat_map(|y| (area.x..area.right()).map(move |x| Position::new(x, y)))
         .find(|position| {
-            (ShellView { shell: &shell }).transcript_output_at(area, *position)
-                == Some(output_index)
+            (ShellView { shell: &shell }).transcript_card_at(area, *position)
+                == Some(TranscriptCardHit::ToolOutput {
+                    transcript_index: output_index,
+                })
         })
         .expect("output card should expose a click target");
 
@@ -5794,6 +5797,176 @@ fn file_change_notifications_render_only_the_edited_log_snapshot() {
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
     );
     insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[tokio::test]
+async fn clicking_edited_card_opens_and_refreshes_the_diff_popup() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+    let change = FileUpdateChange {
+        path: "src/lib.rs".to_string(),
+        kind: PatchChangeKind::Update { move_path: None },
+        diff: "@@ -1 +1 @@\n-before\n+after\n".to_string(),
+    };
+    shell.handle_notification(ServerNotification::FileChangePatchUpdated(
+        FileChangePatchUpdatedNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            item_id: "file-1".to_string(),
+            changes: vec![change],
+        },
+    ));
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+    let diff_index = shell
+        .transcript
+        .iter()
+        .position(|line| line.kind == TranscriptKind::Diff)
+        .expect("edited card should exist");
+    let position = (area.y..area.bottom())
+        .flat_map(|y| (area.x..area.right()).map(move |x| Position::new(x, y)))
+        .find(|position| {
+            (ShellView { shell: &shell }).transcript_card_at(area, *position)
+                == Some(TranscriptCardHit::Diff {
+                    transcript_index: diff_index,
+                })
+        })
+        .expect("edited card should expose a click target");
+
+    shell
+        .handle_mouse_click(area, position, &config, &mut backend)
+        .await
+        .expect("edited card click should succeed");
+
+    let open = shell.diff_view.as_ref().expect("diff popup should open");
+    assert_eq!(open.source_item_id(), Some("file-1"));
+    assert_eq!(open.files().len(), 1);
+    assert_eq!(
+        open.selected_file().and_then(|file| file.old_label()),
+        Some("src/lib.rs")
+    );
+    open.set_scroll_max(12);
+    open.scroll_down(/*amount*/ 4);
+    assert_eq!(open.scroll(), 4);
+
+    shell.handle_notification(ServerNotification::FileChangePatchUpdated(
+        FileChangePatchUpdatedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            item_id: "file-1".to_string(),
+            changes: vec![FileUpdateChange {
+                path: "src/lib.rs".to_string(),
+                kind: PatchChangeKind::Update { move_path: None },
+                diff: "@@ -1 +1,2 @@\n-before\n+after\n+again\n".to_string(),
+            }],
+        },
+    ));
+
+    let open = shell
+        .diff_view
+        .as_ref()
+        .expect("live diff popup should remain open");
+    assert_eq!(open.scroll(), 0);
+    assert!(open.selected_file().is_some_and(|file| {
+        file.rows()
+            .iter()
+            .any(|row| row.new.as_ref().is_some_and(|cell| cell.text == "again"))
+    }));
+
+    shell
+        .handle_mouse_click(area, Position::new(/*x*/ 0, /*y*/ 0), &config, &mut backend)
+        .await
+        .expect("outside click should succeed");
+    assert!(shell.diff_view.is_none());
+
+    shell.transcript_selection = Some(diff_index);
+    assert_eq!(
+        shell.handle_transcript_selection_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE,)),
+        Some(false)
+    );
+    assert!(shell.diff_view.is_some());
+}
+
+#[tokio::test]
+async fn clicking_status_edits_opens_every_session_file() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    shell.composer.clear();
+    shell.record_file_changes(
+        "turn-1",
+        "file-1",
+        &sample_file_changes(),
+        codex_app_server_protocol::PatchApplyStatus::Completed,
+    );
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 140, /*height*/ 40,
+    );
+    let position = (area.y..area.bottom())
+        .flat_map(|y| (area.x..area.right()).map(move |x| Position::new(x, y)))
+        .find(|position| {
+            (ShellView { shell: &shell })
+                .dashboard_panel_position_at(area, *position, "Edits")
+                .is_some()
+        })
+        .expect("Edits panel should expose a click target");
+
+    shell
+        .handle_mouse_click(area, position, &config, &mut backend)
+        .await
+        .expect("Edits click should succeed");
+
+    let open = shell.diff_view.as_ref().expect("session diff should open");
+    assert_eq!(open.source_item_id(), None);
+    assert_eq!(open.files().len(), sample_file_changes().len());
+}
+
+#[test]
+fn historical_edits_hydrate_and_session_switch_clears_them() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut turn = test_turn("historical-turn", TurnStatus::Completed);
+    turn.items.push(ThreadItem::FileChange {
+        id: "historical-file".to_string(),
+        changes: vec![FileUpdateChange {
+            path: "src/history.rs".to_string(),
+            kind: PatchChangeKind::Add,
+            diff: "first\nsecond\n".to_string(),
+        }],
+        status: codex_app_server_protocol::PatchApplyStatus::Completed,
+    });
+    let mut started = started_thread(
+        "history",
+        test_thread_id("01900000-0000-7000-8000-000000000421"),
+        /*forked_from_id*/ None,
+    );
+    started.turns = vec![turn];
+
+    shell.replace_started_session(started);
+
+    assert_eq!(
+        shell.diff_store.session_stats(),
+        super::diff_view::DiffStats {
+            files: 1,
+            additions: 2,
+            removals: 0,
+        }
+    );
+    assert!(shell.open_session_diff_view());
+
+    shell.replace_started_session(started_thread(
+        "empty",
+        test_thread_id("01900000-0000-7000-8000-000000000422"),
+        /*forked_from_id*/ None,
+    ));
+
+    assert!(!shell.diff_store.has_session_edits());
+    assert!(shell.diff_view.is_none());
 }
 
 #[test]

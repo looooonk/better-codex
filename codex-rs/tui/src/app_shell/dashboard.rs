@@ -250,16 +250,26 @@ fn dashboard_panel(
             })
         }
         DashboardPanelKind::Edits => {
-            let lines = if let Some(diff) = &shell.latest_diff {
-                vec![Line::from(diff_stat_spans(format!(
-                    "{} files +{} -{}",
-                    format_usize(diff.files),
-                    format_usize(diff.additions),
-                    format_usize(diff.removals)
-                )))]
-            } else {
-                vec![Line::from("no changes".dim())]
-            };
+            let session = shell.diff_store.session_stats();
+            let summary = (session.files > 0)
+                .then_some((session.files, session.additions, session.removals))
+                .or_else(|| {
+                    shell
+                        .latest_diff
+                        .as_ref()
+                        .map(|diff| (diff.files, diff.additions, diff.removals))
+                });
+            let lines = summary.map_or_else(
+                || vec![Line::from("no changes".dim())],
+                |(files, additions, removals)| {
+                    vec![Line::from(diff_stat_spans(format!(
+                        "{} files +{} -{}",
+                        format_usize(files),
+                        format_usize(additions),
+                        format_usize(removals)
+                    )))]
+                },
+            );
             Some(DashboardPanel::new("Edits", lines))
         }
         DashboardPanelKind::Goal => shell.active_goal.as_ref().map(|goal| {

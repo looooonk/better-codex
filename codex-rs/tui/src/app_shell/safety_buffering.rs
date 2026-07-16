@@ -411,6 +411,8 @@ impl ShellState {
         self.tool_activity.clear();
         self.close_agent_log();
         self.close_tool_output();
+        self.close_diff_view();
+        self.diff_store.remove_turn(&submitted.turn_id);
         self.agent_activity = super::agent_activity::AgentActivityState::default();
         self.subagent_activity.clear();
         self.latest_diff = None;

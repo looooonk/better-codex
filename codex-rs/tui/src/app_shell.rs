@@ -74,7 +74,11 @@ mod dashboard_help;
 mod dashboard_rate_limits;
 mod dashboard_workspace;
 mod design;
+mod diff_model;
 mod diff_style;
+mod diff_view;
+mod diff_view_controller;
+mod diff_view_view;
 mod elicitation;
 mod events;
 mod external_agent_import;
@@ -121,6 +125,8 @@ use command_palette::CommandPaletteEntry;
 use command_palette::CommandPaletteState;
 use command_palette::command_palette_entries;
 use composer::ComposerState;
+use diff_view::DiffStore;
+use diff_view::DiffViewState;
 use elicitation::ElicitationChoice;
 use elicitation::PendingElicitation;
 use external_agent_import::ExternalAgentImportState;
@@ -393,6 +399,7 @@ pub(crate) async fn run(
     shell.cancel_shell_command();
     shell.close_agent_log();
     shell.close_tool_output();
+    shell.close_diff_view();
     shell.cancel_agent_history().await;
     shell.cancel_session_hydration();
     shell.finish_subscription_cleanup().await;
@@ -687,6 +694,8 @@ struct ShellState {
     agent_activity: AgentActivityState,
     agent_log: Option<AgentLogState>,
     tool_output: Option<ToolOutputState>,
+    diff_store: DiffStore,
+    diff_view: Option<DiffViewState>,
     agent_history_task: Option<AgentHistoryTask>,
     active_agent_thread_ids: HashSet<String>,
     deferred_unsubscribe_thread_ids: Vec<ThreadId>,
@@ -787,6 +796,8 @@ impl ShellState {
             agent_activity: AgentActivityState::default(),
             agent_log: None,
             tool_output: None,
+            diff_store: DiffStore::default(),
+            diff_view: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),
@@ -814,8 +825,13 @@ impl ShellState {
 
         self.push_system(format!("loaded {} previous turns", turns.len()));
         for turn in turns {
+            let turn_id = turn.id;
             for item in turn.items {
-                self.ingest_completed_item(item, CompletedItemOrigin::Historical);
+                self.ingest_completed_item_for_turn(
+                    &turn_id,
+                    item,
+                    CompletedItemOrigin::Historical,
+                );
             }
             if let Some(error) = turn.error {
                 self.push_error(error.message);
@@ -845,6 +861,7 @@ impl ShellState {
                 || self.command_palette.is_some()
                 || self.agent_log.is_some()
                 || self.tool_output.is_some()
+                || self.diff_view.is_some()
                 || self.safety_buffering_modal_lines().is_some()
                 || self.pending_approval.is_some()
                 || self.pending_elicitation.is_some()
@@ -904,6 +921,10 @@ impl ShellState {
         }
         if !matches!(key.code, KeyCode::Esc) {
             self.exit_confirmation_pending = false;
+        }
+        if self.diff_view.is_some() {
+            self.handle_diff_view_key(key);
+            return Ok(false);
         }
         if self.tool_output.is_some() {
             self.handle_tool_output_key(key);
@@ -1738,6 +1759,7 @@ impl ShellState {
         self.invalidate_session_hydration();
         self.close_agent_log();
         self.close_tool_output();
+        self.close_diff_view();
         let AppServerStartedThread {
             session,
             turns,
@@ -1784,6 +1806,7 @@ impl ShellState {
         self.deferred_unsubscribe_thread_ids.clear();
         self.subagent_activity.clear();
         self.latest_diff = None;
+        self.diff_store.clear();
         self.record_workspace_git_status(None);
         self.token_usage = TokenUsage::default();
         self.context_token_usage = TokenUsage::default();
@@ -1885,6 +1908,7 @@ impl ShellState {
     fn open_command_palette(&mut self) {
         self.close_agent_log();
         self.close_tool_output();
+        self.close_diff_view();
         self.selector = None;
         self.command_palette = Some(CommandPaletteState::default());
         self.clear_transcript_selection();
@@ -1920,7 +1944,7 @@ impl ShellState {
                 Some(false)
             }
             KeyCode::Enter => {
-                if !self.open_selected_tool_output() {
+                if !self.open_selected_diff_view() && !self.open_selected_tool_output() {
                     self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
                 }
                 Some(false)
@@ -2624,6 +2648,19 @@ impl ShellState {
     }
 
     fn ingest_completed_item(&mut self, item: ThreadItem, origin: CompletedItemOrigin) {
+        let turn_id = self
+            .active_turn_id
+            .clone()
+            .unwrap_or_else(|| "unscoped".to_string());
+        self.ingest_completed_item_for_turn(&turn_id, item, origin);
+    }
+
+    fn ingest_completed_item_for_turn(
+        &mut self,
+        turn_id: &str,
+        item: ThreadItem,
+        origin: CompletedItemOrigin,
+    ) {
         self.agent_activity.reduce_completed(&item);
         match item {
             ThreadItem::UserMessage { content, .. } => {
@@ -2699,6 +2736,7 @@ impl ShellState {
                 changes,
                 status,
             } => {
+                self.record_file_changes(turn_id, &id, &changes, status.clone());
                 self.latest_diff = Some(diff_summary_from_changes(&changes));
                 self.push_diff_with_status_for_item(
                     id,
@@ -3158,6 +3196,8 @@ impl ShellState {
             agent_activity: AgentActivityState::default(),
             agent_log: None,
             tool_output: None,
+            diff_store: DiffStore::default(),
+            diff_view: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),
@@ -3399,6 +3439,8 @@ pub mod bench_support {
             agent_activity: AgentActivityState::default(),
             agent_log: None,
             tool_output: None,
+            diff_store: DiffStore::default(),
+            diff_view: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),
@@ -3572,7 +3614,11 @@ fn diff_summary_from_changes(changes: &[FileUpdateChange]) -> DiffSummary {
         ..DiffSummary::default()
     };
     for change in changes {
-        let (additions, removals) = count_diff_lines(&change.diff);
+        let (additions, removals) = match &change.kind {
+            PatchChangeKind::Add => (change.diff.lines().count(), 0),
+            PatchChangeKind::Delete => (0, change.diff.lines().count()),
+            PatchChangeKind::Update { .. } => count_diff_lines(&change.diff),
+        };
         summary.additions += additions;
         summary.removals += removals;
         if matches!(&change.kind, PatchChangeKind::Update { move_path: Some(_) }) {

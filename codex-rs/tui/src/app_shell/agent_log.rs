@@ -239,6 +239,7 @@ impl ShellState {
     {
         self.close_agent_log();
         self.close_tool_output();
+        self.close_diff_view();
         self.command_palette = None;
         self.selector = None;
         self.clear_transcript_selection();
