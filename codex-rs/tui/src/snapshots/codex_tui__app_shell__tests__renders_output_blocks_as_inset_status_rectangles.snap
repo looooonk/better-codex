@@ -23,10 +23,10 @@ expression: rendered
  ◆ CONVERSATION
  ▌ tool exec cargo test
 
-   ▌ output ↗ ... 4 earlier output lines
-   ▌          line 5
-   ▌          line 6
-   ▌          line 7
+   ▌ output ... 4 earlier output lines
+   ▌        line 5
+   ▌        line 6
+   ▌        line 7
 
 ╭────────────────────────────────────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                                                             │

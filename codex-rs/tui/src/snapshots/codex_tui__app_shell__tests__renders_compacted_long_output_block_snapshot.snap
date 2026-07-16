@@ -13,8 +13,8 @@ expression: "render_shell(&shell, area)"
 
 
  ◆ CONVERSATION
-   ▌          cargo build output line 159                                   ┃
-   ▌          cargo build output line 160                                   ┃
+   ▌        cargo build output line 159                                     ┃
+   ▌        cargo build output line 160                                     ┃
 
 ╭────────────────────────────────────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                                                             │

@@ -268,7 +268,7 @@ fn renders_short_shell_snapshot() {
 }
 
 #[test]
-fn renders_output_blocks_as_inset_neutral_rectangles() {
+fn renders_output_blocks_as_inset_status_rectangles() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.streaming_assistant.clear();
@@ -285,7 +285,7 @@ fn renders_output_blocks_as_inset_neutral_rectangles() {
     let rendered = buffer_contents(&buf, area);
     let tool_row =
         row_containing(&buf, area, "tool exec cargo test").expect("tool row should render");
-    let output_row = row_containing(&buf, area, "output ↗ ... 4 earlier output lines")
+    let output_row = row_containing(&buf, area, "output ... 4 earlier output lines")
         .expect("output omission row should render");
     let output_tail_row =
         row_containing(&buf, area, "line 7").expect("latest output row should render");
@@ -314,7 +314,7 @@ fn renders_output_blocks_as_inset_neutral_rectangles() {
             .expect("output accent cell should exist")
             .style()
             .fg,
-        Some(design::palette::BORDER)
+        Some(design::palette::SUCCESS)
     );
     assert_eq!(
         buf.cell((tool_accent_x, tool_row))
@@ -323,7 +323,55 @@ fn renders_output_blocks_as_inset_neutral_rectangles() {
             .fg,
         Some(design::palette::SUCCESS)
     );
+    let output_label_x =
+        row_needle_x(&buf, area, output_row, "output").expect("output label should render");
+    assert_eq!(
+        buf.cell((output_label_x, output_row))
+            .expect("output label cell should exist")
+            .style()
+            .fg,
+        Some(design::palette::TEXT)
+    );
+
+    shell.pointer_position = Some(Position::new(output_accent_x, output_row));
+    let hovered = render_shell_buffer(&shell, area);
+    assert_eq!(
+        rightmost_bg_x_for_row(&hovered, area, output_row, design::palette::BORDER),
+        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::DARK)
+    );
+    assert_eq!(
+        rightmost_bg_x_for_row(&hovered, area, output_tail_row, design::palette::BORDER),
+        rightmost_bg_x_for_row(&buf, area, output_tail_row, design::palette::DARK)
+    );
     insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn output_transcript_blocks_use_status_accent_colors() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.push_output_with_status("running output", ToolBlockStatus::Running);
+    shell.push_output_with_status("successful output", ToolBlockStatus::Success);
+    shell.push_output_with_status("failed output", ToolBlockStatus::Fail);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+
+    let buf = render_shell_buffer(&shell, area);
+
+    assert_eq!(
+        accent_color_for_row(&buf, area, "running output"),
+        Some(design::palette::CYAN)
+    );
+    assert_eq!(
+        accent_color_for_row(&buf, area, "successful output"),
+        Some(design::palette::SUCCESS)
+    );
+    assert_eq!(
+        accent_color_for_row(&buf, area, "failed output"),
+        Some(design::palette::ERROR)
+    );
 }
 
 #[test]
@@ -5174,7 +5222,7 @@ fn streaming_tool_output_renders_latest_lines_snapshot() {
     );
     let buf = render_shell_buffer(&shell, area);
     let rendered = buffer_contents(&buf, area);
-    let omitted_row = row_containing(&buf, area, "output ↗ ... 4 earlier output lines")
+    let omitted_row = row_containing(&buf, area, "output ... 4 earlier output lines")
         .expect("output omission row should render");
     let line_5_row = row_containing(&buf, area, "line 5").expect("line 5 should render");
     let line_6_row = row_containing(&buf, area, "line 6").expect("line 6 should render");

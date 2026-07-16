@@ -101,7 +101,12 @@ impl ShellView<'_> {
         if let Some(collapsed_dashboard) = layout.collapsed_dashboard {
             self.render_collapsed_dashboard(collapsed_dashboard, buf);
         }
-        render_transcript(self.shell, layout.transcript, buf);
+        render_transcript(
+            self.shell,
+            layout.transcript,
+            self.base_hover_position(),
+            buf,
+        );
         self.render_input(layout.input, buf);
         if let Some(dashboard) = layout.dashboard {
             self.render_dashboard(dashboard, buf);

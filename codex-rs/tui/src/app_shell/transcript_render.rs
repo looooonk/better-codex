@@ -355,6 +355,22 @@ impl TranscriptLayout {
         }
         None
     }
+
+    pub(super) fn transcript_row_range(
+        &self,
+        transcript_index: usize,
+    ) -> Option<std::ops::Range<usize>> {
+        let mut logical_row = 0usize;
+        for chunk in &self.chunks {
+            logical_row = logical_row.saturating_add(usize::from(chunk.separator_before));
+            let chunk_end = logical_row.saturating_add(chunk.lines.len());
+            if chunk.transcript_index == Some(transcript_index) {
+                return Some(logical_row..chunk_end);
+            }
+            logical_row = chunk_end;
+        }
+        None
+    }
 }
 
 #[cfg(test)]

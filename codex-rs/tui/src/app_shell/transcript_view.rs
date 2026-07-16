@@ -33,7 +33,12 @@ const TRANSCRIPT_SCROLLBAR_MIN_THUMB_HEIGHT: u16 = 2;
 const OUTPUT_BLOCK_INDENT: usize = 2;
 const OUTPUT_BLOCK_MAX_LINES: usize = 4;
 
-pub(super) fn render_transcript(shell: &ShellState, area: Rect, buf: &mut Buffer) {
+pub(super) fn render_transcript(
+    shell: &ShellState,
+    area: Rect,
+    hover_position: Option<Position>,
+    buf: &mut Buffer,
+) {
     let viewport = transcript_viewport(shell, area);
     let title = if let Some(selected) = shell.transcript_selection {
         format!(
@@ -63,6 +68,7 @@ pub(super) fn render_transcript(shell: &ShellState, area: Rect, buf: &mut Buffer
         &visible_hyperlink_lines,
         /*scroll_rows*/ 0,
     );
+    render_output_hover(shell, &viewport, hover_position, buf);
     if let Some(scrollbar) = viewport.scrollbar {
         render_transcript_scrollbar(buf, viewport.body, scrollbar);
     }
@@ -74,6 +80,14 @@ pub(super) fn transcript_output_at(
     position: Position,
 ) -> Option<usize> {
     let viewport = transcript_viewport(shell, area);
+    transcript_output_index_at(shell, &viewport, position)
+}
+
+fn transcript_output_index_at(
+    shell: &ShellState,
+    viewport: &TranscriptViewport,
+    position: Position,
+) -> Option<usize> {
     let output_indent = u16::try_from(OUTPUT_BLOCK_INDENT).unwrap_or(u16::MAX);
     let output_body = Rect::new(
         viewport.text_body.x.saturating_add(output_indent),
@@ -91,6 +105,40 @@ pub(super) fn transcript_output_at(
     let transcript_index = viewport.layout.transcript_index_at_row(logical_row)?;
     let item = shell.transcript.get(transcript_index)?;
     (item.kind == TranscriptKind::Output && item.tool_status.is_some()).then_some(transcript_index)
+}
+
+fn render_output_hover(
+    shell: &ShellState,
+    viewport: &TranscriptViewport,
+    hover_position: Option<Position>,
+    buf: &mut Buffer,
+) {
+    let Some(transcript_index) =
+        hover_position.and_then(|position| transcript_output_index_at(shell, viewport, position))
+    else {
+        return;
+    };
+    let Some(rows) = viewport.layout.transcript_row_range(transcript_index) else {
+        return;
+    };
+    let visible_end = viewport.visible_from.saturating_add(viewport.visible_count);
+    let hover_start = rows.start.max(viewport.visible_from);
+    let hover_end = rows.end.min(visible_end);
+    if hover_start >= hover_end {
+        return;
+    }
+
+    let block_indent = u16::try_from(OUTPUT_BLOCK_INDENT).unwrap_or(u16::MAX);
+    let y_offset =
+        u16::try_from(hover_start.saturating_sub(viewport.visible_from)).unwrap_or(u16::MAX);
+    let height = u16::try_from(hover_end.saturating_sub(hover_start)).unwrap_or(u16::MAX);
+    let hover_area = Rect::new(
+        viewport.text_body.x.saturating_add(block_indent),
+        viewport.text_body.y.saturating_add(y_offset),
+        viewport.text_body.width.saturating_sub(block_indent),
+        height,
+    );
+    buf.set_style(hover_area, Style::new().bg(palette::BORDER));
 }
 
 struct TranscriptViewport {
@@ -308,11 +356,7 @@ fn tool_block_lines(
         | TranscriptKind::Audit
         | TranscriptKind::Error => palette::SURFACE,
     };
-    let label = if kind == TranscriptKind::Output {
-        "output ↗"
-    } else {
-        kind.label()
-    };
+    let label = kind.label();
     let label_width = label.width();
     let label_prefix_width = label_width + 3;
     let content_width = block_width.saturating_sub(label_prefix_width).max(1);
@@ -353,12 +397,7 @@ fn tool_block_lines(
         .enumerate()
         .map(|(index, wrapped)| {
             let label_span = if index == 0 {
-                let label = format!("{label} ").bold();
-                if kind == TranscriptKind::Output {
-                    label.fg(palette::CYAN)
-                } else {
-                    label
-                }
+                format!("{label} ").bold()
             } else {
                 " ".repeat(label_width + 1).dim()
             };
@@ -366,13 +405,8 @@ fn tool_block_lines(
             if block_indent > 0 {
                 spans.push(" ".repeat(block_indent).into());
             }
-            let accent_style = if kind == TranscriptKind::Output {
-                Style::new().fg(palette::BORDER).bg(block_background)
-            } else {
-                status.accent_style()
-            };
             spans.extend([
-                Span::styled("▌", accent_style),
+                Span::styled("▌", status.accent_style()),
                 " ".into(),
                 label_span,
                 wrapped.into(),

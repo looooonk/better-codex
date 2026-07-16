@@ -175,6 +175,9 @@ fn logical_rows_resolve_to_stored_transcript_sources() {
     assert_eq!(actual.iter().filter(|index| **index == Some(0)).count(), 1);
     assert_eq!(actual.iter().filter(|index| **index == Some(1)).count(), 2);
     assert!(actual.ends_with(&[None, None]));
+    assert_eq!(layout.transcript_row_range(0), Some(0..1));
+    assert_eq!(layout.transcript_row_range(1), Some(2..4));
+    assert_eq!(layout.transcript_row_range(2), None);
 }
 
 #[test]
