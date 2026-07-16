@@ -2,6 +2,7 @@ use super::MAX_RESUMED_AGENT_THREAD_CANDIDATES;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::Turn;
 use codex_protocol::protocol::SubAgentSource;
 use codex_utils_path_uri::LegacyAppPathString;
@@ -22,6 +23,7 @@ const MAX_REFERENCED_AGENT_THREADS: usize = MAX_RESUMED_AGENT_THREAD_CANDIDATES 
 pub(crate) struct AgentHistorySnapshot {
     pub(crate) thread_id: String,
     pub(crate) agent_path: Option<String>,
+    pub(crate) status: ThreadStatus,
     pub(crate) turns: Vec<Turn>,
 }
 
@@ -30,6 +32,7 @@ impl AgentHistorySnapshot {
         Self {
             thread_id: thread.id.clone(),
             agent_path: agent_path(thread),
+            status: thread.status.clone(),
             turns: Vec::new(),
         }
     }
@@ -38,6 +41,7 @@ impl AgentHistorySnapshot {
         Self {
             thread_id: thread.id.clone(),
             agent_path: agent_path(&thread),
+            status: thread.status.clone(),
             turns: bounded_turns(mem::take(&mut thread.turns)),
         }
     }

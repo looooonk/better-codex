@@ -35,6 +35,8 @@ use codex_app_server_protocol::ThreadGoalSetResponse;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
+use codex_app_server_protocol::ThreadReadParams;
+use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadRollbackResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadStartSource;
@@ -96,6 +98,12 @@ pub(super) trait AppShellBackend {
         &self,
         params: ThreadListParams,
     ) -> impl std::future::Future<Output = Result<ThreadListResponse>> + Send + 'static;
+
+    /// Reads a complete thread transcript without borrowing the event-loop-owned backend.
+    fn thread_read_full_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<Thread>> + Send + 'static;
 
     /// Starts an account rate-limit lookup without borrowing the event-loop-owned backend.
     fn account_rate_limits_in_background(
@@ -337,6 +345,25 @@ impl AppShellBackend for AppServerSession {
                 })
                 .await
                 .map_err(Into::into)
+        }
+    }
+
+    fn thread_read_full_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<Thread>> + Send + 'static {
+        let request_handle = AppServerSession::request_handle(self);
+        async move {
+            let response = request_handle
+                .request_typed::<ThreadReadResponse>(ClientRequest::ThreadRead {
+                    request_id: app_shell_request_id("app-shell-thread-log"),
+                    params: ThreadReadParams {
+                        thread_id: thread_id.to_string(),
+                        include_turns: true,
+                    },
+                })
+                .await?;
+            Ok(response.thread)
         }
     }
 

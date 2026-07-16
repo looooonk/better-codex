@@ -60,6 +60,9 @@ mod agent_activity;
 mod agent_activity_controller;
 mod agent_activity_render;
 mod agent_history;
+mod agent_log;
+mod agent_log_format;
+mod agent_log_view;
 mod approval;
 mod backend;
 mod command_palette;
@@ -100,6 +103,7 @@ mod transcript_view;
 mod user_input;
 mod workspace;
 use agent_activity::AgentActivityState;
+use agent_log::AgentLogState;
 use approval::ApprovalAction;
 use approval::ApprovalChoice;
 use approval::PendingApproval;
@@ -346,6 +350,7 @@ pub(crate) async fn run(
                     }
                 }
                 _ = agent_history_poll.tick(), if shell.has_pending_agent_history()
+                    || shell.has_pending_agent_log()
                     || shell.has_pending_session_hydration()
                     || shell.has_pending_shell_command() =>
                 {
@@ -353,6 +358,9 @@ pub(crate) async fn run(
                     changed |= shell.poll_session_hydration(&app_server).await;
                     if shell.has_pending_agent_history() {
                         changed |= shell.poll_agent_history(&app_server).await;
+                    }
+                    if shell.has_pending_agent_log() {
+                        changed |= shell.poll_agent_log().await;
                     }
                     if changed {
                         tui.frame_requester().schedule_frame();
@@ -365,6 +373,7 @@ pub(crate) async fn run(
     .await;
 
     shell.cancel_shell_command();
+    shell.close_agent_log();
     shell.cancel_agent_history().await;
     shell.cancel_session_hydration();
     shell.finish_subscription_cleanup().await;
@@ -641,6 +650,7 @@ struct ShellState {
     active_goal: Option<ThreadGoal>,
     tool_activity: VecDeque<ToolActivity>,
     agent_activity: AgentActivityState,
+    agent_log: Option<AgentLogState>,
     agent_history_task: Option<AgentHistoryTask>,
     active_agent_thread_ids: HashSet<String>,
     deferred_unsubscribe_thread_ids: Vec<ThreadId>,
@@ -655,6 +665,12 @@ struct ShellState {
     token_usage: TokenUsage,
     context_token_usage: TokenUsage,
     model_context_window: Option<i64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompletedItemOrigin {
+    Historical,
+    Live,
 }
 
 impl ShellState {
@@ -733,6 +749,7 @@ impl ShellState {
             active_goal: None,
             tool_activity: VecDeque::new(),
             agent_activity: AgentActivityState::default(),
+            agent_log: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),
@@ -760,7 +777,7 @@ impl ShellState {
         self.push_system(format!("loaded {} previous turns", turns.len()));
         for turn in turns {
             for item in turn.items {
-                self.ingest_completed_item(item);
+                self.ingest_completed_item(item, CompletedItemOrigin::Historical);
             }
             if let Some(error) = turn.error {
                 self.push_error(error.message);
@@ -788,6 +805,7 @@ impl ShellState {
         {
             if self.selector.is_some()
                 || self.command_palette.is_some()
+                || self.agent_log.is_some()
                 || self.safety_buffering_modal_lines().is_some()
                 || self.pending_approval.is_some()
                 || self.pending_elicitation.is_some()
@@ -847,6 +865,17 @@ impl ShellState {
         }
         if !matches!(key.code, KeyCode::Esc) {
             self.exit_confirmation_pending = false;
+        }
+        if self.agent_log.is_some() {
+            if key.kind == KeyEventKind::Press
+                && key.modifiers == KeyModifiers::NONE
+                && matches!(key.code, KeyCode::Char('r'))
+            {
+                self.reload_agent_log(config, app_server);
+            } else {
+                self.handle_agent_log_key(key);
+            }
+            return Ok(false);
         }
         if self.selector.is_some() {
             self.handle_selector_key(key, app_server).await?;
@@ -954,6 +983,15 @@ impl ShellState {
             && self.settings.focused
             && self.handle_settings_key(key, app_server).await?
         {
+            return Ok(false);
+        }
+        if self.dashboard_visible
+            && self.dashboard_route == DashboardRoute::Agents
+            && self.agents_focused
+            && matches!(key.code, KeyCode::Enter)
+            && matches!(key.modifiers, KeyModifiers::NONE)
+        {
+            self.open_selected_agent_log(config, app_server);
             return Ok(false);
         }
         if self.handle_agent_activity_key(key) {
@@ -1206,6 +1244,7 @@ impl ShellState {
     fn insert_text(&mut self, text: &str) {
         if self.selector.is_some()
             || self.command_palette.is_some()
+            || self.agent_log.is_some()
             || self.safety_buffering_modal_lines().is_some()
             || self.pending_approval.is_some()
             || self.pending_elicitation.is_some()
@@ -1667,6 +1706,7 @@ impl ShellState {
 
     fn replace_started_session(&mut self, started: AppServerStartedThread) {
         self.invalidate_session_hydration();
+        self.close_agent_log();
         let AppServerStartedThread {
             session,
             turns,
@@ -1805,6 +1845,7 @@ impl ShellState {
     }
 
     fn open_command_palette(&mut self) {
+        self.close_agent_log();
         self.selector = None;
         self.command_palette = Some(CommandPaletteState::default());
         self.clear_transcript_selection();
@@ -2536,7 +2577,7 @@ impl ShellState {
         self.clear_streaming_plan();
     }
 
-    fn ingest_completed_item(&mut self, item: ThreadItem) {
+    fn ingest_completed_item(&mut self, item: ThreadItem, origin: CompletedItemOrigin) {
         self.agent_activity.reduce_completed(&item);
         match item {
             ThreadItem::UserMessage { content, .. } => {
@@ -2689,7 +2730,14 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id, title, tool_status_from_debug(&status));
+                match origin {
+                    CompletedItemOrigin::Historical => {}
+                    CompletedItemOrigin::Live => self.push_tool_with_status_for_item(
+                        id,
+                        title,
+                        tool_status_from_debug(&status),
+                    ),
+                }
             }
             ThreadItem::SubAgentActivity {
                 id,
@@ -2698,8 +2746,7 @@ impl ShellState {
                 ..
             } => {
                 let title = format!("subagent {kind:?}: {agent_path}");
-                self.upsert_subagent_activity(id.clone(), title.clone(), "active".to_string());
-                self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Running);
+                self.upsert_subagent_activity(id, title, "recorded".to_string());
             }
             ThreadItem::WebSearch(item) => {
                 let title = format!("web search: {}", item.query);
@@ -3028,6 +3075,7 @@ impl ShellState {
                 },
             ]),
             agent_activity: AgentActivityState::default(),
+            agent_log: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),
@@ -3266,6 +3314,7 @@ pub mod bench_support {
                 status: "running".to_string(),
             }]),
             agent_activity: AgentActivityState::default(),
+            agent_log: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),

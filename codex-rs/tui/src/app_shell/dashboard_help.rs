@@ -95,7 +95,7 @@ fn wide_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
         "r resume, f fork, a/u archive",
         "v archived, d delete",
         "n rename, / search",
-        "Agents: Enter focus, j/k inspect",
+        "Agents: Enter focus/log, j/k inspect",
         "Settings: Tab page, Enter select",
         "Selectors: j/k choose, Enter apply",
         if shell.transcript_selection.is_some() {
@@ -151,7 +151,7 @@ fn compact_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
         "a/u archive · v show",
         "d delete · n rename",
         "/ search",
-        "Agent ↵ focus · j/k",
+        "Agent ↵ focus/log · j/k",
         "Prefs Tab · ↵ select",
         "Pick j/k · ↵ apply",
         if shell.transcript_selection.is_some() {
@@ -200,7 +200,7 @@ fn dense_key_hint_labels(shell: &ShellState) -> [&'static str; 14] {
         "r/f resume/fork",
         "a/u/v/d arc/show/del",
         "n rename  / search",
-        "Agent ↵/j/k focus/nav",
+        "Agent ↵ focus/log · j/k nav",
         "Tab/j/k nav · ↵ apply",
         if shell.transcript_selection.is_some() {
             "Esc composer"

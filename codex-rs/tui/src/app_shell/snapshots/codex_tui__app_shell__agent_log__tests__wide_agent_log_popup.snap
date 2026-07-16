@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell/agent_log_tests.rs
+expression: "render_log(&log, 100, 30)"
+---
+                                                                                                    
+                                                                                                    
+  ╭ Agent log · reviewer ────────────────────────────────────────────────────────────────────────╮  
+  │ ■ stopped  /root/reviewer                                                                    │  
+  │ Task  Review the restored session and verify the TUI state.                                  │  
+  │ Assistant checkpoint 0                                                                       │  
+  │ log line 1: inspected lifecycle events and transcript output                                 │  
+  │ log line 2: inspected lifecycle events and transcript output                                 │  
+  │ log line 3: inspected lifecycle events and transcript output                                 │  
+  │ log line 4: inspected lifecycle events and transcript output                                 │  
+  │ Assistant checkpoint 5                                                                       │  
+  │ log line 6: inspected lifecycle events and transcript output                                 │  
+  │ log line 7: inspected lifecycle events and transcript output                                 │  
+  │ log line 8: inspected lifecycle events and transcript output                                 │  
+  │ log line 9: inspected lifecycle events and transcript output                                 │  
+  │ Assistant checkpoint 10                                                                      │  
+  │ log line 11: inspected lifecycle events and transcript output                                │  
+  │ log line 12: inspected lifecycle events and transcript output                                │  
+  │ log line 13: inspected lifecycle events and transcript output                                │  
+  │ log line 14: inspected lifecycle events and transcript output                                │  
+  │ Assistant checkpoint 15                                                                      │  
+  │ log line 16: inspected lifecycle events and transcript output                                │  
+  │ log line 17: inspected lifecycle events and transcript output                                │  
+  │ log line 18: inspected lifecycle events and transcript output                                │  
+  │ log line 19: inspected lifecycle events and transcript output                                │  
+  │ Assistant checkpoint 20                                                                      │  
+  │  j/k scroll  PgUp/PgDn page  g/G ends  r reload  Esc close  1-21/30                          │  
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯

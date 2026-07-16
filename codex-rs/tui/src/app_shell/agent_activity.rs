@@ -47,7 +47,7 @@ pub(super) struct AgentActivity {
     pub(super) status: AgentLifecycleStatus,
     pub(super) latest_message: Option<String>,
     pub(super) timeline: VecDeque<AgentTimelineEntry>,
-    authoritative_state: bool,
+    thread_status_known: bool,
     live_state: bool,
 }
 
@@ -64,7 +64,7 @@ impl AgentActivity {
             status: AgentLifecycleStatus::Unknown,
             latest_message: None,
             timeline: VecDeque::new(),
-            authoritative_state: false,
+            thread_status_known: false,
             live_state: false,
         }
     }
@@ -107,7 +107,6 @@ impl AgentActivity {
 
     fn apply_state(&mut self, state: &CollabAgentState) {
         self.status = state.into();
-        self.authoritative_state = true;
         if let Some(message) = state.message.as_deref() {
             self.latest_message = bounded_text(message, MAX_LATEST_MESSAGE_CHARS);
         }
@@ -164,6 +163,7 @@ pub(super) struct AgentActivityState {
     agents: HashMap<String, AgentActivity>,
     insertion_order: VecDeque<String>,
     selected_thread_id: Option<String>,
+    hydration_protected_thread_id: Option<String>,
 }
 
 impl AgentActivityState {
@@ -186,6 +186,9 @@ impl AgentActivityState {
     pub(super) fn mark_live_thread(&mut self, thread_id: &str) {
         if let Some(agent) = self.agents.get_mut(thread_id) {
             agent.live_state = true;
+            self.insertion_order
+                .retain(|known_thread_id| known_thread_id != thread_id);
+            self.insertion_order.push_back(thread_id.to_string());
         }
     }
 
@@ -351,6 +354,14 @@ impl AgentActivityState {
         counts
     }
 
+    pub(super) fn finish_history_hydration(&mut self) {
+        for agent in self.agents.values_mut() {
+            if !agent.thread_status_known && !agent.live_state {
+                agent.status = AgentLifecycleStatus::Shutdown;
+            }
+        }
+    }
+
     fn reduce(&mut self, item: &ThreadItem, phase: AgentItemPhase) -> bool {
         match item {
             ThreadItem::CollabAgentToolCall {
@@ -437,23 +448,44 @@ impl AgentActivityState {
     fn ensure_agent(&mut self, thread_id: &str) -> &mut AgentActivity {
         let thread_id = thread_id.to_string();
         if !self.agents.contains_key(&thread_id) {
-            while self.agents.len() >= MAX_TRACKED_AGENTS {
-                let Some(oldest) = self.insertion_order.pop_front() else {
-                    break;
-                };
-                self.agents.remove(&oldest);
-                if self.selected_thread_id.as_deref() == Some(oldest.as_str()) {
-                    self.selected_thread_id = None;
-                }
-            }
             self.insertion_order.push_back(thread_id.clone());
-            if self.selected_thread_id.is_none() {
-                self.selected_thread_id = self.insertion_order.back().cloned();
-            }
+            self.agents
+                .insert(thread_id.clone(), AgentActivity::new(thread_id.clone()));
+            self.enforce_agent_limit();
         }
+        debug_assert!(self.agents.contains_key(&thread_id));
         self.agents
             .entry(thread_id)
             .or_insert_with_key(|thread_id| AgentActivity::new(thread_id.clone()))
+    }
+
+    fn enforce_agent_limit(&mut self) {
+        let mut candidates_remaining = self.insertion_order.len();
+        while self.agents.len() > MAX_TRACKED_AGENTS && candidates_remaining > 0 {
+            let Some(oldest) = self.insertion_order.pop_front() else {
+                break;
+            };
+            if self.hydration_protected_thread_id.as_deref() == Some(oldest.as_str()) {
+                self.insertion_order.push_back(oldest);
+                candidates_remaining = candidates_remaining.saturating_sub(1);
+                continue;
+            }
+            if self.agents.remove(&oldest).is_some() {
+                if self.selected_thread_id.as_deref() == Some(oldest.as_str()) {
+                    self.selected_thread_id = None;
+                }
+                candidates_remaining = self.insertion_order.len();
+            } else {
+                candidates_remaining = candidates_remaining.saturating_sub(1);
+            }
+        }
+        if self
+            .selected_thread_id
+            .as_ref()
+            .is_none_or(|thread_id| !self.agents.contains_key(thread_id))
+        {
+            self.selected_thread_id = self.insertion_order.back().cloned();
+        }
     }
 
     fn move_selection(&mut self, offset: isize) {

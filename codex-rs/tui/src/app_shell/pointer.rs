@@ -47,6 +47,12 @@ impl ShellState {
     {
         self.exit_confirmation_pending = false;
         self.set_pointer_position(position);
+        if self.agent_log.is_some() {
+            if !super::agent_log_view::agent_log_panel_area(area).contains(position) {
+                self.close_agent_log();
+            }
+            return Ok(());
+        }
         if self
             .handle_selector_click(area, position, app_server)
             .await?
@@ -259,6 +265,13 @@ impl ShellState {
             MouseScrollDirection::Up => KeyCode::Up,
             MouseScrollDirection::Down => KeyCode::Down,
         };
+        if self.agent_log.is_some() {
+            match direction {
+                MouseScrollDirection::Up => self.scroll_agent_log_up(),
+                MouseScrollDirection::Down => self.scroll_agent_log_down(),
+            }
+            return;
+        }
         if let Some(selector) = &mut self.selector {
             if selector.option_at(area, position).is_some() {
                 selector.handle_key(KeyEvent::new(key, KeyModifiers::NONE));
@@ -297,7 +310,8 @@ impl ShellState {
     }
 
     fn has_blocking_overlay(&self) -> bool {
-        self.pending_approval.is_some()
+        self.agent_log.is_some()
+            || self.pending_approval.is_some()
             || self.pending_elicitation.is_some()
             || self.pending_external_agent_import.is_some()
             || self.pending_mcp_management.is_some()

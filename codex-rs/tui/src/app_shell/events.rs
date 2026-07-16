@@ -8,6 +8,7 @@ use codex_app_server_client::AppServerEvent;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_app_server_protocol::TokenUsageBreakdown;
 use codex_app_server_protocol::TurnStatus;
@@ -101,6 +102,13 @@ impl ShellState {
                     self.active_turn_id = Some(started.turn.id.clone());
                     self.reset_safety_buffering_for_turn_start(&started.turn.id);
                     self.status = "thinking".to_string();
+                } else if self.prepare_active_agent_thread(&started.thread_id) {
+                    self.agent_activity.record_child_turn(
+                        &started.thread_id,
+                        &started.turn.id,
+                        &started.turn.status,
+                    );
+                    self.agent_activity.mark_live_thread(&started.thread_id);
                 }
             }
             ServerNotification::TurnCompleted(completed) => {
@@ -188,11 +196,13 @@ impl ShellState {
                     if let Some(title) = item_activity_title(&started.item) {
                         let item_id = started.item.id().to_string();
                         self.record_item_activity(&started.item, title.clone(), "in progress");
-                        self.push_tool_with_status_for_item(
-                            item_id,
-                            title,
-                            super::ToolBlockStatus::Running,
-                        );
+                        if !matches!(&started.item, ThreadItem::SubAgentActivity { .. }) {
+                            self.push_tool_with_status_for_item(
+                                item_id,
+                                title,
+                                super::ToolBlockStatus::Running,
+                            );
+                        }
                     }
                 } else if self.prepare_active_agent_thread(&started.thread_id) {
                     self.mark_active_agent_threads(&started.item);
@@ -209,7 +219,10 @@ impl ShellState {
             ServerNotification::ItemCompleted(completed) => {
                 if completed.thread_id == self.thread_id.to_string() {
                     self.mark_active_agent_threads(&completed.item);
-                    self.ingest_completed_item(completed.item.clone());
+                    self.ingest_completed_item(
+                        completed.item.clone(),
+                        super::CompletedItemOrigin::Live,
+                    );
                     self.mark_agent_item_live(&completed.item);
                 } else if self.prepare_active_agent_thread(&completed.thread_id) {
                     self.mark_active_agent_threads(&completed.item);
@@ -349,6 +362,9 @@ impl ShellState {
             }
             ServerNotification::ModelSafetyBufferingUpdated(updated) => {
                 self.on_model_safety_buffering_updated(updated);
+                if self.safety_buffering_modal_lines().is_some() {
+                    self.close_agent_log();
+                }
             }
             ServerNotification::ProcessOutputDelta(_)
             | ServerNotification::ProcessExited(_)
@@ -526,6 +542,7 @@ impl ShellState {
     }
 
     fn close_overlays_for_interactive_request(&mut self) {
+        self.close_agent_log();
         self.selector = None;
         self.command_palette = None;
         self.pending_external_agent_import = None;

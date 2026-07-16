@@ -21,6 +21,7 @@ use codex_protocol::protocol::SubAgentSource;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 #[test]
 fn nested_thread_histories_restore_hierarchy_timeline_and_lifecycle() {
@@ -76,13 +77,13 @@ fn nested_thread_histories_restore_hierarchy_timeline_and_lifecycle() {
             (
                 alpha_id.to_string(),
                 Some("/root/alpha".to_string()),
-                AgentLifecycleStatus::Completed,
+                AgentLifecycleStatus::Shutdown,
                 Some("delegating nested work".to_string()),
             ),
             (
                 child_id.to_string(),
                 Some("/root/alpha/child".to_string()),
-                AgentLifecycleStatus::Completed,
+                AgentLifecycleStatus::Shutdown,
                 Some("nested work complete".to_string()),
             ),
         ]
@@ -104,7 +105,7 @@ fn nested_thread_histories_restore_hierarchy_timeline_and_lifecycle() {
 }
 
 #[test]
-fn failed_turn_preserves_error_detail() {
+fn stopped_disk_thread_preserves_failure_detail() {
     let root_id = thread_id("01900000-0000-7000-8000-000000000011");
     let child_id = thread_id("01900000-0000-7000-8000-000000000012");
     let mut state = AgentActivityState::default();
@@ -125,7 +126,7 @@ fn failed_turn_preserves_error_detail() {
     let agent = state
         .agent(&child_id.to_string())
         .expect("agent should exist");
-    assert_eq!(agent.status, AgentLifecycleStatus::Errored);
+    assert_eq!(agent.status, AgentLifecycleStatus::Shutdown);
     assert_eq!(agent.latest_message.as_deref(), Some("backend failed"));
     assert_eq!(
         agent
@@ -138,7 +139,7 @@ fn failed_turn_preserves_error_detail() {
 }
 
 #[test]
-fn collaboration_snapshot_remains_authoritative_over_replayed_history() {
+fn disk_restored_agent_settles_stale_snapshot_and_retains_result() {
     let root_id = thread_id("01900000-0000-7000-8000-000000000021");
     let child_id = thread_id("01900000-0000-7000-8000-000000000022");
     let mut state = AgentActivityState::default();
@@ -176,8 +177,262 @@ fn collaboration_snapshot_remains_authoritative_over_replayed_history() {
     let agent = state
         .agent(&child_id.to_string())
         .expect("agent should exist");
-    assert_eq!(agent.status, AgentLifecycleStatus::Running);
-    assert_eq!(agent.latest_message.as_deref(), Some("still processing"));
+    assert_eq!(agent.status, AgentLifecycleStatus::Shutdown);
+    assert_eq!(
+        agent.latest_message.as_deref(),
+        Some("older completed result")
+    );
+    assert_eq!(
+        agent
+            .timeline
+            .back()
+            .map(super::super::timeline::AgentTimelineEntry::label),
+        Some("agent completed".to_string())
+    );
+}
+
+#[test]
+fn thread_status_reconciles_stale_active_snapshot() {
+    let root_id = thread_id("01900000-0000-7000-8000-000000000023");
+    let child_id = thread_id("01900000-0000-7000-8000-000000000024");
+    for (thread_status, expected) in [
+        (ThreadStatus::NotLoaded, AgentLifecycleStatus::Shutdown),
+        (ThreadStatus::Idle, AgentLifecycleStatus::Shutdown),
+        (ThreadStatus::SystemError, AgentLifecycleStatus::Errored),
+        (
+            ThreadStatus::Active {
+                active_flags: Vec::new(),
+            },
+            AgentLifecycleStatus::Running,
+        ),
+    ] {
+        let mut state = AgentActivityState::default();
+        state.reduce_completed(&ThreadItem::CollabAgentToolCall {
+            id: "root-status".to_string(),
+            tool: CollabAgentTool::Wait,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: root_id.to_string(),
+            receiver_thread_ids: vec![child_id.to_string()],
+            prompt: None,
+            model: None,
+            reasoning_effort: None,
+            agents_states: HashMap::from([(
+                child_id.to_string(),
+                CollabAgentState {
+                    status: CollabAgentStatus::Completed,
+                    message: Some("stale completed snapshot".to_string()),
+                },
+            )]),
+        });
+        let mut restored = thread(
+            child_id,
+            root_id,
+            &root_id.to_string(),
+            "/root/active",
+            turn(
+                "historical-turn",
+                Vec::new(),
+                TurnStatus::Completed,
+                /*error*/ None,
+            ),
+        );
+        restored.status = thread_status;
+
+        state.hydrate_threads(vec![restored]);
+
+        assert_eq!(
+            state.agent(&child_id.to_string()).map(|agent| agent.status),
+            Some(expected)
+        );
+    }
+}
+
+#[test]
+fn authoritative_metadata_status_survives_history_finalization() {
+    let root_id = thread_id("01900000-0000-7000-8000-000000000025");
+    let child_id = thread_id("01900000-0000-7000-8000-000000000026");
+    for (thread_status, expected) in [
+        (
+            ThreadStatus::Active {
+                active_flags: Vec::new(),
+            },
+            AgentLifecycleStatus::Running,
+        ),
+        (ThreadStatus::SystemError, AgentLifecycleStatus::Errored),
+    ] {
+        let mut metadata = thread(
+            child_id,
+            root_id,
+            &root_id.to_string(),
+            "/root/status_known",
+            turn(
+                "discarded-turn",
+                Vec::new(),
+                TurnStatus::Completed,
+                /*error*/ None,
+            ),
+        );
+        metadata.status = thread_status;
+        metadata.turns.clear();
+        let mut state = AgentActivityState::default();
+
+        state.hydrate_threads(vec![metadata]);
+        state.finish_history_hydration();
+
+        assert_eq!(
+            state.agent(&child_id.to_string()).map(|agent| agent.status),
+            Some(expected)
+        );
+    }
+}
+
+#[test]
+fn unresolved_historical_agents_are_stopped_when_hydration_finishes() {
+    let root_id = thread_id("01900000-0000-7000-8000-000000000025");
+    let child_id = thread_id("01900000-0000-7000-8000-000000000026");
+    for historical_status in [
+        CollabAgentStatus::Running,
+        CollabAgentStatus::Completed,
+        CollabAgentStatus::Interrupted,
+        CollabAgentStatus::Errored,
+    ] {
+        let mut state = AgentActivityState::default();
+        state.reduce_completed(&ThreadItem::CollabAgentToolCall {
+            id: "root-status".to_string(),
+            tool: CollabAgentTool::Wait,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: root_id.to_string(),
+            receiver_thread_ids: vec![child_id.to_string()],
+            prompt: None,
+            model: None,
+            reasoning_effort: None,
+            agents_states: HashMap::from([(
+                child_id.to_string(),
+                CollabAgentState {
+                    status: historical_status,
+                    message: None,
+                },
+            )]),
+        });
+
+        state.finish_history_hydration();
+
+        assert_eq!(
+            state.agent(&child_id.to_string()).map(|agent| agent.status),
+            Some(AgentLifecycleStatus::Shutdown)
+        );
+    }
+}
+
+#[test]
+fn hydration_preserves_the_agent_cap_and_order_index() {
+    let root_id = thread_id("01900000-0000-7000-8000-000000000000");
+    let session_id = root_id.to_string();
+    let agent_ids = (1..=super::super::MAX_TRACKED_AGENTS)
+        .map(|index| thread_id(&format!("01900000-0000-7000-8000-{index:012x}")))
+        .collect::<Vec<_>>();
+    let mut state = AgentActivityState::default();
+    for (index, agent_id) in agent_ids.iter().copied().enumerate() {
+        state.hydrate_threads(vec![thread(
+            agent_id,
+            root_id,
+            &session_id,
+            &format!("/root/agent_{index}"),
+            turn(
+                &format!("turn-{index}"),
+                Vec::new(),
+                TurnStatus::Completed,
+                /*error*/ None,
+            ),
+        )]);
+    }
+    let live_id = agent_ids[0];
+    let parent_id = agent_ids[1];
+    let first_nested_id = thread_id("01900000-0000-7000-8000-0000000000ff");
+    state.mark_live_thread(&live_id.to_string());
+    state.hydrate_threads(vec![thread(
+        parent_id,
+        root_id,
+        &session_id,
+        "/root/parent",
+        turn(
+            "single-nested-turn",
+            vec![activity(
+                "single-nested-start",
+                first_nested_id,
+                "/root/parent/first_nested",
+            )],
+            TurnStatus::Completed,
+            /*error*/ None,
+        ),
+    )]);
+    assert!(
+        state.agent(&live_id.to_string()).is_some(),
+        "recent live activity should outrank restored history at the cap"
+    );
+
+    let nested_items = (0..super::super::MAX_TRACKED_AGENTS)
+        .map(|index| {
+            let nested_id = thread_id(&format!("01900000-0000-7000-8000-{:012x}", 0x100 + index));
+            activity(
+                &format!("nested-start-{index}"),
+                nested_id,
+                &format!("/root/parent/nested_{index}"),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    state.hydrate_threads(vec![thread(
+        parent_id,
+        root_id,
+        &session_id,
+        "/root/parent",
+        turn(
+            "parent-turn",
+            nested_items,
+            TurnStatus::Completed,
+            /*error*/ None,
+        ),
+    )]);
+
+    assert_eq!(state.agents.len(), super::super::MAX_TRACKED_AGENTS);
+    assert_eq!(
+        state.insertion_order.len(),
+        super::super::MAX_TRACKED_AGENTS
+    );
+    assert_eq!(
+        state.insertion_order.iter().collect::<HashSet<_>>().len(),
+        super::super::MAX_TRACKED_AGENTS
+    );
+    assert!(
+        state
+            .insertion_order
+            .iter()
+            .all(|thread_id| state.agents.contains_key(thread_id))
+    );
+    assert!(
+        state
+            .selected_thread_id
+            .as_ref()
+            .is_some_and(|thread_id| state.agents.contains_key(thread_id))
+    );
+    let parent = state
+        .agent(&parent_id.to_string())
+        .expect("hydrated parent should remain tracked");
+    assert_eq!(
+        parent.path.as_ref().map(|path| String::from(path.clone())),
+        Some("/root/parent".to_string())
+    );
+    assert!(
+        parent
+            .timeline
+            .iter()
+            .any(|entry| entry.item_id == "parent-turn")
+    );
+    assert!(
+        state.agent(&live_id.to_string()).is_some(),
+        "live agents should outrank restored history throughout replay"
+    );
 }
 
 #[test]
@@ -198,6 +453,9 @@ fn late_history_keeps_newer_live_state_and_timeline_at_the_end() {
     );
     let mut metadata = historical.clone();
     metadata.turns.clear();
+    metadata.status = ThreadStatus::Active {
+        active_flags: Vec::new(),
+    };
     let mut state = AgentActivityState::default();
     state.hydrate_threads(vec![metadata]);
     state.record_child_progress(

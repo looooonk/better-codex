@@ -14,7 +14,7 @@ expression: rendered
  ▎Enter send                           │ r resume, f fork, a/u archive
  ▎Ctrl+C/Esc twice to exit             │ v archived, d delete
  ▎Alt+Up select, Ctrl+O copy           │ n rename, / search
- ▎Ctrl+D hide dashboard                │ Agents: Enter focus, j/k inspect
+ ▎Ctrl+D hide dashboard                │ Agents: Enter focus/log, j/k inspect
  ▎Alt+M model, Alt+E effort            │ Settings: Tab page, Enter select
  ▎Ctrl+1 Sessions  Ctrl+2 Agents       │ Selectors: j/k choose, Enter apply
  ▎Ctrl+3 Workspace Ctrl+4 Settings     │ Esc twice to exit

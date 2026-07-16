@@ -103,6 +103,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
+use itertools::Itertools;
 use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
@@ -111,6 +112,7 @@ use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::text::Line;
 use serde_json::json;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -1001,6 +1003,274 @@ fn renders_agents_dashboard_snapshot() {
             )
         )
     );
+}
+
+#[tokio::test]
+async fn agent_log_loads_complete_history_beyond_inspector_caps() {
+    let config = test_config().await;
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000091");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Agents;
+    shell.agents_focused = true;
+    shell.composer.clear();
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "child-started".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: child_id.to_string(),
+            agent_path: "/root/full-log".to_string(),
+        });
+
+    let mut child = thread_fixture(child_id, /*name*/ None, "child log");
+    child.turns = (0..13)
+        .map(|index| {
+            let mut turn = test_turn(&format!("child-turn-{index}"), TurnStatus::Completed);
+            let text = if index == 0 {
+                "earliest history sentinel".to_string()
+            } else if index == 12 {
+                format!("long history {} final suffix sentinel", "x".repeat(700))
+            } else {
+                format!("middle history item {index}")
+            };
+            turn.items.push(ThreadItem::AgentMessage {
+                id: format!("child-message-{index}"),
+                text,
+                phase: None,
+                memory_citation: None,
+            });
+            if index == 12 {
+                turn.items.extend([
+                    ThreadItem::AgentMessage {
+                        id: "full-log-git-action".to_string(),
+                        text: "::git-stage{cwd=\"/workspace/better-codex\"}".to_string(),
+                        phase: None,
+                        memory_citation: None,
+                    },
+                    ThreadItem::FileChange {
+                        id: "full-log-file-change".to_string(),
+                        changes: vec![FileUpdateChange {
+                            path: "src/full_log.rs".to_string(),
+                            kind: PatchChangeKind::Update { move_path: None },
+                            diff: "@@ full diff sentinel @@".to_string(),
+                        }],
+                        status: codex_app_server_protocol::PatchApplyStatus::Completed,
+                    },
+                    ThreadItem::McpToolCall {
+                        id: "full-log-mcp".to_string(),
+                        server: "review-tools".to_string(),
+                        tool: "inspect".to_string(),
+                        status: codex_app_server_protocol::McpToolCallStatus::Completed,
+                        arguments: json!({"path": "full argument sentinel"}),
+                        app_context: None,
+                        mcp_app_resource_uri: None,
+                        plugin_id: None,
+                        result: Some(Box::new(codex_app_server_protocol::McpToolCallResult {
+                            content: vec![json!({"text": "full result sentinel"})],
+                            structured_content: None,
+                            meta: None,
+                        })),
+                        error: None,
+                        duration_ms: Some(42),
+                    },
+                ]);
+                turn.status = TurnStatus::Failed;
+                turn.error = Some(TurnError {
+                    message: "agent failure sentinel".to_string(),
+                    codex_error_info: None,
+                    additional_details: Some("detailed failure sentinel".to_string()),
+                });
+            }
+            turn
+        })
+        .collect();
+    let mut backend = RecordingBackend::with_threads(vec![child]);
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("opening the selected agent log should succeed");
+    assert!(shell.has_pending_agent_log());
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+        if shell.poll_agent_log().await {
+            break;
+        }
+    }
+
+    let log = shell.agent_log.as_ref().expect("agent log should be open");
+    assert!(!log.is_loading());
+    assert_eq!(log.error(), None);
+    let rendered = log.lines().iter().map(line_text).join("\n");
+    assert!(rendered.contains("earliest history sentinel"));
+    assert!(rendered.contains("final suffix sentinel"));
+    assert!(rendered.contains(&"x".repeat(700)));
+    assert!(rendered.contains("full diff sentinel"));
+    assert!(rendered.contains("full argument sentinel"));
+    assert!(rendered.contains("full result sentinel"));
+    assert!(rendered.contains("::git-stage"));
+    assert!(rendered.contains("agent failure sentinel"));
+    assert!(rendered.contains("detailed failure sentinel"));
+    assert!(
+        backend
+            .calls()
+            .contains(&RecordedBackendCall::ThreadReadFull(child_id))
+    );
+
+    let other_child_id = test_thread_id("01900000-0000-7000-8000-000000000094");
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "other-child-started".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: other_child_id.to_string(),
+            agent_path: "/root/other-log".to_string(),
+        });
+    assert!(
+        shell
+            .agent_activity
+            .select_thread(&other_child_id.to_string())
+    );
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("reloading the agent log should succeed");
+    assert!(shell.has_pending_agent_log());
+    assert_eq!(
+        backend
+            .calls()
+            .into_iter()
+            .filter(|call| {
+                matches!(
+                    call,
+                    RecordedBackendCall::ThreadReadFull(thread_id) if *thread_id == child_id
+                )
+            })
+            .count(),
+        2
+    );
+    assert!(
+        backend
+            .calls()
+            .iter()
+            .all(|call| !matches!(call, RecordedBackendCall::ThreadReadFull(thread_id) if *thread_id == other_child_id))
+    );
+}
+
+#[tokio::test]
+async fn agent_log_reports_full_history_read_failure() {
+    let config = test_config().await;
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000092");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Agents;
+    shell.agents_focused = true;
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "child-started".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: child_id.to_string(),
+            agent_path: "/root/missing-log".to_string(),
+        });
+    let backend = RecordingBackend::default();
+
+    shell.open_selected_agent_log(&config, &backend);
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+        if shell.poll_agent_log().await {
+            break;
+        }
+    }
+
+    let log = shell
+        .agent_log
+        .as_ref()
+        .expect("error popup should remain open");
+    assert!(
+        log.error()
+            .is_some_and(|error| error.contains("was not found"))
+    );
+    assert!(log.lines().is_empty());
+}
+
+#[tokio::test]
+async fn agent_log_rejects_partial_turn_history() {
+    let config = test_config().await;
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000093");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Agents;
+    shell.agents_focused = true;
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "child-started".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: child_id.to_string(),
+            agent_path: "/root/partial-log".to_string(),
+        });
+    let mut child = thread_fixture(child_id, /*name*/ None, "partial log");
+    let mut turn = test_turn("summary-turn", TurnStatus::Completed);
+    turn.items_view = TurnItemsView::Summary;
+    child.turns.push(turn);
+    let backend = RecordingBackend::with_threads(vec![child]);
+
+    shell.open_selected_agent_log(&config, &backend);
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+        if shell.poll_agent_log().await {
+            break;
+        }
+    }
+
+    let log = shell
+        .agent_log
+        .as_ref()
+        .expect("partial-history error should remain visible");
+    assert!(
+        log.error()
+            .is_some_and(|error| error.contains("contains only a summary"))
+    );
+    assert!(log.lines().is_empty());
+}
+
+#[tokio::test]
+async fn replacing_session_discards_pending_agent_log_result() {
+    let config = test_config().await;
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000095");
+    let mut shell = ShellState::snapshot_fixture();
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "child-started".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: child_id.to_string(),
+            agent_path: "/root/stale-log".to_string(),
+        });
+    let backend = RecordingBackend::with_threads(vec![thread_fixture(
+        child_id,
+        /*name*/ None,
+        "stale agent log",
+    )]);
+
+    shell.open_selected_agent_log(&config, &backend);
+    assert!(shell.has_pending_agent_log());
+    shell.replace_started_session(started_thread(
+        "replacement",
+        test_thread_id("01900000-0000-7000-8000-000000000096"),
+        /*forked_from_id*/ None,
+    ));
+    tokio::task::yield_now().await;
+
+    assert!(shell.agent_log.is_none());
+    assert!(!shell.poll_agent_log().await);
 }
 
 #[test]
@@ -2881,14 +3151,17 @@ fn duplicate_completed_user_message_is_suppressed() {
     shell.transcript.clear();
     shell.push_user("hello from user");
 
-    shell.ingest_completed_item(ThreadItem::UserMessage {
-        id: "user-1".to_string(),
-        client_id: None,
-        content: vec![UserInput::Text {
-            text: "hello from user".to_string(),
-            text_elements: Vec::new(),
-        }],
-    });
+    shell.ingest_completed_item(
+        ThreadItem::UserMessage {
+            id: "user-1".to_string(),
+            client_id: None,
+            content: vec![UserInput::Text {
+                text: "hello from user".to_string(),
+                text_elements: Vec::new(),
+            }],
+        },
+        CompletedItemOrigin::Live,
+    );
 
     assert_eq!(
         shell.transcript.iter().cloned().collect::<Vec<_>>(),
@@ -2902,12 +3175,15 @@ fn completed_agent_message_replaces_matching_stream() {
     shell.transcript.clear();
     shell.streaming_assistant = "hello from codex".to_string();
 
-    shell.ingest_completed_item(ThreadItem::AgentMessage {
-        id: "agent-1".to_string(),
-        text: "hello from codex".to_string(),
-        phase: None,
-        memory_citation: None,
-    });
+    shell.ingest_completed_item(
+        ThreadItem::AgentMessage {
+            id: "agent-1".to_string(),
+            text: "hello from codex".to_string(),
+            phase: None,
+            memory_citation: None,
+        },
+        CompletedItemOrigin::Live,
+    );
     shell.finish_streaming_assistant();
 
     assert_eq!(shell.streaming_assistant, "");
@@ -2925,14 +3201,17 @@ fn completed_reasoning_hides_empty_generated_summary_parts() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
 
-    shell.ingest_completed_item(ThreadItem::Reasoning {
-        id: "reasoning-1".to_string(),
-        summary: vec![
-            "**Checking the first thing**\n\n<!-- -->".to_string(),
-            "**Checking the second thing**\n\n<!-- -->".to_string(),
-        ],
-        content: vec!["raw reasoning must not replace an empty summary".to_string()],
-    });
+    shell.ingest_completed_item(
+        ThreadItem::Reasoning {
+            id: "reasoning-1".to_string(),
+            summary: vec![
+                "**Checking the first thing**\n\n<!-- -->".to_string(),
+                "**Checking the second thing**\n\n<!-- -->".to_string(),
+            ],
+            content: vec!["raw reasoning must not replace an empty summary".to_string()],
+        },
+        CompletedItemOrigin::Live,
+    );
 
     assert_eq!(shell.transcript, VecDeque::new());
 }
@@ -2942,17 +3221,20 @@ fn completed_reasoning_uses_summary_without_interleaving_raw_content() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
 
-    shell.ingest_completed_item(ThreadItem::Reasoning {
-        id: "reasoning-1".to_string(),
-        summary: vec![
-            "**Plan**\n\ndone".to_string(),
-            "**Checking tests**\n\n<!-- -->".to_string(),
-        ],
-        content: vec![
-            "raw reasoning one".to_string(),
-            "raw reasoning two".to_string(),
-        ],
-    });
+    shell.ingest_completed_item(
+        ThreadItem::Reasoning {
+            id: "reasoning-1".to_string(),
+            summary: vec![
+                "**Plan**\n\ndone".to_string(),
+                "**Checking tests**\n\n<!-- -->".to_string(),
+            ],
+            content: vec![
+                "raw reasoning one".to_string(),
+                "raw reasoning two".to_string(),
+            ],
+        },
+        CompletedItemOrigin::Live,
+    );
 
     assert_eq!(
         shell.transcript,
@@ -2970,18 +3252,24 @@ fn completed_extension_items_render_as_successful_tools() {
     shell.transcript.clear();
     shell.tool_activity.clear();
 
-    shell.ingest_completed_item(ThreadItem::WebSearch(WebSearchItem {
-        id: "web-1".to_string(),
-        query: "latest protocol changes".to_string(),
-        action: None,
-    }));
-    shell.ingest_completed_item(ThreadItem::ImageGeneration(ImageGenerationItem {
-        id: "image-1".to_string(),
-        status: "completed".to_string(),
-        revised_prompt: None,
-        result: String::new(),
-        saved_path: None,
-    }));
+    shell.ingest_completed_item(
+        ThreadItem::WebSearch(WebSearchItem {
+            id: "web-1".to_string(),
+            query: "latest protocol changes".to_string(),
+            action: None,
+        }),
+        CompletedItemOrigin::Live,
+    );
+    shell.ingest_completed_item(
+        ThreadItem::ImageGeneration(ImageGenerationItem {
+            id: "image-1".to_string(),
+            status: "completed".to_string(),
+            revised_prompt: None,
+            result: String::new(),
+            saved_path: None,
+        }),
+        CompletedItemOrigin::Live,
+    );
 
     assert_eq!(
         shell.tool_activity,
@@ -4238,6 +4526,44 @@ fn subagent_items_route_to_subagent_activity() {
 }
 
 #[test]
+fn subagent_lifecycle_records_do_not_create_permanent_running_tool_cards() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.subagent_activity.clear();
+    let lifecycle_item = ThreadItem::SubAgentActivity {
+        id: "agent-started".to_string(),
+        kind: SubAgentActivityKind::Started,
+        agent_thread_id: "agent-thread".to_string(),
+        agent_path: "/root/reviewer".to_string(),
+    };
+
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: shell.thread_id.to_string(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: lifecycle_item.clone(),
+    }));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: lifecycle_item,
+        },
+    ));
+
+    assert_eq!(shell.transcript, VecDeque::new());
+    assert_eq!(
+        shell.subagent_activity,
+        VecDeque::from([ToolActivity {
+            id: "agent-started".to_string(),
+            title: "subagent Started: /root/reviewer".to_string(),
+            status: "recorded".to_string(),
+        }])
+    );
+}
+
+#[test]
 fn child_thread_events_update_the_agent_inspector_without_touching_the_transcript() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -4398,6 +4724,49 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
         .expect("spawned agent should remain tracked");
     assert_eq!(agent.status, agent_activity::AgentLifecycleStatus::Errored);
     assert_eq!(agent.latest_message.as_deref(), Some("child failed"));
+}
+
+#[test]
+fn child_turn_start_reactivates_a_stopped_agent() {
+    let mut shell = ShellState::snapshot_fixture();
+    let child_thread_id = "agent-thread".to_string();
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::CollabAgentToolCall {
+            id: "agent-state".to_string(),
+            tool: CollabAgentTool::Wait,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: shell.thread_id.to_string(),
+            receiver_thread_ids: vec![child_thread_id.clone()],
+            prompt: None,
+            model: None,
+            reasoning_effort: None,
+            agents_states: HashMap::from([(
+                child_thread_id.clone(),
+                CollabAgentState {
+                    status: CollabAgentStatus::Shutdown,
+                    message: None,
+                },
+            )]),
+        });
+    shell
+        .active_agent_thread_ids
+        .insert(child_thread_id.clone());
+
+    shell.handle_notification(ServerNotification::TurnStarted(
+        codex_app_server_protocol::TurnStartedNotification {
+            thread_id: child_thread_id.clone(),
+            turn: test_turn("child-turn", TurnStatus::InProgress),
+        },
+    ));
+
+    assert_eq!(
+        shell
+            .agent_activity
+            .agent(&child_thread_id)
+            .map(|agent| agent.status),
+        Some(agent_activity::AgentLifecycleStatus::Running)
+    );
 }
 
 #[test]
@@ -7424,6 +7793,33 @@ fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
     });
     child.turns.push(turn);
     started.agent_threads.push(child);
+    let mut root_turn = test_turn("root-turn", TurnStatus::Completed);
+    root_turn.items.extend([
+        ThreadItem::CollabAgentToolCall {
+            id: "historical-wait".to_string(),
+            tool: CollabAgentTool::Wait,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: root_id.to_string(),
+            receiver_thread_ids: vec![child_id.to_string()],
+            prompt: None,
+            model: None,
+            reasoning_effort: None,
+            agents_states: HashMap::from([(
+                child_id.to_string(),
+                CollabAgentState {
+                    status: CollabAgentStatus::Running,
+                    message: Some("stale active snapshot".to_string()),
+                },
+            )]),
+        },
+        ThreadItem::SubAgentActivity {
+            id: "historical-child-start".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: child_id.to_string(),
+            agent_path: "/root/alpha".to_string(),
+        },
+    ]);
+    started.turns.push(root_turn);
     let mut shell = ShellState::snapshot_fixture();
 
     shell.replace_started_session(started);
@@ -7437,15 +7833,26 @@ fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
         agent.latest_message.as_deref(),
         Some("private child result")
     );
+    assert_eq!(agent.status, agent_activity::AgentLifecycleStatus::Shutdown);
     assert_eq!(
-        agent.status,
-        agent_activity::AgentLifecycleStatus::Completed
+        shell.agent_activity.counts(),
+        agent_activity::AgentActivityCounts {
+            total: 1,
+            completed: 1,
+            ..Default::default()
+        }
     );
     assert!(
         shell
             .transcript
             .iter()
             .all(|line| !line.text.contains("private child result"))
+    );
+    assert!(
+        shell
+            .transcript
+            .iter()
+            .all(|line| !matches!(line.tool_status, Some(ToolBlockStatus::Running)))
     );
 }
 
@@ -8715,6 +9122,7 @@ enum RecordedBackendCall {
         archived: Option<bool>,
         search_term: Option<String>,
     },
+    ThreadReadFull(codex_protocol::ThreadId),
     RateLimits,
     Archive(codex_protocol::ThreadId),
     Unarchive(codex_protocol::ThreadId),
@@ -8892,6 +9300,21 @@ impl backend::AppShellBackend for RecordingBackend {
     {
         let mut backend = self.clone();
         async move { backend.thread_list(params).await }
+    }
+
+    fn thread_read_full_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> impl std::future::Future<Output = color_eyre::Result<Thread>> + Send + 'static {
+        self.push(RecordedBackendCall::ThreadReadFull(thread_id));
+        let thread = self
+            .threads
+            .lock()
+            .expect("threads should lock")
+            .iter()
+            .find(|thread| thread.id == thread_id.to_string())
+            .cloned();
+        async move { thread.ok_or_else(|| color_eyre::eyre::eyre!("thread {thread_id} was not found")) }
     }
 
     fn account_rate_limits_in_background(

@@ -20,6 +20,8 @@ impl ShellState {
         self.agent_activity.hydrate_threads(threads);
         if let Some(task) = &mut task {
             task.start();
+        } else {
+            self.agent_activity.finish_history_hydration();
         }
         self.agent_history_task = task;
     }
@@ -61,6 +63,7 @@ impl ShellState {
             Err(err) if err.is_cancelled() => {}
             Err(err) => tracing::warn!(%err, "resumed agent history task failed"),
         }
+        self.agent_activity.finish_history_hydration();
         self.flush_deferred_unsubscribes(app_server);
         true
     }

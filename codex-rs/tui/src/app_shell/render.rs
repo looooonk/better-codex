@@ -121,11 +121,15 @@ impl ShellView<'_> {
         if let Some(selector) = &self.shell.selector {
             selector.render(area, self.shell.pointer_position, buf);
         }
+        if let Some(log) = &self.shell.agent_log {
+            super::agent_log_view::render_agent_log(log, area, buf);
+        }
     }
 
     pub(super) fn cursor_position(&self, area: Rect) -> Option<Position> {
         if self.shell.selector.is_some()
             || self.shell.command_palette.is_some()
+            || self.shell.agent_log.is_some()
             || self.shell.pending_approval.is_some()
             || self.shell.pending_elicitation.is_some()
             || self.shell.pending_external_agent_import.is_some()
@@ -741,6 +745,7 @@ impl ShellView<'_> {
     fn base_hover_position(&self) -> Option<Position> {
         let blocked = self.shell.selector.is_some()
             || self.shell.command_palette.is_some()
+            || self.shell.agent_log.is_some()
             || self.shell.pending_approval.is_some()
             || self.shell.pending_elicitation.is_some()
             || self.shell.pending_external_agent_import.is_some()

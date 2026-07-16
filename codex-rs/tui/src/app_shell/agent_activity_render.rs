@@ -300,7 +300,7 @@ fn push_count(
     ]);
 }
 
-fn status_visual(status: AgentLifecycleStatus) -> (&'static str, Color) {
+pub(super) fn status_visual(status: AgentLifecycleStatus) -> (&'static str, Color) {
     match status {
         AgentLifecycleStatus::Unknown => ("?", palette::MUTED),
         AgentLifecycleStatus::PendingInit => ("○", palette::WARNING),

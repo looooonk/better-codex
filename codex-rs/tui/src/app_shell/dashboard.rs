@@ -367,7 +367,19 @@ fn dashboard_panel(
             lines.extend(agent_activity_inspector_lines(
                 &shell.agent_activity,
                 content_width,
-                /*line_budget*/ 24,
+                /*line_budget*/ 23,
+            ));
+            lines.push(Line::from(
+                if shell.agents_focused {
+                    "Enter full log · j/k select · Esc release"
+                } else {
+                    "Enter focus · then Enter opens full log"
+                }
+                .fg(if shell.agents_focused {
+                    palette::CYAN
+                } else {
+                    palette::MUTED
+                }),
             ));
             Some(DashboardPanel::new("Agents", lines))
         }
