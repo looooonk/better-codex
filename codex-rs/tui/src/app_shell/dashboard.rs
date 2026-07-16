@@ -258,10 +258,6 @@ fn dashboard_panel(
             "Tokens",
             vec![
                 Line::from(format!(
-                    "total {}",
-                    format_token_count(shell.token_usage.total_tokens)
-                )),
-                Line::from(format!(
                     "input {}",
                     format_token_count(shell.token_usage.input_tokens)
                 )),

@@ -17,16 +17,16 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │▎gpt-5-codex
                                                   │
                                                   │▎◆ TOKENS
-                                                  │▎total 0
                                                   │▎input 0
                                                   │▎output 0
                                                   │▎Context unknown
                                                   │
                                                   │▎◆ INTEGRATIONS
                                                   │▎mcp not loaded
-╭────────────────────────────────────────────────╮│▎plugins not loaded
-│◆ MESSAGE  1:1                                  ││
-│> Type a message, Shift+Enter for newline       ││▎◆ WORKSPACE
-│                                                ││▎cwd /workspace/better-codex
+                                                  │▎plugins not loaded
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:1                                  ││▎◆ WORKSPACE
+│> Type a message, Shift+Enter for newline       ││▎cwd /workspace/better-codex
 │                                                ││▎profile managed
+│                                                ││▎files restricted, net restricted
 ╰────────────────────────────────────────────────╯│

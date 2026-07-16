@@ -23,16 +23,16 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
                    │  available  Drive (local)                                            │
  ▎ CODEX  The new s│                                                                      │
                    │Action: press i or Enter to update from the marketplace               │
-                   │                                                                      │
-                   ╰──────────────────────────────────────────────────────────────────────╯able
-                                                            │▎marketplaces 1
+                   │                                                                      │able
+                   ╰──────────────────────────────────────────────────────────────────────╯
                                                             │▎plugins 2
                                                             │
                                                             │▎◆ WORKSPACE
                                                             │▎cwd /workspace/better-codex
                                                             │▎profile managed
                                                             │▎files restricted, net restricted
-╭──────────────────────────────────────────────────────────╮│▎roots none selected
+                                                            │▎roots none selected
+╭──────────────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                           ││
 │> Summarize the new shell architecture                    ││
 │                                                          ││

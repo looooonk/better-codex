@@ -5622,7 +5622,6 @@ fn dashboard_compacts_token_counts_and_groups_other_large_numbers() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("total 1.5m"));
     assert!(rendered.contains("input 1.2m"));
     assert!(rendered.contains("output 235k"));
     assert!(rendered.contains("Context 27% left"));
