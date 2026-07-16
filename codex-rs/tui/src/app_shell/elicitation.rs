@@ -4,6 +4,7 @@ use codex_app_server_protocol::McpServerElicitationRequestResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerRequest;
 use serde_json::Value;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ElicitationChoice {
@@ -93,5 +94,30 @@ impl PendingElicitation {
             meta: None,
         })
         .map_err(|err| format!("failed to serialize MCP elicitation response: {err}"))
+    }
+
+    pub(super) fn choice_at(&self, line: usize, column: usize) -> Option<ElicitationChoice> {
+        if line != 2 {
+            return None;
+        }
+        let text = if self.can_accept {
+            "   Accept ↵   Decline d   Cancel c "
+        } else {
+            "   Decline d   Cancel c "
+        };
+        [
+            ("Accept ↵", ElicitationChoice::Accept),
+            ("Decline d", ElicitationChoice::Decline),
+            ("Cancel c", ElicitationChoice::Cancel),
+        ]
+        .into_iter()
+        .find_map(|(label, choice)| {
+            let byte_start = text.find(label)?;
+            let start = UnicodeWidthStr::width(&text[..byte_start]);
+            (start..start + UnicodeWidthStr::width(label))
+                .contains(&column)
+                .then_some(choice)
+        })
+        .filter(|choice| *choice != ElicitationChoice::Accept || self.can_accept)
     }
 }

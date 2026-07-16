@@ -1,0 +1,18 @@
+---
+source: tui/src/app_shell/agent_log_tests.rs
+expression: "render_log(&log, 54, 16)"
+---
+                                                      
+                                                      
+  ╭ Agent log · reviewer ──────────────────────────╮  
+  │ ■ stopped  /root/reviewer                      │  
+  │ Task  Review the restored session and verify   │  
+  │ Assistant checkpoint 0                         │  
+  │ log line 1: inspected lifecycle events and     │  
+  │ transcript output                              │  
+  │ log line 2: inspected lifecycle events and     │  
+  │ transcript output                              │  
+  │ log line 3: inspected lifecycle events and     │  
+  │ transcript output                              │  
+  │  j/k scroll  PgUp/PgDn  r reload  Esc  1-7/54  │  
+  ╰────────────────────────────────────────────────╯

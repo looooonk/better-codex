@@ -3,27 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
 
- Better Codex  Ctrl+D Dashboard
+ ◆ BETTER CODEX  better-codex            Panels   gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────────────────────────
 
+ ◆ CONVERSATION
+ ▎ SYSTEM  Better Codex app shell
+ ▎ YOU  Create a divergent standalone TUI.
 
- Conversation
- system: Better Codex app shell
- you: Create a divergent standalone TUI.
-
- codex: Started a fullscreen app shell backed by app-server turns.
- plan: 1. Build shell
-       2. Wire transcript
-       3. Render dashboard
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
+ ▎ PLAN  1. Build shell
+         2. Wire transcript
+         3. Render dashboard
 
  ▌ tool exec just test -p codex-tui
 
  ▌ edited 3 files +128 -24
 
- codex: The new shell owns the fullscreen surface.
+ ▎ CODEX  The new shell owns the fullscreen surface.
 
 
 
 
-
- Composer ready 1:37
- > Summarize the new shell architecture
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                                                   │
+│> Summarize the new shell architecture                                                            │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

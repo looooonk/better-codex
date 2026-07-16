@@ -5,11 +5,11 @@ use super::TranscriptKind;
 use super::TranscriptLine;
 use super::backend::AppShellBackend;
 use super::backend::AppShellTurnStart;
+use super::is_unmodified_action_key;
 use codex_app_server_protocol::ModelSafetyBufferingUpdatedNotification;
 use codex_protocol::openai_models::ReasoningEffort;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
-use crossterm::event::KeyModifiers;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
@@ -204,10 +204,15 @@ impl SafetyBufferingState {
             };
             lines.push(vec![marker, " ".into(), label.into()].into());
         }
+        let shortcuts = if active.can_retry {
+            "↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss"
+        } else {
+            "↑↓ / j k select  Enter confirm  d / Esc dismiss"
+        };
         lines.extend([
             Line::default(),
             Line::from(SAFETY_BUFFERING_FOOTER.dim()),
-            Line::from("Up/Down select  Enter confirm  Esc dismiss".dim()),
+            Line::from(shortcuts.dim()),
         ]);
         Some(lines)
     }
@@ -225,6 +230,18 @@ impl SafetyBufferingState {
         Self::actions(active).get(active.selected).copied()
     }
 
+    fn click_key_at(&mut self, line: usize) -> Option<KeyCode> {
+        let active = self.active.as_mut().filter(|active| active.visible)?;
+        let actions = Self::actions(active);
+        let action_start = if active.can_retry { 4 } else { 2 };
+        let selected = line.checked_sub(action_start)?;
+        if selected >= actions.len() {
+            return None;
+        }
+        active.selected = selected;
+        Some(KeyCode::Enter)
+    }
+
     fn retry_action(&self) -> Option<SafetyBufferingAction> {
         self.active
             .as_ref()
@@ -232,7 +249,7 @@ impl SafetyBufferingState {
             .map(|_| SafetyBufferingAction::Retry)
     }
 
-    fn dismiss(&mut self) {
+    pub(super) fn dismiss(&mut self) {
         if let Some(active) = self.active.as_mut() {
             active.visible = false;
         }
@@ -291,6 +308,13 @@ impl ShellState {
             .update(self.active_turn_id.as_deref(), notification)
         {
             self.command_palette = None;
+            self.selector = None;
+            if self.pending_approval.is_some()
+                || self.pending_elicitation.is_some()
+                || self.pending_user_input.is_some()
+            {
+                self.safety_buffering.dismiss();
+            }
             self.status = if show_buffering_ui {
                 "waiting".to_string()
             } else {
@@ -303,23 +327,29 @@ impl ShellState {
         self.safety_buffering.modal_lines()
     }
 
+    pub(super) fn safety_buffering_click_key(&mut self, line: usize) -> Option<KeyCode> {
+        self.safety_buffering.click_key_at(line)
+    }
+
     pub(super) async fn handle_safety_buffering_key<S>(&mut self, key: KeyEvent, app_server: &mut S)
     where
         S: AppShellBackend,
     {
+        if !is_unmodified_action_key(key) {
+            return;
+        }
         let action = match key.code {
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 self.safety_buffering.move_selection(/*offset*/ -1);
                 return;
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 self.safety_buffering.move_selection(/*offset*/ 1);
                 return;
             }
             KeyCode::Esc | KeyCode::Char('d') => Some(SafetyBufferingAction::Dismiss),
             KeyCode::Char('r') => self.safety_buffering.retry_action(),
             KeyCode::Enter => self.safety_buffering.selected_action(),
-            _ if key.modifiers == KeyModifiers::NONE => None,
             _ => None,
         };
         match action {
@@ -379,6 +409,9 @@ impl ShellState {
         self.scroll_transcript_to_bottom();
         self.clear_streaming_transcript();
         self.tool_activity.clear();
+        self.close_agent_log();
+        self.close_tool_output();
+        self.agent_activity = super::agent_activity::AgentActivityState::default();
         self.subagent_activity.clear();
         self.latest_diff = None;
         self.pending_approval = None;

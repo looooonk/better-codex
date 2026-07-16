@@ -32,7 +32,7 @@ Hang tight or retry with a faster model for a quicker response, though it may be
   Learn more
 
 No action is required. Codex will keep waiting, and this menu will close when the response is ready.
-Up/Down select  Enter confirm  Esc dismiss
+↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss
     ");
 }
 

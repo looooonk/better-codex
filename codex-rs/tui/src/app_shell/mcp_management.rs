@@ -1,5 +1,8 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::is_unmodified_action_key;
+use super::is_unmodified_key_event;
+use super::is_unmodified_key_press;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::McpAuthStatus;
 use codex_app_server_protocol::McpServerOauthLoginParams;
@@ -8,9 +11,11 @@ use codex_app_server_protocol::MergeStrategy;
 use color_eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
+use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use unicode_width::UnicodeWidthStr;
 
 const VISIBLE_MCP_ROWS: usize = 8;
 
@@ -45,10 +50,15 @@ impl ShellState {
         {
             return self.handle_mcp_edit_key(key, app_server).await;
         }
+        if !is_unmodified_action_key(key) {
+            return Ok(true);
+        }
         match key.code {
             KeyCode::Esc => self.pending_mcp_management = None,
-            KeyCode::Up => self.with_mcp_state(McpManagementState::move_up),
-            KeyCode::Down => self.with_mcp_state(McpManagementState::move_down),
+            KeyCode::Up | KeyCode::Char('k') => self.with_mcp_state(McpManagementState::move_up),
+            KeyCode::Down | KeyCode::Char('j') => {
+                self.with_mcp_state(McpManagementState::move_down)
+            }
             KeyCode::Char('r') => {
                 self.reload_mcp_servers(app_server).await?;
             }
@@ -72,6 +82,16 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        let is_shift_back_tab = key.kind == KeyEventKind::Press
+            && key.code == KeyCode::BackTab
+            && key.modifiers == KeyModifiers::SHIFT;
+        if (matches!(key.code, KeyCode::Esc | KeyCode::Enter | KeyCode::Tab)
+            && !is_unmodified_key_press(key))
+            || (key.code == KeyCode::Backspace && !is_unmodified_key_event(key))
+            || (key.code == KeyCode::BackTab && !is_unmodified_key_press(key) && !is_shift_back_tab)
+        {
+            return Ok(true);
+        }
         match key.code {
             KeyCode::Esc => self.with_mcp_state(McpManagementState::cancel_edit),
             KeyCode::Enter => self.apply_mcp_edit(app_server).await?,
@@ -251,9 +271,12 @@ impl McpManagementState {
                     .cyan()
                     .bold(),
                 " mcp servers".into(),
-                "  Enter/l login  d disable  x remove  a add  e edit  r reload".dim(),
+                "  ↑↓ / j k navigate".dim(),
             ]
             .into(),
+            "Login ↵  Disable d  Remove x  Add a  Edit e  Reload r"
+                .dim()
+                .into(),
         ];
         let start = visible_start(self.selected, self.servers.len());
         for (index, server) in self
@@ -288,6 +311,42 @@ impl McpManagementState {
         lines
     }
 
+    pub(super) fn click_key_at(&mut self, line: usize, column: usize) -> Option<KeyCode> {
+        if self.editing() {
+            return (line == 5).then_some(if column < 12 {
+                KeyCode::Enter
+            } else {
+                KeyCode::Esc
+            });
+        }
+        if line == 1 {
+            let text = line_to_plain_text(&self.lines()[1]);
+            return key_at_label(
+                &text,
+                column,
+                &[
+                    ("Login ↵", KeyCode::Enter),
+                    ("Disable d", KeyCode::Char('d')),
+                    ("Remove x", KeyCode::Char('x')),
+                    ("Add a", KeyCode::Char('a')),
+                    ("Edit e", KeyCode::Char('e')),
+                    ("Reload r", KeyCode::Char('r')),
+                ],
+            );
+        }
+        let start = visible_start(self.selected, self.servers.len());
+        let visible = self
+            .servers
+            .len()
+            .saturating_sub(start)
+            .min(VISIBLE_MCP_ROWS);
+        if (2..visible + 2).contains(&line) {
+            self.selected = start + line - 2;
+            return Some(KeyCode::Null);
+        }
+        None
+    }
+
     fn selected(&self) -> Option<&McpServerStatus> {
         self.servers.get(self.selected)
     }
@@ -311,7 +370,7 @@ impl McpManagementState {
         self.selected = (self.selected + 1).min(self.servers.len().saturating_sub(1));
     }
 
-    fn editing(&self) -> bool {
+    pub(super) fn editing(&self) -> bool {
         self.edit.is_some()
     }
 
@@ -410,4 +469,21 @@ fn visible_start(selected: usize, total: usize) -> usize {
             .saturating_sub(VISIBLE_MCP_ROWS / 2)
             .min(total.saturating_sub(VISIBLE_MCP_ROWS))
     }
+}
+
+fn line_to_plain_text(line: &Line<'_>) -> String {
+    line.spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect()
+}
+
+fn key_at_label(text: &str, column: usize, labels: &[(&str, KeyCode)]) -> Option<KeyCode> {
+    labels.iter().find_map(|(label, key)| {
+        let byte_start = text.find(label)?;
+        let start = UnicodeWidthStr::width(&text[..byte_start]);
+        (start..start + UnicodeWidthStr::width(*label))
+            .contains(&column)
+            .then_some(*key)
+    })
 }

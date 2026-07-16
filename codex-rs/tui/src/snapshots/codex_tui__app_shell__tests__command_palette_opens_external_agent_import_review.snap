@@ -2,32 +2,35 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                  Sessions
- you: Create a divergent standalone TUI.                         unfocused active 0 shown
-                                                                 loading sessions
- codex: Started a fullscreen app shell backed by app-server
-        turns.                                                   Tools
-
- Claude Code Import
- Review Claude Code setup  Settings 1, Skills 1
-
- > [x] Settings (settings.json -> config.toml) - home
-       Import settings from Claude Code
-   [x] Skills - better-codex
-       1 skill: review
-
- Enter import  Space toggle  Esc cancel
-
-
-                                                                 Build the standalone shell in
-                                                                 slices.
-                                                                 x Shell frame
-                                                                 > Transcript model
-
- Composer ready 1:37
- > Summarize the new shell architecture
+                                                  │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  Better Codex app shell                 │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ YOU  Create a divergent standalone TUI.        │▎loading sessions
+                                                  │
+ ▎ CODEX  Started a fullscreen app shell backed   │▎◆ THREAD
+          by app-server turns.                    │▎stage-one
+ ▎ PLAN  1. Bu╭──────────────────────────────────────────────────────────────────────╮00001
+         2. Wi│◆ CLAUDE CODE IMPORT                                                  │ession list
+         3. Re│Review Claude Code setup  Settings 1, Skills 1                        │
+              │                                                                      │
+ ▌ tool exec j│> [x] Settings (settings.json -> config.toml) - home                  │
+              │      Import settings from Claude Code                                │
+ ▌ edited 3 fi│  [x] Skills - better-codex                                           │
+ ▎ STATUS  che│      1 skill: review                                                 │
+ ▎ STATUS  rev│                                                                      │
+           imp│↑↓ / j k move  Enter import  Space toggle  Esc cancel                 │
+              │                                                                      │
+ ▎ CODEX  The ╰──────────────────────────────────────────────────────────────────────╯
+          surface.                                │
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

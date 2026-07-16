@@ -2,44 +2,47 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                  Keys
- you: Create a divergent standalone TUI.                         Alt + Left / Right
-                                                                 Enter steer
- codex: Started a fullscreen app shell backed by app-server      Ctrl+C interrupt, Esc x2 exit
-        turns.                                                   Alt+Up select, Ctrl+O copy
- plan: 1. Build shell                                            Ctrl+D hide dashboard
-       2. Wire transcript                                        Sessions: Ctrl+3 select/focus
-       3. Render dashboard                                       r resume, f fork, a/u archive
-                                                                 v archived, d delete
- ▌ tool exec just test -p codex-tui                              n rename, / search
-                                                                 Settings: Ctrl+1 select/focus
- ▌ edited 3 files +128 -24                                       Enter edit/cycle, Tab page
-                                                                 Esc return to composer
- codex: The new shell owns the fullscreen surface.
-                                                                 Status
-                                                                 thinking
-                                                                 turn turn-act...
-
-                                                                 Tools
-                                                                 in progress exec just test -p c...
-                                                                 completed file changes in app_s...
-
-
-
-
-
-
-
-
-
-
-
-
-
- Composer busy 1:37
- > Summarize the new shell architecture
+                                                  │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│
+                                                  │Alt+←/→ view  ^D hide  │ Sess ↵/j/k focus/nav
+ ◆ CONVERSATION                                   │Shift/Alt+↵ newline    │ r/f resume/fork
+ ▎ SYSTEM  Better Codex app shell                 │↵ steer  ^C stop/Esc×2 │ a/u/v/d arc/show/del
+ ▎ YOU  Create a divergent standalone TUI.        │Alt+↑/^O select/copy   │ n rename  / search
+                                                  │Alt+M/E model/effort   │ Agent ↵ focus/log · j/…
+ ▎ CODEX  Started a fullscreen app shell backed   │^1 Status · ^2 Agents  │ Tab/j/k nav · ↵ apply
+          by app-server turns.                    │^3 Sessions · ^4 Help  │ Esc×2 exit
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │
+         3. Render dashboard                      │
+                                                  │
+ ▌ tool exec just test -p codex-tui               │
+                                                  │
+ ▌ edited 3 files +128 -24                        │
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  ● RUNNING  1:37                      ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

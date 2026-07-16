@@ -1,5 +1,6 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::is_unmodified_action_key;
 use crate::app_server_session::EXTERNAL_AGENT_CONFIG_IMPORT_IN_PROGRESS_MESSAGE;
 use crate::external_agent_config_migration_flow::EXTERNAL_AGENT_CONFIG_MIGRATION_DAEMON_UNAVAILABLE_MESSAGE;
 use crate::external_agent_config_migration_flow::EXTERNAL_AGENT_CONFIG_MIGRATION_NO_ITEMS_MESSAGE;
@@ -18,6 +19,7 @@ use crossterm::event::KeyEvent;
 use ratatui::prelude::Stylize as _;
 use ratatui::text::Line;
 use std::path::PathBuf;
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ExternalAgentImportState {
@@ -118,8 +120,34 @@ impl ExternalAgentImportState {
             lines.push(Line::from(vec!["      ".into(), detail.dim()]));
         }
         lines.push(Line::from(""));
-        lines.push("Enter import  Space toggle  Esc cancel".dim().into());
+        lines.push(
+            "↑↓ / j k move  Enter import  Space toggle  Esc cancel"
+                .dim()
+                .into(),
+        );
         lines
+    }
+
+    pub(super) fn click_key_at(&mut self, line: usize, column: usize) -> Option<KeyCode> {
+        let item_start = 2 + usize::from(self.error.is_some()) * 2;
+        let item_end = item_start + self.items.len() * 2;
+        if (item_start..item_end).contains(&line) {
+            self.focused = (line - item_start) / 2;
+            return Some(KeyCode::Char(' '));
+        }
+        let footer_line = item_end + 1;
+        if line != footer_line {
+            return None;
+        }
+        key_at_label(
+            "↑↓ / j k move  Enter import  Space toggle  Esc cancel",
+            column,
+            &[
+                ("Enter import", KeyCode::Enter),
+                ("Space toggle", KeyCode::Char(' ')),
+                ("Esc cancel", KeyCode::Esc),
+            ],
+        )
     }
 }
 
@@ -176,19 +204,22 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if !is_unmodified_action_key(key) {
+            return Ok(true);
+        }
         match key.code {
             KeyCode::Esc => {
                 self.pending_external_agent_import = None;
                 self.push_status("Claude Code import cancelled");
                 Ok(true)
             }
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(pending) = &mut self.pending_external_agent_import {
                     pending.move_up();
                 }
                 Ok(true)
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(pending) = &mut self.pending_external_agent_import {
                     pending.move_down();
                 }
@@ -264,4 +295,14 @@ fn line_to_plain_text(line: &Line<'_>) -> String {
         .iter()
         .map(|span| span.content.as_ref())
         .collect::<String>()
+}
+
+fn key_at_label(text: &str, column: usize, labels: &[(&str, KeyCode)]) -> Option<KeyCode> {
+    labels.iter().find_map(|(label, key)| {
+        let byte_start = text.find(label)?;
+        let start = UnicodeWidthStr::width(&text[..byte_start]);
+        (start..start + UnicodeWidthStr::width(*label))
+            .contains(&column)
+            .then_some(*key)
+    })
 }

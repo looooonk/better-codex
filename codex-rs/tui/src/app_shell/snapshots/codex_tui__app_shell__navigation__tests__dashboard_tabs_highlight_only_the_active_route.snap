@@ -1,19 +1,24 @@
 ---
 source: tui/src/app_shell/navigation.rs
-expression: "DashboardTabs::new(46).lines(DashboardRoute::Workspace)"
+expression: "DashboardTabs::new(46).lines(DashboardRoute::Status)"
 ---
 [
-    Line::from(Span::from("┌────────────┬─────────────┬──────────┬──────┐").dim()).bg(Color::Rgb(24, 24, 37)),
     Line::from_iter([
-        Span::from("│").dim(),
-        Span::from("  Settings  ").dim(),
-        Span::from("│").dim(),
-        Span::from("  Workspace  ").cyan().bold(),
-        Span::from("│").dim(),
-        Span::from(" Sessions ").dim(),
-        Span::from("│").dim(),
-        Span::from(" Help ").dim(),
-        Span::from("│").dim(),
-    ]).bg(Color::Rgb(24, 24, 37)),
-    Line::from(Span::from("└────────────┴─────────────┴──────────┴──────┘").dim()).bg(Color::Rgb(24, 24, 37)),
+        Span::from("  Status   ").fg(Color::Rgb(122, 162, 247)).bold(),
+        Span::from("│").fg(Color::Rgb(65, 72, 104)).bg(Color::Rgb(22, 22, 30)),
+        Span::from("  Agents   ").fg(Color::Rgb(86, 95, 137)),
+        Span::from("│").fg(Color::Rgb(65, 72, 104)).bg(Color::Rgb(22, 22, 30)),
+        Span::from("  Sessions   ").fg(Color::Rgb(86, 95, 137)),
+        Span::from("│").fg(Color::Rgb(65, 72, 104)).bg(Color::Rgb(22, 22, 30)),
+        Span::from("  Help  ").fg(Color::Rgb(86, 95, 137)),
+    ]).bg(Color::Rgb(22, 22, 30)),
+    Line::from_iter([
+        Span::from("━━━━━━━━━━━").fg(Color::Rgb(122, 162, 247)).bg(Color::Rgb(22, 22, 30)).bold(),
+        Span::from("─").fg(Color::Rgb(65, 72, 104)).bg(Color::Rgb(22, 22, 30)),
+        Span::from("───────────").fg(Color::Rgb(65, 72, 104)).bg(Color::Rgb(22, 22, 30)),
+        Span::from("─").fg(Color::Rgb(65, 72, 104)).bg(Color::Rgb(22, 22, 30)),
+        Span::from("─────────────").fg(Color::Rgb(65, 72, 104)).bg(Color::Rgb(22, 22, 30)),
+        Span::from("─").fg(Color::Rgb(65, 72, 104)).bg(Color::Rgb(22, 22, 30)),
+        Span::from("────────").fg(Color::Rgb(65, 72, 104)).bg(Color::Rgb(22, 22, 30)),
+    ]).bg(Color::Rgb(22, 22, 30)),
 ]

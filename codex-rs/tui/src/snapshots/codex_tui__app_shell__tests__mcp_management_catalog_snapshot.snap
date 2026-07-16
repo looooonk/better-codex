@@ -2,36 +2,39 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
 ---
-
- Better Codex                                                              ┌────────┬─────────┬────────┬────┐
-                                                                           │Settings│Workspace│Sessions│Help│
-                                                                           └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                            Settings
- you: Create a divergent standalone TUI.                                   focused integrations 2 fields
-                                                                           Model  Permissions
- codex: Started a fullscreen app shell backed by app-server turns.         Appearance  Integrations
- plan: 1. Build shell                                                      mcp inventory refreshed
-       2. Wire transcript                                                  > mcp servers: 2 servers / 3 to...
-       3. Render dashboard                                                   plugins: not loaded
-
-
- MCP Servers
- 1/2 mcp servers  Enter/l login  d disable  x remove  a add  e edit  r reload
- > login        github 2 tools
-   bearer       linear 1 tools
-
- Action: press Enter or l to start oauth login
-
-
-                                                                           Integrations
-                                                                           mcp 2 servers / 3 tools / 1 log...
-                                                                           plugins not loaded
-                                                                           servers 2
-                                                                           tools 3
-
-                                                                           Workspace
-                                                                           cwd /workspace/better-codex
-                                                                           profile managed
- Composer ready 1:37                                                       files restricted, net restricted
- > Summarize the new shell architecture                                    roots none selected
+                                                            │
+ ◆ BC     gpt-5-codex ▾   default ▾   default ▾  ● thinking │   Status   │  Agents   │  Sessions   │  Help
+────────────────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
+                                                            │
+ ◆ CONVERSATION                                             │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                           │▎Model │ Permissions │ Appearance │Integrations
+ ▎ YOU  Create a divergent standalone TUI.                  │▎──────────────────────────────────━━━━━━━━━━━━━
+                                                            │▎mcp inventory refreshed
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │▎› MCP servers: 2 servers / 3 tools / 1 login n…
+          server turns.                                     │▎  Plugins: not loaded
+ ▎ PLAN  1. Build shell                                     │
+         2. Wire transcript                                 │▎◆ PLAN
+         3. Render dashboard                                │▎Build the standalone shell in slices.
+                   ╭──────────────────────────────────────────────────────────────────────╮
+ ▌ tool exec just t│◆ MCP SERVERS                                                         │
+                   │1/2 mcp servers  ↑↓ / j k navigate                                    │
+ ▌ edited 3 files +│Login ↵  Disable d  Remove x  Add a  Edit e  Reload r                 │
+ ▎ STATUS  mcp mana│> login        github 2 tools                                         │
+                   │  bearer       linear 1 tools                                         │ codex-tui
+ ▎ CODEX  The new s│                                                                      │_shell
+                   │Action: press Enter or l to start oauth login                         │
+                   │                                                                      │
+                   ╰──────────────────────────────────────────────────────────────────────╯
+                                                            │
+                                                            │▎◆ WORKSPACE
+                                                            │▎cwd /workspace/better-codex
+                                                            │▎profile managed
+                                                            │▎files restricted, net restricted
+                                                            │▎roots none selected
+                                                            │
+╭──────────────────────────────────────────────────────────╮│▎◆ TOKENS
+│◆ MESSAGE  1:37                                           ││▎input 1k | output 240
+│> Summarize the new shell architecture                    ││▎Context 100% left
+│                                                          ││
+│                                                          ││
+╰──────────────────────────────────────────────────────────╯│

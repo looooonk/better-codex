@@ -1,0 +1,28 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
+---
+
+ ◆ BC                       gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────
+
+       Status       │      Agents      │      Sessions      │      Help
+ ━━━━━━━━━━━━━━━━━━━─────────────────────────────────────────────────────────
+ ▎◆ SETTINGS
+ ▎    Model     │    Permissions     │    Appearance    │    Integrations
+ ▎━━━━━━━━━━━━━━─────────────────────────────────────────────────────────────
+ ▎› Model: gpt-5-codex
+ ▎  Reasoning: default
+ ▎  Service tier: default
+
+
+ ◆ CONVERSATION
+                                                                            ┃
+ ▎ CODEX  The new shell owns the fullscreen surface.                        ┃
+
+╭────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                             │
+│> Summarize the new shell architecture                                      │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯

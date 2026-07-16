@@ -1,17 +1,26 @@
 use super::dashboard::dashboard_value;
-use crate::text_formatting::truncate_text;
+use super::design::palette;
+use super::design::selection_style;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadListCwdFilter;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey;
 use codex_protocol::ThreadId;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use std::path::PathBuf;
+use unicode_width::UnicodeWidthStr;
 
 const SESSION_LIST_LIMIT: u32 = 20;
 const SESSION_LIST_LINE_BUDGET: usize = 7;
 const SESSION_LIST_DEFAULT_VISIBLE_ROWS: usize = 6;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SessionSearchOutcome {
+    LocalFilterOnly,
+    RefreshList,
+}
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct SessionListState {
@@ -26,6 +35,7 @@ pub(super) struct SessionListState {
     rename_draft: Option<String>,
     last_error: Option<String>,
     loaded: bool,
+    has_more: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -35,7 +45,6 @@ pub(super) struct SessionRow {
     preview: String,
     cwd: PathBuf,
     branch: Option<String>,
-    updated_at: i64,
 }
 
 impl SessionListState {
@@ -60,10 +69,15 @@ impl SessionListState {
     }
 
     pub(super) fn replace_threads(&mut self, threads: Vec<Thread>) {
+        self.replace_thread_page(threads, /*has_more*/ false);
+    }
+
+    pub(super) fn replace_thread_page(&mut self, threads: Vec<Thread>, has_more: bool) {
         self.all_rows = threads
             .into_iter()
             .filter_map(SessionRow::from_thread)
             .collect();
+        self.has_more = has_more;
         self.apply_search_filter();
         self.normalize_selection_and_scroll();
         self.loaded = true;
@@ -90,6 +104,22 @@ impl SessionListState {
 
     pub(super) fn selected_thread_id(&self) -> Option<ThreadId> {
         self.rows.get(self.selected).map(|row| row.thread_id)
+    }
+
+    pub(super) fn select_at_line(&mut self, line: usize) -> bool {
+        self.focused = true;
+        let leading_lines = self.leading_line_count();
+        if line < leading_lines {
+            return false;
+        }
+        let visible_rows = SESSION_LIST_LINE_BUDGET.saturating_sub(leading_lines);
+        let scroll_top = self.normalized_scroll_top(visible_rows);
+        let index = scroll_top.saturating_add(line.saturating_sub(leading_lines));
+        if index >= self.rows.len() || index >= scroll_top.saturating_add(visible_rows) {
+            return false;
+        }
+        self.selected = index;
+        true
     }
 
     pub(super) fn selected_title(&self) -> Option<&str> {
@@ -142,10 +172,17 @@ impl SessionListState {
         self.normalize_selection_and_scroll();
     }
 
-    pub(super) fn backspace_search(&mut self) {
-        self.search_query.pop();
+    pub(super) fn backspace_search(&mut self) -> SessionSearchOutcome {
+        if self.search_query.pop().is_none() {
+            return SessionSearchOutcome::LocalFilterOnly;
+        }
         self.apply_search_filter();
         self.normalize_selection_and_scroll();
+        if self.search_query.is_empty() {
+            SessionSearchOutcome::RefreshList
+        } else {
+            SessionSearchOutcome::LocalFilterOnly
+        }
     }
 
     pub(super) fn clear_search(&mut self) {
@@ -169,6 +206,9 @@ impl SessionListState {
         self.rows.clear();
         self.selected = 0;
         self.scroll_top = 0;
+        self.last_error = None;
+        self.loaded = false;
+        self.has_more = false;
     }
 
     pub(super) fn show_archived(&self) -> bool {
@@ -212,46 +252,74 @@ impl SessionListState {
 
     pub(super) fn lines(&self, width: usize) -> Vec<Line<'static>> {
         let mut lines = Vec::new();
-        let focus = if self.focused { "focused" } else { "unfocused" };
-        let mode = if self.show_archived {
-            "archived"
+        let focus = if self.focused {
+            "● FOCUSED"
         } else {
-            "active"
+            "○ CLICK TO FOCUS"
+        };
+        let mode = if self.show_archived {
+            "ARCHIVED"
+        } else {
+            "ACTIVE"
+        };
+        let count = if self.search_active && !self.search_query.trim().is_empty() {
+            format!(
+                "{} shown / {}{} loaded",
+                self.rows.len(),
+                self.all_rows.len(),
+                if self.has_more { "+" } else { "" }
+            )
+        } else {
+            format!(
+                "{}{} sessions",
+                self.rows.len(),
+                if self.has_more { "+" } else { "" }
+            )
         };
         lines.push(Line::from(vec![
-            focus.cyan(),
-            " ".dim(),
-            mode.dim(),
-            " ".dim(),
-            format!("{} shown", self.rows.len()).dim(),
+            focus.fg(if self.focused {
+                palette::FOCUS
+            } else {
+                palette::MUTED
+            }),
+            "  ".into(),
+            mode.fg(palette::TEXT).bold(),
+            "  ".into(),
+            count.fg(palette::MUTED),
         ]));
         if self.search_active || !self.search_query.is_empty() {
-            let label = if self.search_active {
-                "search*"
+            let (label, hint) = if self.search_active {
+                ("filter*", "  · Enter search all")
             } else {
-                "search"
+                ("search", "  · server results")
             };
             lines.push(Line::from(vec![
-                label.cyan(),
-                " ".dim(),
-                dashboard_value(&self.search_query, width, label.len() + 1).into(),
+                label.fg(palette::CYAN),
+                " ".into(),
+                dashboard_value(
+                    &self.search_query,
+                    width,
+                    label.len() + 1 + UnicodeWidthStr::width(hint),
+                )
+                .fg(palette::TEXT),
+                hint.fg(palette::MUTED),
             ]));
         }
         if let Some(draft) = &self.rename_draft {
             lines.push(Line::from(vec![
-                "rename*".cyan(),
-                " ".dim(),
-                dashboard_value(draft, width, /*prefix_width*/ 8).into(),
+                "rename*".fg(palette::CYAN),
+                " ".into(),
+                dashboard_value(draft, width, /*prefix_width*/ 8).fg(palette::TEXT),
             ]));
         }
         if let Some(error) = &self.last_error {
             lines.push(Line::from(
-                dashboard_value(error, width, /*prefix_width*/ 0).red(),
+                dashboard_value(error, width, /*prefix_width*/ 0).fg(palette::ERROR),
             ));
         } else if !self.loaded {
-            lines.push(Line::from("loading sessions".dim()));
+            lines.push(Line::from("loading sessions".fg(palette::MUTED)));
         } else if self.rows.is_empty() {
-            lines.push(Line::from("no matching sessions".dim()));
+            lines.push(Line::from("no matching sessions".fg(palette::MUTED)));
         }
 
         let remaining = SESSION_LIST_LINE_BUDGET.saturating_sub(lines.len());
@@ -286,11 +354,10 @@ impl SessionListState {
             return;
         }
 
-        let query = query.to_lowercase();
         self.rows = self
             .all_rows
             .iter()
-            .filter(|row| row.matches_search(&query))
+            .filter(|row| row.matches_search(query))
             .cloned()
             .collect();
     }
@@ -321,6 +388,17 @@ impl SessionListState {
 
         scroll_top
     }
+
+    fn leading_line_count(&self) -> usize {
+        1usize
+            .saturating_add(usize::from(
+                self.search_active || !self.search_query.is_empty(),
+            ))
+            .saturating_add(usize::from(self.rename_draft.is_some()))
+            .saturating_add(usize::from(
+                self.last_error.is_some() || !self.loaded || self.rows.is_empty(),
+            ))
+    }
 }
 
 impl SessionRow {
@@ -344,18 +422,11 @@ impl SessionRow {
             preview,
             cwd: thread.cwd.to_path_buf(),
             branch: thread.git_info.and_then(|git_info| git_info.branch),
-            updated_at: thread.updated_at,
         })
     }
 
     fn matches_search(&self, query: &str) -> bool {
-        self.title.to_lowercase().contains(query)
-            || self.preview.to_lowercase().contains(query)
-            || self
-                .branch
-                .as_deref()
-                .is_some_and(|branch| branch.to_lowercase().contains(query))
-            || self.cwd.to_string_lossy().to_lowercase().contains(query)
+        self.title.contains(query) || self.preview.contains(query)
     }
 }
 
@@ -367,18 +438,18 @@ fn row_line(
     width: usize,
 ) -> Line<'static> {
     let marker = if selected {
-        ">".cyan().bold()
+        "›".fg(palette::FOCUS).bold()
     } else {
-        " ".dim()
+        " ".into()
     };
     let total = total.max(1);
     let position_width = total.to_string().len();
     let position = format!("{:>position_width$}/{total}", index.saturating_add(1));
     let position_width = position.chars().count();
     let position = if selected {
-        position.cyan()
+        position.fg(palette::FOCUS)
     } else {
-        position.dim()
+        position.fg(palette::MUTED)
     };
     let mut detail = row
         .branch
@@ -390,26 +461,35 @@ fn row_line(
     {
         detail = format!(" [{cwd}]");
     }
-    let age = if row.updated_at > 0 {
-        format!(" {}", row.updated_at)
-    } else {
-        String::new()
-    };
-    let text = format!("{}{}{}", row.title, detail, age);
+    let text = format!("{}{detail}", row.title);
     let prefix_width = 3usize.saturating_add(position_width);
     let visible = dashboard_value(&text, width, prefix_width);
-    let preview_width = width.saturating_sub(prefix_width + visible.chars().count() + 1);
+    let preview_width =
+        width.saturating_sub(prefix_width + UnicodeWidthStr::width(visible.as_str()) + 2);
     let preview = if preview_width > 8 {
-        format!(" {}", truncate_text(&row.preview, preview_width)).dim()
+        format!(
+            "  {}",
+            dashboard_value(&row.preview, preview_width, /*prefix_width*/ 0)
+        )
+        .fg(palette::MUTED)
     } else {
-        "".dim()
+        "".into()
     };
-    Line::from(vec![
+    let line = Line::from(vec![
         marker,
-        " ".dim(),
+        " ".into(),
         position,
-        " ".dim(),
-        visible.into(),
+        " ".into(),
+        visible.fg(if selected {
+            palette::TEXT
+        } else {
+            palette::MUTED
+        }),
         preview,
-    ])
+    ]);
+    if selected {
+        line.set_style(selection_style())
+    } else {
+        line
+    }
 }

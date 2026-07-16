@@ -1,0 +1,18 @@
+---
+source: tui/src/app_shell/tool_output_tests.rs
+expression: "render_output(&output, 54, 16)"
+---
+
+
+  ╭ Tool output · exec cargo build --workspace --al╮
+  │ ● Running  Live output updates automatically   │
+  │ Item  exec-42                                  │
+  │ workspace crate                                │
+  │ build line 27: compiling a representative      │
+  │ workspace crate                                │
+  │ build line 28: compiling a representative      │
+  │ workspace crate                                │
+  │ build line 29: compiling a representative      │
+  │ workspace crate                                │
+  │  ↑↓ scroll  PgUp/PgDn  Esc  running · 53-59/59 │
+  ╰────────────────────────────────────────────────╯

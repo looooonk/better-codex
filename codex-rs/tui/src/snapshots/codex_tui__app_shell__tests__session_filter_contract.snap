@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
+---
+                                                  │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  ACTIVE  0 shown / 20+ loaded
+ ▎ YOU  Create a divergent standalone TUI.        │▎filter* needle  · Enter search all
+                                                  │▎no matching sessions
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ THREAD
+ ▎ PLAN  1. Build shell                           │▎stage-one
+         2. Wire transcript                       │▎id 01900000-0000-7000-8000-000000000001
+         3. Render dashboard                      │▎resume, fork, archive, delete in session list
+                                                  │
+ ▌ tool exec just test -p codex-tui               │
+                                                  │
+ ▌ edited 3 files +128 -24                        │
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

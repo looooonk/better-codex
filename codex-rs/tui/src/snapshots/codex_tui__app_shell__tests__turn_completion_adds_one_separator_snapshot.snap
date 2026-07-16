@@ -2,22 +2,23 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 20))"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- codex: Turn complete.                                           Sessions
- ──────────────────────────────────────────────────────────────  unfocused active 0 shown
-                                                                 loading sessions
-
-                                                                 Background
-                                                                 workspace refresh queued
-
-                                                                 Tools
-                                                                 in progress exec just test -p c...
-                                                                 completed file changes in app_s...
- Composer ready 1:37
- > Summarize the new shell architecture                          Thread
-                                                                 stage-one
-                                                                 id 01900000-0000-7000-8000-0000...
+                                                  │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ CODEX  Turn complete.                          │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ──────────────────────────────────────────────── │▎loading sessions
+                                                  │
+                                                  │▎◆ THREAD
+                                                  │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

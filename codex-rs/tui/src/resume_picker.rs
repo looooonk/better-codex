@@ -26,6 +26,7 @@ use crate::terminal_palette::best_color;
 use crate::terminal_palette::default_bg;
 use crate::text_formatting::truncate_text;
 use crate::tui::FrameRequester;
+use crate::tui::MouseScrollDirection;
 use crate::tui::Tui;
 use crate::tui::TuiEvent;
 use crate::wrapping::RtOptions;
@@ -473,7 +474,19 @@ async fn run_session_picker_with_loader(
                     TuiEvent::Paste(pasted) => {
                         state.handle_paste(pasted);
                     }
-                    TuiEvent::MouseClick(_) => {}
+                    TuiEvent::MouseScroll { direction, .. } => {
+                        let code = match direction {
+                            MouseScrollDirection::Up => KeyCode::PageUp,
+                            MouseScrollDirection::Down => KeyCode::PageDown,
+                        };
+                        if let Some(sel) = state
+                            .handle_key(KeyEvent::new(code, KeyModifiers::NONE))
+                            .await?
+                        {
+                            return Ok(sel);
+                        }
+                    }
+                    TuiEvent::MouseClick(_) | TuiEvent::MouseMove(_) => {}
                     TuiEvent::Draw | TuiEvent::Resize => {
                         if let Ok(size) = alt.tui.terminal.size() {
                             let list_height =

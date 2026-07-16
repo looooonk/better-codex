@@ -194,7 +194,10 @@ async fn run_startup_hooks_review_app(
                 }
                 StartupHooksReviewKeyAction::Ignored => {}
             },
-            TuiEvent::MouseClick(_) | TuiEvent::Paste(_) => {}
+            TuiEvent::MouseClick(_)
+            | TuiEvent::MouseMove(_)
+            | TuiEvent::MouseScroll { .. }
+            | TuiEvent::Paste(_) => {}
             TuiEvent::Resize | TuiEvent::Draw => draw_startup_hooks_review(tui, &state)?,
         }
     }

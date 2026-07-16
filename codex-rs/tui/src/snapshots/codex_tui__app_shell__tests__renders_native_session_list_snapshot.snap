@@ -2,32 +2,35 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                  Sessions
- you: Create a divergent standalone TUI.                         focused active 2 shown
-                                                                 > 1/2 Refactor dashboard naviga...
- codex: Started a fullscreen app shell backed by app-server        2/2 Investigate approval rend...
-        turns.
- plan: 1. Build shell                                            Tools
-       2. Wire transcript                                        in progress exec just test -p c...
-       3. Render dashboard                                       completed file changes in app_s...
-
- ▌ tool exec just test -p codex-tui                              Thread
-                                                                 stage-one
- ▌ edited 3 files +128 -24                                       id 01900000-0000-7000-8000-0000...
-                                                                 resume, fork, archive, delete in
- codex: The new shell owns the fullscreen surface.
-                                                                 Status
-                                                                 thinking
-
-                                                                 Plan
-                                                                 Build the standalone shell in
-                                                                 slices.
-                                                                 x Shell frame
-                                                                 > Transcript model
- Composer ready 1:37
- > Summarize the new shell architecture
+                                                  │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  ACTIVE  2 sessions
+ ▎ YOU  Create a divergent standalone TUI.        │▎› 1/2 Refactor dashboard navigation [main]
+                                                  │▎  2/2 Investigate approval rendering regressio…
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ THREAD
+ ▎ PLAN  1. Build shell                           │▎stage-one
+         2. Wire transcript                       │▎id 01900000-0000-7000-8000-000000000001
+         3. Render dashboard                      │▎resume, fork, archive, delete in session list
+                                                  │
+ ▌ tool exec just test -p codex-tui               │
+                                                  │
+ ▌ edited 3 files +128 -24                        │
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

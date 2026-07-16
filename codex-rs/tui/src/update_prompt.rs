@@ -57,7 +57,10 @@ pub(crate) async fn run_update_prompt_if_needed(
         if let Some(event) = events.next().await {
             match event {
                 TuiEvent::Key(key_event) => screen.handle_key(key_event),
-                TuiEvent::MouseClick(_) | TuiEvent::Paste(_) => {}
+                TuiEvent::MouseClick(_)
+                | TuiEvent::MouseMove(_)
+                | TuiEvent::MouseScroll { .. }
+                | TuiEvent::Paste(_) => {}
                 TuiEvent::Draw | TuiEvent::Resize => {
                     tui.draw(u16::MAX, |frame| {
                         frame.render_widget_ref(&screen, frame.area());

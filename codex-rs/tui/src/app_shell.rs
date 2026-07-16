@@ -5,10 +5,10 @@
 
 use crate::app_exit::AppExitInfo;
 use crate::app_exit::ExitReason;
+use crate::app_server_session::AgentHistoryTask;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
-use crate::app_server_session::app_server_rate_limit_snapshots;
 use crate::clipboard_copy::ClipboardLease;
 use crate::goal_display::GOAL_USAGE;
 use crate::goal_display::goal_status_label;
@@ -46,42 +46,67 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use std::cell::Cell;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use tokio::select;
+use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
+mod agent_activity;
+mod agent_activity_controller;
+mod agent_activity_render;
+mod agent_history;
+mod agent_log;
+mod agent_log_format;
+mod agent_log_view;
 mod approval;
 mod backend;
 mod command_palette;
+mod command_palette_view;
 mod composer;
 mod composer_render;
 mod dashboard;
+mod dashboard_help;
 mod dashboard_rate_limits;
 mod dashboard_workspace;
 mod design;
 mod elicitation;
 mod events;
 mod external_agent_import;
+mod header;
+mod input_request_view;
 mod integrations;
 mod mcp_management;
+mod modal_view;
 mod navigation;
 mod plugin_management;
+mod pointer;
 mod render;
 mod safety_buffering;
+mod scrollback_view;
+mod selector;
+mod selector_controller;
+mod session_hydration;
 mod sessions;
 mod settings;
 mod shell_command;
 mod startup;
 mod startup_availability_nux;
+mod startup_layout;
 mod startup_login;
 mod startup_model_migration;
+mod tool_output;
+mod tool_output_view;
 mod transcript_render;
+mod transcript_view;
 mod user_input;
 mod workspace;
+use agent_activity::AgentActivityState;
+use agent_log::AgentLogState;
 use approval::ApprovalAction;
 use approval::ApprovalChoice;
 use approval::PendingApproval;
@@ -100,19 +125,24 @@ use external_agent_import::ExternalAgentImportState;
 use integrations::McpInventorySummary;
 use integrations::PluginInventorySummary;
 use mcp_management::McpManagementState;
-use navigation::AppShellRouteState;
 use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
 use render::draw_shell;
 use safety_buffering::SafetyBufferingState;
+use selector::SelectorState;
+use selector::SelectorValue;
+use session_hydration::SessionHydrationState;
 use sessions::SessionListState;
+use sessions::SessionSearchOutcome;
 use settings::SettingsAction;
 use settings::SettingsState;
+use shell_command::PendingShellCommand;
 use shell_command::ShellCommand;
 pub(crate) use startup::StartupOnboardingOutcome;
 pub(crate) use startup::run_startup_onboarding;
 pub(crate) use startup_login::LoginOnboardingOutcome;
 pub(crate) use startup_login::run_login_onboarding;
+use tool_output::ToolOutputState;
 use transcript_render::TranscriptRenderCache;
 use user_input::PendingUserInput;
 use user_input::UserInputAdvance;
@@ -127,10 +157,17 @@ const TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX: &str = "... earlier output omitted ..
 const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
 const TRANSCRIPT_SELECTION_STEP: usize = 1;
 const APP_SERVER_FRAME_INTERVAL: Duration = Duration::from_millis(33);
+const AGENT_HISTORY_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 fn next_transcript_render_revision() -> u64 {
     static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
     NEXT_REVISION.fetch_add(1, Ordering::Relaxed)
+}
+
+fn next_local_output_item_id() -> String {
+    static NEXT_ID: AtomicU64 = AtomicU64::new(1);
+    let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+    format!("local-output:{id}")
 }
 
 pub(crate) async fn run(
@@ -190,53 +227,93 @@ pub(crate) async fn run(
     ));
 
     let started = start_selected_session(&mut app_server, &config, session_selection).await?;
-    let route_state = AppShellRouteState::load(config.codex_home.as_path());
+    let AppServerStartedThread {
+        session,
+        turns,
+        agent_threads,
+        agent_history_task,
+    } = started;
     let mut shell = ShellState::new(
-        started.session,
+        session,
         fallback_model,
         bootstrap.available_models,
         config.codex_home.to_path_buf(),
-        route_state.route,
         config.tui_theme.clone(),
         config.animations,
         config.show_tooltips,
         config.multi_agent_v2.max_concurrent_threads_per_session,
     );
     shell.workspace_command_runner = Some(workspace_command_runner.clone());
-    shell.ingest_turn_history(started.turns);
+    shell.ingest_turn_history(turns);
+    shell.install_agent_history(agent_threads, agent_history_task);
     if let Some(message) = availability_nux {
         shell.push_system(message);
     }
-    shell
-        .refresh_workspace_status(workspace_command_runner.as_ref())
-        .await;
-    shell.refresh_rate_limits(&mut app_server).await;
-    shell.refresh_goal_state(&mut app_server).await;
-    shell.refresh_session_list(&mut app_server).await;
-
-    if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
-        shell.submit_prompt(&mut app_server, prompt).await?;
-        tui.frame_requester().schedule_frame();
+    // Paint the restored conversation and start accepting input before secondary dashboard data
+    // completes. These lookups can cross a remote app-server boundary, so their results are
+    // revision-guarded and applied from the event loop as they become available.
+    let has_initial_prompt = initial_prompt
+        .as_deref()
+        .is_some_and(|prompt| !prompt.trim().is_empty());
+    draw_shell(tui, &shell)?;
+    shell.start_initial_dashboard_hydration(&app_server);
+    if !has_initial_prompt {
+        shell.start_initial_goal_hydration(&app_server);
     }
 
-    let mut tui_events = tui.event_stream();
-    let exit_reason = loop {
-        select! {
-            event = tui_events.next() => {
-                let Some(event) = event else {
-                    break ExitReason::UserRequested;
-                };
-                match event {
-                    TuiEvent::Key(key) => {
-                        if shell.handle_key(key, &config, &mut app_server).await? {
-                            break ExitReason::UserRequested;
+    let run_result: Result<ExitReason> = async {
+        if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
+            shell.submit_prompt(&mut app_server, prompt).await?;
+            // Goal reads and turn starts serialize by thread id. Start this lookup only after the
+            // initial turn is accepted so a slow goal read cannot delay the user's first prompt.
+            shell.start_initial_goal_hydration(&app_server);
+            tui.frame_requester().schedule_frame();
+        }
+
+        let mut tui_events = tui.event_stream();
+        let mut agent_history_poll = tokio::time::interval(AGENT_HISTORY_POLL_INTERVAL);
+        agent_history_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let exit_reason = loop {
+            select! {
+                event = tui_events.next() => {
+                    let Some(event) = event else {
+                        break ExitReason::UserRequested;
+                    };
+                    match event {
+                        TuiEvent::Key(key) => {
+                            if shell.handle_key(key, &config, &mut app_server).await? {
+                                break ExitReason::UserRequested;
+                            }
+                            tui.frame_requester().schedule_frame();
                         }
-                        tui.frame_requester().schedule_frame();
-                    }
-                    TuiEvent::MouseClick(position) => {
-                        let size = tui.terminal.size()?;
-                        shell
-                            .handle_mouse_click(
+                        TuiEvent::MouseClick(position) => {
+                            let size = tui.terminal.size()?;
+                            shell
+                                .handle_mouse_click(
+                                    ratatui::layout::Rect::new(
+                                        /*x*/ 0,
+                                        /*y*/ 0,
+                                        size.width,
+                                        size.height,
+                                    ),
+                                    position,
+                                    &config,
+                                    &mut app_server,
+                                )
+                                .await?;
+                            tui.frame_requester().schedule_frame();
+                        }
+                        TuiEvent::MouseMove(position) => {
+                            if shell.set_pointer_position(position) {
+                                tui.frame_requester().schedule_frame();
+                            }
+                        }
+                        TuiEvent::MouseScroll {
+                            position,
+                            direction,
+                        } => {
+                            let size = tui.terminal.size()?;
+                            shell.handle_mouse_scroll(
                                 ratatui::layout::Rect::new(
                                     /*x*/ 0,
                                     /*y*/ 0,
@@ -244,49 +321,80 @@ pub(crate) async fn run(
                                     size.height,
                                 ),
                                 position,
-                                &mut app_server,
-                            )
-                            .await;
-                        tui.frame_requester().schedule_frame();
+                                direction,
+                            );
+                            tui.frame_requester().schedule_frame();
+                        }
+                        TuiEvent::Paste(text) => {
+                            shell.insert_text(&text);
+                            tui.frame_requester().schedule_frame();
+                        }
+                        TuiEvent::Resize => {
+                            shell.clear_pointer_position();
+                            draw_shell(tui, &shell)?;
+                        }
+                        TuiEvent::Draw => {
+                            draw_shell(tui, &shell)?;
+                        }
                     }
-                    TuiEvent::Paste(text) => {
-                        shell.insert_text(&text);
-                        tui.frame_requester().schedule_frame();
+                }
+                event = app_server.next_event() => {
+                    match event {
+                        Some(event) => {
+                            shell
+                                .handle_app_server_event(
+                                    &mut app_server,
+                                    event,
+                                )
+                                .await?;
+                            tui.frame_requester()
+                                .schedule_frame_in(APP_SERVER_FRAME_INTERVAL);
+                        }
+                        None => {
+                            shell.push_system("app-server disconnected");
+                            break ExitReason::Fatal("app-server disconnected".to_string());
+                        }
                     }
-                    TuiEvent::Resize | TuiEvent::Draw => {
-                        draw_shell(tui, &shell)?;
+                }
+                _ = agent_history_poll.tick(), if shell.has_pending_agent_history()
+                    || shell.has_pending_agent_log()
+                    || shell.has_pending_session_hydration()
+                    || shell.has_pending_shell_command() =>
+                {
+                    let mut changed = shell.poll_shell_command().await;
+                    changed |= shell.poll_session_hydration(&app_server).await;
+                    if shell.has_pending_agent_history() {
+                        changed |= shell.poll_agent_history(&app_server).await;
+                    }
+                    if shell.has_pending_agent_log() {
+                        changed |= shell.poll_agent_log().await;
+                    }
+                    if changed {
+                        tui.frame_requester().schedule_frame();
                     }
                 }
             }
-            event = app_server.next_event() => {
-                match event {
-                    Some(event) => {
-                        shell
-                            .handle_app_server_event(
-                                &mut app_server,
-                                workspace_command_runner.as_ref(),
-                                event,
-                            )
-                            .await?;
-                        tui.frame_requester()
-                            .schedule_frame_in(APP_SERVER_FRAME_INTERVAL);
-                    }
-                    None => {
-                        shell.push_system("app-server disconnected");
-                        break ExitReason::Fatal("app-server disconnected".to_string());
-                    }
-                }
-            }
-        }
-    };
+        };
+        Ok(exit_reason)
+    }
+    .await;
 
-    let _ = app_server.unsubscribe_thread(shell.thread_id).await;
+    shell.cancel_shell_command();
+    shell.close_agent_log();
+    shell.close_tool_output();
+    shell.cancel_agent_history().await;
+    shell.cancel_session_hydration();
+    shell.finish_subscription_cleanup().await;
+    app_server
+        .unsubscribe_threads(shell.tracked_thread_ids())
+        .await;
     shutdown_app_shell_backend(app_server)
         .await
         .inspect_err(|err| {
             tracing::warn!("app-server shutdown failed: {err}");
         })
         .ok();
+    let exit_reason = run_result?;
 
     Ok(AppExitInfo {
         token_usage: shell.token_usage.clone(),
@@ -331,6 +439,7 @@ where
 struct TranscriptLine {
     kind: TranscriptKind,
     text: String,
+    full_text: Option<String>,
     tool_status: Option<ToolBlockStatus>,
     item_id: Option<String>,
     render_revision: u64,
@@ -341,8 +450,21 @@ impl TranscriptLine {
         Self {
             kind,
             text: text.into(),
+            full_text: None,
             tool_status: None,
             item_id: None,
+            render_revision: next_transcript_render_revision(),
+        }
+    }
+
+    fn output(text: impl Into<String>, status: ToolBlockStatus, item_id: String) -> Self {
+        let full_text = text.into();
+        Self {
+            kind: TranscriptKind::Output,
+            text: compact_output_for_transcript(full_text.clone()),
+            full_text: Some(full_text),
+            tool_status: Some(status),
+            item_id: Some(item_id),
             render_revision: next_transcript_render_revision(),
         }
     }
@@ -368,6 +490,7 @@ impl Clone for TranscriptLine {
         Self {
             kind: self.kind,
             text: self.text.clone(),
+            full_text: self.full_text.clone(),
             tool_status: self.tool_status,
             item_id: self.item_id.clone(),
             render_revision: next_transcript_render_revision(),
@@ -379,6 +502,7 @@ impl PartialEq for TranscriptLine {
     fn eq(&self, other: &Self) -> bool {
         self.kind == other.kind
             && self.text == other.text
+            && self.full_text == other.full_text
             && self.tool_status == other.tool_status
             && self.item_id == other.item_id
     }
@@ -521,11 +645,16 @@ struct ShellState {
     animations: bool,
     show_tooltips: bool,
     command_palette: Option<CommandPaletteState>,
+    selector: Option<SelectorState<SelectorValue>>,
     codex_home: std::path::PathBuf,
     dashboard_route: DashboardRoute,
     dashboard_visible: bool,
+    pointer_position: Option<ratatui::layout::Position>,
+    agents_focused: bool,
     composer: ComposerState,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
+    pending_shell_command: Option<PendingShellCommand>,
+    session_hydration: SessionHydrationState,
     exit_confirmation_pending: bool,
     clipboard_lease: Option<ClipboardLease>,
     active_turn_id: Option<String>,
@@ -544,6 +673,13 @@ struct ShellState {
     plan_steps: Vec<TurnPlanStep>,
     active_goal: Option<ThreadGoal>,
     tool_activity: VecDeque<ToolActivity>,
+    agent_activity: AgentActivityState,
+    agent_log: Option<AgentLogState>,
+    tool_output: Option<ToolOutputState>,
+    agent_history_task: Option<AgentHistoryTask>,
+    active_agent_thread_ids: HashSet<String>,
+    deferred_unsubscribe_thread_ids: Vec<ThreadId>,
+    subscription_cleanup_task: Option<JoinHandle<()>>,
     subagent_activity: VecDeque<ToolActivity>,
     latest_diff: Option<DiffSummary>,
     workspace_git_status: Option<WorkspaceGitStatus>,
@@ -556,13 +692,18 @@ struct ShellState {
     model_context_window: Option<i64>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CompletedItemOrigin {
+    Historical,
+    Live,
+}
+
 impl ShellState {
     fn new(
         session: ThreadSessionState,
         fallback_model: String,
         available_models: Vec<ModelPreset>,
         codex_home: std::path::PathBuf,
-        dashboard_route: DashboardRoute,
         tui_theme: Option<String>,
         animations: bool,
         show_tooltips: bool,
@@ -603,11 +744,16 @@ impl ShellState {
             animations,
             show_tooltips,
             command_palette: None,
+            selector: None,
             codex_home,
-            dashboard_route,
+            dashboard_route: DashboardRoute::Status,
             dashboard_visible: true,
+            pointer_position: None,
+            agents_focused: false,
             composer: ComposerState::default(),
             workspace_command_runner: None,
+            pending_shell_command: None,
+            session_hydration: SessionHydrationState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: None,
@@ -626,6 +772,13 @@ impl ShellState {
             plan_steps: Vec::new(),
             active_goal: None,
             tool_activity: VecDeque::new(),
+            agent_activity: AgentActivityState::default(),
+            agent_log: None,
+            tool_output: None,
+            agent_history_task: None,
+            active_agent_thread_ids: HashSet::new(),
+            deferred_unsubscribe_thread_ids: Vec::new(),
+            subscription_cleanup_task: None,
             subagent_activity: VecDeque::new(),
             latest_diff: None,
             workspace_git_status: None,
@@ -649,7 +802,7 @@ impl ShellState {
         self.push_system(format!("loaded {} previous turns", turns.len()));
         for turn in turns {
             for item in turn.items {
-                self.ingest_completed_item(item);
+                self.ingest_completed_item(item, CompletedItemOrigin::Historical);
             }
             if let Some(error) = turn.error {
                 self.push_error(error.message);
@@ -670,7 +823,40 @@ impl ShellState {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return Ok(false);
         }
+        let is_plain_text_repeat = if key.kind == KeyEventKind::Repeat
+            && let KeyCode::Char(ch) = key.code
+            && !ch.is_control()
+            && matches!(key.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
+        {
+            if self.selector.is_some()
+                || self.command_palette.is_some()
+                || self.agent_log.is_some()
+                || self.tool_output.is_some()
+                || self.safety_buffering_modal_lines().is_some()
+                || self.pending_approval.is_some()
+                || self.pending_elicitation.is_some()
+                || self.pending_external_agent_import.is_some()
+            {
+                false
+            } else if let Some(mcp_management) = &self.pending_mcp_management {
+                mcp_management.editing()
+            } else if self.pending_plugin_management.is_some() {
+                false
+            } else if self.pending_user_input.is_some() {
+                true
+            } else if self.dashboard_route == DashboardRoute::Sessions && self.session_list.focused
+            {
+                self.session_list.search_active() || self.session_list.renaming()
+            } else if self.dashboard_route == DashboardRoute::Status && self.settings.focused {
+                self.settings.editing()
+            } else {
+                !self.dashboard_focused() && self.transcript_selection.is_none()
+            }
+        } else {
+            false
+        };
         if key.kind == KeyEventKind::Repeat
+            && !is_plain_text_repeat
             && !matches!(
                 key.code,
                 KeyCode::Backspace
@@ -696,10 +882,34 @@ impl ShellState {
                 self.interrupt_active_turn(app_server).await?;
                 return Ok(false);
             }
+            if self.has_pending_shell_command() {
+                self.cancel_shell_command();
+                self.exit_confirmation_pending = false;
+                return Ok(false);
+            }
             return Ok(self.confirm_exit());
         }
         if !matches!(key.code, KeyCode::Esc) {
             self.exit_confirmation_pending = false;
+        }
+        if self.tool_output.is_some() {
+            self.handle_tool_output_key(key);
+            return Ok(false);
+        }
+        if self.agent_log.is_some() {
+            if key.kind == KeyEventKind::Press
+                && key.modifiers == KeyModifiers::NONE
+                && matches!(key.code, KeyCode::Char('r'))
+            {
+                self.reload_agent_log(config, app_server);
+            } else {
+                self.handle_agent_log_key(key);
+            }
+            return Ok(false);
+        }
+        if self.selector.is_some() {
+            self.handle_selector_key(key, app_server).await?;
+            return Ok(false);
         }
         if self.command_palette.is_some() {
             self.handle_command_palette_key(key, app_server).await?;
@@ -716,11 +926,34 @@ impl ShellState {
             }
             return Ok(false);
         }
+        if self.pending_elicitation.is_some() {
+            if let Some(choice) = elicitation_choice_from_key(key) {
+                self.resolve_pending_elicitation(app_server, choice).await?;
+            }
+            return Ok(false);
+        }
+        if self.pending_external_agent_import.is_some() {
+            self.handle_external_agent_import_key(key, app_server)
+                .await?;
+            return Ok(false);
+        }
+        if self.pending_mcp_management.is_some() {
+            self.handle_mcp_management_key(key, app_server).await?;
+            return Ok(false);
+        }
+        if self.pending_plugin_management.is_some() {
+            self.handle_plugin_management_key(key, app_server).await?;
+            return Ok(false);
+        }
+        if self.pending_user_input.is_some() {
+            return self.handle_user_input_key(key, app_server).await;
+        }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('d')) {
             self.dashboard_visible = !self.dashboard_visible;
             if !self.dashboard_visible {
                 self.session_list.focused = false;
                 self.settings.focused = false;
+                self.agents_focused = false;
             }
             return Ok(false);
         }
@@ -733,9 +966,10 @@ impl ShellState {
             self.dashboard_visible = true;
             self.set_dashboard_route(route);
             self.session_list.focused = route_already_visible && route == DashboardRoute::Sessions;
-            self.settings.focused = route_already_visible && route == DashboardRoute::Settings;
+            self.settings.focused = route_already_visible && route == DashboardRoute::Status;
+            self.agents_focused = route_already_visible && route == DashboardRoute::Agents;
             if route == DashboardRoute::Sessions {
-                self.refresh_session_list(app_server).await;
+                self.start_session_list_refresh(app_server);
             }
             return Ok(false);
         }
@@ -750,6 +984,7 @@ impl ShellState {
             self.set_dashboard_route(route);
             self.session_list.focused = false;
             self.settings.focused = false;
+            self.agents_focused = false;
             return Ok(false);
         }
         if self.transcript_selection.is_some()
@@ -766,32 +1001,6 @@ impl ShellState {
             }
             return Ok(false);
         }
-        if self.pending_elicitation.is_some()
-            && let Some(choice) = elicitation_choice_from_key(key)
-        {
-            self.resolve_pending_elicitation(app_server, choice).await?;
-            return Ok(false);
-        }
-        if self.pending_external_agent_import.is_some()
-            && self
-                .handle_external_agent_import_key(key, app_server)
-                .await?
-        {
-            return Ok(false);
-        }
-        if self.pending_mcp_management.is_some()
-            && self.handle_mcp_management_key(key, app_server).await?
-        {
-            return Ok(false);
-        }
-        if self.pending_plugin_management.is_some()
-            && self.handle_plugin_management_key(key, app_server).await?
-        {
-            return Ok(false);
-        }
-        if self.pending_user_input.is_some() {
-            return self.handle_user_input_key(key, app_server).await;
-        }
         if self.dashboard_route == DashboardRoute::Sessions
             && self.session_list.focused
             && self
@@ -800,9 +1009,26 @@ impl ShellState {
         {
             return Ok(false);
         }
-        if self.dashboard_route == DashboardRoute::Settings
+        if self.dashboard_route == DashboardRoute::Status
             && self.settings.focused
             && self.handle_settings_key(key, app_server).await?
+        {
+            return Ok(false);
+        }
+        if self.dashboard_visible
+            && self.dashboard_route == DashboardRoute::Agents
+            && self.agents_focused
+            && matches!(key.code, KeyCode::Enter)
+            && matches!(key.modifiers, KeyModifiers::NONE)
+        {
+            self.open_selected_agent_log(config, app_server);
+            return Ok(false);
+        }
+        if self.handle_agent_activity_key(key) {
+            return Ok(false);
+        }
+        if self.dashboard_focused()
+            && matches!(key.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
         {
             return Ok(false);
         }
@@ -821,13 +1047,32 @@ impl ShellState {
             self.open_command_palette();
             return Ok(false);
         }
+        if key.modifiers.contains(KeyModifiers::ALT) && matches!(key.code, KeyCode::Char('m')) {
+            self.open_model_selector();
+            return Ok(false);
+        }
+        if key.modifiers.contains(KeyModifiers::ALT) && matches!(key.code, KeyCode::Char('e')) {
+            self.open_reasoning_selector();
+            return Ok(false);
+        }
         match key.code {
             KeyCode::Esc => Ok(self.confirm_exit()),
             KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                if is_composer_newline_key(key) {
                     self.composer.insert_newline();
                 } else {
                     let prompt = self.composer.submission_text();
+                    if prompt.is_empty() && self.dashboard_visible {
+                        match self.dashboard_route {
+                            DashboardRoute::Sessions => self.session_list.focused = true,
+                            DashboardRoute::Agents => self.agents_focused = true,
+                            DashboardRoute::Status => self.settings.focused = true,
+                            DashboardRoute::Help => {}
+                        }
+                        if self.dashboard_focused() {
+                            return Ok(false);
+                        }
+                    }
                     if !prompt.is_empty() {
                         if let Some(command) = LocalSlashCommand::parse(&prompt) {
                             let outcome = self
@@ -835,7 +1080,7 @@ impl ShellState {
                                 .await?;
                             return Ok(outcome == LocalSlashCommandOutcome::Exit);
                         } else if let Some(command) = ShellCommand::parse(&prompt) {
-                            self.run_shell_command(command, prompt).await;
+                            self.start_shell_command(command, prompt);
                         } else if self.active_turn_id.is_some() {
                             self.steer_active_turn(app_server, prompt).await?;
                         } else {
@@ -922,64 +1167,12 @@ impl ShellState {
         }
     }
 
-    async fn handle_mouse_click<S>(
-        &mut self,
-        area: ratatui::layout::Rect,
-        position: ratatui::layout::Position,
-        app_server: &mut S,
-    ) where
-        S: AppShellBackend,
-    {
-        let Some(route) = (render::ShellView { shell: self }).dashboard_route_at(area, position)
-        else {
-            return;
-        };
-        self.set_dashboard_route(route);
-        self.session_list.focused = false;
-        self.settings.focused = false;
-        if route == DashboardRoute::Sessions {
-            self.refresh_session_list(app_server).await;
-        }
-    }
-
     async fn refresh_workspace_status(
         &mut self,
         runner: &dyn crate::workspace_command::WorkspaceCommandExecutor,
     ) {
-        self.workspace_git_status =
-            workspace::load_git_status(runner, std::path::Path::new(&self.cwd)).await;
-        self.workspace_status_refresh_due = false;
-    }
-
-    async fn refresh_rate_limits(&mut self, app_server: &mut AppServerSession) {
-        let Ok(response) = app_server.account_rate_limits().await else {
-            return;
-        };
-        self.rate_limit_reset_credits = response
-            .rate_limit_reset_credits
-            .as_ref()
-            .map(|credits| credits.available_count);
-        self.rate_limits = app_server_rate_limit_snapshots(response);
-    }
-
-    async fn refresh_goal_state(&mut self, app_server: &mut AppServerSession) {
-        let Ok(response) = app_server.thread_goal_get(self.thread_id).await else {
-            return;
-        };
-        self.active_goal = response.goal;
-    }
-
-    async fn refresh_session_list<S>(&mut self, app_server: &mut S)
-    where
-        S: AppShellBackend,
-    {
-        match app_server
-            .thread_list(self.session_list.list_params())
-            .await
-        {
-            Ok(response) => self.session_list.replace_threads(response.data),
-            Err(err) => self.session_list.set_error(err.to_string()),
-        }
+        let status = workspace::load_git_status(runner, std::path::Path::new(&self.cwd)).await;
+        self.record_workspace_git_status(status);
     }
 
     async fn refresh_mcp_inventory<S>(&mut self, app_server: &mut S)
@@ -1057,6 +1250,7 @@ impl ShellState {
     }
 
     fn apply_rate_limit_update(&mut self, snapshot: RateLimitSnapshot) {
+        self.mark_rate_limits_updated();
         let Some(limit_id) = snapshot.limit_id.as_deref() else {
             if self.rate_limits.is_empty() {
                 self.rate_limits.push(snapshot);
@@ -1078,8 +1272,21 @@ impl ShellState {
     }
 
     fn insert_text(&mut self, text: &str) {
+        if self.selector.is_some()
+            || self.command_palette.is_some()
+            || self.agent_log.is_some()
+            || self.tool_output.is_some()
+            || self.safety_buffering_modal_lines().is_some()
+            || self.pending_approval.is_some()
+            || self.pending_elicitation.is_some()
+            || self.pending_external_agent_import.is_some()
+            || self.pending_mcp_management.is_some()
+            || self.pending_plugin_management.is_some()
+            || self.dashboard_focused()
+        {
+            return;
+        }
         self.clear_transcript_selection();
-        self.close_command_palette();
         self.composer.insert_str(text);
     }
 
@@ -1091,6 +1298,13 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if key_hint::ctrl(KeyCode::Char('p')).is_press(key) {
+            self.close_command_palette();
+            return Ok(());
+        }
+        if !is_unmodified_action_key(key) {
+            return Ok(());
+        }
         match key.code {
             KeyCode::Esc => {
                 self.close_command_palette();
@@ -1099,13 +1313,13 @@ impl ShellState {
                 self.execute_selected_command_palette_action(app_server)
                     .await?;
             }
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 let entries = self.command_palette_entries();
                 if let Some(palette) = &mut self.command_palette {
                     palette.move_up(&entries);
                 }
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 let entries = self.command_palette_entries();
                 if let Some(palette) = &mut self.command_palette {
                     palette.move_down(&entries);
@@ -1119,9 +1333,6 @@ impl ShellState {
                 if let Some(palette) = &mut self.command_palette {
                     palette.select_last(&entries);
                 }
-            }
-            KeyCode::Char('p') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                self.close_command_palette();
             }
             KeyCode::Char(_)
             | KeyCode::Backspace
@@ -1164,20 +1375,38 @@ impl ShellState {
                 .map(|()| true);
         }
         if self.session_list.search_active() {
-            self.handle_session_search_key(key);
+            if self.handle_session_search_key(key) == SessionSearchOutcome::RefreshList {
+                self.start_session_list_refresh(app_server);
+            }
             return Ok(true);
+        }
+        if !is_unmodified_action_key(key) {
+            return Ok(matches!(
+                key.code,
+                KeyCode::Esc
+                    | KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::Enter
+                    | KeyCode::Char('k' | 'j' | '/' | 'v' | 'r' | 'f' | 'a' | 'u' | 'd' | 'n')
+                    | KeyCode::PageUp
+                    | KeyCode::PageDown
+            ));
         }
         match key.code {
             KeyCode::Esc => {
                 self.session_list.focused = false;
                 Ok(true)
             }
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 self.session_list.move_selection_up();
                 Ok(true)
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 self.session_list.move_selection_down();
+                Ok(true)
+            }
+            KeyCode::Enter => {
+                self.resume_selected_session(config, app_server).await?;
                 Ok(true)
             }
             KeyCode::Char('/') => {
@@ -1186,7 +1415,7 @@ impl ShellState {
             }
             KeyCode::Char('v') => {
                 self.session_list.toggle_archived();
-                self.refresh_session_list(app_server).await;
+                self.start_session_list_refresh(app_server);
                 Ok(true)
             }
             KeyCode::Char('r') => {
@@ -1229,7 +1458,6 @@ impl ShellState {
             | KeyCode::Backspace
             | KeyCode::Left
             | KeyCode::Right
-            | KeyCode::Enter
             | KeyCode::Home
             | KeyCode::End
             | KeyCode::Delete
@@ -1250,28 +1478,37 @@ impl ShellState {
         }
     }
 
-    fn handle_session_search_key(&mut self, key: KeyEvent) {
+    fn handle_session_search_key(&mut self, key: KeyEvent) -> SessionSearchOutcome {
+        if (matches!(key.code, KeyCode::Esc | KeyCode::Enter) && !is_unmodified_key_press(key))
+            || (key.code == KeyCode::Backspace && !is_unmodified_key_event(key))
+            || (matches!(key.code, KeyCode::Up | KeyCode::Down) && !is_unmodified_action_key(key))
+        {
+            return SessionSearchOutcome::LocalFilterOnly;
+        }
         match key.code {
             KeyCode::Esc => {
                 self.session_list.clear_search();
+                SessionSearchOutcome::RefreshList
             }
             KeyCode::Enter => {
                 self.session_list.stop_search();
+                SessionSearchOutcome::RefreshList
             }
-            KeyCode::Backspace => {
-                self.session_list.backspace_search();
-            }
+            KeyCode::Backspace => self.session_list.backspace_search(),
             KeyCode::Char(ch)
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
             {
                 self.session_list.push_search_char(ch);
+                SessionSearchOutcome::LocalFilterOnly
             }
-            KeyCode::Char(_) => {}
+            KeyCode::Char(_) => SessionSearchOutcome::LocalFilterOnly,
             KeyCode::Up => {
                 self.session_list.move_selection_up();
+                SessionSearchOutcome::LocalFilterOnly
             }
             KeyCode::Down => {
                 self.session_list.move_selection_down();
+                SessionSearchOutcome::LocalFilterOnly
             }
             KeyCode::Left
             | KeyCode::Right
@@ -1293,7 +1530,7 @@ impl ShellState {
             | KeyCode::Tab
             | KeyCode::BackTab
             | KeyCode::PageUp
-            | KeyCode::PageDown => {}
+            | KeyCode::PageDown => SessionSearchOutcome::LocalFilterOnly,
         }
     }
 
@@ -1305,6 +1542,11 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if (matches!(key.code, KeyCode::Esc | KeyCode::Enter) && !is_unmodified_key_press(key))
+            || (key.code == KeyCode::Backspace && !is_unmodified_key_event(key))
+        {
+            return Ok(());
+        }
         match key.code {
             KeyCode::Esc => {
                 self.session_list.cancel_rename();
@@ -1322,6 +1564,7 @@ impl ShellState {
                     return Ok(());
                 }
                 app_server.thread_set_name(thread_id, name.clone()).await?;
+                self.invalidate_session_list_refresh();
                 self.session_list.rename_selected(name.clone());
                 if thread_id == self.thread_id {
                     self.thread_name = Some(name.clone());
@@ -1372,6 +1615,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.block_session_switch_if_busy() {
+            return Ok(());
+        }
         let Some(thread_id) = self.session_list.selected_thread_id() else {
             self.push_status("no session selected");
             return Ok(());
@@ -1380,9 +1626,14 @@ impl ShellState {
             self.push_status("session is already open");
             return Ok(());
         }
+        self.finish_subscription_cleanup().await;
         let started = app_server.resume_thread(config.clone(), thread_id).await?;
+        self.cancel_agent_history().await;
+        let previous_thread_ids = self.tracked_thread_ids();
         self.replace_started_session(started);
-        self.refresh_session_list(app_server).await;
+        self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
+        self.start_replaced_session_hydration(app_server);
+        self.start_session_list_refresh(app_server);
         Ok(())
     }
 
@@ -1390,14 +1641,41 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.block_session_switch_if_busy() {
+            return Ok(());
+        }
         let Some(thread_id) = self.session_list.selected_thread_id() else {
             self.push_status("no session selected");
             return Ok(());
         };
+        self.finish_subscription_cleanup().await;
         let started = app_server.fork_thread(config.clone(), thread_id).await?;
+        self.cancel_agent_history().await;
+        let previous_thread_ids = self.tracked_thread_ids();
         self.replace_started_session(started);
-        self.refresh_session_list(app_server).await;
+        self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
+        self.start_replaced_session_hydration(app_server);
+        self.start_session_list_refresh(app_server);
         Ok(())
+    }
+
+    fn block_session_switch_if_busy(&mut self) -> bool {
+        let message = if self.active_turn_id.is_some() {
+            "finish or interrupt the active turn before switching sessions"
+        } else if self.pending_shell_command.is_some() {
+            "finish or cancel the shell command before switching sessions"
+        } else if self.pending_approval.is_some()
+            || self.pending_elicitation.is_some()
+            || self.pending_user_input.is_some()
+        {
+            "resolve the pending request before switching sessions"
+        } else if !self.composer.is_empty() {
+            "send or clear the message draft before switching sessions"
+        } else {
+            return false;
+        };
+        self.push_status(message);
+        true
     }
 
     async fn archive_selected_session<S>(&mut self, app_server: &mut S) -> Result<()>
@@ -1413,6 +1691,7 @@ impl ShellState {
             return Ok(());
         }
         app_server.thread_archive(thread_id).await?;
+        self.invalidate_session_list_refresh();
         let title = self
             .session_list
             .remove_selected()
@@ -1431,6 +1710,7 @@ impl ShellState {
             return Ok(());
         };
         app_server.thread_unarchive(thread_id).await?;
+        self.invalidate_session_list_refresh();
         self.session_list.remove_selected();
         self.push_status(format!("unarchived session {thread_id}"));
         Ok(())
@@ -1449,13 +1729,22 @@ impl ShellState {
             return Ok(());
         }
         app_server.thread_delete(thread_id).await?;
+        self.invalidate_session_list_refresh();
         self.session_list.remove_selected();
         self.push_status(format!("deleted session {thread_id}"));
         Ok(())
     }
 
     fn replace_started_session(&mut self, started: AppServerStartedThread) {
-        let session = started.session;
+        self.invalidate_session_hydration();
+        self.close_agent_log();
+        self.close_tool_output();
+        let AppServerStartedThread {
+            session,
+            turns,
+            agent_threads,
+            agent_history_task,
+        } = started;
         self.thread_id = session.thread_id;
         self.thread_name = session.thread_name;
         if !session.model.is_empty() {
@@ -1478,15 +1767,38 @@ impl ShellState {
         self.clear_streaming_transcript();
         self.plan_explanation = None;
         self.plan_steps.clear();
-        self.active_goal = None;
+        self.record_active_goal(None);
+        self.composer.clear();
+        self.pending_shell_command = None;
+        self.command_palette = None;
+        self.exit_confirmation_pending = false;
+        self.pending_external_agent_import = None;
+        self.pending_mcp_management = None;
+        self.pending_plugin_management = None;
+        self.mcp_inventory = McpInventorySummary::default();
+        self.mcp_catalog = None;
+        self.plugin_inventory = PluginInventorySummary::default();
+        self.plugin_catalog = None;
+        self.tool_activity.clear();
+        self.agent_activity = AgentActivityState::default();
+        self.active_agent_thread_ids.clear();
+        self.deferred_unsubscribe_thread_ids.clear();
+        self.subagent_activity.clear();
+        self.latest_diff = None;
+        self.record_workspace_git_status(None);
+        self.token_usage = TokenUsage::default();
+        self.context_token_usage = TokenUsage::default();
+        self.model_context_window = None;
         self.active_turn_id = None;
         self.pending_approval = None;
         self.pending_elicitation = None;
         self.pending_user_input = None;
+        self.selector = None;
         self.safety_buffering.clear();
         self.status = "ready".to_string();
         self.push_system("switched session");
-        self.ingest_turn_history(started.turns);
+        self.ingest_turn_history(turns);
+        self.install_agent_history(agent_threads, agent_history_task);
     }
 
     async fn execute_selected_command_palette_action<S>(&mut self, app_server: &mut S) -> Result<()>
@@ -1529,30 +1841,31 @@ impl ShellState {
                 self.interrupt_active_turn(app_server).await?;
             }
             CommandPaletteAction::SwitchModel => {
-                self.set_dashboard_route(DashboardRoute::Settings);
+                self.set_dashboard_route(DashboardRoute::Status);
                 self.session_list.focused = false;
                 self.settings.focused = true;
-                self.settings
-                    .start_edit(SettingsAction::Model, self.model.clone());
+                self.settings.focus_action(SettingsAction::Model);
+                self.open_model_selector();
             }
             CommandPaletteAction::ChangePermissions => {
-                self.set_dashboard_route(DashboardRoute::Settings);
+                self.set_dashboard_route(DashboardRoute::Status);
                 self.session_list.focused = false;
                 self.settings.focused = true;
                 self.settings.focus_action(SettingsAction::ApprovalPolicy);
+                self.open_approval_selector();
             }
             CommandPaletteAction::ResumeThread => {
                 self.set_dashboard_route(DashboardRoute::Sessions);
                 self.settings.focused = false;
                 self.session_list.focused = true;
-                self.refresh_session_list(app_server).await;
+                self.start_session_list_refresh(app_server);
                 self.push_status("press r to resume selected session");
             }
             CommandPaletteAction::ForkThread => {
                 self.set_dashboard_route(DashboardRoute::Sessions);
                 self.settings.focused = false;
                 self.session_list.focused = true;
-                self.refresh_session_list(app_server).await;
+                self.start_session_list_refresh(app_server);
                 self.push_status("press f to fork selected session");
             }
             CommandPaletteAction::ImportExternalAgentConfig => {
@@ -1564,6 +1877,9 @@ impl ShellState {
     }
 
     fn open_command_palette(&mut self) {
+        self.close_agent_log();
+        self.close_tool_output();
+        self.selector = None;
         self.command_palette = Some(CommandPaletteState::default());
         self.clear_transcript_selection();
     }
@@ -1577,11 +1893,10 @@ impl ShellState {
             return;
         }
 
+        self.session_list.focused = false;
+        self.settings.focused = false;
+        self.agents_focused = false;
         self.dashboard_route = route;
-        let route_state = AppShellRouteState { route };
-        if let Err(err) = route_state.save(&self.codex_home) {
-            tracing::warn!("failed to persist app shell route state: {err}");
-        }
     }
 
     fn command_palette_entries(&self) -> Vec<CommandPaletteEntry> {
@@ -1599,7 +1914,9 @@ impl ShellState {
                 Some(false)
             }
             KeyCode::Enter => {
-                self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+                if !self.open_selected_tool_output() {
+                    self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+                }
                 Some(false)
             }
             KeyCode::Up => {
@@ -1714,57 +2031,6 @@ impl ShellState {
         false
     }
 
-    async fn run_shell_command(&mut self, command: ShellCommand, prompt: String) {
-        self.composer.remember_submission(&prompt);
-        self.composer.clear();
-        if command.is_empty() {
-            self.push_error("shell command cannot be empty");
-            return;
-        }
-        let Some(runner) = self.workspace_command_runner.clone() else {
-            self.push_error("shell command runner is unavailable");
-            return;
-        };
-
-        let command_text = command.text().to_string();
-        self.status = "running shell command".to_string();
-        match runner
-            .run(command.workspace_command(std::path::Path::new(&self.cwd)))
-            .await
-        {
-            Ok(output) => {
-                let tool_status = if output.success() {
-                    ToolBlockStatus::Success
-                } else {
-                    ToolBlockStatus::Fail
-                };
-                self.push_tool_with_status(
-                    format!("! {command_text} exit {}", output.exit_code),
-                    tool_status,
-                );
-                let mut combined = output.stdout;
-                if !output.stderr.is_empty() {
-                    if !combined.is_empty() && !combined.ends_with('\n') {
-                        combined.push('\n');
-                    }
-                    combined.push_str(&output.stderr);
-                }
-                if !combined.is_empty() {
-                    self.push_output_with_status(
-                        compact_output_for_transcript(combined),
-                        tool_status,
-                    );
-                }
-                self.status = format!("shell exit {}", output.exit_code);
-            }
-            Err(err) => {
-                self.push_tool_with_status(format!("! {command_text}"), ToolBlockStatus::Fail);
-                self.push_error(format!("shell command failed: {err}"));
-                self.status = "shell command failed".to_string();
-            }
-        }
-    }
-
     async fn run_local_slash_command<S>(
         &mut self,
         command: LocalSlashCommand,
@@ -1820,7 +2086,7 @@ impl ShellState {
     {
         match app_server.thread_goal_get(self.thread_id).await {
             Ok(response) => {
-                self.active_goal = response.goal;
+                self.record_active_goal(response.goal);
                 match &self.active_goal {
                     Some(goal) => self.push_status(format!(
                         "goal {}. {}",
@@ -1849,7 +2115,7 @@ impl ShellState {
         {
             Ok(response) => {
                 let objective = response.goal.objective.clone();
-                self.active_goal = Some(response.goal);
+                self.record_active_goal(Some(response.goal));
                 self.push_status(format!("goal set: {objective}"));
             }
             Err(err) => self.push_error(format!("failed to set goal: {err}")),
@@ -1862,7 +2128,7 @@ impl ShellState {
     {
         match app_server.thread_goal_clear(self.thread_id).await {
             Ok(response) => {
-                self.active_goal = None;
+                self.record_active_goal(None);
                 if response.cleared {
                     self.push_status("goal cleared");
                 } else {
@@ -1891,7 +2157,7 @@ impl ShellState {
             .await
         {
             Ok(response) => {
-                self.active_goal = Some(response.goal);
+                self.record_active_goal(Some(response.goal));
                 self.push_status(format!("goal {action}"));
             }
             Err(err) => self.push_error(format!("failed to update goal: {err}")),
@@ -1942,9 +2208,18 @@ impl ShellState {
 
     fn selected_transcript_copy_text(&self) -> Option<(TranscriptKind, &str)> {
         let selected = self.transcript_selection?;
-        self.transcript
-            .get(selected)
-            .map(|line| (line.kind, line.text.as_str()))
+        self.transcript.get(selected).map(|line| {
+            (
+                line.kind,
+                line.full_text.as_deref().unwrap_or(line.text.as_str()),
+            )
+        })
+    }
+
+    fn selected_transcript_is_output(&self) -> bool {
+        self.transcript_selection
+            .and_then(|selected| self.transcript.get(selected))
+            .is_some_and(|line| line.kind == TranscriptKind::Output)
     }
 
     fn transcript_copy_text(&self) -> Option<(TranscriptKind, &str)> {
@@ -2147,9 +2422,9 @@ impl ShellState {
         }
 
         match key.code {
-            KeyCode::Esc => Ok(true),
+            KeyCode::Esc => Ok(false),
             KeyCode::Enter => {
-                if key.modifiers.contains(KeyModifiers::SHIFT) {
+                if is_composer_newline_key(key) {
                     self.composer.insert_newline();
                 } else {
                     self.resolve_pending_user_input(app_server).await?;
@@ -2342,7 +2617,8 @@ impl ShellState {
         self.clear_streaming_plan();
     }
 
-    fn ingest_completed_item(&mut self, item: ThreadItem) {
+    fn ingest_completed_item(&mut self, item: ThreadItem, origin: CompletedItemOrigin) {
+        self.agent_activity.reduce_completed(&item);
         match item {
             ThreadItem::UserMessage { content, .. } => {
                 let text = format_user_inputs(&content);
@@ -2406,7 +2682,7 @@ impl ShellState {
                     format!("{status:?}").to_lowercase(),
                 );
                 self.push_tool_with_status_for_item(id.clone(), title, tool_status);
-                if let Some(output) = aggregated_output.and_then(compact_output_text) {
+                if let Some(output) = aggregated_output.and_then(nonempty_output_text) {
                     self.push_output_with_status_for_item(id, output, tool_status);
                 } else {
                     self.update_output_status_for_item(&id, tool_status);
@@ -2494,7 +2770,14 @@ impl ShellState {
                     title.clone(),
                     format!("{status:?}").to_lowercase(),
                 );
-                self.push_tool_with_status_for_item(id, title, tool_status_from_debug(&status));
+                match origin {
+                    CompletedItemOrigin::Historical => {}
+                    CompletedItemOrigin::Live => self.push_tool_with_status_for_item(
+                        id,
+                        title,
+                        tool_status_from_debug(&status),
+                    ),
+                }
             }
             ThreadItem::SubAgentActivity {
                 id,
@@ -2503,8 +2786,7 @@ impl ShellState {
                 ..
             } => {
                 let title = format!("subagent {kind:?}: {agent_path}");
-                self.upsert_subagent_activity(id.clone(), title.clone(), "active".to_string());
-                self.push_tool_with_status_for_item(id, title, ToolBlockStatus::Running);
+                self.upsert_subagent_activity(id, title, "recorded".to_string());
             }
             ThreadItem::WebSearch(item) => {
                 let title = format!("web search: {}", item.query);
@@ -2596,6 +2878,9 @@ impl ShellState {
         text: impl Into<String>,
         status: ToolBlockStatus,
     ) {
+        let item_id = item_id.into();
+        let text = text.into();
+        self.update_open_tool_output_title(&item_id, &text, status);
         self.upsert_line(
             TranscriptLine::new(TranscriptKind::Tool, text)
                 .tool_status(status)
@@ -2631,7 +2916,7 @@ impl ShellState {
     }
 
     fn push_output_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
-        self.push_line(TranscriptLine::new(TranscriptKind::Output, text).tool_status(status));
+        self.push_output_with_status_for_item(next_local_output_item_id(), text, status);
     }
 
     fn push_turn_separator(&mut self) {
@@ -2644,11 +2929,38 @@ impl ShellState {
         text: impl Into<String>,
         status: ToolBlockStatus,
     ) {
-        self.upsert_line(
-            TranscriptLine::new(TranscriptKind::Output, text)
-                .tool_status(status)
-                .item_id(item_id),
-        );
+        let item_id = item_id.into();
+        let text = text.into();
+        let existing_full_text = self
+            .transcript
+            .iter()
+            .rev()
+            .find(|existing| {
+                existing.kind == TranscriptKind::Output
+                    && existing.item_id.as_deref() == Some(&item_id)
+                    && existing.tool_status == Some(ToolBlockStatus::Running)
+            })
+            .map(|existing| existing.full_text.as_deref().unwrap_or(&existing.text))
+            .or_else(|| {
+                self.tool_output
+                    .as_ref()
+                    .filter(|output| {
+                        output.target.item_id == item_id
+                            && output.target.status == ToolBlockStatus::Running
+                    })
+                    .map(ToolOutputState::output)
+            });
+        let full_text = if status != ToolBlockStatus::Running {
+            existing_full_text
+                .filter(|existing| existing.len() > text.len())
+                .map_or_else(|| text.clone(), str::to_string)
+        } else {
+            text.clone()
+        };
+        self.replace_open_tool_output(&item_id, full_text.clone(), status);
+        let mut line = TranscriptLine::output(text, status, item_id);
+        line.full_text = Some(full_text);
+        self.upsert_line(line);
     }
 
     fn push_output_delta_with_status_for_item(
@@ -2659,13 +2971,19 @@ impl ShellState {
     ) {
         let item_id = item_id.into();
         let delta = delta.into();
-        if delta.trim().is_empty() {
+        if delta.is_empty() {
             return;
         }
+
+        self.append_open_tool_output(&item_id, &delta, status);
 
         if let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
             existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(&item_id)
         }) {
+            existing
+                .full_text
+                .get_or_insert_with(|| existing.text.clone())
+                .push_str(&delta);
             existing.text.push_str(&delta);
             existing.text = compact_output_for_transcript(std::mem::take(&mut existing.text));
             existing.tool_status = Some(status);
@@ -2673,14 +2991,16 @@ impl ShellState {
             return;
         }
 
-        self.push_output_with_status_for_item(
-            item_id,
-            compact_output_for_transcript(delta),
-            status,
-        );
+        let output = self
+            .tool_output
+            .as_ref()
+            .filter(|output| output.target.item_id == item_id)
+            .map_or(delta, |output| output.output().to_string());
+        self.push_output_with_status_for_item(item_id, output, status);
     }
 
     fn update_output_status_for_item(&mut self, item_id: &str, status: ToolBlockStatus) {
+        self.update_open_tool_output_status(item_id, status);
         if let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
             existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(item_id)
         }) {
@@ -2739,7 +3059,8 @@ impl ShellState {
     }
 
     fn dashboard_focused(&self) -> bool {
-        self.dashboard_visible && (self.session_list.focused || self.settings.focused)
+        self.dashboard_visible
+            && (self.session_list.focused || self.settings.focused || self.agents_focused)
     }
 
     #[cfg(test)]
@@ -2775,15 +3096,20 @@ impl ShellState {
             animations: true,
             show_tooltips: true,
             command_palette: None,
+            selector: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            pointer_position: None,
+            agents_focused: false,
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Summarize the new shell architecture");
                 composer
             },
             workspace_command_runner: None,
+            pending_shell_command: None,
+            session_hydration: SessionHydrationState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: None,
@@ -2826,6 +3152,13 @@ impl ShellState {
                     status: "completed".to_string(),
                 },
             ]),
+            agent_activity: AgentActivityState::default(),
+            agent_log: None,
+            tool_output: None,
+            agent_history_task: None,
+            active_agent_thread_ids: HashSet::new(),
+            deferred_unsubscribe_thread_ids: Vec::new(),
+            subscription_cleanup_task: None,
             subagent_activity: VecDeque::new(),
             latest_diff: Some(DiffSummary {
                 files: 3,
@@ -2976,7 +3309,7 @@ pub mod bench_support {
             .join("\n");
         fixture.shell.push_output_with_status_for_item(
             BENCH_TOOL_ITEM_ID,
-            compact_output_for_transcript(initial_output),
+            initial_output,
             ToolBlockStatus::Running,
         );
         fixture.next_tool_output_line = TRANSCRIPT_OUTPUT_HIGH_WATER_LINES;
@@ -3014,15 +3347,20 @@ pub mod bench_support {
             animations: true,
             show_tooltips: true,
             command_palette: None,
+            selector: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            pointer_position: None,
+            agents_focused: false,
             composer: {
                 let mut composer = ComposerState::default();
                 composer.set_text("Benchmark the app shell render path");
                 composer
             },
             workspace_command_runner: None,
+            pending_shell_command: None,
+            session_hydration: SessionHydrationState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: Some("turn-bench-1234567890".to_string()),
@@ -3054,6 +3392,13 @@ pub mod bench_support {
                 title: "render benchmark".to_string(),
                 status: "running".to_string(),
             }]),
+            agent_activity: AgentActivityState::default(),
+            agent_log: None,
+            tool_output: None,
+            agent_history_task: None,
+            active_agent_thread_ids: HashSet::new(),
+            deferred_unsubscribe_thread_ids: Vec::new(),
+            subscription_cleanup_task: None,
             subagent_activity: VecDeque::new(),
             latest_diff: Some(DiffSummary {
                 files: 4,
@@ -3306,12 +3651,11 @@ fn compact_multiline(text: String) -> Option<String> {
     Some(compact)
 }
 
-fn compact_output_text(text: String) -> Option<String> {
-    let text = text.trim();
-    if text.is_empty() {
+fn nonempty_output_text(text: String) -> Option<String> {
+    if text.trim().is_empty() {
         None
     } else {
-        Some(compact_output_for_transcript(text.to_string()))
+        Some(text)
     }
 }
 
@@ -3369,13 +3713,13 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
     }
 
     if key_hint::ctrl(KeyCode::Char('1')).is_press(key) {
-        return Some(DashboardRoute::Settings);
+        return Some(DashboardRoute::Status);
     }
     if key_hint::ctrl(KeyCode::Char('2')).is_press(key) {
-        return Some(DashboardRoute::Workspace);
+        return Some(DashboardRoute::Agents);
     }
     if key_hint::ctrl(KeyCode::Char(' ')).is_press(key) {
-        return Some(DashboardRoute::Workspace);
+        return Some(DashboardRoute::Agents);
     }
     if key_hint::ctrl(KeyCode::Char('3')).is_press(key) {
         return Some(DashboardRoute::Sessions);
@@ -3390,20 +3734,46 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
             modifiers,
             ..
         } if modifiers.is_empty() || modifiers.contains(KeyModifiers::CONTROL) => {
-            Some(DashboardRoute::Workspace)
+            Some(DashboardRoute::Agents)
         }
         KeyEvent {
             code: KeyCode::Char('\u{001b}'),
             modifiers,
             ..
-        } if modifiers.is_empty() => Some(DashboardRoute::Settings),
+        } if modifiers.is_empty() => Some(DashboardRoute::Sessions),
         KeyEvent {
             code: KeyCode::Esc,
             modifiers,
             ..
-        } if modifiers.contains(KeyModifiers::CONTROL) => Some(DashboardRoute::Settings),
+        } if modifiers.contains(KeyModifiers::CONTROL) => Some(DashboardRoute::Sessions),
         _ => None,
     }
+}
+
+fn is_unmodified_action_key(key: KeyEvent) -> bool {
+    is_unmodified_key_event(key)
+        && (is_unmodified_key_press(key)
+            || key.kind == KeyEventKind::Repeat
+                && matches!(
+                    key.code,
+                    KeyCode::Up
+                        | KeyCode::Down
+                        | KeyCode::Left
+                        | KeyCode::Right
+                        | KeyCode::Home
+                        | KeyCode::End
+                        | KeyCode::PageUp
+                        | KeyCode::PageDown
+                ))
+}
+
+fn is_unmodified_key_event(key: KeyEvent) -> bool {
+    key.modifiers == KeyModifiers::NONE
+        && matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+}
+
+fn is_unmodified_key_press(key: KeyEvent) -> bool {
+    key.modifiers == KeyModifiers::NONE && key.kind == KeyEventKind::Press
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -3445,6 +3815,13 @@ fn composer_backspace_action_from_key(key: KeyEvent) -> Option<ComposerBackspace
     } else {
         Some(ComposerBackspaceAction::DeleteChar)
     }
+}
+
+fn is_composer_newline_key(key: KeyEvent) -> bool {
+    key.code == KeyCode::Enter
+        && key
+            .modifiers
+            .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT)
 }
 
 fn composer_word_motion_from_key(key: KeyEvent) -> Option<ComposerWordMotion> {

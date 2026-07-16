@@ -2,29 +2,31 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- you: Create a divergent standalone TUI.                      ┃  Sessions
-                                                              ┃  unfocused active 0 shown
- codex: Started a fullscreen app shell backed by app-server   ┃  loading sessions
-        turns.                                                ┃
- plan: 1. Build shell                                         ┃  Tools
-       2. Wire transcript                                     ┃  in progress exec just test -p c...
-       3. Render dashboard                                    ┃  completed file changes in app_s...
-                                                              ┃
- ▌ tool exec just test -p codex-tui                           ┃  Thread
-                                                              ┃  stage-one
- ▌ edited 3 files +128 -24                                    ┃  id 01900000-0000-7000-8000-0000...
-                                                              ┃  resume, fork, archive, delete in
- ▌ tool mcp progress: indexed 42 files                        ┃
- ▌      preparing search results                              ┃  Status
-                                                              ┃  thinking
- codex: The new shell owns the fullscreen surface.            ┃
-                                                                 Plan
-                                                                 Build the standalone shell in
- Composer ready 1:37                                             slices.
- > Summarize the new shell architecture                          x Shell frame
-                                                                 > Transcript model
+                                                  │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+                                                │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ CODEX  Started a fullscreen app shell backed ┃ │▎loading sessions
+          by app-server turns.                  ┃ │
+ ▎ PLAN  1. Build shell                         ┃ │▎◆ THREAD
+         2. Wire transcript                     ┃ │▎stage-one
+         3. Render dashboard                    ┃ │▎id 01900000-0000-7000-8000-000000000001
+                                                ┃ │▎resume, fork, archive, delete in session list
+ ▌ tool exec just test -p codex-tui             ┃ │
+                                                ┃ │
+ ▌ edited 3 files +128 -24                      ┃ │
+                                                ┃ │
+ ▌ tool mcp progress: indexed 42 files          ┃ │
+ ▌      preparing search results                ┃ │
+                                                ┃ │
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │
+          surface.                              ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

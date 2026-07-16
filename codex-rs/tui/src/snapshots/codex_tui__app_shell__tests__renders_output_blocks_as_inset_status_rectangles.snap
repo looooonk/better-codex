@@ -1,0 +1,36 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+
+ ◆ BC                       gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────
+
+       Status       │      Agents      │      Sessions      │      Help
+ ───────────────────────────────────────━━━━━━━━━━━━━━━━━━━━─────────────────
+ ▎◆ SESSIONS
+ ▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎loading sessions
+ ▎◆ THREAD
+ ▎stage-one
+ ▎id 01900000-0000-7000-8000-000000000001
+ ▎resume, fork, archive, delete in session list
+
+
+
+
+
+ ◆ CONVERSATION
+ ▌ tool exec cargo test
+
+   ▌ output ... 4 earlier output lines
+   ▌        line 5
+   ▌        line 6
+   ▌        line 7
+
+╭────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                             │
+│> Summarize the new shell architecture                                      │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯

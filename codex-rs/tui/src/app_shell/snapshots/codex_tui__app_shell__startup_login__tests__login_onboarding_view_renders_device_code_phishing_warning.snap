@@ -26,7 +26,7 @@ expression: terminal.backend().to_string()
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
+"                                                                                                    "
 " Esc cancel and exit                                                                                "
 " Waiting for app-server to report login completion.                                                 "
-"                                                                                                    "
 "                                                                                                    "

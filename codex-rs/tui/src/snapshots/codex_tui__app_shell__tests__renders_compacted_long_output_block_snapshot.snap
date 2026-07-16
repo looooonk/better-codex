@@ -3,19 +3,22 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
 
- Better Codex
+ ◆ BC                       gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────
+
+       Status       │      Agents      │      Sessions      │      Help
+ ───────────────────────────────────────━━━━━━━━━━━━━━━━━━━━─────────────────
+ ▎◆ SESSIONS
+ ▎○ CLICK TO FOCUS  ACTIVE  0 sessions
 
 
- ┌────────────────────┬───────────────────┬──────────────────┬──────────────┐
- │      Settings      │     Workspace     │     Sessions     │     Help     │
- └────────────────────┴───────────────────┴──────────────────┴──────────────┘
-
-
- Conversation
-   ▌        cargo build output line 158                                     ┃
+ ◆ CONVERSATION
    ▌        cargo build output line 159                                     ┃
    ▌        cargo build output line 160                                     ┃
 
-
- Composer ready 1:37
- > Summarize the new shell architecture
+╭────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                             │
+│> Summarize the new shell architecture                                      │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯

@@ -1,11 +1,14 @@
 use super::render::ShellView;
-use super::render::TranscriptScrollbarMetrics;
+use super::transcript_view::TranscriptScrollbarMetrics;
 use super::*;
 use base64::Engine;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
+use codex_app_server_protocol::AccountRateLimitsUpdatedNotification;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
 use codex_app_server_protocol::AppSummary;
+use codex_app_server_protocol::CollabAgentState;
+use codex_app_server_protocol::CollabAgentStatus;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandExecOutputDeltaNotification;
@@ -25,6 +28,7 @@ use codex_app_server_protocol::ExternalAgentConfigImportTypeResult;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
 use codex_app_server_protocol::FileChangePatchUpdatedNotification;
+use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::ImageGenerationItem;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
@@ -56,11 +60,13 @@ use codex_app_server_protocol::PluginSource;
 use codex_app_server_protocol::PluginSummary;
 use codex_app_server_protocol::PluginUninstallParams;
 use codex_app_server_protocol::PluginUninstallResponse;
+use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::SkillMigration;
+use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadGoalClearResponse;
@@ -97,6 +103,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
+use itertools::Itertools;
 use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
@@ -105,9 +112,12 @@ use ratatui::style::Color;
 use ratatui::style::Modifier;
 use ratatui::text::Line;
 use serde_json::json;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+
+const SNAPSHOT_THREAD_ID: &str = "01900000-0000-7000-8000-000000000001";
 
 #[test]
 fn renders_first_stage_shell_snapshot() {
@@ -156,6 +166,34 @@ fn renders_native_session_list_snapshot() {
 }
 
 #[test]
+fn renders_loading_archived_session_list_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Sessions;
+    shell.session_list.focused = true;
+    shell.session_list.replace_threads(vec![thread_fixture(
+        test_thread_id("01900000-0000-7000-8000-000000000503"),
+        Some("active session"),
+        "should disappear while archived sessions load",
+    )]);
+    shell.session_list.set_error("stale active-session error");
+    shell.session_list.toggle_archived();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(rendered.contains("ARCHIVED  0 sessions"), "{rendered}");
+    assert!(rendered.contains("loading sessions"), "{rendered}");
+    assert!(
+        !rendered.contains("stale active-session error"),
+        "{rendered}"
+    );
+    assert!(!rendered.contains("no matching sessions"), "{rendered}");
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn renders_scrolled_session_list_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.session_list.focused = true;
@@ -178,9 +216,9 @@ fn renders_scrolled_session_list_snapshot() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("3/10 Session 03"));
-    assert!(rendered.contains(">  8/10 Session 08"));
-    assert!(!rendered.contains("1/10 Session 01"));
+    assert!(rendered.contains("3/10 Session 03"), "{rendered}");
+    assert!(rendered.contains("8/10 Session 08"), "{rendered}");
+    assert!(!rendered.contains("1/10 Session 01"), "{rendered}");
     insta::assert_snapshot!(rendered);
 }
 
@@ -230,7 +268,7 @@ fn renders_short_shell_snapshot() {
 }
 
 #[test]
-fn renders_output_blocks_as_inset_neutral_rectangles() {
+fn renders_output_blocks_as_inset_status_rectangles() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.streaming_assistant.clear();
@@ -240,7 +278,7 @@ fn renders_output_blocks_as_inset_neutral_rectangles() {
         ToolBlockStatus::Success,
     );
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 30,
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 32,
     );
 
     let buf = render_shell_buffer(&shell, area);
@@ -264,28 +302,76 @@ fn renders_output_blocks_as_inset_neutral_rectangles() {
     assert!(rendered.contains("line 7"));
     assert_eq!(output_accent_x, tool_accent_x + 2);
     assert_eq!(
-        rightmost_bg_x_for_row(&buf, area, tool_row, Color::Rgb(49, 50, 68)),
-        rightmost_bg_x_for_row(&buf, area, output_row, Color::Rgb(24, 24, 37)),
+        rightmost_bg_x_for_row(&buf, area, tool_row, design::palette::SURFACE),
+        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::DARK),
     );
     assert_eq!(
-        rightmost_bg_x_for_row(&buf, area, output_tail_row, Color::Rgb(24, 24, 37)),
-        rightmost_bg_x_for_row(&buf, area, output_row, Color::Rgb(24, 24, 37)),
+        rightmost_bg_x_for_row(&buf, area, output_tail_row, design::palette::DARK),
+        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::DARK),
     );
     assert_eq!(
         buf.cell((output_accent_x, output_row))
             .expect("output accent cell should exist")
             .style()
             .fg,
-        Some(Color::Rgb(69, 71, 90))
+        Some(design::palette::SUCCESS)
     );
     assert_eq!(
         buf.cell((tool_accent_x, tool_row))
             .expect("tool accent cell should exist")
             .style()
             .fg,
-        Some(Color::Green)
+        Some(design::palette::SUCCESS)
+    );
+    let output_label_x =
+        row_needle_x(&buf, area, output_row, "output").expect("output label should render");
+    assert_eq!(
+        buf.cell((output_label_x, output_row))
+            .expect("output label cell should exist")
+            .style()
+            .fg,
+        Some(design::palette::TEXT)
+    );
+
+    shell.pointer_position = Some(Position::new(output_accent_x, output_row));
+    let hovered = render_shell_buffer(&shell, area);
+    assert_eq!(
+        rightmost_bg_x_for_row(&hovered, area, output_row, design::palette::BORDER),
+        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::DARK)
+    );
+    assert_eq!(
+        rightmost_bg_x_for_row(&hovered, area, output_tail_row, design::palette::BORDER),
+        rightmost_bg_x_for_row(&buf, area, output_tail_row, design::palette::DARK)
     );
     insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn output_transcript_blocks_use_status_accent_colors() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.push_output_with_status("running output", ToolBlockStatus::Running);
+    shell.push_output_with_status("successful output", ToolBlockStatus::Success);
+    shell.push_output_with_status("failed output", ToolBlockStatus::Fail);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+
+    let buf = render_shell_buffer(&shell, area);
+
+    assert_eq!(
+        accent_color_for_row(&buf, area, "running output"),
+        Some(design::palette::CYAN)
+    );
+    assert_eq!(
+        accent_color_for_row(&buf, area, "successful output"),
+        Some(design::palette::SUCCESS)
+    );
+    assert_eq!(
+        accent_color_for_row(&buf, area, "failed output"),
+        Some(design::palette::ERROR)
+    );
 }
 
 #[test]
@@ -297,10 +383,7 @@ fn renders_compacted_long_output_block_snapshot() {
         .map(|line| format!("cargo build output line {line:03}"))
         .collect::<Vec<_>>()
         .join("\n");
-    shell.push_output_with_status(
-        compact_output_for_transcript(output),
-        ToolBlockStatus::Running,
-    );
+    shell.push_output_with_status(output, ToolBlockStatus::Running);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 20,
     );
@@ -311,7 +394,7 @@ fn renders_compacted_long_output_block_snapshot() {
 #[test]
 fn renders_workspace_roots_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Workspace;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.runtime_workspace_roots = vec![
         AbsolutePathBuf::from_absolute_path_checked("/workspace/better-codex")
             .expect("absolute path should be valid"),
@@ -332,7 +415,7 @@ fn renders_workspace_roots_snapshot() {
 #[test]
 fn renders_workspace_git_status_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Workspace;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.workspace_git_status = Some(WorkspaceGitStatus {
         branch: Some("feature/app-shell-dashboard".to_string()),
         changes: workspace::WorkspaceChangeSummary {
@@ -352,9 +435,14 @@ fn renders_workspace_git_status_snapshot() {
 }
 
 #[test]
-fn renders_workspace_route_snapshot() {
+fn renders_status_route_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Workspace;
+    shell.dashboard_route = DashboardRoute::Status;
+    shell.active_goal = Some(test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::Active,
+        "Complete the dashboard consolidation",
+    ));
     shell.workspace_git_status = Some(WorkspaceGitStatus {
         branch: Some("feature/app-shell-dashboard".to_string()),
         changes: workspace::WorkspaceChangeSummary {
@@ -367,16 +455,67 @@ fn renders_workspace_route_snapshot() {
         },
     });
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 34,
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 60,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
 #[test]
+fn dashboard_routes_keep_session_and_status_panels_separate() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Sessions;
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+
+    assert_eq!(
+        panels
+            .iter()
+            .map(|panel| panel.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Navigation", "Sessions", "Thread"]
+    );
+
+    shell.dashboard_route = DashboardRoute::Status;
+    shell.active_goal = Some(test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::Active,
+        "Keep route ownership explicit",
+    ));
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+
+    assert_eq!(
+        panels
+            .iter()
+            .map(|panel| panel.title.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "Navigation",
+            "Settings",
+            "Goal",
+            "Plan",
+            "Tools",
+            "Edits",
+            "Workspace",
+            "Tokens",
+        ]
+    );
+
+    shell.dashboard_route = DashboardRoute::Help;
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+
+    assert_eq!(
+        panels
+            .iter()
+            .map(|panel| panel.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Navigation", "Keys"]
+    );
+}
+
+#[test]
 fn renders_model_runtime_details_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.model = "gpt-5.6-sol".to_string();
     shell.reasoning_effort = Some(ReasoningEffort::Max);
@@ -410,7 +549,7 @@ fn renders_model_availability_nux_snapshot() {
 #[test]
 fn renders_settings_pages_validation_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell
         .settings
@@ -428,7 +567,7 @@ fn renders_settings_pages_validation_snapshot() {
 #[test]
 fn renders_rate_limits_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.rate_limits = vec![
         codex_app_server_protocol::RateLimitSnapshot {
             limit_id: Some("codex".to_string()),
@@ -485,7 +624,7 @@ fn renders_rate_limits_snapshot() {
 #[test]
 fn renders_context_pressure_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.token_usage = TokenUsage {
         input_tokens: 260_000,
         cached_input_tokens: 40_000,
@@ -496,7 +635,7 @@ fn renders_context_pressure_snapshot() {
     shell.context_token_usage = shell.token_usage.clone();
     shell.model_context_window = Some(372_000);
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 42,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
@@ -510,12 +649,16 @@ fn renders_active_turn_status_snapshot() {
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
 
-    insta::assert_snapshot!(render_shell(&shell, area));
+    let rendered = render_shell(&shell, area);
+
+    assert!(!rendered.contains("◆ STATUS"), "{rendered}");
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]
 fn renders_goal_progress_in_dashboard_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
     shell.active_goal = Some(test_thread_goal(
         &shell.thread_id,
         ThreadGoalStatus::Active,
@@ -526,6 +669,62 @@ fn renders_goal_progress_in_dashboard_snapshot() {
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn narrow_dashboard_truncates_long_plan_lines_without_clipping_steps_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    shell.plan_explanation = Some(
+        "This deliberately long plan explanation must stay on one visual dashboard row so every later plan step keeps its measured position."
+            .to_string(),
+    );
+    shell.plan_steps = vec![
+        codex_app_server_protocol::TurnPlanStep {
+            step: "Inspect measurement".to_string(),
+            status: codex_app_server_protocol::TurnPlanStepStatus::Completed,
+        },
+        codex_app_server_protocol::TurnPlanStep {
+            step: "Truncate styled lines".to_string(),
+            status: codex_app_server_protocol::TurnPlanStepStatus::Completed,
+        },
+        codex_app_server_protocol::TurnPlanStep {
+            step: "Preserve hit targets".to_string(),
+            status: codex_app_server_protocol::TurnPlanStepStatus::InProgress,
+        },
+        codex_app_server_protocol::TurnPlanStep {
+            step: "Verify narrow rendering".to_string(),
+            status: codex_app_server_protocol::TurnPlanStepStatus::Pending,
+        },
+        codex_app_server_protocol::TurnPlanStep {
+            step: "Final plan row remains visible".to_string(),
+            status: codex_app_server_protocol::TurnPlanStepStatus::Pending,
+        },
+    ];
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 36,
+    );
+
+    let buf = render_shell_buffer(&shell, area);
+    let rendered = buffer_contents(&buf, area);
+    let explanation_row = row_containing(&buf, area, "This deliberately long plan explanation")
+        .expect("truncated plan explanation should render");
+    let ellipsis_x = (area.x..area.right())
+        .find(|x| buf[(*x, explanation_row)].symbol() == "…")
+        .expect("long plan explanation should end with an ellipsis");
+
+    assert!(
+        rendered.contains("Final plan row remains visible"),
+        "{rendered}"
+    );
+    assert!(
+        buf[(ellipsis_x, explanation_row)]
+            .style()
+            .add_modifier
+            .contains(Modifier::DIM),
+        "the ellipsis should preserve the explanation style"
+    );
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]
@@ -559,19 +758,22 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         "Tab page",
     ];
     let centralized_guides = [
-        "Sessions: Ctrl+3 select/focus",
+        "Ctrl+1 Status  Ctrl+2 Agents",
+        "Ctrl+3 Sessions Ctrl+4 Help",
+        "Mouse click tabs and rows",
+        "Sessions: Enter focus, j/k move",
         "r resume, f fork, a/u archive",
         "v archived, d delete",
         "n rename, / search",
-        "Settings: Ctrl+1 select/focus",
-        "Enter edit/cycle, Tab page",
-        "Esc return to composer",
+        "Status: Tab page, Enter select",
+        "Selectors: j/k choose, Enter apply",
+        "Esc twice to exit",
     ];
     let mut leaked_guides = Vec::new();
 
     let visibility = DashboardRoute::ALL.map(|route| {
         shell.dashboard_route = route;
-        let panels = dashboard::dashboard_panels(&shell, /*width*/ 40);
+        let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
         let has_keys = panels.iter().any(|panel| panel.title == "Keys");
         let has_route_shortcut = panels
             .iter()
@@ -579,7 +781,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             .into_iter()
             .flat_map(|panel| &panel.lines)
             .flat_map(|line| &line.spans)
-            .any(|span| span.content.contains("Alt + Left / Right"));
+            .any(|span| span.content.contains("Alt+Left/Right"));
         if route != DashboardRoute::Help {
             let text = panels
                 .iter()
@@ -601,13 +803,13 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
     assert_eq!(
         visibility,
         [
-            (DashboardRoute::Settings, false, false),
-            (DashboardRoute::Workspace, false, false),
+            (DashboardRoute::Status, false, false),
+            (DashboardRoute::Agents, false, false),
             (DashboardRoute::Sessions, false, false),
             (DashboardRoute::Help, true, true),
         ]
     );
-    let help_text = dashboard::dashboard_panels(&shell, /*width*/ 40)
+    let help_text = dashboard::dashboard_panels(&shell, /*width*/ 80)
         .into_iter()
         .flat_map(|panel| panel.lines)
         .flat_map(|line| line.spans)
@@ -615,7 +817,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         .collect::<String>();
     assert_eq!(
         centralized_guides.map(|guide| help_text.contains(guide)),
-        [true; 7]
+        [true; 10]
     );
     let active_session_lines = shell
         .session_list
@@ -634,11 +836,11 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         (active_session_lines, archived_session_lines),
         (
             vec![
-                "unfocused active 0 shown".to_string(),
+                "○ CLICK TO FOCUS  ACTIVE  0 sessions".to_string(),
                 "loading sessions".to_string(),
             ],
             vec![
-                "unfocused archived 0 shown".to_string(),
+                "○ CLICK TO FOCUS  ARCHIVED  0 sessions".to_string(),
                 "loading sessions".to_string(),
             ],
         )
@@ -649,7 +851,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             .lines(&shell.settings_view(), /*width*/ 40)
             .first()
             .map(line_text),
-        Some("unfocused model 3 fields".to_string())
+        Some("  Model  │Permis...│Appear...│Integra...".to_string())
     );
 }
 
@@ -709,6 +911,537 @@ fn renders_command_palette_snapshot() {
 }
 
 #[test]
+fn short_command_palette_keeps_the_selection_visible() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.open_command_palette();
+    let entries = shell.command_palette_entries();
+    shell
+        .command_palette
+        .as_mut()
+        .expect("command palette should be open")
+        .select_last(&entries);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 12,
+    );
+    let rendered = render_shell(&shell, area);
+    let compact = rendered_text_position(&rendered, "Compact context");
+
+    assert_eq!(
+        ShellView { shell: &shell }.command_palette_entry_at(area, compact),
+        Some(entries.len().saturating_sub(1))
+    );
+    insta::assert_snapshot!("short_command_palette", rendered);
+}
+
+#[tokio::test]
+async fn command_palette_ignores_inside_chrome_and_closes_on_outside_click() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    shell.open_command_palette();
+    let panel = command_palette_view::palette_area(area, shell.command_palette_entries().len());
+    let content = design::pane_content_rect(panel);
+    let title = rendered_text_position(&render_shell(&shell, area), "ACTIONS");
+    let blank_row = Position::new(content.x, content.y.saturating_add(1));
+
+    for position in [title, blank_row] {
+        shell
+            .handle_mouse_click(area, position, &config, &mut backend)
+            .await
+            .expect("inside palette click should succeed");
+        assert!(shell.command_palette.is_some());
+    }
+
+    shell
+        .handle_mouse_click(
+            area,
+            Position::new(panel.x.saturating_sub(1), panel.y),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("outside palette click should succeed");
+
+    assert!(shell.command_palette.is_none());
+    assert_eq!(backend.calls(), Vec::new());
+}
+
+#[test]
+fn renders_sessions_dashboard_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Sessions;
+    shell.session_list.focused = true;
+    shell.session_list.replace_threads(vec![
+        thread_fixture(
+            test_thread_id("01900000-0000-7000-8000-000000000011"),
+            Some("Tokyo Night polish"),
+            "Refining the application shell and mouse interactions",
+        ),
+        thread_fixture(
+            test_thread_id("01900000-0000-7000-8000-000000000012"),
+            Some("Agent activity"),
+            "Building a bounded subagent inspector",
+        ),
+    ]);
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 112, /*height*/ 30
+        )
+    ));
+}
+
+#[test]
+fn session_rows_use_display_width_for_wide_characters() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Sessions;
+    shell.session_list.replace_threads(vec![
+        thread_fixture(
+            test_thread_id("01900000-0000-7000-8000-000000000021"),
+            Some("東京 UI"),
+            "鮮やかなテーマを確認する",
+        ),
+        thread_fixture(
+            test_thread_id("01900000-0000-7000-8000-000000000022"),
+            Some("検証 🌙"),
+            "マウスとキーボードのフロー",
+        ),
+    ]);
+    let width = 46;
+    let lines = shell.session_list.lines(width);
+
+    assert_eq!(
+        lines
+            .iter()
+            .map(line_text)
+            .filter(|line| line.contains("東京 UI") || line.contains("検証 🌙"))
+            .count(),
+        2
+    );
+    assert!(
+        lines.iter().all(|line| {
+            unicode_width::UnicodeWidthStr::width(line_text(line).as_str()) <= width
+        })
+    );
+}
+
+#[test]
+fn renders_agents_dashboard_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Agents;
+    shell.agents_focused = true;
+    for (thread_id, path) in [
+        ("research", "/root/research"),
+        ("visual", "/root/research/visual"),
+        ("testing", "/root/testing"),
+        ("failure", "/root/testing/failure"),
+    ] {
+        shell
+            .agent_activity
+            .reduce_completed(&ThreadItem::SubAgentActivity {
+                id: format!("activity-{thread_id}"),
+                kind: SubAgentActivityKind::Started,
+                agent_thread_id: thread_id.to_string(),
+                agent_path: path.to_string(),
+            });
+    }
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::CollabAgentToolCall {
+            id: "spawn-agents".to_string(),
+            tool: CollabAgentTool::SpawnAgent,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: "root-thread".to_string(),
+            receiver_thread_ids: vec![
+                "research".to_string(),
+                "visual".to_string(),
+                "testing".to_string(),
+                "failure".to_string(),
+            ],
+            prompt: Some("Review the new TUI flow and visual hierarchy.".to_string()),
+            model: Some("gpt-5-codex".to_string()),
+            reasoning_effort: Some(ReasoningEffort::High),
+            agents_states: [
+                ("research", CollabAgentStatus::Running, "Reviewing layout"),
+                (
+                    "visual",
+                    CollabAgentStatus::Completed,
+                    "Visual audit complete",
+                ),
+                (
+                    "testing",
+                    CollabAgentStatus::Interrupted,
+                    "Stopped after review",
+                ),
+                ("failure", CollabAgentStatus::Errored, "Compact flow failed"),
+            ]
+            .into_iter()
+            .map(|(thread_id, status, message)| {
+                (
+                    thread_id.to_string(),
+                    CollabAgentState {
+                        status,
+                        message: Some(message.to_string()),
+                    },
+                )
+            })
+            .collect(),
+        });
+    shell.agent_activity.select_thread("failure");
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 112, /*height*/ 30
+        )
+    ));
+    insta::assert_snapshot!(
+        "compact_agents_dashboard",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24
+            )
+        )
+    );
+}
+
+#[tokio::test]
+async fn agent_log_loads_complete_history_beyond_inspector_caps() {
+    let config = test_config().await;
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000091");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Agents;
+    shell.agents_focused = true;
+    shell.composer.clear();
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "child-started".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: child_id.to_string(),
+            agent_path: "/root/full-log".to_string(),
+        });
+
+    let mut child = thread_fixture(child_id, /*name*/ None, "child log");
+    child.turns = (0..13)
+        .map(|index| {
+            let mut turn = test_turn(&format!("child-turn-{index}"), TurnStatus::Completed);
+            let text = if index == 0 {
+                "earliest history sentinel".to_string()
+            } else if index == 12 {
+                format!("long history {} final suffix sentinel", "x".repeat(700))
+            } else {
+                format!("middle history item {index}")
+            };
+            turn.items.push(ThreadItem::AgentMessage {
+                id: format!("child-message-{index}"),
+                text,
+                phase: None,
+                memory_citation: None,
+            });
+            if index == 12 {
+                turn.items.extend([
+                    ThreadItem::AgentMessage {
+                        id: "full-log-git-action".to_string(),
+                        text: "::git-stage{cwd=\"/workspace/better-codex\"}".to_string(),
+                        phase: None,
+                        memory_citation: None,
+                    },
+                    ThreadItem::FileChange {
+                        id: "full-log-file-change".to_string(),
+                        changes: vec![FileUpdateChange {
+                            path: "src/full_log.rs".to_string(),
+                            kind: PatchChangeKind::Update { move_path: None },
+                            diff: "@@ full diff sentinel @@".to_string(),
+                        }],
+                        status: codex_app_server_protocol::PatchApplyStatus::Completed,
+                    },
+                    ThreadItem::McpToolCall {
+                        id: "full-log-mcp".to_string(),
+                        server: "review-tools".to_string(),
+                        tool: "inspect".to_string(),
+                        status: codex_app_server_protocol::McpToolCallStatus::Completed,
+                        arguments: json!({"path": "full argument sentinel"}),
+                        app_context: None,
+                        mcp_app_resource_uri: None,
+                        plugin_id: None,
+                        result: Some(Box::new(codex_app_server_protocol::McpToolCallResult {
+                            content: vec![json!({"text": "full result sentinel"})],
+                            structured_content: None,
+                            meta: None,
+                        })),
+                        error: None,
+                        duration_ms: Some(42),
+                    },
+                ]);
+                turn.status = TurnStatus::Failed;
+                turn.error = Some(TurnError {
+                    message: "agent failure sentinel".to_string(),
+                    codex_error_info: None,
+                    additional_details: Some("detailed failure sentinel".to_string()),
+                });
+            }
+            turn
+        })
+        .collect();
+    let mut backend = RecordingBackend::with_threads(vec![child]);
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("opening the selected agent log should succeed");
+    assert!(shell.has_pending_agent_log());
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+        if shell.poll_agent_log().await {
+            break;
+        }
+    }
+
+    let log = shell.agent_log.as_ref().expect("agent log should be open");
+    assert!(!log.is_loading());
+    assert_eq!(log.error(), None);
+    let rendered = log.lines().iter().map(line_text).join("\n");
+    assert!(rendered.contains("earliest history sentinel"));
+    assert!(rendered.contains("final suffix sentinel"));
+    assert!(rendered.contains(&"x".repeat(700)));
+    assert!(rendered.contains("full diff sentinel"));
+    assert!(rendered.contains("full argument sentinel"));
+    assert!(rendered.contains("full result sentinel"));
+    assert!(rendered.contains("::git-stage"));
+    assert!(rendered.contains("agent failure sentinel"));
+    assert!(rendered.contains("detailed failure sentinel"));
+    assert!(
+        backend
+            .calls()
+            .contains(&RecordedBackendCall::ThreadReadFull(child_id))
+    );
+
+    let other_child_id = test_thread_id("01900000-0000-7000-8000-000000000094");
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "other-child-started".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: other_child_id.to_string(),
+            agent_path: "/root/other-log".to_string(),
+        });
+    assert!(
+        shell
+            .agent_activity
+            .select_thread(&other_child_id.to_string())
+    );
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("reloading the agent log should succeed");
+    assert!(shell.has_pending_agent_log());
+    assert_eq!(
+        backend
+            .calls()
+            .into_iter()
+            .filter(|call| {
+                matches!(
+                    call,
+                    RecordedBackendCall::ThreadReadFull(thread_id) if *thread_id == child_id
+                )
+            })
+            .count(),
+        2
+    );
+    assert!(
+        backend
+            .calls()
+            .iter()
+            .all(|call| !matches!(call, RecordedBackendCall::ThreadReadFull(thread_id) if *thread_id == other_child_id))
+    );
+}
+
+#[tokio::test]
+async fn agent_log_reports_full_history_read_failure() {
+    let config = test_config().await;
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000092");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Agents;
+    shell.agents_focused = true;
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "child-started".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: child_id.to_string(),
+            agent_path: "/root/missing-log".to_string(),
+        });
+    let backend = RecordingBackend::default();
+
+    shell.open_selected_agent_log(&config, &backend);
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+        if shell.poll_agent_log().await {
+            break;
+        }
+    }
+
+    let log = shell
+        .agent_log
+        .as_ref()
+        .expect("error popup should remain open");
+    assert!(
+        log.error()
+            .is_some_and(|error| error.contains("was not found"))
+    );
+    assert!(log.lines().is_empty());
+}
+
+#[tokio::test]
+async fn agent_log_rejects_partial_turn_history() {
+    let config = test_config().await;
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000093");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Agents;
+    shell.agents_focused = true;
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "child-started".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: child_id.to_string(),
+            agent_path: "/root/partial-log".to_string(),
+        });
+    let mut child = thread_fixture(child_id, /*name*/ None, "partial log");
+    let mut turn = test_turn("summary-turn", TurnStatus::Completed);
+    turn.items_view = TurnItemsView::Summary;
+    child.turns.push(turn);
+    let backend = RecordingBackend::with_threads(vec![child]);
+
+    shell.open_selected_agent_log(&config, &backend);
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+        if shell.poll_agent_log().await {
+            break;
+        }
+    }
+
+    let log = shell
+        .agent_log
+        .as_ref()
+        .expect("partial-history error should remain visible");
+    assert!(
+        log.error()
+            .is_some_and(|error| error.contains("contains only a summary"))
+    );
+    assert!(log.lines().is_empty());
+}
+
+#[tokio::test]
+async fn replacing_session_discards_pending_agent_log_result() {
+    let config = test_config().await;
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000095");
+    let mut shell = ShellState::snapshot_fixture();
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "child-started".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: child_id.to_string(),
+            agent_path: "/root/stale-log".to_string(),
+        });
+    let backend = RecordingBackend::with_threads(vec![thread_fixture(
+        child_id,
+        /*name*/ None,
+        "stale agent log",
+    )]);
+
+    shell.open_selected_agent_log(&config, &backend);
+    assert!(shell.has_pending_agent_log());
+    shell.replace_started_session(started_thread(
+        "replacement",
+        test_thread_id("01900000-0000-7000-8000-000000000096"),
+        /*forked_from_id*/ None,
+    ));
+    tokio::task::yield_now().await;
+
+    assert!(shell.agent_log.is_none());
+    assert!(!shell.poll_agent_log().await);
+}
+
+#[test]
+fn renders_status_dashboard_at_wide_and_compact_sizes() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    shell.settings.focused = true;
+
+    insta::assert_snapshot!(
+        "wide_status",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 112, /*height*/ 30
+            )
+        )
+    );
+    insta::assert_snapshot!(
+        "compact_status",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24
+            )
+        )
+    );
+}
+
+#[test]
+fn renders_model_selector_at_wide_and_compact_sizes() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.available_models = (0..12)
+        .map(|index| {
+            model_preset_fixture(
+                &format!("gpt-5-{index}"),
+                /*show_in_picker*/ true,
+                ReasoningEffort::Medium,
+                &[ReasoningEffort::Low, ReasoningEffort::Medium],
+                &["fast"],
+            )
+        })
+        .collect();
+    shell.model = "gpt-5-0".to_string();
+    shell.open_model_selector();
+
+    insta::assert_snapshot!(
+        "wide_model_selector",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 30
+            )
+        )
+    );
+    insta::assert_snapshot!(
+        "compact_model_selector",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 16
+            )
+        )
+    );
+}
+
+#[test]
 fn command_palette_lists_common_actions() {
     let shell = ShellState::snapshot_fixture();
     let entries = shell.command_palette_entries();
@@ -747,9 +1480,9 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
         .await
         .expect("model action should open settings");
 
-    assert_eq!(shell.dashboard_route, DashboardRoute::Settings);
+    assert_eq!(shell.dashboard_route, DashboardRoute::Status);
     assert!(shell.settings.focused);
-    assert!(shell.settings.editing());
+    assert!(shell.selector.is_some());
 
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::ChangePermissions);
@@ -758,9 +1491,9 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
         .await
         .expect("permissions action should open settings");
 
-    assert_eq!(shell.dashboard_route, DashboardRoute::Settings);
+    assert_eq!(shell.dashboard_route, DashboardRoute::Status);
     assert!(shell.settings.focused);
-    assert!(!shell.settings.editing());
+    assert!(shell.selector.is_some());
     let rendered = render_shell(
         &shell,
         Rect::new(
@@ -768,8 +1501,8 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
         ),
     );
     assert!(
-        rendered.contains("> approval: on-request"),
-        "permissions action should focus approval policy row, got:\n{rendered}"
+        rendered.contains("Select approval policy"),
+        "permissions action should open approval policy selector, got:\n{rendered}"
     );
 }
 
@@ -789,6 +1522,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
         .execute_selected_command_palette_action(&mut backend)
         .await
         .expect("resume action should open sessions");
+    finish_session_hydration(&mut shell, &backend).await;
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
     assert!(shell.session_list.focused);
@@ -807,6 +1541,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
         .execute_selected_command_palette_action(&mut backend)
         .await
         .expect("fork action should open sessions");
+    finish_session_hydration(&mut shell, &backend).await;
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
     assert!(shell.session_list.focused);
@@ -861,6 +1596,144 @@ async fn command_palette_opens_external_agent_import_review() {
 }
 
 #[tokio::test]
+async fn short_management_modal_keeps_keyboard_selection_visible() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut response = plugin_list_response_fixture();
+    response.marketplaces[0].plugins = (0..12)
+        .map(|index| {
+            plugin_summary_fixture(
+                &format!("plugin-{index:02}"),
+                &format!("Plugin {index:02}"),
+                /*installed*/ index % 2 == 0,
+                /*enabled*/ index % 2 == 0,
+            )
+        })
+        .collect();
+    shell.plugin_catalog = Some(response);
+    shell.open_plugin_management();
+    let mut backend = RecordingBackend::default();
+    for _ in 0..11 {
+        shell
+            .handle_plugin_management_key(key_char('j'), &mut backend)
+            .await
+            .expect("plugin selection should move");
+    }
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 12,
+    );
+    let rendered = render_shell(&shell, area);
+
+    assert!(rendered.contains("Plugin 11"));
+    insta::assert_snapshot!("short_plugin_management", rendered);
+}
+
+#[tokio::test]
+async fn interactive_requests_preempt_management_overlays() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::with_external_agent_items(external_agent_items());
+    shell
+        .start_external_agent_import_review(&mut backend)
+        .await
+        .expect("external agent review should open");
+    assert!(shell.pending_external_agent_import.is_some());
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerRequest(command_approval_request()),
+        )
+        .await
+        .expect("approval request should preempt the management overlay");
+
+    assert!(shell.pending_approval.is_some());
+    assert!(shell.pending_external_agent_import.is_none());
+    assert!(shell.command_palette.is_none());
+    assert!(shell.selector.is_none());
+}
+
+#[tokio::test]
+async fn interactive_requests_from_replaced_sessions_are_rejected() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "historical-agent".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: "01900000-0000-7000-8000-000000000099".to_string(),
+            agent_path: "/root/historical".to_string(),
+        });
+    let mut request = command_approval_request();
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
+        panic!("command approval fixture should keep its request type");
+    };
+    params.thread_id = "01900000-0000-7000-8000-000000000099".to_string();
+
+    shell
+        .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request))
+        .await
+        .expect("stale approval should be rejected");
+
+    assert_eq!(shell.pending_approval, None);
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::Reject {
+            request_id: RequestId::Integer(41),
+            message: "interactive request belongs to inactive thread 01900000-0000-7000-8000-000000000099".to_string(),
+        }]
+    );
+}
+
+#[test]
+fn notifications_from_historical_inactive_agents_are_ignored() {
+    let mut shell = ShellState::snapshot_fixture();
+    let thread_id = "01900000-0000-7000-8000-000000000098";
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::SubAgentActivity {
+            id: "historical-agent".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: thread_id.to_string(),
+            agent_path: "/root/historical".to_string(),
+        });
+    let before = shell.agent_activity.agent(thread_id).cloned();
+
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "stale-turn".to_string(),
+            item_id: "stale-message".to_string(),
+            delta: "old session output".to_string(),
+        },
+    ));
+
+    assert_eq!(shell.agent_activity.agent(thread_id), before.as_ref());
+}
+
+#[test]
+fn notifications_create_an_authorized_agent_before_history_catches_up() {
+    let mut shell = ShellState::snapshot_fixture();
+    let thread_id = "01900000-0000-7000-8000-000000000097";
+    shell.active_agent_thread_ids.insert(thread_id.to_string());
+
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "live-turn".to_string(),
+            item_id: "live-message".to_string(),
+            delta: "live output".to_string(),
+        },
+    ));
+
+    let agent = shell
+        .agent_activity
+        .agent(thread_id)
+        .expect("authorized agent should be created");
+    assert_eq!(agent.latest_message.as_deref(), Some("live output"));
+    assert_eq!(agent.status, agent_activity::AgentLifecycleStatus::Running);
+}
+
+#[tokio::test]
 async fn external_agent_import_starts_selected_items_and_reports_completion() {
     let items = external_agent_items();
     let mut shell = ShellState::snapshot_fixture();
@@ -888,7 +1761,6 @@ async fn external_agent_import_starts_selected_items_and_reports_completion() {
     shell
         .handle_app_server_event(
             &mut backend,
-            &NoopWorkspaceRunner,
             AppServerEvent::ServerNotification(
                 ServerNotification::ExternalAgentConfigImportCompleted(
                     external_agent_import_completed_notification(),
@@ -1109,6 +1981,38 @@ async fn exit_keys_require_confirmation_while_ctrl_c_interrupts_immediately() {
 }
 
 #[tokio::test]
+async fn pointer_activity_clears_exit_confirmation() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let mut shell = ShellState::snapshot_fixture();
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Esc should arm exit confirmation");
+    assert!(shell.exit_confirmation_pending);
+
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let input = ShellView { shell: &shell }.input_area(area);
+    shell
+        .handle_mouse_click(
+            area,
+            Position::new(input.x.saturating_add(2), input.y.saturating_add(2)),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("composer click should succeed");
+
+    assert!(!shell.exit_confirmation_pending);
+}
+
+#[tokio::test]
 async fn shell_operator_executes_through_workspace_runner_without_submitting_turn() {
     let config = test_config().await;
     let runner = Arc::new(RecordingWorkspaceRunner::new(
@@ -1134,6 +2038,8 @@ async fn shell_operator_executes_through_workspace_runner_without_submitting_tur
         .expect("shell command should execute");
 
     assert!(!should_exit);
+    assert!(shell.has_pending_shell_command());
+    finish_pending_shell_command(&mut shell).await;
     assert_eq!(
         runner.commands(),
         vec![
@@ -1152,12 +2058,146 @@ async fn shell_operator_executes_through_workspace_runner_without_submitting_tur
         vec![
             TranscriptLine::new(TranscriptKind::Tool, "! printf hello exit 0")
                 .tool_status(ToolBlockStatus::Success),
-            TranscriptLine::new(TranscriptKind::Output, "hello\nwarning\n")
-                .tool_status(ToolBlockStatus::Success),
+            TranscriptLine::output(
+                "hello\nwarning\n",
+                ToolBlockStatus::Success,
+                shell
+                    .transcript
+                    .back()
+                    .and_then(|line| line.item_id.clone())
+                    .expect("local output should have a stable id"),
+            ),
         ]
     );
     assert_eq!(shell.composer.text(), "");
     assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
+async fn shell_operator_remains_interactive_while_command_is_running() {
+    let config = test_config().await;
+    let (runner, _gate) =
+        RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "finished\n".to_string(),
+            stderr: String::new(),
+        });
+    let runner = Arc::new(runner);
+    let mut shell = ShellState::snapshot_fixture();
+    shell.workspace_command_runner = Some(runner.clone());
+    shell.composer.set_text("! long-running-task");
+    let transcript_len = shell.transcript.len();
+    let mut backend = RecordingBackend::default();
+
+    tokio::time::timeout(
+        Duration::from_secs(/*secs*/ 1),
+        shell.handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        ),
+    )
+    .await
+    .expect("starting a shell command must not block the event loop")
+    .expect("shell command should start");
+
+    assert!(shell.has_pending_shell_command());
+    assert_eq!(shell.status, "running shell command");
+    assert_eq!(shell.transcript.len(), transcript_len);
+    for panel_width in [50, 60, 80] {
+        let help = super::dashboard_help::key_hint_lines(&shell, panel_width)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            help.contains("cancel"),
+            "running-command help should explain cancellation at width {panel_width}:\n{help}"
+        );
+    }
+    shell.dashboard_route = DashboardRoute::Help;
+    insta::assert_snapshot!(
+        "running_shell_command",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
+    );
+
+    shell.composer.set_text("! second-task");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("second shell command should be rejected without blocking");
+    assert_eq!(shell.composer.text(), "! second-task");
+    assert!(shell.block_session_switch_if_busy());
+    assert_eq!(
+        shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Status,
+            "finish or cancel the shell command before switching sessions",
+        ))
+    );
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Ctrl+C should request shell command cancellation");
+    assert_eq!(shell.status, "cancelling shell command");
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("repeated Ctrl+C should remain scoped to the shell command");
+    assert!(!should_exit);
+    assert!(!shell.exit_confirmation_pending);
+
+    finish_pending_shell_command(&mut shell).await;
+    assert!(!shell.has_pending_shell_command());
+    assert_eq!(shell.status, "shell command cancelled");
+    assert_eq!(
+        shell.transcript.back(),
+        Some(
+            &TranscriptLine::new(TranscriptKind::Tool, "! long-running-task cancelled")
+                .tool_status(ToolBlockStatus::Fail)
+        )
+    );
+    assert_eq!(runner.run_process_ids(), runner.terminate_process_ids());
+    assert_eq!(runner.run_process_ids().len(), 1);
+    assert!(shell.workspace_status_refresh_due);
+
+    assert!(!shell.poll_session_hydration(&backend).await);
+    finish_session_hydration(&mut shell, &backend).await;
+    assert!(!shell.workspace_status_refresh_due);
+    assert_eq!(runner.commands().len(), 2);
+}
+
+async fn finish_pending_shell_command(shell: &mut ShellState) {
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        loop {
+            let _changed = shell.poll_shell_command().await;
+            if !shell.has_pending_shell_command() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("shell command should finish");
 }
 
 #[tokio::test]
@@ -1225,6 +2265,7 @@ async fn goal_slash_command_sets_and_shows_thread_goal() {
         "goal slash commands should not submit turns"
     );
 
+    shell.dashboard_route = DashboardRoute::Status;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -1287,15 +2328,15 @@ async fn goal_slash_command_pauses_resumes_and_clears_thread_goal() {
 fn dashboard_route_key_mapping_covers_native_routes() {
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Settings)
+        Some(DashboardRoute::Status)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Workspace)
+        Some(DashboardRoute::Agents)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Workspace)
+        Some(DashboardRoute::Agents)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL)),
@@ -1306,20 +2347,24 @@ fn dashboard_route_key_mapping_covers_native_routes() {
         Some(DashboardRoute::Help)
     );
     assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::CONTROL)),
+        None
+    );
+    assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('\u{0000}'), KeyModifiers::NONE)),
-        Some(DashboardRoute::Workspace)
+        Some(DashboardRoute::Agents)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Null, KeyModifiers::NONE)),
-        Some(DashboardRoute::Workspace)
+        Some(DashboardRoute::Agents)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('\u{001b}'), KeyModifiers::NONE)),
-        Some(DashboardRoute::Settings)
+        Some(DashboardRoute::Sessions)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Settings)
+        Some(DashboardRoute::Sessions)
     );
     assert_eq!(dashboard_route_from_key(key_char('1')), None);
     assert_eq!(
@@ -1470,6 +2515,596 @@ async fn composer_backspace_repeat_deletes_continuously() {
     assert_eq!(backend.calls(), Vec::new());
 }
 
+#[tokio::test]
+async fn printable_character_repeat_inserts_continuously_in_composer_inputs() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let repeat =
+        KeyEvent::new_with_kind(KeyCode::Char('x'), KeyModifiers::NONE, KeyEventKind::Repeat);
+    shell.composer.set_text("x");
+
+    for _ in 0..2 {
+        shell
+            .handle_key(repeat, &config, &mut backend)
+            .await
+            .expect("composer repeat should insert text");
+    }
+
+    assert_eq!(
+        (
+            shell.composer.text(),
+            shell.pending_user_input.is_some(),
+            backend.calls(),
+        ),
+        ("xxx", false, Vec::new())
+    );
+
+    shell.composer.clear();
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    for _ in 0..2 {
+        shell
+            .handle_key(repeat, &config, &mut backend)
+            .await
+            .expect("tool input repeat should insert text");
+    }
+
+    assert_eq!(
+        (
+            shell.composer.text(),
+            shell.pending_user_input.is_some(),
+            backend.calls(),
+        ),
+        ("xx", true, Vec::new())
+    );
+}
+
+#[tokio::test]
+async fn printable_character_repeat_reaches_text_entry_overlays() {
+    let config = test_config().await;
+    let repeat =
+        KeyEvent::new_with_kind(KeyCode::Char('x'), KeyModifiers::NONE, KeyEventKind::Repeat);
+    let mut backend = RecordingBackend::default();
+
+    let mut sessions = ShellState::snapshot_fixture();
+    sessions.composer.clear();
+    sessions.dashboard_route = DashboardRoute::Sessions;
+    sessions.session_list.focused = true;
+    sessions.session_list.start_search();
+    sessions
+        .handle_key(repeat, &config, &mut backend)
+        .await
+        .expect("session search repeat should insert text");
+    sessions.session_list.stop_search();
+    assert_eq!(
+        (
+            sessions.session_list.list_params().search_term,
+            sessions.composer.text(),
+        ),
+        (Some("x".to_string()), "")
+    );
+
+    let mut settings = ShellState::snapshot_fixture();
+    settings.composer.clear();
+    settings.dashboard_route = DashboardRoute::Status;
+    settings.settings.focused = true;
+    settings
+        .settings
+        .start_edit(SettingsAction::Theme, String::new());
+    settings
+        .handle_key(repeat, &config, &mut backend)
+        .await
+        .expect("settings repeat should insert text");
+    assert_eq!(
+        (settings.settings.take_edit(), settings.composer.text(),),
+        (Some((SettingsAction::Theme, "x".to_string())), "")
+    );
+
+    let mut mcp = ShellState::snapshot_fixture();
+    mcp.composer.clear();
+    mcp.mcp_catalog = Some(ListMcpServerStatusResponse {
+        data: vec![mcp_status_fixture(
+            "github",
+            McpAuthStatus::NotLoggedIn,
+            ["search"],
+        )],
+        next_cursor: None,
+    });
+    mcp.open_mcp_management();
+    mcp.handle_key(key_char('a'), &config, &mut backend)
+        .await
+        .expect("MCP add mode should open");
+    mcp.handle_key(repeat, &config, &mut backend)
+        .await
+        .expect("MCP edit repeat should insert text");
+    let mcp_lines = mcp
+        .pending_mcp_management
+        .as_ref()
+        .expect("MCP manager should remain open")
+        .lines();
+    let mcp_draft = mcp_lines[3]
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+    assert_eq!(
+        (mcp_draft, mcp.composer.text(), backend.calls()),
+        ("x".to_string(), "", Vec::new())
+    );
+}
+
+#[test]
+fn action_mode_keys_require_unmodified_input_and_ignore_repeated_actions() {
+    let cases = [
+        (KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE), true),
+        (
+            KeyEvent::new_with_kind(KeyCode::Down, KeyModifiers::NONE, KeyEventKind::Repeat),
+            true,
+        ),
+        (
+            KeyEvent::new_with_kind(KeyCode::Char('d'), KeyModifiers::NONE, KeyEventKind::Repeat),
+            false,
+        ),
+        (
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::CONTROL),
+            false,
+        ),
+        (KeyEvent::new(KeyCode::Char('d'), KeyModifiers::ALT), false),
+        (
+            KeyEvent::new(KeyCode::Char('d'), KeyModifiers::SUPER),
+            false,
+        ),
+    ];
+
+    for (key, expected) in cases {
+        assert_eq!(is_unmodified_action_key(key), expected, "key: {key:?}");
+    }
+}
+
+#[tokio::test]
+async fn modified_keys_do_not_trigger_focused_session_settings_or_plugin_actions() {
+    let config = test_config().await;
+    let modifiers = [
+        KeyModifiers::CONTROL,
+        KeyModifiers::ALT,
+        KeyModifiers::SUPER,
+    ];
+
+    let session_id = test_thread_id("01900000-0000-7000-8000-000000000398");
+    let mut sessions = ShellState::snapshot_fixture();
+    sessions.dashboard_route = DashboardRoute::Sessions;
+    sessions.session_list.focused = true;
+    sessions.session_list.replace_threads(vec![thread_fixture(
+        session_id,
+        Some("keep this session"),
+        "modifier guard",
+    )]);
+    let mut session_backend = RecordingBackend::default();
+    for modifier in modifiers {
+        sessions
+            .handle_key(
+                KeyEvent::new(KeyCode::Char('a'), modifier),
+                &config,
+                &mut session_backend,
+            )
+            .await
+            .expect("modified archive key should be consumed");
+        assert_eq!(sessions.session_list.selected_thread_id(), Some(session_id));
+        assert_eq!(session_backend.calls(), Vec::new());
+    }
+    sessions
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('p'), KeyModifiers::CONTROL),
+            &config,
+            &mut session_backend,
+        )
+        .await
+        .expect("Ctrl+P should remain available from a focused action mode");
+    assert!(sessions.command_palette.is_some());
+    sessions.command_palette = None;
+    sessions
+        .handle_key(key_char('a'), &config, &mut session_backend)
+        .await
+        .expect("plain archive key should work");
+    assert!(
+        session_backend
+            .calls()
+            .contains(&RecordedBackendCall::Archive(session_id))
+    );
+
+    let mut settings = ShellState::snapshot_fixture();
+    settings.dashboard_route = DashboardRoute::Status;
+    settings.settings.focused = true;
+    settings.settings.focus_action(SettingsAction::Animations);
+    let initial_animations = settings.animations;
+    let mut settings_backend = RecordingBackend::default();
+    for modifier in modifiers {
+        settings
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, modifier),
+                &config,
+                &mut settings_backend,
+            )
+            .await
+            .expect("modified activation key should be consumed");
+        assert_eq!(settings.animations, initial_animations);
+        assert_eq!(settings_backend.calls(), Vec::new());
+    }
+    settings
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut settings_backend,
+        )
+        .await
+        .expect("plain activation key should work");
+    assert_eq!(settings.animations, !initial_animations);
+    assert!(matches!(
+        settings_backend.calls().as_slice(),
+        [RecordedBackendCall::ConfigWrite(_)]
+    ));
+
+    let mut back_tab = ShellState::snapshot_fixture();
+    back_tab.dashboard_route = DashboardRoute::Status;
+    back_tab.settings.focused = true;
+    let mut back_tab_backend = RecordingBackend::default();
+    back_tab
+        .handle_key(
+            KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT),
+            &config,
+            &mut back_tab_backend,
+        )
+        .await
+        .expect("terminal-encoded Shift+BackTab should change settings pages");
+    assert_eq!(
+        back_tab.settings.selected_action(),
+        SettingsAction::McpServers
+    );
+    assert_eq!(back_tab_backend.calls(), Vec::new());
+
+    let mut plugins = ShellState::snapshot_fixture();
+    plugins.plugin_catalog = Some(plugin_list_response_fixture());
+    plugins.open_plugin_management();
+    let initial_plugin_state = plugins.pending_plugin_management.clone();
+    let mut plugin_backend = RecordingBackend::default();
+    for modifier in modifiers {
+        plugins
+            .handle_key(
+                KeyEvent::new(KeyCode::Char('u'), modifier),
+                &config,
+                &mut plugin_backend,
+            )
+            .await
+            .expect("modified uninstall key should be consumed");
+        assert_eq!(plugins.pending_plugin_management, initial_plugin_state);
+        assert_eq!(plugin_backend.calls(), Vec::new());
+    }
+    plugins
+        .handle_key(key_char('u'), &config, &mut plugin_backend)
+        .await
+        .expect("plain uninstall key should work");
+    assert!(
+        plugin_backend
+            .calls()
+            .iter()
+            .any(|call| matches!(call, RecordedBackendCall::PluginUninstall { .. }))
+    );
+}
+
+#[tokio::test]
+async fn modified_keys_do_not_trigger_mcp_safety_or_import_actions() {
+    let config = test_config().await;
+
+    let mut mcp = ShellState::snapshot_fixture();
+    mcp.mcp_catalog = Some(ListMcpServerStatusResponse {
+        data: vec![mcp_status_fixture(
+            "github",
+            McpAuthStatus::NotLoggedIn,
+            ["search"],
+        )],
+        next_cursor: None,
+    });
+    mcp.open_mcp_management();
+    let initial_mcp_state = mcp.pending_mcp_management.clone();
+    let mut mcp_backend = RecordingBackend::default();
+    mcp.handle_key(
+        KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
+        &config,
+        &mut mcp_backend,
+    )
+    .await
+    .expect("Ctrl+U should not remove the selected MCP server");
+    assert_eq!(mcp.pending_mcp_management, initial_mcp_state);
+    assert_eq!(mcp_backend.calls(), Vec::new());
+    mcp.handle_key(key_char('u'), &config, &mut mcp_backend)
+        .await
+        .expect("plain remove key should work");
+    assert!(mcp_backend.calls().iter().any(|call| matches!(
+        call,
+        RecordedBackendCall::McpServerWriteConfig {
+            value: serde_json::Value::Null,
+            merge_strategy: MergeStrategy::Replace,
+            ..
+        }
+    )));
+
+    let mut safety = ShellState::snapshot_fixture();
+    let mut safety_backend = RecordingBackend::default();
+    safety
+        .submit_prompt(&mut safety_backend, "Explain the request".to_string())
+        .await
+        .expect("turn should start");
+    safety.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &safety,
+            "turn-submit",
+            /*show_buffering_ui*/ true,
+            Some("faster-model"),
+        ),
+    ));
+    let initial_safety_calls = safety_backend.calls();
+    let initial_safety_transcript = safety.transcript.clone();
+    safety
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('r'), KeyModifiers::CONTROL),
+            &config,
+            &mut safety_backend,
+        )
+        .await
+        .expect("Ctrl+R should not retry a safety-buffered turn");
+    assert!(safety.safety_buffering_modal_lines().is_some());
+    assert_eq!(safety.transcript, initial_safety_transcript);
+    assert_eq!(safety_backend.calls(), initial_safety_calls);
+    safety
+        .handle_key(key_char('r'), &config, &mut safety_backend)
+        .await
+        .expect("plain retry key should work");
+    assert!(safety.safety_buffering_modal_lines().is_none());
+    assert!(
+        safety_backend
+            .calls()
+            .iter()
+            .any(|call| matches!(call, RecordedBackendCall::Rollback { .. }))
+    );
+
+    let items = external_agent_items();
+    let mut import = ShellState::snapshot_fixture();
+    let mut import_backend = RecordingBackend::with_external_agent_items(items.clone());
+    import
+        .start_external_agent_import_review(&mut import_backend)
+        .await
+        .expect("external agent import review should open");
+    let initial_import_state = import.pending_external_agent_import.clone();
+    let initial_import_calls = import_backend.calls();
+    import
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::CONTROL),
+            &config,
+            &mut import_backend,
+        )
+        .await
+        .expect("modified Enter should not start import");
+    assert_eq!(import.pending_external_agent_import, initial_import_state);
+    assert_eq!(import_backend.calls(), initial_import_calls);
+    import
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut import_backend,
+        )
+        .await
+        .expect("plain Enter should start import");
+    assert!(
+        import_backend
+            .calls()
+            .contains(&RecordedBackendCall::ExternalAgentConfigImport(items))
+    );
+}
+
+#[tokio::test]
+async fn modified_enter_does_not_commit_editors_or_command_palette_actions() {
+    let config = test_config().await;
+    let modifiers = [
+        KeyModifiers::CONTROL,
+        KeyModifiers::ALT,
+        KeyModifiers::SUPER,
+        KeyModifiers::SHIFT,
+    ];
+
+    let session_id = test_thread_id("01900000-0000-7000-8000-000000000397");
+    let mut sessions = ShellState::snapshot_fixture();
+    sessions.dashboard_route = DashboardRoute::Sessions;
+    sessions.session_list.focused = true;
+    sessions.session_list.replace_threads(vec![thread_fixture(
+        session_id,
+        Some("rename draft"),
+        "modified Enter guard",
+    )]);
+    let mut session_backend = RecordingBackend::default();
+    sessions
+        .handle_key(key_char('n'), &config, &mut session_backend)
+        .await
+        .expect("rename mode should open");
+    for modifier in modifiers {
+        sessions
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, modifier),
+                &config,
+                &mut session_backend,
+            )
+            .await
+            .expect("modified Enter should not commit a session rename");
+        assert!(sessions.session_list.renaming());
+        assert_eq!(sessions.session_list.selected_title(), Some("rename draft"));
+        assert_eq!(session_backend.calls(), Vec::new());
+    }
+
+    sessions
+        .handle_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &config,
+            &mut session_backend,
+        )
+        .await
+        .expect("plain Esc should cancel rename mode");
+    sessions
+        .handle_key(key_char('/'), &config, &mut session_backend)
+        .await
+        .expect("search mode should open");
+    sessions
+        .handle_key(key_char('x'), &config, &mut session_backend)
+        .await
+        .expect("search text should be accepted");
+    for modifier in modifiers {
+        sessions
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, modifier),
+                &config,
+                &mut session_backend,
+            )
+            .await
+            .expect("modified Enter should not stop search mode");
+        assert!(sessions.session_list.search_active());
+    }
+    sessions
+        .handle_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::ALT),
+            &config,
+            &mut session_backend,
+        )
+        .await
+        .expect("modified Esc should not cancel search mode");
+    assert!(sessions.session_list.search_active());
+    sessions
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut session_backend,
+        )
+        .await
+        .expect("plain Enter should stop search mode");
+    assert_eq!(
+        sessions.session_list.list_params().search_term,
+        Some("x".to_string())
+    );
+
+    let mut settings = ShellState::snapshot_fixture();
+    settings.dashboard_route = DashboardRoute::Status;
+    settings.settings.focused = true;
+    settings
+        .settings
+        .start_edit(SettingsAction::Theme, "theme-draft".to_string());
+    let mut settings_backend = RecordingBackend::default();
+    for modifier in modifiers {
+        settings
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, modifier),
+                &config,
+                &mut settings_backend,
+            )
+            .await
+            .expect("modified Enter should not commit a settings edit");
+        assert!(settings.settings.editing());
+        assert_eq!(settings_backend.calls(), Vec::new());
+    }
+
+    let mut mcp = ShellState::snapshot_fixture();
+    mcp.mcp_catalog = Some(ListMcpServerStatusResponse {
+        data: vec![mcp_status_fixture(
+            "github",
+            McpAuthStatus::NotLoggedIn,
+            ["search"],
+        )],
+        next_cursor: None,
+    });
+    mcp.open_mcp_management();
+    let mut mcp_backend = RecordingBackend::default();
+    mcp.handle_key(key_char('e'), &config, &mut mcp_backend)
+        .await
+        .expect("MCP edit mode should open");
+    let initial_mcp_state = mcp.pending_mcp_management.clone();
+    for modifier in modifiers {
+        mcp.handle_key(
+            KeyEvent::new(KeyCode::Enter, modifier),
+            &config,
+            &mut mcp_backend,
+        )
+        .await
+        .expect("modified Enter should not commit an MCP edit");
+        assert_eq!(mcp.pending_mcp_management, initial_mcp_state);
+        assert_eq!(mcp_backend.calls(), Vec::new());
+    }
+
+    let mut palette = ShellState::snapshot_fixture();
+    palette.open_command_palette();
+    select_command_palette_action(&mut palette, CommandPaletteAction::ResumeThread);
+    let initial_palette_state = palette.command_palette.clone();
+    let initial_route = palette.dashboard_route;
+    let mut palette_backend = RecordingBackend::default();
+    for modifier in modifiers {
+        palette
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, modifier),
+                &config,
+                &mut palette_backend,
+            )
+            .await
+            .expect("modified Enter should not execute a command palette action");
+        assert_eq!(palette.command_palette, initial_palette_state);
+        assert_eq!(palette.dashboard_route, initial_route);
+        assert_eq!(palette_backend.calls(), Vec::new());
+    }
+}
+
+#[tokio::test]
+async fn repeated_action_keys_do_not_toggle_submit_or_delete() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("prompt");
+
+    for key in [
+        KeyEvent::new_with_kind(KeyCode::Enter, KeyModifiers::NONE, KeyEventKind::Repeat),
+        KeyEvent::new_with_kind(
+            KeyCode::Char('d'),
+            KeyModifiers::CONTROL,
+            KeyEventKind::Repeat,
+        ),
+    ] {
+        shell
+            .handle_key(key, &config, &mut backend)
+            .await
+            .expect("repeated shortcut should be ignored");
+    }
+
+    let other_thread_id = test_thread_id("01900000-0000-7000-8000-000000000399");
+    shell.session_list.replace_threads(vec![thread_fixture(
+        other_thread_id,
+        Some("do not delete"),
+        "repeat guard",
+    )]);
+    shell.dashboard_route = DashboardRoute::Sessions;
+    shell.session_list.focused = true;
+    shell
+        .handle_key(
+            KeyEvent::new_with_kind(KeyCode::Char('d'), KeyModifiers::NONE, KeyEventKind::Repeat),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("repeated list action should be ignored");
+
+    assert_eq!(
+        (
+            shell.dashboard_visible,
+            shell.composer.text(),
+            shell.session_list.selected_thread_id(),
+            backend.calls(),
+        ),
+        (true, "prompt", Some(other_thread_id), Vec::new())
+    );
+}
+
 #[test]
 fn dashboard_route_step_matches_alt_arrow_fallbacks_only_when_allowed() {
     assert_eq!(
@@ -1503,21 +3138,39 @@ fn dashboard_route_step_matches_alt_arrow_fallbacks_only_when_allowed() {
 }
 
 #[test]
-fn dashboard_route_changes_are_persisted() {
+fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
     let codex_home = tempfile::tempdir().expect("create temp codex home");
-    let mut shell = ShellState {
-        codex_home: codex_home.path().to_path_buf(),
-        ..ShellState::snapshot_fixture()
-    };
-
-    shell.set_dashboard_route(DashboardRoute::Settings);
+    std::fs::write(
+        codex_home.path().join("app-shell-state.json"),
+        b"{\"route\":\"sessions\"}",
+    )
+    .expect("write legacy route state");
+    let started = started_thread(
+        "new session",
+        test_thread_id("01900000-0000-7000-8000-000000000702"),
+        /*forked_from_id*/ None,
+    );
+    let shell = ShellState::new(
+        started.session,
+        "fallback-model".to_string(),
+        Vec::new(),
+        codex_home.path().to_path_buf(),
+        /*tui_theme*/ None,
+        /*animations*/ true,
+        /*show_tooltips*/ true,
+        /*max_concurrent_threads_per_session*/ 4,
+    );
 
     assert_eq!(
-        AppShellRouteState::load(codex_home.path()),
-        AppShellRouteState {
-            route: DashboardRoute::Settings
-        }
+        (shell.dashboard_route, shell.settings.selected_action()),
+        (DashboardRoute::Status, SettingsAction::Model)
     );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28
+        )
+    ));
 }
 
 #[test]
@@ -1629,14 +3282,17 @@ fn duplicate_completed_user_message_is_suppressed() {
     shell.transcript.clear();
     shell.push_user("hello from user");
 
-    shell.ingest_completed_item(ThreadItem::UserMessage {
-        id: "user-1".to_string(),
-        client_id: None,
-        content: vec![UserInput::Text {
-            text: "hello from user".to_string(),
-            text_elements: Vec::new(),
-        }],
-    });
+    shell.ingest_completed_item(
+        ThreadItem::UserMessage {
+            id: "user-1".to_string(),
+            client_id: None,
+            content: vec![UserInput::Text {
+                text: "hello from user".to_string(),
+                text_elements: Vec::new(),
+            }],
+        },
+        CompletedItemOrigin::Live,
+    );
 
     assert_eq!(
         shell.transcript.iter().cloned().collect::<Vec<_>>(),
@@ -1650,12 +3306,15 @@ fn completed_agent_message_replaces_matching_stream() {
     shell.transcript.clear();
     shell.streaming_assistant = "hello from codex".to_string();
 
-    shell.ingest_completed_item(ThreadItem::AgentMessage {
-        id: "agent-1".to_string(),
-        text: "hello from codex".to_string(),
-        phase: None,
-        memory_citation: None,
-    });
+    shell.ingest_completed_item(
+        ThreadItem::AgentMessage {
+            id: "agent-1".to_string(),
+            text: "hello from codex".to_string(),
+            phase: None,
+            memory_citation: None,
+        },
+        CompletedItemOrigin::Live,
+    );
     shell.finish_streaming_assistant();
 
     assert_eq!(shell.streaming_assistant, "");
@@ -1673,14 +3332,17 @@ fn completed_reasoning_hides_empty_generated_summary_parts() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
 
-    shell.ingest_completed_item(ThreadItem::Reasoning {
-        id: "reasoning-1".to_string(),
-        summary: vec![
-            "**Checking the first thing**\n\n<!-- -->".to_string(),
-            "**Checking the second thing**\n\n<!-- -->".to_string(),
-        ],
-        content: vec!["raw reasoning must not replace an empty summary".to_string()],
-    });
+    shell.ingest_completed_item(
+        ThreadItem::Reasoning {
+            id: "reasoning-1".to_string(),
+            summary: vec![
+                "**Checking the first thing**\n\n<!-- -->".to_string(),
+                "**Checking the second thing**\n\n<!-- -->".to_string(),
+            ],
+            content: vec!["raw reasoning must not replace an empty summary".to_string()],
+        },
+        CompletedItemOrigin::Live,
+    );
 
     assert_eq!(shell.transcript, VecDeque::new());
 }
@@ -1690,17 +3352,20 @@ fn completed_reasoning_uses_summary_without_interleaving_raw_content() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
 
-    shell.ingest_completed_item(ThreadItem::Reasoning {
-        id: "reasoning-1".to_string(),
-        summary: vec![
-            "**Plan**\n\ndone".to_string(),
-            "**Checking tests**\n\n<!-- -->".to_string(),
-        ],
-        content: vec![
-            "raw reasoning one".to_string(),
-            "raw reasoning two".to_string(),
-        ],
-    });
+    shell.ingest_completed_item(
+        ThreadItem::Reasoning {
+            id: "reasoning-1".to_string(),
+            summary: vec![
+                "**Plan**\n\ndone".to_string(),
+                "**Checking tests**\n\n<!-- -->".to_string(),
+            ],
+            content: vec![
+                "raw reasoning one".to_string(),
+                "raw reasoning two".to_string(),
+            ],
+        },
+        CompletedItemOrigin::Live,
+    );
 
     assert_eq!(
         shell.transcript,
@@ -1718,18 +3383,24 @@ fn completed_extension_items_render_as_successful_tools() {
     shell.transcript.clear();
     shell.tool_activity.clear();
 
-    shell.ingest_completed_item(ThreadItem::WebSearch(WebSearchItem {
-        id: "web-1".to_string(),
-        query: "latest protocol changes".to_string(),
-        action: None,
-    }));
-    shell.ingest_completed_item(ThreadItem::ImageGeneration(ImageGenerationItem {
-        id: "image-1".to_string(),
-        status: "completed".to_string(),
-        revised_prompt: None,
-        result: String::new(),
-        saved_path: None,
-    }));
+    shell.ingest_completed_item(
+        ThreadItem::WebSearch(WebSearchItem {
+            id: "web-1".to_string(),
+            query: "latest protocol changes".to_string(),
+            action: None,
+        }),
+        CompletedItemOrigin::Live,
+    );
+    shell.ingest_completed_item(
+        ThreadItem::ImageGeneration(ImageGenerationItem {
+            id: "image-1".to_string(),
+            status: "completed".to_string(),
+            revised_prompt: None,
+            result: String::new(),
+            saved_path: None,
+        }),
+        CompletedItemOrigin::Live,
+    );
 
     assert_eq!(
         shell.tool_activity,
@@ -2035,7 +3706,7 @@ async fn ctrl_d_hides_dashboard_and_reclaims_layout_snapshot() {
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
     let rendered = render_shell(&shell, area);
-    assert!(rendered.contains("Ctrl+D Dashboard"));
+    assert!(rendered.contains("Panels"));
     assert!(!rendered.contains("Navigation"));
     insta::assert_snapshot!(rendered);
 
@@ -2054,16 +3725,16 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
-    let ctrl_1 = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
-    let ctrl_3 = KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL);
+    let ctrl_status = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
+    let ctrl_sessions = KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
 
     shell
-        .handle_key(ctrl_1, &config, &mut backend)
+        .handle_key(ctrl_status, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should select settings");
+        .expect("Ctrl+1 should select status");
 
     assert_eq!(
         (
@@ -2071,15 +3742,15 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
             shell.session_list.focused,
             shell.settings.focused,
         ),
-        (DashboardRoute::Settings, false, false)
+        (DashboardRoute::Status, false, false)
     );
     assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
     insta::assert_snapshot!(render_shell(&shell, area));
 
     shell
-        .handle_key(ctrl_1, &config, &mut backend)
+        .handle_key(ctrl_status, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should focus selected settings");
+        .expect("Ctrl+1 should focus selected status settings");
 
     assert_eq!(
         (
@@ -2087,12 +3758,12 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
             shell.session_list.focused,
             shell.settings.focused,
         ),
-        (DashboardRoute::Settings, false, true)
+        (DashboardRoute::Status, false, true)
     );
     assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
 
     shell
-        .handle_key(ctrl_3, &config, &mut backend)
+        .handle_key(ctrl_sessions, &config, &mut backend)
         .await
         .expect("Ctrl+3 should select sessions");
 
@@ -2107,7 +3778,7 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
 
     shell
-        .handle_key(ctrl_3, &config, &mut backend)
+        .handle_key(ctrl_sessions, &config, &mut backend)
         .await
         .expect("Ctrl+3 should focus selected sessions");
 
@@ -2123,9 +3794,97 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
 }
 
 #[tokio::test]
-async fn dashboard_tabs_click_without_focusing_wide_or_collapsed_routes() {
+async fn blocked_session_list_refresh_does_not_block_dashboard_input() {
+    let config = test_config().await;
+    let session_id = test_thread_id("01900000-0000-7000-8000-000000000798");
+    let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let mut backend = RecordingBackend {
+        threads: Arc::new(Mutex::new(vec![thread_fixture(
+            session_id,
+            Some("background session"),
+            "loaded after input",
+        )])),
+        thread_list_gate: Some(gate.clone()),
+        ..RecordingBackend::default()
+    };
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    let ctrl_sessions = KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL);
+    let ctrl_status = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
+
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        shell
+            .handle_key(ctrl_sessions, &config, &mut backend)
+            .await
+            .expect("Ctrl+3 should start loading sessions");
+        shell
+            .handle_key(ctrl_sessions, &config, &mut backend)
+            .await
+            .expect("repeated Ctrl+3 should coalesce with the pending load");
+        shell
+            .handle_key(ctrl_status, &config, &mut backend)
+            .await
+            .expect("other dashboard input should stay responsive");
+    })
+    .await
+    .expect("dashboard input should not wait for thread/list");
+
+    assert!(shell.has_pending_session_hydration());
+    assert_eq!(shell.dashboard_route, DashboardRoute::Status);
+    gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(shell.session_list.selected_thread_id(), Some(session_id));
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn empty_enter_focuses_the_active_interactive_dashboard() {
+    let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
+    shell.composer.clear();
+
+    for route in [
+        DashboardRoute::Sessions,
+        DashboardRoute::Agents,
+        DashboardRoute::Status,
+    ] {
+        shell.dashboard_route = route;
+        shell.session_list.focused = false;
+        shell.agents_focused = false;
+        shell.settings.focused = false;
+
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("empty Enter should focus the active dashboard");
+
+        assert_eq!(
+            shell.session_list.focused,
+            route == DashboardRoute::Sessions
+        );
+        assert_eq!(shell.agents_focused, route == DashboardRoute::Agents);
+        assert_eq!(shell.settings.focused, route == DashboardRoute::Status);
+    }
+    assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
+async fn dashboard_tab_clicks_select_routes_without_focusing_panels() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let config = test_config().await;
 
     for area in [
         Rect::new(
@@ -2138,76 +3897,476 @@ async fn dashboard_tabs_click_without_focusing_wide_or_collapsed_routes() {
         shell.dashboard_route = DashboardRoute::Sessions;
         let rendered = render_shell(&shell, area);
         assert!(!rendered.contains("Navigation"));
-        assert!(!rendered.contains("Alt + Left / Right"));
+        assert!(!rendered.contains("Alt+Left/Right"));
         let (tab_row_index, tab_row) = rendered
             .lines()
             .enumerate()
-            .find(|(_, line)| line.contains("Settings") && line.contains("Help"))
+            .find(|(_, line)| line.contains("Sessions") && line.contains("Agents"))
             .expect("all dashboard tabs should share a visible row");
-        assert_eq!(tab_row.matches('│').count(), 5);
-        let tab_borders = tab_row
-            .match_indices('│')
-            .map(|(column, _)| u16::try_from(tab_row[..column].chars().count()).unwrap_or(u16::MAX))
-            .collect::<Vec<_>>();
         let tab_row_index = u16::try_from(tab_row_index).unwrap_or(u16::MAX);
 
-        for (index, route) in DashboardRoute::ALL.into_iter().enumerate() {
-            let left_edge = Position::new(
-                area.x.saturating_add(tab_borders[index]),
-                area.y.saturating_add(tab_row_index),
-            );
-            let center = Position::new(
-                area.x
-                    .saturating_add(tab_borders[index].saturating_add(tab_borders[index + 1]) / 2),
-                area.y.saturating_add(tab_row_index),
-            );
-            let view = ShellView { shell: &shell };
-
-            assert_eq!(view.dashboard_route_at(area, left_edge), Some(route));
-            assert_eq!(
-                view.dashboard_route_at(area, Position::new(center.x, center.y.saturating_sub(1))),
-                Some(route)
-            );
-            assert_eq!(
-                view.dashboard_route_at(area, Position::new(center.x, center.y.saturating_add(1))),
-                Some(route)
-            );
-        }
-
         for (route, label) in [
-            (DashboardRoute::Settings, "Settings"),
-            (DashboardRoute::Workspace, "Workspace"),
+            (DashboardRoute::Status, "Status"),
+            (DashboardRoute::Agents, "Agents"),
             (DashboardRoute::Sessions, "Sessions"),
             (DashboardRoute::Help, "Help"),
         ] {
             shell.session_list.focused = true;
             shell.settings.focused = true;
+            shell.agents_focused = true;
+            let label_start = tab_row
+                .find(label)
+                .expect("dashboard tab label should be visible");
             let position = Position::new(
                 area.x.saturating_add(
                     u16::try_from(
-                        tab_row[..tab_row
-                            .find(label)
-                            .expect("dashboard tab label should be visible")]
-                            .chars()
-                            .count(),
+                        tab_row[..label_start].chars().count() + label.chars().count() / 2,
                     )
                     .unwrap_or(u16::MAX),
                 ),
                 area.y.saturating_add(tab_row_index),
             );
 
-            shell.handle_mouse_click(area, position, &mut backend).await;
+            shell
+                .handle_mouse_click(area, position, &config, &mut backend)
+                .await
+                .expect("tab click should succeed");
 
             assert_eq!(
                 (
                     shell.dashboard_route,
                     shell.session_list.focused,
                     shell.settings.focused,
+                    shell.agents_focused,
                 ),
-                (route, false, false)
+                (route, false, false, false)
             );
+            if area.width == 100 && route == DashboardRoute::Status {
+                assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
+                insta::assert_snapshot!(
+                    "dashboard_status_tab_click_without_focus",
+                    render_shell(&shell, area)
+                );
+            }
         }
     }
+}
+
+#[tokio::test]
+async fn clicking_the_composer_returns_focus_from_dashboard_panels() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.session_list.focused = true;
+    shell.settings.focused = true;
+    shell.agents_focused = true;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let input = ShellView { shell: &shell }.input_area(area);
+
+    shell
+        .handle_mouse_click(
+            area,
+            Position::new(input.x.saturating_add(2), input.y.saturating_add(2)),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("composer click should succeed");
+
+    assert_eq!(
+        (
+            shell.session_list.focused,
+            shell.settings.focused,
+            shell.agents_focused,
+            shell.transcript_selection,
+        ),
+        (false, false, false, None)
+    );
+    assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
+}
+
+#[test]
+fn pointer_hover_uses_existing_header_hit_geometry() {
+    let mut shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let position = (area.x..area.right())
+        .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
+        .find(|position| {
+            ShellView { shell: &shell }.header_control_at(area, *position)
+                == Some(header::HeaderControl::Model)
+        })
+        .expect("model chip should be visible");
+    shell.pointer_position = Some(position);
+
+    let buf = render_shell_buffer(&shell, area);
+
+    assert_eq!(buf[position].style().bg, Some(design::palette::BORDER));
+}
+
+#[test]
+fn settings_tab_hover_uses_content_only_geometry() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let baseline = render_shell_buffer(&shell, area);
+    let label_y =
+        row_containing(&baseline, area, "Permissions").expect("settings tabs should be visible");
+    let pointer = Position::new(
+        row_needle_x(&baseline, area, label_y, "Permissions")
+            .expect("permissions tab should be visible"),
+        label_y,
+    );
+    let panel_position = ShellView { shell: &shell }
+        .dashboard_panel_position_at(area, pointer, "Settings")
+        .expect("pointer should be inside the settings panel");
+    let strip_x = pointer
+        .x
+        .saturating_sub(u16::try_from(panel_position.column).unwrap_or(u16::MAX));
+    let columns = settings::SettingsTabs::new(panel_position.width)
+        .column_range(settings::SettingsPage::Permissions)
+        .expect("permissions tab should have a content range");
+
+    shell.pointer_position = Some(pointer);
+    let hovered = render_shell_buffer(&shell, area);
+    let actual_backgrounds = (0..panel_position.width)
+        .map(|column| {
+            hovered[(
+                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
+                label_y,
+            )]
+                .style()
+                .bg
+        })
+        .collect::<Vec<_>>();
+    let mut expected_backgrounds = (0..panel_position.width)
+        .map(|column| {
+            baseline[(
+                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
+                label_y,
+            )]
+                .style()
+                .bg
+        })
+        .collect::<Vec<_>>();
+    expected_backgrounds[columns.clone()].fill(Some(design::palette::BORDER));
+    assert_eq!(actual_backgrounds, expected_backgrounds);
+
+    let underline_y = label_y.saturating_add(1);
+    let actual_foregrounds = (0..panel_position.width)
+        .map(|column| {
+            hovered[(
+                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
+                underline_y,
+            )]
+                .style()
+                .fg
+        })
+        .collect::<Vec<_>>();
+    let mut expected_foregrounds = (0..panel_position.width)
+        .map(|column| {
+            baseline[(
+                strip_x.saturating_add(u16::try_from(column).unwrap_or(u16::MAX)),
+                underline_y,
+            )]
+                .style()
+                .fg
+        })
+        .collect::<Vec<_>>();
+    expected_foregrounds[columns].fill(Some(design::palette::FOCUS));
+    assert_eq!(actual_foregrounds, expected_foregrounds);
+}
+
+#[test]
+fn mouse_wheel_routes_to_the_pane_under_the_pointer() {
+    let mut shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    for index in 0..40 {
+        shell.push_assistant(format!("scrollable response {index}"));
+    }
+    render_shell(&shell, area);
+    let transcript_position = (area.x..area.right())
+        .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
+        .find(|position| {
+            ShellView { shell: &shell }.pointer_pane_at(area, *position)
+                == Some(render::PointerPane::Transcript)
+        })
+        .expect("transcript pane should exist");
+
+    shell.handle_mouse_scroll(area, transcript_position, tui::MouseScrollDirection::Up);
+    assert_eq!(shell.transcript_scroll, 3);
+
+    let input = ShellView { shell: &shell }.input_area(area);
+    shell.handle_mouse_scroll(
+        area,
+        Position::new(input.x, input.y),
+        tui::MouseScrollDirection::Down,
+    );
+    assert_eq!(shell.transcript_scroll, 3);
+
+    shell.pending_elicitation = PendingElicitation::from_request(&mcp_url_elicitation_request());
+    shell.handle_mouse_scroll(area, transcript_position, tui::MouseScrollDirection::Down);
+    assert_eq!(shell.transcript_scroll, 3);
+}
+
+#[test]
+fn mouse_wheel_moves_only_the_hovered_dashboard_selection() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let position = (area.x..area.right())
+        .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
+        .find(|position| {
+            ShellView { shell: &shell }
+                .dashboard_panel_position_at(area, *position, "Settings")
+                .is_some()
+        })
+        .expect("settings panel should be visible");
+
+    assert_eq!(shell.settings.selected_action(), SettingsAction::Model);
+    shell.handle_mouse_scroll(area, position, tui::MouseScrollDirection::Down);
+
+    assert_eq!(
+        shell.settings.selected_action(),
+        SettingsAction::ReasoningEffort
+    );
+    assert!(!shell.settings.focused);
+}
+
+#[tokio::test]
+async fn long_narrow_elicitation_and_tool_options_are_clickable() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 16,
+    );
+    let mut elicitation_request = mcp_url_elicitation_request();
+    let ServerRequest::McpServerElicitationRequest { params, .. } = &mut elicitation_request else {
+        panic!("expected MCP elicitation request");
+    };
+    params.server_name = "github-enterprise-with-a-long-server-name".to_string();
+    let McpServerElicitationRequest::Url { message, url, .. } = &mut params.request else {
+        panic!("expected URL elicitation request");
+    };
+    *message =
+        "Open the authorization page after reviewing the extended security notice".to_string();
+    *url = "https://github.example.test/login/device/with/a/long/authorization/path".to_string();
+    shell.pending_elicitation = PendingElicitation::from_request(&elicitation_request);
+    let accept = rendered_text_position(&render_shell(&shell, area), "Accept ↵");
+
+    shell
+        .handle_mouse_click(area, accept, &config, &mut backend)
+        .await
+        .expect("elicitation click should succeed");
+
+    assert!(shell.pending_elicitation.is_none());
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::Resolve(RequestId::Integer(45))]
+    );
+
+    let mut user_input_request = tool_user_input_request();
+    let ServerRequest::ToolRequestUserInput { params, .. } = &mut user_input_request else {
+        panic!("expected tool user input request");
+    };
+    params.item_id = "environment-selection-for-the-production-deployment".to_string();
+    let question = params.questions.first_mut().expect("tool input question");
+    question.header = "Deployment environment and release channel".to_string();
+    question.question = "Which environment should receive the carefully validated release after all preflight checks complete?".to_string();
+    shell.pending_user_input = PendingUserInput::from_request(&user_input_request);
+    let staging = rendered_text_position(&render_shell(&shell, area), "Staging");
+    shell
+        .handle_mouse_click(area, staging, &config, &mut backend)
+        .await
+        .expect("tool option click should succeed");
+
+    assert!(shell.pending_user_input.is_none());
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::Resolve(RequestId::Integer(45)),
+            RecordedBackendCall::Resolve(RequestId::Integer(43)),
+        ]
+    );
+}
+
+#[test]
+fn long_narrow_approval_keeps_wrapped_actions_visible_and_clickable_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    let mut request = command_approval_request();
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
+        panic!("expected command approval request");
+    };
+    params.command = Some(
+        "cargo test --workspace --package codex-tui --features long-running-integration-checks"
+            .to_string(),
+    );
+    params.reason = Some(
+        "This command needs temporary network access to validate remote fixtures and download test metadata before the release can continue"
+            .to_string(),
+    );
+    shell.pending_approval =
+        PendingApproval::from_request(&request).expect("approval request should be valid");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 18,
+    );
+    let rendered = render_shell(&shell, area);
+    let explain = rendered_text_position(&rendered, "Explain ?");
+
+    assert_eq!(
+        ShellView { shell: &shell }.approval_action_at(area, explain),
+        Some(ApprovalAction::Explain)
+    );
+    insta::assert_snapshot!(rendered);
+}
+
+#[tokio::test]
+async fn safety_modal_actions_are_clickable() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    shell
+        .submit_prompt(&mut backend, "Explain the request".to_string())
+        .await
+        .expect("turn should start");
+    shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &shell,
+            "turn-submit",
+            /*show_buffering_ui*/ true,
+            Some("faster-model"),
+        ),
+    ));
+    let dismiss = rendered_text_position(&render_shell(&shell, area), "Dismiss and keep waiting");
+
+    shell
+        .handle_mouse_click(area, dismiss, &config, &mut backend)
+        .await
+        .expect("safety action click should succeed");
+
+    assert!(shell.safety_buffering_modal_lines().is_none());
+}
+
+#[tokio::test]
+async fn safety_modal_ignores_inside_chrome_and_closes_on_outside_click() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    shell
+        .submit_prompt(&mut backend, "Explain the request".to_string())
+        .await
+        .expect("turn should start");
+    shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &shell,
+            "turn-submit",
+            /*show_buffering_ui*/ true,
+            Some("faster-model"),
+        ),
+    ));
+    let lines = shell
+        .safety_buffering_modal_lines()
+        .expect("safety modal should be open");
+    let panel = modal_view::modal_panel_area(area, &lines);
+    let rendered = render_shell(&shell, area);
+    let title = rendered_text_position(&rendered, "SAFETY REVIEW");
+    let explanation = rendered_text_position(&rendered, "Our systems are thinking");
+    let calls = backend.calls();
+
+    for position in [title, explanation] {
+        shell
+            .handle_mouse_click(area, position, &config, &mut backend)
+            .await
+            .expect("inside safety modal click should succeed");
+        assert!(shell.safety_buffering_modal_lines().is_some());
+        assert_eq!(backend.calls(), calls);
+    }
+
+    shell
+        .handle_mouse_click(
+            area,
+            Position::new(panel.x.saturating_sub(1), panel.y),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("outside safety modal click should succeed");
+
+    assert!(shell.safety_buffering_modal_lines().is_none());
+    assert_eq!(backend.calls(), calls);
+}
+
+#[tokio::test]
+async fn blocking_overlays_capture_keys_and_paste_before_the_composer() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("draft");
+    shell.pending_elicitation = PendingElicitation::from_request(&mcp_url_elicitation_request());
+
+    shell.insert_text(" pasted");
+    shell
+        .handle_key(key_char('x'), &config, &mut backend)
+        .await
+        .expect("modal key should be captured");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("modal shortcut should be captured");
+
+    assert_eq!(shell.composer.text(), "draft");
+    assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
+
+    shell.pending_elicitation = None;
+    shell.session_list.focused = true;
+    shell.insert_text(" hidden");
+    assert_eq!(shell.composer.text(), "draft");
+
+    shell.session_list.focused = false;
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    shell.insert_text(" answer");
+    assert_eq!(shell.composer.text(), "draft answer");
+}
+
+#[tokio::test]
+async fn escape_during_tool_input_does_not_exit_the_shell() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("escape should be captured");
+
+    assert!(!should_exit);
+    assert!(shell.pending_user_input.is_some());
 }
 
 #[test]
@@ -2417,15 +4576,15 @@ fn tool_transcript_blocks_use_status_accent_colors() {
 
     assert_eq!(
         accent_color_for_row(&buf, area, "exec just test"),
-        Some(Color::Cyan)
+        Some(design::palette::CYAN)
     );
     assert_eq!(
         accent_color_for_row(&buf, area, "exec true"),
-        Some(Color::Green)
+        Some(design::palette::SUCCESS)
     );
     assert_eq!(
         accent_color_for_row(&buf, area, "exec false"),
-        Some(Color::Red)
+        Some(design::palette::ERROR)
     );
 }
 
@@ -2456,6 +4615,7 @@ fn tool_transcript_block_background_spans_conversation_width() {
 #[test]
 fn renders_activity_dashboard_panels_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Help;
     shell.pending_approval = PendingApproval::from_request(&command_approval_request())
         .expect("approval request should be valid");
     shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
@@ -2482,7 +4642,7 @@ fn renders_activity_dashboard_panels_snapshot() {
 }
 
 #[test]
-fn narrow_dashboard_overlay_prioritizes_live_activity() {
+fn narrow_dashboard_keeps_the_active_route_interactive() {
     let mut shell = ShellState::snapshot_fixture();
     shell.pending_approval = PendingApproval::from_request(&command_approval_request())
         .expect("approval request should be valid");
@@ -2498,10 +4658,45 @@ fn narrow_dashboard_overlay_prioritizes_live_activity() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("Approvals approval Run command: cargo test"));
-    assert!(rendered.contains("Background workspace refresh queued"));
-    assert!(rendered.contains("Tools in progress exec just test"));
-    assert!(rendered.contains("Subagents"));
+    assert!(rendered.contains("Sessions"));
+    assert!(rendered.contains("CLICK TO FOCUS"));
+    assert!(rendered.contains("Run command: cargo test"));
+}
+
+#[test]
+fn help_dashboard_shows_every_shortcut_at_78_by_24_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Help;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(
+        rendered.contains("Esc twice to exit"),
+        "shortcut tail should remain visible:\n{rendered}"
+    );
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn help_dashboard_shows_every_shortcut_at_48_by_16_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Help;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 16,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(
+        rendered.contains("Esc×2 exit"),
+        "shortcut tail should remain visible:\n{rendered}"
+    );
+    assert!(rendered.contains("> Summarize the new shell architecture"));
+    assert!(!rendered.contains("Esc composer"));
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]
@@ -2527,7 +4722,6 @@ fn subagent_items_route_to_subagent_activity() {
             agents_states: Default::default(),
         },
     }));
-
     assert_eq!(shell.tool_activity, VecDeque::new());
     assert_eq!(
         shell.subagent_activity,
@@ -2537,6 +4731,313 @@ fn subagent_items_route_to_subagent_activity() {
             status: "in progress".to_string(),
         }])
     );
+}
+
+#[test]
+fn subagent_lifecycle_records_do_not_create_permanent_running_tool_cards() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.subagent_activity.clear();
+    let lifecycle_item = ThreadItem::SubAgentActivity {
+        id: "agent-started".to_string(),
+        kind: SubAgentActivityKind::Started,
+        agent_thread_id: "agent-thread".to_string(),
+        agent_path: "/root/reviewer".to_string(),
+    };
+
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: shell.thread_id.to_string(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: lifecycle_item.clone(),
+    }));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: lifecycle_item,
+        },
+    ));
+
+    assert_eq!(shell.transcript, VecDeque::new());
+    assert_eq!(
+        shell.subagent_activity,
+        VecDeque::from([ToolActivity {
+            id: "agent-started".to_string(),
+            title: "subagent Started: /root/reviewer".to_string(),
+            status: "recorded".to_string(),
+        }])
+    );
+}
+
+#[test]
+fn child_thread_events_update_the_agent_inspector_without_touching_the_transcript() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    let root_thread_id = shell.thread_id.to_string();
+    let child_thread_id = "agent-thread".to_string();
+
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: root_thread_id,
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: ThreadItem::CollabAgentToolCall {
+            id: "agent-tool-1".to_string(),
+            tool: CollabAgentTool::SpawnAgent,
+            status: CollabAgentToolCallStatus::InProgress,
+            sender_thread_id: "parent-thread".to_string(),
+            receiver_thread_ids: vec![child_thread_id.clone()],
+            prompt: Some("Inspect dashboard activity.".to_string()),
+            model: Some("gpt-5-codex".to_string()),
+            reasoning_effort: Some(ReasoningEffort::High),
+            agents_states: Default::default(),
+        },
+    }));
+    let root_transcript = shell.transcript.clone();
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "message-1".to_string(),
+            delta: "Review ".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "message-1".to_string(),
+            delta: "complete.".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: child_thread_id.clone(),
+        turn_id: "child-turn".to_string(),
+        started_at_ms: 1,
+        item: ThreadItem::Reasoning {
+            id: "reasoning-1".to_string(),
+            summary: Vec::new(),
+            content: Vec::new(),
+        },
+    }));
+    assert_eq!(
+        shell
+            .agent_activity
+            .agent(&child_thread_id)
+            .expect("spawned agent should be tracked")
+            .timeline
+            .back()
+            .map(agent_activity::AgentTimelineEntry::label),
+        Some("reasoning started".to_string())
+    );
+    shell.handle_notification(ServerNotification::ReasoningTextDelta(
+        codex_app_server_protocol::ReasoningTextDeltaNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "reasoning-1".to_string(),
+            delta: "private chain of thought".to_string(),
+            content_index: 0,
+        },
+    ));
+    let agent = shell
+        .agent_activity
+        .agent(&child_thread_id)
+        .expect("spawned agent should remain tracked");
+    assert_eq!(agent.latest_message.as_deref(), Some("Review complete."));
+    assert_eq!(
+        agent
+            .timeline
+            .back()
+            .map(agent_activity::AgentTimelineEntry::label),
+        Some("reasoning started".to_string())
+    );
+    shell.handle_notification(ServerNotification::ReasoningSummaryTextDelta(
+        codex_app_server_protocol::ReasoningSummaryTextDeltaNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "reasoning-1".to_string(),
+            delta: "checking constraints".to_string(),
+            summary_index: 0,
+        },
+    ));
+    shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+        CommandExecutionOutputDeltaNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "command-1".to_string(),
+            delta: "tests pass".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            completed_at_ms: 2,
+            item: ThreadItem::AgentMessage {
+                id: "message-1".to_string(),
+                text: "Review complete.".to_string(),
+                phase: None,
+                memory_citation: None,
+            },
+        },
+    ));
+
+    let agent = shell
+        .agent_activity
+        .agent(&child_thread_id)
+        .expect("spawned agent should remain tracked");
+    assert_eq!(shell.transcript, root_transcript);
+    assert_eq!(agent.latest_message.as_deref(), Some("Review complete."));
+    assert_eq!(
+        agent
+            .timeline
+            .iter()
+            .map(agent_activity::AgentTimelineEntry::label)
+            .collect::<Vec<_>>(),
+        vec![
+            "spawning agent".to_string(),
+            "message completed: Review complete.".to_string(),
+            "reasoning: checking constraints".to_string(),
+            "command output: tests pass".to_string(),
+        ]
+    );
+
+    shell.handle_notification(ServerNotification::TurnCompleted(
+        codex_app_server_protocol::TurnCompletedNotification {
+            thread_id: child_thread_id.clone(),
+            turn: test_turn("child-turn", TurnStatus::Completed),
+        },
+    ));
+    assert_eq!(
+        shell
+            .agent_activity
+            .agent(&child_thread_id)
+            .map(|agent| agent.status),
+        Some(agent_activity::AgentLifecycleStatus::Completed)
+    );
+    shell.handle_notification(ServerNotification::Error(ErrorNotification {
+        error: TurnError {
+            message: "child failed".to_string(),
+            codex_error_info: None,
+            additional_details: None,
+        },
+        will_retry: false,
+        thread_id: child_thread_id.clone(),
+        turn_id: "child-turn-2".to_string(),
+    }));
+    let agent = shell
+        .agent_activity
+        .agent(&child_thread_id)
+        .expect("spawned agent should remain tracked");
+    assert_eq!(agent.status, agent_activity::AgentLifecycleStatus::Errored);
+    assert_eq!(agent.latest_message.as_deref(), Some("child failed"));
+}
+
+#[test]
+fn child_turn_start_reactivates_a_stopped_agent() {
+    let mut shell = ShellState::snapshot_fixture();
+    let child_thread_id = "agent-thread".to_string();
+    shell
+        .agent_activity
+        .reduce_completed(&ThreadItem::CollabAgentToolCall {
+            id: "agent-state".to_string(),
+            tool: CollabAgentTool::Wait,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: shell.thread_id.to_string(),
+            receiver_thread_ids: vec![child_thread_id.clone()],
+            prompt: None,
+            model: None,
+            reasoning_effort: None,
+            agents_states: HashMap::from([(
+                child_thread_id.clone(),
+                CollabAgentState {
+                    status: CollabAgentStatus::Shutdown,
+                    message: None,
+                },
+            )]),
+        });
+    shell
+        .active_agent_thread_ids
+        .insert(child_thread_id.clone());
+
+    shell.handle_notification(ServerNotification::TurnStarted(
+        codex_app_server_protocol::TurnStartedNotification {
+            thread_id: child_thread_id.clone(),
+            turn: test_turn("child-turn", TurnStatus::InProgress),
+        },
+    ));
+
+    assert_eq!(
+        shell
+            .agent_activity
+            .agent(&child_thread_id)
+            .map(|agent| agent.status),
+        Some(agent_activity::AgentLifecycleStatus::Running)
+    );
+}
+
+#[test]
+fn child_notifications_discover_nested_agents() {
+    let mut shell = ShellState::snapshot_fixture();
+    let root_thread_id = shell.thread_id.to_string();
+    let child_thread_id = "agent-child".to_string();
+    let grandchild_thread_id = "agent-grandchild".to_string();
+
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: root_thread_id,
+            turn_id: "root-turn".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::SubAgentActivity {
+                id: "child-started".to_string(),
+                kind: SubAgentActivityKind::Started,
+                agent_thread_id: child_thread_id.clone(),
+                agent_path: "/root/child".to_string(),
+            },
+        },
+    ));
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: child_thread_id.clone(),
+        turn_id: "child-turn".to_string(),
+        started_at_ms: 2,
+        item: ThreadItem::CollabAgentToolCall {
+            id: "nested-spawn".to_string(),
+            tool: CollabAgentTool::SpawnAgent,
+            status: CollabAgentToolCallStatus::InProgress,
+            sender_thread_id: child_thread_id.clone(),
+            receiver_thread_ids: vec![grandchild_thread_id.clone()],
+            prompt: Some("Inspect the nested flow.".to_string()),
+            model: Some("gpt-5-codex".to_string()),
+            reasoning_effort: Some(ReasoningEffort::High),
+            agents_states: Default::default(),
+        },
+    }));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: child_thread_id,
+            turn_id: "child-turn".to_string(),
+            completed_at_ms: 3,
+            item: ThreadItem::SubAgentActivity {
+                id: "grandchild-started".to_string(),
+                kind: SubAgentActivityKind::Started,
+                agent_thread_id: grandchild_thread_id.clone(),
+                agent_path: "/root/child/grandchild".to_string(),
+            },
+        },
+    ));
+
+    assert!(shell.agent_activity.is_known_thread(&grandchild_thread_id));
+    assert_eq!(
+        shell
+            .agent_activity
+            .agent(&grandchild_thread_id)
+            .and_then(|agent| agent.path.as_ref())
+            .map(ToString::to_string)
+            .as_deref(),
+        Some("/root/child/grandchild")
+    );
+    assert_eq!(shell.agent_activity.counts().total, 2);
 }
 
 #[test]
@@ -2605,7 +5106,7 @@ fn completed_tool_item_updates_existing_transcript_status() {
     let running_buf = render_shell_buffer(&shell, area);
     assert_eq!(
         accent_color_for_row(&running_buf, area, "exec cargo test"),
-        Some(Color::Cyan)
+        Some(design::palette::CYAN)
     );
 
     shell.handle_notification(ServerNotification::ItemCompleted(
@@ -2628,7 +5129,7 @@ fn completed_tool_item_updates_existing_transcript_status() {
     let completed_buf = render_shell_buffer(&shell, area);
     assert_eq!(
         accent_color_for_row(&completed_buf, area, "exec cargo test"),
-        Some(Color::Green)
+        Some(design::palette::SUCCESS)
     );
 }
 
@@ -2670,12 +5171,11 @@ fn command_output_deltas_update_one_output_block() {
             TranscriptLine::new(TranscriptKind::Tool, "exec cargo test")
                 .tool_status(ToolBlockStatus::Running)
                 .item_id("exec-1"),
-            TranscriptLine::new(
-                TranscriptKind::Output,
-                "pytest 40%\rpytest 80%\rpytest 100%\n"
-            )
-            .tool_status(ToolBlockStatus::Running)
-            .item_id("exec-1"),
+            TranscriptLine::output(
+                "pytest 40%\rpytest 80%\rpytest 100%\n",
+                ToolBlockStatus::Running,
+                "exec-1".to_string(),
+            ),
         ])
     );
     let area = Rect::new(
@@ -2705,17 +5205,55 @@ fn command_output_deltas_update_one_output_block() {
         },
     ));
 
+    let mut completed_output = TranscriptLine::output(
+        "pytest 100%\n",
+        ToolBlockStatus::Success,
+        "exec-1".to_string(),
+    );
+    completed_output.full_text = Some("pytest 40%\rpytest 80%\rpytest 100%\n".to_string());
     assert_eq!(
         shell.transcript,
         VecDeque::from([
             TranscriptLine::new(TranscriptKind::Tool, "exec cargo test exit 0 42ms")
                 .tool_status(ToolBlockStatus::Success)
                 .item_id("exec-1"),
-            TranscriptLine::new(TranscriptKind::Output, "pytest 100%")
-                .tool_status(ToolBlockStatus::Success)
-                .item_id("exec-1"),
+            completed_output,
         ])
     );
+}
+
+#[test]
+fn command_output_deltas_preserve_newline_chunks() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    for delta in ["first", "\n", "second", ""] {
+        shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+            CommandExecutionOutputDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+                item_id: "exec-lines".to_string(),
+                delta: delta.to_string(),
+            },
+        ));
+    }
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::output(
+            "first\nsecond",
+            ToolBlockStatus::Running,
+            "exec-lines".to_string(),
+        )])
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+        )
+    ));
 }
 
 #[test]
@@ -2766,13 +5304,16 @@ fn command_output_transcript_text_is_bounded() {
     shell.streaming_assistant.clear();
     let thread_id = shell.thread_id.to_string();
 
-    for index in 0..200 {
+    let full_output = (0..200)
+        .map(|index| format!("compile line {index:03}: {}\n", "x".repeat(96)))
+        .collect::<String>();
+    for delta in full_output.split_inclusive('\n') {
         shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
             CommandExecutionOutputDeltaNotification {
                 thread_id: thread_id.clone(),
                 turn_id: "turn-1".to_string(),
                 item_id: "exec-1".to_string(),
-                delta: format!("compile line {index:03}: {}\n", "x".repeat(96)),
+                delta: delta.to_string(),
             },
         ));
     }
@@ -2783,13 +5324,12 @@ fn command_output_transcript_text_is_bounded() {
         .expect("output line should be present")
         .text
         .clone();
+    let mut expected = TranscriptLine::new(TranscriptKind::Output, output.clone())
+        .tool_status(ToolBlockStatus::Running)
+        .item_id("exec-1");
+    expected.full_text = Some(full_output);
 
-    assert_eq!(
-        shell.transcript,
-        VecDeque::from([TranscriptLine::new(TranscriptKind::Output, output.clone())
-            .tool_status(ToolBlockStatus::Running)
-            .item_id("exec-1")])
-    );
+    assert_eq!(shell.transcript, VecDeque::from([expected]));
     assert!(output.starts_with(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX));
     assert!(
         output.chars().count()
@@ -2797,6 +5337,110 @@ fn command_output_transcript_text_is_bounded() {
     );
     assert!(!output.contains("compile line 000"));
     assert!(output.contains("compile line 199"));
+}
+
+#[tokio::test]
+async fn clicking_running_output_opens_a_live_full_output_popup() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: thread_id.clone(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: command_execution_item("exec-live", CommandExecutionStatus::InProgress, None),
+    }));
+    let initial_output = (0..200)
+        .map(|index| format!("compile line {index:03}: checking workspace\n"))
+        .collect::<String>();
+    shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+        CommandExecutionOutputDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            item_id: "exec-live".to_string(),
+            delta: initial_output.clone(),
+        },
+    ));
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+    let output_index = shell
+        .transcript
+        .iter()
+        .position(|line| line.kind == TranscriptKind::Output)
+        .expect("output card should exist");
+    let position = (area.y..area.bottom())
+        .flat_map(|y| (area.x..area.right()).map(move |x| Position::new(x, y)))
+        .find(|position| {
+            (ShellView { shell: &shell }).transcript_output_at(area, *position)
+                == Some(output_index)
+        })
+        .expect("output card should expose a click target");
+
+    shell
+        .handle_mouse_click(area, position, &config, &mut backend)
+        .await
+        .expect("output click should succeed");
+
+    let open = shell
+        .tool_output
+        .as_ref()
+        .expect("output popup should open");
+    assert!(open.output().contains("compile line 000"));
+    assert!(open.output().contains("compile line 199"));
+    assert_eq!(open.target.status, ToolBlockStatus::Running);
+
+    shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+        CommandExecutionOutputDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            item_id: "exec-live".to_string(),
+            delta: "compile line 200: finished\n".to_string(),
+        },
+    ));
+    let open = shell
+        .tool_output
+        .as_ref()
+        .expect("live output popup should remain open");
+    assert!(open.output().ends_with("compile line 200: finished\n"));
+
+    let completed_output = format!("{initial_output}compile line 200: finished\n");
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::CommandExecution {
+                id: "exec-live".to_string(),
+                command: "cargo test".to_string(),
+                cwd: LegacyAppPathString::from_abs_path(&test_absolute_path(
+                    "workspace/better-codex",
+                )),
+                process_id: None,
+                source: CommandExecutionSource::Agent,
+                status: CommandExecutionStatus::Completed,
+                command_actions: Vec::new(),
+                aggregated_output: Some(completed_output.clone()),
+                exit_code: Some(0),
+                duration_ms: Some(42),
+            },
+        },
+    ));
+    let open = shell
+        .tool_output
+        .as_ref()
+        .expect("completed output popup should remain open");
+    assert_eq!(open.output(), completed_output);
+    assert_eq!(open.target.status, ToolBlockStatus::Success);
+
+    shell
+        .handle_mouse_click(area, Position::new(/*x*/ 0, /*y*/ 0), &config, &mut backend)
+        .await
+        .expect("outside click should succeed");
+    assert!(shell.tool_output.is_none());
 }
 
 #[test]
@@ -2865,18 +5509,18 @@ fn legacy_command_exec_output_deltas_update_one_output_block() {
 
     assert_eq!(
         shell.transcript,
-        VecDeque::from([TranscriptLine::new(
-            TranscriptKind::Output,
-            "tqdm 1/3\rtqdm 2/3\rtqdm 3/3\n"
-        )
-        .tool_status(ToolBlockStatus::Running)
-        .item_id("command-exec:process-1")])
+        VecDeque::from([TranscriptLine::output(
+            "tqdm 1/3\rtqdm 2/3\rtqdm 3/3\n",
+            ToolBlockStatus::Running,
+            "command-exec:process-1".to_string(),
+        )])
     );
 }
 
 #[tokio::test]
 async fn workspace_refresh_waits_until_active_turn_finishes() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.workspace_command_runner = Some(Arc::new(NoopWorkspaceRunner));
     let mut backend = RecordingBackend::default();
     let thread_id = shell.thread_id.to_string();
     shell.active_turn_id = Some("turn-1".to_string());
@@ -2885,7 +5529,6 @@ async fn workspace_refresh_waits_until_active_turn_finishes() {
     shell
         .handle_app_server_event(
             &mut backend,
-            &NoopWorkspaceRunner,
             AppServerEvent::ServerNotification(ServerNotification::TurnDiffUpdated(
                 TurnDiffUpdatedNotification {
                     thread_id: thread_id.clone(),
@@ -2903,7 +5546,6 @@ async fn workspace_refresh_waits_until_active_turn_finishes() {
     shell
         .handle_app_server_event(
             &mut backend,
-            &NoopWorkspaceRunner,
             AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(
                 codex_app_server_protocol::TurnCompletedNotification {
                     thread_id,
@@ -2912,9 +5554,15 @@ async fn workspace_refresh_waits_until_active_turn_finishes() {
             )),
         )
         .await
-        .expect("turn completion should refresh workspace status");
+        .expect("turn completion should schedule workspace status refresh");
 
-    assert_eq!(shell.workspace_status_refresh_due, false);
+    assert!(shell.workspace_status_refresh_due);
+    assert!(shell.has_pending_session_hydration());
+    assert_eq!(shell.workspace_git_status, None);
+
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert!(!shell.workspace_status_refresh_due);
     assert_eq!(
         shell.workspace_git_status,
         Some(WorkspaceGitStatus::default())
@@ -3032,7 +5680,7 @@ fn dashboard_uses_available_width_for_long_values() {
         title: "exec just test -p codex-tui app_shell_tests".to_string(),
         status: "completed".to_string(),
     }]);
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 190, /*height*/ 36,
     );
@@ -3040,9 +5688,6 @@ fn dashboard_uses_available_width_for_long_values() {
     let rendered = render_shell(&shell, area);
 
     assert!(rendered.contains("gpt-5-codex-dashboard-detail"));
-    shell.dashboard_route = DashboardRoute::Workspace;
-    let rendered = render_shell(&shell, area);
-
     assert!(rendered.contains("/workspace/better-codex/codex-rs/tui"));
     assert!(rendered.contains("feature/dashboard-width-budget"));
     assert!(rendered.contains("exec just test -p codex-tui app_shell_tests"));
@@ -3076,20 +5721,15 @@ fn dashboard_compacts_token_counts_and_groups_other_large_numbers() {
             untracked: 6_000,
         },
     });
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 130, /*height*/ 48,
     );
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("total 1.5m"));
-    assert!(rendered.contains("input 1.2m"));
-    assert!(rendered.contains("output 235k"));
+    assert!(rendered.contains("input 1.2m | output 235k"));
     assert!(rendered.contains("Context 27% left"));
-    shell.dashboard_route = DashboardRoute::Workspace;
-    let rendered = render_shell(&shell, area);
-
     assert!(rendered.contains("1,234 files +56,789 -10,011"));
     assert!(rendered.contains("changes 21,000 files"));
     assert!(rendered.contains("added 1,000"));
@@ -3146,7 +5786,7 @@ fn transcript_selection_page_keys_scroll_without_changing_selection() {
 #[test]
 fn transcript_scrollbar_metrics_tracks_visible_range() {
     assert_eq!(
-        render::transcript_scrollbar_metrics(
+        transcript_view::transcript_scrollbar_metrics(
             /*total_lines*/ 40, /*visible_count*/ 10, /*visible_from*/ 0,
             /*min_thumb_height*/ 2
         ),
@@ -3156,7 +5796,7 @@ fn transcript_scrollbar_metrics_tracks_visible_range() {
         })
     );
     assert_eq!(
-        render::transcript_scrollbar_metrics(
+        transcript_view::transcript_scrollbar_metrics(
             /*total_lines*/ 40, /*visible_count*/ 10, /*visible_from*/ 30,
             /*min_thumb_height*/ 2
         ),
@@ -3170,7 +5810,7 @@ fn transcript_scrollbar_metrics_tracks_visible_range() {
 #[test]
 fn transcript_scrollbar_metrics_uses_minimum_thumb_height() {
     assert_eq!(
-        render::transcript_scrollbar_metrics(
+        transcript_view::transcript_scrollbar_metrics(
             /*total_lines*/ 1_000, /*visible_count*/ 10, /*visible_from*/ 500,
             /*min_thumb_height*/ 2
         ),
@@ -3180,7 +5820,7 @@ fn transcript_scrollbar_metrics_uses_minimum_thumb_height() {
         })
     );
     assert_eq!(
-        render::transcript_scrollbar_metrics(
+        transcript_view::transcript_scrollbar_metrics(
             /*total_lines*/ 8, /*visible_count*/ 10, /*visible_from*/ 0,
             /*min_thumb_height*/ 2
         ),
@@ -3251,7 +5891,6 @@ async fn token_usage_notification_uses_last_usage_for_context_pressure() {
     shell
         .handle_app_server_event(
             &mut backend,
-            &NoopWorkspaceRunner,
             AppServerEvent::ServerNotification(ServerNotification::ThreadTokenUsageUpdated(
                 codex_app_server_protocol::ThreadTokenUsageUpdatedNotification {
                     thread_id: shell.thread_id.to_string(),
@@ -3380,7 +6019,7 @@ async fn shift_enter_preserves_multiline_composer_when_typing() {
     let rendered = render_shell(&shell, area);
 
     assert!(
-        rendered.contains("Composer ready 2:2"),
+        rendered.contains("MESSAGE  2:2"),
         "composer should render the cursor on the second line"
     );
     assert!(
@@ -3399,6 +6038,57 @@ async fn shift_enter_preserves_multiline_composer_when_typing() {
 
     assert_eq!(cursor.y, row);
     assert_eq!(cursor.x, text_x + 1);
+}
+
+#[tokio::test]
+async fn alt_enter_inserts_a_newline_without_submitting() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("first");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("alt enter should insert a newline");
+
+    assert_eq!(
+        (shell.composer.text(), shell.composer.cursor_position()),
+        ("first\n", (1, 0))
+    );
+    assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
+async fn alt_enter_inserts_a_newline_during_tool_input() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    shell.composer.set_text("details");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::ALT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("alt enter should insert a tool-input newline");
+
+    assert_eq!(
+        (
+            shell.pending_user_input.is_some(),
+            shell.composer.text(),
+            shell.composer.cursor_position(),
+            backend.calls(),
+        ),
+        (true, "details\n", (1, 0), Vec::new())
+    );
 }
 
 #[tokio::test]
@@ -3427,7 +6117,7 @@ async fn repeated_shift_enter_keeps_blank_line_cursor_visible() {
     let view = ShellView { shell: &shell };
     let buf = render_shell_buffer(&shell, area);
     let input_area = view.input_area(area);
-    let title_row = row_containing(&buf, input_area, "Composer ready 9:1")
+    let title_row = row_containing(&buf, input_area, "MESSAGE  9:1")
         .expect("composer should render the ninth logical line");
     let cursor = view
         .cursor_position(area)
@@ -3473,21 +6163,28 @@ fn composer_cursor_tracks_word_wrapped_single_line_prompt() {
     let view = ShellView { shell: &shell };
     let buf = render_shell_buffer(&shell, area);
     let input_area = view.input_area(area);
+    let first_row = row_containing(&buf, input_area, "This deliberately")
+        .expect("prompt start should render on a visible row");
+    let first_x = row_needle_x(&buf, input_area, first_row, "This deliberately")
+        .expect("prompt start should have an x position");
     let row = row_containing(&buf, input_area, "another row")
         .expect("wrapped prompt tail should render on a visible row");
+    let wrapped_x = row_needle_x(&buf, input_area, row, "before the final")
+        .expect("wrapped prompt line should have an x position");
     let tail_x = row_needle_x(&buf, input_area, row, "another row")
         .expect("wrapped prompt tail should have an x position");
     let cursor = view
         .cursor_position(area)
         .expect("composer cursor should be visible");
 
+    assert_eq!(wrapped_x, first_x);
     assert_eq!(cursor.y, row);
     assert_eq!(cursor.x, tail_x + 11);
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
 #[test]
-fn dashboard_focus_dims_conversation_and_hides_composer_cursor() {
+fn dashboard_focus_keeps_context_readable_and_hides_composer_cursor() {
     let mut shell = ShellState::snapshot_fixture();
     shell.session_list.focused = true;
     let area = Rect::new(
@@ -3496,8 +6193,8 @@ fn dashboard_focus_dims_conversation_and_hides_composer_cursor() {
     let view = ShellView { shell: &shell };
     let buf = render_shell_buffer(&shell, area);
     let conversation_row =
-        row_containing(&buf, area, "Conversation").expect("conversation title should render");
-    let conversation_x = row_needle_x(&buf, area, conversation_row, "Conversation")
+        row_containing(&buf, area, "CONVERSATION").expect("conversation title should render");
+    let conversation_x = row_needle_x(&buf, area, conversation_row, "CONVERSATION")
         .expect("conversation title should have an x position");
     let dashboard_row =
         row_containing(&buf, area, "Sessions").expect("dashboard tabs should render");
@@ -3505,16 +6202,16 @@ fn dashboard_focus_dims_conversation_and_hides_composer_cursor() {
         .expect("active tab should have an x position");
 
     assert!(
-        buf[(conversation_x, conversation_row)]
+        !buf[(conversation_x, conversation_row)]
             .style()
             .add_modifier
             .contains(Modifier::DIM)
     );
-    let background_x = conversation_x + "Conversation".len() as u16 + 1;
+    let background_x = conversation_x + "CONVERSATION".len() as u16 + 1;
     assert_eq!(buf[(background_x, conversation_row)].symbol(), " ");
     assert_eq!(
         buf[(background_x, conversation_row)].style().bg,
-        Some(design::MOCHA_MANTLE)
+        Some(design::palette::BASE)
     );
     assert!(
         !buf[(dashboard_x, dashboard_row)]
@@ -3541,7 +6238,7 @@ fn composer_highlights_recognized_slash_commands_snapshot() {
     let slash_x = row_needle_x(&buf, input_area, row, "/goal")
         .expect("slash command should have an x position");
 
-    assert_eq!(buf[(slash_x, row)].style().fg, Some(Color::Cyan));
+    assert_eq!(buf[(slash_x, row)].style().fg, Some(design::palette::FOCUS));
 
     shell.composer.set_text("/clear");
     let clear_buf = render_shell_buffer(&shell, area);
@@ -3551,7 +6248,7 @@ fn composer_highlights_recognized_slash_commands_snapshot() {
         .expect("clear command should have an x position");
     assert_eq!(
         clear_buf[(clear_x, clear_row)].style().fg,
-        Some(Color::Cyan)
+        Some(design::palette::FOCUS)
     );
 
     shell.composer.set_text("/exit");
@@ -3560,7 +6257,10 @@ fn composer_highlights_recognized_slash_commands_snapshot() {
         .expect("exit command should render in the composer");
     let exit_x = row_needle_x(&exit_buf, input_area, exit_row, "/exit")
         .expect("exit command should have an x position");
-    assert_eq!(exit_buf[(exit_x, exit_row)].style().fg, Some(Color::Cyan));
+    assert_eq!(
+        exit_buf[(exit_x, exit_row)].style().fg,
+        Some(design::palette::FOCUS)
+    );
 
     shell.composer.set_text("/goal Keep the dashboard compact");
     insta::assert_snapshot!(render_shell(&shell, area));
@@ -3581,7 +6281,7 @@ fn composer_does_not_highlight_unknown_slash_commands() {
     let slash_x = row_needle_x(&buf, input_area, row, "/unknown")
         .expect("slash-prefixed text should have an x position");
 
-    assert_eq!(buf[(slash_x, row)].style().fg, Some(Color::Reset));
+    assert_eq!(buf[(slash_x, row)].style().fg, Some(design::palette::TEXT));
 }
 
 #[test]
@@ -3599,8 +6299,14 @@ fn composer_highlights_shell_operator_snapshot() {
     let operator_x = row_needle_x(&buf, input_area, row, "! printf hello")
         .expect("shell command should have an x position");
 
-    assert_eq!(buf[(operator_x, row)].style().fg, Some(Color::Cyan));
-    assert_eq!(buf[(operator_x + 1, row)].style().fg, Some(Color::Reset));
+    assert_eq!(
+        buf[(operator_x, row)].style().fg,
+        Some(design::palette::FOCUS)
+    );
+    assert_eq!(
+        buf[(operator_x + 1, row)].style().fg,
+        Some(design::palette::TEXT)
+    );
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
@@ -3750,6 +6456,22 @@ fn mcp_elicitation_serializes_accept_decline_and_cancel() {
 }
 
 #[test]
+fn mcp_elicitation_mouse_columns_use_display_width() {
+    let pending = PendingElicitation::from_request(&mcp_url_elicitation_request())
+        .expect("request should be supported");
+    let actions = "   Accept ↵   Decline d   Cancel c ";
+    let decline = actions
+        .find("Decline d")
+        .expect("decline action should exist");
+    let column = unicode_width::UnicodeWidthStr::width(&actions[..decline]);
+
+    assert_eq!(
+        pending.choice_at(/*line*/ 2, column),
+        Some(ElicitationChoice::Decline)
+    );
+}
+
+#[test]
 fn mcp_elicitation_rejects_rich_form_accept_without_content() {
     let pending = PendingElicitation::from_request(&mcp_rich_elicitation_request())
         .expect("request should be supported");
@@ -3796,6 +6518,22 @@ fn file_change_detail_caps_file_rows() {
 fn render_shell(shell: &ShellState, area: Rect) -> String {
     let buf = render_shell_buffer(shell, area);
     buffer_contents(&buf, area)
+}
+
+fn rendered_text_position(rendered: &str, needle: &str) -> Position {
+    rendered
+        .lines()
+        .enumerate()
+        .find_map(|(y, line)| {
+            let start = line.find(needle)?;
+            let x = unicode_width::UnicodeWidthStr::width(&line[..start])
+                + unicode_width::UnicodeWidthStr::width(needle) / 2;
+            Some(Position::new(
+                u16::try_from(x).unwrap_or(u16::MAX),
+                u16::try_from(y).unwrap_or(u16::MAX),
+            ))
+        })
+        .expect("rendered text should contain target")
 }
 
 fn line_text(line: &Line<'_>) -> String {
@@ -3882,8 +6620,10 @@ fn row_needle_x(buf: &Buffer, area: Rect, y: u16, needle: &str) -> Option<u16> {
             row.push_str(cell.symbol());
         }
     }
-    row.find(needle)
-        .and_then(|offset| area.x.checked_add(u16::try_from(offset).ok()?))
+    row.find(needle).and_then(|offset| {
+        area.x
+            .checked_add(u16::try_from(row[..offset].chars().count()).ok()?)
+    })
 }
 
 fn assert_adjacent_rows(rendered: &str, first: &str, second: &str) {
@@ -3994,7 +6734,7 @@ fn command_approval_request() -> ServerRequest {
     ServerRequest::CommandExecutionRequestApproval {
         request_id: RequestId::Integer(41),
         params: CommandExecutionRequestApprovalParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "exec-1".to_string(),
             started_at_ms: 0,
@@ -4019,7 +6759,7 @@ fn permissions_approval_request() -> ServerRequest {
     ServerRequest::PermissionsRequestApproval {
         request_id: RequestId::Integer(42),
         params: PermissionsRequestApprovalParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "permissions-1".to_string(),
             environment_id: None,
@@ -4040,7 +6780,7 @@ fn tool_user_input_request() -> ServerRequest {
     ServerRequest::ToolRequestUserInput {
         request_id: RequestId::Integer(43),
         params: ToolRequestUserInputParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "tool-input-1".to_string(),
             questions: vec![ToolRequestUserInputQuestion {
@@ -4069,7 +6809,7 @@ fn tool_free_form_user_input_request() -> ServerRequest {
     ServerRequest::ToolRequestUserInput {
         request_id: RequestId::Integer(44),
         params: ToolRequestUserInputParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: "turn-1".to_string(),
             item_id: "tool-input-2".to_string(),
             questions: vec![ToolRequestUserInputQuestion {
@@ -4089,7 +6829,7 @@ fn mcp_url_elicitation_request() -> ServerRequest {
     ServerRequest::McpServerElicitationRequest {
         request_id: RequestId::Integer(45),
         params: McpServerElicitationRequestParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: Some("turn-1".to_string()),
             server_name: "github".to_string(),
             request: McpServerElicitationRequest::Url {
@@ -4119,7 +6859,7 @@ fn mcp_rich_elicitation_request() -> ServerRequest {
     ServerRequest::McpServerElicitationRequest {
         request_id: RequestId::Integer(46),
         params: McpServerElicitationRequestParams {
-            thread_id: "thread-1".to_string(),
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
             turn_id: Some("turn-1".to_string()),
             server_name: "payments".to_string(),
             request: McpServerElicitationRequest::OpenAiForm {
@@ -4420,7 +7160,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
         thread_fixture(other_id, Some("feature search"), "other preview"),
     ]);
 
-    shell.refresh_session_list(&mut backend).await;
+    refresh_session_list(&mut shell, &backend).await;
     shell
         .handle_session_list_key(key_char('/'), &config, &mut backend)
         .await
@@ -4444,6 +7184,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
         )
         .await
         .expect("search should finish");
+    finish_session_hydration(&mut shell, &backend).await;
     shell
         .handle_session_list_key(key_char('a'), &config, &mut backend)
         .await
@@ -4452,6 +7193,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
         .handle_session_list_key(key_char('v'), &config, &mut backend)
         .await
         .expect("archived view should load");
+    finish_session_hydration(&mut shell, &backend).await;
     shell
         .handle_session_list_key(key_char('u'), &config, &mut backend)
         .await
@@ -4460,6 +7202,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
         .handle_session_list_key(key_char('v'), &config, &mut backend)
         .await
         .expect("active view should reload");
+    finish_session_hydration(&mut shell, &backend).await;
     shell
         .handle_session_list_key(key_char('n'), &config, &mut backend)
         .await
@@ -4492,30 +7235,203 @@ async fn native_session_list_search_archive_delete_and_rename() {
 }
 
 #[tokio::test]
+async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely() {
+    let config = test_config().await;
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000799");
+    let mut threads = (0..20)
+        .map(|index| {
+            let thread_id = test_thread_id(&format!("01900000-0000-7000-8000-{index:012x}"));
+            thread_fixture(
+                thread_id,
+                Some(&format!("session {index}")),
+                "ordinary preview",
+            )
+        })
+        .collect::<Vec<_>>();
+    threads[0].name = Some("Needle case mismatch".to_string());
+    threads[1]
+        .git_info
+        .as_mut()
+        .expect("thread should have git info")
+        .branch = Some("needle-branch-only".to_string());
+    threads[2].cwd = test_absolute_path("workspace/needle-cwd-only");
+    threads.push(thread_fixture(
+        target_id,
+        Some("needle target"),
+        "match beyond the initial page",
+    ));
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    let mut backend = RecordingBackend::with_threads(threads);
+
+    refresh_session_list(&mut shell, &backend).await;
+    assert!(
+        shell.session_list.lines(/*width*/ 80)[0]
+            .to_string()
+            .contains("20+ sessions")
+    );
+    shell
+        .handle_session_list_key(key_char('/'), &config, &mut backend)
+        .await
+        .expect("search mode should start");
+    shell
+        .handle_session_list_key(
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("backspace on an empty query should be a no-op");
+    for ch in "needle".chars() {
+        shell
+            .handle_session_list_key(key_char(ch), &config, &mut backend)
+            .await
+            .expect("typing should filter locally");
+    }
+    assert_eq!(shell.session_list.selected_thread_id(), None);
+    assert!(
+        shell.session_list.lines(/*width*/ 80)[1]
+            .to_string()
+            .contains("filter* needle  · Enter search all")
+    );
+    insta::assert_snapshot!(
+        "session_filter_contract",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
+    );
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+        }]
+    );
+
+    shell
+        .handle_session_list_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("committed search should refresh from the backend");
+    finish_session_hydration(&mut shell, &backend).await;
+    assert_eq!(shell.session_list.selected_thread_id(), Some(target_id));
+    assert!(
+        shell.session_list.lines(/*width*/ 80)[1]
+            .to_string()
+            .contains("search needle  · server results")
+    );
+
+    shell
+        .handle_session_list_key(key_char('/'), &config, &mut backend)
+        .await
+        .expect("committed search should reopen");
+    shell
+        .handle_session_list_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("clearing search should restore the unfiltered page");
+    finish_session_hydration(&mut shell, &backend).await;
+    assert_ne!(shell.session_list.selected_thread_id(), Some(target_id));
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: Some("needle".to_string()),
+            },
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+        ]
+    );
+}
+
+async fn refresh_session_list<S>(shell: &mut ShellState, app_server: &S)
+where
+    S: backend::AppShellBackend,
+{
+    shell.start_session_list_refresh(app_server);
+    finish_session_hydration(shell, app_server).await;
+}
+
+async fn finish_session_hydration<S>(shell: &mut ShellState, app_server: &S)
+where
+    S: backend::AppShellBackend,
+{
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        loop {
+            let _changed = shell.poll_session_hydration(app_server).await;
+            if !shell.has_pending_session_hydration() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("session hydration should finish");
+}
+
+#[tokio::test]
 async fn native_session_list_resume_and_fork_switch_shell_thread() {
     let config = test_config().await;
     let resume_id = test_thread_id("01900000-0000-7000-8000-000000000401");
     let fork_id = test_thread_id("01900000-0000-7000-8000-000000000402");
+    let initial_id = test_thread_id(SNAPSHOT_THREAD_ID);
     let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
     shell.session_list.focused = true;
+    let runner = Arc::new(RecordingWorkspaceRunner::new(
+        crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "## hydrated\n M src/lib.rs\n".to_string(),
+            stderr: String::new(),
+        },
+    ));
+    shell.workspace_command_runner = Some(runner.clone());
     let mut backend = RecordingBackend::with_threads(vec![
         thread_fixture(resume_id, Some("resume target"), "resume preview"),
         thread_fixture(fork_id, Some("fork target"), "fork preview"),
     ]);
+    let resume_goal = test_thread_goal(&resume_id, ThreadGoalStatus::Active, "Resume goal");
+    *backend.active_goal.lock().expect("goal should lock") = Some(resume_goal.clone());
 
-    shell.refresh_session_list(&mut backend).await;
+    refresh_session_list(&mut shell, &backend).await;
     shell
         .handle_session_list_key(key_char('r'), &config, &mut backend)
         .await
         .expect("resume should resolve");
+    finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(shell.thread_id, resume_id);
+    assert_eq!(shell.active_goal, Some(resume_goal));
+    assert_eq!(
+        (shell.dashboard_route, shell.session_list.focused),
+        (DashboardRoute::Sessions, true)
+    );
 
-    shell.refresh_session_list(&mut backend).await;
+    refresh_session_list(&mut shell, &backend).await;
     shell.session_list.move_selection_down();
+    let forked_id = test_thread_id("01900000-0000-7000-8000-000000000202");
+    let fork_goal = test_thread_goal(&forked_id, ThreadGoalStatus::Paused, "Fork goal");
+    *backend.active_goal.lock().expect("goal should lock") = Some(fork_goal.clone());
     shell
         .handle_session_list_key(key_char('f'), &config, &mut backend)
         .await
         .expect("fork should resolve");
+    finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(
         backend.calls(),
         vec![
@@ -4524,6 +7440,11 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
                 search_term: None,
             },
             RecordedBackendCall::Resume(resume_id),
+            RecordedBackendCall::Unsubscribe(initial_id),
+            RecordedBackendCall::GoalGet {
+                thread_id: resume_id,
+            },
+            RecordedBackendCall::RateLimits,
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
@@ -4533,6 +7454,10 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
                 search_term: None,
             },
             RecordedBackendCall::Fork(fork_id),
+            RecordedBackendCall::Unsubscribe(resume_id),
+            RecordedBackendCall::GoalGet {
+                thread_id: forked_id,
+            },
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
@@ -4544,12 +7469,839 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
         Some("forked".to_string()),
         "fork should replace the active shell session"
     );
+    assert_eq!(shell.active_goal, Some(fork_goal));
+    assert_eq!(
+        (shell.dashboard_route, shell.session_list.focused),
+        (DashboardRoute::Sessions, true)
+    );
+    assert_eq!(
+        shell.workspace_git_status,
+        Some(WorkspaceGitStatus {
+            branch: Some("hydrated".to_string()),
+            changes: workspace::WorkspaceChangeSummary {
+                modified: 1,
+                ..workspace::WorkspaceChangeSummary::default()
+            },
+        })
+    );
+    assert_eq!(
+        runner
+            .commands()
+            .into_iter()
+            .map(|command| (command.argv, command.cwd))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                vec![
+                    "git".to_string(),
+                    "status".to_string(),
+                    "--porcelain=v1".to_string(),
+                    "--branch".to_string(),
+                ],
+                Some(PathBuf::from("/workspace/better-codex")),
+            ),
+            (
+                vec![
+                    "git".to_string(),
+                    "status".to_string(),
+                    "--porcelain=v1".to_string(),
+                    "--branch".to_string(),
+                ],
+                Some(PathBuf::from("/workspace/better-codex")),
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn session_switch_hydration_is_nonblocking_and_preserves_newer_state() {
+    let config = test_config().await;
+    let initial_id = test_thread_id(SNAPSHOT_THREAD_ID);
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000405");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.session_list.focused = true;
+    let (runner, gate) =
+        RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "## stale\n M stale.rs\n".to_string(),
+            stderr: String::new(),
+        });
+    shell.workspace_command_runner = Some(Arc::new(runner));
+    let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
+        target_id,
+        Some("switch target"),
+        "switch preview",
+    )]);
+    *backend.active_goal.lock().expect("goal should lock") = Some(test_thread_goal(
+        &target_id,
+        ThreadGoalStatus::Active,
+        "Stale goal",
+    ));
+
+    refresh_session_list(&mut shell, &backend).await;
+    tokio::time::timeout(
+        Duration::from_secs(/*secs*/ 1),
+        shell.handle_session_list_key(key_char('r'), &config, &mut backend),
+    )
+    .await
+    .expect("session switch should not wait for workspace hydration")
+    .expect("session switch should resolve");
+
+    assert!(shell.has_pending_session_hydration());
+    assert!(
+        backend
+            .calls()
+            .contains(&RecordedBackendCall::Unsubscribe(initial_id))
+    );
+    shell
+        .set_goal_objective(&mut backend, "Newer goal".to_string())
+        .await;
+    shell.active_turn_id = Some("new-turn".to_string());
+    shell.mark_workspace_status_refresh_due();
+
+    gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(
+        shell
+            .active_goal
+            .as_ref()
+            .map(|goal| goal.objective.as_str()),
+        Some("Newer goal")
+    );
+    assert_eq!(shell.workspace_git_status, None);
+    assert!(shell.workspace_status_refresh_due);
+
+    shell.active_turn_id = None;
+    let fresh_runner =
+        RecordingWorkspaceRunner::new(crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "## fresh\n?? fresh.rs\n".to_string(),
+            stderr: String::new(),
+        });
+    shell.refresh_workspace_status(&fresh_runner).await;
+    assert_eq!(
+        shell.workspace_git_status,
+        Some(WorkspaceGitStatus {
+            branch: Some("fresh".to_string()),
+            changes: workspace::WorkspaceChangeSummary {
+                untracked: 1,
+                ..workspace::WorkspaceChangeSummary::default()
+            },
+        })
+    );
+    assert!(!shell.workspace_status_refresh_due);
+}
+
+#[tokio::test]
+async fn initial_hydration_applies_fast_lookups_while_workspace_is_still_loading() {
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000408");
+    let mut shell = ShellState::snapshot_fixture();
+    let (runner, gate) =
+        RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "## startup\n".to_string(),
+            stderr: String::new(),
+        });
+    shell.workspace_command_runner = Some(Arc::new(runner));
+    let backend = RecordingBackend::with_threads(vec![thread_fixture(
+        target_id,
+        Some("startup target"),
+        "loaded without blocking input",
+    )]);
+    let goal = test_thread_goal(&shell.thread_id, ThreadGoalStatus::Active, "Startup goal");
+    *backend.active_goal.lock().expect("goal should lock") = Some(goal.clone());
+
+    shell.start_initial_dashboard_hydration(&backend);
+
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        loop {
+            let _changed = shell.poll_session_hydration(&backend).await;
+            if shell.session_list.selected_thread_id() == Some(target_id)
+                && !shell.rate_limits.is_empty()
+            {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("fast startup lookups should finish independently");
+
+    assert_eq!(shell.active_goal, None);
+    assert!(
+        !backend
+            .calls()
+            .iter()
+            .any(|call| matches!(call, RecordedBackendCall::GoalGet { .. }))
+    );
+
+    shell.start_initial_goal_hydration(&backend);
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        loop {
+            let _changed = shell.poll_session_hydration(&backend).await;
+            if shell.active_goal.as_ref() == Some(&goal) {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("goal lookup should finish independently");
+
+    assert!(shell.has_pending_session_hydration());
+    assert_eq!(shell.active_goal, Some(goal.clone()));
+    assert_eq!(
+        shell
+            .rate_limits
+            .first()
+            .and_then(|limit| limit.limit_id.as_deref()),
+        Some("codex")
+    );
+
+    gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(shell.active_goal, Some(goal));
+    assert_eq!(
+        shell.workspace_git_status,
+        Some(WorkspaceGitStatus {
+            branch: Some("startup".to_string()),
+            changes: workspace::WorkspaceChangeSummary::default(),
+        })
+    );
+}
+
+#[test]
+fn newer_session_list_refresh_rejects_an_older_completion() {
+    let mut shell = ShellState::snapshot_fixture();
+    let stale_id = test_thread_id("01900000-0000-7000-8000-000000000409");
+    let current_id = test_thread_id("01900000-0000-7000-8000-000000000410");
+    let stale_revision = shell.begin_session_list_refresh();
+    let current_revision = shell.begin_session_list_refresh();
+
+    assert!(shell.finish_session_list_refresh(
+        current_revision,
+        Ok(ThreadListResponse {
+            data: vec![thread_fixture(current_id, Some("current"), "newer result")],
+            next_cursor: None,
+            backwards_cursor: None,
+        })
+    ));
+    assert!(!shell.finish_session_list_refresh(
+        stale_revision,
+        Ok(ThreadListResponse {
+            data: vec![thread_fixture(stale_id, Some("stale"), "older result")],
+            next_cursor: None,
+            backwards_cursor: None,
+        })
+    ));
+
+    assert_eq!(shell.session_list.selected_thread_id(), Some(current_id));
+}
+
+#[tokio::test]
+async fn changed_session_list_query_supersedes_a_blocked_refresh() {
+    let stale_id = test_thread_id("01900000-0000-7000-8000-000000000413");
+    let current_id = test_thread_id("01900000-0000-7000-8000-000000000414");
+    let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let backend = RecordingBackend {
+        threads: Arc::new(Mutex::new(vec![thread_fixture(
+            stale_id,
+            Some("stale"),
+            "superseded result",
+        )])),
+        thread_list_gate: Some(gate.clone()),
+        ..RecordingBackend::default()
+    };
+    let mut shell = ShellState::snapshot_fixture();
+
+    shell.start_session_list_refresh(&backend);
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        while backend.calls().len() != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the first list request should start");
+
+    *backend.threads.lock().expect("threads should lock") = vec![thread_fixture(
+        current_id,
+        Some("current"),
+        "replacement result",
+    )];
+    shell.session_list.toggle_archived();
+    shell.start_session_list_refresh(&backend);
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        while backend.calls().len() != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the replacement list request should start");
+
+    gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(shell.session_list.selected_thread_id(), Some(current_id));
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::ThreadList {
+                archived: Some(true),
+                search_term: None,
+            },
+        ]
+    );
+}
+
+#[tokio::test]
+async fn completed_list_refresh_cannot_restore_a_deleted_session() {
+    let config = test_config().await;
+    let session_id = test_thread_id("01900000-0000-7000-8000-000000000415");
+    let thread = thread_fixture(session_id, Some("delete me"), "stale server result");
+    let backend_threads = vec![thread.clone()];
+    let mut backend = RecordingBackend::with_threads(backend_threads);
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    shell.session_list.replace_threads(vec![thread]);
+
+    shell.start_session_list_refresh(&backend);
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        while backend.calls().is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("the stale list request should complete");
+    shell
+        .handle_session_list_key(key_char('d'), &config, &mut backend)
+        .await
+        .expect("delete should succeed");
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(shell.session_list.selected_thread_id(), None);
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::Delete(session_id),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn rate_limit_notification_during_startup_baseline_triggers_a_refetch() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    shell.start_initial_dashboard_hydration(&backend);
+    shell.handle_notification(ServerNotification::AccountRateLimitsUpdated(
+        AccountRateLimitsUpdatedNotification {
+            rate_limits: RateLimitSnapshot {
+                limit_id: Some("codex".to_string()),
+                limit_name: Some("Codex".to_string()),
+                primary: Some(codex_app_server_protocol::RateLimitWindow {
+                    used_percent: 73,
+                    window_duration_mins: Some(300),
+                    resets_at: None,
+                }),
+                secondary: None,
+                credits: None,
+                individual_limit: None,
+                plan_type: None,
+                rate_limit_reached_type: None,
+            },
+        },
+    ));
+
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        loop {
+            let _changed = shell.poll_session_hydration(&backend).await;
+            let refreshes = backend
+                .calls()
+                .into_iter()
+                .filter(|call| matches!(call, RecordedBackendCall::RateLimits))
+                .count();
+            if refreshes == 2 && !shell.has_pending_session_hydration() {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("stale startup baseline should be refetched");
+
+    assert_eq!(
+        shell
+            .rate_limits
+            .first()
+            .and_then(|limit| limit.primary.as_ref())
+            .map(|window| window.used_percent),
+        Some(73)
+    );
+}
+
+#[tokio::test]
+async fn rate_limit_notification_after_baseline_fetches_canonical_state() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    shell.start_initial_dashboard_hydration(&backend);
+    finish_session_hydration(&mut shell, &backend).await;
+    backend.set_rate_limits_used_percent(/*used_percent*/ 41);
+
+    shell.handle_notification(ServerNotification::AccountRateLimitsUpdated(
+        AccountRateLimitsUpdatedNotification {
+            rate_limits: RateLimitSnapshot {
+                limit_id: Some("codex".to_string()),
+                limit_name: Some("Codex".to_string()),
+                primary: Some(codex_app_server_protocol::RateLimitWindow {
+                    used_percent: 92,
+                    window_duration_mins: Some(300),
+                    resets_at: None,
+                }),
+                secondary: None,
+                credits: None,
+                individual_limit: None,
+                plan_type: None,
+                rate_limit_reached_type: None,
+            },
+        },
+    ));
+
+    assert_eq!(
+        shell.rate_limits[0]
+            .primary
+            .as_ref()
+            .map(|window| window.used_percent),
+        Some(92)
+    );
+    assert!(shell.has_pending_session_hydration());
+    finish_session_hydration(&mut shell, &backend).await;
+    assert_eq!(
+        shell.rate_limits[0]
+            .primary
+            .as_ref()
+            .map(|window| window.used_percent),
+        Some(41)
+    );
+    assert_eq!(
+        backend
+            .calls()
+            .into_iter()
+            .filter(|call| matches!(call, RecordedBackendCall::RateLimits))
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn session_switch_restarts_an_in_flight_rate_limit_baseline() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let backend = RecordingBackend {
+        rate_limits_gate: Some(Arc::clone(&gate)),
+        ..RecordingBackend::default()
+    };
+    let mut shell = ShellState::snapshot_fixture();
+    shell.start_initial_dashboard_hydration(&backend);
+    tokio::task::yield_now().await;
+
+    shell.replace_started_session(started_thread(
+        "replacement",
+        test_thread_id("01900000-0000-7000-8000-000000000411"),
+        /*forked_from_id*/ None,
+    ));
+    shell.start_replaced_session_hydration(&backend);
+
+    assert_eq!(
+        backend
+            .calls()
+            .into_iter()
+            .filter(|call| matches!(call, RecordedBackendCall::RateLimits))
+            .count(),
+        2
+    );
+    assert!(shell.has_pending_session_hydration());
+
+    gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell, &backend).await;
+    assert_eq!(
+        shell
+            .rate_limits
+            .first()
+            .and_then(|limit| limit.primary.as_ref())
+            .map(|window| window.used_percent),
+        Some(73)
+    );
+
+    shell.replace_started_session(started_thread(
+        "second replacement",
+        test_thread_id("01900000-0000-7000-8000-000000000412"),
+        /*forked_from_id*/ None,
+    ));
+    shell.start_replaced_session_hydration(&backend);
+    finish_session_hydration(&mut shell, &backend).await;
+    assert_eq!(
+        backend
+            .calls()
+            .into_iter()
+            .filter(|call| matches!(call, RecordedBackendCall::RateLimits))
+            .count(),
+        2,
+        "a loaded account baseline should survive later session switches"
+    );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn session_hydration_times_out_stalled_workspace_lookup() {
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000406");
+    let mut shell = ShellState::snapshot_fixture();
+    let (runner, _gate) =
+        RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
+            exit_code: 0,
+            stdout: "## never\n".to_string(),
+            stderr: String::new(),
+        });
+    shell.workspace_command_runner = Some(Arc::new(runner));
+    let backend = RecordingBackend::default();
+    shell.replace_started_session(started_thread(
+        "replacement",
+        target_id,
+        /*forked_from_id*/ None,
+    ));
+    shell.start_replaced_session_hydration(&backend);
+
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_secs(/*secs*/ 6)).await;
+    tokio::task::yield_now().await;
+    assert!(shell.poll_session_hydration(&backend).await);
+    assert!(!shell.has_pending_session_hydration());
+}
+
+#[tokio::test]
+async fn session_switch_waits_for_the_active_turn_to_finish() {
+    let config = test_config().await;
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000403");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    shell.active_turn_id = Some("active-turn".to_string());
+    let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
+        target_id,
+        Some("switch target"),
+        "switch preview",
+    )]);
+    refresh_session_list(&mut shell, &backend).await;
+
+    shell
+        .handle_session_list_key(key_char('r'), &config, &mut backend)
+        .await
+        .expect("blocked session switch should remain interactive");
+
+    assert_eq!(shell.thread_id, test_thread_id(SNAPSHOT_THREAD_ID));
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Status
+            && line.text == "finish or interrupt the active turn before switching sessions"
+    }));
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn session_switch_waits_for_pending_agent_input() {
+    let config = test_config().await;
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000404");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
+        target_id,
+        Some("switch target"),
+        "switch preview",
+    )]);
+    refresh_session_list(&mut shell, &backend).await;
+
+    shell
+        .handle_session_list_key(key_char('r'), &config, &mut backend)
+        .await
+        .expect("blocked session switch should remain interactive");
+
+    assert_eq!(shell.thread_id, test_thread_id(SNAPSHOT_THREAD_ID));
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Status
+            && line.text == "resolve the pending request before switching sessions"
+    }));
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn session_switch_preserves_nonempty_composer_draft() {
+    let config = test_config().await;
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000407");
+    let mut shell = ShellState::snapshot_fixture();
+    let draft = shell.composer.text().to_string();
+    shell.session_list.focused = true;
+    let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
+        target_id,
+        Some("switch target"),
+        "switch preview",
+    )]);
+    refresh_session_list(&mut shell, &backend).await;
+
+    shell
+        .handle_session_list_key(key_char('r'), &config, &mut backend)
+        .await
+        .expect("draft-blocked session switch should remain interactive");
+
+    assert_eq!(shell.thread_id, test_thread_id(SNAPSHOT_THREAD_ID));
+    assert_eq!(shell.composer.text(), draft);
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Status
+            && line.text == "send or clear the message draft before switching sessions"
+    }));
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+        }]
+    );
+}
+
+#[test]
+fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
+    let root_id = test_thread_id("01900000-0000-7000-8000-000000000411");
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000412");
+    let mut started = started_thread("resumed", root_id, /*forked_from_id*/ None);
+    let mut child = thread_fixture(child_id, /*name*/ None, "child preview");
+    child.session_id = root_id.to_string();
+    child.parent_thread_id = Some(root_id.to_string());
+    child.source = SessionSource::SubAgent(codex_protocol::protocol::SubAgentSource::ThreadSpawn {
+        parent_thread_id: root_id,
+        depth: 1,
+        agent_path: Some(
+            codex_protocol::AgentPath::try_from("/root/alpha").expect("agent path should be valid"),
+        ),
+        agent_nickname: None,
+        agent_role: None,
+    });
+    child.thread_source = Some(codex_app_server_protocol::ThreadSource::Subagent);
+    let mut turn = test_turn("child-turn", TurnStatus::Completed);
+    turn.items.push(ThreadItem::AgentMessage {
+        id: "child-message".to_string(),
+        text: "private child result".to_string(),
+        phase: None,
+        memory_citation: None,
+    });
+    child.turns.push(turn);
+    started.agent_threads.push(child);
+    let mut root_turn = test_turn("root-turn", TurnStatus::Completed);
+    root_turn.items.extend([
+        ThreadItem::CollabAgentToolCall {
+            id: "historical-wait".to_string(),
+            tool: CollabAgentTool::Wait,
+            status: CollabAgentToolCallStatus::Completed,
+            sender_thread_id: root_id.to_string(),
+            receiver_thread_ids: vec![child_id.to_string()],
+            prompt: None,
+            model: None,
+            reasoning_effort: None,
+            agents_states: HashMap::from([(
+                child_id.to_string(),
+                CollabAgentState {
+                    status: CollabAgentStatus::Running,
+                    message: Some("stale active snapshot".to_string()),
+                },
+            )]),
+        },
+        ThreadItem::SubAgentActivity {
+            id: "historical-child-start".to_string(),
+            kind: SubAgentActivityKind::Started,
+            agent_thread_id: child_id.to_string(),
+            agent_path: "/root/alpha".to_string(),
+        },
+    ]);
+    started.turns.push(root_turn);
+    let mut shell = ShellState::snapshot_fixture();
+
+    shell.replace_started_session(started);
+
+    let agent = shell
+        .agent_activity
+        .agent(&child_id.to_string())
+        .expect("child agent should be restored");
+    assert_eq!(agent.display_name(), "alpha");
+    assert_eq!(
+        agent.latest_message.as_deref(),
+        Some("private child result")
+    );
+    assert_eq!(agent.status, agent_activity::AgentLifecycleStatus::Shutdown);
+    assert_eq!(
+        shell.agent_activity.counts(),
+        agent_activity::AgentActivityCounts {
+            total: 1,
+            completed: 1,
+            ..Default::default()
+        }
+    );
+    assert!(
+        shell
+            .transcript
+            .iter()
+            .all(|line| !line.text.contains("private child result"))
+    );
+    assert!(
+        shell
+            .transcript
+            .iter()
+            .all(|line| !matches!(line.tool_status, Some(ToolBlockStatus::Running)))
+    );
+}
+
+#[tokio::test]
+async fn replacing_session_clears_session_bound_surfaces() {
+    let next_id = test_thread_id("01900000-0000-7000-8000-000000000413");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.open_command_palette();
+    shell.exit_confirmation_pending = true;
+    shell.active_turn_id = Some("old-turn".to_string());
+    shell.active_goal = Some(test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::Active,
+        "Old goal",
+    ));
+    shell.agent_activity.ensure_thread("old-agent");
+    shell
+        .active_agent_thread_ids
+        .insert("old-agent".to_string());
+    shell.subagent_activity.push_back(ToolActivity {
+        id: "old-subagent".to_string(),
+        title: "old child work".to_string(),
+        status: "running".to_string(),
+    });
+    shell.workspace_git_status = Some(WorkspaceGitStatus {
+        branch: Some("old-branch".to_string()),
+        changes: workspace::WorkspaceChangeSummary {
+            modified: 1,
+            ..workspace::WorkspaceChangeSummary::default()
+        },
+    });
+    shell.workspace_status_refresh_due = true;
+
+    let mcp_response = ListMcpServerStatusResponse {
+        data: vec![mcp_status_fixture(
+            "github",
+            McpAuthStatus::OAuth,
+            ["search"],
+        )],
+        next_cursor: None,
+    };
+    shell.mcp_inventory = McpInventorySummary::from_response(&mcp_response);
+    shell.mcp_catalog = Some(mcp_response);
+    shell.open_mcp_management();
+    let plugin_response = plugin_list_response_fixture();
+    shell.plugin_inventory = PluginInventorySummary::from_response(&plugin_response);
+    shell.plugin_catalog = Some(plugin_response);
+    shell.open_plugin_management();
+    let mut backend = RecordingBackend::with_external_agent_items(external_agent_items());
+    shell
+        .start_external_agent_import_review(&mut backend)
+        .await
+        .expect("external agent review should open");
+
+    shell.replace_started_session(started_thread(
+        "replacement",
+        next_id,
+        /*forked_from_id*/ None,
+    ));
+
+    assert_eq!(
+        (
+            shell.composer.text(),
+            shell.command_palette,
+            shell.exit_confirmation_pending,
+            shell.pending_external_agent_import,
+            shell.pending_mcp_management,
+            shell.pending_plugin_management,
+        ),
+        ("", None, false, None, None, None)
+    );
+    assert_eq!(
+        (
+            shell.active_turn_id,
+            shell.active_goal,
+            shell.tool_activity,
+            shell.agent_activity,
+            shell.active_agent_thread_ids,
+            shell.subagent_activity,
+        ),
+        (
+            None,
+            None,
+            VecDeque::new(),
+            AgentActivityState::default(),
+            HashSet::new(),
+            VecDeque::new(),
+        )
+    );
+    assert_eq!(
+        (
+            shell.latest_diff,
+            shell.workspace_git_status,
+            shell.workspace_status_refresh_due,
+            shell.token_usage,
+            shell.context_token_usage,
+            shell.model_context_window,
+        ),
+        (
+            None,
+            None,
+            false,
+            TokenUsage::default(),
+            TokenUsage::default(),
+            None,
+        )
+    );
+    assert_eq!(
+        (
+            shell.mcp_inventory,
+            shell.mcp_catalog,
+            shell.plugin_inventory,
+            shell.plugin_catalog,
+        ),
+        (
+            McpInventorySummary::default(),
+            None,
+            PluginInventorySummary::default(),
+            None,
+        )
+    );
+    assert_eq!(shell.plan_explanation, None);
+    assert_eq!(shell.plan_steps, Vec::new());
+    assert_eq!(shell.status, "ready");
 }
 
 #[tokio::test]
 async fn native_settings_integrations_refresh_mcp_and_plugins() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::McpServers);
     let mut backend = RecordingBackend::with_integrations(
@@ -4608,15 +8360,16 @@ async fn native_settings_integrations_refresh_mcp_and_plugins() {
         ),
     );
     assert!(
-        rendered.contains("Integrations"),
-        "dashboard should render native integrations panel:\n{rendered}"
+        rendered.contains("MCP servers: 2 servers / 3 tools")
+            && rendered.contains("Plugins: 1 installed / 2 available"),
+        "settings should render native integration summaries:\n{rendered}"
     );
 }
 
 #[tokio::test]
 async fn mcp_management_catalog_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::McpServers);
     let mut backend = RecordingBackend::with_integrations(
@@ -4649,7 +8402,7 @@ async fn mcp_management_catalog_snapshot() {
 async fn mcp_management_actions_login_disable_remove_add_and_edit() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::McpServers);
     let mut backend = RecordingBackend::with_integrations(
@@ -4784,7 +8537,7 @@ async fn mcp_management_actions_login_disable_remove_add_and_edit() {
 #[tokio::test]
 async fn plugin_management_catalog_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::Plugins);
     let mut backend =
@@ -4815,7 +8568,7 @@ async fn plugin_management_catalog_snapshot() {
 async fn plugin_management_actions_update_enable_install_auth_and_uninstall() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::Plugins);
     let mut backend =
@@ -4899,7 +8652,7 @@ async fn plugin_management_actions_update_enable_install_auth_and_uninstall() {
 #[tokio::test]
 async fn native_settings_pages_write_config_and_validate_edits() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.available_models = vec![model_preset_fixture(
         "gpt-5-codex",
@@ -4930,7 +8683,21 @@ async fn native_settings_pages_write_config_and_validate_edits() {
             &mut backend,
         )
         .await
-        .expect("reasoning cycle should persist");
+        .expect("reasoning selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("low reasoning should be selected");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("low reasoning should persist");
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
@@ -4944,7 +8711,13 @@ async fn native_settings_pages_write_config_and_validate_edits() {
             &mut backend,
         )
         .await
-        .expect("approval cycle should persist");
+        .expect("approval selector should open");
+    for code in [KeyCode::Down, KeyCode::Down, KeyCode::Enter] {
+        shell
+            .handle_selector_key(KeyEvent::new(code, KeyModifiers::NONE), &mut backend)
+            .await
+            .expect("never approval policy should persist");
+    }
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
@@ -5062,6 +8835,20 @@ async fn ultra_reasoning_warns_about_configured_agent_concurrency() {
             &mut backend,
         )
         .await
+        .expect("reasoning selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("ultra reasoning should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
         .expect("ultra reasoning should be selected");
 
     assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Ultra));
@@ -5071,9 +8858,9 @@ async fn ultra_reasoning_warns_about_configured_agent_concurrency() {
 }
 
 #[tokio::test]
-async fn native_settings_cycle_models_and_service_tiers() {
+async fn native_settings_select_models_and_service_tiers() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.available_models = vec![
         model_preset_fixture(
@@ -5106,7 +8893,21 @@ async fn native_settings_cycle_models_and_service_tiers() {
             &mut backend,
         )
         .await
-        .expect("model should cycle");
+        .expect("model selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("visible model should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("visible model should be selected");
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
@@ -5127,21 +8928,63 @@ async fn native_settings_cycle_models_and_service_tiers() {
             &mut backend,
         )
         .await
-        .expect("service tier should cycle to first tier");
+        .expect("service tier selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("fast tier should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("fast tier should be selected");
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
             &mut backend,
         )
         .await
-        .expect("service tier should cycle to second tier");
+        .expect("service tier selector should reopen");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("batch tier should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("batch tier should be selected");
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
             &mut backend,
         )
         .await
-        .expect("service tier should cycle to default");
+        .expect("service tier selector should reopen");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("default tier should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("default tier should be selected");
 
     assert_eq!(shell.model, "gpt-5.5");
     assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Medium));
@@ -5196,84 +9039,8 @@ async fn native_settings_cycle_models_and_service_tiers() {
     );
 }
 
-#[test]
-fn native_settings_reasoning_cycle_follows_model_catalog() {
-    let sol = model_preset_fixture(
-        "gpt-5.6-sol",
-        /*show_in_picker*/ true,
-        ReasoningEffort::Low,
-        &[
-            ReasoningEffort::Low,
-            ReasoningEffort::Medium,
-            ReasoningEffort::High,
-            ReasoningEffort::XHigh,
-            ReasoningEffort::Max,
-            ReasoningEffort::Ultra,
-        ],
-        &["priority"],
-    );
-    let luna = model_preset_fixture(
-        "gpt-5.6-luna",
-        /*show_in_picker*/ true,
-        ReasoningEffort::Medium,
-        &[
-            ReasoningEffort::Low,
-            ReasoningEffort::Medium,
-            ReasoningEffort::High,
-            ReasoningEffort::XHigh,
-            ReasoningEffort::Max,
-        ],
-        &["priority"],
-    );
-
-    let mut effort = None;
-    let mut sol_cycle = Vec::new();
-    for _ in 0..7 {
-        effort = settings::next_reasoning_effort(effort.as_ref(), &sol);
-        sol_cycle.push(effort.clone());
-    }
-    assert_eq!(
-        sol_cycle,
-        vec![
-            Some(ReasoningEffort::Low),
-            Some(ReasoningEffort::Medium),
-            Some(ReasoningEffort::High),
-            Some(ReasoningEffort::XHigh),
-            Some(ReasoningEffort::Max),
-            Some(ReasoningEffort::Ultra),
-            None,
-        ]
-    );
-
-    let mut effort = None;
-    let mut luna_cycle = Vec::new();
-    for _ in 0..6 {
-        effort = settings::next_reasoning_effort(effort.as_ref(), &luna);
-        luna_cycle.push(effort.clone());
-    }
-    assert_eq!(
-        luna_cycle,
-        vec![
-            Some(ReasoningEffort::Low),
-            Some(ReasoningEffort::Medium),
-            Some(ReasoningEffort::High),
-            Some(ReasoningEffort::XHigh),
-            Some(ReasoningEffort::Max),
-            None,
-        ]
-    );
-    assert_eq!(
-        settings::reasoning_effort_label(&ReasoningEffort::Max),
-        "Max"
-    );
-    assert_eq!(
-        settings::reasoning_effort_label(&ReasoningEffort::XHigh),
-        "Extra high"
-    );
-}
-
 #[tokio::test]
-async fn native_settings_reasoning_wrap_resets_active_thread_to_model_default() {
+async fn native_settings_reasoning_selector_resets_active_thread_to_model_default() {
     let mut shell = ShellState::snapshot_fixture();
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::ReasoningEffort);
@@ -5305,7 +9072,21 @@ async fn native_settings_reasoning_wrap_resets_active_thread_to_model_default() 
             &mut backend,
         )
         .await
-        .expect("reasoning should wrap to the model default");
+        .expect("reasoning selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("default reasoning should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("default reasoning should be selected");
 
     assert_eq!(shell.reasoning_effort, None);
     assert_eq!(
@@ -5338,7 +9119,7 @@ async fn native_settings_reasoning_wrap_resets_active_thread_to_model_default() 
 #[tokio::test]
 async fn native_settings_model_switch_resets_unsupported_runtime_options() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.model = "gpt-5.6-sol".to_string();
     shell.reasoning_effort = Some(ReasoningEffort::Ultra);
@@ -5384,7 +9165,21 @@ async fn native_settings_model_switch_resets_unsupported_runtime_options() {
             &mut backend,
         )
         .await
-        .expect("model should switch");
+        .expect("model selector should open");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("luna model should be focused");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("luna model should be selected");
     shell
         .submit_prompt(&mut backend, "Use current settings".to_string())
         .await
@@ -5441,7 +9236,6 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell.streaming_plan.clear();
     shell.active_turn_id = None;
     let mut backend = RecordingBackend::default();
-    let workspace_runner = NoopWorkspaceRunner;
 
     shell
         .submit_prompt(&mut backend, "hello app shell".to_string())
@@ -5450,7 +9244,6 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell
         .handle_app_server_event(
             &mut backend,
-            &workspace_runner,
             AppServerEvent::ServerNotification(ServerNotification::AgentMessageDelta(
                 codex_app_server_protocol::AgentMessageDeltaNotification {
                     thread_id: shell.thread_id.to_string(),
@@ -5465,7 +9258,6 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell
         .handle_app_server_event(
             &mut backend,
-            &workspace_runner,
             AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(
                 codex_app_server_protocol::TurnCompletedNotification {
                     thread_id: shell.thread_id.to_string(),
@@ -5479,7 +9271,6 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell
         .handle_app_server_event(
             &mut backend,
-            &workspace_runner,
             AppServerEvent::ServerRequest(command_approval_request()),
         )
         .await
@@ -5497,7 +9288,6 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell
         .handle_app_server_event(
             &mut backend,
-            &workspace_runner,
             AppServerEvent::Disconnected {
                 message: "backend closed".to_string(),
             },
@@ -5557,6 +9347,9 @@ struct RecordingBackend {
     external_agent_items: Arc<Mutex<Vec<ExternalAgentConfigMigrationItem>>>,
     external_agent_import_in_progress: Arc<Mutex<bool>>,
     active_goal: Arc<Mutex<Option<ThreadGoal>>>,
+    thread_list_gate: Option<Arc<tokio::sync::Semaphore>>,
+    rate_limits_gate: Option<Arc<tokio::sync::Semaphore>>,
+    rate_limits_used_percent: Arc<Mutex<i32>>,
     remote_workspace: bool,
     embedded_app_server: bool,
 }
@@ -5575,6 +9368,9 @@ impl Default for RecordingBackend {
             external_agent_items: Arc::new(Mutex::new(Vec::new())),
             external_agent_import_in_progress: Arc::new(Mutex::new(false)),
             active_goal: Arc::new(Mutex::new(None)),
+            thread_list_gate: None,
+            rate_limits_gate: None,
+            rate_limits_used_percent: Arc::new(Mutex::new(73)),
             remote_workspace: false,
             embedded_app_server: true,
         }
@@ -5628,6 +9424,13 @@ impl RecordingBackend {
             .lock()
             .expect("plugin install response should lock") = response;
     }
+
+    fn set_rate_limits_used_percent(&self, used_percent: i32) {
+        *self
+            .rate_limits_used_percent
+            .lock()
+            .expect("rate-limit percentage should lock") = used_percent;
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -5639,6 +9442,8 @@ enum RecordedBackendCall {
         archived: Option<bool>,
         search_term: Option<String>,
     },
+    ThreadReadFull(codex_protocol::ThreadId),
+    RateLimits,
     Archive(codex_protocol::ThreadId),
     Unarchive(codex_protocol::ThreadId),
     Delete(codex_protocol::ThreadId),
@@ -5773,8 +9578,11 @@ impl backend::AppShellBackend for RecordingBackend {
             archived: params.archived,
             search_term: params.search_term.clone(),
         });
-        let search_term = params.search_term.unwrap_or_default().to_lowercase();
-        let data = self
+        let limit = params.limit.map_or(usize::MAX, |limit| {
+            usize::try_from(limit).unwrap_or(usize::MAX)
+        });
+        let search_term = params.search_term.unwrap_or_default();
+        let mut data = self
             .threads
             .lock()
             .expect("threads should lock")
@@ -5784,18 +9592,88 @@ impl backend::AppShellBackend for RecordingBackend {
                     || thread
                         .name
                         .as_deref()
-                        .unwrap_or(thread.preview.as_str())
-                        .to_lowercase()
-                        .contains(&search_term)
-                    || thread.preview.to_lowercase().contains(&search_term)
+                        .is_some_and(|name| name.contains(&search_term))
+                    || thread.preview.contains(&search_term)
             })
             .cloned()
-            .collect();
-        Ok(ThreadListResponse {
+            .collect::<Vec<_>>();
+        let next_cursor = (data.len() > limit).then(|| "more".to_string());
+        data.truncate(limit);
+        let response = ThreadListResponse {
             data,
-            next_cursor: None,
+            next_cursor,
             backwards_cursor: None,
-        })
+        };
+        if let Some(gate) = self.thread_list_gate.clone() {
+            gate.acquire_owned()
+                .await
+                .expect("session-list gate should remain open")
+                .forget();
+        }
+        Ok(response)
+    }
+
+    fn thread_list_in_background(
+        &self,
+        params: ThreadListParams,
+    ) -> impl std::future::Future<Output = color_eyre::Result<ThreadListResponse>> + Send + 'static
+    {
+        let mut backend = self.clone();
+        async move { backend.thread_list(params).await }
+    }
+
+    fn thread_read_full_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> impl std::future::Future<Output = color_eyre::Result<Thread>> + Send + 'static {
+        self.push(RecordedBackendCall::ThreadReadFull(thread_id));
+        let thread = self
+            .threads
+            .lock()
+            .expect("threads should lock")
+            .iter()
+            .find(|thread| thread.id == thread_id.to_string())
+            .cloned();
+        async move { thread.ok_or_else(|| color_eyre::eyre::eyre!("thread {thread_id} was not found")) }
+    }
+
+    fn account_rate_limits_in_background(
+        &self,
+    ) -> impl std::future::Future<Output = color_eyre::Result<GetAccountRateLimitsResponse>>
+    + Send
+    + 'static {
+        self.push(RecordedBackendCall::RateLimits);
+        let gate = self.rate_limits_gate.clone();
+        let used_percent = *self
+            .rate_limits_used_percent
+            .lock()
+            .expect("rate-limit percentage should lock");
+        async move {
+            if let Some(gate) = gate {
+                gate.acquire_owned()
+                    .await
+                    .expect("rate-limit gate should remain open")
+                    .forget();
+            }
+            Ok(GetAccountRateLimitsResponse {
+                rate_limits: RateLimitSnapshot {
+                    limit_id: Some("codex".to_string()),
+                    limit_name: Some("Codex".to_string()),
+                    primary: Some(codex_app_server_protocol::RateLimitWindow {
+                        used_percent,
+                        window_duration_mins: Some(300),
+                        resets_at: None,
+                    }),
+                    secondary: None,
+                    credits: None,
+                    individual_limit: None,
+                    plan_type: None,
+                    rate_limit_reached_type: None,
+                },
+                rate_limits_by_limit_id: None,
+                rate_limit_reset_credits: None,
+            })
+        }
     }
 
     async fn thread_archive(
@@ -5843,6 +9721,16 @@ impl backend::AppShellBackend for RecordingBackend {
         Ok(ThreadGoalGetResponse {
             goal: self.active_goal.lock().expect("goal should lock").clone(),
         })
+    }
+
+    fn thread_goal_get_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> impl std::future::Future<Output = color_eyre::Result<ThreadGoalGetResponse>> + Send + 'static
+    {
+        self.push(RecordedBackendCall::GoalGet { thread_id });
+        let goal = self.active_goal.lock().expect("goal should lock").clone();
+        async move { Ok(ThreadGoalGetResponse { goal }) }
     }
 
     async fn thread_goal_set(
@@ -6224,6 +10112,22 @@ impl backend::AppShellBackend for RecordingBackend {
         Ok(())
     }
 
+    async fn unsubscribe_threads(&self, thread_ids: Vec<codex_protocol::ThreadId>) {
+        for thread_id in thread_ids {
+            self.push(RecordedBackendCall::Unsubscribe(thread_id));
+        }
+    }
+
+    fn unsubscribe_threads_in_background(
+        &self,
+        thread_ids: Vec<codex_protocol::ThreadId>,
+    ) -> tokio::task::JoinHandle<()> {
+        for thread_id in thread_ids {
+            self.push(RecordedBackendCall::Unsubscribe(thread_id));
+        }
+        tokio::spawn(async {})
+    }
+
     async fn shutdown(self) -> std::io::Result<()> {
         self.push(RecordedBackendCall::Shutdown);
         Ok(())
@@ -6234,21 +10138,57 @@ struct NoopWorkspaceRunner;
 
 struct RecordingWorkspaceRunner {
     commands: Mutex<Vec<crate::workspace_command::WorkspaceCommand>>,
+    run_process_ids: Mutex<Vec<String>>,
+    terminate_process_ids: Mutex<Vec<String>>,
     output: crate::workspace_command::WorkspaceCommandOutput,
+    gate: Option<Arc<tokio::sync::Semaphore>>,
 }
 
 impl RecordingWorkspaceRunner {
     fn new(output: crate::workspace_command::WorkspaceCommandOutput) -> Self {
         Self {
             commands: Mutex::new(Vec::new()),
+            run_process_ids: Mutex::new(Vec::new()),
+            terminate_process_ids: Mutex::new(Vec::new()),
             output,
+            gate: None,
         }
+    }
+
+    fn blocked(
+        output: crate::workspace_command::WorkspaceCommandOutput,
+    ) -> (Self, Arc<tokio::sync::Semaphore>) {
+        let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+        (
+            Self {
+                commands: Mutex::new(Vec::new()),
+                run_process_ids: Mutex::new(Vec::new()),
+                terminate_process_ids: Mutex::new(Vec::new()),
+                output,
+                gate: Some(Arc::clone(&gate)),
+            },
+            gate,
+        )
     }
 
     fn commands(&self) -> Vec<crate::workspace_command::WorkspaceCommand> {
         self.commands
             .lock()
             .expect("workspace commands should lock")
+            .clone()
+    }
+
+    fn run_process_ids(&self) -> Vec<String> {
+        self.run_process_ids
+            .lock()
+            .expect("workspace run process ids should lock")
+            .clone()
+    }
+
+    fn terminate_process_ids(&self) -> Vec<String> {
+        self.terminate_process_ids
+            .lock()
+            .expect("workspace terminate process ids should lock")
             .clone()
     }
 }
@@ -6273,7 +10213,63 @@ impl crate::workspace_command::WorkspaceCommandExecutor for RecordingWorkspaceRu
             .expect("workspace commands should lock")
             .push(command);
         let output = self.output.clone();
-        Box::pin(async move { Ok(output) })
+        let gate = self.gate.clone();
+        Box::pin(async move {
+            if let Some(gate) = gate {
+                let _permit = gate.acquire_owned().await;
+            }
+            Ok(output)
+        })
+    }
+
+    fn run_cancellable(
+        &self,
+        command: crate::workspace_command::WorkspaceCommand,
+        process_id: String,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        crate::workspace_command::WorkspaceCommandOutput,
+                        crate::workspace_command::WorkspaceCommandError,
+                    >,
+                > + Send
+                + '_,
+        >,
+    > {
+        self.run_process_ids
+            .lock()
+            .expect("workspace run process ids should lock")
+            .push(process_id);
+        self.run(command)
+    }
+
+    fn terminate(
+        &self,
+        process_id: String,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<
+                        crate::workspace_command::WorkspaceCommandTermination,
+                        crate::workspace_command::WorkspaceCommandError,
+                    >,
+                > + Send
+                + '_,
+        >,
+    > {
+        self.terminate_process_ids
+            .lock()
+            .expect("workspace terminate process ids should lock")
+            .push(process_id);
+        let gate = self.gate.clone();
+        Box::pin(async move {
+            tokio::task::yield_now().await;
+            if let Some(gate) = gate {
+                gate.add_permits(/*n*/ 1);
+            }
+            Ok(crate::workspace_command::WorkspaceCommandTermination::Requested)
+        })
     }
 }
 
@@ -6341,6 +10337,8 @@ fn started_thread(
             rollout_path: None,
         },
         turns: Vec::new(),
+        agent_threads: Vec::new(),
+        agent_history_task: None,
     }
 }
 

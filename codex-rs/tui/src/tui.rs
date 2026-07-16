@@ -551,12 +551,26 @@ fn set_panic_hook() {
     }));
 }
 
+/// Direction of a vertical terminal wheel event.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MouseScrollDirection {
+    Up,
+    Down,
+}
+
 #[derive(Clone, Debug)]
 pub enum TuiEvent {
     /// A terminal key event after focus, paste, and protocol bookkeeping has been handled.
     Key(KeyEvent),
     /// A left-button press translated into terminal coordinates.
     MouseClick(Position),
+    /// Pointer movement translated into terminal coordinates.
+    MouseMove(Position),
+    /// A vertical wheel event with its pointer location preserved.
+    MouseScroll {
+        position: Position,
+        direction: MouseScrollDirection,
+    },
     /// A bracketed paste payload normalized by the app layer before it reaches the composer.
     Paste(String),
     /// A terminal size notification that should be handled as resize-sensitive draw work.

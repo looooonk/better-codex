@@ -26,7 +26,7 @@ expression: terminal.backend().to_string()
 "                                                                                                    "
 "                                                                                                    "
 "                                                                                                    "
+"                                                                                                    "
 " Enter continue  Up/Down choose  1/2/3 jump  Esc exit                                               "
 " You can change this later from config.toml.                                                        "
-"                                                                                                    "
 "                                                                                                    "

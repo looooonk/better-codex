@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell/tool_output_tests.rs
+expression: "render_output(&output, 100, 30)"
+---
+
+
+  ╭ Tool output · exec cargo build --workspace --all-targets ────────────────────────────────────╮
+  │ ● Running  Live output updates automatically                                                 │
+  │ Item  exec-42                                                                                │
+  │ build line 09: compiling a representative workspace crate                                    │
+  │ build line 10: compiling a representative workspace crate                                    │
+  │ build line 11: compiling a representative workspace crate                                    │
+  │ build line 12: compiling a representative workspace crate                                    │
+  │ build line 13: compiling a representative workspace crate                                    │
+  │ build line 14: compiling a representative workspace crate                                    │
+  │ build line 15: compiling a representative workspace crate                                    │
+  │ build line 16: compiling a representative workspace crate                                    │
+  │ build line 17: compiling a representative workspace crate                                    │
+  │ build line 18: compiling a representative workspace crate                                    │
+  │ build line 19: compiling a representative workspace crate                                    │
+  │ build line 20: compiling a representative workspace crate                                    │
+  │ build line 21: compiling a representative workspace crate                                    │
+  │ build line 22: compiling a representative workspace crate                                    │
+  │ build line 23: compiling a representative workspace crate                                    │
+  │ build line 24: compiling a representative workspace crate                                    │
+  │ build line 25: compiling a representative workspace crate                                    │
+  │ build line 26: compiling a representative workspace crate                                    │
+  │ build line 27: compiling a representative workspace crate                                    │
+  │ build line 28: compiling a representative workspace crate                                    │
+  │ build line 29: compiling a representative workspace crate                                    │
+  │  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  running · 10-30/30                         │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯

@@ -1,0 +1,34 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
+---
+                                                              │
+ ◆ BC       gpt-5-codex ▾   default ▾   default ▾  ● thinking │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
+                                                              │
+ ◆ CONVERSATION                                               │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                             │▎Model │ Permissions │ Appearance │Integrations
+ ▎ YOU  Create a divergent standalone TUI.                    │▎━━━━━━─────────────────────────────────────────
+                                                              │▎› Model: gpt-5-codex
+ ▎ CODEX  Started a fullscreen app shell backed by app-server │▎  Reasoning: default
+          turns.                                              │▎  Service tier: default
+ ▎ PLAN  1. Build shell                                       │
+         2. Wire transcript                                   │▎◆ PLAN
+         3. Render dashboard                                  │▎Build the standalone shell in slices.
+                                                              │▎x Shell frame
+ ▌ tool exec just test -p codex-tui                           │▎> Transcript model
+                                                              │▎- Approvals
+ ▌ edited 3 files +128 -24                                    │
+                                                              │▎◆ TOOLS
+ ▎ CODEX  The new shell owns the fullscreen surface.          │▎in progress exec just test -p codex-tui
+                                                              │▎completed file changes in app_shell
+                                                              │
+                                                              │▎◆ EDITS
+                                                              │▎3 files +128 -24
+                                                              │
+╭────────────────────────────────────────────────────────────╮│▎◆ WORKSPACE
+│◆ MESSAGE  1:37                                             ││▎cwd /workspace/better-codex
+│> Summarize the new shell architecture                      ││▎profile managed
+│                                                            ││▎files restricted, net restricted
+│                                                            ││▎roots none selected
+╰────────────────────────────────────────────────────────────╯│

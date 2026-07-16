@@ -2,29 +2,31 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
-        turns.                                                │  Sessions
- plan: 1. Build shell                                         │  unfocused active 0 shown
-       2. Wire transcript                                     │  loading sessions
-       3. Render dashboard                                    ┃
-                                                              ┃  Tools
- ▌ tool exec just test -p codex-tui                           ┃  in progress exec just test -p c...
-                                                              ┃  completed file changes in app_s...
- ▌ edited 3 files +128 -24                                    ┃
-                                                              ┃  Thread
- ▌ edited 5 files +4 -3                                       ┃  stage-one
- ▌          M src/app.rs                                      ┃  id 01900000-0000-7000-8000-0000...
- ▌          A src/new.rs                                      ┃  resume, fork, archive, delete in
- ▌          D src/old.rs                                      ┃
- ▌          R src/from.rs -> src/to.rs                        ┃  Status
-                                                              ┃  thinking
- codex: The new shell owns the fullscreen surface.            ┃
-                                                                 Plan
-                                                                 Build the standalone shell in
- Composer ready 1:37                                             slices.
- > Summarize the new shell architecture                          x Shell frame
-                                                                 > Transcript model
+                                                  │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ PLAN  1. Build shell                         │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wire transcript                     │ │▎loading sessions
+         3. Render dashboard                    │ │
+                                                ┃ │▎◆ THREAD
+ ▌ tool exec just test -p codex-tui             ┃ │▎stage-one
+                                                ┃ │▎id 01900000-0000-7000-8000-000000000001
+ ▌ edited 3 files +128 -24                      ┃ │▎resume, fork, archive, delete in session list
+                                                ┃ │
+ ▌ edited 5 files +4 -3                         ┃ │
+ ▌          M src/app.rs                        ┃ │
+ ▌          A src/new.rs                        ┃ │
+ ▌          D src/old.rs                        ┃ │
+ ▌          R src/from.rs -> src/to.rs          ┃ │
+                                                ┃ │
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │
+          surface.                              ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

@@ -2,36 +2,39 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
 ---
-
- Better Codex                                                              ┌────────┬─────────┬────────┬────┐
-                                                                           │Settings│Workspace│Sessions│Help│
-                                                                           └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                            Settings
- you: Create a divergent standalone TUI.                                   focused integrations 2 fields
-                                                                           Model  Permissions
- codex: Started a fullscreen app shell backed by app-server turns.         Appearance  Integrations
- plan: 1. Build shell                                                      plugin inventory refreshed
-       2. Wire transcript                                                    mcp servers: not loaded
-       3. Render dashboard                                                 > plugins: 1 installed / 2 avai...
-
-
- Plugins
- 1/2 plugin catalog  Enter action  i install/update  e enable/disable  u uninstall  r refresh
- > enabled    Calendar (local)
-   available  Drive (local)
-
- Action: press i or Enter to update from the marketplace
-
-
-                                                                           Integrations
-                                                                           mcp not loaded
-                                                                           plugins 1 installed / 2 available
-                                                                           marketplaces 1
-                                                                           plugins 2
-
-                                                                           Workspace
-                                                                           cwd /workspace/better-codex
-                                                                           profile managed
- Composer ready 1:37                                                       files restricted, net restricted
- > Summarize the new shell architecture                                    roots none selected
+                                                            │
+ ◆ BC     gpt-5-codex ▾   default ▾   default ▾  ● thinking │   Status   │  Agents   │  Sessions   │  Help
+────────────────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
+                                                            │
+ ◆ CONVERSATION                                             │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                           │▎Model │ Permissions │ Appearance │Integrations
+ ▎ YOU  Create a divergent standalone TUI.                  │▎──────────────────────────────────━━━━━━━━━━━━━
+                                                            │▎plugin inventory refreshed
+ ▎ CODEX  Started a fullscreen app shell backed by app-     │▎  MCP servers: not loaded
+          server turns.                                     │▎› Plugins: 1 installed / 2 available
+ ▎ PLAN  1. Build shell                                     │
+         2. Wire transcript                                 │▎◆ PLAN
+         3. Render dashboard                                │▎Build the standalone shell in slices.
+                   ╭──────────────────────────────────────────────────────────────────────╮
+ ▌ tool exec just t│◆ PLUGINS                                                             │
+                   │1/2 plugin catalog  ↑↓ / j k navigate                                 │
+ ▌ edited 3 files +│Install / update ↵  Toggle e  Uninstall u  Refresh r                  │
+ ▎ STATUS  plugin m│> enabled    Calendar (local)                                         │
+                   │  available  Drive (local)                                            │ codex-tui
+ ▎ CODEX  The new s│                                                                      │_shell
+                   │Action: press i or Enter to update from the marketplace               │
+                   │                                                                      │
+                   ╰──────────────────────────────────────────────────────────────────────╯
+                                                            │
+                                                            │▎◆ WORKSPACE
+                                                            │▎cwd /workspace/better-codex
+                                                            │▎profile managed
+                                                            │▎files restricted, net restricted
+                                                            │▎roots none selected
+                                                            │
+╭──────────────────────────────────────────────────────────╮│▎◆ TOKENS
+│◆ MESSAGE  1:37                                           ││▎input 1k | output 240
+│> Summarize the new shell architecture                    ││▎Context 100% left
+│                                                          ││
+│                                                          ││
+╰──────────────────────────────────────────────────────────╯│

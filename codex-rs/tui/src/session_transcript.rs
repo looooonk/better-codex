@@ -40,7 +40,8 @@ pub(crate) fn thread_to_transcript_lines(
 ) -> TranscriptLines {
     let mut lines = Vec::new();
     for item in thread.turns.iter().flat_map(|turn| &turn.items) {
-        let mut item_lines = item_lines(item, thread, raw_reasoning_visibility);
+        let mut item_lines =
+            thread_item_to_transcript_lines(item, thread, raw_reasoning_visibility);
         if item_lines.is_empty() {
             continue;
         }
@@ -56,7 +57,7 @@ pub(crate) fn thread_to_transcript_lines(
     lines
 }
 
-fn item_lines(
+pub(crate) fn thread_item_to_transcript_lines(
     item: &ThreadItem,
     thread: &Thread,
     raw_reasoning_visibility: RawReasoningVisibility,

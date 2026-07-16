@@ -2,30 +2,45 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                  Settings
- you: Create a divergent standalone TUI.                         unfocused model 3 fields
-                                                                 Model  Permissions
- codex: Started a fullscreen app shell backed by app-server      Appearance  Integrations
-        turns.                                                   > model: gpt-5-codex
- plan: 1. Build shell                                              reasoning: default
-       2. Wire transcript                                          service tier: default
-       3. Render dashboard
-                                                                 Model
- ▌ tool exec just test -p codex-tui                              gpt-5-codex
-
- ▌ edited 3 files +128 -24                                       Tokens
-                                                                 total 280k
- codex: The new shell owns the fullscreen surface.               input 260k
-                                                                 output 20k
-                                                                 Context 26% left
-
-                                                                 Integrations
- Composer ready 1:37                                             mcp not loaded
- > Summarize the new shell architecture                          plugins not loaded
-
-                                                                 Workspace
+                                                  │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
+ ▎ YOU  Create a divergent standalone TUI.        │▎━━━━━━─────────────────────────────────────────
+                                                  │▎› Model: gpt-5-codex
+ ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
+          by app-server turns.                    │▎  Service tier: default
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │▎◆ PLAN
+         3. Render dashboard                      │▎Build the standalone shell in slices.
+                                                  │▎x Shell frame
+ ▌ tool exec just test -p codex-tui               │▎> Transcript model
+                                                  │▎- Approvals
+ ▌ edited 3 files +128 -24                        │
+                                                  │▎◆ TOOLS
+ ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
+          surface.                                │▎completed file changes in app_shell
+                                                  │
+                                                  │▎◆ EDITS
+                                                  │▎3 files +128 -24
+                                                  │
+                                                  │▎◆ WORKSPACE
+                                                  │▎cwd /workspace/better-codex
+                                                  │▎profile managed
+                                                  │▎files restricted, net restricted
+                                                  │▎roots none selected
+                                                  │
+                                                  │▎◆ TOKENS
+                                                  │▎input 260k | output 20k
+                                                  │▎Context 26% left
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

@@ -1,19 +1,19 @@
 use super::ShellState;
 use super::ToolActivity;
+use super::agent_activity_render::agent_activity_inspector_lines;
+use super::agent_activity_render::agent_activity_overview_lines;
 use super::dashboard_rate_limits::rate_limit_lines;
 use super::dashboard_workspace::workspace_lines;
-use super::design::MOCHA_MANTLE;
-use super::design::MOCHA_SURFACE0;
 use super::design::Tone;
 use super::design::badge_span;
-use super::design::key_hint_line;
+use super::design::palette;
 use super::navigation::DashboardRoute;
 use super::navigation::DashboardTabs;
 use crate::goal_display::format_goal_elapsed_seconds;
 use crate::goal_display::goal_status_label;
-use crate::text_formatting::truncate_text;
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use codex_app_server_protocol::TurnPlanStepStatus;
-use ratatui::style::Color;
+use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use ratatui::text::Span;
@@ -24,6 +24,25 @@ pub(super) struct DashboardPanel {
     pub(super) lines: Vec<Line<'static>>,
     title_hint: Option<String>,
     pub(super) show_title: bool,
+}
+
+#[derive(Clone, Copy)]
+enum DashboardPanelKind {
+    Navigation,
+    Sessions,
+    Settings,
+    Thread,
+    Tokens,
+    Approvals,
+    Background,
+    RateLimits,
+    Edits,
+    Goal,
+    Plan,
+    Tools,
+    Agents,
+    Workspace,
+    Keys,
 }
 
 impl DashboardPanel {
@@ -37,7 +56,12 @@ impl DashboardPanel {
     }
 
     pub(super) fn title_line(&self) -> Line<'static> {
-        let mut spans = vec![self.title.clone().bold()];
+        let mut spans = vec![
+            "◆ ".set_style(ratatui::style::Style::new().fg(palette::FOCUS)),
+            self.title
+                .to_uppercase()
+                .set_style(ratatui::style::Style::new().fg(palette::MUTED).bold()),
+        ];
         if let Some(hint) = &self.title_hint {
             spans.extend(["  ".into(), hint.clone().dim()]);
         }
@@ -53,232 +77,26 @@ impl DashboardPanel {
         .unwrap_or(u16::MAX)
     }
 
-    pub(super) fn background(&self, index: usize) -> Color {
-        if index.is_multiple_of(2) {
-            MOCHA_SURFACE0
-        } else {
-            MOCHA_MANTLE
-        }
+    pub(super) fn render_lines(&self, width: usize) -> Vec<Line<'static>> {
+        self.show_title
+            .then(|| self.title_line())
+            .into_iter()
+            .chain(self.lines.iter().cloned())
+            .map(|line| truncate_line_with_ellipsis_if_overflow(line, width))
+            .collect()
     }
 }
 
 pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<DashboardPanel> {
-    let mut panels = vec![dashboard_navigation_panel(shell.dashboard_route, width)];
-    panels.push(DashboardPanel::new(
-        "Sessions",
-        shell.session_list.lines(width),
-    ));
-    panels.push(DashboardPanel::new(
-        "Settings",
-        shell.settings.lines(&shell.settings_view(), width),
-    ));
-    panels.push(DashboardPanel::new(
-        "Integrations",
-        integration_lines(shell, width),
-    ));
-    let mut status_lines = vec![status_line(&shell.status)];
-    if let Some(active_turn_id) = &shell.active_turn_id {
-        status_lines.push(Line::from(vec![
-            "turn ".dim(),
-            short_id(active_turn_id).cyan(),
-        ]));
-    }
-    panels.push(DashboardPanel::new("Status", status_lines));
-    let thread_label = shell.thread_name.as_deref().unwrap_or("untitled thread");
-    panels.push(DashboardPanel::new(
-        "Thread",
-        vec![
-            Line::from(dashboard_value(
-                thread_label,
-                width,
-                /*prefix_width*/ 0,
-            )),
-            Line::from(vec![
-                "id ".dim(),
-                dashboard_value(&shell.thread_id.to_string(), width, /*prefix_width*/ 3).cyan(),
-            ]),
-            Line::from("resume, fork, archive, delete in session list".dim()),
-        ],
-    ));
-    let mut model_lines = vec![Line::from(dashboard_value(
-        &shell.model,
-        width,
-        /*prefix_width*/ 0,
-    ))];
-    if let Some(reasoning_effort) = &shell.reasoning_effort {
-        model_lines.push(Line::from(format!("reasoning {reasoning_effort}").dim()));
-    }
-    if let Some(service_tier) = shell
-        .service_tier
-        .as_deref()
-        .filter(|service_tier| !service_tier.trim().is_empty())
-    {
-        model_lines.push(Line::from(vec![
-            "tier ".dim(),
-            dashboard_value(service_tier, width, /*prefix_width*/ 5).into(),
-        ]));
-    }
-    panels.push(DashboardPanel::new("Model", model_lines));
-    let token_lines = vec![
-        Line::from(format!(
-            "total {}",
-            format_token_count(shell.token_usage.total_tokens)
-        )),
-        Line::from(format!(
-            "input {}",
-            format_token_count(shell.token_usage.input_tokens)
-        )),
-        Line::from(format!(
-            "output {}",
-            format_token_count(shell.token_usage.output_tokens)
-        )),
-        match context_remaining_percent(&shell.context_token_usage, shell.model_context_window) {
-            Some(percent) => Line::from(format!("Context {percent}% left")),
-            None => Line::from("Context unknown".dim()),
-        },
-    ];
-    panels.push(DashboardPanel::new("Tokens", token_lines));
-
-    if shell.pending_approval.is_some()
-        || shell.pending_elicitation.is_some()
-        || shell.pending_user_input.is_some()
-    {
-        panels.push(DashboardPanel::new(
-            "Approvals",
-            approval_activity_lines(shell, width),
-        ));
-    }
-    if let Some(background_lines) = background_activity_lines(shell) {
-        panels.push(DashboardPanel::new("Background", background_lines));
-    }
-
-    if !shell.rate_limits.is_empty() || shell.rate_limit_reset_credits.is_some() {
-        let mut limit_lines = Vec::new();
-        for limit in shell.rate_limits.iter().take(2) {
-            limit_lines.extend(rate_limit_lines(limit, width));
-        }
-        if shell.rate_limits.len() > 2 {
-            limit_lines.push(Line::from(
-                format!("+{} more", format_usize(shell.rate_limits.len() - 2)).dim(),
-            ));
-        }
-        if let Some(credits) = shell.rate_limit_reset_credits {
-            limit_lines.push(Line::from(
-                format!("reset credits {}", format_i64(credits)).dim(),
-            ));
-        }
-        panels.push(DashboardPanel::new("Rate Limits", limit_lines));
-    }
-
-    let diff_lines = if let Some(diff) = &shell.latest_diff {
-        vec![Line::from(format!(
-            "{} files +{} -{}",
-            format_usize(diff.files),
-            format_usize(diff.additions),
-            format_usize(diff.removals)
-        ))]
-    } else {
-        vec![Line::from("no changes".dim())]
-    };
-    panels.push(DashboardPanel::new("Edits", diff_lines));
-
-    if let Some(goal) = &shell.active_goal {
-        let mut lines = vec![
-            Line::from(vec!["status ".dim(), goal_status_span(goal.status)]),
-            Line::from(dashboard_value(
-                &goal.objective,
-                width,
-                /*prefix_width*/ 0,
-            )),
-        ];
-        let mut usage = Vec::new();
-        if goal.time_used_seconds > 0 {
-            usage.push(format_goal_elapsed_seconds(goal.time_used_seconds));
-        }
-        if let Some(token_budget) = goal.token_budget {
-            usage.push(format!(
-                "{}/{} tokens",
-                format_i64(goal.tokens_used),
-                format_i64(token_budget)
-            ));
-        } else if goal.tokens_used > 0 {
-            usage.push(format!("{} tokens", format_i64(goal.tokens_used)));
-        }
-        if !usage.is_empty() {
-            lines.push(Line::from(usage.join(" | ").dim()));
-        }
-        panels.push(DashboardPanel::new("Goal", lines));
-    }
-
-    let mut plan_lines = Vec::new();
-    if let Some(explanation) = &shell.plan_explanation {
-        plan_lines.push(Line::from(explanation.clone().dim()));
-    }
-    if shell.plan_steps.is_empty() {
-        plan_lines.push(Line::from("no active plan".dim()));
-    } else {
-        for step in shell.plan_steps.iter().take(5) {
-            plan_lines.push(plan_step_line(step.status, &step.step));
-        }
-    }
-    panels.push(DashboardPanel::new("Plan", plan_lines));
-
-    panels.push(DashboardPanel::new(
-        "Tools",
-        activity_lines(&shell.tool_activity, width, "idle"),
-    ));
-    if !shell.subagent_activity.is_empty() {
-        panels.push(DashboardPanel::new(
-            "Subagents",
-            activity_lines(&shell.subagent_activity, width, "idle"),
-        ));
-    }
-
-    panels.push(DashboardPanel::new(
-        "Workspace",
-        workspace_lines(shell, width),
-    ));
-
-    let mut key_lines = if shell.transcript_selection.is_some() {
-        vec![
-            key_hint_line("Up/Down select"),
-            key_hint_line("Enter copy"),
-            key_hint_line("Esc composer"),
-            key_hint_line("Ctrl+D hide dashboard"),
-        ]
-    } else if shell.active_turn_id.is_some() {
-        vec![
-            key_hint_line("Enter steer"),
-            key_hint_line("Ctrl+C interrupt, Esc x2 exit"),
-            key_hint_line("Alt+Up select, Ctrl+O copy"),
-            key_hint_line("Ctrl+D hide dashboard"),
-        ]
-    } else {
-        vec![
-            key_hint_line("Enter send"),
-            key_hint_line("Ctrl+C/Esc twice to exit"),
-            key_hint_line("Alt+Up select, Ctrl+O copy"),
-            key_hint_line("Ctrl+D hide dashboard"),
-        ]
-    };
-    key_lines.insert(0, key_hint_line("Alt + Left / Right"));
-    key_lines.extend([
-        key_hint_line("Sessions: Ctrl+3 select/focus"),
-        key_hint_line("r resume, f fork, a/u archive"),
-        key_hint_line("v archived, d delete"),
-        key_hint_line("n rename, / search"),
-        key_hint_line("Settings: Ctrl+1 select/focus"),
-        key_hint_line("Enter edit/cycle, Tab page"),
-        key_hint_line("Esc return to composer"),
-    ]);
-    panels.push(DashboardPanel::new("Keys", key_lines));
-
-    route_dashboard_panels(shell.dashboard_route, panels)
+    dashboard_panel_kinds(shell.dashboard_route)
+        .iter()
+        .filter_map(|kind| dashboard_panel(shell, width, *kind))
+        .collect()
 }
 
 pub(super) fn dashboard_value(text: &str, line_width: usize, prefix_width: usize) -> String {
-    let max_chars = line_width.saturating_sub(prefix_width).max(1);
-    truncate_text(text, max_chars)
+    let max_width = line_width.saturating_sub(prefix_width).max(1);
+    truncate_line_with_ellipsis_if_overflow(Line::from(text.to_string()), max_width).to_string()
 }
 
 pub(super) fn format_usize(value: usize) -> String {
@@ -300,54 +118,229 @@ fn context_remaining_percent(
     Some(usage.percent_of_context_window_remaining(context_window))
 }
 
-fn route_dashboard_panels(
-    route: DashboardRoute,
-    panels: Vec<DashboardPanel>,
-) -> Vec<DashboardPanel> {
-    let titles: &[&str] = match route {
+fn dashboard_panel_kinds(route: DashboardRoute) -> &'static [DashboardPanelKind] {
+    match route {
         DashboardRoute::Sessions => &[
-            "Navigation",
-            "Sessions",
-            "Approvals",
-            "Background",
-            "Tools",
-            "Subagents",
-            "Thread",
-            "Status",
-            "Goal",
-            "Plan",
+            DashboardPanelKind::Navigation,
+            DashboardPanelKind::Sessions,
+            DashboardPanelKind::Thread,
         ],
-        DashboardRoute::Workspace => &["Navigation", "Workspace", "Edits", "Tools"],
-        DashboardRoute::Settings => &[
-            "Navigation",
-            "Settings",
-            "Model",
-            "Tokens",
-            "Integrations",
-            "Rate Limits",
-            "Workspace",
+        DashboardRoute::Agents => &[
+            DashboardPanelKind::Navigation,
+            DashboardPanelKind::Agents,
+            DashboardPanelKind::Approvals,
+        ],
+        DashboardRoute::Status => &[
+            DashboardPanelKind::Navigation,
+            DashboardPanelKind::Settings,
+            DashboardPanelKind::Goal,
+            DashboardPanelKind::Plan,
+            DashboardPanelKind::Tools,
+            DashboardPanelKind::Edits,
+            DashboardPanelKind::Workspace,
+            DashboardPanelKind::Tokens,
+            DashboardPanelKind::RateLimits,
         ],
         DashboardRoute::Help => &[
-            "Navigation",
-            "Keys",
-            "Status",
-            "Approvals",
-            "Background",
-            "Tools",
-            "Subagents",
+            DashboardPanelKind::Navigation,
+            DashboardPanelKind::Keys,
+            DashboardPanelKind::Approvals,
+            DashboardPanelKind::Background,
         ],
-    };
+    }
+}
 
-    let mut panels = panels;
-    titles
-        .iter()
-        .filter_map(|title| {
-            let index = panels
-                .iter()
-                .position(|panel| panel.title.as_str() == *title)?;
-            Some(panels.remove(index))
-        })
-        .collect()
+fn dashboard_panel(
+    shell: &ShellState,
+    width: usize,
+    kind: DashboardPanelKind,
+) -> Option<DashboardPanel> {
+    let content_width = width.saturating_sub(1);
+    match kind {
+        DashboardPanelKind::Navigation => {
+            let mut panel = dashboard_navigation_panel(shell.dashboard_route, width);
+            if shell.dashboard_route == DashboardRoute::Help
+                && super::dashboard_help::uses_dense_layout(width)
+            {
+                panel.lines.truncate(1);
+            }
+            Some(panel)
+        }
+        DashboardPanelKind::Sessions => Some(DashboardPanel::new(
+            "Sessions",
+            shell.session_list.lines(content_width),
+        )),
+        DashboardPanelKind::Settings => Some(DashboardPanel::new(
+            "Settings",
+            shell.settings.lines(&shell.settings_view(), content_width),
+        )),
+        DashboardPanelKind::Thread => {
+            let thread_label = shell.thread_name.as_deref().unwrap_or("untitled thread");
+            Some(DashboardPanel::new(
+                "Thread",
+                vec![
+                    Line::from(dashboard_value(
+                        thread_label,
+                        content_width,
+                        /*prefix_width*/ 0,
+                    )),
+                    Line::from(vec![
+                        "id ".dim(),
+                        dashboard_value(
+                            &shell.thread_id.to_string(),
+                            content_width,
+                            /*prefix_width*/ 3,
+                        )
+                        .cyan(),
+                    ]),
+                    Line::from(
+                        dashboard_value(
+                            "resume, fork, archive, delete in session list",
+                            content_width,
+                            /*prefix_width*/ 0,
+                        )
+                        .dim(),
+                    ),
+                ],
+            ))
+        }
+        DashboardPanelKind::Tokens => Some(DashboardPanel::new(
+            "Tokens",
+            vec![
+                Line::from(format!(
+                    "input {} | output {}",
+                    format_token_count(shell.token_usage.input_tokens),
+                    format_token_count(shell.token_usage.output_tokens)
+                )),
+                Line::from(format!(
+                    "Context {}% left",
+                    context_remaining_percent(
+                        &shell.context_token_usage,
+                        shell.model_context_window,
+                    )
+                    .unwrap_or(100)
+                )),
+            ],
+        )),
+        DashboardPanelKind::Approvals => (shell.pending_approval.is_some()
+            || shell.pending_elicitation.is_some()
+            || shell.pending_user_input.is_some())
+        .then(|| DashboardPanel::new("Approvals", approval_activity_lines(shell, content_width))),
+        DashboardPanelKind::Background => {
+            background_activity_lines(shell).map(|lines| DashboardPanel::new("Background", lines))
+        }
+        DashboardPanelKind::RateLimits => {
+            (!shell.rate_limits.is_empty() || shell.rate_limit_reset_credits.is_some()).then(|| {
+                let mut lines = Vec::new();
+                for limit in shell.rate_limits.iter().take(2) {
+                    lines.extend(rate_limit_lines(limit, content_width));
+                }
+                if shell.rate_limits.len() > 2 {
+                    lines.push(Line::from(
+                        format!("+{} more", format_usize(shell.rate_limits.len() - 2)).dim(),
+                    ));
+                }
+                if let Some(credits) = shell.rate_limit_reset_credits {
+                    lines.push(Line::from(
+                        format!("reset credits {}", format_i64(credits)).dim(),
+                    ));
+                }
+                DashboardPanel::new("Rate Limits", lines)
+            })
+        }
+        DashboardPanelKind::Edits => {
+            let lines = if let Some(diff) = &shell.latest_diff {
+                vec![Line::from(format!(
+                    "{} files +{} -{}",
+                    format_usize(diff.files),
+                    format_usize(diff.additions),
+                    format_usize(diff.removals)
+                ))]
+            } else {
+                vec![Line::from("no changes".dim())]
+            };
+            Some(DashboardPanel::new("Edits", lines))
+        }
+        DashboardPanelKind::Goal => shell.active_goal.as_ref().map(|goal| {
+            let mut lines = vec![
+                Line::from(vec!["status ".dim(), goal_status_span(goal.status)]),
+                Line::from(dashboard_value(
+                    &goal.objective,
+                    content_width,
+                    /*prefix_width*/ 0,
+                )),
+            ];
+            let mut usage = Vec::new();
+            if goal.time_used_seconds > 0 {
+                usage.push(format_goal_elapsed_seconds(goal.time_used_seconds));
+            }
+            if let Some(token_budget) = goal.token_budget {
+                usage.push(format!(
+                    "{}/{} tokens",
+                    format_i64(goal.tokens_used),
+                    format_i64(token_budget)
+                ));
+            } else if goal.tokens_used > 0 {
+                usage.push(format!("{} tokens", format_i64(goal.tokens_used)));
+            }
+            if !usage.is_empty() {
+                lines.push(Line::from(usage.join(" | ").dim()));
+            }
+            DashboardPanel::new("Goal", lines)
+        }),
+        DashboardPanelKind::Plan => {
+            let mut lines = Vec::new();
+            if let Some(explanation) = &shell.plan_explanation {
+                lines.push(Line::from(explanation.clone().dim()));
+            }
+            if shell.plan_steps.is_empty() {
+                lines.push(Line::from("no active plan".dim()));
+            } else {
+                for step in shell.plan_steps.iter().take(5) {
+                    lines.push(plan_step_line(step.status, &step.step));
+                }
+            }
+            Some(DashboardPanel::new("Plan", lines))
+        }
+        DashboardPanelKind::Tools => Some(DashboardPanel::new(
+            "Tools",
+            activity_lines(&shell.tool_activity, content_width, "idle"),
+        )),
+        DashboardPanelKind::Agents => {
+            let mut lines = agent_activity_overview_lines(&shell.agent_activity, content_width);
+            lines.extend(agent_activity_inspector_lines(
+                &shell.agent_activity,
+                content_width,
+                /*line_budget*/ 23,
+            ));
+            lines.push(Line::from(
+                if shell.agents_focused {
+                    "Enter full log · j/k select · Esc release"
+                } else {
+                    "Enter focus · then Enter opens full log"
+                }
+                .fg(if shell.agents_focused {
+                    palette::CYAN
+                } else {
+                    palette::MUTED
+                }),
+            ));
+            Some(DashboardPanel::new("Agents", lines))
+        }
+        DashboardPanelKind::Workspace => Some(DashboardPanel::new(
+            "Workspace",
+            workspace_lines(shell, content_width),
+        )),
+        DashboardPanelKind::Keys => {
+            let dense = super::dashboard_help::uses_dense_layout(width);
+            let mut panel =
+                DashboardPanel::new("Keys", super::dashboard_help::key_hint_lines(shell, width));
+            if dense {
+                panel.show_title = false;
+            }
+            Some(panel)
+        }
+    }
 }
 
 fn dashboard_navigation_panel(active_route: DashboardRoute, width: usize) -> DashboardPanel {
@@ -357,20 +350,6 @@ fn dashboard_navigation_panel(active_route: DashboardRoute, width: usize) -> Das
         lines: DashboardTabs::new(width).lines(active_route).into(),
         title_hint: None,
         show_title: false,
-    }
-}
-
-fn status_line(status: &str) -> Line<'static> {
-    Line::from(status_span(status))
-}
-
-fn status_span(status: &str) -> Span<'static> {
-    match status {
-        "ready" => badge_span(status, Tone::Success),
-        "failed" | "error" | "disconnected" => badge_span(status, Tone::Danger),
-        "thinking" | "reasoning" | "retrying" => badge_span(status, Tone::Focus),
-        "interrupted" => badge_span(status, Tone::Codex),
-        _ => status.to_string().into(),
     }
 }
 
@@ -462,35 +441,6 @@ fn activity_status_line(label: &'static str, title: &str, width: usize) -> Line<
         " ".dim(),
         dashboard_value(title, width, prefix_width).into(),
     ])
-}
-
-fn integration_lines(shell: &ShellState, width: usize) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from(vec![
-        "mcp ".dim(),
-        dashboard_value(&shell.mcp_inventory.label(), width, /*prefix_width*/ 4).into(),
-    ])];
-    lines.push(Line::from(vec![
-        "plugins ".dim(),
-        dashboard_value(
-            &shell.plugin_inventory.label(),
-            width,
-            /*prefix_width*/ 8,
-        )
-        .into(),
-    ]));
-    if shell.mcp_inventory.has_details() {
-        lines.extend(shell.mcp_inventory.lines(width).into_iter().take(2));
-    }
-    if shell.plugin_inventory.has_details() {
-        lines.extend(shell.plugin_inventory.lines(width).into_iter().take(2));
-    }
-    lines
-}
-
-fn short_id(id: &str) -> String {
-    id.get(..8)
-        .map(|prefix| format!("{prefix}..."))
-        .unwrap_or_else(|| id.to_string())
 }
 
 pub(super) fn format_i64(value: i64) -> String {

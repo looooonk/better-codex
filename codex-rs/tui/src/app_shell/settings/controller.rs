@@ -1,11 +1,10 @@
 use super::super::ShellState;
 use super::super::backend::AppShellBackend;
+use super::super::is_unmodified_action_key;
+use super::super::is_unmodified_key_event;
+use super::super::is_unmodified_key_press;
 use super::SettingsAction;
 use super::SettingsView;
-use super::approval_policy_label;
-use super::next_approval_policy;
-use super::next_reasoning_effort;
-use super::reasoning_effort_label;
 use super::ultra_reasoning_concurrency_warning;
 use crate::config_update::build_model_selection_edits;
 use crate::config_update::build_service_tier_selection_edits;
@@ -20,6 +19,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use color_eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
+use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 
 impl ShellState {
@@ -48,16 +48,33 @@ impl ShellState {
         if self.settings.editing() {
             return self.handle_settings_edit_key(key, app_server).await;
         }
+        let is_shift_back_tab = key.kind == KeyEventKind::Press
+            && key.code == KeyCode::BackTab
+            && key.modifiers == KeyModifiers::SHIFT;
+        if !is_unmodified_action_key(key) && !is_shift_back_tab {
+            return Ok(matches!(
+                key.code,
+                KeyCode::Esc
+                    | KeyCode::Up
+                    | KeyCode::Down
+                    | KeyCode::Tab
+                    | KeyCode::Right
+                    | KeyCode::BackTab
+                    | KeyCode::Left
+                    | KeyCode::Enter
+                    | KeyCode::Char('k' | 'j' | 'l' | 'h' | ' ')
+            ));
+        }
         match key.code {
             KeyCode::Esc => {
                 self.settings.focused = false;
                 Ok(true)
             }
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 self.settings.move_up();
                 Ok(true)
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 self.settings.move_down();
                 Ok(true)
             }
@@ -65,7 +82,15 @@ impl ShellState {
                 self.settings.next_page();
                 Ok(true)
             }
+            KeyCode::Char('l') => {
+                self.settings.next_page();
+                Ok(true)
+            }
             KeyCode::BackTab | KeyCode::Left => {
+                self.settings.previous_page();
+                Ok(true)
+            }
+            KeyCode::Char('h') => {
                 self.settings.previous_page();
                 Ok(true)
             }
@@ -103,6 +128,11 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if (matches!(key.code, KeyCode::Esc | KeyCode::Enter) && !is_unmodified_key_press(key))
+            || (key.code == KeyCode::Backspace && !is_unmodified_key_event(key))
+        {
+            return Ok(true);
+        }
         match key.code {
             KeyCode::Esc => {
                 self.settings.cancel_edit();
@@ -148,44 +178,23 @@ impl ShellState {
         Ok(true)
     }
 
-    async fn activate_selected_setting<S>(&mut self, app_server: &mut S) -> Result<()>
+    pub(in crate::app_shell) async fn activate_selected_setting<S>(
+        &mut self,
+        app_server: &mut S,
+    ) -> Result<()>
     where
         S: AppShellBackend,
     {
         let action = self.settings.selected_action();
         match action {
-            SettingsAction::Model => {
-                if !self.cycle_model(app_server).await? {
-                    self.settings.start_edit(action, self.model.clone());
-                }
-            }
-            SettingsAction::ServiceTier => {
-                if !self.cycle_service_tier(app_server).await? {
-                    self.settings
-                        .start_edit(action, self.service_tier.clone().unwrap_or_default());
-                }
-            }
+            SettingsAction::Model => self.open_model_selector(),
+            SettingsAction::ServiceTier => self.open_service_tier_selector(),
             SettingsAction::Theme => {
                 self.settings
                     .start_edit(action, self.tui_theme.clone().unwrap_or_default());
             }
-            SettingsAction::ReasoningEffort => {
-                let Some(preset) = self
-                    .available_models
-                    .iter()
-                    .find(|preset| preset.model == self.model)
-                else {
-                    self.settings
-                        .set_error(format!("model metadata unavailable for `{}`", self.model));
-                    return Ok(());
-                };
-                let effort = next_reasoning_effort(self.reasoning_effort.as_ref(), preset);
-                self.apply_reasoning_effort(effort, app_server).await?;
-            }
-            SettingsAction::ApprovalPolicy => {
-                let policy = next_approval_policy(self.approval_policy);
-                self.apply_approval_policy(policy, app_server).await?;
-            }
+            SettingsAction::ReasoningEffort => self.open_reasoning_selector(),
+            SettingsAction::ApprovalPolicy => self.open_approval_selector(),
             SettingsAction::Animations => {
                 self.animations = !self.animations;
                 app_server
@@ -194,14 +203,6 @@ impl ShellState {
                         serde_json::json!(self.animations),
                     )])
                     .await?;
-                self.settings.set_info(format!(
-                    "animations {}",
-                    if self.animations {
-                        "enabled"
-                    } else {
-                        "disabled"
-                    }
-                ));
             }
             SettingsAction::Tooltips => {
                 self.show_tooltips = !self.show_tooltips;
@@ -211,14 +212,6 @@ impl ShellState {
                         serde_json::json!(self.show_tooltips),
                     )])
                     .await?;
-                self.settings.set_info(format!(
-                    "startup tooltips {}",
-                    if self.show_tooltips {
-                        "enabled"
-                    } else {
-                        "disabled"
-                    }
-                ));
             }
             SettingsAction::McpServers => {
                 if self.mcp_catalog.is_some() {
@@ -236,66 +229,6 @@ impl ShellState {
             }
         }
         Ok(())
-    }
-
-    async fn cycle_model<S>(&mut self, app_server: &mut S) -> Result<bool>
-    where
-        S: AppShellBackend,
-    {
-        let Some(next_model) = ({
-            let models = self
-                .available_models
-                .iter()
-                .filter(|preset| preset.show_in_picker)
-                .map(|preset| preset.model.as_str())
-                .collect::<Vec<_>>();
-            if models.is_empty() {
-                None
-            } else {
-                let current = models
-                    .iter()
-                    .position(|model| *model == self.model)
-                    .unwrap_or(models.len().saturating_sub(1));
-                Some(models[(current + 1) % models.len()].to_string())
-            }
-        }) else {
-            return Ok(false);
-        };
-        self.apply_model(next_model, app_server).await?;
-        Ok(true)
-    }
-
-    async fn cycle_service_tier<S>(&mut self, app_server: &mut S) -> Result<bool>
-    where
-        S: AppShellBackend,
-    {
-        let Some(next_tier) = ({
-            let Some(preset) = self
-                .available_models
-                .iter()
-                .find(|preset| preset.model == self.model)
-            else {
-                return Ok(false);
-            };
-            if preset.service_tiers.is_empty() {
-                None
-            } else {
-                let mut tiers = Vec::with_capacity(preset.service_tiers.len() + 1);
-                tiers.push(SERVICE_TIER_DEFAULT_REQUEST_VALUE);
-                tiers.extend(preset.service_tiers.iter().map(|tier| tier.id.as_str()));
-
-                let current = self
-                    .service_tier
-                    .as_deref()
-                    .and_then(|service_tier| tiers.iter().position(|tier| *tier == service_tier))
-                    .unwrap_or(0);
-                Some(Some(tiers[(current + 1) % tiers.len()].to_string()))
-            }
-        }) else {
-            return Ok(false);
-        };
-        self.apply_service_tier(next_tier, app_server).await?;
-        Ok(true)
     }
 
     async fn apply_settings_edit<S>(
@@ -342,8 +275,6 @@ impl ShellState {
                     None => clear_config_value("tui.theme"),
                 };
                 app_server.write_config(vec![edit]).await?;
-                let label = theme.as_deref().unwrap_or("default");
-                self.settings.set_info(format!("theme set to {label}"));
             }
             SettingsAction::ReasoningEffort
             | SettingsAction::ApprovalPolicy
@@ -355,7 +286,11 @@ impl ShellState {
         Ok(())
     }
 
-    async fn apply_model<S>(&mut self, model: String, app_server: &mut S) -> Result<()>
+    pub(in crate::app_shell) async fn apply_model<S>(
+        &mut self,
+        model: String,
+        app_server: &mut S,
+    ) -> Result<()>
     where
         S: AppShellBackend,
     {
@@ -401,14 +336,13 @@ impl ShellState {
                 /*developer_instructions*/ None,
             );
         }
-        self.model = model.clone();
+        self.model = model;
         self.reasoning_effort = effort;
         self.service_tier = service_tier;
-        self.settings.set_info(format!("model set to {model}"));
         Ok(())
     }
 
-    async fn apply_service_tier<S>(
+    pub(in crate::app_shell) async fn apply_service_tier<S>(
         &mut self,
         service_tier: Option<String>,
         app_server: &mut S,
@@ -427,13 +361,10 @@ impl ShellState {
                 Some(service_tier.clone()),
             ))
             .await?;
-        let label = service_tier.as_deref().unwrap_or("default");
-        self.settings
-            .set_info(format!("service tier set to {label}"));
         Ok(())
     }
 
-    async fn apply_reasoning_effort<S>(
+    pub(in crate::app_shell) async fn apply_reasoning_effort<S>(
         &mut self,
         effort: Option<ReasoningEffort>,
         app_server: &mut S,
@@ -471,15 +402,10 @@ impl ShellState {
         ) {
             self.push_status(warning);
         }
-        let label = effort
-            .as_ref()
-            .map(reasoning_effort_label)
-            .unwrap_or_else(|| "default".to_string());
-        self.settings.set_info(format!("reasoning set to {label}"));
         Ok(())
     }
 
-    async fn apply_approval_policy<S>(
+    pub(in crate::app_shell) async fn apply_approval_policy<S>(
         &mut self,
         policy: AskForApproval,
         app_server: &mut S,
@@ -499,10 +425,6 @@ impl ShellState {
                 /*model*/ None, /*effort*/ None, /*service_tier*/ None,
             ))
             .await?;
-        self.settings.set_info(format!(
-            "approval policy set to {}",
-            approval_policy_label(policy)
-        ));
         Ok(())
     }
 

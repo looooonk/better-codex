@@ -2,43 +2,45 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- system: Better Codex app shell                                  Settings
- you: Create a divergent standalone TUI.                         unfocused model 3 fields
-                                                                 Model  Permissions
- codex: Started a fullscreen app shell backed by app-server      Appearance  Integrations
-        turns.                                                   > model: gpt-5-codex
- plan: 1. Build shell                                              reasoning: default
-       2. Wire transcript                                          service tier: default
-       3. Render dashboard
-                                                                 Model
- ▌ tool exec just test -p codex-tui                              gpt-5-codex
-
- ▌ edited 3 files +128 -24                                       Tokens
-                                                                 total 1k
- codex: The new shell owns the fullscreen surface.               input 1k
-                                                                 output 240
-                                                                 Context 100% left
-
-                                                                 Integrations
-                                                                 mcp not loaded
-                                                                 plugins not loaded
-
-                                                                 Rate Limits
-                                                                 Codex 82% 5h
-                                                                   secondary 18% 7d
-                                                                 credits $12.34
-                                                                 spend 75% left
-                                                                 Background 95% 1h
-                                                                 limited RateLimitReached
-                                                                 reset credits 2
-
-                                                                 Workspace
-                                                                 cwd /workspace/better-codex
- Composer ready 1:37                                             profile managed
- > Summarize the new shell architecture                          files restricted, net restricted
-                                                                 roots none selected
+                                                  │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
+ ▎ YOU  Create a divergent standalone TUI.        │▎━━━━━━─────────────────────────────────────────
+                                                  │▎› Model: gpt-5-codex
+ ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
+          by app-server turns.                    │▎  Service tier: default
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │▎◆ PLAN
+         3. Render dashboard                      │▎Build the standalone shell in slices.
+                                                  │▎x Shell frame
+ ▌ tool exec just test -p codex-tui               │▎> Transcript model
+                                                  │▎- Approvals
+ ▌ edited 3 files +128 -24                        │
+                                                  │▎◆ TOOLS
+ ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
+          surface.                                │▎completed file changes in app_shell
+                                                  │
+                                                  │▎◆ EDITS
+                                                  │▎3 files +128 -24
+                                                  │
+                                                  │▎◆ WORKSPACE
+                                                  │▎cwd /workspace/better-codex
+                                                  │▎profile managed
+                                                  │▎files restricted, net restricted
+                                                  │▎roots none selected
+                                                  │
+                                                  │▎◆ TOKENS
+                                                  │▎input 1k | output 240
+                                                  │▎Context 100% left
+                                                  │
+                                                  │▎◆ RATE LIMITS
+                                                  │▎Codex 82% 5h
+╭────────────────────────────────────────────────╮│▎  secondary 18% 7d
+│◆ MESSAGE  1:37                                 ││▎credits $12.34
+│> Summarize the new shell architecture          ││▎spend 75% left
+│                                                ││▎Background 95% 1h
+│                                                ││▎limited RateLimitReached
+╰────────────────────────────────────────────────╯│

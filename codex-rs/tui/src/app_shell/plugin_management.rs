@@ -1,5 +1,6 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::is_unmodified_action_key;
 use codex_app_server_protocol::PluginAvailability;
 use codex_app_server_protocol::PluginInstallParams;
 use codex_app_server_protocol::PluginInstallPolicy;
@@ -14,6 +15,7 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use unicode_width::UnicodeWidthStr;
 
 const VISIBLE_PLUGIN_ROWS: usize = 8;
 
@@ -41,14 +43,17 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if !is_unmodified_action_key(key) {
+            return Ok(true);
+        }
         match key.code {
             KeyCode::Esc => self.pending_plugin_management = None,
-            KeyCode::Up => {
+            KeyCode::Up | KeyCode::Char('k') => {
                 if let Some(state) = &mut self.pending_plugin_management {
                     state.move_up();
                 }
             }
-            KeyCode::Down => {
+            KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(state) = &mut self.pending_plugin_management {
                     state.move_down();
                 }
@@ -266,9 +271,12 @@ impl PluginManagementState {
                     .cyan()
                     .bold(),
                 " plugin catalog".into(),
-                "  Enter action  i install/update  e enable/disable  u uninstall  r refresh".dim(),
+                "  ↑↓ / j k navigate".dim(),
             ]
             .into(),
+            "Install / update ↵  Toggle e  Uninstall u  Refresh r"
+                .dim()
+                .into(),
         ];
         let start = visible_start(self.selected, self.entries.len());
         for (index, entry) in self
@@ -301,6 +309,33 @@ impl PluginManagementState {
             lines.push(vec!["Action: ".dim(), entry.action_hint().into()].into());
         }
         lines
+    }
+
+    pub(super) fn click_key_at(&mut self, line: usize, column: usize) -> Option<KeyCode> {
+        if line == 1 {
+            let text = line_to_plain_text(&self.lines()[1]);
+            return key_at_label(
+                &text,
+                column,
+                &[
+                    ("Install / update ↵", KeyCode::Enter),
+                    ("Toggle e", KeyCode::Char('e')),
+                    ("Uninstall u", KeyCode::Char('u')),
+                    ("Refresh r", KeyCode::Char('r')),
+                ],
+            );
+        }
+        let start = visible_start(self.selected, self.entries.len());
+        let visible = self
+            .entries
+            .len()
+            .saturating_sub(start)
+            .min(VISIBLE_PLUGIN_ROWS);
+        if (2..visible + 2).contains(&line) {
+            self.selected = start + line - 2;
+            return Some(KeyCode::Null);
+        }
+        None
     }
 }
 
@@ -421,4 +456,21 @@ fn visible_start(selected: usize, total: usize) -> usize {
             .saturating_sub(VISIBLE_PLUGIN_ROWS / 2)
             .min(total.saturating_sub(VISIBLE_PLUGIN_ROWS))
     }
+}
+
+fn line_to_plain_text(line: &Line<'_>) -> String {
+    line.spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect()
+}
+
+fn key_at_label(text: &str, column: usize, labels: &[(&str, KeyCode)]) -> Option<KeyCode> {
+    labels.iter().find_map(|(label, key)| {
+        let byte_start = text.find(label)?;
+        let start = UnicodeWidthStr::width(&text[..byte_start]);
+        (start..start + UnicodeWidthStr::width(*label))
+            .contains(&column)
+            .then_some(*key)
+    })
 }

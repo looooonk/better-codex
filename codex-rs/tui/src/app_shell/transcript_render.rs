@@ -3,7 +3,7 @@
 use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
-use super::render::render_transcript_line;
+use super::transcript_view::render_transcript_line;
 use crate::terminal_hyperlinks::HyperlinkLine;
 use std::collections::HashMap;
 use std::collections::VecDeque;
@@ -12,16 +12,20 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 const MAX_RENDER_VARIANTS_PER_ITEM: usize = 4;
+const MAX_LAYOUT_VARIANTS: usize = 4;
 
 /// Width-aware rendered transcript state retained across terminal frames.
 ///
 /// Completed items are keyed by their stable render revision. Each item keeps a
-/// small set of variants so the normal content and scrollbar widths can coexist
-/// without letting resize or working-directory changes grow the cache without
-/// bound.
+/// small set of variants so the normal content and scrollbar widths can coexist.
+/// Complete layouts are also retained by their ordered revisions, width,
+/// working directory, and selection so unchanged frames avoid rebuilding every
+/// chunk. Both caches are bounded to prevent resize or directory changes from
+/// growing them without limit.
 #[derive(Default)]
 pub(super) struct TranscriptRenderCache {
     items: HashMap<u64, CachedTranscriptItem>,
+    layouts: VecDeque<CachedTranscriptLayout>,
 }
 
 impl TranscriptRenderCache {
@@ -30,7 +34,18 @@ impl TranscriptRenderCache {
         shell: &ShellState,
         width: u16,
         cwd: &Path,
-    ) -> TranscriptLayout {
+    ) -> Arc<TranscriptLayout> {
+        if let Some(index) = self
+            .layouts
+            .iter()
+            .position(|cached| cached.matches(shell, width, cwd))
+            && let Some(cached) = self.layouts.remove(index)
+        {
+            let layout = Arc::clone(&cached.layout);
+            self.layouts.push_back(cached);
+            return layout;
+        }
+
         let mut previous_items = std::mem::take(&mut self.items);
         let mut current_items = HashMap::with_capacity(
             shell.transcript.len()
@@ -48,6 +63,7 @@ impl TranscriptRenderCache {
                 &mut previous_items,
                 &mut current_items,
                 CachedSource {
+                    transcript_index: Some(index),
                     revision: item.render_revision,
                     kind: item.kind,
                     text: &item.text,
@@ -66,6 +82,7 @@ impl TranscriptRenderCache {
                 &mut previous_items,
                 &mut current_items,
                 CachedSource {
+                    transcript_index: None,
                     revision: shell.streaming_plan_revision,
                     kind: TranscriptKind::Plan,
                     text: &shell.streaming_plan,
@@ -83,6 +100,7 @@ impl TranscriptRenderCache {
                 &mut previous_items,
                 &mut current_items,
                 CachedSource {
+                    transcript_index: None,
                     revision: shell.streaming_assistant_revision,
                     kind: TranscriptKind::Assistant,
                     text: &shell.streaming_assistant,
@@ -95,15 +113,56 @@ impl TranscriptRenderCache {
         }
 
         self.items = current_items;
-        TranscriptLayout::new(chunks)
+        let layout = Arc::new(TranscriptLayout::new(chunks));
+        self.layouts.push_back(CachedTranscriptLayout {
+            width,
+            cwd: cwd.to_path_buf(),
+            selected: shell.transcript_selection,
+            revisions: render_revisions(shell).collect(),
+            layout: Arc::clone(&layout),
+        });
+        while self.layouts.len() > MAX_LAYOUT_VARIANTS {
+            self.layouts.pop_front();
+        }
+        layout
     }
 
     pub(super) fn clear(&mut self) {
         self.items.clear();
+        self.layouts.clear();
     }
 }
 
+struct CachedTranscriptLayout {
+    width: u16,
+    cwd: PathBuf,
+    selected: Option<usize>,
+    revisions: Vec<u64>,
+    layout: Arc<TranscriptLayout>,
+}
+
+impl CachedTranscriptLayout {
+    fn matches(&self, shell: &ShellState, width: u16, cwd: &Path) -> bool {
+        self.width == width
+            && self.cwd == cwd
+            && self.selected == shell.transcript_selection
+            && self.revisions.iter().copied().eq(render_revisions(shell))
+    }
+}
+
+fn render_revisions(shell: &ShellState) -> impl Iterator<Item = u64> + '_ {
+    shell
+        .transcript
+        .iter()
+        .map(|item| item.render_revision)
+        .chain((!shell.streaming_plan.is_empty()).then_some(shell.streaming_plan_revision))
+        .chain(
+            (!shell.streaming_assistant.is_empty()).then_some(shell.streaming_assistant_revision),
+        )
+}
+
 struct CachedSource<'a> {
+    transcript_index: Option<usize>,
     revision: u64,
     kind: TranscriptKind,
     text: &'a str,
@@ -124,6 +183,7 @@ fn push_cached_chunk(
     let mut cached = previous_items.remove(&source.revision).unwrap_or_default();
     let lines = cached.lines(&source, width, cwd, selected);
     chunks.push(TranscriptChunk {
+        transcript_index: source.transcript_index,
         revision: source.revision,
         separator_before,
         lines,
@@ -208,6 +268,7 @@ struct CachedRenderVariant {
 }
 
 struct TranscriptChunk {
+    transcript_index: Option<usize>,
     #[cfg_attr(not(test), allow(dead_code))]
     revision: u64,
     separator_before: bool,
@@ -267,6 +328,48 @@ impl TranscriptLayout {
             }
         }
         visible
+    }
+
+    /// Return the stored transcript item that owns a rendered logical row.
+    ///
+    /// Separator rows and streaming-only chunks have no stored transcript
+    /// source, so they intentionally return `None`.
+    pub(super) fn transcript_index_at_row(&self, row: usize) -> Option<usize> {
+        let mut logical_row = 0usize;
+        for chunk in &self.chunks {
+            if chunk.separator_before {
+                if logical_row == row {
+                    return None;
+                }
+                logical_row = logical_row.saturating_add(1);
+            }
+
+            let chunk_end = logical_row.saturating_add(chunk.lines.len());
+            if (logical_row..chunk_end).contains(&row) {
+                return chunk.transcript_index;
+            }
+            logical_row = chunk_end;
+            if logical_row > row {
+                break;
+            }
+        }
+        None
+    }
+
+    pub(super) fn transcript_row_range(
+        &self,
+        transcript_index: usize,
+    ) -> Option<std::ops::Range<usize>> {
+        let mut logical_row = 0usize;
+        for chunk in &self.chunks {
+            logical_row = logical_row.saturating_add(usize::from(chunk.separator_before));
+            let chunk_end = logical_row.saturating_add(chunk.lines.len());
+            if chunk.transcript_index == Some(transcript_index) {
+                return Some(logical_row..chunk_end);
+            }
+            logical_row = chunk_end;
+        }
+        None
     }
 }
 

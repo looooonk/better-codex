@@ -2,21 +2,23 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
- ▌ tool exec cargo test                                          Sessions
-                                                                 unfocused active 0 shown
-   ▌ output pytest 40%                                           loading sessions
-   ▌        pytest 80%
-   ▌        pytest 100%                                          Tools
-                                                                 in progress exec just test -p c...
-                                                                 completed file changes in app_s...
-                                                                 in progress exec cargo test
-
-                                                                 Thread
- Composer ready 1:37                                             stage-one
- > Summarize the new shell architecture                          id 01900000-0000-7000-8000-0000...
-                                                                 resume, fork, archive, delete in
+                                                  │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▌ tool exec cargo test                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎loading sessions
+   ▌ output pytest 40%                            │
+   ▌        pytest 80%                            │▎◆ THREAD
+   ▌        pytest 100%                           │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

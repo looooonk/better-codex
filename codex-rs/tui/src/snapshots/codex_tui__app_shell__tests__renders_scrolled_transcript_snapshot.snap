@@ -2,18 +2,19 @@
 source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
-
- Better Codex                                                    ┌────────┬─────────┬────────┬────┐
-                                                                 │Settings│Workspace│Sessions│Help│
-                                                                 └────────┴─────────┴────────┴────┘
- Conversation
-                                                              │  Sessions
- ▌ edited 3 files +128 -24                                    ┃  unfocused active 0 shown
- status: first checkpoint                                     ┃  loading sessions
- status: second checkpoint                                    │
-                                                                 Tools
-                                                                 in progress exec just test -p c...
- Composer ready 1:37                                             completed file changes in app_s...
- > Summarize the new shell architecture
-                                                                 Thread
-                                                                 stage-one
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │
+──────────────────────────────────────────────────│   Status   │  Agents   │  Sessions   │  Help
+                                                  │─────────────────────────━━━━━━━━━━━━━──────────
+ ◆ CONVERSATION                                   │
+                                                │ │▎◆ SESSIONS
+ ▌ edited 3 files +128 -24                      │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ STATUS  first checkpoint                     ┃ │▎loading sessions
+ ▎ STATUS  second checkpoint                    ┃ │
+ ▎ STATUS  third checkpoint                     │ │▎◆ THREAD
+                                                  │▎stage-one
+╭────────────────────────────────────────────────╮│▎id 01900000-0000-7000-8000-000000000001
+│◆ MESSAGE  1:37                                 ││▎resume, fork, archive, delete in session list
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│
