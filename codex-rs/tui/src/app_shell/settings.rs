@@ -8,9 +8,11 @@ use codex_protocol::openai_models::ReasoningEffort;
 use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
-use ratatui::text::Span;
 
 mod controller;
+mod tabs;
+
+use tabs::SettingsTabs;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
 
@@ -95,16 +97,7 @@ impl SettingsState {
             "  ".into(),
             format!("{} fields", self.actions().len()).fg(palette::MUTED),
         ]));
-        lines.push(Line::from(vec![
-            tab("Model", self.page == SettingsPage::Model),
-            "  ".dim(),
-            tab("Permissions", self.page == SettingsPage::Permissions),
-        ]));
-        lines.push(Line::from(vec![
-            tab("Appearance", self.page == SettingsPage::Appearance),
-            "  ".dim(),
-            tab("Integrations", self.page == SettingsPage::Integrations),
-        ]));
+        lines.extend(SettingsTabs::new(width).lines(self.page));
 
         if let Some(edit) = &self.edit {
             let label = format!("edit {}", edit.action.label());
@@ -168,31 +161,11 @@ impl SettingsState {
         self.actions()[self.selected.min(self.actions().len().saturating_sub(1))]
     }
 
-    pub(super) fn select_at(&mut self, line: usize, column: usize) -> bool {
+    pub(super) fn select_at(&mut self, line: usize, column: usize, width: usize) -> bool {
         self.focused = true;
-        let first_width = |page: SettingsPage| page.label().chars().count() + 2;
-        let page = match line {
-            1 if column < first_width(SettingsPage::Model) => Some(SettingsPage::Model),
-            1 if (first_width(SettingsPage::Model) + 2
-                ..first_width(SettingsPage::Model)
-                    + 2
-                    + first_width(SettingsPage::Permissions))
-                .contains(&column) =>
-            {
-                Some(SettingsPage::Permissions)
-            }
-            2 if column < first_width(SettingsPage::Appearance) => Some(SettingsPage::Appearance),
-            2 if (first_width(SettingsPage::Appearance) + 2
-                ..first_width(SettingsPage::Appearance)
-                    + 2
-                    + first_width(SettingsPage::Integrations))
-                .contains(&column) =>
-            {
-                Some(SettingsPage::Integrations)
-            }
-            1 | 2 => None,
-            _ => None,
-        };
+        let page = matches!(line, 1 | 2)
+            .then(|| SettingsTabs::new(width).page_at(column))
+            .flatten();
         if let Some(page) = page {
             self.set_page(page);
             return false;
@@ -316,6 +289,13 @@ impl SettingsState {
 }
 
 impl SettingsPage {
+    const ALL: [Self; 4] = [
+        Self::Model,
+        Self::Permissions,
+        Self::Appearance,
+        Self::Integrations,
+    ];
+
     fn label(self) -> &'static str {
         match self {
             Self::Model => "Model",
@@ -339,14 +319,6 @@ impl SettingsAction {
             Self::McpServers => "MCP servers",
             Self::Plugins => "Plugins",
         }
-    }
-}
-
-fn tab(label: &'static str, active: bool) -> Span<'static> {
-    if active {
-        format!("▸ {label}").fg(palette::FOCUS).bold()
-    } else {
-        format!("  {label}").fg(palette::MUTED)
     }
 }
 

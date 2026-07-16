@@ -206,7 +206,10 @@ impl ShellState {
         if self.dashboard_route == DashboardRoute::Settings
             && let Some(target) = view.dashboard_panel_position_at(area, position, "Settings")
         {
-            if self.settings.select_at(target.line, target.column) {
+            if self
+                .settings
+                .select_at(target.line, target.column, target.width)
+            {
                 self.activate_selected_setting(app_server).await?;
             }
             return Ok(());

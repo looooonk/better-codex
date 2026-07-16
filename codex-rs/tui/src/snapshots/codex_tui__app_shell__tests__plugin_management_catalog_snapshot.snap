@@ -8,8 +8,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
                                                             │
  ◆ CONVERSATION                                             │▎◆ SETTINGS
  ▎ SYSTEM  Better Codex app shell                           │▎● FOCUSED  INTEGRATIONS  2 fields
- ▎ YOU  Create a divergent standalone TUI.                  │▎  Model    Permissions
-                                                            │▎  Appearance  ▸ Integrations
+ ▎ YOU  Create a divergent standalone TUI.                  │▎Model │ Permissions │ Appearance │ Integrations
+                                                            │▎──────────────────────────────────━━━━━━━━━━━━━
  ▎ CODEX  Started a fullscreen app shell backed by app-     │▎plugin inventory refreshed
           server turns.                                     │▎  MCP servers: not loaded
  ▎ PLAN  1. Build shell                                     │▎› Plugins: 1 installed / 2 available

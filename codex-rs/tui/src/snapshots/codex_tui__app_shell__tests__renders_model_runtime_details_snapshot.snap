@@ -8,8 +8,8 @@ expression: "render_shell(&shell, area)"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS
  ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  MODEL  3 fields
- ▎ YOU  Create a divergent standalone TUI.        │▎▸ Model    Permissions
-                                                  │▎  Appearance    Integrations
+ ▎ YOU  Create a divergent standalone TUI.        │▎Model │ Permissions │ Appearance │ Integrations
+                                                  │▎━━━━━━━────────────────────────────────────────
  ▎ CODEX  Started a fullscreen app shell backed   │▎› Model: gpt-5.6-sol
           by app-server turns.                    │▎  Reasoning: Max
  ▎ PLAN  1. Build shell                           │▎  Service tier: priority

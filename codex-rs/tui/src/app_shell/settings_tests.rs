@@ -2,23 +2,20 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn headings_and_tab_gaps_do_not_activate_settings() {
+fn settings_tabs_fill_the_strip_and_select_the_clicked_page() {
     let mut settings = SettingsState::default();
     settings.move_down();
 
-    assert!(!settings.select_at(/*line*/ 0, /*column*/ 0));
+    assert!(!settings.select_at(/*line*/ 0, /*column*/ 0, /*width*/ 49));
     assert_eq!(settings.selected_action(), SettingsAction::ReasoningEffort);
 
-    assert!(!settings.select_at(/*line*/ 1, /*column*/ 21));
+    assert!(!settings.select_at(/*line*/ 1, /*column*/ 8, /*width*/ 49));
     assert_eq!(settings.page, SettingsPage::Permissions);
-    assert!(!settings.select_at(/*line*/ 1, /*column*/ 7));
-    assert_eq!(settings.page, SettingsPage::Permissions);
-
-    assert!(!settings.select_at(/*line*/ 2, /*column*/ 11));
+    assert!(!settings.select_at(/*line*/ 2, /*column*/ 22, /*width*/ 49));
     assert_eq!(settings.page, SettingsPage::Appearance);
-    assert!(!settings.select_at(/*line*/ 2, /*column*/ 13));
-    assert_eq!(settings.page, SettingsPage::Appearance);
-    assert!(!settings.select_at(/*line*/ 2, /*column*/ 27));
+    assert!(!settings.select_at(/*line*/ 1, /*column*/ 35, /*width*/ 49));
+    assert_eq!(settings.page, SettingsPage::Integrations);
+    assert!(!settings.select_at(/*line*/ 1, /*column*/ 49, /*width*/ 49));
     assert_eq!(settings.page, SettingsPage::Integrations);
 }
 
@@ -27,6 +24,6 @@ fn action_rows_select_only_the_clicked_action() {
     let mut settings = SettingsState::default();
     let line = settings.action_line_start().saturating_add(2);
 
-    assert!(settings.select_at(line, /*column*/ 0));
+    assert!(settings.select_at(line, /*column*/ 0, /*width*/ 49));
     assert_eq!(settings.selected_action(), SettingsAction::ServiceTier);
 }
