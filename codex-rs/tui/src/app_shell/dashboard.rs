@@ -258,20 +258,18 @@ fn dashboard_panel(
             "Tokens",
             vec![
                 Line::from(format!(
-                    "input {}",
-                    format_token_count(shell.token_usage.input_tokens)
-                )),
-                Line::from(format!(
-                    "output {}",
+                    "input {} | output {}",
+                    format_token_count(shell.token_usage.input_tokens),
                     format_token_count(shell.token_usage.output_tokens)
                 )),
-                match context_remaining_percent(
-                    &shell.context_token_usage,
-                    shell.model_context_window,
-                ) {
-                    Some(percent) => Line::from(format!("Context {percent}% left")),
-                    None => Line::from("Context unknown".dim()),
-                },
+                Line::from(format!(
+                    "Context {}% left",
+                    context_remaining_percent(
+                        &shell.context_token_usage,
+                        shell.model_context_window,
+                    )
+                    .unwrap_or(100)
+                )),
             ],
         )),
         DashboardPanelKind::Approvals => (shell.pending_approval.is_some()

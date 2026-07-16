@@ -19,14 +19,14 @@ expression: "render_shell(&shell, area)"
  ▌ tool exec just test -p codex-tui               │▎tier priority
                                                   │
  ▌ edited 3 files +128 -24                        │▎◆ TOKENS
-                                                  │▎input 1k
- ▎ CODEX  The new shell owns the fullscreen       │▎output 240
-          surface.                                │▎Context 100% left
-                                                  │
+                                                  │▎input 1k | output 240
+ ▎ CODEX  The new shell owns the fullscreen       │▎Context 100% left
+          surface.                                │
                                                   │▎◆ INTEGRATIONS
-╭────────────────────────────────────────────────╮│▎mcp not loaded
-│◆ MESSAGE  1:37                                 ││▎plugins not loaded
-│> Summarize the new shell architecture          ││
-│                                                ││▎◆ WORKSPACE
+                                                  │▎mcp not loaded
+╭────────────────────────────────────────────────╮│▎plugins not loaded
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││▎◆ WORKSPACE
 │                                                ││▎cwd /workspace/better-codex
+│                                                ││▎profile managed
 ╰────────────────────────────────────────────────╯│

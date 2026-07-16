@@ -22,16 +22,16 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
  ▎ STATUS  plugin m│> enabled    Calendar (local)                                         │
                    │  available  Drive (local)                                            │
  ▎ CODEX  The new s│                                                                      │
-                   │Action: press i or Enter to update from the marketplace               │
-                   │                                                                      │able
+                   │Action: press i or Enter to update from the marketplace               │able
+                   │                                                                      │
                    ╰──────────────────────────────────────────────────────────────────────╯
-                                                            │▎plugins 2
                                                             │
                                                             │▎◆ WORKSPACE
                                                             │▎cwd /workspace/better-codex
                                                             │▎profile managed
                                                             │▎files restricted, net restricted
                                                             │▎roots none selected
+                                                            │
 ╭──────────────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                           ││
 │> Summarize the new shell architecture                    ││

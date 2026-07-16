@@ -17,12 +17,11 @@ expression: "render_shell(&shell, area)"
          3. Render dashboard                      │▎gpt-5-codex
                                                   │
  ▌ tool exec just test -p codex-tui               │▎◆ TOKENS
-                                                  │▎input 1k
- ▌ edited 3 files +128 -24                        │▎output 240
-                                                  │▎Context 100% left
- ▎ CODEX  The new shell owns the fullscreen       │
-          surface.                                │▎◆ INTEGRATIONS
-                                                  │▎mcp not loaded
+                                                  │▎input 1k | output 240
+ ▌ edited 3 files +128 -24                        │▎Context 100% left
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ INTEGRATIONS
+          surface.                                │▎mcp not loaded
                                                   │▎plugins not loaded
                                                   │
                                                   │▎◆ RATE LIMITS
@@ -38,7 +37,8 @@ expression: "render_shell(&shell, area)"
                                                   │▎cwd /workspace/better-codex
                                                   │▎profile managed
                                                   │▎files restricted, net restricted
-╭────────────────────────────────────────────────╮│▎roots none selected
+                                                  │▎roots none selected
+╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││
 │                                                ││

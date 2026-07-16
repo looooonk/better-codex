@@ -21,17 +21,17 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
  ▌ edited 3 files +│Login ↵  Disable d  Remove x  Add a  Edit e  Reload r                 │
  ▎ STATUS  mcp mana│> login        github 2 tools                                         │
                    │  bearer       linear 1 tools                                         │
- ▎ CODEX  The new s│                                                                      │
-                   │Action: press Enter or l to start oauth login                         │ogin needed
+ ▎ CODEX  The new s│                                                                      │ogin needed
+                   │Action: press Enter or l to start oauth login                         │
                    │                                                                      │
                    ╰──────────────────────────────────────────────────────────────────────╯
-                                                            │▎tools 3
                                                             │
                                                             │▎◆ WORKSPACE
                                                             │▎cwd /workspace/better-codex
                                                             │▎profile managed
                                                             │▎files restricted, net restricted
                                                             │▎roots none selected
+                                                            │
 ╭──────────────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                           ││
 │> Summarize the new shell architecture                    ││

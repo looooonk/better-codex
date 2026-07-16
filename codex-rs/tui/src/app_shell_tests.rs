@@ -5670,8 +5670,7 @@ fn dashboard_compacts_token_counts_and_groups_other_large_numbers() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("input 1.2m"));
-    assert!(rendered.contains("output 235k"));
+    assert!(rendered.contains("input 1.2m | output 235k"));
     assert!(rendered.contains("Context 27% left"));
     shell.dashboard_route = DashboardRoute::Workspace;
     let rendered = render_shell(&shell, area);
