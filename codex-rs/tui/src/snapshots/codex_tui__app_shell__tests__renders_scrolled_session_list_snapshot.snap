@@ -29,7 +29,7 @@ expression: rendered
                                                   │
                                                   │▎◆ PLAN
 ╭────────────────────────────────────────────────╮│▎Build the standalone shell in slices.
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎x Shell frame
+│◆ MESSAGE  1:37                                 ││▎x Shell frame
 │> Summarize the new shell architecture          ││▎> Transcript model
 │                                                ││▎- Approvals
 │                                                ││

@@ -10,7 +10,7 @@ expression: rendered
           surf│  Fork thread                                                         │ns
               │  Import Claude Code setup                                            │
 ╭─────────────│▌ Compact context  Context compaction action is no...                 │
-│◆ MESSAGE  EN│↑↓ / j k navigate   Enter select   Esc close  ↑12/12                  │
+│◆ MESSAGE  1:│↑↓ / j k navigate   Enter select   Esc close  ↑12/12                  │
 │> Summarize t╰──────────────────────────────────────────────────────────────────────╯x-tui
 │                                                ││▎completed file changes in app_shell
 ╰────────────────────────────────────────────────╯│

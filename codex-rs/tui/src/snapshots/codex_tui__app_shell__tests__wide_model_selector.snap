@@ -27,7 +27,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
                 │   · ○ gpt-5-9                                                    │
                 │       gpt-5-9 - gpt-5-9 description                              │
 ╭───────────────│                                                                  │
-│◆ MESSAGE  ENTE│  wheel / j k  Enter select  Esc cancel  1/12 ↓                   │
+│◆ MESSAGE  1:37│  wheel / j k  Enter select  Esc cancel  1/12 ↓                   │
 │> Summarize the╰──────────────────────────────────────────────────────────────────╯
 │                                                ││
 │                                                ││

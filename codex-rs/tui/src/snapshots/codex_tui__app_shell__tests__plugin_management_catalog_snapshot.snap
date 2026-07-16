@@ -33,7 +33,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
                                                             │▎cwd /workspace/better-codex
                                                             │▎profile managed
 ╭──────────────────────────────────────────────────────────╮│▎files restricted, net restricted
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37          ││▎roots none selected
+│◆ MESSAGE  1:37                                           ││▎roots none selected
 │> Summarize the new shell architecture                    ││
 │                                                          ││
 │                                                          ││

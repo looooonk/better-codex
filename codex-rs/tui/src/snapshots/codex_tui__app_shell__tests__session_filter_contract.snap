@@ -25,7 +25,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │
                                                   │▎◆ PLAN
 ╭────────────────────────────────────────────────╮│▎Build the standalone shell in slices.
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎x Shell frame
+│◆ MESSAGE  1:37                                 ││▎x Shell frame
 │> Summarize the new shell architecture          ││▎> Transcript model
 │                                                ││▎- Approvals
 │                                                ││

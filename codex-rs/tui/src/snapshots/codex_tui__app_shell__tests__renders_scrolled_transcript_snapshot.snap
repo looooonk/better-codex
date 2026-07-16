@@ -13,7 +13,7 @@ expression: "render_shell(&shell, area)"
  ▎ STATUS  third checkpoint                     │ │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
 ╭────────────────────────────────────────────────╮│▎completed file changes in app_shell
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││
+│◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││▎◆ THREAD
 │                                                ││▎stage-one
 │                                                ││▎id 01900000-0000-7000-8000-000000000001

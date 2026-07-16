@@ -25,7 +25,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:1 ││
+│◆ MESSAGE  1:1                                  ││
 │> Type a message, Shift+Enter for newline       ││
 │                                                ││
 │                                                ││

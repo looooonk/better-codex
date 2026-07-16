@@ -5711,7 +5711,7 @@ async fn shift_enter_preserves_multiline_composer_when_typing() {
     let rendered = render_shell(&shell, area);
 
     assert!(
-        rendered.contains("MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  2:2"),
+        rendered.contains("MESSAGE  2:2"),
         "composer should render the cursor on the second line"
     );
     assert!(
@@ -5809,12 +5809,8 @@ async fn repeated_shift_enter_keeps_blank_line_cursor_visible() {
     let view = ShellView { shell: &shell };
     let buf = render_shell_buffer(&shell, area);
     let input_area = view.input_area(area);
-    let title_row = row_containing(
-        &buf,
-        input_area,
-        "MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  9:1",
-    )
-    .expect("composer should render the ninth logical line");
+    let title_row = row_containing(&buf, input_area, "MESSAGE  9:1")
+        .expect("composer should render the ninth logical line");
     let cursor = view
         .cursor_position(area)
         .expect("composer cursor should be visible");
@@ -5859,14 +5855,21 @@ fn composer_cursor_tracks_word_wrapped_single_line_prompt() {
     let view = ShellView { shell: &shell };
     let buf = render_shell_buffer(&shell, area);
     let input_area = view.input_area(area);
+    let first_row = row_containing(&buf, input_area, "This deliberately")
+        .expect("prompt start should render on a visible row");
+    let first_x = row_needle_x(&buf, input_area, first_row, "This deliberately")
+        .expect("prompt start should have an x position");
     let row = row_containing(&buf, input_area, "another row")
         .expect("wrapped prompt tail should render on a visible row");
+    let wrapped_x = row_needle_x(&buf, input_area, row, "before the final")
+        .expect("wrapped prompt line should have an x position");
     let tail_x = row_needle_x(&buf, input_area, row, "another row")
         .expect("wrapped prompt tail should have an x position");
     let cursor = view
         .cursor_position(area)
         .expect("composer cursor should be visible");
 
+    assert_eq!(wrapped_x, first_x);
     assert_eq!(cursor.y, row);
     assert_eq!(cursor.x, tail_x + 11);
     insta::assert_snapshot!(render_shell(&shell, area));

@@ -31,7 +31,7 @@ expression: "render_shell(&shell, area)"
                                                   │▎Build the standalone shell in slices.
                                                   │▎x Shell frame
 ╭────────────────────────────────────────────────╮│▎> Transcript model
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎- Approvals
+│◆ MESSAGE  1:37                                 ││▎- Approvals
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││

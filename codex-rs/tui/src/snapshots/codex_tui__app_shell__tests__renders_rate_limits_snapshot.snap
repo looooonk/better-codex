@@ -39,7 +39,7 @@ expression: "render_shell(&shell, area)"
                                                   │▎◆ WORKSPACE
                                                   │▎cwd /workspace/better-codex
 ╭────────────────────────────────────────────────╮│▎profile managed
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎files restricted, net restricted
+│◆ MESSAGE  1:37                                 ││▎files restricted, net restricted
 │> Summarize the new shell architecture          ││▎roots none selected
 │                                                ││
 │                                                ││

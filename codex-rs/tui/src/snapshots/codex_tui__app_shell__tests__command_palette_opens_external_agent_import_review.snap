@@ -29,7 +29,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 32,))"
                                                   │▎- Approvals
                                                   │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││
+│◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││

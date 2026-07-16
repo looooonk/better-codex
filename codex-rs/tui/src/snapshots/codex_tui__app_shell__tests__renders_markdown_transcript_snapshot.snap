@@ -25,7 +25,7 @@ expression: "render_shell(&shell, area)"
             slice.                                          ┃ │▎◆ PLAN
                                                               │▎Build the standalone shell in slices.
 ╭────────────────────────────────────────────────────────────╮│▎x Shell frame
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:1             ││▎> Transcript model
+│◆ MESSAGE  1:1                                              ││▎> Transcript model
 │> Type a message, Shift+Enter for newline                   ││▎- Approvals
 │                                                            ││
 │                                                            ││

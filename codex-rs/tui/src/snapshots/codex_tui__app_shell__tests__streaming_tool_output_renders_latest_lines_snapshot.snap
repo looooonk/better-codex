@@ -17,7 +17,7 @@ expression: "render_shell(&shell, area)"
                                                   │▎◆ THREAD
                                                   │▎stage-one
 ╭────────────────────────────────────────────────╮│▎id 01900000-0000-7000-8000-000000000001
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎resume, fork, archive, delete in session list
+│◆ MESSAGE  1:37                                 ││▎resume, fork, archive, delete in session list
 │> Summarize the new shell architecture          ││
 │                                                ││▎◆ STATUS
 │                                                ││▎thinking

@@ -21,7 +21,7 @@ expression: "render_shell(&shell, area)"
           surface.                              ┃ │
                                                   │▎◆ STATUS
 ╭────────────────────────────────────────────────╮│▎thinking
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  7:6 ││
+│◆ MESSAGE  7:6                                  ││
 │> alpha                                         ││▎◆ PLAN
 │                                                ││▎Build the standalone shell in slices.
 │  bravo                                         ││▎x Shell frame

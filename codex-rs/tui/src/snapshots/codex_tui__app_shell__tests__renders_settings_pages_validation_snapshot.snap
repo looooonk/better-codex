@@ -29,7 +29,7 @@ expression: "render_shell(&shell, area)"
                                                   │▎mcp not loaded
                                                   │▎plugins not loaded
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎◆ WORKSPACE
+│◆ MESSAGE  1:37                                 ││▎◆ WORKSPACE
 │> Summarize the new shell architecture          ││▎cwd /workspace/better-codex
 │                                                ││▎profile managed
 │                                                ││▎files restricted, net restricted

@@ -25,7 +25,7 @@ expression: "render_shell(&shell, area)"
                                                   │▎output 240
                                                   │▎Context 100% left
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎◆ INTEGRATIONS
+│◆ MESSAGE  1:37                                 ││▎◆ INTEGRATIONS
 │> Summarize the new shell architecture          ││▎mcp not loaded
 │                                                ││▎plugins not loaded
 │                                                ││

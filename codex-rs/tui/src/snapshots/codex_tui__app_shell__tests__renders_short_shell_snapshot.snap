@@ -10,7 +10,7 @@ expression: "render_shell(&shell, area)"
           surface.                              ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                   │▎loading sessions
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37││▎◆ TOOLS
+│◆ MESSAGE  1:37                                 ││▎◆ TOOLS
 │> Summarize the new shell architecture          ││▎in progress exec just test -p codex-tui
 │                                                ││▎completed file changes in app_shell
 ╰────────────────────────────────────────────────╯│

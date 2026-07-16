@@ -27,7 +27,7 @@ expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
                                                               │
                                                               │
 ╭────────────────────────────────────────────────────────────╮│
-│◆ MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  1:37            ││
+│◆ MESSAGE  1:37                                             ││
 │> Summarize the new shell architecture                      ││
 │                                                            ││
 │                                                            ││

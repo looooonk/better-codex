@@ -506,17 +506,13 @@ impl ShellView<'_> {
         let position = format!("{}:{}", line + 1, column + 1);
         let title_width = usize::from(pane_content_rect(area).width).saturating_sub(2);
         let titles = if self.shell.active_turn_id.is_some() {
-            [
+            vec![
                 format!("MESSAGE  ● RUNNING  {position}"),
                 format!("MESSAGE  ●  {position}"),
                 position.clone(),
             ]
         } else {
-            [
-                format!("MESSAGE  ENTER SEND  SHIFT+ENTER NEWLINE  {position}"),
-                format!("MESSAGE  ENTER SEND  {position}"),
-                format!("MESSAGE  {position}"),
-            ]
+            vec![format!("MESSAGE  {position}"), position.clone()]
         };
         let title = titles
             .into_iter()

@@ -10,7 +10,7 @@ expression: rendered
           surf│Install / update ↵  Toggle e  Uninstall u  Refresh r                  │ns
               │> available  Plugin 11 (local)                                        │
 ╭─────────────│                                                                      │
-│◆ MESSAGE  EN│Action: press i or Enter to install                                   │
+│◆ MESSAGE  1:│Action: press i or Enter to install                                   │
 │> Summarize t╰──────────────────────────────────────────────────────────────────────╯x-tui
 │                                                ││▎completed file changes in app_shell
 ╰────────────────────────────────────────────────╯│

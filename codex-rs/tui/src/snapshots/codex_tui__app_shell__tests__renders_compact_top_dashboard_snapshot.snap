@@ -21,7 +21,7 @@ expression: "render_shell(&shell, area)"
           surface.                            ┃
 
 ╭──────────────────────────────────────────────╮
-│◆ MESSAGE  ENTER SEND  1:37                   │
+│◆ MESSAGE  1:37                               │
 │> Summarize the new shell architecture        │
 │                                              │
 │                                              │
