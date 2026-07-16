@@ -1,5 +1,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum CommandPaletteAction {
+    NewSession,
     CopyTranscript,
     ClearTranscript,
     SelectLatestTranscript,
@@ -76,6 +77,12 @@ pub(super) struct CommandPaletteContext {
 
 pub(super) fn command_palette_entries(context: CommandPaletteContext) -> Vec<CommandPaletteEntry> {
     vec![
+        CommandPaletteEntry {
+            action: CommandPaletteAction::NewSession,
+            title: "New session",
+            detail: "Start an empty session in the current workspace",
+            enabled: true,
+        },
         CommandPaletteEntry {
             action: CommandPaletteAction::CopyTranscript,
             title: "Copy transcript item",

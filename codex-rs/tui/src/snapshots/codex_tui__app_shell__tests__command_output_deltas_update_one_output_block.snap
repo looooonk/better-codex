@@ -8,13 +8,13 @@ expression: "render_shell(&shell, area)"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▌ tool exec cargo test                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎loading sessions
-   ▌ output pytest 40%                            │
-   ▌        pytest 80%                            │▎◆ THREAD
-   ▌        pytest 100%                           │▎stage-one
+                                                  │▎+ New session  Ctrl+N
+   ▌ output pytest 40%                            │▎loading sessions
+   ▌        pytest 80%                            │
+   ▌        pytest 100%                           │▎◆ THREAD
+                                                  │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
-                                                  │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                 ││

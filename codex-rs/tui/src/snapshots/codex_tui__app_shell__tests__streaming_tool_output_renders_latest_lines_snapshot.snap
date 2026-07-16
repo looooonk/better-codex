@@ -8,13 +8,13 @@ expression: "render_shell(&shell, area)"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
    ▌ output ... 4 earlier output lines            │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-   ▌        line 5                                │▎loading sessions
-   ▌        line 6                                │
-   ▌        line 7                                │▎◆ THREAD
+   ▌        line 5                                │▎+ New session  Ctrl+N
+   ▌        line 6                                │▎loading sessions
+   ▌        line 7                                │
+                                                  │▎◆ THREAD
                                                   │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
-                                                  │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                 ││

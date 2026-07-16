@@ -8,9 +8,9 @@ expression: "render_shell(&shell, area)"
  ◆ CONVERSATION                                   │
  ▎ CODEX  The new shell owns the fullscreen     ┃ │▎◆ SESSIONS
           surface.                              ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                  │▎loading sessions
-╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││▎◆ THREAD
-│> Summarize the new shell architecture          ││▎stage-one
-│                                                ││▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎+ New session  Ctrl+N
+╭────────────────────────────────────────────────╮│▎loading sessions
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││▎◆ THREAD
+│                                                ││▎stage-one
 ╰────────────────────────────────────────────────╯│

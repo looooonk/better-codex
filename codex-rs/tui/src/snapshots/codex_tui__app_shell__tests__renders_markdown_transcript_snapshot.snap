@@ -8,13 +8,13 @@ expression: "render_shell(&shell, area)"
                                                               │
  ◆ CONVERSATION                                               │▎◆ SESSIONS
           - Render assistant text as markdown.              │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-          - Preserve local links like codex-rs/tui/src/     ┃ │▎loading sessions
-            app_shell/render.rs:1.                          ┃ │
-                                                            ┃ │▎◆ THREAD
-          fn transcript() -> &'static str {                 ┃ │▎stage-one
-          "markdown"                                        ┃ │▎id 01900000-0000-7000-8000-000000000001
-          }                                                 ┃ │▎resume, fork, archive, delete in session list
+          - Preserve local links like codex-rs/tui/src/     ┃ │▎+ New session  Ctrl+N
+            app_shell/render.rs:1.                          ┃ │▎loading sessions
                                                             ┃ │
+          fn transcript() -> &'static str {                 ┃ │▎◆ THREAD
+          "markdown"                                        ┃ │▎stage-one
+          }                                                 ┃ │▎id 01900000-0000-7000-8000-000000000001
+                                                            ┃ │▎resume, fork, archive, delete in session list
            Area     Status                                  ┃ │
           ━━━━━━━  ━━━━━━━━                                 ┃ │
            code     done                                    ┃ │

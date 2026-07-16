@@ -8,13 +8,13 @@ expression: "render_shell(&shell, area)"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▌ edited 5 files +4 -3                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▌          M src/app.rs                          │▎loading sessions
- ▌          A src/new.rs                          │
- ▌          D src/old.rs                          │▎◆ THREAD
- ▌          R src/from.rs -> src/to.rs            │▎stage-one
+ ▌          M src/app.rs                          │▎+ New session  Ctrl+N
+ ▌          A src/new.rs                          │▎loading sessions
+ ▌          D src/old.rs                          │
+ ▌          R src/from.rs -> src/to.rs            │▎◆ THREAD
+                                                  │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
-                                                  │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                 ││

@@ -6,7 +6,7 @@ expression: rendered
 ────────────────────────────────────────────────
 
    Status   │  Agents   │  Sessions   │  Help
- Alt+←/→ view  ^D hide │ Sess ↵/j/k focus/nav
+ Alt+←/→ view  ^D hide │ ^N new · Sess ↵ focus
  Shift/Alt+↵ newline   │ r/f resume/fork
  ↵ send  ^C/Esc×2 exit │ a/u/v/d arc/show/del
  Alt+↑/^O select/copy  │ n rename  / search

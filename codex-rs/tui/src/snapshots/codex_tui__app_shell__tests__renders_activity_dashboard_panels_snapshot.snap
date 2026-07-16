@@ -5,7 +5,7 @@ expression: "render_shell(&shell, area)"
                                                                       │
  ◆ BC               gpt-5-codex ▾   default ▾   default ▾  ◐ thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────────────────────────│
-                                                                      │Alt+←/→ view  ^D hide  │ Sess ↵/j/k focus/nav
+                                                                      │Alt+←/→ view  ^D hide  │ ^N new · Sess ↵ focus
  ◆ CONVERSATION                                                       │Shift/Alt+↵ newline    │ r/f resume/fork
  ▎ SYSTEM  Better Codex app shell                                     │↵ steer  ^C stop/Esc×2 │ a/u/v/d arc/show/del
  ▎ YOU  Create a divergent standalone TUI.                            │Alt+↑/^O select/copy   │ n rename  / search

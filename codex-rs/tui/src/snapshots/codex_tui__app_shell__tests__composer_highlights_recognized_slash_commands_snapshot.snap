@@ -8,13 +8,13 @@ expression: "render_shell(&shell, area)"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ SYSTEM  Better Codex app shell                 │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ YOU  Create a divergent standalone TUI.        │▎loading sessions
-                                                  │
- ▎ CODEX  Started a fullscreen app shell backed   │▎◆ THREAD
-          by app-server turns.                    │▎stage-one
- ▎ PLAN  1. Build shell                           │▎id 01900000-0000-7000-8000-000000000001
-         2. Wire transcript                       │▎resume, fork, archive, delete in session list
-         3. Render dashboard                      │
+ ▎ YOU  Create a divergent standalone TUI.        │▎+ New session  Ctrl+N
+                                                  │▎loading sessions
+ ▎ CODEX  Started a fullscreen app shell backed   │
+          by app-server turns.                    │▎◆ THREAD
+ ▎ PLAN  1. Build shell                           │▎stage-one
+         2. Wire transcript                       │▎id 01900000-0000-7000-8000-000000000001
+         3. Render dashboard                      │▎resume, fork, archive, delete in session list
                                                   │
  ▌ tool exec just test -p codex-tui               │
                                                   │

@@ -8,13 +8,13 @@ expression: "render_shell(&shell, area)"
  ◆ CONVERSATION                                   │
                                                 │ │▎◆ SESSIONS
  ▌ edited 3 files +128 -24                      │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ STATUS  first checkpoint                     ┃ │▎loading sessions
- ▎ STATUS  second checkpoint                    ┃ │
- ▎ STATUS  third checkpoint                     │ │▎◆ THREAD
-                                                  │▎stage-one
-╭────────────────────────────────────────────────╮│▎id 01900000-0000-7000-8000-000000000001
-│◆ MESSAGE  1:37                                 ││▎resume, fork, archive, delete in session list
-│> Summarize the new shell architecture          ││
+ ▎ STATUS  first checkpoint                     ┃ │▎+ New session  Ctrl+N
+ ▎ STATUS  second checkpoint                    ┃ │▎loading sessions
+ ▎ STATUS  third checkpoint                     │ │
+                                                  │▎◆ THREAD
+╭────────────────────────────────────────────────╮│▎stage-one
+│◆ MESSAGE  1:37                                 ││▎id 01900000-0000-7000-8000-000000000001
+│> Summarize the new shell architecture          ││▎resume, fork, archive, delete in session list
 │                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

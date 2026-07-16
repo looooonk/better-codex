@@ -12,9 +12,9 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
                 │       gpt-5-1 - gpt-5-1 description                              │
  ▎ CODEX  Starte│   3 ○ gpt-5-2                                                    │
           by app│       gpt-5-2 - gpt-5-2 description                              │
- ▎ PLAN  1. Buil│   4 ○ gpt-5-3                                                    │0000001
-         2. Wire│       gpt-5-3 - gpt-5-3 description                              │ session list
-         3. Rend│   5 ○ gpt-5-4                                                    │
+ ▎ PLAN  1. Buil│   4 ○ gpt-5-3                                                    │
+         2. Wire│       gpt-5-3 - gpt-5-3 description                              │0000001
+         3. Rend│   5 ○ gpt-5-4                                                    │ session list
                 │       gpt-5-4 - gpt-5-4 description                              │
  ▌ tool exec jus│   6 ○ gpt-5-5                                                    │
                 │       gpt-5-5 - gpt-5-5 description                              │

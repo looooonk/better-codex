@@ -9,7 +9,7 @@ expression: rendered
        Status       │      Agents      │      Sessions      │      Help
  ────────────────────────────────────────────────────────────━━━━━━━━━━━━━━━━
  ▎◆ KEYS
- ▎Alt+Left/Right switch views          │ Mouse click tabs and rows
+ ▎Alt+Left/Right switch views          │ Ctrl+N new, mouse click rows
  ▎Shift/Alt+Enter newline              │ Sessions: Enter focus, j/k move
  ▎Enter send                           │ r resume, f fork, a/u archive
  ▎Ctrl+C/Esc twice to exit             │ v archived, d delete

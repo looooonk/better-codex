@@ -92,6 +92,7 @@ mod scrollback_view;
 mod selector;
 mod selector_controller;
 mod session_hydration;
+mod session_switch;
 mod sessions;
 mod settings;
 mod shell_command;
@@ -924,7 +925,8 @@ impl ShellState {
             return Ok(false);
         }
         if self.command_palette.is_some() {
-            self.handle_command_palette_key(key, app_server).await?;
+            self.handle_command_palette_key(key, config, app_server)
+                .await?;
             return Ok(false);
         }
         if self.safety_buffering_modal_lines().is_some() {
@@ -971,6 +973,10 @@ impl ShellState {
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('o')) {
             self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+            return Ok(false);
+        }
+        if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('n')) {
+            self.start_new_session(config, app_server).await?;
             return Ok(false);
         }
         if let Some(route) = dashboard_route_from_key(key) {
@@ -1305,6 +1311,7 @@ impl ShellState {
     async fn handle_command_palette_key<S>(
         &mut self,
         key: KeyEvent,
+        config: &Config,
         app_server: &mut S,
     ) -> Result<()>
     where
@@ -1322,7 +1329,7 @@ impl ShellState {
                 self.close_command_palette();
             }
             KeyCode::Enter => {
-                self.execute_selected_command_palette_action(app_server)
+                self.execute_selected_command_palette_action(config, app_server)
                     .await?;
             }
             KeyCode::Up | KeyCode::Char('k') => {
@@ -1627,26 +1634,11 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        if self.block_session_switch_if_busy() {
-            return Ok(());
-        }
         let Some(thread_id) = self.session_list.selected_thread_id() else {
             self.push_status("no session selected");
             return Ok(());
         };
-        if thread_id == self.thread_id {
-            self.push_status("session is already open");
-            return Ok(());
-        }
-        self.finish_subscription_cleanup().await;
-        let started = app_server.resume_thread(config.clone(), thread_id).await?;
-        self.cancel_agent_history().await;
-        let previous_thread_ids = self.tracked_thread_ids();
-        self.replace_started_session(started);
-        self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
-        self.start_replaced_session_hydration(app_server);
-        self.start_session_list_refresh(app_server);
-        Ok(())
+        self.resume_session(config, app_server, thread_id).await
     }
 
     async fn fork_selected_session<S>(&mut self, config: &Config, app_server: &mut S) -> Result<()>
@@ -1662,12 +1654,7 @@ impl ShellState {
         };
         self.finish_subscription_cleanup().await;
         let started = app_server.fork_thread(config.clone(), thread_id).await?;
-        self.cancel_agent_history().await;
-        let previous_thread_ids = self.tracked_thread_ids();
-        self.replace_started_session(started);
-        self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
-        self.start_replaced_session_hydration(app_server);
-        self.start_session_list_refresh(app_server);
+        self.complete_session_switch(started, app_server).await;
         Ok(())
     }
 
@@ -1813,7 +1800,11 @@ impl ShellState {
         self.install_agent_history(agent_threads, agent_history_task);
     }
 
-    async fn execute_selected_command_palette_action<S>(&mut self, app_server: &mut S) -> Result<()>
+    async fn execute_selected_command_palette_action<S>(
+        &mut self,
+        config: &Config,
+        app_server: &mut S,
+    ) -> Result<()>
     where
         S: AppShellBackend,
     {
@@ -1834,6 +1825,9 @@ impl ShellState {
         };
         self.close_command_palette();
         match action {
+            CommandPaletteAction::NewSession => {
+                self.start_new_session(config, app_server).await?;
+            }
             CommandPaletteAction::CopyTranscript => {
                 self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
             }

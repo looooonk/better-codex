@@ -8,13 +8,13 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 20))"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ CODEX  Turn complete.                          │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ──────────────────────────────────────────────── │▎loading sessions
+ ──────────────────────────────────────────────── │▎+ New session  Ctrl+N
+                                                  │▎loading sessions
                                                   │
                                                   │▎◆ THREAD
                                                   │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list
-                                                  │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                 ││

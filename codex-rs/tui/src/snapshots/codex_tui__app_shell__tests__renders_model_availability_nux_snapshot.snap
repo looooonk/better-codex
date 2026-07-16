@@ -8,13 +8,13 @@ expression: "render_shell(&shell, area)"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
           by app-server turns.                  │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ PLAN  1. Build shell                         │ │▎loading sessions
-         2. Wire transcript                     │ │
-         3. Render dashboard                    ┃ │▎◆ THREAD
-                                                ┃ │▎stage-one
- ▌ tool exec just test -p codex-tui             ┃ │▎id 01900000-0000-7000-8000-000000000001
-                                                ┃ │▎resume, fork, archive, delete in session list
- ▌ edited 3 files +128 -24                      ┃ │
+ ▎ PLAN  1. Build shell                         │ │▎+ New session  Ctrl+N
+         2. Wire transcript                     │ │▎loading sessions
+         3. Render dashboard                    ┃ │
+                                                ┃ │▎◆ THREAD
+ ▌ tool exec just test -p codex-tui             ┃ │▎stage-one
+                                                ┃ │▎id 01900000-0000-7000-8000-000000000001
+ ▌ edited 3 files +128 -24                      ┃ │▎resume, fork, archive, delete in session list
  ▎ SYSTEM  Our most capable model yet. GPT-     ┃ │
            5.6 Sol can tackle complex code      ┃ │
            changes, dig into research, produce  ┃ │

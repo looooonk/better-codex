@@ -216,7 +216,7 @@ fn renders_scrolled_session_list_snapshot() {
 
     let rendered = render_shell(&shell, area);
 
-    assert!(rendered.contains("3/10 Session 03"), "{rendered}");
+    assert!(rendered.contains("4/10 Session 04"), "{rendered}");
     assert!(rendered.contains("8/10 Session 08"), "{rendered}");
     assert!(!rendered.contains("1/10 Session 01"), "{rendered}");
     insta::assert_snapshot!(rendered);
@@ -792,7 +792,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
     let centralized_guides = [
         "Ctrl+1 Status  Ctrl+2 Agents",
         "Ctrl+3 Sessions Ctrl+4 Help",
-        "Mouse click tabs and rows",
+        "Ctrl+N new, mouse click rows",
         "Sessions: Enter focus, j/k move",
         "r resume, f fork, a/u archive",
         "v archived, d delete",
@@ -869,6 +869,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         (
             vec![
                 "○ CLICK TO FOCUS  ACTIVE  0 sessions".to_string(),
+                "+ New session  Ctrl+N".to_string(),
                 "loading sessions".to_string(),
             ],
             vec![
@@ -1484,6 +1485,7 @@ fn command_palette_lists_common_actions() {
             .map(|entry| (entry.action, entry.enabled))
             .collect::<Vec<_>>(),
         vec![
+            (CommandPaletteAction::NewSession, true),
             (CommandPaletteAction::CopyTranscript, true),
             (CommandPaletteAction::ClearTranscript, true),
             (CommandPaletteAction::SelectLatestTranscript, true),
@@ -1501,14 +1503,37 @@ fn command_palette_lists_common_actions() {
 }
 
 #[tokio::test]
+async fn command_palette_starts_a_new_session() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.open_command_palette();
+    select_command_palette_action(&mut shell, CommandPaletteAction::NewSession);
+    let mut backend = RecordingBackend::default();
+
+    shell
+        .execute_selected_command_palette_action(&config, &mut backend)
+        .await
+        .expect("new session action should start a session");
+
+    assert_eq!(
+        backend.calls().first(),
+        Some(&RecordedBackendCall::Start(Some(ThreadStartSource::Clear)))
+    );
+    assert!(shell.command_palette.is_none());
+    assert!(!shell.session_list.focused);
+}
+
+#[tokio::test]
 async fn command_palette_opens_native_model_and_permissions_settings() {
+    let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
 
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::SwitchModel);
     shell
-        .execute_selected_command_palette_action(&mut backend)
+        .execute_selected_command_palette_action(&config, &mut backend)
         .await
         .expect("model action should open settings");
 
@@ -1519,7 +1544,7 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::ChangePermissions);
     shell
-        .execute_selected_command_palette_action(&mut backend)
+        .execute_selected_command_palette_action(&config, &mut backend)
         .await
         .expect("permissions action should open settings");
 
@@ -1540,6 +1565,7 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
 
 #[tokio::test]
 async fn command_palette_opens_native_session_list_for_resume_and_fork() {
+    let config = test_config().await;
     let session_id = test_thread_id("01900000-0000-7000-8000-000000000601");
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
@@ -1551,7 +1577,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::ResumeThread);
     shell
-        .execute_selected_command_palette_action(&mut backend)
+        .execute_selected_command_palette_action(&config, &mut backend)
         .await
         .expect("resume action should open sessions");
     finish_session_hydration(&mut shell, &backend).await;
@@ -1570,7 +1596,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::ForkThread);
     shell
-        .execute_selected_command_palette_action(&mut backend)
+        .execute_selected_command_palette_action(&config, &mut backend)
         .await
         .expect("fork action should open sessions");
     finish_session_hydration(&mut shell, &backend).await;
@@ -1600,6 +1626,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
 
 #[tokio::test]
 async fn command_palette_opens_external_agent_import_review() {
+    let config = test_config().await;
     let items = external_agent_items();
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::with_external_agent_items(items.clone());
@@ -1607,7 +1634,7 @@ async fn command_palette_opens_external_agent_import_review() {
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::ImportExternalAgentConfig);
     shell
-        .execute_selected_command_palette_action(&mut backend)
+        .execute_selected_command_palette_action(&config, &mut backend)
         .await
         .expect("import action should detect Claude Code setup");
 
@@ -4016,6 +4043,35 @@ async fn clicking_the_composer_returns_focus_from_dashboard_panels() {
         ),
         (false, false, false, None)
     );
+    assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
+}
+
+#[tokio::test]
+async fn clicking_new_session_starts_a_clear_session_and_focuses_the_composer() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.session_list.focused = true;
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let buf = render_shell_buffer(&shell, area);
+    let row =
+        row_containing(&buf, area, "+ New session").expect("new session action should be visible");
+    let x = row_needle_x(&buf, area, row, "+ New session")
+        .expect("new session action should have an x position");
+
+    shell
+        .handle_mouse_click(area, Position::new(x, row), &config, &mut backend)
+        .await
+        .expect("new session click should succeed");
+
+    assert_eq!(
+        backend.calls().first(),
+        Some(&RecordedBackendCall::Start(Some(ThreadStartSource::Clear)))
+    );
+    assert!(!shell.session_list.focused);
     assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
 }
 
@@ -7266,6 +7322,96 @@ async fn start_resume_and_fork_route_through_app_shell_backend() {
 }
 
 #[tokio::test]
+async fn ctrl_n_starts_a_clear_session_with_current_settings() {
+    let config = test_config().await;
+    let initial_id = test_thread_id(SNAPSHOT_THREAD_ID);
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.model = "gpt-current".to_string();
+    shell.reasoning_effort = Some(ReasoningEffort::High);
+    shell.service_tier = Some("priority".to_string());
+    shell.approval_policy = codex_app_server_protocol::AskForApproval::Never;
+    shell.cwd = "/workspace/current".to_string();
+    shell.runtime_workspace_roots = vec![test_absolute_path("workspace/current")];
+    let mut backend = RecordingBackend::default();
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("new session should start");
+
+    assert!(!should_exit);
+    assert_eq!(
+        backend.calls().first(),
+        Some(&RecordedBackendCall::Start(Some(ThreadStartSource::Clear)))
+    );
+    let start_configs = backend.start_configs();
+    let started_config = start_configs
+        .first()
+        .expect("start config should be recorded");
+    assert_eq!(
+        (
+            started_config.model.as_deref(),
+            started_config.model_reasoning_effort.as_ref(),
+            started_config.service_tier.as_deref(),
+            started_config.permissions.approval_policy.value(),
+            started_config.cwd.as_path(),
+            started_config.workspace_roots.as_slice(),
+            started_config.workspace_roots_explicit,
+        ),
+        (
+            Some("gpt-current"),
+            Some(&ReasoningEffort::High),
+            Some("priority"),
+            codex_app_server_protocol::AskForApproval::Never.to_core(),
+            std::path::Path::new("/workspace/current"),
+            [test_absolute_path("workspace/current")].as_slice(),
+            true,
+        )
+    );
+    assert_ne!(shell.thread_id, initial_id);
+    assert!(!shell.session_list.focused);
+    assert!(
+        ShellView { shell: &shell }
+            .cursor_position(Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            ))
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn new_session_is_blocked_during_an_active_turn() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.active_turn_id = Some("turn-active".to_string());
+    let initial_id = shell.thread_id;
+    let mut backend = RecordingBackend::default();
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("blocked new session should be handled");
+
+    assert!(!should_exit);
+    assert_eq!(shell.thread_id, initial_id);
+    assert_eq!(backend.calls(), Vec::new());
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Status
+            && line.text == "finish or interrupt the active turn before switching sessions"
+    }));
+}
+
+#[tokio::test]
 async fn native_session_list_search_archive_delete_and_rename() {
     let config = test_config().await;
     let session_id = test_thread_id("01900000-0000-7000-8000-000000000301");
@@ -7408,7 +7554,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     }
     assert_eq!(shell.session_list.selected_thread_id(), None);
     assert!(
-        shell.session_list.lines(/*width*/ 80)[1]
+        shell.session_list.lines(/*width*/ 80)[2]
             .to_string()
             .contains("filter* needle  · Enter search all")
     );
@@ -7440,7 +7586,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(shell.session_list.selected_thread_id(), Some(target_id));
     assert!(
-        shell.session_list.lines(/*width*/ 80)[1]
+        shell.session_list.lines(/*width*/ 80)[2]
             .to_string()
             .contains("search needle  · server results")
     );
@@ -9458,6 +9604,7 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
 #[derive(Clone)]
 struct RecordingBackend {
     calls: Arc<Mutex<Vec<RecordedBackendCall>>>,
+    start_configs: Arc<Mutex<Vec<Config>>>,
     threads: Arc<Mutex<Vec<Thread>>>,
     mcp_statuses: Arc<Mutex<Vec<McpServerStatus>>>,
     plugin_response: Arc<Mutex<Option<PluginListResponse>>>,
@@ -9476,6 +9623,7 @@ impl Default for RecordingBackend {
     fn default() -> Self {
         Self {
             calls: Arc::new(Mutex::new(Vec::new())),
+            start_configs: Arc::new(Mutex::new(Vec::new())),
             threads: Arc::new(Mutex::new(Vec::new())),
             mcp_statuses: Arc::new(Mutex::new(Vec::new())),
             plugin_response: Arc::new(Mutex::new(None)),
@@ -9530,6 +9678,13 @@ impl RecordingBackend {
 
     fn call_log(&self) -> Arc<Mutex<Vec<RecordedBackendCall>>> {
         Arc::clone(&self.calls)
+    }
+
+    fn start_configs(&self) -> Vec<Config> {
+        self.start_configs
+            .lock()
+            .expect("start configs should lock")
+            .clone()
     }
 
     fn push(&self, call: RecordedBackendCall) {
@@ -9653,10 +9808,14 @@ enum RecordedBackendCall {
 impl backend::AppShellBackend for RecordingBackend {
     async fn start_thread_with_session_start_source(
         &mut self,
-        _config: &Config,
+        config: &Config,
         session_start_source: Option<ThreadStartSource>,
     ) -> color_eyre::Result<crate::app_server_session::AppServerStartedThread> {
         self.push(RecordedBackendCall::Start(session_start_source));
+        self.start_configs
+            .lock()
+            .expect("start configs should lock")
+            .push(config.clone());
         Ok(started_thread(
             "started",
             test_thread_id("01900000-0000-7000-8000-000000000201"),

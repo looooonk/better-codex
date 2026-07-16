@@ -10,6 +10,7 @@ use super::navigation::DashboardRoute;
 use super::plugin_management::PluginManagementState;
 use super::render::PointerPane;
 use super::render::ShellView;
+use super::sessions::SessionListHit;
 use crate::legacy_core::config::Config;
 use crate::tui::MouseScrollDirection;
 use color_eyre::Result;
@@ -72,7 +73,7 @@ impl ShellState {
                 if let Some(palette) = &mut self.command_palette {
                     palette.select(index, &entries);
                 }
-                self.execute_selected_command_palette_action(app_server)
+                self.execute_selected_command_palette_action(config, app_server)
                     .await?;
             } else if !command_palette_view::palette_area(
                 area,
@@ -228,8 +229,14 @@ impl ShellState {
         if self.dashboard_route == DashboardRoute::Sessions
             && let Some(target) = view.dashboard_panel_position_at(area, position, "Sessions")
         {
-            if self.session_list.select_at_line(target.line) {
-                self.resume_selected_session(config, app_server).await?;
+            match self.session_list.hit_at_line(target.line) {
+                Some(SessionListHit::NewSession) => {
+                    self.start_new_session(config, app_server).await?;
+                }
+                Some(SessionListHit::Thread(thread_id)) => {
+                    self.resume_session(config, app_server, thread_id).await?;
+                }
+                None => {}
             }
             return Ok(());
         }

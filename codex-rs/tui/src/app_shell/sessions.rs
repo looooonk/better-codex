@@ -14,12 +14,18 @@ use unicode_width::UnicodeWidthStr;
 
 const SESSION_LIST_LIMIT: u32 = 20;
 const SESSION_LIST_LINE_BUDGET: usize = 7;
-const SESSION_LIST_DEFAULT_VISIBLE_ROWS: usize = 6;
+const SESSION_LIST_DEFAULT_VISIBLE_ROWS: usize = 5;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum SessionSearchOutcome {
     LocalFilterOnly,
     RefreshList,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SessionListHit {
+    NewSession,
+    Thread(ThreadId),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -106,20 +112,23 @@ impl SessionListState {
         self.rows.get(self.selected).map(|row| row.thread_id)
     }
 
-    pub(super) fn select_at_line(&mut self, line: usize) -> bool {
+    pub(super) fn hit_at_line(&mut self, line: usize) -> Option<SessionListHit> {
         self.focused = true;
+        if !self.show_archived && line == 1 {
+            return Some(SessionListHit::NewSession);
+        }
         let leading_lines = self.leading_line_count();
         if line < leading_lines {
-            return false;
+            return None;
         }
         let visible_rows = SESSION_LIST_LINE_BUDGET.saturating_sub(leading_lines);
         let scroll_top = self.normalized_scroll_top(visible_rows);
         let index = scroll_top.saturating_add(line.saturating_sub(leading_lines));
         if index >= self.rows.len() || index >= scroll_top.saturating_add(visible_rows) {
-            return false;
+            return None;
         }
         self.selected = index;
-        true
+        Some(SessionListHit::Thread(self.rows[index].thread_id))
     }
 
     pub(super) fn selected_title(&self) -> Option<&str> {
@@ -287,6 +296,12 @@ impl SessionListState {
             "  ".into(),
             count.fg(palette::MUTED),
         ]));
+        if !self.show_archived {
+            lines.push(Line::from(vec![
+                "+ New session".fg(palette::CYAN).bold(),
+                "  Ctrl+N".fg(palette::MUTED),
+            ]));
+        }
         if self.search_active || !self.search_query.is_empty() {
             let (label, hint) = if self.search_active {
                 ("filter*", "  · Enter search all")
@@ -391,6 +406,7 @@ impl SessionListState {
 
     fn leading_line_count(&self) -> usize {
         1usize
+            .saturating_add(usize::from(!self.show_archived))
             .saturating_add(usize::from(
                 self.search_active || !self.search_query.is_empty(),
             ))

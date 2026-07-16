@@ -8,13 +8,13 @@ expression: "render_shell(&shell, area)"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ CODEX  Started a fullscreen app shell backed │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-          by app-server turns.                  │ │▎loading sessions
- ▎ PLAN  1. Build shell                         ┃ │
-         2. Wire transcript                     ┃ │▎◆ THREAD
-         3. Render dashboard                    ┃ │▎stage-one
-                                                ┃ │▎id 01900000-0000-7000-8000-000000000001
- ▌ tool exec just test -p codex-tui             ┃ │▎resume, fork, archive, delete in session list
-                                                ┃ │
+          by app-server turns.                  │ │▎+ New session  Ctrl+N
+ ▎ PLAN  1. Build shell                         ┃ │▎loading sessions
+         2. Wire transcript                     ┃ │
+         3. Render dashboard                    ┃ │▎◆ THREAD
+                                                ┃ │▎stage-one
+ ▌ tool exec just test -p codex-tui             ┃ │▎id 01900000-0000-7000-8000-000000000001
+                                                ┃ │▎resume, fork, archive, delete in session list
  ▌ edited 3 files +128 -24                      ┃ │
                                                 ┃ │
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
