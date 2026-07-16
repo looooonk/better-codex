@@ -13,20 +13,20 @@ expression: "render_shell(&shell, area)"
  ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: Max
           by app-server turns.                    │▎  Service tier: priority
  ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ MODEL
-         3. Render dashboard                      │▎gpt-5.6-sol
-                                                  │▎reasoning max
- ▌ tool exec just test -p codex-tui               │▎tier priority
+         2. Wire transcript                       │▎◆ TOKENS
+         3. Render dashboard                      │▎input 1k | output 240
+                                                  │▎Context 100% left
+ ▌ tool exec just test -p codex-tui               │
+                                                  │▎◆ WORKSPACE
+ ▌ edited 3 files +128 -24                        │▎cwd /workspace/better-codex
+                                                  │▎profile managed
+ ▎ CODEX  The new shell owns the fullscreen       │▎files restricted, net restricted
+          surface.                                │▎roots none selected
                                                   │
- ▌ edited 3 files +128 -24                        │▎◆ TOKENS
-                                                  │▎input 1k | output 240
- ▎ CODEX  The new shell owns the fullscreen       │▎Context 100% left
-          surface.                                │
-                                                  │▎◆ INTEGRATIONS
-                                                  │▎mcp not loaded
-╭────────────────────────────────────────────────╮│▎plugins not loaded
+                                                  │
+╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                 ││
-│> Summarize the new shell architecture          ││▎◆ WORKSPACE
-│                                                ││▎cwd /workspace/better-codex
-│                                                ││▎profile managed
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
 ╰────────────────────────────────────────────────╯│

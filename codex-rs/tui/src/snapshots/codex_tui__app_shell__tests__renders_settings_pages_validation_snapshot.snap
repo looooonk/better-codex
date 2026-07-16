@@ -15,22 +15,22 @@ expression: "render_shell(&shell, area)"
  ▎ PLAN  1. Build shell                           │▎  Animations: on
          2. Wire transcript                       │▎  Tooltips: on
          3. Render dashboard                      │
-                                                  │▎◆ MODEL
- ▌ tool exec just test -p codex-tui               │▎gpt-5-codex
-                                                  │
- ▌ edited 3 files +128 -24                        │▎◆ TOKENS
-                                                  │▎input 1k | output 240
- ▎ CODEX  The new shell owns the fullscreen       │▎Context 100% left
-          surface.                                │
-                                                  │▎◆ INTEGRATIONS
-                                                  │▎mcp not loaded
-                                                  │▎plugins not loaded
-                                                  │
+                                                  │▎◆ TOKENS
+ ▌ tool exec just test -p codex-tui               │▎input 1k | output 240
+                                                  │▎Context 100% left
+ ▌ edited 3 files +128 -24                        │
                                                   │▎◆ WORKSPACE
-                                                  │▎cwd /workspace/better-codex
-╭────────────────────────────────────────────────╮│▎profile managed
-│◆ MESSAGE  1:37                                 ││▎files restricted, net restricted
-│> Summarize the new shell architecture          ││▎roots none selected
+ ▎ CODEX  The new shell owns the fullscreen       │▎cwd /workspace/better-codex
+          surface.                                │▎profile managed
+                                                  │▎files restricted, net restricted
+                                                  │▎roots none selected
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

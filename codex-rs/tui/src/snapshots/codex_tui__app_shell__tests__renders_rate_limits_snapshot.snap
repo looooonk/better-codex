@@ -13,22 +13,15 @@ expression: "render_shell(&shell, area)"
  ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
           by app-server turns.                    │▎  Service tier: default
  ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ MODEL
-         3. Render dashboard                      │▎gpt-5-codex
-                                                  │
- ▌ tool exec just test -p codex-tui               │▎◆ TOKENS
-                                                  │▎input 1k | output 240
- ▌ edited 3 files +128 -24                        │▎Context 100% left
-                                                  │
- ▎ CODEX  The new shell owns the fullscreen       │▎◆ INTEGRATIONS
-          surface.                                │▎mcp not loaded
-                                                  │▎plugins not loaded
-                                                  │
+         2. Wire transcript                       │▎◆ TOKENS
+         3. Render dashboard                      │▎input 1k | output 240
+                                                  │▎Context 100% left
+ ▌ tool exec just test -p codex-tui               │
                                                   │▎◆ RATE LIMITS
-                                                  │▎Codex 82% 5h
+ ▌ edited 3 files +128 -24                        │▎Codex 82% 5h
                                                   │▎  secondary 18% 7d
-                                                  │▎credits $12.34
-                                                  │▎spend 75% left
+ ▎ CODEX  The new shell owns the fullscreen       │▎credits $12.34
+          surface.                                │▎spend 75% left
                                                   │▎Background 95% 1h
                                                   │▎limited RateLimitReached
                                                   │▎reset credits 2
@@ -38,6 +31,13 @@ expression: "render_shell(&shell, area)"
                                                   │▎profile managed
                                                   │▎files restricted, net restricted
                                                   │▎roots none selected
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││

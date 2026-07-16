@@ -8305,8 +8305,9 @@ async fn native_settings_integrations_refresh_mcp_and_plugins() {
         ),
     );
     assert!(
-        rendered.contains("Integrations"),
-        "dashboard should render native integrations panel:\n{rendered}"
+        rendered.contains("MCP servers: 2 servers / 3 tools")
+            && rendered.contains("Plugins: 1 installed / 2 available"),
+        "settings should render native integration summaries:\n{rendered}"
     );
 }
 

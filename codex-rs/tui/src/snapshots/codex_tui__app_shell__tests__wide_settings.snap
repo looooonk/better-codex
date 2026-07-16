@@ -13,22 +13,22 @@ expression: "render_shell(&shell, Rect::new(0, 0, 112, 30))"
  ▎ CODEX  Started a fullscreen app shell backed by app-server │▎  Reasoning: default
           turns.                                              │▎  Service tier: default
  ▎ PLAN  1. Build shell                                       │
-         2. Wire transcript                                   │▎◆ MODEL
-         3. Render dashboard                                  │▎gpt-5-codex
-                                                              │
- ▌ tool exec just test -p codex-tui                           │▎◆ TOKENS
-                                                              │▎input 1k | output 240
- ▌ edited 3 files +128 -24                                    │▎Context 100% left
-                                                              │
- ▎ CODEX  The new shell owns the fullscreen surface.          │▎◆ INTEGRATIONS
-                                                              │▎mcp not loaded
-                                                              │▎plugins not loaded
-                                                              │
+         2. Wire transcript                                   │▎◆ TOKENS
+         3. Render dashboard                                  │▎input 1k | output 240
+                                                              │▎Context 100% left
+ ▌ tool exec just test -p codex-tui                           │
                                                               │▎◆ WORKSPACE
-                                                              │▎cwd /workspace/better-codex
-╭────────────────────────────────────────────────────────────╮│▎profile managed
-│◆ MESSAGE  1:37                                             ││▎files restricted, net restricted
-│> Summarize the new shell architecture                      ││▎roots none selected
+ ▌ edited 3 files +128 -24                                    │▎cwd /workspace/better-codex
+                                                              │▎profile managed
+ ▎ CODEX  The new shell owns the fullscreen surface.          │▎files restricted, net restricted
+                                                              │▎roots none selected
+                                                              │
+                                                              │
+                                                              │
+                                                              │
+╭────────────────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                             ││
+│> Summarize the new shell architecture                      ││
 │                                                            ││
 │                                                            ││
 ╰────────────────────────────────────────────────────────────╯│

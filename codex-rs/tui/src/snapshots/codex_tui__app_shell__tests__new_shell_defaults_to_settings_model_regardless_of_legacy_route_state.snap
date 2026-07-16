@@ -13,20 +13,20 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │▎  Reasoning: default
                                                   │▎  Service tier: default
                                                   │
-                                                  │▎◆ MODEL
-                                                  │▎gpt-5-codex
-                                                  │
                                                   │▎◆ TOKENS
                                                   │▎input 0 | output 0
                                                   │▎Context 100% left
                                                   │
-                                                  │▎◆ INTEGRATIONS
-                                                  │▎mcp not loaded
-                                                  │▎plugins not loaded
+                                                  │▎◆ WORKSPACE
+                                                  │▎cwd /workspace/better-codex
+                                                  │▎profile managed
+                                                  │▎files restricted, net restricted
+                                                  │▎roots 1 writable
+                                                  │▎  /workspace/better-codex
                                                   │
-╭────────────────────────────────────────────────╮│▎◆ WORKSPACE
-│◆ MESSAGE  1:1                                  ││▎cwd /workspace/better-codex
-│> Type a message, Shift+Enter for newline       ││▎profile managed
-│                                                ││▎files restricted, net restricted
-│                                                ││▎roots 1 writable
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:1                                  ││
+│> Type a message, Shift+Enter for newline       ││
+│                                                ││
+│                                                ││
 ╰────────────────────────────────────────────────╯│

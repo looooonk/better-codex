@@ -31,10 +31,8 @@ enum DashboardPanelKind {
     Navigation,
     Sessions,
     Settings,
-    Integrations,
     Status,
     Thread,
-    Model,
     Tokens,
     Approvals,
     Background,
@@ -148,9 +146,7 @@ fn dashboard_panel_kinds(route: DashboardRoute) -> &'static [DashboardPanelKind]
         DashboardRoute::Settings => &[
             DashboardPanelKind::Navigation,
             DashboardPanelKind::Settings,
-            DashboardPanelKind::Model,
             DashboardPanelKind::Tokens,
-            DashboardPanelKind::Integrations,
             DashboardPanelKind::RateLimits,
             DashboardPanelKind::Workspace,
         ],
@@ -188,10 +184,6 @@ fn dashboard_panel(
         DashboardPanelKind::Settings => Some(DashboardPanel::new(
             "Settings",
             shell.settings.lines(&shell.settings_view(), content_width),
-        )),
-        DashboardPanelKind::Integrations => Some(DashboardPanel::new(
-            "Integrations",
-            integration_lines(shell, content_width),
         )),
         DashboardPanelKind::Status => {
             let mut lines = vec![status_line(&shell.status)];
@@ -232,27 +224,6 @@ fn dashboard_panel(
                     ),
                 ],
             ))
-        }
-        DashboardPanelKind::Model => {
-            let mut lines = vec![Line::from(dashboard_value(
-                &shell.model,
-                content_width,
-                /*prefix_width*/ 0,
-            ))];
-            if let Some(reasoning_effort) = &shell.reasoning_effort {
-                lines.push(Line::from(format!("reasoning {reasoning_effort}").dim()));
-            }
-            if let Some(service_tier) = shell
-                .service_tier
-                .as_deref()
-                .filter(|service_tier| !service_tier.trim().is_empty())
-            {
-                lines.push(Line::from(vec![
-                    "tier ".dim(),
-                    dashboard_value(service_tier, content_width, /*prefix_width*/ 5).into(),
-                ]));
-            }
-            Some(DashboardPanel::new("Model", lines))
         }
         DashboardPanelKind::Tokens => Some(DashboardPanel::new(
             "Tokens",
@@ -505,29 +476,6 @@ fn activity_status_line(label: &'static str, title: &str, width: usize) -> Line<
         " ".dim(),
         dashboard_value(title, width, prefix_width).into(),
     ])
-}
-
-fn integration_lines(shell: &ShellState, width: usize) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from(vec![
-        "mcp ".dim(),
-        dashboard_value(&shell.mcp_inventory.label(), width, /*prefix_width*/ 4).into(),
-    ])];
-    lines.push(Line::from(vec![
-        "plugins ".dim(),
-        dashboard_value(
-            &shell.plugin_inventory.label(),
-            width,
-            /*prefix_width*/ 8,
-        )
-        .into(),
-    ]));
-    if shell.mcp_inventory.has_details() {
-        lines.extend(shell.mcp_inventory.lines(width).into_iter().take(2));
-    }
-    if shell.plugin_inventory.has_details() {
-        lines.extend(shell.plugin_inventory.lines(width).into_iter().take(2));
-    }
-    lines
 }
 
 fn short_id(id: &str) -> String {
