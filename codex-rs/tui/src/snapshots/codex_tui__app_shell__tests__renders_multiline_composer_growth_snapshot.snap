@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ CODEX  Started a fullscreen app shell backed │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
           by app-server turns.                  │ │▎loading sessions
  ▎ PLAN  1. Build shell                         ┃ │
-         2. Wire transcript                     ┃ │▎◆ TOOLS
-         3. Render dashboard                    ┃ │▎in progress exec just test -p codex-tui
-                                                ┃ │▎completed file changes in app_shell
- ▌ tool exec just test -p codex-tui             ┃ │
-                                                ┃ │▎◆ THREAD
- ▌ edited 3 files +128 -24                      ┃ │▎stage-one
+         2. Wire transcript                     ┃ │▎◆ THREAD
+         3. Render dashboard                    ┃ │▎stage-one
                                                 ┃ │▎id 01900000-0000-7000-8000-000000000001
- ▎ CODEX  The new shell owns the fullscreen     ┃ │▎resume, fork, archive, delete in session list
+ ▌ tool exec just test -p codex-tui             ┃ │▎resume, fork, archive, delete in session list
+                                                ┃ │
+ ▌ edited 3 files +128 -24                      ┃ │
+                                                ┃ │
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │
           surface.                              ┃ │
-                                                  │▎◆ STATUS
-╭────────────────────────────────────────────────╮│▎thinking
+                                                  │
+╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  7:6                                  ││
-│> alpha                                         ││▎◆ PLAN
-│                                                ││▎Build the standalone shell in slices.
-│  bravo                                         ││▎x Shell frame
-│                                                ││▎> Transcript model
-│  charlie                                       ││▎- Approvals
+│> alpha                                         ││
+│                                                ││
+│  bravo                                         ││
+│                                                ││
+│  charlie                                       ││
 │                                                ││
 │  delta                                         ││
 ╰────────────────────────────────────────────────╯│

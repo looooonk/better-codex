@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ YOU  Create a divergent standalone TUI.      ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                 ┃ │▎loading sessions
  ▎ CODEX  Started a fullscreen app shell backed ┃ │
-          by app-server turns.                  ┃ │▎◆ APPROVALS
- ▎ PLAN  1. Build shell                         ┃ │▎approval Run command: cargo test -p codex-tui
-         2. Wire transcript                     ┃ │
-         3. Render dashboard                    ┃ │▎◆ TOOLS
-                                                ┃ │▎in progress exec just test -p codex-tui
- ▌ tool exec just test -p codex-tui             ┃ │▎completed file changes in app_shell
+          by app-server turns.                  ┃ │▎◆ THREAD
+ ▎ PLAN  1. Build shell                         ┃ │▎stage-one
+         2. Wire transcript                     ┃ │▎id 01900000-0000-7000-8000-000000000001
+         3. Render dashboard                    ┃ │▎resume, fork, archive, delete in session list
                                                 ┃ │
- ▌ edited 3 files +128 -24                      ┃ │▎◆ THREAD
-                                                ┃ │▎stage-one
- ▎ CODEX  The new shell owns the fullscreen     ┃ │▎id 01900000-0000-7000-8000-000000000001
-          surface.                              ┃ │▎resume, fork, archive, delete in session list
+ ▌ tool exec just test -p codex-tui             ┃ │
+                                                ┃ │
+ ▌ edited 3 files +128 -24                      ┃ │
+                                                ┃ │
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │
+          surface.                              ┃ │
                                                   │
-╭────────────────────────────────────────────────╮│▎◆ STATUS
-│◆ APPROVAL                                      ││▎thinking
+╭────────────────────────────────────────────────╮│
+│◆ APPROVAL                                      ││
 │? Run command: cargo test -p codex-tui          ││
-│  Needs network access - /workspace/better-codex││▎◆ PLAN
-│   Approve ↵   Deny n   Edit e   Explain ?      ││▎Build the standalone shell in slices.
-│                                                ││▎x Shell frame
-│                                                ││▎> Transcript model
+│  Needs network access - /workspace/better-codex││
+│   Approve ↵   Deny n   Edit e   Explain ?      ││
+│                                                ││
+│                                                ││
 ╰────────────────────────────────────────────────╯│

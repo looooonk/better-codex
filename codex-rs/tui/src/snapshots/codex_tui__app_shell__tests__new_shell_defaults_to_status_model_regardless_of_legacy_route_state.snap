@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
+---
+                                                  │
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
+                                                  │▎━━━━━━─────────────────────────────────────────
+                                                  │▎› Model: gpt-5-codex
+                                                  │▎  Reasoning: default
+                                                  │▎  Service tier: default
+                                                  │
+                                                  │▎◆ PLAN
+                                                  │▎no active plan
+                                                  │
+                                                  │▎◆ TOOLS
+                                                  │▎idle
+                                                  │
+                                                  │▎◆ EDITS
+                                                  │▎no changes
+                                                  │
+                                                  │▎◆ WORKSPACE
+                                                  │▎cwd /workspace/better-codex
+╭────────────────────────────────────────────────╮│▎profile managed
+│◆ MESSAGE  1:1                                  ││▎files restricted, net restricted
+│> Type a message, Shift+Enter for newline       ││▎roots 1 writable
+│                                                ││▎  /workspace/better-codex
+│                                                ││
+╰────────────────────────────────────────────────╯│

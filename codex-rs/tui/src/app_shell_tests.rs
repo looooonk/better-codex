@@ -394,7 +394,7 @@ fn renders_compacted_long_output_block_snapshot() {
 #[test]
 fn renders_workspace_roots_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Workspace;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.runtime_workspace_roots = vec![
         AbsolutePathBuf::from_absolute_path_checked("/workspace/better-codex")
             .expect("absolute path should be valid"),
@@ -415,7 +415,7 @@ fn renders_workspace_roots_snapshot() {
 #[test]
 fn renders_workspace_git_status_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Workspace;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.workspace_git_status = Some(WorkspaceGitStatus {
         branch: Some("feature/app-shell-dashboard".to_string()),
         changes: workspace::WorkspaceChangeSummary {
@@ -435,9 +435,14 @@ fn renders_workspace_git_status_snapshot() {
 }
 
 #[test]
-fn renders_workspace_route_snapshot() {
+fn renders_status_route_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Workspace;
+    shell.dashboard_route = DashboardRoute::Status;
+    shell.active_goal = Some(test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::Active,
+        "Complete the dashboard consolidation",
+    ));
     shell.workspace_git_status = Some(WorkspaceGitStatus {
         branch: Some("feature/app-shell-dashboard".to_string()),
         changes: workspace::WorkspaceChangeSummary {
@@ -450,16 +455,67 @@ fn renders_workspace_route_snapshot() {
         },
     });
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 34,
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 60,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
 #[test]
+fn dashboard_routes_keep_session_and_status_panels_separate() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Sessions;
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+
+    assert_eq!(
+        panels
+            .iter()
+            .map(|panel| panel.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Navigation", "Sessions", "Thread"]
+    );
+
+    shell.dashboard_route = DashboardRoute::Status;
+    shell.active_goal = Some(test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::Active,
+        "Keep route ownership explicit",
+    ));
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+
+    assert_eq!(
+        panels
+            .iter()
+            .map(|panel| panel.title.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "Navigation",
+            "Settings",
+            "Goal",
+            "Plan",
+            "Tools",
+            "Edits",
+            "Workspace",
+            "Tokens",
+        ]
+    );
+
+    shell.dashboard_route = DashboardRoute::Help;
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+
+    assert_eq!(
+        panels
+            .iter()
+            .map(|panel| panel.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Navigation", "Keys"]
+    );
+}
+
+#[test]
 fn renders_model_runtime_details_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.model = "gpt-5.6-sol".to_string();
     shell.reasoning_effort = Some(ReasoningEffort::Max);
@@ -493,7 +549,7 @@ fn renders_model_availability_nux_snapshot() {
 #[test]
 fn renders_settings_pages_validation_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell
         .settings
@@ -511,7 +567,7 @@ fn renders_settings_pages_validation_snapshot() {
 #[test]
 fn renders_rate_limits_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.rate_limits = vec![
         codex_app_server_protocol::RateLimitSnapshot {
             limit_id: Some("codex".to_string()),
@@ -568,7 +624,7 @@ fn renders_rate_limits_snapshot() {
 #[test]
 fn renders_context_pressure_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.token_usage = TokenUsage {
         input_tokens: 260_000,
         cached_input_tokens: 40_000,
@@ -579,7 +635,7 @@ fn renders_context_pressure_snapshot() {
     shell.context_token_usage = shell.token_usage.clone();
     shell.model_context_window = Some(372_000);
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 42,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
@@ -593,12 +649,16 @@ fn renders_active_turn_status_snapshot() {
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
 
-    insta::assert_snapshot!(render_shell(&shell, area));
+    let rendered = render_shell(&shell, area);
+
+    assert!(!rendered.contains("◆ STATUS"), "{rendered}");
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]
 fn renders_goal_progress_in_dashboard_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
     shell.active_goal = Some(test_thread_goal(
         &shell.thread_id,
         ThreadGoalStatus::Active,
@@ -614,6 +674,7 @@ fn renders_goal_progress_in_dashboard_snapshot() {
 #[test]
 fn narrow_dashboard_truncates_long_plan_lines_without_clipping_steps_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
     shell.plan_explanation = Some(
         "This deliberately long plan explanation must stay on one visual dashboard row so every later plan step keeps its measured position."
             .to_string(),
@@ -697,14 +758,14 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         "Tab page",
     ];
     let centralized_guides = [
-        "Ctrl+1 Settings  Ctrl+2 Agents",
-        "Ctrl+3 Workspace Ctrl+4 Sessions",
-        "Ctrl+5 Help",
+        "Ctrl+1 Status  Ctrl+2 Agents",
+        "Ctrl+3 Sessions Ctrl+4 Help",
+        "Mouse click tabs and rows",
         "Sessions: Enter focus, j/k move",
         "r resume, f fork, a/u archive",
         "v archived, d delete",
         "n rename, / search",
-        "Settings: Tab page, Enter select",
+        "Status: Tab page, Enter select",
         "Selectors: j/k choose, Enter apply",
         "Esc twice to exit",
     ];
@@ -742,9 +803,8 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
     assert_eq!(
         visibility,
         [
-            (DashboardRoute::Settings, false, false),
+            (DashboardRoute::Status, false, false),
             (DashboardRoute::Agents, false, false),
-            (DashboardRoute::Workspace, false, false),
             (DashboardRoute::Sessions, false, false),
             (DashboardRoute::Help, true, true),
         ]
@@ -1319,13 +1379,13 @@ async fn replacing_session_discards_pending_agent_log_result() {
 }
 
 #[test]
-fn renders_settings_dashboard_at_wide_and_compact_sizes() {
+fn renders_status_dashboard_at_wide_and_compact_sizes() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
 
     insta::assert_snapshot!(
-        "wide_settings",
+        "wide_status",
         render_shell(
             &shell,
             Rect::new(
@@ -1334,7 +1394,7 @@ fn renders_settings_dashboard_at_wide_and_compact_sizes() {
         )
     );
     insta::assert_snapshot!(
-        "compact_settings",
+        "compact_status",
         render_shell(
             &shell,
             Rect::new(
@@ -1420,7 +1480,7 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
         .await
         .expect("model action should open settings");
 
-    assert_eq!(shell.dashboard_route, DashboardRoute::Settings);
+    assert_eq!(shell.dashboard_route, DashboardRoute::Status);
     assert!(shell.settings.focused);
     assert!(shell.selector.is_some());
 
@@ -1431,7 +1491,7 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
         .await
         .expect("permissions action should open settings");
 
-    assert_eq!(shell.dashboard_route, DashboardRoute::Settings);
+    assert_eq!(shell.dashboard_route, DashboardRoute::Status);
     assert!(shell.settings.focused);
     assert!(shell.selector.is_some());
     let rendered = render_shell(
@@ -2205,6 +2265,7 @@ async fn goal_slash_command_sets_and_shows_thread_goal() {
         "goal slash commands should not submit turns"
     );
 
+    shell.dashboard_route = DashboardRoute::Status;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -2267,7 +2328,7 @@ async fn goal_slash_command_pauses_resumes_and_clears_thread_goal() {
 fn dashboard_route_key_mapping_covers_native_routes() {
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Settings)
+        Some(DashboardRoute::Status)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL)),
@@ -2275,35 +2336,35 @@ fn dashboard_route_key_mapping_covers_native_routes() {
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Workspace)
+        Some(DashboardRoute::Agents)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Workspace)
-    );
-    assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL)),
         Some(DashboardRoute::Sessions)
     );
     assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::CONTROL)),
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL)),
         Some(DashboardRoute::Help)
     );
     assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::CONTROL)),
+        None
+    );
+    assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('\u{0000}'), KeyModifiers::NONE)),
-        Some(DashboardRoute::Workspace)
+        Some(DashboardRoute::Agents)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Null, KeyModifiers::NONE)),
-        Some(DashboardRoute::Workspace)
+        Some(DashboardRoute::Agents)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('\u{001b}'), KeyModifiers::NONE)),
-        Some(DashboardRoute::Settings)
+        Some(DashboardRoute::Sessions)
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Settings)
+        Some(DashboardRoute::Sessions)
     );
     assert_eq!(dashboard_route_from_key(key_char('1')), None);
     assert_eq!(
@@ -2525,7 +2586,7 @@ async fn printable_character_repeat_reaches_text_entry_overlays() {
 
     let mut settings = ShellState::snapshot_fixture();
     settings.composer.clear();
-    settings.dashboard_route = DashboardRoute::Settings;
+    settings.dashboard_route = DashboardRoute::Status;
     settings.settings.focused = true;
     settings
         .settings
@@ -2652,7 +2713,7 @@ async fn modified_keys_do_not_trigger_focused_session_settings_or_plugin_actions
     );
 
     let mut settings = ShellState::snapshot_fixture();
-    settings.dashboard_route = DashboardRoute::Settings;
+    settings.dashboard_route = DashboardRoute::Status;
     settings.settings.focused = true;
     settings.settings.focus_action(SettingsAction::Animations);
     let initial_animations = settings.animations;
@@ -2684,7 +2745,7 @@ async fn modified_keys_do_not_trigger_focused_session_settings_or_plugin_actions
     ));
 
     let mut back_tab = ShellState::snapshot_fixture();
-    back_tab.dashboard_route = DashboardRoute::Settings;
+    back_tab.dashboard_route = DashboardRoute::Status;
     back_tab.settings.focused = true;
     let mut back_tab_backend = RecordingBackend::default();
     back_tab
@@ -2928,7 +2989,7 @@ async fn modified_enter_does_not_commit_editors_or_command_palette_actions() {
     );
 
     let mut settings = ShellState::snapshot_fixture();
-    settings.dashboard_route = DashboardRoute::Settings;
+    settings.dashboard_route = DashboardRoute::Status;
     settings.settings.focused = true;
     settings
         .settings
@@ -3077,7 +3138,7 @@ fn dashboard_route_step_matches_alt_arrow_fallbacks_only_when_allowed() {
 }
 
 #[test]
-fn new_shell_defaults_to_settings_model_regardless_of_legacy_route_state() {
+fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
     let codex_home = tempfile::tempdir().expect("create temp codex home");
     std::fs::write(
         codex_home.path().join("app-shell-state.json"),
@@ -3102,7 +3163,7 @@ fn new_shell_defaults_to_settings_model_regardless_of_legacy_route_state() {
 
     assert_eq!(
         (shell.dashboard_route, shell.settings.selected_action()),
-        (DashboardRoute::Settings, SettingsAction::Model)
+        (DashboardRoute::Status, SettingsAction::Model)
     );
     insta::assert_snapshot!(render_shell(
         &shell,
@@ -3664,16 +3725,16 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
-    let ctrl_settings = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
-    let ctrl_sessions = KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL);
+    let ctrl_status = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
+    let ctrl_sessions = KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
 
     shell
-        .handle_key(ctrl_settings, &config, &mut backend)
+        .handle_key(ctrl_status, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should select settings");
+        .expect("Ctrl+1 should select status");
 
     assert_eq!(
         (
@@ -3681,15 +3742,15 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
             shell.session_list.focused,
             shell.settings.focused,
         ),
-        (DashboardRoute::Settings, false, false)
+        (DashboardRoute::Status, false, false)
     );
     assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
     insta::assert_snapshot!(render_shell(&shell, area));
 
     shell
-        .handle_key(ctrl_settings, &config, &mut backend)
+        .handle_key(ctrl_status, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should focus selected settings");
+        .expect("Ctrl+1 should focus selected status settings");
 
     assert_eq!(
         (
@@ -3697,14 +3758,14 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
             shell.session_list.focused,
             shell.settings.focused,
         ),
-        (DashboardRoute::Settings, false, true)
+        (DashboardRoute::Status, false, true)
     );
     assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
 
     shell
         .handle_key(ctrl_sessions, &config, &mut backend)
         .await
-        .expect("Ctrl+4 should select sessions");
+        .expect("Ctrl+3 should select sessions");
 
     assert_eq!(
         (
@@ -3719,7 +3780,7 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     shell
         .handle_key(ctrl_sessions, &config, &mut backend)
         .await
-        .expect("Ctrl+4 should focus selected sessions");
+        .expect("Ctrl+3 should focus selected sessions");
 
     assert_eq!(
         (
@@ -3747,21 +3808,21 @@ async fn blocked_session_list_refresh_does_not_block_dashboard_input() {
         ..RecordingBackend::default()
     };
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
-    let ctrl_sessions = KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL);
-    let ctrl_settings = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
+    shell.dashboard_route = DashboardRoute::Status;
+    let ctrl_sessions = KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL);
+    let ctrl_status = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
 
     tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
         shell
             .handle_key(ctrl_sessions, &config, &mut backend)
             .await
-            .expect("Ctrl+4 should start loading sessions");
+            .expect("Ctrl+3 should start loading sessions");
         shell
             .handle_key(ctrl_sessions, &config, &mut backend)
             .await
-            .expect("repeated Ctrl+4 should coalesce with the pending load");
+            .expect("repeated Ctrl+3 should coalesce with the pending load");
         shell
-            .handle_key(ctrl_settings, &config, &mut backend)
+            .handle_key(ctrl_status, &config, &mut backend)
             .await
             .expect("other dashboard input should stay responsive");
     })
@@ -3769,7 +3830,7 @@ async fn blocked_session_list_refresh_does_not_block_dashboard_input() {
     .expect("dashboard input should not wait for thread/list");
 
     assert!(shell.has_pending_session_hydration());
-    assert_eq!(shell.dashboard_route, DashboardRoute::Settings);
+    assert_eq!(shell.dashboard_route, DashboardRoute::Status);
     gate.add_permits(/*n*/ 1);
     finish_session_hydration(&mut shell, &backend).await;
 
@@ -3793,7 +3854,7 @@ async fn empty_enter_focuses_the_active_interactive_dashboard() {
     for route in [
         DashboardRoute::Sessions,
         DashboardRoute::Agents,
-        DashboardRoute::Settings,
+        DashboardRoute::Status,
     ] {
         shell.dashboard_route = route;
         shell.session_list.focused = false;
@@ -3814,7 +3875,7 @@ async fn empty_enter_focuses_the_active_interactive_dashboard() {
             route == DashboardRoute::Sessions
         );
         assert_eq!(shell.agents_focused, route == DashboardRoute::Agents);
-        assert_eq!(shell.settings.focused, route == DashboardRoute::Settings);
+        assert_eq!(shell.settings.focused, route == DashboardRoute::Status);
     }
     assert_eq!(backend.calls(), Vec::new());
 }
@@ -3845,10 +3906,9 @@ async fn dashboard_tab_clicks_select_routes_without_focusing_panels() {
         let tab_row_index = u16::try_from(tab_row_index).unwrap_or(u16::MAX);
 
         for (route, label) in [
-            (DashboardRoute::Sessions, "Sessions"),
+            (DashboardRoute::Status, "Status"),
             (DashboardRoute::Agents, "Agents"),
-            (DashboardRoute::Workspace, "Workspace"),
-            (DashboardRoute::Settings, "Settings"),
+            (DashboardRoute::Sessions, "Sessions"),
             (DashboardRoute::Help, "Help"),
         ] {
             shell.session_list.focused = true;
@@ -3881,10 +3941,10 @@ async fn dashboard_tab_clicks_select_routes_without_focusing_panels() {
                 ),
                 (route, false, false, false)
             );
-            if area.width == 100 && route == DashboardRoute::Settings {
+            if area.width == 100 && route == DashboardRoute::Status {
                 assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
                 insta::assert_snapshot!(
-                    "dashboard_settings_tab_click_without_focus",
+                    "dashboard_status_tab_click_without_focus",
                     render_shell(&shell, area)
                 );
             }
@@ -3950,7 +4010,7 @@ fn pointer_hover_uses_existing_header_hit_geometry() {
 #[test]
 fn settings_tab_hover_uses_content_only_geometry() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -4059,7 +4119,7 @@ fn mouse_wheel_routes_to_the_pane_under_the_pointer() {
 #[test]
 fn mouse_wheel_moves_only_the_hovered_dashboard_selection() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -4555,6 +4615,7 @@ fn tool_transcript_block_background_spans_conversation_width() {
 #[test]
 fn renders_activity_dashboard_panels_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Help;
     shell.pending_approval = PendingApproval::from_request(&command_approval_request())
         .expect("approval request should be valid");
     shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
@@ -5619,7 +5680,7 @@ fn dashboard_uses_available_width_for_long_values() {
         title: "exec just test -p codex-tui app_shell_tests".to_string(),
         status: "completed".to_string(),
     }]);
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 190, /*height*/ 36,
     );
@@ -5627,9 +5688,6 @@ fn dashboard_uses_available_width_for_long_values() {
     let rendered = render_shell(&shell, area);
 
     assert!(rendered.contains("gpt-5-codex-dashboard-detail"));
-    shell.dashboard_route = DashboardRoute::Workspace;
-    let rendered = render_shell(&shell, area);
-
     assert!(rendered.contains("/workspace/better-codex/codex-rs/tui"));
     assert!(rendered.contains("feature/dashboard-width-budget"));
     assert!(rendered.contains("exec just test -p codex-tui app_shell_tests"));
@@ -5663,7 +5721,7 @@ fn dashboard_compacts_token_counts_and_groups_other_large_numbers() {
             untracked: 6_000,
         },
     });
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 130, /*height*/ 48,
     );
@@ -5672,9 +5730,6 @@ fn dashboard_compacts_token_counts_and_groups_other_large_numbers() {
 
     assert!(rendered.contains("input 1.2m | output 235k"));
     assert!(rendered.contains("Context 27% left"));
-    shell.dashboard_route = DashboardRoute::Workspace;
-    let rendered = render_shell(&shell, area);
-
     assert!(rendered.contains("1,234 files +56,789 -10,011"));
     assert!(rendered.contains("changes 21,000 files"));
     assert!(rendered.contains("added 1,000"));
@@ -8246,7 +8301,7 @@ async fn replacing_session_clears_session_bound_surfaces() {
 #[tokio::test]
 async fn native_settings_integrations_refresh_mcp_and_plugins() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::McpServers);
     let mut backend = RecordingBackend::with_integrations(
@@ -8314,7 +8369,7 @@ async fn native_settings_integrations_refresh_mcp_and_plugins() {
 #[tokio::test]
 async fn mcp_management_catalog_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::McpServers);
     let mut backend = RecordingBackend::with_integrations(
@@ -8347,7 +8402,7 @@ async fn mcp_management_catalog_snapshot() {
 async fn mcp_management_actions_login_disable_remove_add_and_edit() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::McpServers);
     let mut backend = RecordingBackend::with_integrations(
@@ -8482,7 +8537,7 @@ async fn mcp_management_actions_login_disable_remove_add_and_edit() {
 #[tokio::test]
 async fn plugin_management_catalog_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::Plugins);
     let mut backend =
@@ -8513,7 +8568,7 @@ async fn plugin_management_catalog_snapshot() {
 async fn plugin_management_actions_update_enable_install_auth_and_uninstall() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.settings.focus_action(SettingsAction::Plugins);
     let mut backend =
@@ -8597,7 +8652,7 @@ async fn plugin_management_actions_update_enable_install_auth_and_uninstall() {
 #[tokio::test]
 async fn native_settings_pages_write_config_and_validate_edits() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.available_models = vec![model_preset_fixture(
         "gpt-5-codex",
@@ -8805,7 +8860,7 @@ async fn ultra_reasoning_warns_about_configured_agent_concurrency() {
 #[tokio::test]
 async fn native_settings_select_models_and_service_tiers() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.available_models = vec![
         model_preset_fixture(
@@ -9064,7 +9119,7 @@ async fn native_settings_reasoning_selector_resets_active_thread_to_model_defaul
 #[tokio::test]
 async fn native_settings_model_switch_resets_unsupported_runtime_options() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Settings;
+    shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.model = "gpt-5.6-sol".to_string();
     shell.reasoning_effort = Some(ReasoningEffort::Ultra);

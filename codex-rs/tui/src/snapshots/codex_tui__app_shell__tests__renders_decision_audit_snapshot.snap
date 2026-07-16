@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ PLAN  1. Build shell                         │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
          2. Wire transcript                     │ │▎loading sessions
          3. Render dashboard                    │ │
-                                                ┃ │▎◆ TOOLS
- ▌ tool exec just test -p codex-tui             ┃ │▎in progress exec just test -p codex-tui
-                                                ┃ │▎completed file changes in app_shell
- ▌ edited 3 files +128 -24                      ┃ │
- ▎ AUDIT  approval approved: Command: cargo     ┃ │▎◆ THREAD
-          test -p codex-tui                     ┃ │▎stage-one
- ▎ AUDIT  elicitation declined: MCP github:     ┃ │▎id 01900000-0000-7000-8000-000000000001
-          URL request                           ┃ │▎resume, fork, archive, delete in session list
+                                                ┃ │▎◆ THREAD
+ ▌ tool exec just test -p codex-tui             ┃ │▎stage-one
+                                                ┃ │▎id 01900000-0000-7000-8000-000000000001
+ ▌ edited 3 files +128 -24                      ┃ │▎resume, fork, archive, delete in session list
+ ▎ AUDIT  approval approved: Command: cargo     ┃ │
+          test -p codex-tui                     ┃ │
+ ▎ AUDIT  elicitation declined: MCP github:     ┃ │
+          URL request                           ┃ │
  ▎ AUDIT  tool input submitted: Tool input:     ┃ │
-          environment                           ┃ │▎◆ STATUS
-                                                ┃ │▎thinking
+          environment                           ┃ │
+                                                ┃ │
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
-          surface.                              ┃ │▎◆ PLAN
-                                                  │▎Build the standalone shell in slices.
-╭────────────────────────────────────────────────╮│▎x Shell frame
-│◆ MESSAGE  1:37                                 ││▎> Transcript model
-│> Summarize the new shell architecture          ││▎- Approvals
+          surface.                              ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

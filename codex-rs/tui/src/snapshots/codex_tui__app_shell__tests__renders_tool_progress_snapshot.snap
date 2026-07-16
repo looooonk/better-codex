@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
                                                 │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
  ▎ CODEX  Started a fullscreen app shell backed ┃ │▎loading sessions
           by app-server turns.                  ┃ │
- ▎ PLAN  1. Build shell                         ┃ │▎◆ TOOLS
-         2. Wire transcript                     ┃ │▎in progress exec just test -p codex-tui
-         3. Render dashboard                    ┃ │▎completed file changes in app_shell
-                                                ┃ │
- ▌ tool exec just test -p codex-tui             ┃ │▎◆ THREAD
-                                                ┃ │▎stage-one
- ▌ edited 3 files +128 -24                      ┃ │▎id 01900000-0000-7000-8000-000000000001
+ ▎ PLAN  1. Build shell                         ┃ │▎◆ THREAD
+         2. Wire transcript                     ┃ │▎stage-one
+         3. Render dashboard                    ┃ │▎id 01900000-0000-7000-8000-000000000001
                                                 ┃ │▎resume, fork, archive, delete in session list
+ ▌ tool exec just test -p codex-tui             ┃ │
+                                                ┃ │
+ ▌ edited 3 files +128 -24                      ┃ │
+                                                ┃ │
  ▌ tool mcp progress: indexed 42 files          ┃ │
- ▌      preparing search results                ┃ │▎◆ STATUS
-                                                ┃ │▎thinking
+ ▌      preparing search results                ┃ │
+                                                ┃ │
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
-          surface.                              ┃ │▎◆ PLAN
-                                                  │▎Build the standalone shell in slices.
-╭────────────────────────────────────────────────╮│▎x Shell frame
-│◆ MESSAGE  1:37                                 ││▎> Transcript model
-│> Summarize the new shell architecture          ││▎- Approvals
+          surface.                              ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

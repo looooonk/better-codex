@@ -746,7 +746,7 @@ impl ShellState {
             command_palette: None,
             selector: None,
             codex_home,
-            dashboard_route: DashboardRoute::Settings,
+            dashboard_route: DashboardRoute::Status,
             dashboard_visible: true,
             pointer_position: None,
             agents_focused: false,
@@ -847,7 +847,7 @@ impl ShellState {
             } else if self.dashboard_route == DashboardRoute::Sessions && self.session_list.focused
             {
                 self.session_list.search_active() || self.session_list.renaming()
-            } else if self.dashboard_route == DashboardRoute::Settings && self.settings.focused {
+            } else if self.dashboard_route == DashboardRoute::Status && self.settings.focused {
                 self.settings.editing()
             } else {
                 !self.dashboard_focused() && self.transcript_selection.is_none()
@@ -966,7 +966,7 @@ impl ShellState {
             self.dashboard_visible = true;
             self.set_dashboard_route(route);
             self.session_list.focused = route_already_visible && route == DashboardRoute::Sessions;
-            self.settings.focused = route_already_visible && route == DashboardRoute::Settings;
+            self.settings.focused = route_already_visible && route == DashboardRoute::Status;
             self.agents_focused = route_already_visible && route == DashboardRoute::Agents;
             if route == DashboardRoute::Sessions {
                 self.start_session_list_refresh(app_server);
@@ -1009,7 +1009,7 @@ impl ShellState {
         {
             return Ok(false);
         }
-        if self.dashboard_route == DashboardRoute::Settings
+        if self.dashboard_route == DashboardRoute::Status
             && self.settings.focused
             && self.handle_settings_key(key, app_server).await?
         {
@@ -1066,8 +1066,8 @@ impl ShellState {
                         match self.dashboard_route {
                             DashboardRoute::Sessions => self.session_list.focused = true,
                             DashboardRoute::Agents => self.agents_focused = true,
-                            DashboardRoute::Settings => self.settings.focused = true,
-                            DashboardRoute::Workspace | DashboardRoute::Help => {}
+                            DashboardRoute::Status => self.settings.focused = true,
+                            DashboardRoute::Help => {}
                         }
                         if self.dashboard_focused() {
                             return Ok(false);
@@ -1841,14 +1841,14 @@ impl ShellState {
                 self.interrupt_active_turn(app_server).await?;
             }
             CommandPaletteAction::SwitchModel => {
-                self.set_dashboard_route(DashboardRoute::Settings);
+                self.set_dashboard_route(DashboardRoute::Status);
                 self.session_list.focused = false;
                 self.settings.focused = true;
                 self.settings.focus_action(SettingsAction::Model);
                 self.open_model_selector();
             }
             CommandPaletteAction::ChangePermissions => {
-                self.set_dashboard_route(DashboardRoute::Settings);
+                self.set_dashboard_route(DashboardRoute::Status);
                 self.session_list.focused = false;
                 self.settings.focused = true;
                 self.settings.focus_action(SettingsAction::ApprovalPolicy);
@@ -3713,21 +3713,18 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
     }
 
     if key_hint::ctrl(KeyCode::Char('1')).is_press(key) {
-        return Some(DashboardRoute::Settings);
+        return Some(DashboardRoute::Status);
     }
     if key_hint::ctrl(KeyCode::Char('2')).is_press(key) {
         return Some(DashboardRoute::Agents);
     }
     if key_hint::ctrl(KeyCode::Char(' ')).is_press(key) {
-        return Some(DashboardRoute::Workspace);
+        return Some(DashboardRoute::Agents);
     }
     if key_hint::ctrl(KeyCode::Char('3')).is_press(key) {
-        return Some(DashboardRoute::Workspace);
-    }
-    if key_hint::ctrl(KeyCode::Char('4')).is_press(key) {
         return Some(DashboardRoute::Sessions);
     }
-    if key_hint::ctrl(KeyCode::Char('5')).is_press(key) {
+    if key_hint::ctrl(KeyCode::Char('4')).is_press(key) {
         return Some(DashboardRoute::Help);
     }
 
@@ -3737,18 +3734,18 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
             modifiers,
             ..
         } if modifiers.is_empty() || modifiers.contains(KeyModifiers::CONTROL) => {
-            Some(DashboardRoute::Workspace)
+            Some(DashboardRoute::Agents)
         }
         KeyEvent {
             code: KeyCode::Char('\u{001b}'),
             modifiers,
             ..
-        } if modifiers.is_empty() => Some(DashboardRoute::Settings),
+        } if modifiers.is_empty() => Some(DashboardRoute::Sessions),
         KeyEvent {
             code: KeyCode::Esc,
             modifiers,
             ..
-        } if modifiers.contains(KeyModifiers::CONTROL) => Some(DashboardRoute::Settings),
+        } if modifiers.contains(KeyModifiers::CONTROL) => Some(DashboardRoute::Sessions),
         _ => None,
     }
 }

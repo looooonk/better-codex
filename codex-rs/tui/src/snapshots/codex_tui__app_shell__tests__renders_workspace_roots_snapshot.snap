@@ -3,42 +3,42 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────━━━━━━━━━━━─────────────────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ WORKSPACE
- ▎ SYSTEM  Better Codex app shell                 │▎cwd /workspace/better-codex
- ▎ YOU  Create a divergent standalone TUI.        │▎profile managed
-                                                  │▎files restricted, net restricted
- ▎ CODEX  Started a fullscreen app shell backed   │▎roots 4 writable
-          by app-server turns.                    │▎  /workspace/better-codex
- ▎ PLAN  1. Build shell                           │▎  /workspace/better-codex/codex-rs
-         2. Wire transcript                       │▎  /tmp/codex-cache
-         3. Render dashboard                      │▎  +1 more
-                                                  │
- ▌ tool exec just test -p codex-tui               │▎◆ EDITS
-                                                  │▎3 files +128 -24
+ ◆ CONVERSATION                                   │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
+ ▎ YOU  Create a divergent standalone TUI.        │▎━━━━━━─────────────────────────────────────────
+                                                  │▎› Model: gpt-5-codex
+ ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
+          by app-server turns.                    │▎  Service tier: default
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │▎◆ PLAN
+         3. Render dashboard                      │▎Build the standalone shell in slices.
+                                                  │▎x Shell frame
+ ▌ tool exec just test -p codex-tui               │▎> Transcript model
+                                                  │▎- Approvals
  ▌ edited 3 files +128 -24                        │
                                                   │▎◆ TOOLS
  ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
           surface.                                │▎completed file changes in app_shell
                                                   │
+                                                  │▎◆ EDITS
+                                                  │▎3 files +128 -24
                                                   │
+                                                  │▎◆ WORKSPACE
+                                                  │▎cwd /workspace/better-codex
+                                                  │▎profile managed
+                                                  │▎files restricted, net restricted
+                                                  │▎roots 4 writable
+                                                  │▎  /workspace/better-codex
+                                                  │▎  /workspace/better-codex/codex-rs
+                                                  │▎  /tmp/codex-cache
+                                                  │▎  +1 more
                                                   │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-╭────────────────────────────────────────────────╮│
+                                                  │▎◆ TOKENS
+                                                  │▎input 1k | output 240
+╭────────────────────────────────────────────────╮│▎Context 100% left
 │◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││
 │                                                ││

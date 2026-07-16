@@ -3,38 +3,38 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                                       │
- ◆ BC               gpt-5-codex ▾   default ▾   default ▾  ● thinking │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC               gpt-5-codex ▾   default ▾   default ▾  ● thinking │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────────────────────────│
+                                                                      │Alt+←/→ view  ^D hide  │ Sess ↵/j/k focus/nav
+ ◆ CONVERSATION                                                       │Shift/Alt+↵ newline    │ r/f resume/fork
+ ▎ SYSTEM  Better Codex app shell                                     │↵ steer  ^C stop/Esc×2 │ a/u/v/d arc/show/del
+ ▎ YOU  Create a divergent standalone TUI.                            │Alt+↑/^O select/copy   │ n rename  / search
+                                                                      │Alt+M/E model/effort   │ Agent ↵ focus/log · j/…
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │^1 Status · ^2 Agents  │ Tab/j/k nav · ↵ apply
+ ▎ PLAN  1. Build shell                                               │^3 Sessions · ^4 Help  │ Esc×2 exit
+         2. Wire transcript                                           │
+         3. Render dashboard                                          │▎◆ APPROVALS
+                                                                      │▎approval Run command: cargo test -p codex-tui
+ ▌ tool exec just test -p codex-tui                                   │▎input Tool input: tool-input-1
                                                                       │
- ◆ CONVERSATION                                                       │▎◆ SESSIONS
- ▎ SYSTEM  Better Codex app shell                                     │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ YOU  Create a divergent standalone TUI.                            │▎loading sessions
+ ▌ edited 3 files +128 -24                                            │▎◆ BACKGROUND
+ ▎ PLAN  1. Route activity into dashboard panels                      │▎workspace refresh queued
                                                                       │
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │▎◆ APPROVALS
- ▎ PLAN  1. Build shell                                               │▎approval Run command: cargo test -p codex-tui
-         2. Wire transcript                                           │▎input Tool input: tool-input-1
-         3. Render dashboard                                          │
-                                                                      │▎◆ BACKGROUND
- ▌ tool exec just test -p codex-tui                                   │▎workspace refresh queued
-                                                                      │
- ▌ edited 3 files +128 -24                                            │▎◆ TOOLS
- ▎ PLAN  1. Route activity into dashboard panels                      │▎in progress exec just test -p codex-tui
-                                                                      │▎completed file changes in app_shell
  ▎ CODEX  The new shell owns the fullscreen surface.                  │
-                                                                      │▎◆ THREAD
-                                                                      │▎stage-one
-                                                                      │▎id 01900000-0000-7000-8000-000000000001
-                                                                      │▎resume, fork, archive, delete in session list
                                                                       │
-                                                                      │▎◆ STATUS
-                                                                      │▎thinking
-                                                                      │▎turn turn-bac...
                                                                       │
-                                                                      │▎◆ PLAN
-                                                                      │▎Build the standalone shell in slices.
-                                                                      │▎x Shell frame
-                                                                      │▎> Transcript model
-                                                                      │▎- Approvals
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
+                                                                      │
                                                                       │
                                                                       │
                                                                       │

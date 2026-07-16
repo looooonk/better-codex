@@ -3,46 +3,46 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────━━━━━━━━━━━─────────────────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ WORKSPACE
- ▎ SYSTEM  Better Codex app shell                 │▎cwd /workspace/better-codex
- ▎ YOU  Create a divergent standalone TUI.        │▎branch feature/app-shell-dashboard
-                                                  │▎changes 13 files
- ▎ CODEX  Started a fullscreen app shell backed   │▎  added 2
-          by app-server turns.                    │▎  modified 5
- ▎ PLAN  1. Build shell                           │▎  deleted 1
-         2. Wire transcript                       │▎  renamed 1
-         3. Render dashboard                      │▎  conflicted 1
-                                                  │▎  untracked 3
- ▌ tool exec just test -p codex-tui               │▎profile managed
-                                                  │▎files restricted, net restricted
- ▌ edited 3 files +128 -24                        │▎roots none selected
-                                                  │
- ▎ CODEX  The new shell owns the fullscreen       │▎◆ EDITS
-          surface.                                │▎3 files +128 -24
-                                                  │
+ ◆ CONVERSATION                                   │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
+ ▎ YOU  Create a divergent standalone TUI.        │▎━━━━━━─────────────────────────────────────────
+                                                  │▎› Model: gpt-5-codex
+ ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
+          by app-server turns.                    │▎  Service tier: default
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │▎◆ PLAN
+         3. Render dashboard                      │▎Build the standalone shell in slices.
+                                                  │▎x Shell frame
+ ▌ tool exec just test -p codex-tui               │▎> Transcript model
+                                                  │▎- Approvals
+ ▌ edited 3 files +128 -24                        │
                                                   │▎◆ TOOLS
-                                                  │▎in progress exec just test -p codex-tui
-                                                  │▎completed file changes in app_shell
+ ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
+          surface.                                │▎completed file changes in app_shell
                                                   │
+                                                  │▎◆ EDITS
+                                                  │▎3 files +128 -24
                                                   │
+                                                  │▎◆ WORKSPACE
+                                                  │▎cwd /workspace/better-codex
+                                                  │▎branch feature/app-shell-dashboard
+                                                  │▎changes 13 files
+                                                  │▎  added 2
+                                                  │▎  modified 5
+                                                  │▎  deleted 1
+                                                  │▎  renamed 1
+                                                  │▎  conflicted 1
+                                                  │▎  untracked 3
+                                                  │▎profile managed
+                                                  │▎files restricted, net restricted
+                                                  │▎roots none selected
                                                   │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
+                                                  │▎◆ TOKENS
+                                                  │▎input 1k | output 240
+                                                  │▎Context 100% left
                                                   │
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                 ││

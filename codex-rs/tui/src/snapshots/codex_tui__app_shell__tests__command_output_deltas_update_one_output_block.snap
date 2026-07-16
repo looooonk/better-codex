@@ -3,22 +3,22 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▌ tool exec cargo test                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                   │▎loading sessions
    ▌ output pytest 40%                            │
-   ▌        pytest 80%                            │▎◆ TOOLS
-   ▌        pytest 100%                           │▎in progress exec just test -p codex-tui
-                                                  │▎completed file changes in app_shell
-                                                  │▎in progress exec cargo test
+   ▌        pytest 80%                            │▎◆ THREAD
+   ▌        pytest 100%                           │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
                                                   │
-                                                  │▎◆ THREAD
-╭────────────────────────────────────────────────╮│▎stage-one
-│◆ MESSAGE  1:37                                 ││▎id 01900000-0000-7000-8000-000000000001
-│> Summarize the new shell architecture          ││▎resume, fork, archive, delete in session list
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

@@ -3,27 +3,27 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
 ---
                                                   │
- ◆ BC          gpt-5-0 ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC          gpt-5-0 ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                 ╭ Select model ────────────────────────────────────────────────────╮
  ◆ CONVERSATION │ › 1 ● gpt-5-0  current                                           │
  ▎ SYSTEM  Bette│       gpt-5-0 - gpt-5-0 description                              │ions
  ▎ YOU  Create a│   2 ○ gpt-5-1                                                    │
                 │       gpt-5-1 - gpt-5-1 description                              │
  ▎ CODEX  Starte│   3 ○ gpt-5-2                                                    │
-          by app│       gpt-5-2 - gpt-5-2 description                              │dex-tui
- ▎ PLAN  1. Buil│   4 ○ gpt-5-3                                                    │ell
-         2. Wire│       gpt-5-3 - gpt-5-3 description                              │
+          by app│       gpt-5-2 - gpt-5-2 description                              │
+ ▎ PLAN  1. Buil│   4 ○ gpt-5-3                                                    │0000001
+         2. Wire│       gpt-5-3 - gpt-5-3 description                              │ session list
          3. Rend│   5 ○ gpt-5-4                                                    │
                 │       gpt-5-4 - gpt-5-4 description                              │
- ▌ tool exec jus│   6 ○ gpt-5-5                                                    │0000001
-                │       gpt-5-5 - gpt-5-5 description                              │ session list
+ ▌ tool exec jus│   6 ○ gpt-5-5                                                    │
+                │       gpt-5-5 - gpt-5-5 description                              │
  ▌ edited 3 file│   7 ○ gpt-5-6                                                    │
                 │       gpt-5-6 - gpt-5-6 description                              │
  ▎ CODEX  The ne│   8 ○ gpt-5-7                                                    │
           surfac│       gpt-5-7 - gpt-5-7 description                              │
                 │   9 ○ gpt-5-8                                                    │
-                │       gpt-5-8 - gpt-5-8 description                              │ices.
+                │       gpt-5-8 - gpt-5-8 description                              │
                 │   · ○ gpt-5-9                                                    │
                 │       gpt-5-9 - gpt-5-9 description                              │
 ╭───────────────│                                                                  │

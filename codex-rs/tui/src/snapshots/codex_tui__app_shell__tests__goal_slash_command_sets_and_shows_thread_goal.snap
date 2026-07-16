@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
- ◆ CONVERSATION                                   │▎◆ SESSIONS
-                                                │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ CODEX  Started a fullscreen app shell backed ┃ │▎loading sessions
-          by app-server turns.                  ┃ │
- ▎ PLAN  1. Build shell                         ┃ │▎◆ TOOLS
-         2. Wire transcript                     ┃ │▎in progress exec just test -p codex-tui
-         3. Render dashboard                    ┃ │▎completed file changes in app_shell
-                                                ┃ │
- ▌ tool exec just test -p codex-tui             ┃ │▎◆ THREAD
-                                                ┃ │▎stage-one
- ▌ edited 3 files +128 -24                      ┃ │▎id 01900000-0000-7000-8000-000000000001
- ▎ STATUS  goal set: Ship the standalone shell  ┃ │▎resume, fork, archive, delete in session list
- ▎ STATUS  goal active. Objective: Ship the     ┃ │
-           standalone shell Time: 1m.           ┃ │▎◆ STATUS
-                                                ┃ │▎thinking
- ▎ CODEX  The new shell owns the fullscreen     ┃ │
-          surface.                              ┃ │▎◆ GOAL
-                                                  │▎status active
-╭────────────────────────────────────────────────╮│▎Ship the standalone shell
-│◆ MESSAGE  1:1                                  ││▎1m | 12,345 tokens
-│> Type a message, Shift+Enter for newline       ││
-│                                                ││▎◆ PLAN
-│                                                ││▎Build the standalone shell in slices.
+ ◆ CONVERSATION                                   │▎◆ SETTINGS
+                                                │ │▎Model │ Permissions │ Appearance │Integrations
+ ▎ CODEX  Started a fullscreen app shell backed ┃ │▎━━━━━━─────────────────────────────────────────
+          by app-server turns.                  ┃ │▎› Model: gpt-5-codex
+ ▎ PLAN  1. Build shell                         ┃ │▎  Reasoning: default
+         2. Wire transcript                     ┃ │▎  Service tier: default
+         3. Render dashboard                    ┃ │
+                                                ┃ │▎◆ GOAL
+ ▌ tool exec just test -p codex-tui             ┃ │▎status active
+                                                ┃ │▎Ship the standalone shell
+ ▌ edited 3 files +128 -24                      ┃ │▎1m | 12,345 tokens
+ ▎ STATUS  goal set: Ship the standalone shell  ┃ │
+ ▎ STATUS  goal active. Objective: Ship the     ┃ │▎◆ PLAN
+           standalone shell Time: 1m.           ┃ │▎Build the standalone shell in slices.
+                                                ┃ │▎x Shell frame
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │▎> Transcript model
+          surface.                              ┃ │▎- Approvals
+                                                  │
+╭────────────────────────────────────────────────╮│▎◆ TOOLS
+│◆ MESSAGE  1:1                                  ││▎in progress exec just test -p codex-tui
+│> Type a message, Shift+Enter for newline       ││▎completed file changes in app_shell
+│                                                ││
+│                                                ││
 ╰────────────────────────────────────────────────╯│

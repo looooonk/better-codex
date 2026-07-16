@@ -6,33 +6,25 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 use std::ops::Range;
 
-const COMPACT_TAB_WIDTH: u16 = 48;
+const COMPACT_TAB_WIDTH: u16 = 36;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(super) enum DashboardRoute {
     #[default]
-    Settings,
+    Status,
     Agents,
-    Workspace,
     Sessions,
     Help,
 }
 
 impl DashboardRoute {
-    pub(super) const ALL: [Self; 5] = [
-        Self::Settings,
-        Self::Agents,
-        Self::Workspace,
-        Self::Sessions,
-        Self::Help,
-    ];
+    pub(super) const ALL: [Self; 4] = [Self::Status, Self::Agents, Self::Sessions, Self::Help];
 
     pub(super) fn label(self) -> &'static str {
         match self {
             Self::Sessions => "Sessions",
             Self::Agents => "Agents",
-            Self::Workspace => "Workspace",
-            Self::Settings => "Settings",
+            Self::Status => "Status",
             Self::Help => "Help",
         }
     }
@@ -41,8 +33,7 @@ impl DashboardRoute {
         match self {
             Self::Sessions => "Threads",
             Self::Agents => "Agents",
-            Self::Workspace => "Files",
-            Self::Settings => "Config",
+            Self::Status => "Status",
             Self::Help => "Help",
         }
     }
@@ -220,15 +211,13 @@ mod tests {
             vec![34; 2]
         );
         let expected_routes = [
-            (Some(DashboardRoute::Settings), 6),
+            (Some(DashboardRoute::Status), 8),
             (None, 1),
-            (Some(DashboardRoute::Agents), 6),
+            (Some(DashboardRoute::Agents), 8),
             (None, 1),
-            (Some(DashboardRoute::Workspace), 6),
+            (Some(DashboardRoute::Sessions), 7),
             (None, 1),
-            (Some(DashboardRoute::Sessions), 6),
-            (None, 1),
-            (Some(DashboardRoute::Help), 6),
+            (Some(DashboardRoute::Help), 8),
         ]
         .into_iter()
         .flat_map(|(route, width)| std::iter::repeat_n(route, width))
@@ -247,33 +236,26 @@ mod tests {
 
         assert_eq!(
             DashboardRoute::ALL.map(|route| tabs.column_range(route)),
-            [
-                Some(0..10),
-                Some(11..19),
-                Some(20..31),
-                Some(32..42),
-                Some(43..48),
-            ]
+            [Some(0..9), Some(10..18), Some(19..29), Some(30..36)]
         );
     }
 
     #[test]
     fn dashboard_tabs_highlight_only_the_active_route() {
         insta::assert_debug_snapshot!(
-            DashboardTabs::new(/*width*/ 46).lines(DashboardRoute::Workspace)
+            DashboardTabs::new(/*width*/ 46).lines(DashboardRoute::Status)
         );
     }
 
     #[test]
     fn final_wide_tab_keeps_space_after_the_separator() {
-        let [labels, _underline] =
-            DashboardTabs::new(COMPACT_TAB_WIDTH).lines(DashboardRoute::Sessions);
+        let [labels, _underline] = DashboardTabs::new(/*width*/ 46).lines(DashboardRoute::Sessions);
         let line = labels
             .spans
             .into_iter()
             .map(|span| span.content.into_owned())
             .collect::<String>();
 
-        assert_eq!(line, " Settings │ Agents │ Workspace │ Sessions │ Help");
+        assert_eq!(line, "  Status   │  Agents   │  Sessions   │  Help  ");
     }
 }

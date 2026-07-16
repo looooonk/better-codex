@@ -5,14 +5,14 @@ expression: rendered
  ◆ BC    gpt-5-codex ▾   default ▾   default ▾
 ────────────────────────────────────────────────
 
-  Config  │ Agents │ Files  │Threads │  Help
+   Status   │  Agents   │  Sessions   │  Help
  Alt+←/→ view  ^D hide │ Sess ↵/j/k focus/nav
  Shift/Alt+↵ newline   │ r/f resume/fork
  ↵ send  ^C/Esc×2 exit │ a/u/v/d arc/show/del
  Alt+↑/^O select/copy  │ n rename  / search
  Alt+M/E model/effort  │ Agent ↵ focus/log · j…
- ^1 Session · ^2 Agent │ Tab/j/k nav · ↵ apply
- ^3/4/5 Work/Set/Help  │ Esc×2 exit
+ ^1 Status · ^2 Agents │ Tab/j/k nav · ↵ apply
+ ^3 Sessions · ^4 Help │ Esc×2 exit
 
 ╭──────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                               │

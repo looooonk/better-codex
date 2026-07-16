@@ -6,18 +6,18 @@ expression: rendered
  ◆ BC                       gpt-5-codex ▾   default ▾   default ▾  ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
-     Settings    │    Agents    │   Workspace    │   Sessions    │   Help
- ─────────────────────────────────────────────────────────────────━━━━━━━━━━━
+       Status       │      Agents      │      Sessions      │      Help
+ ────────────────────────────────────────────────────────────━━━━━━━━━━━━━━━━
  ▎◆ KEYS
- ▎Alt+Left/Right switch views          │ Ctrl+5 Help
+ ▎Alt+Left/Right switch views          │ Mouse click tabs and rows
  ▎Shift/Alt+Enter newline              │ Sessions: Enter focus, j/k move
  ▎Enter send                           │ r resume, f fork, a/u archive
  ▎Ctrl+C/Esc twice to exit             │ v archived, d delete
  ▎Alt+Up select, Ctrl+O copy           │ n rename, / search
  ▎Ctrl+D hide dashboard                │ Agents: Enter focus/log, j/k inspect
- ▎Alt+M model, Alt+E effort            │ Settings: Tab page, Enter select
- ▎Ctrl+1 Settings  Ctrl+2 Agents       │ Selectors: j/k choose, Enter apply
- ▎Ctrl+3 Workspace Ctrl+4 Sessions     │ Esc twice to exit
+ ▎Alt+M model, Alt+E effort            │ Status: Tab page, Enter select
+ ▎Ctrl+1 Status  Ctrl+2 Agents         │ Selectors: j/k choose, Enter apply
+ ▎Ctrl+3 Sessions Ctrl+4 Help          │ Esc twice to exit
 
  ◆ CONVERSATION
 ╭────────────────────────────────────────────────────────────────────────────╮

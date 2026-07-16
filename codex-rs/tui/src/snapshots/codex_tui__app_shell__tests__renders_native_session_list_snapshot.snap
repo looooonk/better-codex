@@ -3,31 +3,31 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  ACTIVE  2 sessions
  ▎ YOU  Create a divergent standalone TUI.        │▎› 1/2 Refactor dashboard navigation [main]
                                                   │▎  2/2 Investigate approval rendering regressio…
  ▎ CODEX  Started a fullscreen app shell backed   │
-          by app-server turns.                    │▎◆ TOOLS
- ▎ PLAN  1. Build shell                           │▎in progress exec just test -p codex-tui
-         2. Wire transcript                       │▎completed file changes in app_shell
-         3. Render dashboard                      │
-                                                  │▎◆ THREAD
- ▌ tool exec just test -p codex-tui               │▎stage-one
-                                                  │▎id 01900000-0000-7000-8000-000000000001
- ▌ edited 3 files +128 -24                        │▎resume, fork, archive, delete in session list
+          by app-server turns.                    │▎◆ THREAD
+ ▎ PLAN  1. Build shell                           │▎stage-one
+         2. Wire transcript                       │▎id 01900000-0000-7000-8000-000000000001
+         3. Render dashboard                      │▎resume, fork, archive, delete in session list
                                                   │
- ▎ CODEX  The new shell owns the fullscreen       │▎◆ STATUS
-          surface.                                │▎thinking
+ ▌ tool exec just test -p codex-tui               │
                                                   │
-                                                  │▎◆ PLAN
-                                                  │▎Build the standalone shell in slices.
-                                                  │▎x Shell frame
-                                                  │▎> Transcript model
-                                                  │▎- Approvals
+ ▌ edited 3 files +128 -24                        │
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││

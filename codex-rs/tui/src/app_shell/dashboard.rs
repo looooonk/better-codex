@@ -31,7 +31,6 @@ enum DashboardPanelKind {
     Navigation,
     Sessions,
     Settings,
-    Status,
     Thread,
     Tokens,
     Approvals,
@@ -124,39 +123,29 @@ fn dashboard_panel_kinds(route: DashboardRoute) -> &'static [DashboardPanelKind]
         DashboardRoute::Sessions => &[
             DashboardPanelKind::Navigation,
             DashboardPanelKind::Sessions,
-            DashboardPanelKind::Approvals,
-            DashboardPanelKind::Background,
-            DashboardPanelKind::Tools,
             DashboardPanelKind::Thread,
-            DashboardPanelKind::Status,
-            DashboardPanelKind::Goal,
-            DashboardPanelKind::Plan,
         ],
         DashboardRoute::Agents => &[
             DashboardPanelKind::Navigation,
             DashboardPanelKind::Agents,
             DashboardPanelKind::Approvals,
         ],
-        DashboardRoute::Workspace => &[
-            DashboardPanelKind::Navigation,
-            DashboardPanelKind::Workspace,
-            DashboardPanelKind::Edits,
-            DashboardPanelKind::Tools,
-        ],
-        DashboardRoute::Settings => &[
+        DashboardRoute::Status => &[
             DashboardPanelKind::Navigation,
             DashboardPanelKind::Settings,
+            DashboardPanelKind::Goal,
+            DashboardPanelKind::Plan,
+            DashboardPanelKind::Tools,
+            DashboardPanelKind::Edits,
+            DashboardPanelKind::Workspace,
             DashboardPanelKind::Tokens,
             DashboardPanelKind::RateLimits,
-            DashboardPanelKind::Workspace,
         ],
         DashboardRoute::Help => &[
             DashboardPanelKind::Navigation,
             DashboardPanelKind::Keys,
-            DashboardPanelKind::Status,
             DashboardPanelKind::Approvals,
             DashboardPanelKind::Background,
-            DashboardPanelKind::Tools,
         ],
     }
 }
@@ -185,16 +174,6 @@ fn dashboard_panel(
             "Settings",
             shell.settings.lines(&shell.settings_view(), content_width),
         )),
-        DashboardPanelKind::Status => {
-            let mut lines = vec![status_line(&shell.status)];
-            if let Some(active_turn_id) = &shell.active_turn_id {
-                lines.push(Line::from(vec![
-                    "turn ".dim(),
-                    short_id(active_turn_id).cyan(),
-                ]));
-            }
-            Some(DashboardPanel::new("Status", lines))
-        }
         DashboardPanelKind::Thread => {
             let thread_label = shell.thread_name.as_deref().unwrap_or("untitled thread");
             Some(DashboardPanel::new(
@@ -374,20 +353,6 @@ fn dashboard_navigation_panel(active_route: DashboardRoute, width: usize) -> Das
     }
 }
 
-fn status_line(status: &str) -> Line<'static> {
-    Line::from(status_span(status))
-}
-
-fn status_span(status: &str) -> Span<'static> {
-    match status {
-        "ready" => badge_span(status, Tone::Success),
-        "failed" | "error" | "disconnected" => badge_span(status, Tone::Danger),
-        "thinking" | "reasoning" | "retrying" => badge_span(status, Tone::Focus),
-        "interrupted" => badge_span(status, Tone::Codex),
-        _ => status.to_string().into(),
-    }
-}
-
 fn goal_status_span(status: codex_app_server_protocol::ThreadGoalStatus) -> Span<'static> {
     let label = goal_status_label(status);
     match status {
@@ -476,12 +441,6 @@ fn activity_status_line(label: &'static str, title: &str, width: usize) -> Line<
         " ".dim(),
         dashboard_value(title, width, prefix_width).into(),
     ])
-}
-
-fn short_id(id: &str) -> String {
-    id.get(..8)
-        .map(|prefix| format!("{prefix}..."))
-        .unwrap_or_else(|| id.to_string())
 }
 
 pub(super) fn format_i64(value: i64) -> String {

@@ -214,7 +214,7 @@ impl ShellState {
         }
 
         let view = ShellView { shell: self };
-        if self.dashboard_route == DashboardRoute::Settings
+        if self.dashboard_route == DashboardRoute::Status
             && let Some(target) = view.dashboard_panel_position_at(area, position, "Settings")
         {
             if self
@@ -351,8 +351,8 @@ impl ShellState {
         let title = match self.dashboard_route {
             DashboardRoute::Sessions => "Sessions",
             DashboardRoute::Agents => "Agents",
-            DashboardRoute::Settings => "Settings",
-            DashboardRoute::Workspace | DashboardRoute::Help => return,
+            DashboardRoute::Status => "Settings",
+            DashboardRoute::Help => return,
         };
         if (ShellView { shell: self })
             .dashboard_panel_position_at(area, position, title)
@@ -373,9 +373,9 @@ impl ShellState {
             (DashboardRoute::Agents, MouseScrollDirection::Down) => {
                 self.agent_activity.move_selection_down()
             }
-            (DashboardRoute::Settings, MouseScrollDirection::Up) => self.settings.move_up(),
-            (DashboardRoute::Settings, MouseScrollDirection::Down) => self.settings.move_down(),
-            (DashboardRoute::Workspace | DashboardRoute::Help, _) => {}
+            (DashboardRoute::Status, MouseScrollDirection::Up) => self.settings.move_up(),
+            (DashboardRoute::Status, MouseScrollDirection::Down) => self.settings.move_down(),
+            (DashboardRoute::Help, _) => {}
         }
     }
 }

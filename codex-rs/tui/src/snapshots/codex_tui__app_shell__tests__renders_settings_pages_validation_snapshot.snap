@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│━━━━━━━━━━──────────────────────────────────────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS
  ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
@@ -15,22 +15,22 @@ expression: "render_shell(&shell, area)"
  ▎ PLAN  1. Build shell                           │▎  Animations: on
          2. Wire transcript                       │▎  Tooltips: on
          3. Render dashboard                      │
-                                                  │▎◆ TOKENS
- ▌ tool exec just test -p codex-tui               │▎input 1k | output 240
-                                                  │▎Context 100% left
- ▌ edited 3 files +128 -24                        │
-                                                  │▎◆ WORKSPACE
- ▎ CODEX  The new shell owns the fullscreen       │▎cwd /workspace/better-codex
-          surface.                                │▎profile managed
-                                                  │▎files restricted, net restricted
-                                                  │▎roots none selected
+                                                  │▎◆ PLAN
+ ▌ tool exec just test -p codex-tui               │▎Build the standalone shell in slices.
+                                                  │▎x Shell frame
+ ▌ edited 3 files +128 -24                        │▎> Transcript model
+                                                  │▎- Approvals
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │▎◆ TOOLS
+                                                  │▎in progress exec just test -p codex-tui
+                                                  │▎completed file changes in app_shell
                                                   │
+                                                  │▎◆ EDITS
+                                                  │▎3 files +128 -24
                                                   │
-                                                  │
-                                                  │
-╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││
-│> Summarize the new shell architecture          ││
-│                                                ││
-│                                                ││
+╭────────────────────────────────────────────────╮│▎◆ WORKSPACE
+│◆ MESSAGE  1:37                                 ││▎cwd /workspace/better-codex
+│> Summarize the new shell architecture          ││▎profile managed
+│                                                ││▎files restricted, net restricted
+│                                                ││▎roots none selected
 ╰────────────────────────────────────────────────╯│

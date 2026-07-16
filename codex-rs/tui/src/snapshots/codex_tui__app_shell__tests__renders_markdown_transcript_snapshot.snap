@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                               │
- ◆ BC       gpt-5-codex ▾   default ▾   default ▾  ● thinking │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC       gpt-5-codex ▾   default ▾   default ▾  ● thinking │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                               │
  ◆ CONVERSATION                                               │▎◆ SESSIONS
           - Render assistant text as markdown.              │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
           - Preserve local links like codex-rs/tui/src/     ┃ │▎loading sessions
             app_shell/render.rs:1.                          ┃ │
-                                                            ┃ │▎◆ TOOLS
-          fn transcript() -> &'static str {                 ┃ │▎in progress exec just test -p codex-tui
-          "markdown"                                        ┃ │▎completed file changes in app_shell
-          }                                                 ┃ │
                                                             ┃ │▎◆ THREAD
-           Area     Status                                  ┃ │▎stage-one
-          ━━━━━━━  ━━━━━━━━                                 ┃ │▎id 01900000-0000-7000-8000-000000000001
-           code     done                                    ┃ │▎resume, fork, archive, delete in session list
+          fn transcript() -> &'static str {                 ┃ │▎stage-one
+          "markdown"                                        ┃ │▎id 01900000-0000-7000-8000-000000000001
+          }                                                 ┃ │▎resume, fork, archive, delete in session list
+                                                            ┃ │
+           Area     Status                                  ┃ │
+          ━━━━━━━  ━━━━━━━━                                 ┃ │
+           code     done                                    ┃ │
           ───────  ────────                                 ┃ │
-           table    done                                    ┃ │▎◆ STATUS
- ▎ PLAN  1. Keep transcript rendering width-aware.          ┃ │▎thinking
+           table    done                                    ┃ │
+ ▎ PLAN  1. Keep transcript rendering width-aware.          ┃ │
          2. Leave selection and copy mode for the next      ┃ │
-            slice.                                          ┃ │▎◆ PLAN
-                                                              │▎Build the standalone shell in slices.
-╭────────────────────────────────────────────────────────────╮│▎x Shell frame
-│◆ MESSAGE  1:1                                              ││▎> Transcript model
-│> Type a message, Shift+Enter for newline                   ││▎- Approvals
+            slice.                                          ┃ │
+                                                              │
+╭────────────────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:1                                              ││
+│> Type a message, Shift+Enter for newline                   ││
 │                                                            ││
 │                                                            ││
 ╰────────────────────────────────────────────────────────────╯│

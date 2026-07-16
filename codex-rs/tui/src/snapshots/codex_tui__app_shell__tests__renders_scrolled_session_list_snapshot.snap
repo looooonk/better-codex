@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: rendered
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  ACTIVE  10 sessions
@@ -15,22 +15,22 @@ expression: rendered
  ▎ PLAN  1. Build shell                           │▎   7/10 Session 07 [main]  Preview for session…
          2. Wire transcript                       │▎›  8/10 Session 08 [main]  Preview for session…
          3. Render dashboard                      │
-                                                  │▎◆ TOOLS
- ▌ tool exec just test -p codex-tui               │▎in progress exec just test -p codex-tui
-                                                  │▎completed file changes in app_shell
- ▌ edited 3 files +128 -24                        │
                                                   │▎◆ THREAD
- ▎ CODEX  The new shell owns the fullscreen       │▎stage-one
-          surface.                                │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
+ ▌ tool exec just test -p codex-tui               │▎stage-one
+                                                  │▎id 01900000-0000-7000-8000-000000000001
+ ▌ edited 3 files +128 -24                        │▎resume, fork, archive, delete in session list
                                                   │
-                                                  │▎◆ STATUS
-                                                  │▎thinking
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │
                                                   │
-                                                  │▎◆ PLAN
-╭────────────────────────────────────────────────╮│▎Build the standalone shell in slices.
-│◆ MESSAGE  1:37                                 ││▎x Shell frame
-│> Summarize the new shell architecture          ││▎> Transcript model
-│                                                ││▎- Approvals
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

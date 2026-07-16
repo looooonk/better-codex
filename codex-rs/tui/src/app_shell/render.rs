@@ -768,7 +768,7 @@ impl ShellView<'_> {
             (self.shell.dashboard_route, panel.title.as_str()),
             (DashboardRoute::Sessions, "Sessions")
                 | (DashboardRoute::Agents, "Agents")
-                | (DashboardRoute::Settings, "Settings")
+                | (DashboardRoute::Status, "Settings")
         );
         if panel.title == "Agents" && pointer.y > text_area.y {
             let line = usize::from(pointer.y.saturating_sub(text_area.y.saturating_add(1)));

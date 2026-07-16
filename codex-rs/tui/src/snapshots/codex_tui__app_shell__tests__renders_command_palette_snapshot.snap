@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ SYSTEM  Better Codex app shell                 │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
  ▎ YOU  Create╭──────────────────────────────────────────────────────────────────────╮
               │◆ ACTIONS  Ctrl+P                                                     │
  ▎ CODEX  Star│                                                                      │
-          by a│▌ Copy transcript item  Copy selection or latest assist...            │x-tui
- ▎ PLAN  1. Bu│  Clear visible transcript                                            │l
-         2. Wi│  Select latest transcript item                                       │
+          by a│▌ Copy transcript item  Copy selection or latest assist...            │
+ ▎ PLAN  1. Bu│  Clear visible transcript                                            │00001
+         2. Wi│  Select latest transcript item                                       │ession list
          3. Re│  Jump transcript to top                                              │
               │  Jump transcript to bottom                                           │
- ▌ tool exec j│  Interrupt active turn                                               │00001
-              │  Switch model                                                        │ession list
+ ▌ tool exec j│  Interrupt active turn                                               │
+              │  Switch model                                                        │
  ▌ edited 3 fi│  Change permissions                                                  │
               │  Resume thread                                                       │
  ▎ CODEX  The │  Fork thread                                                         │
           surf│  Import Claude Code setup                                            │
               │  Compact context                                                     │
-              │↑↓ / j k navigate   Enter select   Esc close  1/12                    │es.
+              │↑↓ / j k navigate   Enter select   Esc close  1/12                    │
               ╰──────────────────────────────────────────────────────────────────────╯
-                                                  │▎> Transcript model
-╭────────────────────────────────────────────────╮│▎- Approvals
+                                                  │
+╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││
 │                                                ││

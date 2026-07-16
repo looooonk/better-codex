@@ -6,18 +6,18 @@ expression: rendered
  ◆ BC                       gpt-5-codex ▾   default ▾   default ▾  ● thinking
 ──────────────────────────────────────────────────────────────────────────────
 
-     Settings    │    Agents    │   Workspace    │   Sessions    │   Help
- ─────────────────────────────────────────────────━━━━━━━━━━━━━━━────────────
+       Status       │      Agents      │      Sessions      │      Help
+ ───────────────────────────────────────━━━━━━━━━━━━━━━━━━━━─────────────────
  ▎◆ SESSIONS
  ▎○ CLICK TO FOCUS  ACTIVE  0 sessions
  ▎loading sessions
- ▎◆ TOOLS
- ▎in progress exec just test -p codex-tui
- ▎completed file changes in app_shell
  ▎◆ THREAD
  ▎stage-one
  ▎id 01900000-0000-7000-8000-000000000001
  ▎resume, fork, archive, delete in session list
+
+
+
 
 
  ◆ CONVERSATION

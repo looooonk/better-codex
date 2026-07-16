@@ -3,8 +3,8 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│━━━━━━━━━━──────────────────────────────────────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS
  ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
@@ -13,18 +13,18 @@ expression: "render_shell(&shell, area)"
  ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
           by app-server turns.                    │▎  Service tier: default
  ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ TOKENS
-         3. Render dashboard                      │▎input 1k | output 240
-                                                  │▎Context 100% left
- ▌ tool exec just test -p codex-tui               │
-                                                  │▎◆ RATE LIMITS
- ▌ edited 3 files +128 -24                        │▎Codex 82% 5h
-                                                  │▎  secondary 18% 7d
- ▎ CODEX  The new shell owns the fullscreen       │▎credits $12.34
-          surface.                                │▎spend 75% left
-                                                  │▎Background 95% 1h
-                                                  │▎limited RateLimitReached
-                                                  │▎reset credits 2
+         2. Wire transcript                       │▎◆ PLAN
+         3. Render dashboard                      │▎Build the standalone shell in slices.
+                                                  │▎x Shell frame
+ ▌ tool exec just test -p codex-tui               │▎> Transcript model
+                                                  │▎- Approvals
+ ▌ edited 3 files +128 -24                        │
+                                                  │▎◆ TOOLS
+ ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
+          surface.                                │▎completed file changes in app_shell
+                                                  │
+                                                  │▎◆ EDITS
+                                                  │▎3 files +128 -24
                                                   │
                                                   │▎◆ WORKSPACE
                                                   │▎cwd /workspace/better-codex
@@ -32,15 +32,15 @@ expression: "render_shell(&shell, area)"
                                                   │▎files restricted, net restricted
                                                   │▎roots none selected
                                                   │
+                                                  │▎◆ TOKENS
+                                                  │▎input 1k | output 240
+                                                  │▎Context 100% left
                                                   │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││
-│> Summarize the new shell architecture          ││
-│                                                ││
-│                                                ││
+                                                  │▎◆ RATE LIMITS
+                                                  │▎Codex 82% 5h
+╭────────────────────────────────────────────────╮│▎  secondary 18% 7d
+│◆ MESSAGE  1:37                                 ││▎credits $12.34
+│> Summarize the new shell architecture          ││▎spend 75% left
+│                                                ││▎Background 95% 1h
+│                                                ││▎limited RateLimitReached
 ╰────────────────────────────────────────────────╯│

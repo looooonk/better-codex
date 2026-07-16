@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
           by app-server turns.                  │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
  ▎ PLAN  1. Build shell                         │ │▎loading sessions
          2. Wire transcript                     │ │
-         3. Render dashboard                    ┃ │▎◆ TOOLS
-                                                ┃ │▎in progress exec just test -p codex-tui
- ▌ tool exec just test -p codex-tui             ┃ │▎completed file changes in app_shell
-                                                ┃ │
- ▌ edited 3 files +128 -24                      ┃ │▎◆ THREAD
- ▎ SYSTEM  Our most capable model yet. GPT-     ┃ │▎stage-one
-           5.6 Sol can tackle complex code      ┃ │▎id 01900000-0000-7000-8000-000000000001
-           changes, dig into research, produce  ┃ │▎resume, fork, archive, delete in session list
+         3. Render dashboard                    ┃ │▎◆ THREAD
+                                                ┃ │▎stage-one
+ ▌ tool exec just test -p codex-tui             ┃ │▎id 01900000-0000-7000-8000-000000000001
+                                                ┃ │▎resume, fork, archive, delete in session list
+ ▌ edited 3 files +128 -24                      ┃ │
+ ▎ SYSTEM  Our most capable model yet. GPT-     ┃ │
+           5.6 Sol can tackle complex code      ┃ │
+           changes, dig into research, produce  ┃ │
            polished documents, and take on your ┃ │
-           most ambitious work. Sol is highly   ┃ │▎◆ STATUS
-           capable at lower reasoning efforts—  ┃ │▎thinking
+           most ambitious work. Sol is highly   ┃ │
+           capable at lower reasoning efforts—  ┃ │
            try starting lower, then turn it up  ┃ │
-           for harder jobs.                     ┃ │▎◆ PLAN
-                                                  │▎Build the standalone shell in slices.
-╭────────────────────────────────────────────────╮│▎x Shell frame
-│◆ MESSAGE  1:37                                 ││▎> Transcript model
-│> Summarize the new shell architecture          ││▎- Approvals
+           for harder jobs.                     ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
 │                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

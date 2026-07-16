@@ -3,30 +3,30 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
 ---
                                                   │
- ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │ Settings │ Agents │ Workspace │ Sessions │ Help
-──────────────────────────────────────────────────│────────────────────────────────━━━━━━━━━━──────
+ ◆ BC      gpt-5-codex ▾   default ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▎ SYSTEM  Bet╭──────────────────────────────────────────────────────────────────────╮ns
  ▎ YOU  Create│◆ SAFETY REVIEW                                                       │
               │Our systems are thinking a bit more about this request before         │
  ▎ CODEX  Star│responding.                                                           │
-          by a│                                                                      │x-tui
- ▎ PLAN  1. Bu│Hang tight or retry with a faster model for a quicker response, though│l
-         2. Wi│it may be less capable of handling complex requests.                  │
+          by a│                                                                      │
+ ▎ PLAN  1. Bu│Hang tight or retry with a faster model for a quicker response, though│00001
+         2. Wi│it may be less capable of handling complex requests.                  │ession list
          3. Re│                                                                      │
               │> Retry with a faster model                                           │
- ▌ tool exec j│  Dismiss and keep waiting                                            │00001
-              │  Learn more                                                          │ession list
+ ▌ tool exec j│  Dismiss and keep waiting                                            │
+              │  Learn more                                                          │
  ▌ edited 3 fi│                                                                      │
               │No action is required. Codex will keep waiting, and this menu will    │
  ▎ YOU  Explai│close when the response is ready.                                     │
               │↑↓ / j k select  Enter confirm  r retry  d / Esc dismiss              │
               │                                                                      │
               ╰──────────────────────────────────────────────────────────────────────╯
-╭────────────────────────────────────────────────╮│▎Build the standalone shell in slices.
-│◆ MESSAGE  ● RUNNING  1:1                       ││▎x Shell frame
-│> Type a message, Shift+Enter for newline       ││▎> Transcript model
-│                                                ││▎- Approvals
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  ● RUNNING  1:1                       ││
+│> Type a message, Shift+Enter for newline       ││
+│                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│
