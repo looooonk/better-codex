@@ -3025,21 +3025,39 @@ fn dashboard_route_step_matches_alt_arrow_fallbacks_only_when_allowed() {
 }
 
 #[test]
-fn dashboard_route_changes_are_persisted() {
+fn new_shell_defaults_to_settings_model_regardless_of_legacy_route_state() {
     let codex_home = tempfile::tempdir().expect("create temp codex home");
-    let mut shell = ShellState {
-        codex_home: codex_home.path().to_path_buf(),
-        ..ShellState::snapshot_fixture()
-    };
-
-    shell.set_dashboard_route(DashboardRoute::Settings);
+    std::fs::write(
+        codex_home.path().join("app-shell-state.json"),
+        b"{\"route\":\"sessions\"}",
+    )
+    .expect("write legacy route state");
+    let started = started_thread(
+        "new session",
+        test_thread_id("01900000-0000-7000-8000-000000000702"),
+        /*forked_from_id*/ None,
+    );
+    let shell = ShellState::new(
+        started.session,
+        "fallback-model".to_string(),
+        Vec::new(),
+        codex_home.path().to_path_buf(),
+        /*tui_theme*/ None,
+        /*animations*/ true,
+        /*show_tooltips*/ true,
+        /*max_concurrent_threads_per_session*/ 4,
+    );
 
     assert_eq!(
-        AppShellRouteState::load(codex_home.path()),
-        AppShellRouteState {
-            route: DashboardRoute::Settings
-        }
+        (shell.dashboard_route, shell.settings.selected_action()),
+        (DashboardRoute::Settings, SettingsAction::Model)
     );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28
+        )
+    ));
 }
 
 #[test]
@@ -7184,6 +7202,10 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
     finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(shell.thread_id, resume_id);
     assert_eq!(shell.active_goal, Some(resume_goal));
+    assert_eq!(
+        (shell.dashboard_route, shell.session_list.focused),
+        (DashboardRoute::Sessions, true)
+    );
 
     refresh_session_list(&mut shell, &backend).await;
     shell.session_list.move_selection_down();
@@ -7233,6 +7255,10 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
         "fork should replace the active shell session"
     );
     assert_eq!(shell.active_goal, Some(fork_goal));
+    assert_eq!(
+        (shell.dashboard_route, shell.session_list.focused),
+        (DashboardRoute::Sessions, true)
+    );
     assert_eq!(
         shell.workspace_git_status,
         Some(WorkspaceGitStatus {

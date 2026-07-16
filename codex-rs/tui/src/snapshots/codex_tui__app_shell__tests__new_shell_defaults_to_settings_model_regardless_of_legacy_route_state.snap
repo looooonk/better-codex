@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
+---
+                                                  │
+ ◆ BC          gpt-5-codex ▾   default ▾  ● ready │ Settings │ Agents │ Workspace │ Sessions │ Help
+──────────────────────────────────────────────────│━━━━━━━━━━──────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
+                                                  │▎━━━━━━─────────────────────────────────────────
+                                                  │▎› Model: gpt-5-codex
+                                                  │▎  Reasoning: default
+                                                  │▎  Service tier: default
+                                                  │
+                                                  │▎◆ MODEL
+                                                  │▎gpt-5-codex
+                                                  │
+                                                  │▎◆ TOKENS
+                                                  │▎total 0
+                                                  │▎input 0
+                                                  │▎output 0
+                                                  │▎Context unknown
+                                                  │
+                                                  │▎◆ INTEGRATIONS
+                                                  │▎mcp not loaded
+╭────────────────────────────────────────────────╮│▎plugins not loaded
+│◆ MESSAGE  1:1                                  ││
+│> Type a message, Shift+Enter for newline       ││▎◆ WORKSPACE
+│                                                ││▎cwd /workspace/better-codex
+│                                                ││▎profile managed
+╰────────────────────────────────────────────────╯│

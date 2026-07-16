@@ -122,7 +122,6 @@ use external_agent_import::ExternalAgentImportState;
 use integrations::McpInventorySummary;
 use integrations::PluginInventorySummary;
 use mcp_management::McpManagementState;
-use navigation::AppShellRouteState;
 use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
 use render::draw_shell;
@@ -224,13 +223,11 @@ pub(crate) async fn run(
         agent_threads,
         agent_history_task,
     } = started;
-    let route_state = AppShellRouteState::load(config.codex_home.as_path());
     let mut shell = ShellState::new(
         session,
         fallback_model,
         bootstrap.available_models,
         config.codex_home.to_path_buf(),
-        route_state.route,
         config.tui_theme.clone(),
         config.animations,
         config.show_tooltips,
@@ -679,7 +676,6 @@ impl ShellState {
         fallback_model: String,
         available_models: Vec<ModelPreset>,
         codex_home: std::path::PathBuf,
-        dashboard_route: DashboardRoute,
         tui_theme: Option<String>,
         animations: bool,
         show_tooltips: bool,
@@ -722,7 +718,7 @@ impl ShellState {
             command_palette: None,
             selector: None,
             codex_home,
-            dashboard_route,
+            dashboard_route: DashboardRoute::Settings,
             dashboard_visible: true,
             pointer_position: None,
             agents_focused: false,
@@ -1864,10 +1860,6 @@ impl ShellState {
         self.settings.focused = false;
         self.agents_focused = false;
         self.dashboard_route = route;
-        let route_state = AppShellRouteState { route };
-        if let Err(err) = route_state.save(&self.codex_home) {
-            tracing::warn!("failed to persist app shell route state: {err}");
-        }
     }
 
     fn command_palette_entries(&self) -> Vec<CommandPaletteEntry> {
