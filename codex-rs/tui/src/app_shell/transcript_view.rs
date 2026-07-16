@@ -7,6 +7,7 @@ use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::design::selection_style;
 use super::design::title_rect;
+use super::diff_style::diff_stat_spans;
 use super::transcript_render::TranscriptLayout;
 use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_to_width;
@@ -396,6 +397,7 @@ fn tool_block_lines(
         .into_iter()
         .enumerate()
         .map(|(index, wrapped)| {
+            let wrapped_width = wrapped.width();
             let label_span = if index == 0 {
                 format!("{label} ").bold()
             } else {
@@ -409,11 +411,13 @@ fn tool_block_lines(
                 Span::styled("▌", status.accent_style()),
                 " ".into(),
                 label_span,
-                wrapped.into(),
             ]);
-            let content_span_index = usize::from(block_indent > 0) + 3;
-            let occupied_width =
-                block_indent + label_prefix_width + spans[content_span_index].content.width();
+            if kind == TranscriptKind::Diff {
+                spans.extend(diff_stat_spans(wrapped));
+            } else {
+                spans.push(wrapped.into());
+            }
+            let occupied_width = block_indent + label_prefix_width + wrapped_width;
             if occupied_width < width {
                 spans.push(Span::styled(
                     " ".repeat(width - occupied_width),

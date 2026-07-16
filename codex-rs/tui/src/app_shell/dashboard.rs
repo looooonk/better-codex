@@ -7,6 +7,7 @@ use super::dashboard_workspace::workspace_lines;
 use super::design::Tone;
 use super::design::badge_span;
 use super::design::palette;
+use super::diff_style::diff_stat_spans;
 use super::navigation::DashboardRoute;
 use super::navigation::DashboardTabs;
 use crate::goal_display::format_goal_elapsed_seconds;
@@ -250,12 +251,12 @@ fn dashboard_panel(
         }
         DashboardPanelKind::Edits => {
             let lines = if let Some(diff) = &shell.latest_diff {
-                vec![Line::from(format!(
+                vec![Line::from(diff_stat_spans(format!(
                     "{} files +{} -{}",
                     format_usize(diff.files),
                     format_usize(diff.additions),
                     format_usize(diff.removals)
-                ))]
+                )))]
             } else {
                 vec![Line::from("no changes".dim())]
             };

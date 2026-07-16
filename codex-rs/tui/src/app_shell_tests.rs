@@ -4582,6 +4582,37 @@ fn renders_file_change_detail_snapshot() {
 }
 
 #[test]
+fn diff_summaries_use_addition_and_removal_colors() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_assistant();
+    shell.push_diff("9 files +8 -7");
+    shell.dashboard_route = DashboardRoute::Status;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 60,
+    );
+
+    let buf = render_shell_buffer(&shell, area);
+
+    assert_eq!(
+        text_color_for_row(&buf, area, "+8"),
+        Some(design::palette::SUCCESS)
+    );
+    assert_eq!(
+        text_color_for_row(&buf, area, "-7"),
+        Some(design::palette::ERROR)
+    );
+    assert_eq!(
+        text_color_for_row(&buf, area, "+128"),
+        Some(design::palette::SUCCESS)
+    );
+    assert_eq!(
+        text_color_for_row(&buf, area, "-24"),
+        Some(design::palette::ERROR)
+    );
+}
+
+#[test]
 fn renders_tool_progress_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.push_tool("mcp progress: indexed 42 files\npreparing search results");
@@ -6599,6 +6630,12 @@ fn accent_color_for_row(buf: &Buffer, area: Rect, needle: &str) -> Option<Color>
         }
     }
     None
+}
+
+fn text_color_for_row(buf: &Buffer, area: Rect, needle: &str) -> Option<Color> {
+    let row = row_containing(buf, area, needle)?;
+    let x = row_needle_x(buf, area, row, needle)?;
+    buf.cell((x, row))?.style().fg
 }
 
 fn accent_x_for_row(buf: &Buffer, area: Rect, y: u16) -> Option<u16> {

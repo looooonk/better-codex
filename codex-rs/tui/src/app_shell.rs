@@ -74,6 +74,7 @@ mod dashboard_help;
 mod dashboard_rate_limits;
 mod dashboard_workspace;
 mod design;
+mod diff_style;
 mod elicitation;
 mod events;
 mod external_agent_import;
