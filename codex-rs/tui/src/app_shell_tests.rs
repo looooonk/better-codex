@@ -7593,6 +7593,101 @@ fn composer_boundary_space_precedes_the_next_logical_line() {
 }
 
 #[test]
+fn long_pasted_single_line_exposes_every_wrapped_row_at_navigation_extents() {
+    const ROWS: usize = 12;
+
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 24,
+    );
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    shell.composer.clear();
+    let initial_input = ShellView { shell: &shell }.input_area(area);
+    let initial_body = design::body_rect_after_title(design::pane_content_rect(initial_input));
+    let content_width = usize::from(initial_body.width).saturating_sub(2);
+    let mut pasted = (0..ROWS - 1)
+        .map(|row| format!("R{row:02}{}", "x".repeat(content_width.saturating_sub(3))))
+        .collect::<String>();
+    pasted.push_str("R11TAIL");
+    shell.insert_text(&pasted);
+
+    let input = ShellView { shell: &shell }.input_area(area);
+    let body = design::body_rect_after_title(design::pane_content_rect(input));
+    let wrapped = composer_render::wrapped_composer_lines(
+        shell.composer.text(),
+        shell.composer.is_empty(),
+        shell.composer.cursor(),
+        usize::from(body.width),
+    );
+    assert_eq!((input.height, body.height, wrapped.len()), (12, 9, ROWS));
+
+    let mut bottom = render_shell_buffer(&shell, area);
+    let tail_row = row_containing(&bottom, body, "R11TAIL");
+    let tail_x = tail_row.and_then(|row| row_needle_x(&bottom, body, row, "R11TAIL"));
+    let cursor = ShellView { shell: &shell }
+        .cursor_position(area)
+        .expect("pasted-text cursor should be visible");
+    let expected_tail_row = body.bottom().saturating_sub(1);
+    let expected_tail_x = body.x.saturating_add(2);
+    assert_eq!(
+        (
+            row_containing(&bottom, body, "R02"),
+            row_containing(&bottom, body, "R03"),
+            tail_row,
+            tail_x,
+            cursor,
+        ),
+        (
+            None,
+            Some(body.y),
+            Some(expected_tail_row),
+            Some(expected_tail_x),
+            Position::new(expected_tail_x.saturating_add(7), expected_tail_row),
+        )
+    );
+
+    while shell.composer.cursor() > 0 {
+        shell.composer.move_left();
+    }
+    let top = render_shell_buffer(&shell, area);
+    assert_eq!(
+        (
+            row_containing(&top, body, "R00"),
+            row_containing(&top, body, "R08"),
+            row_containing(&top, body, "R09"),
+            ShellView { shell: &shell }.cursor_position(area),
+        ),
+        (
+            Some(body.y),
+            Some(body.bottom().saturating_sub(1)),
+            None,
+            Some(Position::new(body.x.saturating_add(2), body.y)),
+        )
+    );
+    let visible_rows = (0..ROWS)
+        .filter(|row| {
+            let marker = format!("R{row:02}");
+            row_containing(&top, body, &marker).is_some()
+                || row_containing(&bottom, body, &marker).is_some()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(visible_rows, (0..ROWS).collect::<Vec<_>>());
+
+    while shell.composer.cursor() < pasted.len() {
+        shell.composer.move_right();
+    }
+    assert_eq!(
+        ShellView { shell: &shell }.cursor_position(area),
+        Some(cursor)
+    );
+    bottom[cursor].set_symbol("▌");
+    insta::assert_snapshot!(
+        "long_pasted_composer_bottom",
+        buffer_contents(&bottom, area)
+    );
+}
+
+#[test]
 fn dashboard_focus_keeps_context_readable_and_hides_composer_cursor() {
     let mut shell = ShellState::snapshot_fixture();
     shell.session_list.focused = true;
