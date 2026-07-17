@@ -13,3 +13,5 @@ This file tracks implementation tasks explicitly requested by users during live 
 - [ ] Add a clickable button to toggle the dashboard on the top bar (where the "BETTER CODEX" text is). This should act as the mouse-control alternative to CTRL + D.
 - [ ] Allow scrolling on the dashboard if it overflows. Check mouse position to check if scrolling should scroll dashboard or the conversation log. Scrolling on the dashboard should scroll the entire pane, excluding the "Status | Agents | Sessions | Help" tab picker, which should remain fixed.
   - For tabs in the dashboard with scrollable elements, disambiguate whether the user wants to scroll the dashboard or scroll elements inside a list (e.g. list of agents, sessions, settings, etc.) by checking their mouse position.
+- [ ] Implement the feature to scroll the file list on the git diff pane. Currently, if there is a diff that changes many files, you can only access all of them with the arrow key.
+- [ ] Add green/red line highlighting for the diff lines in the git diff pane, like GitHub does.
