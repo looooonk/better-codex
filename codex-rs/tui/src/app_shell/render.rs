@@ -442,6 +442,7 @@ impl ShellView<'_> {
         let mut lines = wrapped_composer_lines(
             self.shell.composer.text(),
             self.shell.composer.is_empty(),
+            self.shell.composer.cursor(),
             usize::from(body.width).max(1),
         );
         if visible_height > 0 && lines.len() > visible_height {

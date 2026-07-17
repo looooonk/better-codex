@@ -175,6 +175,7 @@ fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u1
         wrapped_composer_lines(
             shell.composer.text(),
             shell.composer.is_empty(),
+            shell.composer.cursor(),
             usize::from(body_width).max(1),
         )
         .len(),

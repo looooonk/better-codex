@@ -7399,6 +7399,200 @@ fn composer_cursor_tracks_word_wrapped_single_line_prompt() {
 }
 
 #[test]
+fn composer_cursor_wraps_at_a_boundary_space() {
+    let mut shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let input = ShellView { shell: &shell }.input_area(area);
+    let body = design::body_rect_after_title(design::pane_content_rect(input));
+    let content_width = usize::from(body.width).saturating_sub(2);
+    shell.composer.set_text("x".repeat(content_width));
+    let boundary = ShellView { shell: &shell }
+        .cursor_position(area)
+        .expect("boundary cursor should be visible");
+
+    shell.composer.insert_char(' ');
+    let cursor = ShellView { shell: &shell }
+        .cursor_position(area)
+        .expect("wrapped cursor should be visible");
+    let wrapped = composer_render::wrapped_composer_lines(
+        shell.composer.text(),
+        shell.composer.is_empty(),
+        shell.composer.cursor(),
+        usize::from(body.width),
+    );
+    let continuation = Position::new(body.x.saturating_add(2), body.y.saturating_add(1));
+    let after_space = Position::new(continuation.x.saturating_add(1), continuation.y);
+
+    assert_eq!(
+        (wrapped.len(), boundary, cursor, body.contains(cursor)),
+        (2, continuation, after_space, true)
+    );
+    let mut buf = render_shell_buffer(&shell, area);
+    buf[cursor].set_symbol("▌");
+    insta::assert_snapshot!(buffer_contents(&buf, area));
+
+    shell.composer.insert_char('X');
+    let buf = render_shell_buffer(&shell, area);
+    assert_eq!(
+        (
+            row_needle_x(&buf, body, continuation.y, "X"),
+            ShellView { shell: &shell }.cursor_position(area)
+        ),
+        (
+            Some(after_space.x),
+            Some(Position::new(
+                after_space.x.saturating_add(1),
+                after_space.y
+            ))
+        )
+    );
+}
+
+#[test]
+fn composer_preserves_multiple_boundary_spaces_before_text() {
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    for space_count in [1, 3] {
+        let mut shell = ShellState::snapshot_fixture();
+        let input = ShellView { shell: &shell }.input_area(area);
+        let body = design::body_rect_after_title(design::pane_content_rect(input));
+        let content_width = usize::from(body.width).saturating_sub(2);
+        shell.composer.set_text(format!(
+            "{}{}Z",
+            "x".repeat(content_width),
+            " ".repeat(space_count)
+        ));
+        shell.composer.move_left();
+
+        let wrapped = composer_render::wrapped_composer_lines(
+            shell.composer.text(),
+            shell.composer.is_empty(),
+            shell.composer.cursor(),
+            usize::from(body.width),
+        );
+        let cursor = ShellView { shell: &shell }
+            .cursor_position(area)
+            .expect("boundary-space cursor should be visible");
+        let buf = render_shell_buffer(&shell, area);
+        let expected = Position::new(
+            body.x
+                .saturating_add(2)
+                .saturating_add(u16::try_from(space_count).unwrap_or(u16::MAX)),
+            body.y.saturating_add(1),
+        );
+
+        assert_eq!(
+            (
+                space_count,
+                wrapped.len(),
+                cursor,
+                row_needle_x(&buf, body, expected.y, "Z")
+            ),
+            (space_count, 2, expected, Some(expected.x))
+        );
+    }
+}
+
+#[test]
+fn composer_wraps_multirow_spaces_and_wide_text() {
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let shell = ShellState::snapshot_fixture();
+    let input = ShellView { shell: &shell }.input_area(area);
+    let body = design::body_rect_after_title(design::pane_content_rect(input));
+    let content_width = usize::from(body.width).saturating_sub(2);
+    let cases = [
+        (
+            format!(
+                "{}{}Z",
+                "x".repeat(content_width),
+                " ".repeat(content_width.saturating_add(1))
+            ),
+            3,
+            2,
+        ),
+        (format!("{} Z", "界".repeat(content_width / 2)), 2, 1),
+    ];
+
+    for (text, expected_rows, expected_line) in cases {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.composer.set_text(text);
+        shell.composer.move_left();
+        let wrapped = composer_render::wrapped_composer_lines(
+            shell.composer.text(),
+            shell.composer.is_empty(),
+            shell.composer.cursor(),
+            usize::from(body.width),
+        );
+        let cursor_line = composer_render::composer_visual_cursor_line(
+            shell.composer.text(),
+            shell.composer.cursor(),
+            usize::from(body.width),
+        );
+        let z_column = wrapped[expected_line].to_string().find('Z');
+
+        assert_eq!(
+            (wrapped.len(), cursor_line, z_column),
+            (expected_rows, Some(expected_line), Some(3))
+        );
+    }
+}
+
+#[test]
+fn composer_boundary_space_precedes_the_next_logical_line() {
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    for (space, expected_rows, cursor_offset, expected_foo_line) in [("", 2, 0, 1), (" ", 3, 1, 2)]
+    {
+        let mut shell = ShellState::snapshot_fixture();
+        let input = ShellView { shell: &shell }.input_area(area);
+        let body = design::body_rect_after_title(design::pane_content_rect(input));
+        let content_width = usize::from(body.width).saturating_sub(2);
+        shell
+            .composer
+            .set_text(format!("{}{space}\nfoo", "x".repeat(content_width)));
+        for _ in 0..4 {
+            shell.composer.move_left();
+        }
+
+        let wrapped = composer_render::wrapped_composer_lines(
+            shell.composer.text(),
+            shell.composer.is_empty(),
+            shell.composer.cursor(),
+            usize::from(body.width),
+        );
+        let cursor = ShellView { shell: &shell }
+            .cursor_position(area)
+            .expect("cursor before newline should be visible");
+        let content_x = body.x.saturating_add(2);
+        let expected_cursor = Position::new(
+            content_x.saturating_add(cursor_offset),
+            body.y.saturating_add(1),
+        );
+        let foo_line = wrapped
+            .iter()
+            .position(|line| line.to_string().contains("foo"));
+
+        assert_eq!(
+            (space, wrapped.len(), cursor, foo_line),
+            (
+                space,
+                expected_rows,
+                expected_cursor,
+                Some(expected_foo_line)
+            )
+        );
+    }
+}
+
+#[test]
 fn dashboard_focus_keeps_context_readable_and_hides_composer_cursor() {
     let mut shell = ShellState::snapshot_fixture();
     shell.session_list.focused = true;
