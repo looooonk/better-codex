@@ -3939,7 +3939,6 @@ async fn ctrl_d_hides_dashboard_and_reclaims_layout_snapshot() {
     );
     assert_eq!(ShellView { shell: &shell }.input_area(area).width, 78);
     let rendered = render_shell(&shell, area);
-    assert!(rendered.contains("Panels"));
     assert!(!rendered.contains("Navigation"));
     insta::assert_snapshot!(rendered);
 
@@ -3951,6 +3950,81 @@ async fn ctrl_d_hides_dashboard_and_reclaims_layout_snapshot() {
     );
     assert!(shell.dashboard_visible);
     assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
+async fn dashboard_header_button_toggles_in_sidebar_and_overlay_layouts() {
+    let config = test_config().await;
+    for (area, is_overlay) in [
+        (
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            ),
+            false,
+        ),
+        (
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
+            ),
+            true,
+        ),
+    ] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.session_list.focused = true;
+        shell.settings.focused = true;
+        shell.agents_focused = true;
+        let mut backend = RecordingBackend::default();
+        let button_positions = |shell: &ShellState| {
+            (area.x..area.right())
+                .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
+                .filter(|position| {
+                    ShellView { shell }.header_control_at(area, *position)
+                        == Some(header::HeaderControl::Dashboard)
+                })
+                .collect::<Vec<_>>()
+        };
+        let visible_buttons = button_positions(&shell);
+        let button = visible_buttons
+            .first()
+            .copied()
+            .expect("dashboard button should be visible");
+        let visible_input_width = ShellView { shell: &shell }.input_area(area).width;
+
+        assert_eq!(visible_input_width == area.width, is_overlay);
+        shell
+            .handle_mouse_click(area, button, &config, &mut backend)
+            .await
+            .expect("dashboard button should hide the dashboard");
+
+        assert_eq!(
+            (
+                shell.dashboard_visible,
+                shell.session_list.focused,
+                shell.settings.focused,
+                shell.agents_focused,
+                ShellView { shell: &shell }.input_area(area).width,
+            ),
+            (false, false, false, false, area.width)
+        );
+        assert_eq!(button_positions(&shell), visible_buttons);
+
+        shell
+            .handle_mouse_click(area, button, &config, &mut backend)
+            .await
+            .expect("dashboard button should restore the dashboard");
+
+        assert_eq!(
+            (
+                shell.dashboard_visible,
+                shell.session_list.focused,
+                shell.settings.focused,
+                shell.agents_focused,
+                ShellView { shell: &shell }.input_area(area).width,
+            ),
+            (true, false, false, false, visible_input_width)
+        );
+        assert_eq!(backend.calls(), Vec::new());
+    }
 }
 
 #[tokio::test]
@@ -4267,6 +4341,31 @@ fn pointer_hover_uses_existing_header_hit_geometry() {
     let buf = render_shell_buffer(&shell, area);
 
     assert_eq!(buf[position].style().bg, Some(design::palette::BORDER));
+}
+
+#[test]
+fn dashboard_button_hover_uses_its_hit_geometry_in_both_states() {
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    for dashboard_visible in [true, false] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.dashboard_visible = dashboard_visible;
+        let position = (area.x..area.right())
+            .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
+            .find(|position| {
+                ShellView { shell: &shell }.header_control_at(area, *position)
+                    == Some(header::HeaderControl::Dashboard)
+            })
+            .expect("dashboard button should be visible");
+        shell.pointer_position = Some(position);
+
+        assert_eq!(
+            render_shell_buffer(&shell, area)[position].style().bg,
+            Some(design::palette::BORDER),
+            "dashboard_visible {dashboard_visible}"
+        );
+    }
 }
 
 #[test]

@@ -15,6 +15,7 @@ use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
 
 const CONTROL_GAP: u16 = 1;
+const DASHBOARD_BRAND_GAP: u16 = 1;
 const BRAND_CONTROL_GAP: u16 = 2;
 const STATUS_SPINNER_FRAMES: [&str; 4] = ["◐", "◓", "◑", "◒"];
 
@@ -41,20 +42,11 @@ impl HeaderView<'_> {
         fill_rect(buf, area, palette::DARK);
         let content = pane_content_rect(area);
         let layout = self.control_layout(area);
-        Paragraph::new(self.brand_line(layout.is_none_or(|layout| layout.compact_brand)))
-            .style(pane_style(palette::DARK))
-            .render(Rect::new(content.x, content.y, content.width, 1), buf);
-
         if let Some(layout) = layout {
-            if let Some(dashboard) = layout.dashboard {
-                Paragraph::new(self.dashboard_label())
-                    .style(
-                        Style::new()
-                            .fg(palette::CYAN)
-                            .bg(control_background(hovered, HeaderControl::Dashboard)),
-                    )
-                    .render(dashboard, buf);
-            }
+            Paragraph::new(self.dashboard_button(hovered)).render(layout.dashboard, buf);
+            Paragraph::new(self.brand_line(layout.compact_brand))
+                .style(pane_style(palette::DARK))
+                .render(layout.brand, buf);
             if let Some(model) = layout.model {
                 Paragraph::new(self.model_label())
                     .style(
@@ -87,6 +79,10 @@ impl HeaderView<'_> {
                     .style(pane_style(palette::DARK))
                     .render(status, buf);
             }
+        } else {
+            Paragraph::new(self.brand_line(/*compact*/ true))
+                .style(pane_style(palette::DARK))
+                .render(Rect::new(content.x, content.y, content.width, 1), buf);
         }
 
         Paragraph::new(
@@ -101,7 +97,7 @@ impl HeaderView<'_> {
 
     pub(super) fn control_at(&self, area: Rect, position: Position) -> Option<HeaderControl> {
         let layout = self.control_layout(area)?;
-        if layout.dashboard.is_some_and(|area| area.contains(position)) {
+        if layout.dashboard.contains(position) {
             Some(HeaderControl::Dashboard)
         } else if layout.model.is_some_and(|area| area.contains(position)) {
             Some(HeaderControl::Model)
@@ -119,91 +115,134 @@ impl HeaderView<'_> {
 
     fn control_layout(&self, area: Rect) -> Option<HeaderControlLayout> {
         let content = pane_content_rect(area);
+        let dashboard_width = u16::try_from(text_width(&self.dashboard_label())).ok()?;
         let model_width = text_width(&self.model_label());
         let effort_width = text_width(&self.effort_label());
         let service_tier_width = text_width(&self.service_tier_label());
-        let dashboard_width = if self.dashboard_visible {
-            None
-        } else {
-            Some(u16::try_from(text_width(&self.dashboard_label())).ok()?)
-        };
         let status_width = line_width(&self.status_line());
         let model_width = u16::try_from(model_width).ok()?;
         let effort_width = u16::try_from(effort_width).ok()?;
         let service_tier_width = u16::try_from(service_tier_width).ok()?;
         let status_width = u16::try_from(status_width).ok()?;
-        for (compact_brand, include_status) in [(false, true), (true, true), (true, false)] {
-            let status_and_gap = if include_status {
-                status_width.saturating_add(CONTROL_GAP)
-            } else {
-                0
+        for (compact_brand, controls) in [
+            (false, HeaderControlSet::AllWithStatus),
+            (true, HeaderControlSet::AllWithStatus),
+            (true, HeaderControlSet::AllSelectors),
+            (true, HeaderControlSet::ModelAndEffort),
+            (true, HeaderControlSet::ModelOnly),
+            (true, HeaderControlSet::None),
+        ] {
+            let controls_width = match controls {
+                HeaderControlSet::AllWithStatus => model_width
+                    .saturating_add(CONTROL_GAP)
+                    .saturating_add(effort_width)
+                    .saturating_add(CONTROL_GAP)
+                    .saturating_add(service_tier_width)
+                    .saturating_add(CONTROL_GAP)
+                    .saturating_add(status_width),
+                HeaderControlSet::AllSelectors => model_width
+                    .saturating_add(CONTROL_GAP)
+                    .saturating_add(effort_width)
+                    .saturating_add(CONTROL_GAP)
+                    .saturating_add(service_tier_width),
+                HeaderControlSet::ModelAndEffort => model_width
+                    .saturating_add(CONTROL_GAP)
+                    .saturating_add(effort_width),
+                HeaderControlSet::ModelOnly => model_width,
+                HeaderControlSet::None => 0,
             };
-            let dashboard_and_gap = dashboard_width
-                .map(|width| width.saturating_add(CONTROL_GAP))
-                .unwrap_or_default();
-            let controls_width = dashboard_and_gap
-                .saturating_add(model_width)
-                .saturating_add(CONTROL_GAP)
-                .saturating_add(effort_width)
-                .saturating_add(CONTROL_GAP)
-                .saturating_add(service_tier_width)
-                .saturating_add(status_and_gap);
-            let required_width = line_width(&self.brand_line(compact_brand))
-                .saturating_add(usize::from(BRAND_CONTROL_GAP))
-                .saturating_add(usize::from(controls_width));
-            if required_width > usize::from(content.width) {
+            let brand_width = u16::try_from(line_width(&self.brand_line(compact_brand))).ok()?;
+            let controls_and_gap = if controls_width == 0 {
+                0
+            } else {
+                BRAND_CONTROL_GAP.saturating_add(controls_width)
+            };
+            let required_width = dashboard_width
+                .saturating_add(DASHBOARD_BRAND_GAP)
+                .saturating_add(brand_width)
+                .saturating_add(controls_and_gap);
+            if required_width > content.width {
                 continue;
             }
             let controls_x = content.right().saturating_sub(controls_width);
-            let dashboard = dashboard_width.map(|width| Rect::new(controls_x, content.y, width, 1));
-            let model_x = controls_x.saturating_add(dashboard_and_gap);
+            let model_x = controls_x;
             let effort_x = model_x
                 .saturating_add(model_width)
                 .saturating_add(CONTROL_GAP);
             let service_tier_x = effort_x
                 .saturating_add(effort_width)
                 .saturating_add(CONTROL_GAP);
-            let status = include_status.then(|| {
-                Rect::new(
-                    service_tier_x
-                        .saturating_add(service_tier_width)
-                        .saturating_add(CONTROL_GAP),
+            let status_x = service_tier_x
+                .saturating_add(service_tier_width)
+                .saturating_add(CONTROL_GAP);
+            return Some(HeaderControlLayout {
+                dashboard: Rect::new(content.x, content.y, dashboard_width, 1),
+                brand: Rect::new(
+                    content
+                        .x
+                        .saturating_add(dashboard_width)
+                        .saturating_add(DASHBOARD_BRAND_GAP),
+                    content.y,
+                    brand_width,
+                    1,
+                ),
+                model: (!matches!(controls, HeaderControlSet::None)).then_some(Rect::new(
+                    model_x,
+                    content.y,
+                    model_width,
+                    1,
+                )),
+                effort: matches!(
+                    controls,
+                    HeaderControlSet::AllWithStatus
+                        | HeaderControlSet::AllSelectors
+                        | HeaderControlSet::ModelAndEffort
+                )
+                .then_some(Rect::new(effort_x, content.y, effort_width, 1)),
+                service_tier: matches!(
+                    controls,
+                    HeaderControlSet::AllWithStatus | HeaderControlSet::AllSelectors
+                )
+                .then_some(Rect::new(
+                    service_tier_x,
+                    content.y,
+                    service_tier_width,
+                    1,
+                )),
+                status: matches!(controls, HeaderControlSet::AllWithStatus).then_some(Rect::new(
+                    status_x,
                     content.y,
                     status_width,
                     1,
-                )
-            });
-            return Some(HeaderControlLayout {
-                dashboard,
-                model: Some(Rect::new(model_x, content.y, model_width, 1)),
-                effort: Some(Rect::new(effort_x, content.y, effort_width, 1)),
-                service_tier: Some(Rect::new(service_tier_x, content.y, service_tier_width, 1)),
-                status,
+                )),
                 compact_brand,
             });
         }
-        if let Some(width) = dashboard_width {
-            let compact_brand = true;
-            let required_width = line_width(&self.brand_line(compact_brand))
-                .saturating_add(usize::from(BRAND_CONTROL_GAP))
-                .saturating_add(usize::from(width));
-            if required_width <= usize::from(content.width) {
-                return Some(HeaderControlLayout {
-                    dashboard: Some(Rect::new(
-                        content.right().saturating_sub(width),
-                        content.y,
-                        width,
-                        1,
-                    )),
-                    model: None,
-                    effort: None,
-                    service_tier: None,
-                    status: None,
-                    compact_brand,
-                });
-            }
-        }
         None
+    }
+
+    fn dashboard_button(&self, hovered: Option<HeaderControl>) -> Line<'static> {
+        let hovered = hovered == Some(HeaderControl::Dashboard);
+        let background = if hovered {
+            palette::BORDER
+        } else if self.dashboard_visible {
+            palette::FOCUS
+        } else {
+            palette::ELEVATED
+        };
+        let label = self.dashboard_label();
+        let label = if self.dashboard_visible {
+            label
+                .fg(if hovered {
+                    palette::TEXT
+                } else {
+                    palette::DARK
+                })
+                .bold()
+        } else {
+            label.fg(palette::CYAN)
+        };
+        Line::from(label).style(Style::new().bg(background))
     }
 
     fn brand_line(&self, compact: bool) -> Line<'static> {
@@ -230,7 +269,7 @@ impl HeaderView<'_> {
     }
 
     fn dashboard_label(&self) -> String {
-        " Panels ".to_string()
+        " Dashboard ".to_string()
     }
 
     fn effort_label(&self) -> String {
@@ -275,12 +314,22 @@ fn control_background(hovered: Option<HeaderControl>, control: HeaderControl) ->
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct HeaderControlLayout {
-    dashboard: Option<Rect>,
+    dashboard: Rect,
+    brand: Rect,
     model: Option<Rect>,
     effort: Option<Rect>,
     service_tier: Option<Rect>,
     status: Option<Rect>,
     compact_brand: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeaderControlSet {
+    AllWithStatus,
+    AllSelectors,
+    ModelAndEffort,
+    ModelOnly,
+    None,
 }
 
 fn text_width(text: &str) -> usize {

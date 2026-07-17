@@ -1009,12 +1009,7 @@ impl ShellState {
             return self.handle_user_input_key(key, app_server).await;
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('d')) {
-            self.dashboard_visible = !self.dashboard_visible;
-            if !self.dashboard_visible {
-                self.session_list.focused = false;
-                self.settings.focused = false;
-                self.agents_focused = false;
-            }
+            self.toggle_dashboard();
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('o')) {
@@ -1983,6 +1978,15 @@ impl ShellState {
         self.settings.focused = false;
         self.agents_focused = false;
         self.dashboard_route = route;
+    }
+
+    fn toggle_dashboard(&mut self) {
+        self.dashboard_visible = !self.dashboard_visible;
+        if !self.dashboard_visible {
+            self.session_list.focused = false;
+            self.settings.focused = false;
+            self.agents_focused = false;
+        }
     }
 
     fn command_palette_entries(&self) -> Vec<CommandPaletteEntry> {

@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: "render_shell(&shell, area)"
 ---
                                                   │
- ◆ BC         gpt-5.6-sol ▾   max ▾   priority ▾  │   Status   │  Agents   │  Sessions   │  Help
+  Dashboard  ◆ BC          gpt-5.6-sol ▾   max ▾  │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SETTINGS

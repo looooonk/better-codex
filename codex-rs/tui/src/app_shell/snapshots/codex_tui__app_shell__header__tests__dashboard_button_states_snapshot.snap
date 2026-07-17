@@ -1,0 +1,22 @@
+---
+source: tui/src/app_shell/header_tests.rs
+expression: "[(\"visible\", visible.dashboard_button(None),),\n(\"visible hovered\",\nvisible.dashboard_button(Some(HeaderControl::Dashboard)),),\n(\"hidden\", hidden.dashboard_button(None),),\n(\"hidden hovered\", hidden.dashboard_button(Some(HeaderControl::Dashboard)),),]"
+---
+[
+    (
+        "visible",
+        Line::from(Span::from(" Dashboard ").fg(Color::Rgb(22, 22, 30)).bold()).bg(Color::Rgb(122, 162, 247)),
+    ),
+    (
+        "visible hovered",
+        Line::from(Span::from(" Dashboard ").fg(Color::Rgb(192, 202, 245)).bold()).bg(Color::Rgb(65, 72, 104)),
+    ),
+    (
+        "hidden",
+        Line::from(Span::from(" Dashboard ").fg(Color::Rgb(125, 207, 255))).bg(Color::Rgb(41, 46, 66)),
+    ),
+    (
+        "hidden hovered",
+        Line::from(Span::from(" Dashboard ").fg(Color::Rgb(125, 207, 255))).bg(Color::Rgb(65, 72, 104)),
+    ),
+]

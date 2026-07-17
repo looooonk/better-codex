@@ -188,14 +188,7 @@ impl ShellState {
         }
         if let Some(control) = (ShellView { shell: self }).header_control_at(area, position) {
             match control {
-                HeaderControl::Dashboard => {
-                    self.dashboard_visible = !self.dashboard_visible;
-                    if !self.dashboard_visible {
-                        self.session_list.focused = false;
-                        self.settings.focused = false;
-                        self.agents_focused = false;
-                    }
-                }
+                HeaderControl::Dashboard => self.toggle_dashboard(),
                 HeaderControl::Model => self.open_model_selector(),
                 HeaderControl::ReasoningEffort => self.open_reasoning_selector(),
                 HeaderControl::ServiceTier => self.open_service_tier_selector(),
