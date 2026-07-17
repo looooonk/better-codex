@@ -63,11 +63,20 @@ fn wide_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
             "Ctrl+D hide dashboard",
         ]
     } else if shell.active_turn_id.is_some() {
+        let editing_queue = shell.composer.queued_edit_position().is_some();
         [
-            "Enter steer",
+            if editing_queue {
+                "Enter/Tab save queued edit"
+            } else {
+                "Enter steer, Tab queue"
+            },
+            if editing_queue {
+                "Alt+Up/Down traverse queue"
+            } else {
+                "Alt+Up/Down edit queued"
+            },
             "Ctrl+C interrupt, Esc x2 exit",
-            "Alt+Up select, Ctrl+O copy",
-            "Ctrl+D hide dashboard",
+            "Ctrl+O copy, Ctrl+D hide dashboard",
         ]
     } else if shell.has_pending_shell_command() {
         [
@@ -75,6 +84,22 @@ fn wide_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
             "Ctrl+C cancel shell, Esc x2 exit",
             "Alt+Up select, Ctrl+O copy",
             "Ctrl+D hide dashboard",
+        ]
+    } else if shell.composer.has_queued_messages() {
+        let editing_queue = shell.composer.queued_edit_position().is_some();
+        [
+            if editing_queue {
+                "Enter save and resume queue"
+            } else {
+                "Enter send or resume queue"
+            },
+            if editing_queue {
+                "Alt+Up/Down traverse queue"
+            } else {
+                "Alt+Up/Down edit queued"
+            },
+            "Ctrl+C/Esc twice to exit",
+            "Ctrl+O copy, Ctrl+D hide dashboard",
         ]
     } else {
         [
@@ -123,11 +148,20 @@ fn compact_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
             "Ctrl+D hide dashboard",
         ]
     } else if shell.active_turn_id.is_some() {
+        let editing_queue = shell.composer.queued_edit_position().is_some();
         [
-            "↵ steer",
+            if editing_queue {
+                "↵/Tab save queued edit"
+            } else {
+                "↵ steer · Tab queue"
+            },
+            if editing_queue {
+                "Alt+↑/↓ traverse queue"
+            } else {
+                "Alt+↑/↓ edit queued"
+            },
             "^C stop · Esc×2 exit",
-            "Alt+↑ select  ^O copy",
-            "Ctrl+D hide dashboard",
+            "^O copy · ^D hide dashboard",
         ]
     } else if shell.has_pending_shell_command() {
         [
@@ -135,6 +169,22 @@ fn compact_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
             "^C cancel shell · Esc×2 exit",
             "Alt+↑ select  ^O copy",
             "Ctrl+D hide dashboard",
+        ]
+    } else if shell.composer.has_queued_messages() {
+        let editing_queue = shell.composer.queued_edit_position().is_some();
+        [
+            if editing_queue {
+                "↵ save + resume queue"
+            } else {
+                "↵ send/resume queue"
+            },
+            if editing_queue {
+                "Alt+↑/↓ traverse queue"
+            } else {
+                "Alt+↑/↓ edit queued"
+            },
+            "^C/Esc×2 exit",
+            "^O copy · ^D hide dashboard",
         ]
     } else {
         [
@@ -182,16 +232,40 @@ fn dense_key_hint_labels(shell: &ShellState) -> [&'static str; 14] {
             "Ctrl+D hide dashboard",
         ]
     } else if shell.active_turn_id.is_some() {
+        let editing_queue = shell.composer.queued_edit_position().is_some();
         [
             "Alt+←/→ view  ^D hide",
-            "↵ steer  ^C stop/Esc×2",
-            "Alt+↑/^O select/copy",
+            if editing_queue {
+                "↵/Tab save · ^C stop"
+            } else {
+                "↵ steer · Tab queue"
+            },
+            if editing_queue {
+                "Alt+↑/↓ traverse"
+            } else {
+                "Alt+↑/↓ edit · ^C stop"
+            },
         ]
     } else if shell.has_pending_shell_command() {
         [
             "Alt+←/→ view  ^D hide",
             "↵ send  ^C cancel/Esc×2",
             "Alt+↑/^O select/copy",
+        ]
+    } else if shell.composer.has_queued_messages() {
+        let editing_queue = shell.composer.queued_edit_position().is_some();
+        [
+            "Alt+←/→ view  ^D hide",
+            if editing_queue {
+                "↵ save/resume  ^C exit"
+            } else {
+                "↵ send/resume  ^C exit"
+            },
+            if editing_queue {
+                "Alt+↑/↓ traverse"
+            } else {
+                "Alt+↑/↓ edit queue"
+            },
         ]
     } else {
         [

@@ -2,13 +2,24 @@ use std::collections::VecDeque;
 
 const MAX_COMPOSER_HISTORY: usize = 50;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct ComposerDraft {
+    text: String,
+    cursor: usize,
+    history_index: Option<usize>,
+    draft_before_history: String,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct ComposerState {
     text: String,
     cursor: usize,
     history: VecDeque<String>,
     history_index: Option<usize>,
     draft_before_history: String,
+    queued: VecDeque<String>,
+    queued_index: Option<usize>,
+    draft_before_queue: Option<ComposerDraft>,
 }
 
 impl ComposerState {
@@ -42,6 +53,97 @@ impl ComposerState {
         self.text.clear();
         self.cursor = 0;
         self.clear_history_recall();
+    }
+
+    pub(super) fn reset_for_session(&mut self) {
+        *self = Self::default();
+    }
+
+    pub(super) fn queue_current_message(&mut self) -> bool {
+        let message = self.submission_text();
+        if message.is_empty() {
+            return false;
+        }
+
+        if self.queued_index.is_some() {
+            self.finish_queued_message_edit();
+        } else {
+            self.queued.push_back(message);
+            self.clear();
+        }
+        true
+    }
+
+    pub(super) fn has_queued_messages(&self) -> bool {
+        !self.queued.is_empty()
+    }
+
+    pub(super) fn queued_count(&self) -> usize {
+        self.queued.len()
+    }
+
+    pub(super) fn queued_edit_position(&self) -> Option<(usize, usize)> {
+        self.queued_index
+            .map(|index| (index.saturating_add(1), self.queued.len()))
+    }
+
+    pub(super) fn edit_previous_queued_message(&mut self) -> bool {
+        if self.queued.is_empty() {
+            return false;
+        }
+
+        let index = if let Some(index) = self.queued_index {
+            self.save_queued_message_edit();
+            index.saturating_sub(1)
+        } else {
+            self.draft_before_queue = Some(ComposerDraft {
+                text: self.text.clone(),
+                cursor: self.cursor,
+                history_index: self.history_index,
+                draft_before_history: self.draft_before_history.clone(),
+            });
+            self.queued.len() - 1
+        };
+        self.select_queued_message(index);
+        true
+    }
+
+    pub(super) fn edit_next_queued_message(&mut self) -> bool {
+        let Some(index) = self.queued_index else {
+            return false;
+        };
+        self.save_queued_message_edit();
+        if index + 1 < self.queued.len() {
+            self.select_queued_message(index + 1);
+        } else {
+            self.finish_queued_message_edit();
+        }
+        true
+    }
+
+    pub(super) fn finish_queued_message_edit(&mut self) -> bool {
+        if self.queued_index.is_none() {
+            return false;
+        }
+        self.save_queued_message_edit();
+        self.queued_index = None;
+        let draft = self.draft_before_queue.take().unwrap_or_default();
+        self.text = draft.text;
+        self.cursor = draft.cursor;
+        self.history_index = draft.history_index;
+        self.draft_before_history = draft.draft_before_history;
+        true
+    }
+
+    pub(super) fn prepare_next_queued_message(&mut self) -> Option<String> {
+        self.finish_queued_message_edit();
+        self.queued.front().cloned()
+    }
+
+    pub(super) fn confirm_next_queued_message(&mut self, message: &str) {
+        let queued = self.queued.pop_front();
+        debug_assert_eq!(queued.as_deref(), Some(message));
+        self.remember_submission(message);
     }
 
     pub(super) fn set_text(&mut self, text: impl Into<String>) {
@@ -256,6 +358,25 @@ impl ComposerState {
         self.cursor = self.text.len();
     }
 
+    fn select_queued_message(&mut self, index: usize) {
+        self.queued_index = Some(index);
+        if let Some(message) = self.queued.get(index).cloned() {
+            self.set_text(message);
+        }
+    }
+
+    fn save_queued_message_edit(&mut self) {
+        let Some(index) = self.queued_index else {
+            return;
+        };
+        let message = self.submission_text();
+        if !message.is_empty()
+            && let Some(queued) = self.queued.get_mut(index)
+        {
+            *queued = message;
+        }
+    }
+
     fn clear_history_recall(&mut self) {
         self.history_index = None;
         self.draft_before_history.clear();
@@ -306,3 +427,7 @@ impl ComposerState {
 fn word_motion_char(ch: char) -> bool {
     ch.is_alphanumeric() || ch == '_'
 }
+
+#[cfg(test)]
+#[path = "composer_tests.rs"]
+mod tests;

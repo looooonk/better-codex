@@ -553,7 +553,32 @@ impl ShellView<'_> {
         let (line, column) = self.shell.composer.cursor_position();
         let position = format!("{}:{}", line + 1, column + 1);
         let title_width = usize::from(pane_content_rect(area).width).saturating_sub(2);
-        let titles = if self.shell.active_turn_id.is_some() {
+        let queue_label = self
+            .shell
+            .composer
+            .queued_edit_position()
+            .map(|(index, count)| format!("EDIT {index}/{count}"))
+            .or_else(|| {
+                let count = self.shell.composer.queued_count();
+                (count > 0).then(|| format!("QUEUED {count}"))
+            });
+        let titles = if let Some(queue_label) = queue_label {
+            if self.shell.active_turn_id.is_some() {
+                vec![
+                    format!("MESSAGE  ● RUNNING  {queue_label}  {position}"),
+                    format!("MESSAGE  ●  {queue_label}  {position}"),
+                    format!("MESSAGE  {queue_label}  {position}"),
+                    format!("{queue_label}  {position}"),
+                    position.clone(),
+                ]
+            } else {
+                vec![
+                    format!("MESSAGE  {queue_label}  {position}"),
+                    format!("{queue_label}  {position}"),
+                    position.clone(),
+                ]
+            }
+        } else if self.shell.active_turn_id.is_some() {
             vec![
                 format!("MESSAGE  ● RUNNING  {position}"),
                 format!("MESSAGE  ●  {position}"),

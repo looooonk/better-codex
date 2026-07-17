@@ -90,6 +90,7 @@ mod modal_view;
 mod navigation;
 mod plugin_management;
 mod pointer;
+mod queued_messages;
 mod render;
 mod safety_buffering;
 mod scrollback_view;
@@ -1026,6 +1027,20 @@ impl ShellState {
             self.agents_focused = false;
             return Ok(false);
         }
+        let edit_previous_queued = key_hint::alt(KeyCode::Up).is_press(key);
+        let edit_next_queued = key_hint::alt(KeyCode::Down).is_press(key);
+        if self.composer.has_queued_messages() && (edit_previous_queued || edit_next_queued) {
+            self.session_list.focused = false;
+            self.settings.focused = false;
+            self.agents_focused = false;
+            self.clear_transcript_selection();
+            if edit_previous_queued {
+                self.composer.edit_previous_queued_message();
+            } else {
+                self.composer.edit_next_queued_message();
+            }
+            return Ok(false);
+        }
         if self.transcript_selection.is_some()
             && let Some(handled) = self.handle_transcript_selection_key(key)
         {
@@ -1099,32 +1114,43 @@ impl ShellState {
             KeyCode::Enter => {
                 if is_composer_newline_key(key) {
                     self.composer.insert_newline();
-                } else {
-                    let prompt = self.composer.submission_text();
-                    if prompt.is_empty() && self.dashboard_visible {
-                        match self.dashboard_route {
-                            DashboardRoute::Sessions => self.session_list.focused = true,
-                            DashboardRoute::Agents => self.agents_focused = true,
-                            DashboardRoute::Status => self.settings.focused = true,
-                            DashboardRoute::Help => {}
-                        }
-                        if self.dashboard_focused() {
-                            return Ok(false);
-                        }
+                    return Ok(false);
+                }
+                let finished_queued_edit = self.composer.finish_queued_message_edit();
+                if finished_queued_edit && self.active_turn_id.is_some() {
+                    return Ok(false);
+                }
+                let prompt = self.composer.submission_text();
+                if self.active_turn_id.is_none()
+                    && self.composer.has_queued_messages()
+                    && (finished_queued_edit || prompt.is_empty())
+                {
+                    self.submit_next_queued_message(app_server).await;
+                    return Ok(false);
+                }
+                if prompt.is_empty() && self.dashboard_visible {
+                    match self.dashboard_route {
+                        DashboardRoute::Sessions => self.session_list.focused = true,
+                        DashboardRoute::Agents => self.agents_focused = true,
+                        DashboardRoute::Status => self.settings.focused = true,
+                        DashboardRoute::Help => {}
                     }
-                    if !prompt.is_empty() {
-                        if let Some(command) = LocalSlashCommand::parse(&prompt) {
-                            let outcome = self
-                                .run_local_slash_command(command, prompt, app_server)
-                                .await?;
-                            return Ok(outcome == LocalSlashCommandOutcome::Exit);
-                        } else if let Some(command) = ShellCommand::parse(&prompt) {
-                            self.start_shell_command(command, prompt);
-                        } else if self.active_turn_id.is_some() {
-                            self.steer_active_turn(app_server, prompt).await?;
-                        } else {
-                            self.submit_prompt(app_server, prompt).await?;
-                        }
+                    if self.dashboard_focused() {
+                        return Ok(false);
+                    }
+                }
+                if !prompt.is_empty() {
+                    if let Some(command) = LocalSlashCommand::parse(&prompt) {
+                        let outcome = self
+                            .run_local_slash_command(command, prompt, app_server)
+                            .await?;
+                        return Ok(outcome == LocalSlashCommandOutcome::Exit);
+                    } else if let Some(command) = ShellCommand::parse(&prompt) {
+                        self.start_shell_command(command, prompt);
+                    } else if self.active_turn_id.is_some() {
+                        self.steer_active_turn(app_server, prompt).await?;
+                    } else {
+                        self.submit_prompt(app_server, prompt).await?;
                     }
                 }
                 Ok(false)
@@ -1172,7 +1198,11 @@ impl ShellState {
                 Ok(false)
             }
             KeyCode::Tab => {
-                self.composer.insert_str("    ");
+                if self.active_turn_id.is_some() && key_hint::plain(KeyCode::Tab).is_press(key) {
+                    self.composer.queue_current_message();
+                } else {
+                    self.composer.insert_str("    ");
+                }
                 Ok(false)
             }
             KeyCode::BackTab => {
@@ -1689,6 +1719,8 @@ impl ShellState {
             || self.pending_user_input.is_some()
         {
             "resolve the pending request before switching sessions"
+        } else if self.composer.has_queued_messages() {
+            "finish queued messages before switching sessions"
         } else if !self.composer.is_empty() {
             "send or clear the message draft before switching sessions"
         } else {
@@ -1789,7 +1821,7 @@ impl ShellState {
         self.plan_explanation = None;
         self.plan_steps.clear();
         self.record_active_goal(None);
-        self.composer.clear();
+        self.composer.reset_for_session();
         self.pending_shell_command = None;
         self.command_palette = None;
         self.exit_confirmation_pending = false;
@@ -2271,11 +2303,6 @@ impl ShellState {
             return Ok(());
         }
 
-        self.scroll_transcript_to_bottom();
-        let transcript_len_before_submit = self.transcript.len();
-        self.push_user(prompt.clone());
-        self.status = "thinking".to_string();
-        self.clear_streaming_transcript();
         let params = AppShellTurnStart {
             thread_id: self.thread_id,
             items: vec![UserInput::Text {
@@ -2296,6 +2323,11 @@ impl ShellState {
             output_schema: None,
         };
         let response = app_server.turn_start(params.clone()).await?;
+        self.scroll_transcript_to_bottom();
+        let transcript_len_before_submit = self.transcript.len();
+        self.push_user(prompt.clone());
+        self.status = "thinking".to_string();
+        self.clear_streaming_transcript();
         self.composer.remember_submission(&prompt);
         self.composer.clear();
         self.active_turn_id = Some(response.turn.id.clone());

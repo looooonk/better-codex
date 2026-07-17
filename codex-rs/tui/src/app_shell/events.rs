@@ -39,7 +39,21 @@ impl ShellState {
                     self.report_external_agent_import_finished(notification);
                     return Ok(());
                 }
+                let submit_queued_message = match &notification {
+                    ServerNotification::TurnCompleted(completed) => {
+                        completed.thread_id == self.thread_id.to_string()
+                            && self.active_turn_id.as_deref() == Some(completed.turn.id.as_str())
+                            && matches!(
+                                &completed.turn.status,
+                                TurnStatus::Completed | TurnStatus::Failed
+                            )
+                    }
+                    _ => false,
+                };
                 self.handle_notification(notification);
+                if submit_queued_message {
+                    self.submit_next_queued_message(app_server).await;
+                }
             }
             AppServerEvent::ServerRequest(request) => {
                 self.handle_server_request(app_server, request).await?;
@@ -546,6 +560,7 @@ impl ShellState {
     }
 
     fn close_overlays_for_interactive_request(&mut self) {
+        self.composer.finish_queued_message_edit();
         self.close_agent_log();
         self.close_tool_output();
         self.close_diff_view();

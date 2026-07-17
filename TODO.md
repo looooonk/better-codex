@@ -2,7 +2,7 @@
 
 This file tracks implementation tasks explicitly requested by users during live use. Add each task as a checkbox with a concise description of about two sentences, and mark it complete only after the requested behavior has been implemented and verified.
 
-- [ ] Add feature to queue messages by pressing TAB when a turn is running, and edit queued message by pressing OPTION (ALT) + UPARROW.
+- [x] Add feature to queue messages by pressing TAB when a turn is running, and edit queued message by pressing OPTION (ALT) + UPARROW.
   - Must support feature to queue multiple messages. The user should be able to traverse these messages through OPTION (ALT) + DOWNARROW. Editing a message keeps its position in the queue.
 - [ ] AUDIT messages must have exactly 1 space before and after them. Beware double spacing errors. Consecutive AUDIT messages must also be spaced.
 - [ ] Reduce the frequency of the "skipped {} best-effort backend events" system messages, such that the user now rarely sees them. This phenomenon occurs when running just test -p codex-tui frequently.

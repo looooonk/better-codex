@@ -7,8 +7,8 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────│
                                                   │Alt+←/→ view  ^D hide  │ ^N new · Sess ↵ focus
  ◆ CONVERSATION                                   │Shift/Alt+↵ newline    │ r/f resume/fork
- ▎ SYSTEM  Better Codex app shell                 │↵ steer · Tab queue    │ a/u/v/d arc/show/del
- ▎ YOU  Create a divergent standalone TUI.        │Alt+↑/↓ edit · ^C stop │ n rename  / search
+ ▎ SYSTEM  Better Codex app shell                 │↵ save/resume  ^C exit │ a/u/v/d arc/show/del
+ ▎ YOU  Create a divergent standalone TUI.        │Alt+↑/↓ traverse       │ n rename  / search
                                                   │Alt+M/E model/effort   │ Agent ↵ focus/log · j/…
  ▎ CODEX  Started a fullscreen app shell backed   │^1 Status · ^2 Agents  │ Tab/j/k nav · ↵ apply
           by app-server turns.                    │^3 Sessions · ^4 Help  │ Esc×2 exit
@@ -41,8 +41,8 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  ● RUNNING  QUEUED 2  1:1             ││
-│> Type a message, Shift+Enter for newline       ││
+│◆ MESSAGE  EDIT 2/2  1:35                       ││
+│> second queued follow-up with edits            ││
 │                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

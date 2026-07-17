@@ -765,6 +765,29 @@ fn renders_active_turn_key_hints_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.active_turn_id = Some("turn-active-1234567890".to_string());
     shell.dashboard_route = DashboardRoute::Help;
+    shell.composer.clear();
+    queue_messages(
+        &mut shell.composer,
+        &["first queued follow-up", "second queued follow-up"],
+    );
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 44,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_queued_message_editor_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Help;
+    shell.composer.clear();
+    queue_messages(
+        &mut shell.composer,
+        &["first queued follow-up", "second queued follow-up"],
+    );
+    assert!(shell.composer.edit_previous_queued_message());
+    shell.composer.insert_str(" with edits");
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 44,
     );
@@ -6327,6 +6350,230 @@ fn composer_recalls_submission_history_from_draft() {
 }
 
 #[tokio::test]
+async fn tab_queues_multiple_messages_only_during_an_active_turn() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.clear();
+
+    for message in ["first queued", "second queued"] {
+        shell.composer.set_text(message);
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("Tab should queue the message");
+    }
+
+    assert_eq!(shell.composer.queued_count(), 2);
+    assert_eq!(shell.composer.text(), "");
+    assert_eq!(backend.calls(), Vec::new());
+
+    shell.active_turn_id = None;
+    shell.composer.set_text("draft");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("idle Tab should indent the draft");
+
+    assert_eq!(shell.composer.queued_count(), 2);
+    assert_eq!(shell.composer.text(), "draft    ");
+    assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
+async fn alt_arrows_traverse_queued_messages_without_selecting_the_transcript() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.clear();
+    queue_messages(&mut shell.composer, &["first", "second", "third"]);
+    shell.composer.set_text("ordinary draft");
+    shell.transcript_selection = Some(0);
+    let alt_up = KeyEvent::new(KeyCode::Up, KeyModifiers::ALT);
+    let alt_down = KeyEvent::new(KeyCode::Down, KeyModifiers::ALT);
+
+    shell
+        .handle_key(alt_up, &config, &mut backend)
+        .await
+        .expect("Alt+Up should edit the newest queued message");
+    assert_eq!(shell.composer.text(), "third");
+    assert_eq!(shell.transcript_selection, None);
+    shell.composer.insert_str(" updated");
+    shell
+        .handle_key(alt_up, &config, &mut backend)
+        .await
+        .expect("Alt+Up should move to the previous queued message");
+    assert_eq!(shell.composer.text(), "second");
+    shell
+        .handle_key(alt_down, &config, &mut backend)
+        .await
+        .expect("Alt+Down should move to the next queued message");
+    assert_eq!(shell.composer.text(), "third updated");
+    shell
+        .handle_key(alt_down, &config, &mut backend)
+        .await
+        .expect("Alt+Down should leave queue editing after the newest message");
+
+    assert_eq!(shell.composer.text(), "ordinary draft");
+    assert_eq!(shell.composer.queued_edit_position(), None);
+    assert_eq!(shell.composer.queued_count(), 3);
+    assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
+async fn completed_turns_submit_queued_messages_fifo_and_preserve_the_draft() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.active_turn_id = Some("turn-current".to_string());
+    shell.composer.clear();
+    queue_messages(&mut shell.composer, &["first queued", "second queued"]);
+    shell.composer.set_text("ordinary draft");
+    assert!(shell.composer.edit_previous_queued_message());
+    shell.composer.insert_str(" updated");
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            turn_completed_event(shell.thread_id, "turn-current", TurnStatus::Completed),
+        )
+        .await
+        .expect("completion should submit the first queued message");
+
+    assert_eq!(shell.composer.text(), "ordinary draft");
+    assert_eq!(shell.composer.queued_count(), 1);
+    assert_eq!(shell.active_turn_id.as_deref(), Some("turn-submit"));
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            turn_completed_event(shell.thread_id, "turn-submit", TurnStatus::Failed),
+        )
+        .await
+        .expect("failure should submit the next queued message");
+
+    let prompts = backend
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            RecordedBackendCall::TurnStart { prompt, .. } => Some(prompt),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        prompts,
+        vec![
+            "first queued".to_string(),
+            "second queued updated".to_string(),
+        ]
+    );
+    assert_eq!(shell.composer.text(), "ordinary draft");
+    assert_eq!(shell.composer.queued_count(), 0);
+    assert_eq!(shell.active_turn_id.as_deref(), Some("turn-submit"));
+}
+
+#[tokio::test]
+async fn interrupted_turn_retains_queue_until_idle_enter_resumes_it() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.active_turn_id = Some("turn-current".to_string());
+    shell.composer.clear();
+    queue_messages(&mut shell.composer, &["first queued", "second queued"]);
+    assert!(shell.composer.edit_previous_queued_message());
+    shell.composer.set_text("edited second");
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            turn_completed_event(shell.thread_id, "turn-current", TurnStatus::Interrupted),
+        )
+        .await
+        .expect("interruption should retain queued messages");
+
+    assert_eq!(backend.calls(), Vec::new());
+    assert_eq!(shell.composer.queued_count(), 2);
+    assert_eq!(shell.active_turn_id, None);
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("idle Enter should save the edit and resume the queue");
+    assert_eq!(shell.composer.queued_edit_position(), None);
+    assert_eq!(shell.composer.queued_count(), 1);
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            turn_completed_event(shell.thread_id, "turn-submit", TurnStatus::Completed),
+        )
+        .await
+        .expect("completion should continue the queue");
+
+    let prompts = backend
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            RecordedBackendCall::TurnStart { prompt, .. } => Some(prompt),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        prompts,
+        vec!["first queued".to_string(), "edited second".to_string()]
+    );
+    assert_eq!(shell.composer.queued_count(), 0);
+}
+
+#[tokio::test]
+async fn failed_idle_queue_resume_reports_error_and_retains_message() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.clear();
+    shell.composer.set_text("queued");
+    assert!(shell.composer.queue_current_message());
+    let transcript_len = shell.transcript.len();
+    let status = shell.status.clone();
+    backend.fail_next_turn_start("turn start failed");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("failed queue resume should remain in the TUI");
+
+    assert_eq!(shell.composer.queued_count(), 1);
+    assert_eq!(shell.composer.text(), "");
+    assert_eq!(shell.active_turn_id, None);
+    assert_eq!(shell.status, status);
+    assert_eq!(shell.transcript.len(), transcript_len + 1);
+    assert_eq!(
+        shell.transcript.back().map(|line| line.kind),
+        Some(TranscriptKind::Error)
+    );
+    assert_eq!(
+        shell.transcript.back().map(|line| line.text.as_str()),
+        Some("Queued message failed to send: turn start failed")
+    );
+}
+
+#[tokio::test]
 async fn shift_enter_preserves_multiline_composer_when_typing() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
@@ -9788,6 +10035,7 @@ struct RecordingBackend {
     thread_list_gate: Option<Arc<tokio::sync::Semaphore>>,
     rate_limits_gate: Option<Arc<tokio::sync::Semaphore>>,
     rate_limits_used_percent: Arc<Mutex<i32>>,
+    turn_start_error: Arc<Mutex<Option<String>>>,
     remote_workspace: bool,
     embedded_app_server: bool,
 }
@@ -9810,6 +10058,7 @@ impl Default for RecordingBackend {
             thread_list_gate: None,
             rate_limits_gate: None,
             rate_limits_used_percent: Arc::new(Mutex::new(73)),
+            turn_start_error: Arc::new(Mutex::new(None)),
             remote_workspace: false,
             embedded_app_server: true,
         }
@@ -9876,6 +10125,13 @@ impl RecordingBackend {
             .rate_limits_used_percent
             .lock()
             .expect("rate-limit percentage should lock") = used_percent;
+    }
+
+    fn fail_next_turn_start(&self, message: &str) {
+        *self
+            .turn_start_error
+            .lock()
+            .expect("turn-start error should lock") = Some(message.to_string());
     }
 }
 
@@ -10496,6 +10752,14 @@ impl backend::AppShellBackend for RecordingBackend {
             effort: params.effort,
             collaboration_mode: params.collaboration_mode,
         });
+        if let Some(error) = self
+            .turn_start_error
+            .lock()
+            .expect("turn-start error should lock")
+            .take()
+        {
+            return Err(color_eyre::eyre::eyre!(error));
+        }
         Ok(TurnStartResponse {
             turn: test_turn("turn-submit", TurnStatus::InProgress),
         })
@@ -10825,6 +11089,26 @@ fn thread_fixture(
         }),
         name: name.map(ToString::to_string),
         turns: Vec::new(),
+    }
+}
+
+fn turn_completed_event(
+    thread_id: codex_protocol::ThreadId,
+    turn_id: &str,
+    status: TurnStatus,
+) -> AppServerEvent {
+    AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(
+        codex_app_server_protocol::TurnCompletedNotification {
+            thread_id: thread_id.to_string(),
+            turn: test_turn(turn_id, status),
+        },
+    ))
+}
+
+fn queue_messages(composer: &mut ComposerState, messages: &[&str]) {
+    for message in messages {
+        composer.set_text(*message);
+        assert!(composer.queue_current_message());
     }
 }
 
