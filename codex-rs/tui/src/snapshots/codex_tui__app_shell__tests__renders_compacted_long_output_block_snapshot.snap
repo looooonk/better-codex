@@ -5,17 +5,17 @@ expression: "render_shell(&shell, area)"
 
  ◆ BC                       gpt-5-codex ▾   default ▾   default ▾  ● thinking
 ──────────────────────────────────────────────────────────────────────────────
-
-       Status       │      Agents      │      Sessions      │      Help
- ───────────────────────────────────────━━━━━━━━━━━━━━━━━━━━─────────────────
- ▎◆ SESSIONS
- ▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-
-
- ◆ CONVERSATION
-   ▌        cargo build output line 159                                     ┃
-   ▌        cargo build output line 160                                     ┃
-
+                            │
+ ◆ CONVERSATION             │   Status   │  Agents   │  Sessions   │  Help
+   ▌ output ... 118 earlier │─────────────────────────━━━━━━━━━━━━━──────────
+   ▌        cargo build outp│▎◆ SESSIONS
+   ▌        cargo build outp│▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+   ▌        cargo build outp│▎+ New session  Ctrl+N
+                            │▎loading sessions
+                            │▎◆ THREAD
+                            │▎stage-one
+                            │▎id 01900000-0000-7000-8000-000000000001
+                            │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                                                             │
 │> Summarize the new shell architecture                                      │

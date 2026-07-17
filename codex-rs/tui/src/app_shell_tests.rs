@@ -264,6 +264,7 @@ fn renders_narrow_shell_snapshot() {
         /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
     );
 
+    assert_eq!(ShellView { shell: &shell }.input_area(area).width, 78);
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
@@ -406,13 +407,35 @@ fn renders_recovered_retry_status_snapshot() {
 }
 
 #[test]
-fn renders_compact_top_dashboard_snapshot() {
+fn renders_compact_dashboard_overlay_snapshot() {
     let shell = ShellState::snapshot_fixture();
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 48, /*height*/ 24,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_terminal_too_narrow_snapshot() {
+    let shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 39, /*height*/ 16,
+    );
+    let view = ShellView { shell: &shell };
+    let rendered = render_shell(&shell, area);
+
+    assert_eq!(
+        (
+            view.cursor_position(area),
+            view.input_area(area),
+            view.pointer_pane_at(area, Position::new(/*x*/ 1, /*y*/ 1)),
+        ),
+        (None, Rect::default(), None)
+    );
+    assert!(rendered.contains("Use a larger terminal window."));
+    assert!(!rendered.contains("CONVERSATION"));
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]
@@ -428,6 +451,7 @@ fn renders_short_shell_snapshot() {
 #[test]
 fn renders_output_blocks_as_inset_status_rectangles() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
     shell.transcript.clear();
     shell.streaming_assistant.clear();
     shell.push_tool_with_status("exec cargo test", ToolBlockStatus::Success);
@@ -3911,8 +3935,9 @@ async fn ctrl_d_hides_dashboard_and_reclaims_layout_snapshot() {
     assert!(!shell.dashboard_visible);
     assert!(!shell.session_list.focused);
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
     );
+    assert_eq!(ShellView { shell: &shell }.input_area(area).width, 78);
     let rendered = render_shell(&shell, area);
     assert!(rendered.contains("Panels"));
     assert!(!rendered.contains("Navigation"));
@@ -4351,6 +4376,38 @@ fn mouse_wheel_routes_to_the_pane_under_the_pointer() {
     shell.pending_elicitation = PendingElicitation::from_request(&mcp_url_elicitation_request());
     shell.handle_mouse_scroll(area, transcript_position, tui::MouseScrollDirection::Down);
     assert_eq!(shell.transcript_scroll, 3);
+}
+
+#[test]
+fn dashboard_overlay_takes_pointer_precedence_over_transcript_cards() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.clear_streaming_transcript();
+    shell.push_output_with_status("compile output", ToolBlockStatus::Running);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
+    );
+    let card_position = (area.x..area.right())
+        .rev()
+        .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
+        .find(|position| {
+            ShellView { shell: &shell }
+                .transcript_card_at(area, *position)
+                .is_some()
+        })
+        .expect("output card should extend beneath the dashboard overlay");
+
+    shell.dashboard_visible = true;
+    let view = ShellView { shell: &shell };
+
+    assert_eq!(
+        (
+            view.pointer_pane_at(area, card_position),
+            view.transcript_card_at(area, card_position),
+        ),
+        (Some(render::PointerPane::Dashboard), None)
+    );
 }
 
 #[test]
@@ -4942,7 +4999,7 @@ fn help_dashboard_shows_every_shortcut_at_78_by_24_snapshot() {
     let rendered = render_shell(&shell, area);
 
     assert!(
-        rendered.contains("Esc twice to exit"),
+        rendered.contains("Esc×2 exit"),
         "shortcut tail should remain visible:\n{rendered}"
     );
     insta::assert_snapshot!(rendered);

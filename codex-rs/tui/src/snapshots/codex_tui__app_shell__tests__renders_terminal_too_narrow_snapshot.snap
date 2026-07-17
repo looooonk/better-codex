@@ -1,0 +1,15 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+
+
+
+
+
+  ╭─────────────────────────────────╮
+  │◆ TERMINAL TOO NARROW            │
+  │Use a larger terminal window.    │
+  │Minimum width: 40 columns.       │
+  │                                 │
+  ╰─────────────────────────────────╯

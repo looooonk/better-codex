@@ -101,6 +101,7 @@ mod session_switch;
 mod sessions;
 mod settings;
 mod shell_command;
+mod shell_layout;
 mod startup;
 mod startup_availability_nux;
 mod startup_layout;
@@ -147,6 +148,7 @@ use settings::SettingsAction;
 use settings::SettingsState;
 use shell_command::PendingShellCommand;
 use shell_command::ShellCommand;
+use shell_layout::terminal_width_supported;
 pub(crate) use startup::StartupOnboardingOutcome;
 pub(crate) use startup::run_startup_onboarding;
 pub(crate) use startup_login::LoginOnboardingOutcome;
@@ -262,9 +264,8 @@ pub(crate) async fn run(
     // Paint the restored conversation and start accepting input before secondary dashboard data
     // completes. These lookups can cross a remote app-server boundary, so their results are
     // revision-guarded and applied from the event loop as they become available.
-    let has_initial_prompt = initial_prompt
-        .as_deref()
-        .is_some_and(|prompt| !prompt.trim().is_empty());
+    let mut pending_initial_prompt = initial_prompt.filter(|prompt| !prompt.trim().is_empty());
+    let has_initial_prompt = pending_initial_prompt.is_some();
     draw_shell(tui, &shell)?;
     shell.start_initial_dashboard_hydration(&app_server);
     if !has_initial_prompt {
@@ -272,34 +273,49 @@ pub(crate) async fn run(
     }
 
     let run_result: Result<ExitReason> = async {
-        if let Some(prompt) = initial_prompt.filter(|prompt| !prompt.trim().is_empty()) {
-            shell.submit_prompt(&mut app_server, prompt).await?;
-            // Goal reads and turn starts serialize by thread id. Start this lookup only after the
-            // initial turn is accepted so a slow goal read cannot delay the user's first prompt.
-            shell.start_initial_goal_hydration(&app_server);
-            tui.frame_requester().schedule_frame();
-        }
-
         let mut tui_events = tui.event_stream();
         let mut agent_history_poll = tokio::time::interval(AGENT_HISTORY_POLL_INTERVAL);
         agent_history_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut status_spinner = tokio::time::interval(STATUS_SPINNER_FRAME_INTERVAL);
         status_spinner.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let exit_reason = loop {
+            if terminal_width_supported(tui.terminal.size()?.width)
+                && let Some(prompt) = pending_initial_prompt.take()
+            {
+                shell.submit_prompt(&mut app_server, prompt).await?;
+                // Goal reads and turn starts serialize by thread id. Start this lookup only after
+                // the initial turn is accepted so a slow goal read cannot delay the first prompt.
+                shell.start_initial_goal_hydration(&app_server);
+                tui.frame_requester().schedule_frame();
+            }
             select! {
                 event = tui_events.next() => {
                     let Some(event) = event else {
                         break ExitReason::UserRequested;
                     };
+                    let size = tui.terminal.size()?;
+                    let accepts_interaction = terminal_width_supported(size.width);
                     match event {
                         TuiEvent::Key(key) => {
+                            if !accepts_interaction {
+                                let exits_warning = key.kind == KeyEventKind::Press
+                                    && (matches!(key.code, KeyCode::Esc)
+                                        || (key.modifiers.contains(KeyModifiers::CONTROL)
+                                            && matches!(key.code, KeyCode::Char('c'))));
+                                if exits_warning {
+                                    break ExitReason::UserRequested;
+                                }
+                                continue;
+                            }
                             if shell.handle_key(key, &config, &mut app_server).await? {
                                 break ExitReason::UserRequested;
                             }
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::MouseClick(position) => {
-                            let size = tui.terminal.size()?;
+                            if !accepts_interaction {
+                                continue;
+                            }
                             shell
                                 .handle_mouse_click(
                                     ratatui::layout::Rect::new(
@@ -316,6 +332,9 @@ pub(crate) async fn run(
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::MouseMove(position) => {
+                            if !accepts_interaction {
+                                continue;
+                            }
                             if shell.set_pointer_position(position) {
                                 tui.frame_requester().schedule_frame();
                             }
@@ -324,7 +343,9 @@ pub(crate) async fn run(
                             position,
                             direction,
                         } => {
-                            let size = tui.terminal.size()?;
+                            if !accepts_interaction {
+                                continue;
+                            }
                             shell.handle_mouse_scroll(
                                 ratatui::layout::Rect::new(
                                     /*x*/ 0,
@@ -338,6 +359,9 @@ pub(crate) async fn run(
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::Paste(text) => {
+                            if !accepts_interaction {
+                                continue;
+                            }
                             shell.insert_text(&text);
                             tui.frame_requester().schedule_frame();
                         }

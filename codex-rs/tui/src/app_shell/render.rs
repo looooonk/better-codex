@@ -6,7 +6,6 @@ use super::composer_render::composer_visual_cursor_line;
 use super::composer_render::wrapped_composer_lines;
 use super::dashboard::DashboardPanel;
 use super::dashboard::dashboard_panels;
-use super::dashboard_help;
 use super::design::body_rect_after_title;
 use super::design::fill_rect;
 use super::design::palette;
@@ -18,20 +17,20 @@ use super::header::HeaderView;
 use super::input_request_view::approval_lines;
 use super::input_request_view::elicitation_lines;
 use super::input_request_view::request_panel_hit;
-use super::input_request_view::request_panel_visual_line_count;
 use super::input_request_view::user_input_lines;
 use super::input_request_view::visible_request_panel_lines;
 use super::modal_view::render_modal;
 use super::navigation::DashboardRoute;
 use super::navigation::DashboardTabs;
 use super::settings::SettingsTabs;
+use super::shell_layout;
+use super::shell_layout::DashboardPlacement;
+use super::shell_layout::MIN_TERMINAL_WIDTH;
+use super::shell_layout::ShellLayout;
 use super::transcript_view::render_transcript;
 use crate::tui;
 use crossterm::cursor::SetCursorStyle;
 use ratatui::buffer::Buffer;
-use ratatui::layout::Constraint;
-use ratatui::layout::Direction;
-use ratatui::layout::Layout;
 use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
@@ -47,19 +46,7 @@ use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
 use unicode_width::UnicodeWidthStr;
 
-const DASHBOARD_COLLAPSE_WIDTH: u16 = 100;
-const DASHBOARD_MIN_WIDTH: u16 = 50;
-const DASHBOARD_MAX_WIDTH: u16 = 64;
 const DASHBOARD_PANEL_GAP: u16 = 1;
-const DASHBOARD_WIDTH_PERCENT: u16 = 34;
-const COMPACT_HEADER_HEIGHT: u16 = 2;
-const PADDED_HEADER_HEIGHT: u16 = 3;
-const PADDED_HEADER_MIN_SCREEN_HEIGHT: u16 = 17;
-const INPUT_PANEL_MIN_HEIGHT: u16 = 6;
-const INPUT_PANEL_MAX_HEIGHT: u16 = 12;
-const INPUT_REQUEST_PANEL_MIN_HEIGHT: u16 = 8;
-const PANE_CHROME_HEIGHT: u16 = 3;
-const TRANSCRIPT_MIN_HEIGHT: u16 = 5;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
     let height = tui.terminal.size()?.height;
@@ -96,11 +83,11 @@ pub(super) enum PointerPane {
 impl ShellView<'_> {
     pub(super) fn render(&self, area: Rect, buf: &mut Buffer) {
         fill_rect(buf, area, palette::BASE);
-        let layout = self.layout(area);
+        let Some(layout) = self.layout(area) else {
+            self.render_terminal_too_narrow(area, buf);
+            return;
+        };
         self.render_header(layout.header, buf);
-        if let Some(collapsed_dashboard) = layout.collapsed_dashboard {
-            self.render_collapsed_dashboard(collapsed_dashboard, buf);
-        }
         render_transcript(
             self.shell,
             layout.transcript,
@@ -156,15 +143,17 @@ impl ShellView<'_> {
             return None;
         }
 
+        let input = self.layout(area)?.input;
         composer_cursor_position(
-            self.input_area(area),
+            input,
             self.shell.composer.text(),
             self.shell.composer.cursor(),
         )
     }
 
     pub(super) fn input_area(&self, area: Rect) -> Rect {
-        self.layout(area).input
+        self.layout(area)
+            .map_or(Rect::default(), |layout| layout.input)
     }
 
     pub(super) fn transcript_card_at(
@@ -172,27 +161,29 @@ impl ShellView<'_> {
         area: Rect,
         position: Position,
     ) -> Option<super::transcript_view::TranscriptCardHit> {
-        super::transcript_view::transcript_card_at(
-            self.shell,
-            self.layout(area).transcript,
-            position,
-        )
+        let layout = self.layout(area)?;
+        if layout
+            .dashboard
+            .is_some_and(|dashboard| dashboard.area().contains(position))
+        {
+            return None;
+        }
+        super::transcript_view::transcript_card_at(self.shell, layout.transcript, position)
     }
 
     pub(super) fn pointer_pane_at(&self, area: Rect, position: Position) -> Option<PointerPane> {
-        let layout = self.layout(area);
+        let layout = self.layout(area)?;
         if layout.header.contains(position) {
             Some(PointerPane::Header)
+        } else if layout
+            .dashboard
+            .is_some_and(|dashboard| dashboard.area().contains(position))
+        {
+            Some(PointerPane::Dashboard)
         } else if layout.transcript.contains(position) {
             Some(PointerPane::Transcript)
         } else if layout.input.contains(position) {
             Some(PointerPane::Input)
-        } else if layout
-            .dashboard
-            .or(layout.collapsed_dashboard)
-            .is_some_and(|dashboard| dashboard.contains(position))
-        {
-            Some(PointerPane::Dashboard)
         } else {
             None
         }
@@ -203,8 +194,7 @@ impl ShellView<'_> {
         area: Rect,
         position: Position,
     ) -> Option<DashboardRoute> {
-        let layout = self.layout(area);
-        let dashboard = layout.dashboard.or(layout.collapsed_dashboard)?;
+        let dashboard = self.layout(area)?.dashboard?.area();
         let content = pane_content_rect(dashboard);
         if content.height == 0 {
             return None;
@@ -221,6 +211,7 @@ impl ShellView<'_> {
         area: Rect,
         position: Position,
     ) -> Option<HeaderControl> {
+        let header = self.layout(area)?.header;
         let effort = self
             .shell
             .reasoning_effort
@@ -245,7 +236,7 @@ impl ShellView<'_> {
                 .then_some(self.shell.status_spinner_frame),
             dashboard_visible: self.shell.dashboard_visible,
         }
-        .control_at(self.layout(area).header, position)
+        .control_at(header, position)
     }
 
     pub(super) fn dashboard_panel_position_at(
@@ -254,13 +245,12 @@ impl ShellView<'_> {
         position: Position,
         title: &str,
     ) -> Option<DashboardPanelPosition> {
-        let layout = self.layout(area);
-        let dashboard = layout.dashboard.or(layout.collapsed_dashboard)?;
-        let panel_gap = if layout.collapsed_dashboard.is_some() {
-            0
-        } else {
-            DASHBOARD_PANEL_GAP
+        let dashboard = self.layout(area)?.dashboard?;
+        let panel_gap = match dashboard {
+            DashboardPlacement::Sidebar(_) => DASHBOARD_PANEL_GAP,
+            DashboardPlacement::Overlay(_) => 0,
         };
+        let dashboard = dashboard.area();
         let content = pane_content_rect(dashboard);
         if !content.contains(position) {
             return None;
@@ -364,111 +354,8 @@ impl ShellView<'_> {
             })
     }
 
-    fn layout(&self, area: Rect) -> ShellLayout {
-        let header_height = if area.height >= PADDED_HEADER_MIN_SCREEN_HEIGHT {
-            PADDED_HEADER_HEIGHT
-        } else {
-            COMPACT_HEADER_HEIGHT
-        };
-        if !self.shell.dashboard_visible {
-            let input_height =
-                self.input_panel_height(area.height.saturating_sub(header_height), area.width);
-            let main = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(header_height),
-                    Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
-                    Constraint::Length(input_height),
-                ])
-                .split(area);
-            return ShellLayout {
-                header: main[0],
-                collapsed_dashboard: None,
-                transcript: main[1],
-                input: main[2],
-                dashboard: None,
-            };
-        }
-        if area.width < DASHBOARD_COLLAPSE_WIDTH {
-            let help_is_primary_content = self.shell.dashboard_route == DashboardRoute::Help;
-            let dense_help = help_is_primary_content
-                && dashboard_help::uses_dense_layout(usize::from(pane_content_rect(area).width));
-            let dashboard_height = if help_is_primary_content {
-                // Help is the active content, not incidental status. At short terminal heights,
-                // give the shortcut reference priority while retaining a visible composer.
-                area.height
-                    .saturating_sub(header_height)
-                    .min(if dense_help { 10 } else { 14 })
-            } else {
-                area.height
-                    .saturating_sub(
-                        header_height
-                            .saturating_add(INPUT_PANEL_MIN_HEIGHT)
-                            .saturating_add(TRANSCRIPT_MIN_HEIGHT),
-                    )
-                    .clamp(3, 14)
-            };
-            let input_height = self.input_panel_height(
-                area.height
-                    .saturating_sub(header_height)
-                    .saturating_sub(dashboard_height),
-                area.width,
-            );
-            let main = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(header_height),
-                    Constraint::Length(dashboard_height),
-                    Constraint::Min(if help_is_primary_content {
-                        0
-                    } else {
-                        TRANSCRIPT_MIN_HEIGHT
-                    }),
-                    Constraint::Length(input_height),
-                ])
-                .split(area);
-            return ShellLayout {
-                header: main[0],
-                collapsed_dashboard: Some(main[1]),
-                transcript: main[2],
-                input: main[3],
-                dashboard: None,
-            };
-        }
-
-        let dashboard_width = u32::from(area.width)
-            .saturating_mul(u32::from(DASHBOARD_WIDTH_PERCENT))
-            .div_ceil(100)
-            .try_into()
-            .unwrap_or(u16::MAX)
-            .clamp(DASHBOARD_MIN_WIDTH, DASHBOARD_MAX_WIDTH)
-            .min(area.width);
-        let horizontal = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(area.width.saturating_sub(dashboard_width)),
-                Constraint::Length(dashboard_width),
-            ])
-            .split(area);
-        let input_height = self.input_panel_height(
-            area.height.saturating_sub(header_height),
-            horizontal[0].width,
-        );
-        let main = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(header_height),
-                Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
-                Constraint::Length(input_height),
-            ])
-            .split(horizontal[0]);
-        ShellLayout {
-            header: main[0],
-            collapsed_dashboard: None,
-            transcript: main[1],
-            input: main[2],
-            dashboard: Some(horizontal[1]),
-        }
+    fn layout(&self, area: Rect) -> Option<ShellLayout> {
+        shell_layout::calculate(self.shell, area)
     }
 
     fn render_header(&self, area: Rect, buf: &mut Buffer) {
@@ -615,63 +502,8 @@ impl ShellView<'_> {
         self.render_titled_panel(area, &title, lines, palette::SURFACE, buf);
     }
 
-    fn input_panel_height(&self, available_height: u16, input_width: u16) -> u16 {
-        let request_lines = if let Some(pending) = &self.shell.pending_approval {
-            Some(approval_lines(pending))
-        } else if let Some(pending) = &self.shell.pending_elicitation {
-            Some(elicitation_lines(pending))
-        } else {
-            self.shell.pending_user_input.as_ref().map(|pending| {
-                user_input_lines(
-                    pending,
-                    self.shell.composer.text(),
-                    self.shell.composer.is_empty(),
-                )
-            })
-        };
-        if let Some(lines) = request_lines {
-            let body_width = pane_content_rect(Rect::new(
-                /*x*/ 0,
-                /*y*/ 0,
-                input_width,
-                available_height,
-            ))
-            .width;
-            let visual_line_count =
-                u16::try_from(request_panel_visual_line_count(&lines, body_width))
-                    .unwrap_or(u16::MAX);
-            let desired_height = visual_line_count
-                .saturating_add(PANE_CHROME_HEIGHT)
-                .clamp(INPUT_REQUEST_PANEL_MIN_HEIGHT, INPUT_PANEL_MAX_HEIGHT);
-            return desired_height.min(available_height);
-        }
-
-        let body_width = pane_content_rect(Rect::new(
-            /*x*/ 0,
-            /*y*/ 0,
-            input_width,
-            available_height,
-        ))
-        .width;
-        let composer_line_count = u16::try_from(
-            wrapped_composer_lines(
-                self.shell.composer.text(),
-                self.shell.composer.is_empty(),
-                usize::from(body_width).max(1),
-            )
-            .len(),
-        )
-        .unwrap_or(u16::MAX);
-        let desired_height = composer_line_count
-            .saturating_add(PANE_CHROME_HEIGHT)
-            .clamp(INPUT_PANEL_MIN_HEIGHT, INPUT_PANEL_MAX_HEIGHT);
-        let max_height = available_height
-            .saturating_sub(TRANSCRIPT_MIN_HEIGHT)
-            .max(available_height.min(INPUT_PANEL_MIN_HEIGHT));
-        desired_height.min(max_height)
-    }
-
-    fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
+    fn render_dashboard(&self, placement: DashboardPlacement, buf: &mut Buffer) {
+        let area = placement.area();
         fill_rect(buf, area, palette::DARK);
         for y in area.y..area.bottom() {
             if let Some(cell) = buf.cell_mut((area.x, y)) {
@@ -687,15 +519,11 @@ impl ShellView<'_> {
         let content = pane_content_rect(area);
         let width = usize::from(content.width);
         let panels = dashboard_panels(self.shell, width);
-
-        self.render_dashboard_panels(content, &panels, DASHBOARD_PANEL_GAP, buf);
-    }
-
-    fn render_collapsed_dashboard(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, palette::DARK);
-        let content = pane_content_rect(area);
-        let panels = dashboard_panels(self.shell, usize::from(content.width));
-        self.render_dashboard_panels(content, &panels, /*panel_gap*/ 0, buf);
+        let panel_gap = match placement {
+            DashboardPlacement::Sidebar(_) => DASHBOARD_PANEL_GAP,
+            DashboardPlacement::Overlay(_) => 0,
+        };
+        self.render_dashboard_panels(content, &panels, panel_gap, buf);
     }
 
     fn render_dashboard_panels(
@@ -857,6 +685,18 @@ impl ShellView<'_> {
         (!blocked).then_some(self.shell.pointer_position).flatten()
     }
 
+    fn render_terminal_too_narrow(&self, area: Rect, buf: &mut Buffer) {
+        render_modal(
+            area,
+            "Terminal too narrow",
+            vec![
+                "Use a larger terminal window.".into(),
+                Line::from(format!("Minimum width: {MIN_TERMINAL_WIDTH} columns.").dim()),
+            ],
+            buf,
+        );
+    }
+
     fn render_titled_panel(
         &self,
         area: Rect,
@@ -892,13 +732,4 @@ impl ShellView<'_> {
         let visible_lines = visible_request_panel_lines(&lines, body.width, body.height);
         self.render_titled_panel(area, title, visible_lines, background, buf);
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct ShellLayout {
-    header: Rect,
-    collapsed_dashboard: Option<Rect>,
-    transcript: Rect,
-    input: Rect,
-    dashboard: Option<Rect>,
 }

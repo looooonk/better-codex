@@ -5,21 +5,21 @@ expression: "render_shell(&shell, area)"
 
  ◆ BC                       gpt-5-codex ▾   default ▾   default ▾  ● thinking
 ──────────────────────────────────────────────────────────────────────────────
-
-       Status       │      Agents      │      Sessions      │      Help
- ───────────────────────────────────────━━━━━━━━━━━━━━━━━━━━─────────────────
- ▎◆ SESSIONS
- ▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎+ New session  Ctrl+N
- ▎loading sessions
- ▎◆ THREAD
- ▎stage-one
-
-
- ◆ CONVERSATION
-                                                                            ┃
- ▎ CODEX  The new shell owns the fullscreen surface.                        ┃
-
+                            │
+ ◆ CONVERSATION             │   Status   │  Agents   │  Sessions   │  Help
+ ▎ YOU  Create a divergent s│─────────────────────────━━━━━━━━━━━━━──────────
+                            │▎◆ SESSIONS
+ ▎ CODEX  Started a fullscre│▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ PLAN  1. Build shell     │▎+ New session  Ctrl+N
+         2. Wire transcript │▎loading sessions
+         3. Render dashboard│▎◆ THREAD
+                            │▎stage-one
+ ▌ tool exec just test -p co│▎id 01900000-0000-7000-8000-000000000001
+                            │▎resume, fork, archive, delete in session list
+ ▌ edited 3 files +128 -24  │
+                            │
+ ▎ CODEX  The new shell owns│
+                            │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                                                             │
 │> Summarize the new shell architecture                                      │
