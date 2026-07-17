@@ -130,6 +130,25 @@ fn renders_first_stage_shell_snapshot() {
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
+#[tokio::test]
+async fn renders_aggregated_backend_lag_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_transcript();
+    shell.dashboard_visible = false;
+    shell.push_user("Run just test -p codex-tui.");
+    let mut backend = RecordingBackend::default();
+    shell
+        .handle_app_server_event(&mut backend, AppServerEvent::Lagged { skipped: 42 })
+        .await
+        .expect("lag event should be handled");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
 #[test]
 fn renders_multiline_composer_growth_snapshot() {
     let mut shell = ShellState::snapshot_fixture();

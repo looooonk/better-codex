@@ -159,62 +159,44 @@ enum ForwardEventResult {
     DisableStream,
 }
 
+#[derive(Debug, Default, PartialEq, Eq)]
+struct DroppedEventCounts {
+    total: usize,
+    reportable: usize,
+}
+
 /// Forwards a single in-process event to the consumer, respecting the
 /// lossless/best-effort split.
 ///
 /// Lossless events (transcript deltas, item/turn completions) block until the
-/// consumer drains capacity. Best-effort events use `try_send` and increment
-/// `skipped_events` on failure. When a lag marker needs to be flushed before a
-/// lossless event, the flush itself blocks so the marker is never lost.
+/// consumer drains capacity. Best-effort events use `try_send` and accumulate
+/// failures. Command-output delta drops are cleared at the next lossless boundary;
+/// other drops produce one aggregate lag marker at that boundary.
 ///
 /// If a dropped event is a `ServerRequest`, `reject_server_request` is called
 /// so the server does not wait for a response that will never come.
 async fn forward_in_process_event<F>(
     event_tx: &mpsc::Sender<InProcessServerEvent>,
-    skipped_events: &mut usize,
+    dropped_events: &mut DroppedEventCounts,
     event: InProcessServerEvent,
     mut reject_server_request: F,
 ) -> ForwardEventResult
 where
     F: FnMut(ServerRequest),
 {
-    if *skipped_events > 0 {
-        if event_requires_delivery(&event) {
-            // Surface lag before the lossless event, but do not let the lag marker itself cause
-            // us to drop the transcript/completion notification the caller is blocked on.
-            if event_tx
+    if event_requires_delivery(&event) {
+        if dropped_events.reportable > 0
+            && event_tx
                 .send(InProcessServerEvent::Lagged {
-                    skipped: *skipped_events,
+                    skipped: dropped_events.total,
                 })
                 .await
                 .is_err()
-            {
-                return ForwardEventResult::DisableStream;
-            }
-            *skipped_events = 0;
-        } else {
-            match event_tx.try_send(InProcessServerEvent::Lagged {
-                skipped: *skipped_events,
-            }) {
-                Ok(()) => {
-                    *skipped_events = 0;
-                }
-                Err(mpsc::error::TrySendError::Full(_)) => {
-                    *skipped_events = skipped_events.saturating_add(1);
-                    warn!("dropping in-process app-server event because consumer queue is full");
-                    if let InProcessServerEvent::ServerRequest(request) = event {
-                        reject_server_request(request);
-                    }
-                    return ForwardEventResult::Continue;
-                }
-                Err(mpsc::error::TrySendError::Closed(_)) => {
-                    return ForwardEventResult::DisableStream;
-                }
-            }
+        {
+            return ForwardEventResult::DisableStream;
         }
-    }
+        *dropped_events = DroppedEventCounts::default();
 
-    if event_requires_delivery(&event) {
         // Block until the consumer catches up for transcript/completion notifications; this
         // preserves the visible assistant output even when the queue is otherwise saturated.
         if event_tx.send(event).await.is_err() {
@@ -226,8 +208,20 @@ where
     match event_tx.try_send(event) {
         Ok(()) => ForwardEventResult::Continue,
         Err(mpsc::error::TrySendError::Full(event)) => {
-            *skipped_events = skipped_events.saturating_add(1);
-            warn!("dropping in-process app-server event because consumer queue is full");
+            dropped_events.total = dropped_events.total.saturating_add(1);
+            if matches!(
+                &event,
+                InProcessServerEvent::ServerNotification(
+                    ServerNotification::CommandExecutionOutputDelta(_)
+                )
+            ) {
+                tracing::debug!(
+                    "dropping in-process command output because consumer queue is full"
+                );
+            } else {
+                dropped_events.reportable = dropped_events.reportable.saturating_add(1);
+                warn!("dropping in-process app-server event because consumer queue is full");
+            }
             if let InProcessServerEvent::ServerRequest(request) = event {
                 reject_server_request(request);
             }
@@ -466,7 +460,7 @@ impl InProcessAppServerClient {
 
         let worker_handle = tokio::spawn(async move {
             let mut event_stream_enabled = true;
-            let mut skipped_events = 0usize;
+            let mut dropped_events = DroppedEventCounts::default();
             loop {
                 tokio::select! {
                     command = command_rx.recv() => {
@@ -542,7 +536,7 @@ impl InProcessAppServerClient {
 
                         match forward_in_process_event(
                             &event_tx,
-                            &mut skipped_events,
+                            &mut dropped_events,
                             event,
                             |request| {
                                 let _ = request_sender.fail_server_request(
@@ -1346,22 +1340,30 @@ mod tests {
             .await
             .expect("initial event should enqueue");
 
-        let mut skipped_events = 0usize;
-        let result = forward_in_process_event(
-            &event_tx,
-            &mut skipped_events,
-            InProcessServerEvent::ServerNotification(command_execution_output_delta_notification(
-                "stdout-2",
-            )),
-            |_| {},
-        )
-        .await;
-        assert_eq!(result, ForwardEventResult::Continue);
-        assert_eq!(skipped_events, 1);
+        let mut dropped_events = DroppedEventCounts::default();
+        for delta in ["stdout-2", "stdout-3"] {
+            let result = forward_in_process_event(
+                &event_tx,
+                &mut dropped_events,
+                InProcessServerEvent::ServerNotification(
+                    command_execution_output_delta_notification(delta),
+                ),
+                |_| {},
+            )
+            .await;
+            assert_eq!(result, ForwardEventResult::Continue);
+        }
+        assert_eq!(
+            dropped_events,
+            DroppedEventCounts {
+                total: 2,
+                reportable: 0,
+            }
+        );
 
         let receive_task = tokio::spawn(async move {
             let mut events = Vec::new();
-            for _ in 0..5 {
+            for _ in 0..4 {
                 events.push(
                     timeout(Duration::from_secs(2), event_rx.recv())
                         .await
@@ -1379,14 +1381,14 @@ mod tests {
         ] {
             let result = forward_in_process_event(
                 &event_tx,
-                &mut skipped_events,
+                &mut dropped_events,
                 InProcessServerEvent::ServerNotification(notification),
                 |_| {},
             )
             .await;
             assert_eq!(result, ForwardEventResult::Continue);
         }
-        assert_eq!(skipped_events, 0);
+        assert_eq!(dropped_events, DroppedEventCounts::default());
 
         let events = receive_task
             .await
@@ -1399,16 +1401,12 @@ mod tests {
         ));
         assert!(matches!(
             &events[1],
-            InProcessServerEvent::Lagged { skipped: 1 }
-        ));
-        assert!(matches!(
-            &events[2],
             InProcessServerEvent::ServerNotification(ServerNotification::AgentMessageDelta(
                 notification
             )) if notification.delta == "hello"
         ));
         assert!(matches!(
-            &events[3],
+            &events[2],
             InProcessServerEvent::ServerNotification(ServerNotification::ItemCompleted(
                 notification
             )) if matches!(
@@ -1417,10 +1415,124 @@ mod tests {
             )
         ));
         assert!(matches!(
-            &events[4],
+            &events[3],
             InProcessServerEvent::ServerNotification(ServerNotification::TurnCompleted(
                 notification
             )) if notification.turn.status == codex_app_server_protocol::TurnStatus::Completed
+        ));
+    }
+
+    #[tokio::test]
+    async fn forward_in_process_event_aggregates_reportable_lag_until_lossless_event() {
+        let (event_tx, mut event_rx) = mpsc::channel(1);
+        event_tx
+            .send(InProcessServerEvent::ServerNotification(
+                command_execution_output_delta_notification("stdout-1"),
+            ))
+            .await
+            .expect("initial event should enqueue");
+
+        let mut dropped_events = DroppedEventCounts::default();
+        for notification in [
+            command_execution_output_delta_notification("stdout-2"),
+            ServerNotification::AccountUpdated(AccountUpdatedNotification {
+                auth_mode: None,
+                plan_type: None,
+            }),
+            ServerNotification::AccountUpdated(AccountUpdatedNotification {
+                auth_mode: None,
+                plan_type: None,
+            }),
+        ] {
+            let result = forward_in_process_event(
+                &event_tx,
+                &mut dropped_events,
+                InProcessServerEvent::ServerNotification(notification),
+                |_| {},
+            )
+            .await;
+            assert_eq!(result, ForwardEventResult::Continue);
+        }
+        assert_eq!(
+            dropped_events,
+            DroppedEventCounts {
+                total: 3,
+                reportable: 2,
+            }
+        );
+
+        let initial = event_rx
+            .recv()
+            .await
+            .expect("initial event should remain queued");
+        assert!(matches!(
+            initial,
+            InProcessServerEvent::ServerNotification(
+                ServerNotification::CommandExecutionOutputDelta(notification)
+            ) if notification.delta == "stdout-1"
+        ));
+
+        let result = forward_in_process_event(
+            &event_tx,
+            &mut dropped_events,
+            InProcessServerEvent::ServerNotification(command_execution_output_delta_notification(
+                "stdout-3",
+            )),
+            |_| {},
+        )
+        .await;
+        assert_eq!(result, ForwardEventResult::Continue);
+        assert_eq!(
+            dropped_events,
+            DroppedEventCounts {
+                total: 3,
+                reportable: 2,
+            }
+        );
+        let recovered = event_rx
+            .recv()
+            .await
+            .expect("recovered capacity should carry useful output");
+        assert!(matches!(
+            recovered,
+            InProcessServerEvent::ServerNotification(
+                ServerNotification::CommandExecutionOutputDelta(notification)
+            ) if notification.delta == "stdout-3"
+        ));
+
+        let receive_task = tokio::spawn(async move {
+            let lagged = event_rx
+                .recv()
+                .await
+                .expect("aggregate lag marker should arrive");
+            let lossless = event_rx
+                .recv()
+                .await
+                .expect("lossless event should arrive after the marker");
+            (lagged, lossless)
+        });
+        let result = forward_in_process_event(
+            &event_tx,
+            &mut dropped_events,
+            InProcessServerEvent::ServerNotification(agent_message_delta_notification("hello")),
+            |_| {},
+        )
+        .await;
+        assert_eq!(result, ForwardEventResult::Continue);
+        assert_eq!(dropped_events, DroppedEventCounts::default());
+
+        let (lagged, lossless) = receive_task
+            .await
+            .expect("receiver task should join successfully");
+        assert!(matches!(
+            lagged,
+            InProcessServerEvent::Lagged { skipped: 3 }
+        ));
+        assert!(matches!(
+            lossless,
+            InProcessServerEvent::ServerNotification(ServerNotification::AgentMessageDelta(
+                notification
+            )) if notification.delta == "hello"
         ));
     }
 
