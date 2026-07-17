@@ -22,6 +22,7 @@ use ratatui::layout::Position;
 use ratatui::layout::Rect;
 
 const TRANSCRIPT_WHEEL_SCROLL_STEP: usize = 3;
+const DASHBOARD_WHEEL_SCROLL_STEP: usize = 3;
 
 fn modal_click_key(
     area: Rect,
@@ -384,34 +385,56 @@ impl ShellState {
         position: Position,
         direction: MouseScrollDirection,
     ) {
-        let title = match self.dashboard_route {
-            DashboardRoute::Sessions => "Sessions",
-            DashboardRoute::Agents => "Agents",
-            DashboardRoute::Status => "Settings",
-            DashboardRoute::Help => return,
+        let nested_panel = match self.dashboard_route {
+            DashboardRoute::Sessions => Some("Sessions"),
+            DashboardRoute::Agents => Some("Agents"),
+            DashboardRoute::Status => Some("Settings"),
+            DashboardRoute::Help => None,
         };
-        if (ShellView { shell: self })
-            .dashboard_panel_position_at(area, position, title)
-            .is_none()
-        {
+        let over_nested_panel = nested_panel.is_some_and(|title| {
+            (ShellView { shell: self })
+                .dashboard_panel_position_at(area, position, title)
+                .is_some()
+        });
+        if over_nested_panel {
+            match (self.dashboard_route, direction) {
+                (DashboardRoute::Sessions, MouseScrollDirection::Up)
+                    if !self.session_list.renaming() =>
+                {
+                    self.session_list.move_selection_up()
+                }
+                (DashboardRoute::Sessions, MouseScrollDirection::Down)
+                    if !self.session_list.renaming() =>
+                {
+                    self.session_list.move_selection_down()
+                }
+                (DashboardRoute::Agents, MouseScrollDirection::Up) => {
+                    self.agent_activity.move_selection_up()
+                }
+                (DashboardRoute::Agents, MouseScrollDirection::Down) => {
+                    self.agent_activity.move_selection_down()
+                }
+                (DashboardRoute::Status, MouseScrollDirection::Up) if !self.settings.editing() => {
+                    self.settings.move_up()
+                }
+                (DashboardRoute::Status, MouseScrollDirection::Down)
+                    if !self.settings.editing() =>
+                {
+                    self.settings.move_down()
+                }
+                (DashboardRoute::Sessions | DashboardRoute::Status, _)
+                | (DashboardRoute::Help, _) => {}
+            }
             return;
         }
-        match (self.dashboard_route, direction) {
-            (DashboardRoute::Sessions, MouseScrollDirection::Up) => {
-                self.session_list.move_selection_up()
-            }
-            (DashboardRoute::Sessions, MouseScrollDirection::Down) => {
-                self.session_list.move_selection_down()
-            }
-            (DashboardRoute::Agents, MouseScrollDirection::Up) => {
-                self.agent_activity.move_selection_up()
-            }
-            (DashboardRoute::Agents, MouseScrollDirection::Down) => {
-                self.agent_activity.move_selection_down()
-            }
-            (DashboardRoute::Status, MouseScrollDirection::Up) => self.settings.move_up(),
-            (DashboardRoute::Status, MouseScrollDirection::Down) => self.settings.move_down(),
-            (DashboardRoute::Help, _) => {}
-        }
+
+        let max_scroll = (ShellView { shell: self }).dashboard_scroll_max(area);
+        let scroll = self.dashboard_scroll.get().min(max_scroll);
+        self.dashboard_scroll.set(match direction {
+            MouseScrollDirection::Up => scroll.saturating_sub(DASHBOARD_WHEEL_SCROLL_STEP),
+            MouseScrollDirection::Down => scroll
+                .saturating_add(DASHBOARD_WHEEL_SCROLL_STEP)
+                .min(max_scroll),
+        });
     }
 }

@@ -1703,6 +1703,7 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
 
+    shell.dashboard_scroll.set(8);
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::SwitchModel);
     shell
@@ -1711,9 +1712,11 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
         .expect("model action should open settings");
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Status);
+    assert_eq!(shell.dashboard_scroll.get(), 0);
     assert!(shell.settings.focused);
     assert!(shell.selector.is_some());
 
+    shell.dashboard_scroll.set(8);
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::ChangePermissions);
     shell
@@ -1722,6 +1725,7 @@ async fn command_palette_opens_native_model_and_permissions_settings() {
         .expect("permissions action should open settings");
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Status);
+    assert_eq!(shell.dashboard_scroll.get(), 0);
     assert!(shell.settings.focused);
     assert!(shell.selector.is_some());
     let rendered = render_shell(
@@ -1747,6 +1751,8 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
         "palette preview",
     )]);
 
+    shell.dashboard_route = DashboardRoute::Sessions;
+    shell.dashboard_scroll.set(8);
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::ResumeThread);
     shell
@@ -1756,6 +1762,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
     finish_session_hydration(&mut shell, &backend).await;
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
+    assert_eq!(shell.dashboard_scroll.get(), 0);
     assert!(shell.session_list.focused);
     assert!(!shell.settings.focused);
     assert!(shell.session_list.selected_is_current(session_id));
@@ -1766,6 +1773,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
         "resume action should leave a keyboard hint"
     );
 
+    shell.dashboard_scroll.set(8);
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::ForkThread);
     shell
@@ -1775,6 +1783,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
     finish_session_hydration(&mut shell, &backend).await;
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
+    assert_eq!(shell.dashboard_scroll.get(), 0);
     assert!(shell.session_list.focused);
     assert!(
         shell.transcript.iter().any(|line| {
@@ -4444,37 +4453,138 @@ fn settings_tab_hover_uses_content_only_geometry() {
 }
 
 #[test]
-fn mouse_wheel_routes_to_the_pane_under_the_pointer() {
-    let mut shell = ShellState::snapshot_fixture();
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
-    );
-    for index in 0..40 {
-        shell.push_assistant(format!("scrollable response {index}"));
-    }
-    render_shell(&shell, area);
-    let transcript_position = (area.x..area.right())
-        .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
-        .find(|position| {
-            ShellView { shell: &shell }.pointer_pane_at(area, *position)
+fn mouse_wheel_routes_to_the_pane_under_the_pointer_in_both_layouts() {
+    for area in [
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 16,
+        ),
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 16,
+        ),
+    ] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.dashboard_route = DashboardRoute::Status;
+        for index in 0..40 {
+            shell.push_assistant(format!("scrollable response {index}"));
+        }
+        render_shell(&shell, area);
+        let transcript = position_in(area, |position| {
+            ShellView { shell: &shell }.pointer_pane_at(area, position)
                 == Some(render::PointerPane::Transcript)
-        })
-        .expect("transcript pane should exist");
+        });
+        let dashboard = position_in(area, |position| {
+            ShellView { shell: &shell }.dashboard_route_at(area, position)
+                == Some(DashboardRoute::Status)
+        });
 
-    shell.handle_mouse_scroll(area, transcript_position, tui::MouseScrollDirection::Up);
-    assert_eq!(shell.transcript_scroll, 3);
+        shell.handle_mouse_scroll(area, transcript, tui::MouseScrollDirection::Up);
+        shell.handle_mouse_scroll(area, dashboard, tui::MouseScrollDirection::Down);
+        let input = ShellView { shell: &shell }.input_area(area);
+        shell.handle_mouse_scroll(
+            area,
+            Position::new(input.x, input.y),
+            tui::MouseScrollDirection::Down,
+        );
 
-    let input = ShellView { shell: &shell }.input_area(area);
-    shell.handle_mouse_scroll(
-        area,
-        Position::new(input.x, input.y),
-        tui::MouseScrollDirection::Down,
+        assert_eq!(
+            (shell.transcript_scroll, shell.dashboard_scroll.get()),
+            (3, 3)
+        );
+        assert_eq!(
+            ShellView { shell: &shell }.pointer_pane_at(area, dashboard),
+            Some(render::PointerPane::Dashboard)
+        );
+
+        shell.pending_elicitation =
+            PendingElicitation::from_request(&mcp_url_elicitation_request());
+        shell.handle_mouse_scroll(area, transcript, tui::MouseScrollDirection::Down);
+        assert_eq!(
+            (shell.transcript_scroll, shell.dashboard_scroll.get()),
+            (3, 3)
+        );
+    }
+}
+
+#[test]
+fn scrolled_dashboard_keeps_tabs_fixed_in_both_layouts_snapshot() {
+    for area in [
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 16,
+        ),
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 16,
+        ),
+    ] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.dashboard_route = DashboardRoute::Status;
+        let before = render_shell(&shell, area);
+        let tab = position_in(area, |position| {
+            ShellView { shell: &shell }.dashboard_route_at(area, position)
+                == Some(DashboardRoute::Status)
+        });
+        let fixed_tabs = before
+            .lines()
+            .skip(usize::from(tab.y))
+            .take(2)
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
+
+        for _ in 0..20 {
+            shell.handle_mouse_scroll(area, tab, tui::MouseScrollDirection::Down);
+        }
+        let bottom = shell.dashboard_scroll.get();
+        assert!(bottom > 0);
+        shell.handle_mouse_scroll(area, tab, tui::MouseScrollDirection::Down);
+        assert_eq!(shell.dashboard_scroll.get(), bottom);
+
+        let after = render_shell(&shell, area);
+        assert_eq!(
+            after
+                .lines()
+                .skip(usize::from(tab.y))
+                .take(2)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            fixed_tabs
+        );
+        assert!(!after.contains("SETTINGS"), "{after}");
+        assert!(after.contains("TOKENS"), "{after}");
+        if area.width == 100 {
+            insta::assert_snapshot!("scrolled_dashboard_sidebar", after);
+        }
+
+        for _ in 0..20 {
+            shell.handle_mouse_scroll(area, tab, tui::MouseScrollDirection::Up);
+        }
+        assert_eq!(shell.dashboard_scroll.get(), 0);
+    }
+}
+
+#[test]
+fn dashboard_scroll_reclamps_when_the_viewport_grows() {
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 16,
     );
-    assert_eq!(shell.transcript_scroll, 3);
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    let tab = position_in(area, |position| {
+        ShellView { shell: &shell }.dashboard_route_at(area, position)
+            == Some(DashboardRoute::Status)
+    });
 
-    shell.pending_elicitation = PendingElicitation::from_request(&mcp_url_elicitation_request());
-    shell.handle_mouse_scroll(area, transcript_position, tui::MouseScrollDirection::Down);
-    assert_eq!(shell.transcript_scroll, 3);
+    for _ in 0..20 {
+        shell.handle_mouse_scroll(area, tab, tui::MouseScrollDirection::Down);
+    }
+    assert!(shell.dashboard_scroll.get() > 0);
+
+    render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 64,
+        ),
+    );
+
+    assert_eq!(shell.dashboard_scroll.get(), 0);
 }
 
 #[test]
@@ -4510,29 +4620,176 @@ fn dashboard_overlay_takes_pointer_precedence_over_transcript_cards() {
 }
 
 #[test]
-fn mouse_wheel_moves_only_the_hovered_dashboard_selection() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.dashboard_route = DashboardRoute::Status;
-    let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
-    );
-    let position = (area.x..area.right())
-        .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
-        .find(|position| {
+fn mouse_wheel_uses_scrolled_dashboard_panel_geometry() {
+    for area in [
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 16,
+        ),
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 16,
+        ),
+    ] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.dashboard_route = DashboardRoute::Status;
+        render_shell(&shell, area);
+        let tab = position_in(area, |position| {
+            ShellView { shell: &shell }.dashboard_route_at(area, position)
+                == Some(DashboardRoute::Status)
+        });
+        shell.handle_mouse_scroll(area, tab, tui::MouseScrollDirection::Down);
+        let outer_scroll = shell.dashboard_scroll.get();
+        assert!(outer_scroll > 0);
+        render_shell(&shell, area);
+        let settings = position_in(area, |position| {
             ShellView { shell: &shell }
-                .dashboard_panel_position_at(area, *position, "Settings")
+                .dashboard_panel_position_at(area, position, "Settings")
                 .is_some()
-        })
-        .expect("settings panel should be visible");
+        });
 
-    assert_eq!(shell.settings.selected_action(), SettingsAction::Model);
-    shell.handle_mouse_scroll(area, position, tui::MouseScrollDirection::Down);
+        shell.handle_mouse_scroll(area, settings, tui::MouseScrollDirection::Down);
 
-    assert_eq!(
-        shell.settings.selected_action(),
-        SettingsAction::ReasoningEffort
-    );
-    assert!(!shell.settings.focused);
+        assert_eq!(
+            (
+                shell.settings.selected_action(),
+                shell.dashboard_scroll.get(),
+            ),
+            (SettingsAction::ReasoningEffort, outer_scroll)
+        );
+        for _ in 0..20 {
+            shell.handle_mouse_scroll(area, settings, tui::MouseScrollDirection::Down);
+        }
+        let last_action = shell.settings.selected_action();
+        shell.handle_mouse_scroll(area, settings, tui::MouseScrollDirection::Down);
+        assert_eq!(
+            (
+                shell.settings.selected_action(),
+                shell.dashboard_scroll.get()
+            ),
+            (last_action, outer_scroll)
+        );
+        shell.settings.start_edit(last_action, "draft".to_string());
+        shell.handle_mouse_scroll(area, settings, tui::MouseScrollDirection::Up);
+        assert_eq!(
+            (
+                shell.settings.selected_action(),
+                shell.dashboard_scroll.get(),
+                shell.settings.editing(),
+            ),
+            (last_action, outer_scroll, true)
+        );
+        assert!(!shell.settings.focused);
+        shell.set_dashboard_route(DashboardRoute::Help);
+        assert_eq!(shell.dashboard_scroll.get(), 0);
+    }
+}
+
+#[test]
+fn session_and_agent_wheels_stay_nested_in_both_layouts() {
+    for area in [
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 16,
+        ),
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 16,
+        ),
+    ] {
+        let mut sessions = ShellState::snapshot_fixture();
+        sessions.dashboard_route = DashboardRoute::Sessions;
+        sessions.session_list.replace_threads(
+            (1..=10)
+                .map(|index| {
+                    thread_fixture(
+                        test_thread_id(&format!("01900000-0000-7000-8000-{index:012x}")),
+                        Some(&format!("Session {index:02}")),
+                        "nested wheel fixture",
+                    )
+                })
+                .collect(),
+        );
+        render_shell(&sessions, area);
+        let tab = position_in(area, |position| {
+            ShellView { shell: &sessions }.dashboard_route_at(area, position)
+                == Some(DashboardRoute::Sessions)
+        });
+        sessions.handle_mouse_scroll(area, tab, tui::MouseScrollDirection::Down);
+        let outer_scroll = sessions.dashboard_scroll.get();
+        render_shell(&sessions, area);
+        let body = position_in(area, |position| {
+            ShellView { shell: &sessions }
+                .dashboard_panel_position_at(area, position, "Sessions")
+                .is_some()
+        });
+        sessions.handle_mouse_scroll(area, body, tui::MouseScrollDirection::Down);
+        assert_eq!(
+            (
+                sessions.session_list.selected_title(),
+                sessions.dashboard_scroll.get(),
+            ),
+            (Some("Session 02"), outer_scroll)
+        );
+        for _ in 0..20 {
+            sessions.handle_mouse_scroll(area, body, tui::MouseScrollDirection::Down);
+        }
+        sessions.handle_mouse_scroll(area, body, tui::MouseScrollDirection::Down);
+        assert_eq!(
+            (
+                sessions.session_list.selected_title(),
+                sessions.dashboard_scroll.get(),
+            ),
+            (Some("Session 10"), outer_scroll)
+        );
+        sessions.session_list.start_rename();
+        sessions.handle_mouse_scroll(area, body, tui::MouseScrollDirection::Up);
+        assert_eq!(
+            (
+                sessions.session_list.selected_title(),
+                sessions.dashboard_scroll.get(),
+                sessions.session_list.renaming(),
+            ),
+            (Some("Session 10"), outer_scroll, true)
+        );
+
+        let mut agents = ShellState::snapshot_fixture();
+        agents.dashboard_route = DashboardRoute::Agents;
+        for index in 0..4 {
+            agents
+                .agent_activity
+                .ensure_thread(&format!("agent-{index}"));
+        }
+        agents.agent_activity.select_thread("agent-0");
+        render_shell(&agents, area);
+        let tab = position_in(area, |position| {
+            ShellView { shell: &agents }.dashboard_route_at(area, position)
+                == Some(DashboardRoute::Agents)
+        });
+        agents.handle_mouse_scroll(area, tab, tui::MouseScrollDirection::Down);
+        let outer_scroll = agents.dashboard_scroll.get();
+        render_shell(&agents, area);
+        let body = position_in(area, |position| {
+            ShellView { shell: &agents }
+                .dashboard_panel_position_at(area, position, "Agents")
+                .is_some()
+        });
+        agents.handle_mouse_scroll(area, body, tui::MouseScrollDirection::Down);
+        assert_eq!(
+            (
+                agents.agent_activity.selected_thread_id(),
+                agents.dashboard_scroll.get(),
+            ),
+            (Some("agent-1"), outer_scroll)
+        );
+        for _ in 0..20 {
+            agents.handle_mouse_scroll(area, body, tui::MouseScrollDirection::Down);
+        }
+        agents.handle_mouse_scroll(area, body, tui::MouseScrollDirection::Down);
+        assert_eq!(
+            (
+                agents.agent_activity.selected_thread_id(),
+                agents.dashboard_scroll.get(),
+            ),
+            (Some("agent-3"), outer_scroll)
+        );
+    }
 }
 
 #[tokio::test]
@@ -7387,6 +7644,13 @@ fn file_change_detail_caps_file_rows() {
 fn render_shell(shell: &ShellState, area: Rect) -> String {
     let buf = render_shell_buffer(shell, area);
     buffer_contents(&buf, area)
+}
+
+fn position_in(area: Rect, predicate: impl Fn(Position) -> bool) -> Position {
+    (area.x..area.right())
+        .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
+        .find(|position| predicate(*position))
+        .expect("matching shell position should exist")
 }
 
 fn rendered_text_position(rendered: &str, needle: &str) -> Position {

@@ -72,6 +72,7 @@ mod composer_render;
 mod dashboard;
 mod dashboard_help;
 mod dashboard_rate_limits;
+mod dashboard_view;
 mod dashboard_workspace;
 mod design;
 mod diff_model;
@@ -692,6 +693,7 @@ struct ShellState {
     codex_home: std::path::PathBuf,
     dashboard_route: DashboardRoute,
     dashboard_visible: bool,
+    dashboard_scroll: Cell<usize>,
     pointer_position: Option<ratatui::layout::Position>,
     agents_focused: bool,
     composer: ComposerState,
@@ -794,6 +796,7 @@ impl ShellState {
             codex_home,
             dashboard_route: DashboardRoute::Status,
             dashboard_visible: true,
+            dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,
             composer: ComposerState::default(),
@@ -1027,6 +1030,9 @@ impl ShellState {
             self.session_list.focused = route_already_visible && route == DashboardRoute::Sessions;
             self.settings.focused = route_already_visible && route == DashboardRoute::Status;
             self.agents_focused = route_already_visible && route == DashboardRoute::Agents;
+            if self.dashboard_focused() {
+                self.dashboard_scroll.set(0);
+            }
             if route == DashboardRoute::Sessions {
                 self.start_session_list_refresh(app_server);
             }
@@ -1155,6 +1161,7 @@ impl ShellState {
                         DashboardRoute::Help => {}
                     }
                     if self.dashboard_focused() {
+                        self.dashboard_scroll.set(0);
                         return Ok(false);
                     }
                 }
@@ -1834,6 +1841,7 @@ impl ShellState {
         self.transcript.clear();
         self.transcript_scroll = 0;
         self.transcript_scroll_max.set(0);
+        self.dashboard_scroll.set(0);
         self.transcript_selection = None;
         self.transcript_render_cache.get_mut().clear();
         self.clear_streaming_transcript();
@@ -1922,6 +1930,7 @@ impl ShellState {
             }
             CommandPaletteAction::SwitchModel => {
                 self.set_dashboard_route(DashboardRoute::Status);
+                self.dashboard_scroll.set(0);
                 self.session_list.focused = false;
                 self.settings.focused = true;
                 self.settings.focus_action(SettingsAction::Model);
@@ -1929,6 +1938,7 @@ impl ShellState {
             }
             CommandPaletteAction::ChangePermissions => {
                 self.set_dashboard_route(DashboardRoute::Status);
+                self.dashboard_scroll.set(0);
                 self.session_list.focused = false;
                 self.settings.focused = true;
                 self.settings.focus_action(SettingsAction::ApprovalPolicy);
@@ -1936,6 +1946,7 @@ impl ShellState {
             }
             CommandPaletteAction::ResumeThread => {
                 self.set_dashboard_route(DashboardRoute::Sessions);
+                self.dashboard_scroll.set(0);
                 self.settings.focused = false;
                 self.session_list.focused = true;
                 self.start_session_list_refresh(app_server);
@@ -1943,6 +1954,7 @@ impl ShellState {
             }
             CommandPaletteAction::ForkThread => {
                 self.set_dashboard_route(DashboardRoute::Sessions);
+                self.dashboard_scroll.set(0);
                 self.settings.focused = false;
                 self.session_list.focused = true;
                 self.start_session_list_refresh(app_server);
@@ -1978,6 +1990,7 @@ impl ShellState {
         self.settings.focused = false;
         self.agents_focused = false;
         self.dashboard_route = route;
+        self.dashboard_scroll.set(0);
     }
 
     fn toggle_dashboard(&mut self) {
@@ -3208,6 +3221,7 @@ impl ShellState {
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,
             composer: {
@@ -3455,6 +3469,7 @@ pub mod bench_support {
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,
             composer: {

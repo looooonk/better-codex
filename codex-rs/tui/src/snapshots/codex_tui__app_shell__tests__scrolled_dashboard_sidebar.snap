@@ -1,0 +1,20 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: after
+---
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │
+──────────────────────────────────────────────────│   Status   │  Agents   │  Sessions   │  Help
+                                                  │━━━━━━━━━━━━────────────────────────────────────
+ ◆ CONVERSATION                                   │▎◆ EDITS
+                                                │ │▎3 files +128 -24
+ ▌ edited 3 files +128 -24                      │ │
+                                                │ │▎◆ WORKSPACE
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │▎cwd /workspace/better-codex
+          surface.                              ┃ │▎profile managed
+                                                  │▎files restricted, net restricted
+╭────────────────────────────────────────────────╮│▎roots none selected
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││▎◆ TOKENS
+│                                                ││▎input 1k | output 240
+│                                                ││▎Context 100% left
+╰────────────────────────────────────────────────╯│

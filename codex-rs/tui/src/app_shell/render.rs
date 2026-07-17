@@ -1,11 +1,9 @@
 use super::ShellState;
-use super::agent_activity_render::agent_activity_overview_lines;
-use super::agent_activity_render::agent_activity_thread_at_line;
 use super::composer_render::composer_cursor_position;
 use super::composer_render::composer_visual_cursor_line;
 use super::composer_render::wrapped_composer_lines;
-use super::dashboard::DashboardPanel;
-use super::dashboard::dashboard_panels;
+use super::dashboard_view;
+use super::dashboard_view::DashboardPanelPosition;
 use super::design::body_rect_after_title;
 use super::design::fill_rect;
 use super::design::palette;
@@ -21,10 +19,7 @@ use super::input_request_view::user_input_lines;
 use super::input_request_view::visible_request_panel_lines;
 use super::modal_view::render_modal;
 use super::navigation::DashboardRoute;
-use super::navigation::DashboardTabs;
-use super::settings::SettingsTabs;
 use super::shell_layout;
-use super::shell_layout::DashboardPlacement;
 use super::shell_layout::MIN_TERMINAL_WIDTH;
 use super::shell_layout::ShellLayout;
 use super::transcript_view::render_transcript;
@@ -46,8 +41,6 @@ use ratatui::widgets::Widget;
 use ratatui::widgets::Wrap;
 use unicode_width::UnicodeWidthStr;
 
-const DASHBOARD_PANEL_GAP: u16 = 1;
-
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
     let height = tui.terminal.size()?.height;
     tui.draw(height, |frame| {
@@ -63,13 +56,6 @@ pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Res
 
 pub(super) struct ShellView<'a> {
     pub(super) shell: &'a ShellState,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct DashboardPanelPosition {
-    pub(super) line: usize,
-    pub(super) column: usize,
-    pub(super) width: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,7 +82,12 @@ impl ShellView<'_> {
         );
         self.render_input(layout.input, buf);
         if let Some(dashboard) = layout.dashboard {
-            self.render_dashboard(dashboard, buf);
+            dashboard_view::render_dashboard(
+                self.shell,
+                dashboard,
+                self.base_hover_position(),
+                buf,
+            );
         }
         if let Some(pending) = &self.shell.pending_external_agent_import {
             render_modal(area, "Claude Code Import", pending.lines(), buf);
@@ -194,16 +185,7 @@ impl ShellView<'_> {
         area: Rect,
         position: Position,
     ) -> Option<DashboardRoute> {
-        let dashboard = self.layout(area)?.dashboard?.area();
-        let content = pane_content_rect(dashboard);
-        if content.height == 0 {
-            return None;
-        }
-        let tabs = Rect::new(content.x, content.y, content.width, content.height.min(2));
-        if !tabs.contains(position) {
-            return None;
-        }
-        DashboardTabs::new(tabs.width).route_at(position.x.saturating_sub(tabs.x))
+        dashboard_view::route_at(self.shell, self.layout(area)?.dashboard?, position)
     }
 
     pub(super) fn header_control_at(
@@ -245,43 +227,20 @@ impl ShellView<'_> {
         position: Position,
         title: &str,
     ) -> Option<DashboardPanelPosition> {
-        let dashboard = self.layout(area)?.dashboard?;
-        let panel_gap = match dashboard {
-            DashboardPlacement::Sidebar(_) => DASHBOARD_PANEL_GAP,
-            DashboardPlacement::Overlay(_) => 0,
-        };
-        let dashboard = dashboard.area();
-        let content = pane_content_rect(dashboard);
-        if !content.contains(position) {
-            return None;
-        }
-        let panels = dashboard_panels(self.shell, usize::from(content.width));
-        let mut y = content.y;
-        for panel in panels {
-            let available_height = content.bottom().saturating_sub(y);
-            if panel.show_title && available_height < 2 {
-                break;
-            }
-            let height = panel.height().min(available_height);
-            let panel_area = Rect::new(content.x, y, content.width, height);
-            if panel.title == title && panel_area.contains(position) {
-                let text_x = panel_area.x.saturating_add(u16::from(panel.show_title));
-                let body_y = panel_area.y.saturating_add(u16::from(panel.show_title));
-                if position.y < body_y || position.x < text_x {
-                    return None;
-                }
-                return Some(DashboardPanelPosition {
-                    line: usize::from(position.y.saturating_sub(body_y)),
-                    column: usize::from(position.x.saturating_sub(text_x)),
-                    width: usize::from(panel_area.width.saturating_sub(1)),
-                });
-            }
-            y = y.saturating_add(height).saturating_add(panel_gap);
-            if y >= content.bottom() {
-                break;
-            }
-        }
-        None
+        dashboard_view::panel_position_at(
+            self.shell,
+            self.layout(area)?.dashboard?,
+            position,
+            title,
+        )
+    }
+
+    pub(super) fn dashboard_scroll_max(&self, area: Rect) -> usize {
+        self.layout(area)
+            .and_then(|layout| layout.dashboard)
+            .map_or(0, |dashboard| {
+                dashboard_view::max_scroll(self.shell, dashboard)
+            })
     }
 
     pub(super) fn command_palette_entry_at(&self, area: Rect, position: Position) -> Option<usize> {
@@ -500,173 +459,6 @@ impl ShellView<'_> {
             lines = lines.into_iter().skip(start).take(visible_height).collect();
         }
         self.render_titled_panel(area, &title, lines, palette::SURFACE, buf);
-    }
-
-    fn render_dashboard(&self, placement: DashboardPlacement, buf: &mut Buffer) {
-        let area = placement.area();
-        fill_rect(buf, area, palette::DARK);
-        for y in area.y..area.bottom() {
-            if let Some(cell) = buf.cell_mut((area.x, y)) {
-                cell.set_symbol("│").set_style(Style::new().fg(
-                    if self.shell.dashboard_focused() {
-                        palette::FOCUS
-                    } else {
-                        palette::BORDER
-                    },
-                ));
-            }
-        }
-        let content = pane_content_rect(area);
-        let width = usize::from(content.width);
-        let panels = dashboard_panels(self.shell, width);
-        let panel_gap = match placement {
-            DashboardPlacement::Sidebar(_) => DASHBOARD_PANEL_GAP,
-            DashboardPlacement::Overlay(_) => 0,
-        };
-        self.render_dashboard_panels(content, &panels, panel_gap, buf);
-    }
-
-    fn render_dashboard_panels(
-        &self,
-        area: Rect,
-        panels: &[DashboardPanel],
-        panel_gap: u16,
-        buf: &mut Buffer,
-    ) {
-        let mut y = area.y;
-        for panel in panels {
-            if y >= area.bottom() {
-                break;
-            }
-            let desired_height = panel.height();
-            let available_height = area.bottom().saturating_sub(y);
-            if panel.show_title && available_height < 2 {
-                break;
-            }
-            let height = desired_height.min(available_height);
-            if height == 0 {
-                break;
-            }
-            let panel_area = Rect::new(area.x, y, area.width, height);
-            let text_area = if panel.show_title {
-                for rail_y in panel_area.y..panel_area.bottom() {
-                    if let Some(cell) = buf.cell_mut((panel_area.x, rail_y)) {
-                        cell.set_symbol("▎")
-                            .set_style(Style::new().fg(palette::BORDER));
-                    }
-                }
-                Rect::new(
-                    panel_area.x.saturating_add(1),
-                    panel_area.y,
-                    panel_area.width.saturating_sub(1),
-                    panel_area.height,
-                )
-            } else {
-                panel_area
-            };
-            Paragraph::new(panel.render_lines(usize::from(text_area.width)))
-                .style(Style::new().fg(palette::TEXT))
-                .render(text_area, buf);
-            self.render_dashboard_hover(panel, panel_area, text_area, buf);
-            y = y.saturating_add(height).saturating_add(panel_gap);
-        }
-    }
-
-    fn render_dashboard_hover(
-        &self,
-        panel: &DashboardPanel,
-        panel_area: Rect,
-        text_area: Rect,
-        buf: &mut Buffer,
-    ) {
-        let Some(pointer) = self
-            .base_hover_position()
-            .filter(|pointer| panel_area.contains(*pointer))
-        else {
-            return;
-        };
-        if panel.title == "Navigation" {
-            let tabs = DashboardTabs::new(panel_area.width);
-            let Some(route) = tabs.route_at(pointer.x.saturating_sub(panel_area.x)) else {
-                return;
-            };
-            let Some(columns) = tabs.column_range(route) else {
-                return;
-            };
-            let x = panel_area.x.saturating_add(columns.start);
-            let width = columns.end.saturating_sub(columns.start);
-            buf.set_style(
-                Rect::new(x, panel_area.y, width, 1),
-                Style::new().bg(palette::BORDER),
-            );
-            if panel_area.height > 1 {
-                buf.set_style(
-                    Rect::new(x, panel_area.y.saturating_add(1), width, 1),
-                    Style::new().fg(palette::FOCUS),
-                );
-            }
-            return;
-        }
-        if panel.title == "Settings" && matches!(pointer.y.saturating_sub(text_area.y), 1 | 2) {
-            let tabs = SettingsTabs::new(usize::from(text_area.width));
-            let column = usize::from(pointer.x.saturating_sub(text_area.x));
-            let Some(page) = tabs.page_at(column) else {
-                return;
-            };
-            let Some(columns) = tabs.column_range(page) else {
-                return;
-            };
-            let x = text_area
-                .x
-                .saturating_add(u16::try_from(columns.start).unwrap_or(u16::MAX));
-            let width =
-                u16::try_from(columns.end.saturating_sub(columns.start)).unwrap_or(u16::MAX);
-            buf.set_style(
-                Rect::new(x, text_area.y.saturating_add(1), width, 1),
-                Style::new().bg(palette::BORDER),
-            );
-            if text_area.y.saturating_add(2) < panel_area.bottom() {
-                buf.set_style(
-                    Rect::new(x, text_area.y.saturating_add(2), width, 1),
-                    Style::new().fg(palette::FOCUS),
-                );
-            }
-            return;
-        }
-        let interactive = match (self.shell.dashboard_route, panel.title.as_str()) {
-            (DashboardRoute::Sessions, "Sessions")
-            | (DashboardRoute::Agents, "Agents")
-            | (DashboardRoute::Status, "Settings") => true,
-            (DashboardRoute::Status, "Edits") => self.shell.diff_store.has_session_edits(),
-            (DashboardRoute::Sessions, _)
-            | (DashboardRoute::Agents, _)
-            | (DashboardRoute::Status, _)
-            | (DashboardRoute::Help, _) => false,
-        };
-        if panel.title == "Agents" && pointer.y > text_area.y {
-            let line = usize::from(pointer.y.saturating_sub(text_area.y.saturating_add(1)));
-            let overview_height = agent_activity_overview_lines(
-                &self.shell.agent_activity,
-                usize::from(text_area.width),
-            )
-            .len();
-            let agent_line = line.checked_sub(overview_height).and_then(|line| {
-                agent_activity_thread_at_line(
-                    &self.shell.agent_activity,
-                    line,
-                    /*line_budget*/ 24,
-                )
-            });
-            if agent_line.is_none() {
-                return;
-            }
-        }
-        if interactive && pointer.y > text_area.y {
-            buf.set_style(
-                Rect::new(text_area.x, pointer.y, text_area.width, 1),
-                Style::new().bg(palette::BORDER),
-            );
-        }
     }
 
     fn base_hover_position(&self) -> Option<Position> {
