@@ -6489,6 +6489,95 @@ async fn clicking_status_edits_opens_every_session_file() {
 }
 
 #[test]
+fn mouse_wheel_routes_between_diff_files_and_content_in_both_layouts() {
+    for area in [
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 140, /*height*/ 34,
+        ),
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 54, /*height*/ 16,
+        ),
+    ] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.diff_view = Some(DiffViewState::new(
+            "Session edits",
+            /*source_item_id*/ None,
+            (0..30)
+                .map(|file| {
+                    super::diff_view::DiffFile::added(
+                        format!("src/file_{file:02}.rs"),
+                        (0..50)
+                            .map(|line| format!("file {file:02} line {line:02}"))
+                            .collect::<Vec<_>>()
+                            .join("\n"),
+                        super::diff_view::DiffStatus::Completed,
+                    )
+                })
+                .collect(),
+        ));
+        render_shell(&shell, area);
+        let selector = super::diff_view_view::diff_view_file_selector_area(area);
+        let selector_header = Position::new(selector.x, selector.y);
+        let selector_body = Position::new(selector.x, selector.bottom().saturating_sub(1));
+        let diff_body = Position::new(
+            selector.right().saturating_add(1),
+            selector.bottom().saturating_sub(1),
+        );
+
+        shell.handle_mouse_scroll(area, diff_body, tui::MouseScrollDirection::Down);
+        shell.handle_mouse_scroll(area, selector_header, tui::MouseScrollDirection::Up);
+        let view = shell
+            .diff_view
+            .as_ref()
+            .expect("diff view should stay open");
+        assert_eq!((view.selected_file_index(), view.scroll()), (0, 3));
+
+        shell.handle_mouse_scroll(area, selector_body, tui::MouseScrollDirection::Down);
+        let view = shell
+            .diff_view
+            .as_ref()
+            .expect("diff view should stay open");
+        assert_eq!((view.selected_file_index(), view.scroll()), (1, 0));
+        render_shell(&shell, area);
+        shell.handle_mouse_scroll(area, diff_body, tui::MouseScrollDirection::Down);
+        shell.handle_mouse_scroll(area, selector_header, tui::MouseScrollDirection::Down);
+        let view = shell
+            .diff_view
+            .as_ref()
+            .expect("diff view should stay open");
+        assert_eq!((view.selected_file_index(), view.scroll()), (2, 0));
+
+        for _ in 0..40 {
+            shell.handle_mouse_scroll(area, selector_body, tui::MouseScrollDirection::Down);
+        }
+        let view = shell
+            .diff_view
+            .as_ref()
+            .expect("diff view should stay open");
+        assert_eq!((view.selected_file_index(), view.scroll()), (29, 0));
+        let rendered = render_shell(&shell, area);
+        if area.width == 54 {
+            insta::assert_snapshot!("wheel_scrolled_diff_file_selector", rendered);
+        }
+
+        shell.handle_mouse_scroll(area, diff_body, tui::MouseScrollDirection::Down);
+        shell.handle_mouse_scroll(area, selector_body, tui::MouseScrollDirection::Down);
+        let view = shell
+            .diff_view
+            .as_ref()
+            .expect("diff view should stay open");
+        assert_eq!((view.selected_file_index(), view.scroll()), (29, 3));
+
+        shell.handle_mouse_scroll(area, selector_body, tui::MouseScrollDirection::Up);
+        let view = shell
+            .diff_view
+            .as_ref()
+            .expect("diff view should stay open");
+        assert_eq!((view.selected_file_index(), view.scroll()), (28, 0));
+    }
+}
+
+#[test]
 fn historical_edits_hydrate_and_session_switch_clears_them() {
     let mut shell = ShellState::snapshot_fixture();
     let mut turn = test_turn("historical-turn", TurnStatus::Completed);

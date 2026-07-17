@@ -1,0 +1,20 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+  Dashboard  ◆ BC          gpt-5-codex ▾   default ▾
+──────────────────────────────────────────────────────
+  ╭ Session edits ─────────────────────────────────╮
+ ◆│ CHANGED FILES│OLD FILE       │NEW FILE         │
+  │              │               │src/file_29.rs   │─
+ ▌│   A file_23.…│               │    1 + file 29… │
+  │   A file_24.…│               │    2 + file 29… │
+ ▎│   A file_25.…│               │    3 + file 29… │
+  │   A file_26.…│               │    4 + file 29… │
+  │   A file_27.…│               │    5 + file 29… │
+╭─│   A file_28.…│               │    6 + file 29… │─╮
+│◆│ > A file_29.…│               │    7 + file 29… │ │
+│>│  ←/→  ↑/↓  Esc  file 30/30  1-7/50             │ │
+│ ╰────────────────────────────────────────────────╯ │
+│                                                    │
+╰────────────────────────────────────────────────────╯

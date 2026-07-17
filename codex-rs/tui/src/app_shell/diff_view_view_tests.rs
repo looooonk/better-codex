@@ -60,6 +60,49 @@ fn file_hit_testing_uses_the_visible_file_window() {
 }
 
 #[test]
+fn file_selector_area_covers_the_full_left_column() {
+    for screen in [
+        Rect::new(
+            /*x*/ 5, /*y*/ 3, /*width*/ 140, /*height*/ 34,
+        ),
+        Rect::new(
+            /*x*/ 7, /*y*/ 4, /*width*/ 54, /*height*/ 16,
+        ),
+    ] {
+        let geometry = diff_view_geometry(screen);
+        let selector = diff_view_file_selector_area(screen);
+
+        assert_eq!(
+            selector,
+            Rect::new(
+                geometry.files.x,
+                geometry.header.y,
+                geometry.files.width,
+                geometry.body.bottom().saturating_sub(geometry.header.y),
+            )
+        );
+        for y in [
+            geometry.header.y,
+            geometry.labels.y,
+            geometry.body.bottom() - 1,
+        ] {
+            assert!(selector.contains(Position::new(geometry.files.x, y)));
+            assert!(selector.contains(Position::new(geometry.files.right() - 1, y)));
+        }
+        for position in [
+            Position::new(geometry.files.right(), geometry.body.y),
+            Position::new(geometry.old.x, geometry.body.y),
+            Position::new(geometry.new.x, geometry.body.y),
+            Position::new(geometry.files.x, geometry.footer.y),
+            Position::new(geometry.modal.x, geometry.modal.y),
+            Position::new(screen.x, screen.y),
+        ] {
+            assert!(!selector.contains(position));
+        }
+    }
+}
+
+#[test]
 fn diff_cells_and_file_statuses_use_semantic_colors() {
     let state = fixture();
     let screen = Rect::new(

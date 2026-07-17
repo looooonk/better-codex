@@ -309,9 +309,22 @@ impl ShellState {
             MouseScrollDirection::Down => KeyCode::Down,
         };
         if self.diff_view.is_some() {
-            match direction {
-                MouseScrollDirection::Up => self.scroll_diff_view_up(),
-                MouseScrollDirection::Down => self.scroll_diff_view_down(),
+            if super::diff_view_view::diff_view_file_selector_area(area).contains(position) {
+                if let Some(view) = &mut self.diff_view {
+                    match direction {
+                        MouseScrollDirection::Up => {
+                            view.select_previous_file();
+                        }
+                        MouseScrollDirection::Down => {
+                            view.select_next_file();
+                        }
+                    }
+                }
+            } else {
+                match direction {
+                    MouseScrollDirection::Up => self.scroll_diff_view_up(),
+                    MouseScrollDirection::Down => self.scroll_diff_view_down(),
+                }
             }
             return;
         }

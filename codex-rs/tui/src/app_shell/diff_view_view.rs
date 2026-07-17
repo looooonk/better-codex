@@ -76,6 +76,16 @@ pub(super) fn diff_view_panel_area(screen: Rect) -> Rect {
     diff_view_geometry(screen).modal
 }
 
+pub(super) fn diff_view_file_selector_area(screen: Rect) -> Rect {
+    let geometry = diff_view_geometry(screen);
+    Rect::new(
+        geometry.files.x,
+        geometry.header.y,
+        geometry.files.width,
+        geometry.body.bottom().saturating_sub(geometry.header.y),
+    )
+}
+
 pub(super) fn diff_view_file_at(
     state: &DiffViewState,
     screen: Rect,

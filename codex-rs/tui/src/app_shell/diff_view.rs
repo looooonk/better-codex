@@ -203,6 +203,18 @@ impl DiffViewState {
         true
     }
 
+    pub(super) fn select_previous_file(&mut self) -> bool {
+        self.select_file(self.selected_file.saturating_sub(1))
+    }
+
+    pub(super) fn select_next_file(&mut self) -> bool {
+        self.select_file(
+            self.selected_file
+                .saturating_add(1)
+                .min(self.files.len().saturating_sub(1)),
+        )
+    }
+
     pub(super) fn replace_files(&mut self, files: Vec<DiffFile>) {
         let selected = self.selected_file().map(|file| {
             (
@@ -230,15 +242,11 @@ impl DiffViewState {
         match key.code {
             KeyCode::Esc => DiffViewAction::Close,
             KeyCode::Left | KeyCode::Char('[') => {
-                self.select_file(self.selected_file.saturating_sub(1));
+                self.select_previous_file();
                 DiffViewAction::Pending
             }
             KeyCode::Right | KeyCode::Char(']') => {
-                self.select_file(
-                    self.selected_file
-                        .saturating_add(1)
-                        .min(self.files.len().saturating_sub(1)),
-                );
+                self.select_next_file();
                 DiffViewAction::Pending
             }
             KeyCode::Up | KeyCode::Char('k') => {
