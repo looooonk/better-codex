@@ -239,11 +239,11 @@ fn render_cell(cell: Option<&DiffCell>, area: Rect, buf: &mut Buffer) {
         .line_number
         .map(|number| format!("{number:>number_width$}"))
         .unwrap_or_else(|| " ".repeat(number_width));
-    let (marker, color, bold) = match cell.kind {
-        DiffLineKind::Context => (" ", palette::TEXT, false),
-        DiffLineKind::Added => ("+", palette::SUCCESS, false),
-        DiffLineKind::Removed => ("-", palette::ERROR, false),
-        DiffLineKind::Hunk => (" ", palette::CYAN, true),
+    let (marker, color, background, bold) = match cell.kind {
+        DiffLineKind::Context => (" ", palette::TEXT, palette::SURFACE, false),
+        DiffLineKind::Added => ("+", palette::SUCCESS, palette::DIFF_ADDED_BACKGROUND, false),
+        DiffLineKind::Removed => ("-", palette::ERROR, palette::DIFF_REMOVED_BACKGROUND, false),
+        DiffLineKind::Hunk => (" ", palette::CYAN, palette::SURFACE, true),
     };
     let text = if bold {
         Span::from(cell.text.clone()).fg(color).bold()
@@ -261,7 +261,7 @@ fn render_cell(cell: Option<&DiffCell>, area: Rect, buf: &mut Buffer) {
         line,
         usize::from(area.width),
     ))
-    .style(pane_style(palette::SURFACE))
+    .style(pane_style(background))
     .render(area, buf);
 }
 

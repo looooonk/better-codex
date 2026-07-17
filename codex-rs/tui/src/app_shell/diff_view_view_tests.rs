@@ -143,6 +143,104 @@ fn diff_cells_and_file_statuses_use_semantic_colors() {
 }
 
 #[test]
+fn diff_lines_use_full_pane_semantic_backgrounds() {
+    let state = fixture();
+    let screen = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 120, /*height*/ 26,
+    );
+    let mut buf = Buffer::empty(screen);
+    render_diff_view(&state, screen, &mut buf);
+    let geometry = diff_view_geometry(screen);
+    let hunk = position_of(&buf, geometry.old, "@@ -1,8 +1,8 @@").expect("hunk should render");
+    let context = position_of(&buf, geometry.old, "use ratatui::buffer::Buffer;")
+        .expect("context should render");
+    let removed = position_of(&buf, geometry.old, "stale value").expect("removal should render");
+    let added = position_of(&buf, geometry.new, "fresh value").expect("addition should render");
+    let unmatched = position_of(&buf, geometry.new, "new tail three")
+        .expect("unmatched addition should render");
+    assert_eq!(removed.y, added.y);
+
+    let backgrounds = |area: Rect, y| {
+        (area.x..area.right())
+            .map(|x| buf[(x, y)].style().bg)
+            .collect::<Vec<_>>()
+    };
+    let pair = |y| (backgrounds(geometry.old, y), backgrounds(geometry.new, y));
+    let solid = |area: Rect, background| vec![Some(background); usize::from(area.width)];
+    let surface_pair = || {
+        (
+            solid(geometry.old, palette::SURFACE),
+            solid(geometry.new, palette::SURFACE),
+        )
+    };
+
+    assert_eq!(
+        pair(removed.y),
+        (
+            solid(geometry.old, palette::DIFF_REMOVED_BACKGROUND),
+            solid(geometry.new, palette::DIFF_ADDED_BACKGROUND),
+        )
+    );
+    for y in [hunk.y, context.y] {
+        assert_eq!(pair(y), surface_pair());
+    }
+    assert_eq!(
+        pair(unmatched.y),
+        (
+            solid(geometry.old, palette::SURFACE),
+            solid(geometry.new, palette::DIFF_ADDED_BACKGROUND),
+        )
+    );
+    let separator_styles = geometry
+        .separators
+        .into_iter()
+        .flatten()
+        .map(|x| {
+            let style = buf[(x, removed.y)].style();
+            (style.fg, style.bg)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        separator_styles,
+        vec![
+            (Some(palette::BORDER), Some(palette::SURFACE));
+            geometry.separators.into_iter().flatten().count()
+        ]
+    );
+
+    let background_rows = (geometry.body.y..geometry.body.bottom())
+        .map(|y| {
+            let label = |area| {
+                let row = backgrounds(area, y);
+                let background = row.first().copied().flatten();
+                if row.iter().any(|cell| *cell != background) {
+                    "mixed"
+                } else if background == Some(palette::DIFF_ADDED_BACKGROUND) {
+                    "added"
+                } else if background == Some(palette::DIFF_REMOVED_BACKGROUND) {
+                    "removed"
+                } else if background == Some(palette::SURFACE) {
+                    "surface"
+                } else {
+                    "other"
+                }
+            };
+            format!(
+                "{:>7} | {:<7}  {} | {}",
+                label(geometry.old),
+                label(geometry.new),
+                row_text(&buf, Rect::new(geometry.old.x, y, geometry.old.width, 1)),
+                row_text(&buf, Rect::new(geometry.new.x, y, geometry.new.width, 1)),
+            )
+            .trim_end()
+            .to_string()
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    insta::assert_snapshot!("diff_line_backgrounds", background_rows);
+}
+
+#[test]
 fn added_and_deleted_files_leave_the_opposite_pane_empty() {
     let mut state = fixture();
     let screen = Rect::new(

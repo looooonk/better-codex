@@ -17,6 +17,8 @@ pub(super) mod palette {
     pub const DARK: Color = Color::Rgb(22, 22, 30);
     pub const SURFACE: Color = Color::Rgb(36, 40, 59);
     pub const ELEVATED: Color = Color::Rgb(41, 46, 66);
+    pub const DIFF_ADDED_BACKGROUND: Color = Color::Rgb(33, 41, 34);
+    pub const DIFF_REMOVED_BACKGROUND: Color = Color::Rgb(60, 23, 15);
     pub const BORDER: Color = Color::Rgb(65, 72, 104);
     pub const TEXT: Color = Color::Rgb(192, 202, 245);
     pub const MUTED: Color = Color::Rgb(86, 95, 137);

@@ -1,0 +1,21 @@
+---
+source: tui/src/app_shell/diff_view_view_tests.rs
+expression: background_rows
+---
+surface | surface  @@ -1,8 +1,8 @@ | @@ -1,8 +1,8 @@
+surface | surface  1   use ratatui::buffer::Buffer; | 1   use ratatui::buffer::Buffer;
+removed | added    2 - const VALUE: &str = "stale value… | 2 + const VALUE: &str = "fresh value";
+surface | surface  3 | 3
+surface | surface  4   fn render() { | 4   fn render() {
+surface | surface  5       draw(); | 5       draw();
+surface | surface  6   } | 6   }
+surface | surface  7   context six | 7   context six
+surface | surface  8   context seven | 8   context seven
+surface | surface  9   context eight | 9   context eight
+surface | surface  @@ -20,4 +20,8 @@ | @@ -20,4 +20,8 @@
+removed | added    20 - old tail one | 20 + new tail one
+removed | added    21 - old tail two | 21 + new tail two
+surface | added     | 22 + new tail three
+surface | surface  22   context tail | 23   context tail
+surface | surface   |
+surface | surface   |

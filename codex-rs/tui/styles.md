@@ -12,6 +12,8 @@ values.
 | Dark | `#16161e` | Header, sidebar, and recessed chrome |
 | Surface | `#24283b` | Composer, cards, and secondary panes |
 | Elevated | `#292e42` | Selected rows, menus, and modal surfaces |
+| Diff addition | `#212922` | Added-line backgrounds in diff panes |
+| Diff removal | `#3c170f` | Removed-line backgrounds in diff panes |
 | Border | `#414868` | Dividers, inactive outlines, and scroll tracks |
 | Text | `#c0caf5` | Primary text on application-owned backgrounds |
 | Muted | `#565f89` | Metadata, placeholders, and secondary hints |
