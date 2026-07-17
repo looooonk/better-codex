@@ -1,0 +1,20 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 78, 16,),)"
+---
+ ◆ BC              Panels   gpt-5-codex ▾   default ▾   default ▾  ◑ thinking
+──────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ ERROR  stream disconnected
+
+ ▎ CODEX  Recovered response.
+
+
+
+╭────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  ● RUNNING  1:37                                                  │
+│> Summarize the new shell architecture                                      │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯

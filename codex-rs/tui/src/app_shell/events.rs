@@ -73,6 +73,7 @@ impl ShellState {
         match notification {
             ServerNotification::AgentMessageDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
+                    self.mark_retry_recovered(&delta.turn_id);
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     self.push_streaming_assistant_delta(&delta.delta);
                 } else if self.prepare_active_agent_thread(&delta.thread_id) {
@@ -87,6 +88,7 @@ impl ShellState {
             }
             ServerNotification::PlanDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
+                    self.mark_retry_recovered(&delta.turn_id);
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
                     self.push_streaming_plan_delta(&delta.delta);
                 }
@@ -205,6 +207,7 @@ impl ShellState {
             }
             ServerNotification::ItemStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
+                    self.mark_retry_recovered(&started.turn_id);
                     self.mark_active_agent_threads(&started.item);
                     self.agent_activity.reduce_started(&started.item);
                     self.mark_agent_item_live(&started.item);
@@ -233,6 +236,7 @@ impl ShellState {
             }
             ServerNotification::ItemCompleted(completed) => {
                 if completed.thread_id == self.thread_id.to_string() {
+                    self.mark_retry_recovered(&completed.turn_id);
                     self.mark_active_agent_threads(&completed.item);
                     self.ingest_completed_item_for_turn(
                         &completed.turn_id,
@@ -425,6 +429,12 @@ impl ShellState {
             | ServerNotification::WindowsWorldWritableWarning(_)
             | ServerNotification::WindowsSandboxSetupCompleted(_)
             | ServerNotification::AccountLoginCompleted(_) => {}
+        }
+    }
+
+    fn mark_retry_recovered(&mut self, turn_id: &str) {
+        if self.status == "retrying" && self.active_turn_id.as_deref() == Some(turn_id) {
+            self.status = "thinking".to_string();
         }
     }
 

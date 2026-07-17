@@ -299,6 +299,112 @@ fn status_spinner_only_runs_during_active_codex_work() {
     );
 }
 
+fn retrying_error(shell: &ShellState, turn_id: &str) -> ServerNotification {
+    ServerNotification::Error(ErrorNotification {
+        error: TurnError {
+            message: "stream disconnected".to_string(),
+            codex_error_info: None,
+            additional_details: None,
+        },
+        will_retry: true,
+        thread_id: shell.thread_id.to_string(),
+        turn_id: turn_id.to_string(),
+    })
+}
+
+#[test]
+fn active_turn_progress_recovers_retrying_status() {
+    let fixture = ShellState::snapshot_fixture();
+    let thread_id = fixture.thread_id.to_string();
+    let progress = [
+        ServerNotification::AgentMessageDelta(
+            codex_app_server_protocol::AgentMessageDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-active".to_string(),
+                item_id: "assistant-1".to_string(),
+                delta: "Recovered.".to_string(),
+            },
+        ),
+        ServerNotification::PlanDelta(codex_app_server_protocol::PlanDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-active".to_string(),
+            item_id: "plan-1".to_string(),
+            delta: "Recovered plan".to_string(),
+        }),
+        ServerNotification::ItemStarted(ItemStartedNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-active".to_string(),
+            started_at_ms: 0,
+            item: ThreadItem::AgentMessage {
+                id: "assistant-1".to_string(),
+                text: String::new(),
+                phase: None,
+                memory_citation: None,
+            },
+        }),
+        ServerNotification::ItemCompleted(ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-active".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::ContextCompaction {
+                id: "compaction-1".to_string(),
+            },
+        }),
+    ];
+
+    for notification in progress {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.active_turn_id = Some("turn-active".to_string());
+        shell.handle_notification(retrying_error(&shell, "turn-active"));
+        assert_eq!(shell.status, "retrying");
+
+        shell.handle_notification(notification);
+
+        assert_eq!(shell.status, "thinking");
+    }
+
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.handle_notification(retrying_error(&shell, "turn-active"));
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn_id: "turn-stale".to_string(),
+            item_id: "assistant-stale".to_string(),
+            delta: "Stale response".to_string(),
+        },
+    ));
+
+    assert_eq!(shell.status, "retrying");
+}
+
+#[test]
+fn renders_recovered_retry_status_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.clear_streaming_transcript();
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.status_spinner_frame = 2;
+    shell.handle_notification(retrying_error(&shell, "turn-active"));
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn_id: "turn-active".to_string(),
+            item_id: "assistant-1".to_string(),
+            delta: "Recovered response.".to_string(),
+        },
+    ));
+
+    assert_eq!(shell.status, "thinking");
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 16,
+        ),
+    ));
+}
+
 #[test]
 fn renders_compact_top_dashboard_snapshot() {
     let shell = ShellState::snapshot_fixture();
