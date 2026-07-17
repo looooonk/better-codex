@@ -1,0 +1,5 @@
+---
+source: tui/src/resume_picker.rs
+expression: "search_line(&state, 80).to_string()"
+---
+Search: …ndpointendpointendpoint X▏beta  Filter:[All]   Sort: [Updated] Created

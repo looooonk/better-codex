@@ -3,6 +3,8 @@ use super::design::palette;
 use super::design::selection_style;
 use super::integrations::McpInventorySummary;
 use super::integrations::PluginInventorySummary;
+use crate::text_input::EditableText;
+use crate::text_input::TextInputAction;
 use codex_app_server_protocol::AskForApproval;
 use codex_protocol::openai_models::ReasoningEffort;
 use ratatui::style::Styled;
@@ -64,7 +66,7 @@ pub(super) struct SettingsView {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SettingsEdit {
     action: SettingsAction,
-    draft: String,
+    draft: EditableText,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,10 +88,13 @@ impl SettingsState {
         if let Some(edit) = &self.edit {
             let label = format!("edit {}", edit.action.label());
             let prefix_width = label.len() + 1;
+            let draft = edit
+                .draft
+                .text_with_cursor_window(width.saturating_sub(prefix_width).max(1));
             lines.push(Line::from(vec![
                 label.cyan(),
                 " ".dim(),
-                dashboard_value(&edit.draft, width, prefix_width).into(),
+                dashboard_value(&draft, width, prefix_width).into(),
             ]));
         }
         if let Some(feedback) = &self.feedback {
@@ -177,7 +182,7 @@ impl SettingsState {
         self.focus_action(action);
         self.edit = Some(SettingsEdit {
             action,
-            draft: current_value,
+            draft: EditableText::new(current_value),
         });
         self.feedback = None;
     }
@@ -208,13 +213,13 @@ impl SettingsState {
 
     pub(super) fn push_edit_char(&mut self, ch: char) {
         if let Some(edit) = &mut self.edit {
-            edit.draft.push(ch);
+            edit.draft.insert_char(ch);
         }
     }
 
-    pub(super) fn backspace_edit(&mut self) {
+    pub(super) fn edit_text(&mut self, action: TextInputAction) {
         if let Some(edit) = &mut self.edit {
-            edit.draft.pop();
+            edit.draft.apply(action);
         }
     }
 
@@ -225,7 +230,7 @@ impl SettingsState {
     pub(super) fn take_edit(&mut self) -> Option<(SettingsAction, String)> {
         self.edit
             .take()
-            .map(|edit| (edit.action, edit.draft.trim().to_string()))
+            .map(|edit| (edit.action, edit.draft.into_text().trim().to_string()))
     }
 
     pub(super) fn set_info(&mut self, message: impl Into<String>) {

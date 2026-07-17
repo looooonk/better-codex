@@ -40,4 +40,5 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 unicode-width = { workspace = true }
 
 [dev-dependencies]
+insta = { workspace = true }
 pretty_assertions = { workspace = true }

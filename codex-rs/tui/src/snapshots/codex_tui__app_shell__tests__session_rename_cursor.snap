@@ -1,16 +1,16 @@
 ---
 source: tui/src/app_shell_tests.rs
-expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
+expression: "render_shell(&rename, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
   Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  ACTIVE  0 shown / 20+ loaded
+ ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  ACTIVE  1 sessions
  ▎ YOU  Create a divergent standalone TUI.        │▎+ New session  Ctrl+N
-                                                  │▎filter* needle▏  · Enter search all
- ▎ CODEX  Started a fullscreen app shell backed   │▎no matching sessions
+                                                  │▎rename* …tsegmentsegmentsegmentsegmentsegment ▏
+ ▎ CODEX  Started a fullscreen app shell backed   │▎› 1/1 alpha segmentsegmentsegmentsegmentsegmen…
           by app-server turns.                    │
  ▎ PLAN  1. Build shell                           │▎◆ THREAD
          2. Wire transcript                       │▎stage-one

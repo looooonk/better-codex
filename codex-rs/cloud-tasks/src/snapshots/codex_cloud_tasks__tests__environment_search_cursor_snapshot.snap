@@ -1,0 +1,24 @@
+---
+source: cloud-tasks/src/lib.rs
+expression: terminal.backend().to_string()
+---
+"                                                                                "
+"                                                                                "
+"        ╭Select Environment────────────────────────────────────────────╮        "
+"        │                                                              │        "
+"        │  Type to search, Enter select, Esc cancel                    │        "
+"        │  Search: …ntendpointendpointendpointendpointendpoint X▏beta  │        "
+"        │  › All Environments (Global)                                 │        "
+"        │    alpha endpointendpointendpointendpointendpointendpointen  │        "
+"        │                                                              │        "
+"        │                                                              │        "
+"        │                                                              │        "
+"        │                                                              │        "
+"        │                                                              │        "
+"        │                                                              │        "
+"        │                                                              │        "
+"        │                                                              │        "
+"        │                                                              │        "
+"        ╰──────────────────────────────────────────────────────────────╯        "
+"                                                                                "
+"                                                                                "

@@ -986,7 +986,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             .into_iter()
             .flat_map(|panel| &panel.lines)
             .flat_map(|line| &line.spans)
-            .any(|span| span.content.contains("Alt+Left/Right"));
+            .any(|span| span.content.contains("Cmd arrows/⌫"));
         if route != DashboardRoute::Help {
             let text = panels
                 .iter()
@@ -1058,6 +1058,44 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             .first()
             .map(line_text),
         Some("  Model  │Permis...│Appear...│Integra...".to_string())
+    );
+}
+
+#[test]
+fn dashboard_shortcut_guides_fit_layout_boundaries() {
+    let shell = ShellState::snapshot_fixture();
+    let mut selecting = ShellState::snapshot_fixture();
+    selecting.select_latest_transcript_item();
+
+    for shell in [&shell, &selecting] {
+        for width in [38, 40, 48, 54, 55, 58, 71, 72, 80] {
+            for line in super::dashboard_help::key_hint_lines(shell, width) {
+                assert!(
+                    line.width() <= width,
+                    "shortcut help exceeds width {width}: {line}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn dashboard_shortcut_label_variants_snapshot() {
+    let shell = ShellState::snapshot_fixture();
+    let rendered = |panel_width| {
+        super::dashboard_help::key_hint_lines(&shell, panel_width)
+            .into_iter()
+            .map(|line| line.to_string())
+            .join("\n")
+    };
+
+    insta::assert_snapshot!(
+        "compact_dashboard_shortcut_labels",
+        rendered(/*panel_width*/ 60)
+    );
+    insta::assert_snapshot!(
+        "wide_dashboard_shortcut_labels",
+        rendered(/*panel_width*/ 80)
     );
 }
 
@@ -2639,95 +2677,156 @@ fn dashboard_route_step_key_mapping_covers_alt_arrows() {
     );
 }
 
-#[test]
-fn composer_word_motion_key_mapping_covers_standard_shortcuts() {
-    assert_eq!(
-        composer_word_motion_from_key(KeyEvent::new(KeyCode::Left, KeyModifiers::CONTROL)),
-        Some(ComposerWordMotion::Left)
-    );
-    assert_eq!(
-        composer_word_motion_from_key(KeyEvent::new(KeyCode::Right, KeyModifiers::CONTROL)),
-        Some(ComposerWordMotion::Right)
-    );
-    assert_eq!(
-        composer_word_motion_from_key(KeyEvent::new(KeyCode::Left, KeyModifiers::ALT)),
-        Some(ComposerWordMotion::Left)
-    );
-    assert_eq!(
-        composer_word_motion_from_key(KeyEvent::new(KeyCode::Right, KeyModifiers::ALT)),
-        Some(ComposerWordMotion::Right)
-    );
-    assert_eq!(
-        composer_word_motion_from_key(KeyEvent::new(KeyCode::Char('b'), KeyModifiers::ALT)),
-        Some(ComposerWordMotion::Left)
-    );
-    assert_eq!(
-        composer_word_motion_from_key(KeyEvent::new(KeyCode::Char('f'), KeyModifiers::ALT)),
-        Some(ComposerWordMotion::Right)
-    );
-    assert_eq!(composer_word_motion_from_key(key_char('b')), None);
+fn set_composer_cursor(composer: &mut ComposerState, marked_text: &str) {
+    let (before, after) = marked_text
+        .split_once('|')
+        .expect("marked composer text should contain a cursor");
+    composer.set_text(format!("{before}{after}"));
+    for _ in after.chars() {
+        composer.move_left();
+    }
 }
 
-#[test]
-fn composer_backspace_key_mapping_covers_modified_shortcuts() {
-    assert_eq!(
-        composer_backspace_action_from_key(KeyEvent::new(
-            KeyCode::Backspace,
-            KeyModifiers::CONTROL
-        )),
-        Some(ComposerBackspaceAction::Clear)
-    );
-    assert_eq!(
-        composer_backspace_action_from_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT)),
-        Some(ComposerBackspaceAction::DeleteWordLeft)
-    );
-    assert_eq!(
-        composer_backspace_action_from_key(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE)),
-        Some(ComposerBackspaceAction::DeleteChar)
-    );
-    assert_eq!(
-        composer_backspace_action_from_key(KeyEvent::new(
-            KeyCode::Char('\u{007f}'),
-            KeyModifiers::ALT
-        )),
-        Some(ComposerBackspaceAction::DeleteWordLeft)
-    );
-    assert_eq!(
-        composer_backspace_action_from_key(KeyEvent::new(
-            KeyCode::Char('\u{007f}'),
-            KeyModifiers::NONE
-        )),
-        None
-    );
+fn composer_cursor_text(composer: &ComposerState) -> String {
+    let mut text = composer.text().to_string();
+    text.insert(composer.cursor(), '|');
+    text
 }
 
 #[tokio::test]
-async fn composer_modified_backspace_shortcuts_delete_expected_text() {
+async fn text_input_shortcuts_work_in_message_and_tool_input_panes() {
+    let config = test_config().await;
+    let cases = [
+        (
+            "alpha\nbeta ga|mma",
+            KeyCode::Left,
+            KeyModifiers::SUPER,
+            "alpha\n|beta gamma",
+        ),
+        (
+            "alpha\nbeta ga|mma",
+            KeyCode::Right,
+            KeyModifiers::SUPER,
+            "alpha\nbeta gamma|",
+        ),
+        (
+            "alpha\nbeta ga|mma",
+            KeyCode::Backspace,
+            KeyModifiers::SUPER,
+            "alpha\n|mma",
+        ),
+        (
+            "naive beta_gamma, \u{4e16}\u{754c}| tail",
+            KeyCode::Left,
+            KeyModifiers::ALT,
+            "naive beta_gamma, |\u{4e16}\u{754c} tail",
+        ),
+        (
+            "naive beta_gamma, \u{4e16}\u{754c}| tail",
+            KeyCode::Left,
+            KeyModifiers::CONTROL,
+            "naive beta_gamma, |\u{4e16}\u{754c} tail",
+        ),
+        (
+            "naive |beta_gamma, \u{4e16}\u{754c} tail",
+            KeyCode::Right,
+            KeyModifiers::ALT,
+            "naive beta_gamma|, \u{4e16}\u{754c} tail",
+        ),
+        (
+            "naive |beta_gamma, \u{4e16}\u{754c} tail",
+            KeyCode::Right,
+            KeyModifiers::CONTROL,
+            "naive beta_gamma|, \u{4e16}\u{754c} tail",
+        ),
+        (
+            "naive beta_gamma, \u{4e16}\u{754c}| tail",
+            KeyCode::Backspace,
+            KeyModifiers::ALT,
+            "naive beta_gamma, | tail",
+        ),
+        (
+            "naive beta_gamma, \u{4e16}\u{754c}| tail",
+            KeyCode::Backspace,
+            KeyModifiers::CONTROL,
+            "naive beta_gamma, | tail",
+        ),
+    ];
+
+    for tool_input in [false, true] {
+        for (before, code, modifiers, expected) in cases {
+            let mut shell = ShellState::snapshot_fixture();
+            let mut backend = RecordingBackend::default();
+            if tool_input {
+                shell.pending_user_input =
+                    PendingUserInput::from_request(&tool_user_input_request());
+            }
+            set_composer_cursor(&mut shell.composer, before);
+
+            shell
+                .handle_key(KeyEvent::new(code, modifiers), &config, &mut backend)
+                .await
+                .expect("text editing shortcut should be handled");
+
+            assert_eq!(composer_cursor_text(&shell.composer), expected);
+            assert_eq!(shell.pending_user_input.is_some(), tool_input);
+            assert_eq!(backend.calls(), Vec::new());
+        }
+    }
+}
+
+#[tokio::test]
+async fn command_backspace_message_result_snapshot() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
-    shell.composer.set_text("alpha beta");
+    set_composer_cursor(&mut shell.composer, "first line\nsecond |line");
 
     shell
         .handle_key(
-            KeyEvent::new(KeyCode::Backspace, KeyModifiers::ALT),
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::SUPER),
             &config,
             &mut backend,
         )
         .await
-        .expect("alt backspace should delete a word");
-    assert_eq!(shell.composer.text(), "alpha ");
+        .expect("command backspace should be handled");
 
-    shell
-        .handle_key(
-            KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL),
-            &config,
-            &mut backend,
-        )
-        .await
-        .expect("ctrl backspace should clear the composer");
-    assert_eq!(shell.composer.text(), "");
     assert_eq!(backend.calls(), Vec::new());
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        )
+    ));
+}
+
+#[tokio::test]
+async fn tool_input_renders_cursor_and_tracks_shortcuts() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    set_composer_cursor(&mut shell.composer, "alpha |beta");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let before = render_shell(&shell, area);
+    assert!(before.contains("alpha ▏beta"));
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Left, KeyModifiers::SUPER),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("command left should be handled");
+
+    let after = render_shell(&shell, area);
+    assert!(after.contains("▏alpha beta"));
+    assert!(!after.contains("alpha ▏beta"));
+    assert_eq!(backend.calls(), Vec::new());
+    insta::assert_snapshot!("tool_input_command_left_cursor", after);
 }
 
 #[tokio::test]
@@ -2870,8 +2969,197 @@ async fn printable_character_repeat_reaches_text_entry_overlays() {
         .collect::<String>();
     assert_eq!(
         (mcp_draft, mcp.composer.text(), backend.calls()),
-        ("x".to_string(), "", Vec::new())
+        ("x▏".to_string(), "", Vec::new())
     );
+}
+
+#[tokio::test]
+async fn editing_shortcuts_reach_dashboard_and_mcp_text_inputs() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+
+    let mut search = ShellState::snapshot_fixture();
+    search.dashboard_route = DashboardRoute::Sessions;
+    search.session_list.focused = true;
+    search.session_list.start_search();
+    for ch in "alpha beta".chars() {
+        search
+            .handle_key(key_char(ch), &config, &mut backend)
+            .await
+            .expect("search text should be entered");
+    }
+    search
+        .handle_key(
+            KeyEvent::new(KeyCode::Left, KeyModifiers::CONTROL),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("search cursor should move by word");
+    search
+        .handle_key(key_char('X'), &config, &mut backend)
+        .await
+        .expect("search text should insert at the cursor");
+    assert!(
+        search
+            .session_list
+            .lines(/*width*/ 80)
+            .iter()
+            .any(|line| line_text(line).contains("alpha X▏beta"))
+    );
+    search.session_list.stop_search();
+    assert_eq!(
+        search.session_list.list_params().search_term,
+        Some("alpha Xbeta".to_string())
+    );
+
+    let mut rename = ShellState::snapshot_fixture();
+    rename.dashboard_route = DashboardRoute::Sessions;
+    rename.session_list.focused = true;
+    let long_session_word = "segment".repeat(12);
+    let session_name = format!("alpha {long_session_word} beta");
+    rename.session_list.replace_threads(vec![thread_fixture(
+        rename.thread_id,
+        Some(&session_name),
+        "preview",
+    )]);
+    rename.session_list.start_rename();
+    rename
+        .handle_key(
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("rename should delete the previous word");
+    assert!(
+        rename
+            .session_list
+            .lines(/*width*/ 80)
+            .iter()
+            .any(|line| line_text(line).contains("…") && line_text(line).contains('▏'))
+    );
+    insta::assert_snapshot!(
+        "session_rename_cursor",
+        render_shell(
+            &rename,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
+    );
+    assert_eq!(
+        rename.session_list.take_rename_draft(),
+        Some(format!("alpha {long_session_word}"))
+    );
+
+    let mut settings = ShellState::snapshot_fixture();
+    settings.dashboard_route = DashboardRoute::Status;
+    settings.settings.focused = true;
+    settings
+        .settings
+        .start_edit(SettingsAction::Theme, "alpha beta".to_string());
+    settings
+        .handle_key(
+            KeyEvent::new(KeyCode::Left, KeyModifiers::SUPER),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("settings cursor should move to line start");
+    settings
+        .handle_key(key_char('X'), &config, &mut backend)
+        .await
+        .expect("settings text should insert at the cursor");
+    let settings_view = settings.settings_view();
+    assert!(
+        settings
+            .settings
+            .lines(&settings_view, /*width*/ 80)
+            .iter()
+            .any(|line| line_text(line).contains("X▏alpha beta"))
+    );
+    assert_eq!(
+        settings.settings.take_edit(),
+        Some((SettingsAction::Theme, "Xalpha beta".to_string()))
+    );
+
+    let mut mcp = ShellState::snapshot_fixture();
+    mcp.mcp_catalog = Some(ListMcpServerStatusResponse {
+        data: vec![mcp_status_fixture(
+            "github",
+            McpAuthStatus::NotLoggedIn,
+            ["search"],
+        )],
+        next_cursor: None,
+    });
+    mcp.open_mcp_management();
+    mcp.handle_key(key_char('a'), &config, &mut backend)
+        .await
+        .expect("MCP add mode should open");
+    let long_mcp_word = "endpoint".repeat(14);
+    let mcp_text = format!("alpha {long_mcp_word} beta");
+    for ch in mcp_text.chars() {
+        mcp.handle_key(key_char(ch), &config, &mut backend)
+            .await
+            .expect("MCP text should be entered");
+    }
+    mcp.handle_key(
+        KeyEvent::new(KeyCode::Left, KeyModifiers::ALT),
+        &config,
+        &mut backend,
+    )
+    .await
+    .expect("MCP cursor should move by word");
+    mcp.handle_key(key_char('X'), &config, &mut backend)
+        .await
+        .expect("MCP text should insert at the cursor");
+    let draft = line_text(
+        &mcp.pending_mcp_management
+            .as_ref()
+            .expect("MCP manager should remain open")
+            .lines()[3],
+    );
+    assert_eq!(draft, format!("alpha {long_mcp_word} X▏beta"));
+    assert_eq!(backend.calls(), Vec::new());
+    insta::assert_snapshot!(
+        "mcp_edit_cursor",
+        render_shell(
+            &mcp,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
+    );
+}
+
+#[tokio::test]
+async fn option_arrow_on_empty_message_does_not_change_dashboard_route() {
+    let config = test_config().await;
+    for code in [KeyCode::Left, KeyCode::Right] {
+        let mut shell = ShellState::snapshot_fixture();
+        let mut backend = RecordingBackend::default();
+        shell.composer.clear();
+        shell.dashboard_route = DashboardRoute::Status;
+
+        shell
+            .handle_key(
+                KeyEvent::new(code, KeyModifiers::ALT),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("empty message word motion should be handled");
+
+        assert_eq!(
+            (
+                shell.dashboard_route,
+                shell.composer.cursor_position(),
+                backend.calls(),
+            ),
+            (DashboardRoute::Status, (0, 0), Vec::new())
+        );
+    }
 }
 
 #[test]
@@ -5162,6 +5450,37 @@ fn renders_pending_user_input_snapshot() {
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_empty_pending_user_input_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        )
+    ));
+}
+
+#[test]
+fn renders_secret_user_input_cursor_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_user_input = PendingUserInput::from_request(&tool_free_form_user_input_request());
+    set_composer_cursor(
+        &mut shell.composer,
+        &format!("{}sec▏ret|value", "hidden".repeat(20)),
+    );
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 60, /*height*/ 24,
+        )
+    ));
 }
 
 #[test]
@@ -8899,7 +9218,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
     assert!(
         shell.session_list.lines(/*width*/ 80)[2]
             .to_string()
-            .contains("filter* needle  · Enter search all")
+            .contains("filter* needle▏  · Enter search all")
     );
     insta::assert_snapshot!(
         "session_filter_contract",

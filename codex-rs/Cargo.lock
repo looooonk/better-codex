@@ -2450,6 +2450,7 @@ dependencies = [
  "codex-tui",
  "codex-utils-cli",
  "crossterm",
+ "insta",
  "owo-colors",
  "pretty_assertions",
  "ratatui",

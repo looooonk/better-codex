@@ -1,0 +1,6 @@
+---
+source: tui/src/public_widgets/composer_input_tests.rs
+expression: composer.text_with_cursor()
+---
+alpha
+X▏beta gamma

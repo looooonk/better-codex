@@ -7,13 +7,13 @@ expression: rendered
 ──────────────────────────────────────────────────────────────────────────────
                             │
  ◆ CONVERSATION             │   Status   │  Agents   │  Sessions   │  Help
- ▎ YOU  Create a divergent s│Alt+←/→ view  ^D hide  │ ^N new · Sess ↵ focus
-                            │Shift/Alt+↵ newline    │ r/f resume/fork
+ ▎ YOU  Create a divergent s│⌘←→⌫ line · ⌥/^ word   │ ^N new · Sess ↵ focus
+                            │S/A↵ newline · Fn none │ r/f resume/fork
  ▎ CODEX  Started a fullscre│↵ send  ^C/Esc×2 exit  │ a/u/v/d arc/show/del
  ▎ PLAN  1. Build shell     │Alt+↑/^O select/copy   │ n rename  / search
-         2. Wire transcript │Alt+M/E model/effort   │ Agent ↵ focus/log · j/…
+         2. Wire transcript │Alt+M/E model/effort   │ Agent ↵ focus/log · j/k
          3. Render dashboard│^1 Status · ^2 Agents  │ Tab/j/k nav · ↵ apply
-                            │^3 Sessions · ^4 Help  │ Esc×2 exit
+                            │^3 Sessions · ^4 Help  │ Esc×2 exit · ^D hide
  ▌ tool exec just test -p co│
                             │
  ▌ edited 3 files +128 -24  │

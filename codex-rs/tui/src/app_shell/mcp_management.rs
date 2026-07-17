@@ -3,6 +3,9 @@ use super::backend::AppShellBackend;
 use super::is_unmodified_action_key;
 use super::is_unmodified_key_event;
 use super::is_unmodified_key_press;
+use crate::text_input::EditableText;
+use crate::text_input::TextInputAction;
+use crate::text_input::text_input_action_from_key;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::McpAuthStatus;
 use codex_app_server_protocol::McpServerOauthLoginParams;
@@ -82,6 +85,10 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if let Some(action) = text_input_action_from_key(key) {
+            self.with_mcp_state(|state| state.edit_text(action));
+            return Ok(true);
+        }
         let is_shift_back_tab = key.kind == KeyEventKind::Press
             && key.code == KeyCode::BackTab
             && key.modifiers == KeyModifiers::SHIFT;
@@ -95,7 +102,6 @@ impl ShellState {
         match key.code {
             KeyCode::Esc => self.with_mcp_state(McpManagementState::cancel_edit),
             KeyCode::Enter => self.apply_mcp_edit(app_server).await?,
-            KeyCode::Backspace => self.with_mcp_state(McpManagementState::pop_draft),
             KeyCode::Tab | KeyCode::BackTab => {
                 self.with_mcp_state(|state| state.push_draft("    "))
             }
@@ -262,8 +268,12 @@ impl McpManagementState {
     }
 
     pub(super) fn lines(&self) -> Vec<Line<'static>> {
+        self.lines_for_width(usize::MAX)
+    }
+
+    pub(super) fn lines_for_width(&self, width: usize) -> Vec<Line<'static>> {
         if let Some(edit) = &self.edit {
-            return edit.lines();
+            return edit.lines(width);
         }
         let mut lines = vec![
             vec![
@@ -377,7 +387,7 @@ impl McpManagementState {
     fn start_add(&mut self) {
         self.edit = Some(McpEditState {
             title: "Add MCP server".to_string(),
-            draft: String::new(),
+            draft: EditableText::default(),
         });
     }
 
@@ -385,7 +395,7 @@ impl McpManagementState {
         if let Some(server) = self.selected() {
             self.edit = Some(McpEditState {
                 title: format!("Edit {}", server.name),
-                draft: format!("{} {{}}", server.name),
+                draft: EditableText::new(format!("{} {{}}", server.name)),
             });
         }
     }
@@ -396,18 +406,18 @@ impl McpManagementState {
 
     fn push_draft(&mut self, text: &str) {
         if let Some(edit) = &mut self.edit {
-            edit.draft.push_str(text);
+            edit.draft.insert_str(text);
         }
     }
 
-    fn pop_draft(&mut self) {
+    fn edit_text(&mut self, action: TextInputAction) {
         if let Some(edit) = &mut self.edit {
-            edit.draft.pop();
+            edit.draft.apply(action);
         }
     }
 
     fn parsed_edit(&self) -> Option<(String, serde_json::Value)> {
-        let draft = self.edit.as_ref()?.draft.trim();
+        let draft = self.edit.as_ref()?.draft.text().trim();
         let split = draft.find(char::is_whitespace)?;
         let name = draft[..split].trim();
         let value = draft[split..].trim();
@@ -424,18 +434,18 @@ impl McpManagementState {
 #[derive(Debug, Clone, PartialEq)]
 struct McpEditState {
     title: String,
-    draft: String,
+    draft: EditableText,
 }
 
 impl McpEditState {
-    fn lines(&self) -> Vec<Line<'static>> {
+    fn lines(&self, width: usize) -> Vec<Line<'static>> {
         vec![
             self.title.clone().bold().into(),
             "Format: name {\"url\":\"https://...\"} or name {\"command\":\"cmd\",\"args\":[]}"
                 .dim()
                 .into(),
             "".into(),
-            self.draft.clone().into(),
+            self.draft.text_with_cursor_window(width.max(1)).into(),
             "".into(),
             "Enter save  Esc cancel".dim().into(),
         ]

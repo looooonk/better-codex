@@ -9,6 +9,8 @@ use super::startup_layout::startup_panes;
 use crate::LoginStatus;
 use crate::app_server_session::AppServerSession;
 use crate::legacy_core::config::Config;
+use crate::text_input::EditableText;
+use crate::text_input::text_input_action_from_key;
 use crate::tui;
 use crate::tui::TuiEvent;
 use codex_app_server_client::AppServerEvent;
@@ -82,7 +84,7 @@ struct LoginOnboardingState {
     forced_login_method: Option<ForcedLoginMethod>,
     selected: usize,
     mode: LoginMode,
-    api_key_draft: String,
+    api_key_draft: EditableText,
     error: Option<String>,
 }
 
@@ -92,7 +94,7 @@ impl LoginOnboardingState {
             forced_login_method,
             selected: 0,
             mode: LoginMode::Select,
-            api_key_draft: String::new(),
+            api_key_draft: EditableText::default(),
             error: None,
         }
     }
@@ -216,7 +218,7 @@ pub(crate) async fn run_login_onboarding(
                     },
                     TuiEvent::Paste(text) => {
                         if matches!(state.mode, LoginMode::ApiKeyEntry) {
-                            state.api_key_draft.push_str(text.trim());
+                            state.api_key_draft.insert_str(text.trim());
                             tui.frame_requester().schedule_frame();
                         }
                     }
@@ -300,6 +302,10 @@ fn handle_select_key(key: KeyEvent, state: &mut LoginOnboardingState) -> LoginKe
 }
 
 fn handle_api_key_key(key: KeyEvent, state: &mut LoginOnboardingState) -> LoginKeyAction {
+    if let Some(action) = text_input_action_from_key(key) {
+        state.api_key_draft.apply(action);
+        return LoginKeyAction::Redraw;
+    }
     match key.code {
         KeyCode::Esc => {
             state.mode = LoginMode::Select;
@@ -307,12 +313,8 @@ fn handle_api_key_key(key: KeyEvent, state: &mut LoginOnboardingState) -> LoginK
             LoginKeyAction::Redraw
         }
         KeyCode::Enter => LoginKeyAction::SubmitApiKey,
-        KeyCode::Backspace => {
-            state.api_key_draft.pop();
-            LoginKeyAction::Redraw
-        }
         KeyCode::Char(ch) if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT => {
-            state.api_key_draft.push(ch);
+            state.api_key_draft.insert_char(ch);
             LoginKeyAction::Redraw
         }
         _ => LoginKeyAction::Ignored,
@@ -368,7 +370,7 @@ async fn submit_api_key(
     app_server: &mut AppServerSession,
     state: &mut LoginOnboardingState,
 ) -> Option<LoginOnboardingOutcome> {
-    let api_key = state.api_key_draft.trim().to_string();
+    let api_key = state.api_key_draft.text().trim().to_string();
     if api_key.is_empty() {
         state.error = Some("Enter an API key before continuing.".to_string());
         return None;
@@ -446,7 +448,9 @@ impl LoginOnboardingView<'_> {
         ];
         match &self.state.mode {
             LoginMode::Select => self.push_selection_lines(&mut lines, usize::from(content.width)),
-            LoginMode::ApiKeyEntry => self.push_api_key_lines(&mut lines),
+            LoginMode::ApiKeyEntry => {
+                self.push_api_key_lines(&mut lines, usize::from(content.width))
+            }
             LoginMode::DeviceCode {
                 verification_url,
                 user_code,
@@ -491,18 +495,18 @@ impl LoginOnboardingView<'_> {
         }
     }
 
-    fn push_api_key_lines(&self, lines: &mut Vec<Line<'static>>) {
+    fn push_api_key_lines(&self, lines: &mut Vec<Line<'static>>, width: usize) {
         lines.push(
             "Paste your API key below. It is hidden while you type."
                 .dim()
                 .into(),
         );
         lines.push(Line::from(""));
-        let mask = if self.state.api_key_draft.is_empty() {
-            "<empty>".dim()
-        } else {
-            "*".repeat(self.state.api_key_draft.chars().count()).cyan()
-        };
+        let mask = self
+            .state
+            .api_key_draft
+            .masked_text_with_cursor_window(width.saturating_sub(2).max(1))
+            .cyan();
         lines.push(Line::from(vec!["> ".cyan().bold(), mask]));
     }
 

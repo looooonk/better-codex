@@ -77,12 +77,18 @@ pub(super) fn modal_hit(
 }
 
 pub(super) fn modal_panel_area(screen: Rect, lines: &[Line<'static>]) -> Rect {
-    let probe = centered_band_rect(screen, /*height*/ 5);
-    let body_width = body_rect_after_title(pane_content_rect(probe)).width;
+    let body_width = modal_body_width(screen);
     let height = u16::try_from(wrapped_lines(lines.to_vec(), body_width).len())
         .unwrap_or(u16::MAX)
         .saturating_add(4);
     centered_band_rect(screen, height)
+}
+
+pub(super) fn modal_body_width(screen: Rect) -> u16 {
+    body_rect_after_title(pane_content_rect(centered_band_rect(
+        screen, /*height*/ 5,
+    )))
+    .width
 }
 
 fn wrapped_lines(lines: Vec<Line<'static>>, width: u16) -> Vec<Line<'static>> {

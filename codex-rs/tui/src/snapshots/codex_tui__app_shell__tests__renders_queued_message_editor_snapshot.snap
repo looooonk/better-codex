@@ -5,13 +5,13 @@ expression: "render_shell(&shell, area)"
                                                   │
   Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│
-                                                  │Alt+←/→ view  ^D hide  │ ^N new · Sess ↵ focus
- ◆ CONVERSATION                                   │Shift/Alt+↵ newline    │ r/f resume/fork
+                                                  │⌘←→⌫ line · ⌥/^ word   │ ^N new · Sess ↵ focus
+ ◆ CONVERSATION                                   │S/A↵ newline · Fn none │ r/f resume/fork
  ▎ SYSTEM  Better Codex app shell                 │↵ save/resume  ^C exit │ a/u/v/d arc/show/del
  ▎ YOU  Create a divergent standalone TUI.        │Alt+↑/↓ traverse       │ n rename  / search
-                                                  │Alt+M/E model/effort   │ Agent ↵ focus/log · j/…
+                                                  │Alt+M/E model/effort   │ Agent ↵ focus/log · j/k
  ▎ CODEX  Started a fullscreen app shell backed   │^1 Status · ^2 Agents  │ Tab/j/k nav · ↵ apply
-          by app-server turns.                    │^3 Sessions · ^4 Help  │ Esc×2 exit
+          by app-server turns.                    │^3 Sessions · ^4 Help  │ Esc×2 exit · ^D hide
  ▎ PLAN  1. Build shell                           │
          2. Wire transcript                       │
          3. Render dashboard                      │

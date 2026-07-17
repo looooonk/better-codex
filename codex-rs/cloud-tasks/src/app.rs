@@ -1,3 +1,7 @@
+use codex_tui::ComposerInput;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+use crossterm::event::KeyModifiers;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -12,8 +16,30 @@ pub struct EnvironmentRow {
 
 #[derive(Clone, Debug, Default)]
 pub struct EnvModalState {
-    pub query: String,
+    pub query: ComposerInput,
     pub selected: usize,
+}
+
+impl EnvModalState {
+    pub fn handle_text_key(&mut self, key: KeyEvent) -> bool {
+        if self.query.apply_text_shortcut(key) {
+            return true;
+        }
+        if (matches!(key.modifiers, KeyModifiers::NONE | KeyModifiers::SHIFT)
+            && matches!(key.code, KeyCode::Char(_)))
+            || matches!(
+                (key.code, key.modifiers),
+                (
+                    KeyCode::Backspace | KeyCode::Left | KeyCode::Right | KeyCode::Delete,
+                    KeyModifiers::NONE | KeyModifiers::SHIFT
+                )
+            )
+        {
+            let _ = self.query.input(key);
+            return true;
+        }
+        false
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -356,6 +382,19 @@ mod tests {
     use chrono::Utc;
     use codex_cloud_tasks_client::CloudBackendFuture;
     use codex_cloud_tasks_client::CloudTaskError;
+    use pretty_assertions::assert_eq;
+
+    #[test]
+    fn environment_query_uses_shared_text_shortcuts() {
+        let mut state = EnvModalState::default();
+        assert!(state.query.handle_paste("alpha beta".to_string()));
+
+        assert!(state.handle_text_key(KeyEvent::new(KeyCode::Left, KeyModifiers::ALT)));
+        assert!(state.handle_text_key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE)));
+        assert!(!state.handle_text_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)));
+
+        assert_eq!(state.query.text_with_cursor(), "alpha X▏beta");
+    }
 
     struct FakeBackend {
         // maps env key to titles

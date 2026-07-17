@@ -1324,13 +1324,15 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                     Some(Ok(Event::Paste(pasted))) => {
                         if app.env_modal.is_some() {
                             if let Some(m) = app.env_modal.as_mut() {
-                                for ch in pasted.chars() {
-                                    match ch {
-                                        '\r' | '\n' => continue,
-                                        '\t' => m.query.push(' '),
-                                        _ => m.query.push(ch),
-                                    }
-                                }
+                                let pasted = pasted
+                                    .chars()
+                                    .filter_map(|ch| match ch {
+                                        '\r' | '\n' => None,
+                                        '\t' => Some(' '),
+                                        _ => Some(ch),
+                                    })
+                                    .collect();
+                                m.query.handle_paste(pasted);
                             }
                             needs_redraw = true;
                         } else if let Some(page) = app.new_task.as_mut()
@@ -1455,7 +1457,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                         if is_ctrl_o && app.new_task.is_some() {
                             // Close task modal/pending apply if present before opening env modal
                             app.diff_overlay = None;
-                            app.env_modal = Some(app::EnvModalState { query: String::new(), selected: 0 });
+                            app.env_modal = Some(app::EnvModalState::default());
                             // Cache environments while the modal is open to avoid repeated fetches.
                             let should_fetch = app.environments.is_empty();
                             if should_fetch {
@@ -1647,7 +1649,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                 // From task modal, 'o' should close it and open the env selector
                                 KeyCode::Char('o') | KeyCode::Char('O') => {
                                     app.diff_overlay = None;
-                                    app.env_modal = Some(app::EnvModalState { query: String::new(), selected: 0 });
+                                    app.env_modal = Some(app::EnvModalState::default());
                                     // Use cached environments unless empty
                                     if app.environments.is_empty() { app.env_loading = true; app.env_error = None; }
                                     needs_redraw = true;
@@ -1716,15 +1718,16 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                 KeyCode::End  => { if let Some(ov) = &mut app.diff_overlay { ov.sd.scroll_to_bottom(); } needs_redraw = true; }
                                 _ => {}
                             }
+                        } else if app
+                            .env_modal
+                            .as_mut()
+                            .is_some_and(|modal| modal.handle_text_key(key))
+                        {
+                            needs_redraw = true;
                         } else if app.env_modal.is_some() {
                             // Environment modal key handling
                             match key.code {
                                 KeyCode::Esc => { app.env_modal = None; needs_redraw = true; }
-                                KeyCode::Char(ch) if !key.modifiers.contains(KeyModifiers::CONTROL) && !key.modifiers.contains(KeyModifiers::ALT) => {
-                                    if let Some(m) = app.env_modal.as_mut() { m.query.push(ch); }
-                                    needs_redraw = true;
-                                }
-                                KeyCode::Backspace => { if let Some(m) = app.env_modal.as_mut() { m.query.pop(); } needs_redraw = true; }
                                 KeyCode::Down | KeyCode::Char('j') => { if let Some(m) = app.env_modal.as_mut() { m.selected = m.selected.saturating_add(1); } needs_redraw = true; }
                                 KeyCode::Up | KeyCode::Char('k') => { if let Some(m) = app.env_modal.as_mut() { m.selected = m.selected.saturating_sub(1); } needs_redraw = true; }
                                 KeyCode::Home => { if let Some(m) = app.env_modal.as_mut() { m.selected = 0; } needs_redraw = true; }
@@ -1743,7 +1746,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                 KeyCode::Enter => {
                                     // Resolve selection over filtered set
                                     if let Some(state) = app.env_modal.take() {
-                                        let q = state.query.to_lowercase();
+                                        let q = state.query.text().to_lowercase();
                                         let filtered: Vec<&app::EnvironmentRow> = app.environments.iter().filter(|r| {
                                             if q.is_empty() { return true; }
                                             let mut hay = String::new();
@@ -1825,7 +1828,7 @@ pub async fn run_main(cli: Cli, _codex_linux_sandbox_exe: Option<PathBuf>) -> an
                                     });
                                 }
                                 KeyCode::Char('o') | KeyCode::Char('O') => {
-                                    app.env_modal = Some(app::EnvModalState { query: String::new(), selected: 0 });
+                                    app.env_modal = Some(app::EnvModalState::default());
                                     // Cache environments while the modal is open to avoid repeated fetches.
                                     let should_fetch = app.environments.is_empty();
                                     if should_fetch { app.env_loading = true; app.env_error = None; }
@@ -2143,6 +2146,8 @@ mod tests {
     use crossterm::event::KeyEvent;
     use crossterm::event::KeyModifiers;
     use pretty_assertions::assert_eq;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
     use ratatui::buffer::Buffer;
     use ratatui::layout::Rect;
 
@@ -2168,6 +2173,35 @@ mod tests {
         async fn current_branch_name(&self, _path: &std::path::Path) -> Option<String> {
             self.current_branch.clone()
         }
+    }
+
+    #[test]
+    fn environment_search_cursor_snapshot() {
+        let mut app = app::App::new();
+        let mut modal = app::EnvModalState::default();
+        let long_word = "endpoint".repeat(10);
+        let query = format!("alpha {long_word} beta");
+        assert!(modal.query.handle_paste(query));
+        assert!(modal.handle_text_key(KeyEvent::new(KeyCode::Left, KeyModifiers::ALT)));
+        assert!(modal.handle_text_key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE)));
+        app.env_modal = Some(modal);
+        app.environments = vec![app::EnvironmentRow {
+            id: "env-alpha".to_string(),
+            label: Some(format!("alpha {long_word} Xbeta")),
+            is_pinned: true,
+            repo_hints: Some("openai/codex".to_string()),
+        }];
+        let backend = TestBackend::new(/*width*/ 80, /*height*/ 20);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                crate::ui::draw_env_modal(frame, area, &mut app);
+            })
+            .expect("draw environment search");
+
+        insta::assert_snapshot!(terminal.backend().to_string());
     }
 
     #[tokio::test]

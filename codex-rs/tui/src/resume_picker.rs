@@ -25,6 +25,9 @@ use crate::status::format_directory_display;
 use crate::terminal_palette::best_color;
 use crate::terminal_palette::default_bg;
 use crate::text_formatting::truncate_text;
+use crate::text_input::EditableText;
+use crate::text_input::TextInputAction;
+use crate::text_input::text_input_shortcut_from_key;
 use crate::tui::FrameRequester;
 use crate::tui::MouseScrollDirection;
 use crate::tui::Tui;
@@ -653,7 +656,7 @@ struct PickerState {
     scroll_top: usize,
     pending_page_down_target: Option<usize>,
     frozen_footer_percent: Option<u8>,
-    query: String,
+    query: EditableText,
     search_state: SearchState,
     next_request_token: usize,
     next_search_token: usize,
@@ -927,7 +930,7 @@ impl PickerState {
             scroll_top: 0,
             pending_page_down_target: None,
             frozen_footer_percent: None,
-            query: String::new(),
+            query: EditableText::default(),
             search_state: SearchState::Idle,
             next_request_token: 0,
             next_search_token: 0,
@@ -1056,6 +1059,10 @@ impl PickerState {
         if !self.list_keymap.page_down.is_pressed(key) {
             self.pending_page_down_target = None;
         }
+        if let Some(action) = text_input_shortcut_from_key(key) {
+            self.edit_query(action);
+            return Ok(None);
+        }
         // The session picker is always searchable, so plain text belongs to
         // the query first. Modified list bindings still route through the
         // runtime keymap below.
@@ -1181,19 +1188,19 @@ impl PickerState {
                 }
             _ if allow_plain_char_navigation && self.list_keymap.page_down.is_pressed(key)
                 && !self.filtered_rows.is_empty() => {
-                    let step = self.view_rows.unwrap_or(10).max(1);
-                    let target = self.selected.saturating_add(step);
-                    let max_index = self.filtered_rows.len().saturating_sub(1);
-                    if target > max_index && self.pagination.next_cursor.is_some() {
-                        self.pending_page_down_target = Some(target);
-                        self.load_more_if_needed(LoadTrigger::Scroll);
-                    } else {
-                        self.selected = target.min(max_index);
-                        self.ensure_selected_visible();
-                        self.maybe_load_more_for_scroll();
-                    }
-                    self.request_frame();
+                let step = self.view_rows.unwrap_or(10).max(1);
+                let target = self.selected.saturating_add(step);
+                let max_index = self.filtered_rows.len().saturating_sub(1);
+                if target > max_index && self.pagination.next_cursor.is_some() {
+                    self.pending_page_down_target = Some(target);
+                    self.load_more_if_needed(LoadTrigger::Scroll);
+                } else {
+                    self.selected = target.min(max_index);
+                    self.ensure_selected_visible();
+                    self.maybe_load_more_for_scroll();
                 }
+                self.request_frame();
+            }
             KeyEvent {
                 code: KeyCode::Tab, ..
             } => {
@@ -1216,11 +1223,10 @@ impl PickerState {
             }
             KeyEvent {
                 code: KeyCode::Backspace,
+                modifiers: KeyModifiers::NONE,
                 ..
             } => {
-                let mut new_query = self.query.clone();
-                new_query.pop();
-                self.set_query(new_query);
+                self.edit_query(TextInputAction::DeleteBackward);
             }
             KeyEvent {
                 code: KeyCode::Char(c),
@@ -1229,11 +1235,10 @@ impl PickerState {
             }
                 // basic text input for search
                 if !modifiers.contains(KeyModifiers::CONTROL)
-                    && !modifiers.contains(KeyModifiers::ALT)
+                    && !modifiers.intersects(KeyModifiers::ALT | KeyModifiers::SUPER)
                 => {
-                    let mut new_query = self.query.clone();
-                    new_query.push(c);
-                    self.set_query(new_query);
+                    self.query.insert_char(c);
+                    self.query_changed();
                 }
             _ => {}
         }
@@ -1247,7 +1252,7 @@ impl PickerState {
         let Some(pasted) = normalize_pasted_search_query(&pasted) else {
             return;
         };
-        let mut new_query = self.query.clone();
+        let mut new_query = self.query.text().to_string();
         if !new_query.is_empty() && !new_query.ends_with(char::is_whitespace) {
             new_query.push(' ');
         }
@@ -1414,7 +1419,7 @@ impl PickerState {
         if self.query.is_empty() {
             self.filtered_rows = base_iter.cloned().collect();
         } else {
-            let q = self.query.to_lowercase();
+            let q = self.query.text().to_lowercase();
             self.filtered_rows = base_iter.filter(|r| r.matches_query(&q)).cloned().collect();
         }
         if self.selected >= self.filtered_rows.len() {
@@ -1441,10 +1446,22 @@ impl PickerState {
     }
 
     fn set_query(&mut self, new_query: String) {
-        if self.query == new_query {
+        if self.query.text() == new_query {
             return;
         }
-        self.query = new_query;
+        self.query.set_text(new_query);
+        self.query_changed();
+    }
+
+    fn edit_query(&mut self, action: TextInputAction) {
+        if self.query.apply(action) {
+            self.query_changed();
+        } else {
+            self.request_frame();
+        }
+    }
+
+    fn query_changed(&mut self) {
         self.selected = 0;
         self.apply_filter();
         if self.query.is_empty() {
@@ -1914,15 +1931,17 @@ fn search_line(state: &PickerState, width: u16) -> Line<'_> {
     if let Some(error) = state.inline_error.as_deref() {
         return Line::from(error.red());
     }
-    let search = if state.query.is_empty() {
-        "Type to search".dim()
-    } else {
-        format!("Search: {}", state.query).into()
-    };
     let mut toolbar = toolbar_line(state, /*compact*/ false);
     if toolbar.width() as u16 > width.saturating_sub(2) {
         toolbar = toolbar_line(state, /*compact*/ true);
     }
+    let max_search_width = usize::from(width)
+        .saturating_sub(toolbar.width())
+        .saturating_sub(2);
+    let query = state
+        .query
+        .text_with_cursor_window(max_search_width.saturating_sub("Search: ".len()).max(1));
+    let search: Span<'static> = format!("Search: {query}").into();
     let search_width = UnicodeWidthStr::width(search.content.as_ref());
     let toolbar_width = toolbar.width();
     let spacer_width = width
@@ -3769,7 +3788,7 @@ mod tests {
 
         assert!(footer_lines_text(&state, /*width*/ 220).contains("esc start new"));
 
-        state.query = String::from("picker");
+        state.query = EditableText::new("picker");
 
         assert!(footer_lines_text(&state, /*width*/ 220).contains("esc clear search"));
     }
@@ -3795,7 +3814,7 @@ mod tests {
         assert!(compact.contains("esc exit"));
         assert!(compact.contains("ctrl+c exit"));
 
-        state.query = String::from("picker");
+        state.query = EditableText::new("picker");
 
         assert!(footer_lines_text(&state, /*width*/ 220).contains("esc clear search"));
     }
@@ -3873,7 +3892,7 @@ mod tests {
             /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
-        state.query = String::from("picker");
+        state.query = EditableText::new("picker");
         state.density = SessionListDensity::Dense;
 
         assert_snapshot!(
@@ -4084,7 +4103,7 @@ mod tests {
             /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
-        state.query = String::from("pick");
+        state.query = EditableText::new("pick");
 
         state
             .handle_key(KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL))
@@ -4092,7 +4111,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(state.density, SessionListDensity::Dense);
-        assert_eq!(state.query, "pick");
+        assert_eq!(state.query.text(), "pick");
     }
 
     #[tokio::test]
@@ -4181,7 +4200,7 @@ mod tests {
 
         assert!(selection.is_none());
         assert_eq!(state.selected, 0);
-        assert_eq!(state.query, "");
+        assert_eq!(state.query.text(), "");
 
         let selection = state
             .handle_key(KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE))
@@ -4189,7 +4208,7 @@ mod tests {
             .unwrap();
 
         assert!(selection.is_none());
-        assert_eq!(state.query, "");
+        assert_eq!(state.query.text(), "");
     }
 
     #[tokio::test]
@@ -4518,7 +4537,7 @@ session_picker_view = "dense"
             /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
-        state.query = String::from("pick");
+        state.query = EditableText::new("pick");
 
         state
             .handle_key(KeyEvent::new(KeyCode::Char('\u{000f}'), KeyModifiers::NONE))
@@ -4526,7 +4545,7 @@ session_picker_view = "dense"
             .unwrap();
 
         assert_eq!(state.density, SessionListDensity::Dense);
-        assert_eq!(state.query, "pick");
+        assert_eq!(state.query.text(), "pick");
     }
 
     #[tokio::test]
@@ -4540,7 +4559,7 @@ session_picker_view = "dense"
             /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
-        state.query = String::from("resize");
+        state.query = EditableText::new("resize");
 
         state
             .handle_key(KeyEvent::new(KeyCode::Char(' '), KeyModifiers::NONE))
@@ -4551,8 +4570,38 @@ session_picker_view = "dense"
             .await
             .unwrap();
 
-        assert_eq!(state.query, "resize r");
+        assert_eq!(state.query.text(), "resize r");
         assert_eq!(state.expanded_thread_id, None);
+    }
+
+    #[tokio::test]
+    async fn search_query_uses_shared_cursor_shortcuts() {
+        let loader = page_only_loader(|_| {});
+        let mut state = PickerState::new(
+            FrameRequester::test_dummy(),
+            loader,
+            ProviderFilter::MatchDefault(String::from("openai")),
+            /*show_all*/ true,
+            /*filter_cwd*/ None,
+            SessionPickerAction::Resume,
+        );
+        let long_word = "endpoint".repeat(12);
+        state.query = EditableText::new(format!("alpha {long_word} beta"));
+
+        state
+            .handle_key(KeyEvent::new(KeyCode::Left, KeyModifiers::CONTROL))
+            .await
+            .expect("move query cursor");
+        state
+            .handle_key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE))
+            .await
+            .expect("insert query text");
+
+        assert_eq!(state.query.text(), format!("alpha {long_word} Xbeta"));
+        assert_snapshot!(
+            "resume_picker_search_cursor",
+            search_line(&state, /*width*/ 80).to_string()
+        );
     }
 
     #[tokio::test]
@@ -5613,7 +5662,7 @@ session_picker_view = "dense"
     }
 
     #[tokio::test]
-    async fn end_jumps_to_last_known_row_and_starts_loading_more() {
+    async fn jump_bottom_starts_loading_more() {
         let recorded_requests: Arc<Mutex<Vec<PageLoadRequest>>> = Arc::new(Mutex::new(Vec::new()));
         let request_sink = recorded_requests.clone();
         let loader = page_only_loader(move |req: PageLoadRequest| {
@@ -5645,9 +5694,10 @@ session_picker_view = "dense"
             /*reached_scan_cap*/ false,
         ));
         state.update_viewport(/*rows*/ 5, /*width*/ 80);
+        state.list_keymap.jump_bottom = vec![crate::key_hint::ctrl(KeyCode::Char('g'))];
 
         state
-            .handle_key(KeyEvent::new(KeyCode::End, KeyModifiers::NONE))
+            .handle_key(KeyEvent::new(KeyCode::Char('g'), KeyModifiers::CONTROL))
             .await
             .unwrap();
 
@@ -6248,11 +6298,11 @@ session_picker_view = "dense"
             /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
-        state.query = String::from("resize");
+        state.query = EditableText::new("resize");
 
         state.handle_paste(String::from("results"));
 
-        assert_eq!(state.query, "resize results");
+        assert_eq!(state.query.text(), "resize results");
     }
 
     #[tokio::test]
@@ -6266,11 +6316,11 @@ session_picker_view = "dense"
             /*filter_cwd*/ None,
             SessionPickerAction::Resume,
         );
-        state.query = String::from("resize");
+        state.query = EditableText::new("resize");
 
         state.handle_paste(String::from("  \n\t  "));
 
-        assert_eq!(state.query, "resize");
+        assert_eq!(state.query.text(), "resize");
     }
 
     #[tokio::test]
@@ -6305,7 +6355,7 @@ session_picker_view = "dense"
         state.handle_paste(String::from("target"));
 
         let guard = recorded_requests.lock().unwrap();
-        assert_eq!(state.query, "target");
+        assert_eq!(state.query.text(), "target");
         assert_eq!(guard.len(), 1);
         assert!(guard[0].search_token.is_some());
     }

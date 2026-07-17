@@ -1,6 +1,8 @@
 use super::dashboard::dashboard_value;
 use super::design::palette;
 use super::design::selection_style;
+use crate::text_input::EditableText;
+use crate::text_input::TextInputAction;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadListCwdFilter;
 use codex_app_server_protocol::ThreadListParams;
@@ -36,9 +38,9 @@ pub(super) struct SessionListState {
     scroll_top: usize,
     pub(super) focused: bool,
     search_active: bool,
-    search_query: String,
+    search_query: EditableText,
     show_archived: bool,
-    rename_draft: Option<String>,
+    rename_draft: Option<EditableText>,
     last_error: Option<String>,
     loaded: bool,
     has_more: bool,
@@ -67,8 +69,8 @@ impl SessionListState {
             archived: Some(self.show_archived),
             cwd: None::<ThreadListCwdFilter>,
             use_state_db_only: false,
-            search_term: (!self.search_active && !self.search_query.trim().is_empty())
-                .then(|| self.search_query.trim().to_string()),
+            search_term: (!self.search_active && !self.search_query.text().trim().is_empty())
+                .then(|| self.search_query.text().trim().to_string()),
             parent_thread_id: None,
             ancestor_thread_id: None,
         }
@@ -176,13 +178,13 @@ impl SessionListState {
     }
 
     pub(super) fn push_search_char(&mut self, ch: char) {
-        self.search_query.push(ch);
+        self.search_query.insert_char(ch);
         self.apply_search_filter();
         self.normalize_selection_and_scroll();
     }
 
-    pub(super) fn backspace_search(&mut self) -> SessionSearchOutcome {
-        if self.search_query.pop().is_none() {
+    pub(super) fn edit_search(&mut self, action: TextInputAction) -> SessionSearchOutcome {
+        if !self.search_query.apply(action) {
             return SessionSearchOutcome::LocalFilterOnly;
         }
         self.apply_search_filter();
@@ -230,7 +232,7 @@ impl SessionListState {
             .filter(|title| *title != "untitled thread")
             .unwrap_or_default()
             .to_string();
-        self.rename_draft = Some(draft);
+        self.rename_draft = Some(EditableText::new(draft));
     }
 
     pub(super) fn cancel_rename(&mut self) {
@@ -239,20 +241,20 @@ impl SessionListState {
 
     pub(super) fn push_rename_char(&mut self, ch: char) {
         if let Some(draft) = &mut self.rename_draft {
-            draft.push(ch);
+            draft.insert_char(ch);
         }
     }
 
-    pub(super) fn backspace_rename(&mut self) {
+    pub(super) fn edit_rename(&mut self, action: TextInputAction) {
         if let Some(draft) = &mut self.rename_draft {
-            draft.pop();
+            draft.apply(action);
         }
     }
 
     pub(super) fn take_rename_draft(&mut self) -> Option<String> {
         self.rename_draft
             .take()
-            .map(|draft| draft.trim().to_string())
+            .map(|draft| draft.into_text().trim().to_string())
     }
 
     pub(super) fn renaming(&self) -> bool {
@@ -271,7 +273,7 @@ impl SessionListState {
         } else {
             "ACTIVE"
         };
-        let count = if self.search_active && !self.search_query.trim().is_empty() {
+        let count = if self.search_active && !self.search_query.text().trim().is_empty() {
             format!(
                 "{} shown / {}{} loaded",
                 self.rows.len(),
@@ -308,11 +310,20 @@ impl SessionListState {
             } else {
                 ("search", "  · server results")
             };
+            let query = if self.search_active {
+                self.search_query.text_with_cursor_window(
+                    width
+                        .saturating_sub(label.len() + 1 + UnicodeWidthStr::width(hint))
+                        .max(1),
+                )
+            } else {
+                self.search_query.text().to_string()
+            };
             lines.push(Line::from(vec![
                 label.fg(palette::CYAN),
                 " ".into(),
                 dashboard_value(
-                    &self.search_query,
+                    &query,
                     width,
                     label.len() + 1 + UnicodeWidthStr::width(hint),
                 )
@@ -321,10 +332,11 @@ impl SessionListState {
             ]));
         }
         if let Some(draft) = &self.rename_draft {
+            let draft = draft.text_with_cursor_window(width.saturating_sub(8).max(1));
             lines.push(Line::from(vec![
                 "rename*".fg(palette::CYAN),
                 " ".into(),
-                dashboard_value(draft, width, /*prefix_width*/ 8).fg(palette::TEXT),
+                dashboard_value(&draft, width, /*prefix_width*/ 8).fg(palette::TEXT),
             ]));
         }
         if let Some(error) = &self.last_error {
@@ -363,7 +375,7 @@ impl SessionListState {
     }
 
     fn apply_search_filter(&mut self) {
-        let query = self.search_query.trim();
+        let query = self.search_query.text().trim();
         if query.is_empty() {
             self.rows.clone_from(&self.all_rows);
             return;

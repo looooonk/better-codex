@@ -934,9 +934,19 @@ pub fn draw_env_modal(frame: &mut Frame, area: Rect, app: &mut App) {
     let query = app
         .env_modal
         .as_ref()
-        .map(|m| m.query.clone())
+        .map(|m| {
+            m.query.text_with_cursor_window(
+                usize::from(rows[1].width)
+                    .saturating_sub("Search: ".len())
+                    .max(1),
+            )
+        })
         .unwrap_or_default();
-    let ql = query.to_lowercase();
+    let ql = app
+        .env_modal
+        .as_ref()
+        .map(|m| m.query.text().to_lowercase())
+        .unwrap_or_default();
     let search = Paragraph::new(format!("Search: {query}")).wrap(Wrap { trim: true });
     frame.render_widget(search, rows[1]);
 

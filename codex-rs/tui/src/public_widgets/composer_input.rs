@@ -2,6 +2,9 @@
 
 use std::time::Duration;
 
+use crate::text_input::EditableText;
+use crate::text_input::text_input_action_from_key;
+use crate::text_input::text_input_shortcut_from_key;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
@@ -23,9 +26,9 @@ pub enum ComposerAction {
 }
 
 /// A minimal multiline input field with submit semantics.
+#[derive(Clone, Debug)]
 pub struct ComposerInput {
-    text: String,
-    cursor: usize,
+    input: EditableText,
     hint_items: Option<Vec<(String, String)>>,
 }
 
@@ -33,21 +36,43 @@ impl ComposerInput {
     /// Create an empty composer input.
     pub fn new() -> Self {
         Self {
-            text: String::new(),
-            cursor: 0,
+            input: EditableText::default(),
             hint_items: None,
         }
     }
 
     /// Returns true if the input is empty.
     pub fn is_empty(&self) -> bool {
-        self.text.is_empty()
+        self.input.is_empty()
+    }
+
+    /// Return the current input text.
+    pub fn text(&self) -> &str {
+        self.input.text()
+    }
+
+    /// Return the input text with a software cursor marker.
+    pub fn text_with_cursor(&self) -> String {
+        self.input.text_with_cursor()
+    }
+
+    /// Return a width-bounded input window that always contains the cursor.
+    pub fn text_with_cursor_window(&self, max_width: usize) -> String {
+        self.input.text_with_cursor_window(max_width)
     }
 
     /// Clear the input text.
     pub fn clear(&mut self) {
-        self.text.clear();
-        self.cursor = 0;
+        self.input.clear();
+    }
+
+    /// Apply a modified text-editing shortcut if the event matches one.
+    pub fn apply_text_shortcut(&mut self, key: KeyEvent) -> bool {
+        let Some(action) = text_input_shortcut_from_key(key) else {
+            return false;
+        };
+        self.input.apply(action);
+        true
     }
 
     /// Feed a key event into the composer and return a high-level action.
@@ -55,13 +80,17 @@ impl ComposerInput {
         if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
             return ComposerAction::None;
         }
+        if let Some(action) = text_input_action_from_key(key) {
+            self.input.apply(action);
+            return ComposerAction::None;
+        }
 
         match key.code {
             KeyCode::Enter if key.modifiers.contains(KeyModifiers::SHIFT) => {
-                self.insert("\n");
+                self.input.insert_str("\n");
             }
             KeyCode::Enter => {
-                let submitted = self.text.trim().to_string();
+                let submitted = self.input.text().trim().to_string();
                 if !submitted.is_empty() {
                     self.clear();
                     return ComposerAction::Submitted(submitted);
@@ -70,17 +99,17 @@ impl ComposerInput {
             KeyCode::Char(ch)
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
             {
-                self.insert(&ch.to_string());
+                self.input.insert_char(ch);
             }
-            KeyCode::Backspace | KeyCode::Char('\u{007f}') => self.backspace(),
-            KeyCode::Delete => self.delete(),
-            KeyCode::Left => self.move_left(),
-            KeyCode::Right => self.move_right(),
-            KeyCode::Home => self.move_to_line_start(),
-            KeyCode::End => self.move_to_line_end(),
-            KeyCode::Tab | KeyCode::BackTab => self.insert("    "),
+            KeyCode::Tab | KeyCode::BackTab => self.input.insert_str("    "),
             KeyCode::Up
             | KeyCode::Down
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Home
+            | KeyCode::End
+            | KeyCode::Backspace
+            | KeyCode::Delete
             | KeyCode::PageUp
             | KeyCode::PageDown
             | KeyCode::Esc
@@ -106,7 +135,8 @@ impl ComposerInput {
         if pasted.is_empty() {
             return false;
         }
-        self.insert(&pasted.replace("\r\n", "\n").replace('\r', "\n"));
+        self.input
+            .insert_str(&pasted.replace("\r\n", "\n").replace('\r', "\n"));
         true
     }
 
@@ -142,19 +172,15 @@ impl ComposerInput {
         }
         let width = usize::from(area.width);
         let content_width = width.saturating_sub(2).max(1);
-        let line_start = self.text[..self.cursor]
+        let text = self.input.text();
+        let cursor = self.input.cursor();
+        let line_start = text[..cursor]
             .rfind('\n')
             .map(|index| index + 1)
             .unwrap_or(0);
-        let logical_line_index = self.text[..line_start]
-            .chars()
-            .filter(|ch| *ch == '\n')
-            .count();
-        let logical_line = self.text[line_start..]
-            .split('\n')
-            .next()
-            .unwrap_or_default();
-        let cursor_in_line = self.cursor.saturating_sub(line_start);
+        let logical_line_index = text[..line_start].chars().filter(|ch| *ch == '\n').count();
+        let logical_line = text[line_start..].split('\n').next().unwrap_or_default();
+        let cursor_in_line = cursor.saturating_sub(line_start);
         let options =
             textwrap::Options::new(content_width).wrap_algorithm(textwrap::WrapAlgorithm::FirstFit);
         let ranges = crate::wrapping::wrap_ranges(logical_line, options);
@@ -166,7 +192,8 @@ impl ComposerInput {
             .map(|range| range.start)
             .unwrap_or(0);
         let row = self
-            .text
+            .input
+            .text()
             .split('\n')
             .take(logical_line_index)
             .map(|line| textwrap::wrap(line, content_width).len().max(1))
@@ -224,12 +251,13 @@ impl ComposerInput {
     }
 
     fn rendered_lines(&self, width: usize) -> Vec<Line<'static>> {
-        if self.text.is_empty() {
+        if self.input.is_empty() {
             return vec![vec!["> ".cyan(), "Compose new task".dim()].into()];
         }
 
         let content_width = width.saturating_sub(2).max(1);
-        self.text
+        self.input
+            .text()
             .split('\n')
             .flat_map(|logical_line| {
                 let wrapped = textwrap::wrap(logical_line, content_width);
@@ -266,66 +294,6 @@ impl ComposerInput {
             spans.push(label.dim());
         }
         spans.into()
-    }
-
-    fn insert(&mut self, text: &str) {
-        self.text.insert_str(self.cursor, text);
-        self.cursor += text.len();
-    }
-
-    fn backspace(&mut self) {
-        if let Some(previous) = self.text[..self.cursor]
-            .char_indices()
-            .next_back()
-            .map(|(index, _)| index)
-        {
-            self.text.drain(previous..self.cursor);
-            self.cursor = previous;
-        }
-    }
-
-    fn delete(&mut self) {
-        if let Some(next) = self.text[self.cursor..]
-            .chars()
-            .next()
-            .map(|ch| self.cursor + ch.len_utf8())
-        {
-            self.text.drain(self.cursor..next);
-        }
-    }
-
-    fn move_left(&mut self) {
-        if let Some(previous) = self.text[..self.cursor]
-            .char_indices()
-            .next_back()
-            .map(|(index, _)| index)
-        {
-            self.cursor = previous;
-        }
-    }
-
-    fn move_right(&mut self) {
-        if let Some(next) = self.text[self.cursor..]
-            .chars()
-            .next()
-            .map(|ch| self.cursor + ch.len_utf8())
-        {
-            self.cursor = next;
-        }
-    }
-
-    fn move_to_line_start(&mut self) {
-        self.cursor = self.text[..self.cursor]
-            .rfind('\n')
-            .map(|index| index + 1)
-            .unwrap_or(0);
-    }
-
-    fn move_to_line_end(&mut self) {
-        self.cursor = self.text[self.cursor..]
-            .find('\n')
-            .map(|offset| self.cursor + offset)
-            .unwrap_or(self.text.len());
     }
 }
 

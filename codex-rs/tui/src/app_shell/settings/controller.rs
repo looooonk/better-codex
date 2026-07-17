@@ -12,6 +12,7 @@ use crate::config_update::build_syntax_theme_edit;
 use crate::config_update::clear_config_value;
 use crate::config_update::replace_config_value;
 use crate::render::highlight::validate_theme_name;
+use crate::text_input::text_input_action_from_key;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
@@ -128,6 +129,10 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if let Some(action) = text_input_action_from_key(key) {
+            self.settings.edit_text(action);
+            return Ok(true);
+        }
         if (matches!(key.code, KeyCode::Esc | KeyCode::Enter) && !is_unmodified_key_press(key))
             || (key.code == KeyCode::Backspace && !is_unmodified_key_event(key))
         {
@@ -142,15 +147,13 @@ impl ShellState {
                     self.apply_settings_edit(action, draft, app_server).await?;
                 }
             }
-            KeyCode::Backspace => {
-                self.settings.backspace_edit();
-            }
             KeyCode::Char(ch)
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
             {
                 self.settings.push_edit_char(ch);
             }
             KeyCode::Char(_)
+            | KeyCode::Backspace
             | KeyCode::Up
             | KeyCode::Down
             | KeyCode::Left

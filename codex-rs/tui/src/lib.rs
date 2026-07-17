@@ -151,6 +151,7 @@ mod terminal_palette;
 mod terminal_probe;
 mod terminal_visualization_instructions;
 mod text_formatting;
+mod text_input;
 mod token_usage;
 mod tui;
 pub(crate) mod update_action;

@@ -17,6 +17,7 @@ use super::input_request_view::elicitation_lines;
 use super::input_request_view::request_panel_hit;
 use super::input_request_view::user_input_lines;
 use super::input_request_view::visible_request_panel_lines;
+use super::modal_view::modal_body_width;
 use super::modal_view::render_modal;
 use super::navigation::DashboardRoute;
 use super::shell_layout;
@@ -93,7 +94,8 @@ impl ShellView<'_> {
             render_modal(area, "Claude Code Import", pending.lines(), buf);
         }
         if let Some(pending) = &self.shell.pending_mcp_management {
-            render_modal(area, "MCP Servers", pending.lines(), buf);
+            let width = usize::from(modal_body_width(area));
+            render_modal(area, "MCP Servers", pending.lines_for_width(width), buf);
         }
         if let Some(pending) = &self.shell.pending_plugin_management {
             render_modal(area, "Plugins", pending.lines(), buf);
@@ -282,12 +284,10 @@ impl ShellView<'_> {
 
     pub(super) fn user_input_option_at(&self, area: Rect, position: Position) -> Option<usize> {
         let pending = self.shell.pending_user_input.as_ref()?;
-        let lines = user_input_lines(
-            pending,
-            self.shell.composer.text(),
-            self.shell.composer.is_empty(),
-        );
-        let hit = request_panel_hit(self.input_area(area), position, &lines)?;
+        let input_area = self.input_area(area);
+        let width = body_rect_after_title(pane_content_rect(input_area)).width;
+        let lines = user_input_lines(pending, &self.shell.composer, width);
+        let hit = request_panel_hit(input_area, position, &lines)?;
         if hit.line != 2 {
             return None;
         }
@@ -382,14 +382,11 @@ impl ShellView<'_> {
             return;
         }
         if let Some(pending) = &self.shell.pending_user_input {
+            let width = body_rect_after_title(pane_content_rect(area)).width;
             self.render_request_panel(
                 area,
                 "TOOL INPUT",
-                user_input_lines(
-                    pending,
-                    self.shell.composer.text(),
-                    self.shell.composer.is_empty(),
-                ),
+                user_input_lines(pending, &self.shell.composer, width),
                 palette::SURFACE,
                 buf,
             );

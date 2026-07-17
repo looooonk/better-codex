@@ -1,6 +1,7 @@
 use super::ShellState;
 use super::design::key_hint_line;
 use super::design::palette;
+use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 use unicode_width::UnicodeWidthStr;
@@ -32,19 +33,24 @@ fn two_column_lines(labels: &[&'static str], width: usize) -> Vec<Line<'static>>
     let gap_width = UnicodeWidthStr::width(KEY_HINT_COLUMN_GAP);
     let columns_width = width.saturating_sub(gap_width);
     let left_width = columns_width.div_ceil(2);
+    let right_width = columns_width.saturating_sub(left_width);
     let rows = labels.len().div_ceil(2);
     let (left, right) = labels.split_at(rows);
 
     left.iter()
         .zip(right)
         .map(|(left, right)| {
-            let mut spans = key_hint_line(*left).spans;
+            let left = truncate_line_with_ellipsis_if_overflow(key_hint_line(*left), left_width);
+            let rendered_left_width = left.width();
+            let mut spans = left.spans;
             spans.push(
-                " ".repeat(left_width.saturating_sub(UnicodeWidthStr::width(*left)))
+                " ".repeat(left_width.saturating_sub(rendered_left_width))
                     .into(),
             );
             spans.push(KEY_HINT_COLUMN_GAP.fg(palette::BORDER));
-            spans.extend(key_hint_line(*right).spans);
+            spans.extend(
+                truncate_line_with_ellipsis_if_overflow(key_hint_line(*right), right_width).spans,
+            );
             Line::from(spans)
         })
         .collect()
@@ -110,8 +116,8 @@ fn wide_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
         ]
     };
     [
-        "Alt+Left/Right switch views",
-        "Shift/Alt+Enter newline",
+        "Cmd arrows/⌫ line; Opt/Ctrl word",
+        "Shift/Alt+Enter newline; Fn none",
         contextual[0],
         contextual[1],
         contextual[2],
@@ -195,8 +201,8 @@ fn compact_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
         ]
     };
     [
-        "Alt+←/→ switch views",
-        "Shift/Alt+↵ newline",
+        "⌘←→⌫ line · ⌥/^ word",
+        "S/A+↵ newline · Fn none",
         contextual[0],
         contextual[1],
         contextual[2],
@@ -223,18 +229,18 @@ fn compact_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
 fn dense_key_hint_labels(shell: &ShellState) -> [&'static str; 14] {
     let contextual = if shell.transcript_selection.is_some() {
         [
-            "Alt+←/→ switch views",
             if shell.selected_transcript_is_output() {
                 "↑/↓ select  ↵ open"
             } else {
                 "↑/↓ select  ↵ copy"
             },
-            "Ctrl+D hide dashboard",
+            "Esc back · ^D hide",
+            "^O copy",
         ]
     } else if shell.active_turn_id.is_some() {
         let editing_queue = shell.composer.queued_edit_position().is_some();
         [
-            "Alt+←/→ view  ^D hide",
+            "⌘←→⌫ line · ⌥/^ word",
             if editing_queue {
                 "↵/Tab save · ^C stop"
             } else {
@@ -248,14 +254,14 @@ fn dense_key_hint_labels(shell: &ShellState) -> [&'static str; 14] {
         ]
     } else if shell.has_pending_shell_command() {
         [
-            "Alt+←/→ view  ^D hide",
+            "⌘←→⌫ line · ⌥/^ word",
             "↵ send  ^C cancel/Esc×2",
             "Alt+↑/^O select/copy",
         ]
     } else if shell.composer.has_queued_messages() {
         let editing_queue = shell.composer.queued_edit_position().is_some();
         [
-            "Alt+←/→ view  ^D hide",
+            "⌘←→⌫ line · ⌥/^ word",
             if editing_queue {
                 "↵ save/resume  ^C exit"
             } else {
@@ -269,14 +275,14 @@ fn dense_key_hint_labels(shell: &ShellState) -> [&'static str; 14] {
         ]
     } else {
         [
-            "Alt+←/→ view  ^D hide",
+            "⌘←→⌫ line · ⌥/^ word",
             "↵ send  ^C/Esc×2 exit",
             "Alt+↑/^O select/copy",
         ]
     };
     [
         contextual[0],
-        "Shift/Alt+↵ newline",
+        "S/A↵ newline · Fn none",
         contextual[1],
         contextual[2],
         "Alt+M/E model/effort",
@@ -286,12 +292,12 @@ fn dense_key_hint_labels(shell: &ShellState) -> [&'static str; 14] {
         "r/f resume/fork",
         "a/u/v/d arc/show/del",
         "n rename  / search",
-        "Agent ↵ focus/log · j/k nav",
+        "Agent ↵ focus/log · j/k",
         "Tab/j/k nav · ↵ apply",
         if shell.transcript_selection.is_some() {
-            "Esc composer"
+            "Esc back · ^D hide"
         } else {
-            "Esc×2 exit"
+            "Esc×2 exit · ^D hide"
         },
     ]
 }

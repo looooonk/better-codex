@@ -9,7 +9,7 @@ expression: "render_shell(&shell, area)"
  ◆ CONVERSATION                                   │▎◆ SETTINGS
  ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
  ▎ YOU  Create a divergent standalone TUI.        │▎─────────────────────━━━━━━━━━━━━──────────────
-                                                  │▎edit Syntax theme missing-theme
+                                                  │▎edit Syntax theme missing-theme▏
  ▎ CODEX  Started a fullscreen app shell backed   │▎unknown syntax theme `missing-theme`
           by app-server turns.                    │▎› Syntax theme: default
  ▎ PLAN  1. Build shell                           │▎  Animations: on

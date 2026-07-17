@@ -1,6 +1,7 @@
 use super::PendingApproval;
 use super::PendingElicitation;
 use super::PendingUserInput;
+use super::composer::ComposerState;
 use super::design::body_rect_after_title;
 use super::design::palette;
 use super::design::pane_content_rect;
@@ -198,8 +199,8 @@ pub(super) fn approval_lines(pending: &PendingApproval) -> Vec<Line<'static>> {
 
 pub(super) fn user_input_lines(
     pending: &PendingUserInput,
-    composer_text: &str,
-    is_empty: bool,
+    composer: &ComposerState,
+    width: u16,
 ) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let (current, total) = pending.question_position();
@@ -220,12 +221,13 @@ pub(super) fn user_input_lines(
     let secret = pending
         .current_question()
         .is_some_and(|question| question.is_secret);
-    let answer = if is_empty {
-        "answer".dim()
+    let answer_width = usize::from(width).saturating_sub(2).max(1);
+    let answer = if composer.is_empty() {
+        "▏answer".dim()
     } else if secret {
-        "[hidden]".dim()
+        composer.masked_text_with_cursor_window(answer_width).dim()
     } else {
-        composer_text.to_string().into()
+        composer.text_with_cursor_window(answer_width).into()
     };
     let mut answer_line = vec!["> ".cyan().bold(), answer];
     if let Some(question) = pending.current_question()

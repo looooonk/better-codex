@@ -17,6 +17,7 @@ use crate::key_hint;
 use crate::legacy_core::config::Config;
 use crate::resume_picker::SessionSelection;
 use crate::session_state::ThreadSessionState;
+use crate::text_input::text_input_action_from_key;
 use crate::token_usage::TokenUsage;
 use crate::tui;
 use crate::tui::TuiEvent;
@@ -1038,7 +1039,17 @@ impl ShellState {
             }
             return Ok(false);
         }
+        let dashboard_text_input_focused = match self.dashboard_route {
+            DashboardRoute::Sessions => {
+                self.session_list.focused
+                    && (self.session_list.search_active() || self.session_list.renaming())
+            }
+            DashboardRoute::Status => self.settings.focused && self.settings.editing(),
+            DashboardRoute::Agents | DashboardRoute::Help => false,
+        };
         if self.composer.is_empty()
+            && (self.dashboard_focused() && !dashboard_text_input_focused
+                || text_input_action_from_key(key).is_none())
             && let Some(step) =
                 dashboard_route_step_from_key(key, /*allow_word_motion_fallback*/ true)
         {
@@ -1111,15 +1122,10 @@ impl ShellState {
         {
             return Ok(false);
         }
-        if let Some(action) = composer_backspace_action_from_key(key) {
-            self.apply_composer_backspace_action(action);
-            return Ok(false);
-        }
-        if let Some(word_motion) = composer_word_motion_from_key(key) {
-            match word_motion {
-                ComposerWordMotion::Left => self.composer.move_word_left(),
-                ComposerWordMotion::Right => self.composer.move_word_right(),
-            }
+        if !self.dashboard_focused()
+            && let Some(action) = text_input_action_from_key(key)
+        {
+            self.composer.apply_text_input_action(action);
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('p')) {
@@ -1181,10 +1187,6 @@ impl ShellState {
                 }
                 Ok(false)
             }
-            KeyCode::Backspace => {
-                self.composer.backspace();
-                Ok(false)
-            }
             KeyCode::Up => {
                 self.composer.move_up_or_recall_history();
                 Ok(false)
@@ -1204,16 +1206,12 @@ impl ShellState {
             KeyCode::Home => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.scroll_transcript_to_top();
-                } else {
-                    self.composer.move_to_line_start();
                 }
                 Ok(false)
             }
             KeyCode::End => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) {
                     self.scroll_transcript_to_bottom();
-                } else {
-                    self.composer.move_to_line_end();
                 }
                 Ok(false)
             }
@@ -1235,19 +1233,11 @@ impl ShellState {
                 self.composer.insert_str("    ");
                 Ok(false)
             }
-            KeyCode::Left => {
-                self.composer.move_left();
-                Ok(false)
-            }
-            KeyCode::Right => {
-                self.composer.move_right();
-                Ok(false)
-            }
-            KeyCode::Delete => {
-                self.composer.delete();
-                Ok(false)
-            }
-            KeyCode::Insert
+            KeyCode::Backspace
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Delete
+            | KeyCode::Insert
             | KeyCode::F(_)
             | KeyCode::Null
             | KeyCode::CapsLock
@@ -1575,6 +1565,9 @@ impl ShellState {
     }
 
     fn handle_session_search_key(&mut self, key: KeyEvent) -> SessionSearchOutcome {
+        if let Some(action) = text_input_action_from_key(key) {
+            return self.session_list.edit_search(action);
+        }
         if (matches!(key.code, KeyCode::Esc | KeyCode::Enter) && !is_unmodified_key_press(key))
             || (key.code == KeyCode::Backspace && !is_unmodified_key_event(key))
             || (matches!(key.code, KeyCode::Up | KeyCode::Down) && !is_unmodified_action_key(key))
@@ -1590,7 +1583,6 @@ impl ShellState {
                 self.session_list.stop_search();
                 SessionSearchOutcome::RefreshList
             }
-            KeyCode::Backspace => self.session_list.backspace_search(),
             KeyCode::Char(ch)
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
             {
@@ -1606,7 +1598,8 @@ impl ShellState {
                 self.session_list.move_selection_down();
                 SessionSearchOutcome::LocalFilterOnly
             }
-            KeyCode::Left
+            KeyCode::Backspace
+            | KeyCode::Left
             | KeyCode::Right
             | KeyCode::Home
             | KeyCode::End
@@ -1638,6 +1631,10 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if let Some(action) = text_input_action_from_key(key) {
+            self.session_list.edit_rename(action);
+            return Ok(());
+        }
         if (matches!(key.code, KeyCode::Esc | KeyCode::Enter) && !is_unmodified_key_press(key))
             || (key.code == KeyCode::Backspace && !is_unmodified_key_event(key))
         {
@@ -1667,16 +1664,14 @@ impl ShellState {
                 }
                 self.push_status(format!("renamed session {name}"));
             }
-            KeyCode::Backspace => {
-                self.session_list.backspace_rename();
-            }
             KeyCode::Char(ch)
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
             {
                 self.session_list.push_rename_char(ch);
             }
             KeyCode::Char(_) => {}
-            KeyCode::Left
+            KeyCode::Backspace
+            | KeyCode::Left
             | KeyCode::Right
             | KeyCode::Home
             | KeyCode::End
@@ -2507,20 +2502,12 @@ impl ShellState {
         }
     }
 
-    fn apply_composer_backspace_action(&mut self, action: ComposerBackspaceAction) {
-        match action {
-            ComposerBackspaceAction::DeleteChar => self.composer.backspace(),
-            ComposerBackspaceAction::DeleteWordLeft => self.composer.delete_word_left(),
-            ComposerBackspaceAction::Clear => self.composer.clear(),
-        }
-    }
-
     async fn handle_user_input_key<S>(&mut self, key: KeyEvent, app_server: &mut S) -> Result<bool>
     where
         S: AppShellBackend,
     {
-        if let Some(action) = composer_backspace_action_from_key(key) {
-            self.apply_composer_backspace_action(action);
+        if let Some(action) = text_input_action_from_key(key) {
+            self.composer.apply_text_input_action(action);
             return Ok(false);
         }
 
@@ -2534,24 +2521,12 @@ impl ShellState {
                 }
                 Ok(false)
             }
-            KeyCode::Backspace => {
-                self.composer.backspace();
-                Ok(false)
-            }
             KeyCode::Up => {
                 self.composer.move_up_or_recall_history();
                 Ok(false)
             }
             KeyCode::Down => {
                 self.composer.move_down_or_recall_history();
-                Ok(false)
-            }
-            KeyCode::Home => {
-                self.composer.move_to_line_start();
-                Ok(false)
-            }
-            KeyCode::End => {
-                self.composer.move_to_line_end();
                 Ok(false)
             }
             KeyCode::Char(ch) => {
@@ -2564,18 +2539,6 @@ impl ShellState {
                 self.composer.insert_str("    ");
                 Ok(false)
             }
-            KeyCode::Left => {
-                self.composer.move_left();
-                Ok(false)
-            }
-            KeyCode::Right => {
-                self.composer.move_right();
-                Ok(false)
-            }
-            KeyCode::Delete => {
-                self.composer.delete();
-                Ok(false)
-            }
             KeyCode::PageUp => {
                 self.scroll_transcript_up(TRANSCRIPT_PAGE_SCROLL_STEP);
                 Ok(false)
@@ -2584,7 +2547,13 @@ impl ShellState {
                 self.scroll_transcript_down(TRANSCRIPT_PAGE_SCROLL_STEP);
                 Ok(false)
             }
-            KeyCode::Insert
+            KeyCode::Backspace
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Home
+            | KeyCode::End
+            | KeyCode::Delete
+            | KeyCode::Insert
             | KeyCode::F(_)
             | KeyCode::Null
             | KeyCode::CapsLock
@@ -3908,89 +3877,11 @@ enum DashboardRouteStep {
     Next,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ComposerWordMotion {
-    Left,
-    Right,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ComposerBackspaceAction {
-    DeleteChar,
-    DeleteWordLeft,
-    Clear,
-}
-
-fn composer_backspace_action_from_key(key: KeyEvent) -> Option<ComposerBackspaceAction> {
-    if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
-        return None;
-    }
-
-    let is_backspace = matches!(key.code, KeyCode::Backspace)
-        || matches!(key.code, KeyCode::Char('\u{007f}'))
-            && (key.modifiers.contains(KeyModifiers::CONTROL)
-                || key.modifiers.contains(KeyModifiers::ALT));
-    if !is_backspace {
-        return None;
-    }
-
-    if key.modifiers.contains(KeyModifiers::CONTROL) {
-        Some(ComposerBackspaceAction::Clear)
-    } else if key.modifiers.contains(KeyModifiers::ALT) {
-        Some(ComposerBackspaceAction::DeleteWordLeft)
-    } else {
-        Some(ComposerBackspaceAction::DeleteChar)
-    }
-}
-
 fn is_composer_newline_key(key: KeyEvent) -> bool {
     key.code == KeyCode::Enter
         && key
             .modifiers
             .intersects(KeyModifiers::SHIFT | KeyModifiers::ALT)
-}
-
-fn composer_word_motion_from_key(key: KeyEvent) -> Option<ComposerWordMotion> {
-    if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
-        return None;
-    }
-
-    match key {
-        KeyEvent {
-            code: KeyCode::Left,
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL) || modifiers.contains(KeyModifiers::ALT) => {
-            Some(ComposerWordMotion::Left)
-        }
-        KeyEvent {
-            code: KeyCode::Right,
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL) || modifiers.contains(KeyModifiers::ALT) => {
-            Some(ComposerWordMotion::Right)
-        }
-        _ => composer_word_motion_fallback(key),
-    }
-}
-
-fn composer_word_motion_fallback(key: KeyEvent) -> Option<ComposerWordMotion> {
-    // Terminals without enhanced keyboard reporting can encode Alt+Left/Right as Alt+b/f.
-    // Recognize both forms on every platform so Ubuntu terminal configurations behave like the
-    // canonical arrow bindings.
-    match key {
-        KeyEvent {
-            code: KeyCode::Char('b'),
-            modifiers: KeyModifiers::ALT,
-            ..
-        } => Some(ComposerWordMotion::Left),
-        KeyEvent {
-            code: KeyCode::Char('f'),
-            modifiers: KeyModifiers::ALT,
-            ..
-        } => Some(ComposerWordMotion::Right),
-        _ => None,
-    }
 }
 
 fn dashboard_route_step_from_key(

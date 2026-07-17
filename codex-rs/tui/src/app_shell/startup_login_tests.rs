@@ -36,16 +36,66 @@ fn login_keys_open_api_entry_and_capture_secret_text() {
     for ch in "sk-test".chars() {
         assert_eq!(press(KeyCode::Char(ch), &mut state), LoginKeyAction::Redraw);
     }
-    assert_eq!(state.api_key_draft, "sk-test");
+    assert_eq!(state.api_key_draft.text(), "sk-test");
     assert_eq!(
         press(KeyCode::Backspace, &mut state),
         LoginKeyAction::Redraw
     );
-    assert_eq!(state.api_key_draft, "sk-tes");
+    assert_eq!(state.api_key_draft.text(), "sk-tes");
     assert_eq!(
         press(KeyCode::Enter, &mut state),
         LoginKeyAction::SubmitApiKey
     );
+}
+
+#[test]
+fn api_key_entry_uses_shared_cursor_shortcuts() {
+    let mut state = LoginOnboardingState::new(/*forced_login_method*/ None);
+    state.mode = LoginMode::ApiKeyEntry;
+    state.api_key_draft.set_text("sk-alpha-beta");
+
+    assert_eq!(
+        handle_login_key(KeyEvent::new(KeyCode::Left, KeyModifiers::ALT), &mut state),
+        LoginKeyAction::Redraw
+    );
+    assert_eq!(
+        press(KeyCode::Char('X'), &mut state),
+        LoginKeyAction::Redraw
+    );
+
+    assert_eq!(state.api_key_draft.text(), "sk-alpha-Xbeta");
+
+    let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+    terminal
+        .draw(|frame| {
+            LoginOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut())
+        })
+        .expect("draw API key entry");
+    insta::assert_snapshot!("api_key_entry_with_cursor", terminal.backend().to_string());
+
+    state
+        .api_key_draft
+        .set_text(format!("sk-{}", "secret".repeat(30)));
+    let narrow_backend = TestBackend::new(/*width*/ 52, /*height*/ 24);
+    let mut narrow_terminal = Terminal::new(narrow_backend).expect("create narrow terminal");
+    narrow_terminal
+        .draw(|frame| {
+            LoginOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut())
+        })
+        .expect("draw long API key entry");
+    insta::assert_snapshot!(
+        "api_key_entry_long_cursor",
+        narrow_terminal.backend().to_string()
+    );
+
+    state.api_key_draft.clear();
+    terminal
+        .draw(|frame| {
+            LoginOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut())
+        })
+        .expect("draw empty API key entry");
+    insta::assert_snapshot!("api_key_entry_empty_cursor", terminal.backend().to_string());
 }
 
 #[test]

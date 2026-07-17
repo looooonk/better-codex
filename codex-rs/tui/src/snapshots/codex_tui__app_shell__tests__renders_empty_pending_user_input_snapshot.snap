@@ -1,6 +1,6 @@
 ---
 source: tui/src/app_shell_tests.rs
-expression: "render_shell(&shell, area)"
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ---
                                                   │
   Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
@@ -27,6 +27,6 @@ expression: "render_shell(&shell, area)"
 │? Tool input: tool-input-1 (1/1)                ││
 │  Environment: Which environment should the tool││
 │  use?                                          ││
-│> 2▏  1 Production  2 Staging                   ││
+│> ▏answer  1 Production  2 Staging              ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

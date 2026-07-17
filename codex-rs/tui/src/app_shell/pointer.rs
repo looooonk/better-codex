@@ -4,7 +4,6 @@ use super::backend::AppShellBackend;
 use super::command_palette_view;
 use super::external_agent_import::ExternalAgentImportState;
 use super::header::HeaderControl;
-use super::mcp_management::McpManagementState;
 use super::modal_view;
 use super::navigation::DashboardRoute;
 use super::plugin_management::PluginManagementState;
@@ -138,10 +137,11 @@ impl ShellState {
             }
             return Ok(());
         }
+        let modal_width = usize::from(modal_view::modal_body_width(area));
         if let Some(lines) = self
             .pending_mcp_management
             .as_ref()
-            .map(McpManagementState::lines)
+            .map(|state| state.lines_for_width(modal_width))
         {
             let key = modal_click_key(area, position, &lines, |hit| {
                 self.pending_mcp_management

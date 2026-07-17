@@ -139,23 +139,24 @@ fn dashboard_width(terminal_width: u16) -> u16 {
 }
 
 fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u16) -> u16 {
+    let body_width = pane_content_rect(Rect::new(
+        /*x*/ 0,
+        /*y*/ 0,
+        input_width,
+        available_height,
+    ))
+    .width;
     let request_lines = if let Some(pending) = &shell.pending_approval {
         Some(approval_lines(pending))
     } else if let Some(pending) = &shell.pending_elicitation {
         Some(elicitation_lines(pending))
     } else {
-        shell.pending_user_input.as_ref().map(|pending| {
-            user_input_lines(pending, shell.composer.text(), shell.composer.is_empty())
-        })
+        shell
+            .pending_user_input
+            .as_ref()
+            .map(|pending| user_input_lines(pending, &shell.composer, body_width))
     };
     if let Some(lines) = request_lines {
-        let body_width = pane_content_rect(Rect::new(
-            /*x*/ 0,
-            /*y*/ 0,
-            input_width,
-            available_height,
-        ))
-        .width;
         let visual_line_count =
             u16::try_from(request_panel_visual_line_count(&lines, body_width)).unwrap_or(u16::MAX);
         let desired_height = visual_line_count
@@ -164,13 +165,6 @@ fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u1
         return desired_height.min(available_height);
     }
 
-    let body_width = pane_content_rect(Rect::new(
-        /*x*/ 0,
-        /*y*/ 0,
-        input_width,
-        available_height,
-    ))
-    .width;
     let composer_line_count = u16::try_from(
         wrapped_composer_lines(
             shell.composer.text(),

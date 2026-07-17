@@ -1,0 +1,13 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered(80)
+---
+Cmd arrows/⌫ line; Opt/Ctrl word       │ Ctrl+N new, mouse click rows
+Shift/Alt+Enter newline; Fn none       │ Sessions: Enter focus, j/k move
+Enter send                             │ r resume, f fork, a/u archive
+Ctrl+C/Esc twice to exit               │ v archived, d delete
+Alt+Up select, Ctrl+O copy             │ n rename, / search
+Ctrl+D hide dashboard                  │ Agents: Enter focus/log, j/k inspect
+Alt+M model, Alt+E effort              │ Status: Tab page, Enter select
+Ctrl+1 Status  Ctrl+2 Agents           │ Selectors: j/k choose, Enter apply
+Ctrl+3 Sessions Ctrl+4 Help            │ Esc twice to exit

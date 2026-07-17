@@ -1,0 +1,28 @@
+---
+source: tui/src/app_shell/startup_login_tests.rs
+expression: narrow_terminal.backend().to_string()
+---
+"                                                    "
+" Better Codex                                       "
+"                                                    "
+"                                                    "
+" Sign in                                            "
+"                                                    "
+" Better Codex needs an authenticated OpenAI account "
+"                                                    "
+" Paste your API key below. It is hidden while you t "
+"                                                    "
+" > …**********************************************▏ "
+"                                                    "
+"                                                    "
+"                                                    "
+"                                                    "
+"                                                    "
+"                                                    "
+"                                                    "
+"                                                    "
+"                                                    "
+"                                                    "
+" Enter save  Esc back  Paste insert key             "
+" The key is stored by the app-server auth layer.    "
+"                                                    "
