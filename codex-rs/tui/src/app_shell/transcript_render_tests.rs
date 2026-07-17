@@ -181,6 +181,42 @@ fn logical_rows_resolve_to_stored_transcript_sources() {
 }
 
 #[test]
+fn audit_items_have_exactly_one_blank_row_between_neighbors() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_transcript();
+    shell.push_system("before");
+    shell.push_decision_audit("test", "recorded", "first");
+    shell.push_turn_separator();
+    shell.push_decision_audit("test", "recorded", "second");
+    shell.push_decision_audit("test", "recorded", "third");
+    shell.push_status("after");
+    let cwd = Path::new(&shell.cwd);
+    let layout = TranscriptRenderCache::default().layout(&shell, WIDTH, cwd);
+
+    let rows = (0..layout.total_lines)
+        .map(|row| layout.transcript_index_at_row(row))
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        rows,
+        vec![
+            Some(0),
+            None,
+            Some(1),
+            None,
+            Some(2),
+            None,
+            Some(3),
+            None,
+            Some(4),
+            None,
+            Some(5),
+        ]
+    );
+}
+
+#[test]
 fn item_variants_stay_bounded_across_width_and_cwd_changes() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();

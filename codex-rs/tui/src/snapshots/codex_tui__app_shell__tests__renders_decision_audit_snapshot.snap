@@ -14,10 +14,13 @@ expression: "render_shell(&shell, area)"
  ▌ tool exec just test -p codex-tui             ┃ │▎◆ THREAD
                                                 ┃ │▎stage-one
  ▌ edited 3 files +128 -24                      ┃ │▎id 01900000-0000-7000-8000-000000000001
- ▎ AUDIT  approval approved: Command: cargo     ┃ │▎resume, fork, archive, delete in session list
+                                                ┃ │▎resume, fork, archive, delete in session list
+ ▎ AUDIT  approval approved: Command: cargo     ┃ │
           test -p codex-tui                     ┃ │
+                                                ┃ │
  ▎ AUDIT  elicitation declined: MCP github:     ┃ │
           URL request                           ┃ │
+                                                ┃ │
  ▎ AUDIT  tool input submitted: Tool input:     ┃ │
           environment                           ┃ │
                                                 ┃ │

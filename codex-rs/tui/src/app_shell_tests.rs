@@ -4644,7 +4644,7 @@ fn renders_decision_audit_snapshot() {
     shell.push_decision_audit("elicitation", "declined", "MCP github: URL request");
     shell.push_decision_audit("tool input", "submitted", "Tool input: environment");
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 31,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
