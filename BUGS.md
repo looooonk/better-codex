@@ -10,6 +10,14 @@ This file records every confirmed finding from a read-only audit of commit
 
 The audit confirmed **74 findings: 14 P0, 27 P1, 32 P2, and 1 P3**.
 
+## Bug status
+
+Each finding has a **Status** field with one of these values:
+
+- **Assigned**: the bug has been identified and is awaiting or undergoing work.
+- **Fixed**: the bug has been addressed.
+- **Fixed + Reviewed**: a second pass has confirmed that the bug was addressed and properly fixed.
+
 Validation performed:
 
 - `just test -p codex-tui`: 1,090 tests passed.
@@ -27,6 +35,8 @@ The repository remained below the requested 50 GB limit and was about 28 GB afte
 
 ### 1. [P0][Data loss / TUI] One unmodified key recursively deletes a session subtree
 
+**Status:** Assigned
+
 `codex-rs/tui/src/app_shell.rs:1523-1525` immediately dispatches deletion when `d` is pressed in the
 focused Sessions list, and `delete_selected_session` at `app_shell.rs:1792-1808` has no confirmation
 or undo. The active session is guarded, but any other persisted session can be selected. The backend
@@ -39,6 +49,8 @@ children, and press `d` once. The parent and every descendant are permanently de
 confirmation dialog.
 
 ### 2. [P0][Security / Approval UI] Consent dialogs omit security-relevant approval details
+
+**Status:** Assigned
 
 `codex-rs/tui/src/app_shell/approval.rs:36-98` builds command consent from only the command, reason,
 and cwd. It discards `network_approval_context` (including the host), parsed command actions,
@@ -57,6 +69,8 @@ displayed.
 
 ### 3. [P0][Model context / Injection] `additionalContext` has unbounded keys and item count
 
+**Status:** Assigned
+
 Only each value is truncated to roughly 1,000 tokens. The number and length of keys are unrestricted,
 and keys are interpolated into XML-like markers in
 `codex-rs/context-fragments/src/additional_context.rs:5-92`. The app-server accepts the map in
@@ -71,6 +85,8 @@ such as `foo>bar` also changes the generated marker syntax.
 
 ### 4. [P0][Model context / Token usage] Deferred `tool_search` results have no hard output cap
 
+**Status:** Assigned
+
 The tool accepts an unrestricted `usize` limit and the schema has no maximum
 (`codex-rs/core/src/tools/handlers/tool_search_spec.rs:7-22`). The handler serializes full matching
 tool definitions, including parameter schemas, into one result
@@ -84,6 +100,8 @@ and remains in every subsequent inference request.
 schemas without a byte/token ceiling.
 
 ### 5. [P0][Model context / Token usage] Explicit skill bodies can exceed hard caps individually or in aggregate
+
+**Status:** Assigned
 
 Legacy skill injection reads an entire `SKILL.md` and places it into one fragment
 (`codex-rs/core-skills/src/injection.rs:63-100` and
@@ -102,6 +120,8 @@ turn to exceed 10K tokens in aggregate. Inspect the next request; no turn-level 
 
 ### 6. [P0][Model context / Multi-agent] Child completions and inter-agent messages are unbounded
 
+**Status:** Assigned
+
 The 1,000-token cap in `codex-rs/core/src/session_prefix.rs:10-43` applies only to error text.
 Successful child final answers, `send_message`, and `followup_task` bodies are stored unchanged via
 `codex-rs/core/src/context/inter_agent_completion_message.rs:5-40`,
@@ -116,6 +136,8 @@ thread.
 
 ### 7. [P0][Model context / Injection] MCP notes can inject an unbounded developer-priority thread hint
 
+**Status:** Assigned
+
 The notes integration joins returned `thread_hint` text without truncation and injects it as
 developer content in `codex-rs/core/src/session/mod.rs:3382-3418`. Token budgeting in
 `codex-rs/core/src/context/token_budget_context.rs:10-65` does not impose a hard maximum on that
@@ -127,6 +149,8 @@ arbitrary high-priority instructions.
 inference.
 
 ### 8. [P0][Model context / AGENTS.md] Project-instruction limits are not global or reliably bounded
+
+**Status:** Assigned
 
 The global Codex-home AGENTS file is read in full
 (`codex-rs/codex-home/src/instructions/mod.rs:24-60`). `project_doc_max_bytes` has no safe upper
@@ -141,6 +165,8 @@ AGENTS files, or place a large global AGENTS file under Codex home. Start a thre
 initial user-instruction item; the effective total is not constrained by one hard cap.
 
 ### 9. [P0][Model context / Hooks] Hook context has no aggregate hard cap
+
+**Status:** Assigned
 
 Each hook-supplied additional-context or Stop continuation fragment is capped at about 2,500 tokens
 (`codex-rs/hooks/src/output_spill.rs:11-87`), but discovery and execution permit an arbitrary number
@@ -157,6 +183,8 @@ additional-context messages are retained, or all Stop fragments appear in one ov
 
 ### 10. [P0][Model context / Environment] Environment metadata accepts unbounded paths and policy entries
 
+**Status:** Assigned
+
 `codex-rs/core/src/context/environment_context.rs:33-71,115-243` renders every workspace root,
 managed filesystem permission entry (including paths and glob patterns), and allowed/denied domain
 pattern with no byte/token ceiling. Environment IDs, cwd values, and shell names are also unbounded
@@ -170,6 +198,8 @@ entries, or domain patterns, or with very long environment identifiers and paths
 environment block is forwarded to the model.
 
 ### 11. [P0][Model context / Configuration] Raw developer-mode instruction fields have no hard caps
+
+**Status:** Assigned
 
 Thread developer instructions, collaboration instructions, multi-agent guidance, usage hints, and
 realtime instructions are accepted as raw strings and rendered without a shared size bound. Entry
@@ -189,6 +219,8 @@ model context.
 
 ### 12. [P0][Security / Sandbox] Managed-network enforcement is bypassed when `sandbox` is omitted
 
+**Status:** Assigned
+
 The exec-server wire contract says an executor must fail closed when `enforceManagedNetwork` is true
 but managed-network details are unavailable
 (`codex-rs/exec-server-protocol/src/protocol.rs:140-148`). `prepare_exec_request` instead returns an
@@ -202,6 +234,8 @@ network-capable command. The process launches without a sandbox instead of being
 through managed networking.
 
 ### 13. [P0][Model context / Multi-agent] Agent task names have no length limit
+
+**Status:** Assigned
 
 `AgentPath` validates the character set but not length
 (`codex-rs/protocol/src/agent_path.rs:125-146`), and the spawn tool schema has no maximum
@@ -217,6 +251,8 @@ other agent-path context even if the immediate tool result is truncated.
 
 ### 14. [P1][CLI safety] Root bypass and resume/fork approval flags evade the declared conflict
 
+**Status:** Assigned
+
 Clap conflict declarations apply only within one flattened argument scope. A root
 `--dangerously-bypass-approvals-and-sandbox` can therefore be combined with a resume/fork-local
 `--ask-for-approval on-request`. Parsing succeeds, after which `tui::run_main` silently forces
@@ -230,6 +266,8 @@ Unlike the same-scope combination, it parses and starts with approvals disabled.
 
 ### 15. [P1][CLI safety] Dangerous bypass silently overrides an explicit sandbox selection
 
+**Status:** Assigned
+
 The dangerous root flag can also be combined with `--sandbox workspace-write`. The shared CLI types
 do not declare these as conflicting, and both TUI and exec paths replace the explicit sandbox with
 danger-full-access (`codex-rs/utils/cli/src/shared_options.rs:37-49`,
@@ -240,6 +278,8 @@ requests a sandbox therefore runs unsandboxed.
 The command is accepted and the explicit workspace-write policy is discarded.
 
 ### 16. [P1][API compatibility] Config responses omit fields that generated clients require
+
+**Status:** Assigned
 
 `ConfigReadResponse.layers` and `ConfigLayer.disabled_reason` use
 `skip_serializing_if = "Option::is_none"` in
@@ -253,6 +293,8 @@ reason. The JSON omits the required property instead of returning `null`.
 
 ### 17. [P1][Model correctness / AGENTS.md] AGENTS instructions never refresh during a normal thread
 
+**Status:** Assigned
+
 The initial session loads AGENTS once (`codex-rs/core/src/session/session.rs:909-923`). Per-turn
 refresh is behind the disabled deferred executor, while `AgentsMdManager` caches by environment
 selection rather than file contents (`codex-rs/core/src/agents_md_manager.rs:31-44`). An existing
@@ -265,6 +307,8 @@ after edits or directory changes.
 remain effective.
 
 ### 18. [P1][Model correctness / Compaction] Automatic pre-turn compaction ignores the incoming prompt
+
+**Status:** Assigned
 
 The threshold estimate considers only retained history, with a source TODO acknowledging that the
 new turn input is excluded (`codex-rs/core/src/session/turn.rs:153-157,798-823`). A large prompt can
@@ -282,6 +326,8 @@ request: it summarizes without the pending question.
 
 ### 19. [P2][Model correctness / World state] Newly known shell metadata is suppressed when the prior snapshot lacks it
 
+**Status:** Assigned
+
 `EnvironmentSnapshot::has_same_diff_value` compares optional shells with `zip(...).is_none_or(...)`
 in `codex-rs/core/src/context/world_state/environment.rs:300-309`. When the prior snapshot has
 `shell: None`, a newly resolved `Some(shell)` produces an empty zip and is considered unchanged. The
@@ -297,6 +343,8 @@ without changing cwd or status. The next environment diff contains no shell upda
 
 ### 20. [P1][Model correctness / Multi-agent] Subagent-list changes do not trigger environment diffs
 
+**Status:** Assigned
+
 The environment snapshot stores `subagents`, but the change predicate checks only date, timezone,
 network, filesystem, and per-environment values
 (`codex-rs/core/src/context/world_state/environment.rs:93-144`). Spawning or removing a subagent
@@ -308,6 +356,8 @@ then inspect the next model request. The subagent list is stale or absent.
 
 ### 21. [P1][Model correctness / Collaboration] Clearing collaboration instructions has no tombstone
 
+**Status:** Assigned
+
 `build_collaboration_mode_update_item` returns no item when the new mode has empty developer
 instructions (`codex-rs/core/src/context_manager/updates.rs:64-83`). Because history is incremental,
 the prior collaboration policy remains model-visible. Re-enabling it later adds another copy instead
@@ -317,6 +367,8 @@ of replacing the stale one.
 and submit another turn. The previous collaboration instructions remain in request history.
 
 ### 22. [P2][Model context / Capabilities] Re-enabling apps or plugins duplicates generic guidance
+
+**Status:** Assigned
 
 `AppsInstructionsState` and `PluginsInstructionsState` render generic usage guidance only on
 unavailable-to-available transitions and emit nothing for available-to-unavailable transitions
@@ -332,6 +384,8 @@ same generic instructions.
 
 ### 23. [P1][History integrity] Ordinary user text matching an internal wrapper is misclassified
 
+**Status:** Assigned
+
 Internal fragment recognition relies on marker text alone. A genuine user message such as
 `<turn_aborted>ordinary note</turn_aborted>` is recognized as an internal contextual fragment.
 `parse_turn_item` then omits it from reconstructed user turns, while history-boundary and compaction
@@ -345,6 +399,8 @@ reconstructed transcript or `thread/read` turn list (or compact the history). Th
 is absent as an ordinary user turn or handled as contextual state.
 
 ### 24. [P0][Architecture / Model context] Extension APIs bypass the required contextual-fragment boundary
+
+**Status:** Assigned
 
 The extension `PromptFragment` and `WorldState` APIs accept arbitrary `String` content directly
 (`codex-rs/ext/extension-api/src/contributors/prompt.rs:1-49` and
@@ -362,6 +418,8 @@ tokens. The entire body reaches model history without a shared cap at the extens
 
 ### 25. [P1][Availability / Hooks] Hook discovery permits unbounded process fan-out
 
+**Status:** Assigned
+
 Hook discovery accepts an arbitrary number of matching commands and the dispatcher starts them all
 without a concurrency ceiling (`codex-rs/hooks/src/engine/discovery.rs:63-73,441-461` and
 `codex-rs/hooks/src/engine/dispatcher.rs:89-115`). A large configuration can exhaust processes, file
@@ -373,6 +431,8 @@ launched concurrently rather than queued under a bounded worker limit.
 
 ### 26. [P1][Availability / Hooks] Hook output is buffered without a memory cap before truncation
 
+**Status:** Assigned
+
 The command runner uses `wait_with_output` and holds complete stdout/stderr in memory
 (`codex-rs/hooks/src/engine/command_runner.rs:59-65,101-110`). Truncation/spilling occurs only afterward in
 the hook engine. A noisy hook can therefore OOM the process even though the eventual model fragment
@@ -382,6 +442,8 @@ is truncated.
 exiting. RSS grows with the complete output before spill logic runs.
 
 ### 27. [P2][Windows remote execution correctness] Foreign Windows cwd silently becomes the host cwd
+
+**Status:** Assigned
 
 When a remote turn cwd cannot be represented as a native path, `TurnContext` falls back to the local
 host cwd (`codex-rs/core/src/session/turn_context.rs:691-697`). The remote command path continues to
@@ -397,6 +459,8 @@ directory instead of failing localization or using the remote cwd.
 
 ### 28. [P1][Availability / Remote transport] Remote notifications accumulate in an unbounded queue
 
+**Status:** Assigned
+
 `RemoteAppServerClient` creates `mpsc::unbounded_channel::<AppServerEvent>()` at
 `codex-rs/app-server-client/src/remote.rs:213-215`. Every notification and server request is drained
 from the WebSocket into it (`remote.rs:319-356,945-955`) without consumer backpressure. Each WebSocket
@@ -409,6 +473,8 @@ unbounded event backlog.
 
 ### 29. [P1][Availability / Remote transport] Ordinary JSON-RPC requests have no deadline
 
+**Status:** Assigned
+
 `request_json_rpc` sends a command and awaits its oneshot indefinitely
 (`codex-rs/app-server-client/src/remote.rs:635-655`). Only initialization and shutdown have explicit
 timeouts; a pending entry otherwise remains until a response or disconnect. A peer that stays
@@ -419,6 +485,8 @@ session request without responding, and keep the WebSocket open. The request nev
 
 ### 30. [P1][TUI responsiveness] Backend calls block the sole input, render, and event loop
 
+**Status:** Assigned
+
 The main shell loop awaits key handling and server-event handling inline
 (`codex-rs/tui/src/app_shell.rs:277-387`). Submit, resume, delete, settings, and approval handlers all
 await backend RPCs from this path. While one is slow or hung, the TUI cannot redraw, process a resize,
@@ -428,6 +496,8 @@ close a modal, or handle Esc/Ctrl-C. This compounds the missing remote deadlines
 submit or invoke a Sessions/settings action. The entire UI freezes until the transport resolves.
 
 ### 31. [P1][Reliability / TUI] Recoverable action errors terminate the full-screen application
+
+**Status:** Assigned
 
 The same top-level loop propagates ordinary RPC/action failures with `?` at
 `codex-rs/tui/src/app_shell.rs:287,312,333,387`. A rejected `turn/start`, failed approval response,
@@ -441,6 +511,8 @@ a recoverable error.
 
 ### 32. [P1][Security UI / Stale state] Permission-profile updates are ignored by the dashboard
 
+**Status:** Assigned
+
 `ThreadSettingsUpdated` carries both `sandbox_policy` and `active_permission_profile`, but the TUI
 event reducer ignores them (`codex-rs/tui/src/app_shell/events.rs:170-183`). The Status dashboard
 continues rendering the original `shell.permission_profile`
@@ -451,6 +523,8 @@ more permissive sandbox than the thread currently has.
 emit `thread/settings/updated`. Open Status; the displayed permission profile remains stale.
 
 ### 33. [P1][Feature failure / TUI] External-clock current-time reminders make turns fail
+
+**Status:** Assigned
 
 The TUI advertises experimental app-server capability
 (`codex-rs/tui/src/lib.rs:359-370,514-535`) but rejects every `CurrentTimeRead` as unsupported
@@ -464,6 +538,8 @@ the TUI, and submit a turn. The `currentTime/read` request receives `-32000` and
 
 ### 34. [P1][Tool interaction / TUI] `request_user_input` auto-resolution is ignored
 
+**Status:** Assigned
+
 The protocol carries `auto_resolution_ms`
 (`codex-rs/app-server-protocol/src/protocol/v2/item.rs:1622-1629`), and the tool promises a 60-240
 second nonblocking timeout. `PendingUserInput::from_request` copies the questions but drops the timer
@@ -474,6 +550,8 @@ continue automatically instead blocks the agent indefinitely.
 modal remains after a minute and the turn never resumes.
 
 ### 35. [P2][Tool interaction / TUI] The promised free-form Other choice and option explanations are hidden
+
+**Status:** Assigned
 
 The tool contract says the client adds `Other (free-form)` and requires every option to include a
 tradeoff description (`codex-rs/core/src/tools/handlers/request_user_input_spec.rs:14-64`). The TUI
@@ -487,6 +565,8 @@ is accepted.
 
 ### 36. [P1][Interactive requests / Protocol] A second concurrent request is auto-rejected
 
+**Status:** Assigned
+
 `handle_server_request` permits only one approval, elicitation, or user-input request. If another
 arrives, it immediately sends JSON-RPC `-32000` rather than queuing it
 (`codex-rs/tui/src/app_shell/events.rs:441-503`). Parallel tools or child-agent operations can thus be
@@ -496,6 +576,8 @@ denied without any user decision.
 elicitation. Only the first modal appears; the second backend operation receives an automatic error.
 
 ### 37. [P1][Interactive requests / Lifecycle] Resolved requests leave stale modals on screen
+
+**Status:** Assigned
 
 On `ServerRequestResolved`, the TUI only appends a status line
 (`codex-rs/tui/src/app_shell/events.rs:311-315`). It does not match the request ID against and clear
@@ -508,6 +590,8 @@ request that no longer exists and may trigger finding 31.
 
 ### 38. [P1][Security / Approval UI] Long commands hide their suffix without ellipsis or scrolling
 
+**Status:** Assigned
+
 The request panel is capped at 12 rows (`codex-rs/tui/src/app_shell/shell_layout.rs:141-165`).
 `visible_segment_indices` preserves leading title lines and action lines but silently drops the
 middle/tail (`input_request_view.rs:67-121`), and approval key handling has no scroll path. A dangerous
@@ -519,6 +603,8 @@ no truncation marker, yet Approve remains active.
 
 ### 39. [P1][MCP functionality / TUI] Structured elicitation forms cannot be completed
 
+**Status:** Assigned
+
 Any MCP form with properties sets `can_accept = false`, and the response type always uses
 `content: None` (`codex-rs/tui/src/app_shell/elicitation.rs:24-54,80-96`). OpenAI forms are also
 hard-disabled. The TUI offers only Decline/Cancel, so any server requiring even one field cannot
@@ -528,6 +614,8 @@ proceed.
 no field editor and no Accept action.
 
 ### 40. [P1][Remote session lifecycle / TUI] Thread archive, delete, close, and status notifications are ignored
+
+**Status:** Assigned
 
 The event reducer explicitly discards `ThreadStatusChanged`, `ThreadArchived`, `ThreadDeleted`,
 `ThreadUnarchived`, and `ThreadClosed` (`codex-rs/tui/src/app_shell/events.rs:391-431`). Changes from a
@@ -539,6 +627,8 @@ client. The TUI does not close/switch the active session or refresh the list; th
 stale state.
 
 ### 41. [P1][Availability / TUI output] The TUI can retain and repeatedly rewrap roughly 156 MiB per command
+
+**Status:** Assigned
 
 Each `TranscriptLine` keeps the complete streamed `full_text` even after compacting its card
 (`codex-rs/tui/src/app_shell.rs:483-515,3047-3071`). The full-output view invalidates its cache on
@@ -555,6 +645,8 @@ rewrapped.
 
 ### 42. [P1][Availability / TUI diffs] Session diffs grow and clone without a bound
 
+**Status:** Assigned
+
 `DiffStore` retains every turn, item, parsed file, and aggregate diff for the session with no cap
 (`codex-rs/tui/src/app_shell/diff_view.rs:19-109`). Parsing occurs synchronously, and opening or
 refreshing Session Edits clones all files again
@@ -565,6 +657,8 @@ line cap, resumed/long sessions can accumulate unbounded diff memory and produce
 Session Edits. RSS spikes and the event loop stalls while all parsed files are cloned.
 
 ### 43. [P2][Data integrity / Config API] `expectedVersion` is not an atomic compare-and-swap across processes
+
+**Status:** Assigned
 
 `apply_edits` reads and checks the version at
 `codex-rs/app-server/src/config_manager_service.rs:220-236`, validates, and only much later writes at
@@ -583,6 +677,8 @@ return success while only the later value remains on disk.
 
 ### 44. [P1][Availability / Exec server] A long `process/read` blocks every later request on the connection
 
+**Status:** Assigned
+
 The exec-server connection loop routes requests sequentially
 (`codex-rs/exec-server/src/server/processor.rs:108-145`). `process/read` accepts arbitrary `u64`
 `waitMs` and awaits it inline (`codex-rs/exec-server/src/local_process.rs:382-460`). A silent
@@ -594,6 +690,8 @@ large `waitMs`, then issue `process/terminate` on the same connection. Terminati
 until the read expires.
 
 ### 45. [P2][Persistence integrity] Archive/unarchive report success or failure after divergent partial writes
+
+**Status:** Assigned
 
 Archive renames the rollout and discards the result of `mark_archived`
 (`codex-rs/thread-store/src/local/archive_thread.rs:41-60`). Unarchive also renames first, may then
@@ -608,6 +706,8 @@ returns failure after the rollout has already moved.
 
 ### 46. [P1][Data integrity] Thread deletion is non-transactional and can fail after data is gone
 
+**Status:** Assigned
+
 App-server deletes every subtree rollout before state rows
 (`codex-rs/app-server/src/request_processors/thread_delete.rs:39-79`). Local storage removes rollout
 files before fallible name-index cleanup (`thread-store/src/local/delete_thread.rs:68-82`), and state
@@ -619,6 +719,8 @@ notification after irreversible partial deletion; a subtree may be only partly r
 children. The RPC returns an error, but some rollout files and auxiliary state are already gone.
 
 ### 47. [P2][Data integrity / Settings] TUI settings updates are split across non-atomic writes
+
+**Status:** Assigned
 
 Model, effort, service-tier, and approval changes first persist global config and then issue a
 separate `thread/settings/update` (`codex-rs/tui/src/app_shell/settings/controller.rs:300-431`). Some
@@ -632,6 +734,8 @@ the active thread did not.
 
 ### 48. [P2][Review correctness / TUI] Diff lines permanently hide changes beyond the visible width
 
+**Status:** Assigned
+
 Each diff side is ellipsis-truncated to its column
 (`codex-rs/tui/src/app_shell/diff_view_view.rs:233-265`). Left/Right select files, and
 `DiffViewState` has no horizontal offset or key binding (`app_shell/diff_view.rs:236-278`). A change
@@ -641,6 +745,8 @@ only at character 200 can render as two identical prefixes, with no way to inspe
 terminal. The old/new visible text looks identical; no key or mouse action reveals the suffix.
 
 ### 49. [P1][Availability / Input] Multi-megabyte paste has no size cap and blocks rendering
+
+**Status:** Assigned
 
 Composer insertion accepts an arbitrary paste, performs whole-string normalization/insertion, and
 subsequent renders measure and wrap the complete buffer
@@ -653,6 +759,8 @@ during insertion and subsequent frames, with no warning or cancellation path.
 
 ### 50. [P2][Navigation / Sessions] Session browsing has no pagination beyond the first 20 rows
 
+**Status:** Assigned
+
 The list limit is 20 and every request sends `cursor: None`
 (`codex-rs/tui/src/app_shell/sessions.rs:17,59-76`). `has_more` only produces a `+` indicator; no key
 or mouse route consumes a next cursor, and page replacement keeps only those first rows
@@ -664,6 +772,8 @@ but Down/PageDown stops at item 20 and there is no Load More/page action. A uniq
 session may be found with targeted search, but it cannot be reached by browsing.
 
 ### 51. [P2][Tool contract] `request_user_input` cardinality rules are prose-only and invalid calls reach the UI
+
+**Status:** Assigned
 
 The tool promises one to three questions and two to three options, but `JsonSchema::array` cannot
 express min/max items (`codex-rs/tools/src/json_schema.rs:40-74,144-150`) and normalization only checks
@@ -678,6 +788,8 @@ despite the declared maximum and are shown sequentially.
 
 ### 52. [P2][Approval protocol] The TUI ignores all richer or restricted approval decisions
 
+**Status:** Assigned
+
 Approve always serializes plain `Accept`, and permissions always use `scope: Turn`
 (`codex-rs/tui/src/app_shell/approval.rs:122-158`). The UI ignores `available_decisions`,
 `acceptForSession`, exec/network policy amendments, cancel, session permission scope, and strict
@@ -691,6 +803,8 @@ turn.
 
 ### 53. [P2][MCP consent / TUI] Long URL elicitations truncate away the URL and cannot be inspected
 
+**Status:** Assigned
+
 The elicitation combines message and URL, then renders at most 42 graphemes
 (`codex-rs/tui/src/app_shell/elicitation.rs:24-35` and
 `input_request_view.rs:252-273`). There is no scroll, expansion, or copy action. A long explanatory
@@ -701,6 +815,8 @@ visible, yet the modal still permits acceptance.
 
 ### 54. [P2][MCP interaction / TUI] The modal advertises Enter for Accept, but Enter does nothing
 
+**Status:** Assigned
+
 The renderer labels the action `Accept ↵` (`codex-rs/tui/src/app_shell/input_request_view.rs:255-267`),
 while `elicitation_choice_from_key` accepts only `a/A`, `d/D`, and `c/C`
 (`codex-rs/tui/src/app_shell.rs:3947-3956`).
@@ -710,6 +826,8 @@ and request remain unresolved; only the undocumented `a`/`A` shortcut or clickin
 it as accepted.
 
 ### 55. [P2][Session resume compatibility] Custom interactive session sources disappear from normal pickers
+
+**Status:** Assigned
 
 Rollout discovery includes custom sources such as `Custom("atlas")` and `Custom("chatgpt")`
 (`codex-rs/rollout/src/lib.rs:25-31`), but app-server's `ThreadSourceKind` cannot represent `Custom`
@@ -722,6 +840,8 @@ exact UUID can resume them.
 `codex resume --last`. It is absent; supplying its exact thread ID still works.
 
 ### 56. [P2][Windows remote protocol] Read-command file actions are dropped across OS path conventions
+
+**Status:** Assigned
 
 When app-server and executor use different path conventions, command item construction cannot
 localize a foreign `PathUri` and deliberately drops Read actions
@@ -737,6 +857,8 @@ difference.
 
 ### 57. [P2][Input routing / TUI] Paste behaves differently from typing across modal editors
 
+**Status:** Assigned
+
 Paste bypasses the keyboard dispatcher and always calls composer-oriented `insert_text`
 (`codex-rs/tui/src/app_shell.rs:363-368`). That method returns during dashboard or MCP editing
 (`app_shell.rs:1359-1375`), so paste is discarded in session search/rename, settings editors, and MCP
@@ -749,6 +871,8 @@ open Edits, paste, close Edits, and observe the pasted text unexpectedly appear 
 
 ### 58. [P2][Visual / Input] Literal tabs are hidden even though they are submitted
 
+**Status:** Assigned
+
 Paste normalization preserves `\t` (`codex-rs/tui/src/app_shell/composer.rs:157-175`), but cursor
 calculation and Ratatui rendering treat the control grapheme as zero-width
 (`app_shell/composer.rs:42-52`). The tab is therefore collapsed rather than expanded to a terminal
@@ -760,6 +884,8 @@ contains extra whitespace.
 
 ### 59. [P2][Diff correctness] The same file is duplicated across session turns
 
+**Status:** Assigned
+
 `session_file_refs` deduplicates item files only against an aggregate diff within the same turn; it
 does not merge the same path across turns (`codex-rs/tui/src/app_shell/diff_view.rs:111-132`). Session
 file counts and stats therefore count repeated edits as separate files, and Session Edits shows
@@ -769,6 +895,8 @@ multiple non-net versions instead of one coherent session diff.
 and the dashboard file count is inflated.
 
 ### 60. [P2][Diff correctness] Git C-quoted paths are parsed incorrectly
+
+**Status:** Assigned
 
 `diff_path_token` stops a quoted path at the first quote and only attempts to unescape `\"`; it does
 not parse Git's backslash/octal C quoting. Header normalization merely trims surrounding quotes
@@ -782,6 +910,8 @@ tab or quote, and open Edits. The displayed/associated path is malformed or trun
 
 ### 61. [P2][Visual / Performance] Carriage returns corrupt CRLF and progress output
 
+**Status:** Assigned
+
 Both compact transcript and Full Tool Output blindly replace every `\r` with `\n`
 (`codex-rs/tui/src/app_shell/transcript_view.rs:403-408` and
 `app_shell/tool_output.rs:63-77`). CRLF consequently becomes two line breaks, while progress programs
@@ -793,6 +923,8 @@ uses `\r`; every repaint becomes another line instead of updating one line.
 
 ### 62. [P2][Visual / Output] Full Tool Output collapses tab-separated fields
 
+**Status:** Assigned
+
 The transcript view expands tabs, but the full-output path sends literal tab controls through ANSI
 processing and Ratatui (`codex-rs/tui/src/app_shell/tool_output.rs:63-77`). Ratatui does not render a
 tab stop, so fields collapse and the detailed view disagrees with the compact card.
@@ -801,6 +933,8 @@ tab stop, so fields collapse and the detailed view disagrees with the compact ca
 instead of separated fields.
 
 ### 63. [P2][Prompt fidelity / TUI] Submission strips meaningful leading and trailing whitespace
+
+**Status:** Assigned
 
 `ComposerState::submission_text` applies `.trim()` to the entire prompt
 (`codex-rs/tui/src/app_shell/composer.rs:59-60`), and queue/history use the same transformed value.
@@ -812,6 +946,8 @@ material, submit it, and inspect `turn/start`. The leading/trailing whitespace i
 
 ### 64. [P2][Queue interaction / TUI] Clearing a queued edit cannot delete or cancel it
 
+**Status:** Assigned
+
 `save_queued_message_edit` writes back only when the edited message is nonempty
 (`codex-rs/tui/src/app_shell/composer.rs:273-290`). Clearing all text therefore preserves the old
 queued entry. There is no other removal action, queued messages block session switching, and the old
@@ -822,6 +958,8 @@ text, then Alt-Down or Enter. The supposedly cleared original remains queued and
 
 ### 65. [P2][macOS input] Home, End, and forward Delete are deliberately unbound
 
+**Status:** Assigned
+
 Plain Home/End/Delete actions are compiled only on non-macOS
 (`codex-rs/tui/src/text_input.rs:448-455`), with a test explicitly asserting that macOS leaves them
 unbound (`text_input_tests.rs:145-151`). Terminals that emit these keys (including Fn-based Mac
@@ -831,6 +969,8 @@ bindings) cannot move to a line boundary or delete forward, even though the TUI 
 the same events work on Linux.
 
 ### 66. [P2][Error reporting / Compaction] Local compaction drops the operation context on failure
+
+**Status:** Assigned
 
 The local compaction path emits the raw stream error and discards its task-level contextual result
 (`codex-rs/core/src/compact.rs:300-316` and `core/src/tasks/compact.rs:78-81`). The remote path adds a
@@ -844,6 +984,8 @@ failure rather than an error identifying context compaction as the failed action
 
 ### 67. [P2][Resource leak / Hooks] Codex never removes spilled hook-output files
 
+**Status:** Assigned
+
 Every oversized hook result creates a unique spill file
 (`codex-rs/hooks/src/output_spill.rs:20-24,38-60,91-95`), but production ownership has no cleanup
 path. Repeated hooks grow the temp/cache area and leave command output on disk after the turn/session
@@ -853,6 +995,8 @@ ends until an external or OS cleanup removes it.
 spill directory after the sessions exit. Each generated file remains.
 
 ### 68. [P2][Documentation / API compatibility] App-server endpoint summaries use incorrect wire field names
+
+**Status:** Assigned
 
 Two README endpoint-summary lines do not match the v2 wire contract:
 
@@ -868,6 +1012,8 @@ associating a `threadId`.
 
 ### 69. [P2][Execution correctness] Sandboxed launches silently drop custom `arg0`
 
+**Status:** Assigned
+
 The exec protocol promises a process-visible argv0 override
 (`codex-rs/exec-server-protocol/src/protocol.rs:134-136`), and unsandboxed execution preserves it.
 Sandbox transformation omits it; a TODO acknowledges the loss
@@ -880,6 +1026,8 @@ sandboxed Windows remote launches are rejected rather than transformed.
 
 ### 70. [P2][Persistence integrity] Thread metadata RPCs can fail after SQLite already committed
 
+**Status:** Assigned
+
 `update_thread_metadata` first commits `apply_metadata_update`
 (`codex-rs/thread-store/src/local/update_thread_metadata.rs:72-83,200-373`) and only afterward performs
 fallible rollout, name-index, and Git compatibility writes at lines 85-165. If any later write fails,
@@ -891,6 +1039,8 @@ error, but a fresh database-backed list shows the requested metadata.
 
 ### 71. [P2][Interactive requests / Backpressure] A full in-process queue rejects consent requests
 
+**Status:** Assigned
+
 The in-process client classifies every `ServerRequest` as nonessential
 (`codex-rs/app-server-client/src/lib.rs:115-125`). If its bounded event queue is full, `try_send` drops
 the request and calls `reject_server_request` with `-32001` (`app-server-client/src/lib.rs:208-227,537-550`).
@@ -901,6 +1051,8 @@ that transport rejection to a denial or tool failure.
 `request_user_input` arrives. No modal appears; the backend receives `queue is full`.
 
 ### 72. [P2][Remote resources / Protocol] `fs/readFile` allows payloads that cannot cross the transport
+
+**Status:** Assigned
 
 Local FS accepts files up to 512 MiB (`codex-rs/exec-server/src/local_file_system.rs:30,533-550`).
 App-server reads the whole file and base64-encodes it
@@ -914,6 +1066,8 @@ base64-copies it, then the response exceeds the WebSocket maximum and the reques
 
 ### 73. [P2][Maintainability / Reliability] The central TUI controller has become an unsafe change unit
 
+**Status:** Assigned
+
 `codex-rs/tui/src/app_shell.rs` is 3,961 lines, `ShellState` has 78 fields, and `handle_key` alone is
 382 lines. Its 12,391-line test file reaches into the same private state. Relative to
 `origin/sync/openai-2026-07-12`, those two files contain 10,153 insertions. Input routing, transport
@@ -924,6 +1078,8 @@ a unified modal/input router plus a recoverable command-result boundary, followe
 transcript reducers.
 
 ### 74. [P3][Discoverability / TUI] The command palette advertises an intentionally inert action
+
+**Status:** Assigned
 
 The palette includes `Compact context` with the detail `Context compaction action is not wired yet`
 and `enabled: false` (`codex-rs/tui/src/app_shell/command_palette.rs:152-157`). Its dispatch branch is
