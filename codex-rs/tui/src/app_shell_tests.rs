@@ -2716,6 +2716,24 @@ async fn text_input_shortcuts_work_in_message_and_tool_input_panes() {
             "alpha\n|mma",
         ),
         (
+            "alpha\nbeta ga|mma",
+            KeyCode::Char('a'),
+            KeyModifiers::CONTROL,
+            "alpha\n|beta gamma",
+        ),
+        (
+            "alpha\nbeta ga|mma",
+            KeyCode::Char('e'),
+            KeyModifiers::CONTROL,
+            "alpha\nbeta gamma|",
+        ),
+        (
+            "alpha\nbeta ga|mma",
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL,
+            "alpha\n|mma",
+        ),
+        (
             "naive beta_gamma, \u{4e16}\u{754c}| tail",
             KeyCode::Left,
             KeyModifiers::ALT,
@@ -2784,7 +2802,7 @@ async fn command_backspace_message_result_snapshot() {
 
     shell
         .handle_key(
-            KeyEvent::new(KeyCode::Backspace, KeyModifiers::SUPER),
+            KeyEvent::new(KeyCode::Char('u'), KeyModifiers::CONTROL),
             &config,
             &mut backend,
         )
@@ -2815,7 +2833,7 @@ async fn tool_input_renders_cursor_and_tracks_shortcuts() {
 
     shell
         .handle_key(
-            KeyEvent::new(KeyCode::Left, KeyModifiers::SUPER),
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL),
             &config,
             &mut backend,
         )

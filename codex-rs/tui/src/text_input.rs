@@ -381,7 +381,29 @@ impl EditableText {
 }
 
 pub(crate) fn text_input_action_from_key(key: KeyEvent) -> Option<TextInputAction> {
-    text_input_shortcut_from_key(key).or_else(|| plain_text_input_action_from_key(key))
+    text_input_shortcut_with_compat_from_key(key).or_else(|| plain_text_input_action_from_key(key))
+}
+
+pub(crate) fn text_input_shortcut_with_compat_from_key(key: KeyEvent) -> Option<TextInputAction> {
+    if let Some(action) = text_input_shortcut_from_key(key) {
+        return Some(action);
+    }
+    if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+        return None;
+    }
+
+    // macOS terminals commonly encode Command+Left/Right/Backspace as Ctrl+A/E/U.
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('a'), KeyModifiers::CONTROL)
+        | (KeyCode::Char('\u{0001}'), KeyModifiers::NONE) => Some(TextInputAction::MoveLineStart),
+        (KeyCode::Char('e'), KeyModifiers::CONTROL)
+        | (KeyCode::Char('\u{0005}'), KeyModifiers::NONE) => Some(TextInputAction::MoveLineEnd),
+        (KeyCode::Char('u'), KeyModifiers::CONTROL)
+        | (KeyCode::Char('\u{0015}'), KeyModifiers::NONE) => {
+            Some(TextInputAction::DeleteToLineStart)
+        }
+        _ => None,
+    }
 }
 
 pub(crate) fn text_input_shortcut_from_key(key: KeyEvent) -> Option<TextInputAction> {

@@ -50,12 +50,12 @@ fn composer_input_uses_macos_cursor_shortcuts() {
     let mut composer = ComposerInput::new();
     assert!(composer.handle_paste("alpha\nbeta gamma".to_string()));
 
-    let _ = composer.input(KeyEvent::new(KeyCode::Left, KeyModifiers::SUPER));
+    let _ = composer.input(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL));
     let _ = composer.input(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE));
     assert_eq!(composer.text(), "alpha\nXbeta gamma");
     assert_snapshot!("composer_input_middle_cursor", composer.text_with_cursor());
 
-    let _ = composer.input(KeyEvent::new(KeyCode::Right, KeyModifiers::SUPER));
+    let _ = composer.input(KeyEvent::new(KeyCode::Char('e'), KeyModifiers::CONTROL));
     let _ = composer.input(KeyEvent::new(KeyCode::Backspace, KeyModifiers::CONTROL));
     assert_eq!(composer.text(), "alpha\nXbeta ");
 }

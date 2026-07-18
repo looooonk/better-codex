@@ -387,13 +387,19 @@ mod tests {
     #[test]
     fn environment_query_uses_shared_text_shortcuts() {
         let mut state = EnvModalState::default();
-        assert!(state.query.handle_paste("alpha beta".to_string()));
+        assert!(
+            state
+                .query
+                .handle_paste("alpha beta\ngamma delta".to_string())
+        );
 
         assert!(state.handle_text_key(KeyEvent::new(KeyCode::Left, KeyModifiers::ALT)));
         assert!(state.handle_text_key(KeyEvent::new(KeyCode::Char('X'), KeyModifiers::NONE)));
+        assert!(state.handle_text_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL,)));
+        assert!(state.handle_text_key(KeyEvent::new(KeyCode::Char('Y'), KeyModifiers::NONE)));
         assert!(!state.handle_text_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)));
 
-        assert_eq!(state.query.text_with_cursor(), "alpha X▏beta");
+        assert_eq!(state.query.text_with_cursor(), "alpha beta\nY▏gamma Xdelta");
     }
 
     struct FakeBackend {

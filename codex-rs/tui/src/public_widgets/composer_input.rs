@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use crate::text_input::EditableText;
 use crate::text_input::text_input_action_from_key;
-use crate::text_input::text_input_shortcut_from_key;
+use crate::text_input::text_input_shortcut_with_compat_from_key;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
@@ -68,7 +68,7 @@ impl ComposerInput {
 
     /// Apply a modified text-editing shortcut if the event matches one.
     pub fn apply_text_shortcut(&mut self, key: KeyEvent) -> bool {
-        let Some(action) = text_input_shortcut_from_key(key) else {
+        let Some(action) = text_input_shortcut_with_compat_from_key(key) else {
             return false;
         };
         self.input.apply(action);

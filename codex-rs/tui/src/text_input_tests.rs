@@ -64,6 +64,40 @@ fn macos_shortcuts_map_to_text_actions() {
 
 #[test]
 fn compatibility_encodings_map_to_the_same_actions() {
+    for (code, modifiers, expected) in [
+        (
+            KeyCode::Char('a'),
+            KeyModifiers::CONTROL,
+            TextInputAction::MoveLineStart,
+        ),
+        (
+            KeyCode::Char('e'),
+            KeyModifiers::CONTROL,
+            TextInputAction::MoveLineEnd,
+        ),
+        (
+            KeyCode::Char('u'),
+            KeyModifiers::CONTROL,
+            TextInputAction::DeleteToLineStart,
+        ),
+        (
+            KeyCode::Char('\u{0001}'),
+            KeyModifiers::NONE,
+            TextInputAction::MoveLineStart,
+        ),
+        (
+            KeyCode::Char('\u{0005}'),
+            KeyModifiers::NONE,
+            TextInputAction::MoveLineEnd,
+        ),
+        (
+            KeyCode::Char('\u{0015}'),
+            KeyModifiers::NONE,
+            TextInputAction::DeleteToLineStart,
+        ),
+    ] {
+        assert_eq!(action(code, modifiers), Some(expected));
+    }
     assert_eq!(
         action(KeyCode::Char('b'), KeyModifiers::ALT),
         Some(TextInputAction::MoveWordLeft)
@@ -106,6 +140,14 @@ fn shortcut_matching_is_exact_and_ignores_modifier_only_events() {
         state: KeyEventState::NONE,
     };
     assert_eq!(text_input_action_from_key(release), None);
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn fn_navigation_and_delete_remain_unbound() {
+    for code in [KeyCode::Home, KeyCode::End, KeyCode::Delete] {
+        assert_eq!(action(code, KeyModifiers::NONE), None);
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
