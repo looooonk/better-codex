@@ -17,7 +17,7 @@ This file tracks implementation tasks explicitly requested by users during live 
 - [x] Add green/red line background highlighting for the diff lines in the git diff pane, like GitHub does.
 - [x] The cursor in the "MESSAGE" pane can sometimes go outside the pane if a row is filled with characters, and the next character is a space, which should not be the case. Instead, the space should overflow to the next row.
 - [x] If a long message is pasted into the "MESSAGE" pane, such that there is a long line that overflows to multiple rows, the last row may not be visible even when scrolling all the way down. This needs to be fixed, so all parts of the pasted text can be visible through scrolling / arrow key navigation.
-- [x] Refactor the MacOS keyboard shortcuts for the "MESSAGE" pane and any text input pane to the following:
+- [ ] Refactor the MacOS keyboard shortcuts for the "MESSAGE" pane and any text input pane to the following:
   - `CMD + LEFT`, `CMD + RIGHT`: Move the cursor to the start or end of the current line.
   - `CMD + BACKSPACE`: Delete from the cursor to the start of the line.
   - `OPTION + LEFT`, `OPTION + RIGHT`: Move the cursor to the previous or next word.
