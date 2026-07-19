@@ -4,6 +4,7 @@ use codex_core::ThreadConfigSnapshot;
 use codex_core::config::AgentRoleConfig;
 use codex_features::Feature;
 use codex_models_manager::bundled_models_response;
+use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::models::PermissionProfile;
@@ -1124,6 +1125,83 @@ async fn spawned_multi_agent_v2_child_inherits_parent_developer_context() -> Res
         .expect("child request log should capture at least one request");
     assert!(child_request.body_contains_text("Parent developer instructions."));
     assert!(child_request.body_contains_text(CHILD_PROMPT));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn oversized_multi_agent_v2_task_name_is_bounded_in_history() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let oversized_name = "x".repeat(/*n*/ 50_000);
+    let spawn_args = serde_json::to_string(&json!({
+        "message": CHILD_PROMPT,
+        "task_name": &oversized_name,
+    }))?;
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-parent-1"),
+                ev_function_call_with_namespace(
+                    SPAWN_CALL_ID,
+                    MULTI_AGENT_V2_NAMESPACE,
+                    "spawn_agent",
+                    &spawn_args,
+                ),
+                ev_completed("resp-parent-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-parent-2"),
+                ev_assistant_message("msg-parent-2", "done"),
+                ev_completed("resp-parent-2"),
+            ]),
+        ],
+    )
+    .await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::Collab)
+            .expect("test config should allow feature update");
+        config
+            .features
+            .enable(Feature::MultiAgentV2)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build_with_auto_env(&server).await?;
+
+    test.submit_turn(TURN_1_PROMPT).await?;
+
+    let requests = responses.requests();
+    assert_eq!(requests.len(), 2);
+    let follow_up = &requests[1];
+    let function_call = follow_up
+        .inputs_of_type("function_call")
+        .into_iter()
+        .find(|item| item.get("call_id").and_then(Value::as_str) == Some(SPAWN_CALL_ID))
+        .expect("spawn call should remain in history");
+    let arguments = function_call
+        .get("arguments")
+        .and_then(Value::as_str)
+        .expect("spawn call should have arguments");
+    let arguments: Value = serde_json::from_str(arguments)?;
+    assert_eq!(
+        arguments["task_name"],
+        json!("x".repeat(AgentPath::MAX_NAME_LENGTH + 1))
+    );
+    assert!(!follow_up.body_contains_text(&oversized_name));
+    assert_eq!(
+        follow_up.function_call_output_content_and_success(SPAWN_CALL_ID),
+        Some((
+            Some(format!(
+                "agent_name must be at most {} characters",
+                AgentPath::MAX_NAME_LENGTH
+            )),
+            None
+        ))
+    );
 
     Ok(())
 }

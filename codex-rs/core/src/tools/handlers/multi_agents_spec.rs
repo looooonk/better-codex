@@ -1,3 +1,4 @@
+use codex_protocol::AgentPath;
 use codex_protocol::openai_models::ModelPreset;
 use codex_tools::JsonSchema;
 use codex_tools::ResponsesApiNamespace;
@@ -89,10 +90,13 @@ pub fn create_spawn_agent_tool_v2(options: SpawnAgentToolOptions) -> ToolSpec {
     }
     properties.insert(
         "task_name".to_string(),
-        JsonSchema::string(Some(
-            "Task name for the new agent. Use lowercase letters, digits, and underscores."
-                .to_string(),
-        )),
+        JsonSchema {
+            max_length: Some(AgentPath::MAX_NAME_LENGTH),
+            ..JsonSchema::string(Some(
+                "Task name for the new agent. Use lowercase letters, digits, and underscores."
+                    .to_string(),
+            ))
+        },
     );
 
     ToolSpec::Function(ResponsesApiTool {

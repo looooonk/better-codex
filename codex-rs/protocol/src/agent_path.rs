@@ -17,6 +17,8 @@ pub struct AgentPath(String);
 impl AgentPath {
     pub const ROOT: &str = "/root";
     pub const MORPHEUS: &str = "/morpheus";
+    pub const MAX_NAME_LENGTH: usize = 64;
+    pub const MAX_PATH_LENGTH: usize = 1024;
     const ROOT_SEGMENT: &str = "root";
 
     pub fn root() -> Self {
@@ -143,6 +145,12 @@ fn validate_agent_name(agent_name: &str) -> Result<(), String> {
             "agent_name must use only lowercase letters, digits, and underscores".to_string(),
         );
     }
+    if agent_name.len() > AgentPath::MAX_NAME_LENGTH {
+        return Err(format!(
+            "agent_name must be at most {} characters",
+            AgentPath::MAX_NAME_LENGTH
+        ));
+    }
     Ok(())
 }
 
@@ -166,6 +174,12 @@ fn validate_absolute_path(path: &str) -> Result<(), String> {
     }
     for segment in segments {
         validate_agent_name(segment)?;
+    }
+    if path.len() > AgentPath::MAX_PATH_LENGTH {
+        return Err(format!(
+            "agent path must be at most {} characters",
+            AgentPath::MAX_PATH_LENGTH
+        ));
     }
     Ok(())
 }
@@ -235,6 +249,28 @@ mod tests {
         assert_eq!(
             AgentPath::root().resolve("../sibling"),
             Err("agent_name `..` is reserved".to_string())
+        );
+    }
+
+    #[test]
+    fn names_and_paths_have_hard_length_limits() {
+        let maximum_name = "a".repeat(AgentPath::MAX_NAME_LENGTH);
+        assert!(AgentPath::root().join(&maximum_name).is_ok());
+        assert_eq!(
+            AgentPath::root().join(&format!("{maximum_name}a")),
+            Err(format!(
+                "agent_name must be at most {} characters",
+                AgentPath::MAX_NAME_LENGTH
+            ))
+        );
+
+        let deep_path = format!("/root/{}", vec![maximum_name; 16].join("/"));
+        assert_eq!(
+            AgentPath::try_from(deep_path),
+            Err(format!(
+                "agent path must be at most {} characters",
+                AgentPath::MAX_PATH_LENGTH
+            ))
         );
     }
 }

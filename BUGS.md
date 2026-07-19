@@ -235,7 +235,7 @@ through managed networking.
 
 ### 13. [P0][Model context / Multi-agent] Agent task names have no length limit
 
-**Status:** Assigned
+**Status:** Fixed
 
 `AgentPath` validates the character set but not length
 (`codex-rs/protocol/src/agent_path.rs:125-146`), and the spawn tool schema has no maximum

@@ -50,6 +50,8 @@ pub struct JsonSchema {
     pub minimum: Option<Number>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub maximum: Option<Number>,
+    #[serde(rename = "maxLength", skip_serializing_if = "Option::is_none")]
+    pub max_length: Option<usize>,
     /// Responses-only marker for reviewed encrypted tool parameters.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encrypted: Option<bool>,

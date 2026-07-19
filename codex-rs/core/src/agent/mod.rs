@@ -3,6 +3,7 @@ pub(crate) mod control;
 mod registry;
 pub(crate) mod role;
 pub(crate) mod status;
+pub(crate) mod task_name;
 
 pub(crate) use codex_protocol::protocol::AgentStatus;
 pub(crate) use control::AgentControl;
