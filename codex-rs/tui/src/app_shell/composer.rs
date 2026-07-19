@@ -1,9 +1,33 @@
 use crate::text_input::EditableText;
 use crate::text_input::TextInputAction;
+use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use std::collections::VecDeque;
 use unicode_width::UnicodeWidthStr;
 
 const MAX_COMPOSER_HISTORY: usize = 50;
+pub(super) const MAX_COMPOSER_BYTES: usize = MAX_USER_INPUT_TEXT_CHARS;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ComposerInsertResult {
+    Inserted,
+    TooLarge { attempted_bytes: usize },
+}
+
+impl ComposerInsertResult {
+    fn for_size(attempted_bytes: usize) -> Self {
+        if attempted_bytes <= MAX_COMPOSER_BYTES {
+            Self::Inserted
+        } else {
+            Self::TooLarge { attempted_bytes }
+        }
+    }
+}
+
+pub(super) fn input_too_large_message(actual_bytes: usize) -> String {
+    format!(
+        "Message exceeds the maximum size of {MAX_COMPOSER_BYTES} bytes ({actual_bytes} provided)."
+    )
+}
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct ComposerDraft {
@@ -169,19 +193,35 @@ impl ComposerState {
         self.clear_history_recall();
     }
 
-    pub(super) fn insert_char(&mut self, ch: char) {
+    pub(super) fn insert_char(&mut self, ch: char) -> ComposerInsertResult {
+        let result =
+            ComposerInsertResult::for_size(self.input.text().len().saturating_add(ch.len_utf8()));
+        if let ComposerInsertResult::TooLarge { .. } = result {
+            return result;
+        }
         self.input.insert_char(ch);
         self.clear_history_recall();
+        result
     }
 
-    pub(super) fn insert_newline(&mut self) {
-        self.insert_char('\n');
+    pub(super) fn insert_newline(&mut self) -> ComposerInsertResult {
+        self.insert_char('\n')
     }
 
-    pub(super) fn insert_str(&mut self, text: &str) {
-        let normalized = text.replace("\r\n", "\n").replace('\r', "\n");
-        self.input.insert_str(&normalized);
+    pub(super) fn insert_str(&mut self, text: &str) -> ComposerInsertResult {
+        let result =
+            ComposerInsertResult::for_size(self.input.text().len().saturating_add(text.len()));
+        if let ComposerInsertResult::TooLarge { .. } = result {
+            return result;
+        }
+        if text.contains('\r') {
+            self.input
+                .insert_str(&text.replace("\r\n", "\n").replace('\r', "\n"));
+        } else {
+            self.input.insert_str(text);
+        }
         self.clear_history_recall();
+        result
     }
 
     pub(super) fn move_left(&mut self) {
@@ -302,6 +342,27 @@ impl ComposerState {
     fn clear_history_recall(&mut self) {
         self.history_index = None;
         self.draft_before_history.clear();
+    }
+}
+
+impl super::ShellState {
+    pub(super) fn report_composer_insert(&mut self, result: ComposerInsertResult) {
+        if let ComposerInsertResult::TooLarge { attempted_bytes } = result {
+            self.push_error(input_too_large_message(attempted_bytes));
+        }
+    }
+
+    pub(super) fn reject_oversized_composer(&mut self) -> bool {
+        let actual_bytes = self.composer.text().len();
+        self.reject_oversized_input(actual_bytes)
+    }
+
+    pub(super) fn reject_oversized_input(&mut self, actual_bytes: usize) -> bool {
+        if actual_bytes <= MAX_COMPOSER_BYTES {
+            return false;
+        }
+        self.push_error(input_too_large_message(actual_bytes));
+        true
     }
 }
 

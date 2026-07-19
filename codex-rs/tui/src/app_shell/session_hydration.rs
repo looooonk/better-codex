@@ -16,6 +16,17 @@ const SESSION_HYDRATION_LOOKUP_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 
 type LookupResult<T> = std::result::Result<T, String>;
 type LookupTask<T> = Option<JoinHandle<SessionLookup<LookupResult<T>>>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SessionListLoad {
+    Replace,
+    Append,
+}
+
+struct SessionListPage {
+    load: SessionListLoad,
+    result: LookupResult<ThreadListResponse>,
+}
+
 #[derive(Default)]
 pub(super) struct SessionHydrationState {
     generation: u64,
@@ -28,7 +39,7 @@ pub(super) struct SessionHydrationState {
     goal_task: LookupTask<Option<ThreadGoal>>,
     workspace_task: LookupTask<Option<WorkspaceGitStatus>>,
     session_list_params: Option<ThreadListParams>,
-    session_list_task: LookupTask<ThreadListResponse>,
+    session_list_task: Option<JoinHandle<SessionLookup<SessionListPage>>>,
     rate_limits_task: LookupTask<GetAccountRateLimitsResponse>,
 }
 
@@ -70,7 +81,28 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        let params = self.session_list.list_params();
+        let params = self.session_list.first_page_params();
+        self.start_session_list_lookup(app_server, params, SessionListLoad::Replace);
+    }
+
+    pub(super) fn start_session_list_next_page<S>(&mut self, app_server: &S)
+    where
+        S: AppShellBackend,
+    {
+        let Some(params) = self.session_list.next_page_params() else {
+            return;
+        };
+        self.start_session_list_lookup(app_server, params, SessionListLoad::Append);
+    }
+
+    fn start_session_list_lookup<S>(
+        &mut self,
+        app_server: &S,
+        params: ThreadListParams,
+        load: SessionListLoad,
+    ) where
+        S: AppShellBackend,
+    {
         if self
             .session_hydration
             .session_list_task
@@ -99,7 +131,10 @@ impl ShellState {
                 generation,
                 thread_id,
                 revision,
-                value,
+                value: SessionListPage {
+                    load,
+                    result: value,
+                },
             }
         }));
     }
@@ -297,7 +332,11 @@ impl ShellState {
                 && lookup.generation == self.session_hydration.generation
                 && lookup.thread_id == self.thread_id
             {
-                changed |= self.finish_session_list_refresh(lookup.revision, lookup.value);
+                changed |= self.finish_session_list_refresh(
+                    lookup.revision,
+                    lookup.value.load,
+                    lookup.value.result,
+                );
             }
         }
 
@@ -399,16 +438,21 @@ impl ShellState {
     pub(super) fn finish_session_list_refresh(
         &mut self,
         revision: u64,
+        load: SessionListLoad,
         result: std::result::Result<ThreadListResponse, String>,
     ) -> bool {
         if revision != self.session_hydration.session_list_revision {
             return false;
         }
         match result {
-            Ok(response) => self.session_list.replace_thread_page(
-                response.data,
-                /*has_more*/ response.next_cursor.is_some(),
-            ),
+            Ok(response) => match load {
+                SessionListLoad::Replace => self
+                    .session_list
+                    .replace_thread_page(response.data, response.next_cursor),
+                SessionListLoad::Append => self
+                    .session_list
+                    .append_thread_page(response.data, response.next_cursor),
+            },
             Err(err) => self.session_list.set_error(err),
         }
         true

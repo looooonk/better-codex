@@ -369,7 +369,7 @@ pub(crate) async fn run(
                             if !accepts_interaction {
                                 continue;
                             }
-                            shell.handle_mouse_scroll(
+                            let load_more = shell.handle_mouse_scroll(
                                 ratatui::layout::Rect::new(
                                     /*x*/ 0,
                                     /*y*/ 0,
@@ -379,6 +379,9 @@ pub(crate) async fn run(
                                 position,
                                 direction,
                             );
+                            if load_more {
+                                shell.start_session_list_next_page(&app_server);
+                            }
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::Paste(text) => {
@@ -1210,7 +1213,11 @@ impl ShellState {
             KeyCode::Esc => Ok(self.confirm_exit()),
             KeyCode::Enter => {
                 if is_composer_newline_key(key) {
-                    self.composer.insert_newline();
+                    let result = self.composer.insert_newline();
+                    self.report_composer_insert(result);
+                    return Ok(false);
+                }
+                if self.reject_oversized_composer() {
                     return Ok(false);
                 }
                 let finished_queued_edit = self.composer.finish_queued_message_edit();
@@ -1283,7 +1290,8 @@ impl ShellState {
             }
             KeyCode::Char(ch) => {
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
-                    self.composer.insert_char(ch);
+                    let result = self.composer.insert_char(ch);
+                    self.report_composer_insert(result);
                 }
                 Ok(false)
             }
@@ -1291,12 +1299,14 @@ impl ShellState {
                 if self.active_turn_id.is_some() && key_hint::plain(KeyCode::Tab).is_press(key) {
                     self.composer.queue_current_message();
                 } else {
-                    self.composer.insert_str("    ");
+                    let result = self.composer.insert_str("    ");
+                    self.report_composer_insert(result);
                 }
                 Ok(false)
             }
             KeyCode::BackTab => {
-                self.composer.insert_str("    ");
+                let result = self.composer.insert_str("    ");
+                self.report_composer_insert(result);
                 Ok(false)
             }
             KeyCode::Backspace
@@ -1438,8 +1448,11 @@ impl ShellState {
         {
             return;
         }
-        self.clear_transcript_selection();
-        self.composer.insert_str(text);
+        let result = self.composer.insert_str(text);
+        if result == composer::ComposerInsertResult::Inserted {
+            self.clear_transcript_selection();
+        }
+        self.report_composer_insert(result);
     }
 
     async fn handle_command_palette_key<S>(
@@ -1554,7 +1567,9 @@ impl ShellState {
                 Ok(true)
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                self.session_list.move_selection_down();
+                if !self.session_list.move_selection_down() && self.session_list.has_more() {
+                    self.start_session_list_next_page(app_server);
+                }
                 Ok(true)
             }
             KeyCode::Enter => {
@@ -1601,8 +1616,12 @@ impl ShellState {
                 Ok(true)
             }
             KeyCode::PageDown => {
+                let mut reached_end = false;
                 for _ in 0..5 {
-                    self.session_list.move_selection_down();
+                    reached_end |= !self.session_list.move_selection_down();
+                }
+                if reached_end && self.session_list.has_more() {
+                    self.start_session_list_next_page(app_server);
                 }
                 Ok(true)
             }
@@ -2409,6 +2428,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.reject_oversized_input(prompt.len()) {
+            return;
+        }
         if self.reject_unavailable_session_action() {
             return;
         }
@@ -2516,6 +2538,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.reject_oversized_input(prompt.len()) {
+            return Ok(());
+        }
         let Some(turn_id) = self.active_turn_id.clone() else {
             self.submit_prompt(app_server, prompt);
             return Ok(());
@@ -2678,8 +2703,14 @@ impl ShellState {
             KeyCode::Esc => Ok(false),
             KeyCode::Enter => {
                 if is_composer_newline_key(key) {
-                    self.composer.insert_newline();
-                } else if self.pending_elicitation.is_some() {
+                    let result = self.composer.insert_newline();
+                    self.report_composer_insert(result);
+                    return Ok(false);
+                }
+                if self.reject_oversized_composer() {
+                    return Ok(false);
+                }
+                if self.pending_elicitation.is_some() {
                     self.resolve_pending_elicitation(app_server, ElicitationChoice::Accept)
                         .await?;
                 } else {
@@ -2697,12 +2728,14 @@ impl ShellState {
             }
             KeyCode::Char(ch) => {
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
-                    self.composer.insert_char(ch);
+                    let result = self.composer.insert_char(ch);
+                    self.report_composer_insert(result);
                 }
                 Ok(false)
             }
             KeyCode::Tab | KeyCode::BackTab => {
-                self.composer.insert_str("    ");
+                let result = self.composer.insert_str("    ");
+                self.report_composer_insert(result);
                 Ok(false)
             }
             KeyCode::PageUp => {

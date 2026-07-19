@@ -315,7 +315,7 @@ impl ShellState {
         area: Rect,
         position: Position,
         direction: MouseScrollDirection,
-    ) {
+    ) -> bool {
         self.exit_confirmation_pending = false;
         self.set_pointer_position(position);
         let key = match direction {
@@ -340,27 +340,27 @@ impl ShellState {
                     MouseScrollDirection::Down => self.scroll_diff_view_down(),
                 }
             }
-            return;
+            return false;
         }
         if self.tool_output.is_some() {
             match direction {
                 MouseScrollDirection::Up => self.scroll_tool_output_up(),
                 MouseScrollDirection::Down => self.scroll_tool_output_down(),
             }
-            return;
+            return false;
         }
         if self.agent_log.is_some() {
             match direction {
                 MouseScrollDirection::Up => self.scroll_agent_log_up(),
                 MouseScrollDirection::Down => self.scroll_agent_log_down(),
             }
-            return;
+            return false;
         }
         if let Some(selector) = &mut self.selector {
             if selector.option_at(area, position).is_some() {
                 selector.handle_key(KeyEvent::new(key, KeyModifiers::NONE));
             }
-            return;
+            return false;
         }
         if self.command_palette.is_some() {
             let over_entry = (ShellView { shell: self })
@@ -375,7 +375,7 @@ impl ShellState {
                     }
                 }
             }
-            return;
+            return false;
         }
         let over_approval = self.pending_approval.is_some()
             && (ShellView { shell: self })
@@ -388,21 +388,26 @@ impl ShellState {
                     MouseScrollDirection::Down => pending.scroll_down(/*amount*/ 3),
                 }
             }
-            return;
+            return false;
         }
         if self.has_blocking_overlay() {
-            return;
+            return false;
         }
 
         match (ShellView { shell: self }).pointer_pane_at(area, position) {
-            Some(PointerPane::Transcript) => match direction {
-                MouseScrollDirection::Up => self.scroll_transcript_up(TRANSCRIPT_WHEEL_SCROLL_STEP),
-                MouseScrollDirection::Down => {
-                    self.scroll_transcript_down(TRANSCRIPT_WHEEL_SCROLL_STEP)
+            Some(PointerPane::Transcript) => {
+                match direction {
+                    MouseScrollDirection::Up => {
+                        self.scroll_transcript_up(TRANSCRIPT_WHEEL_SCROLL_STEP)
+                    }
+                    MouseScrollDirection::Down => {
+                        self.scroll_transcript_down(TRANSCRIPT_WHEEL_SCROLL_STEP)
+                    }
                 }
-            },
+                false
+            }
             Some(PointerPane::Dashboard) => self.scroll_dashboard_at(area, position, direction),
-            Some(PointerPane::Header | PointerPane::Input) | None => {}
+            Some(PointerPane::Header | PointerPane::Input) | None => false,
         }
     }
 
@@ -425,7 +430,7 @@ impl ShellState {
         area: Rect,
         position: Position,
         direction: MouseScrollDirection,
-    ) {
+    ) -> bool {
         let nested_panel = match self.dashboard_route {
             DashboardRoute::Sessions => Some("Sessions"),
             DashboardRoute::Agents => Some("Agents"),
@@ -438,35 +443,39 @@ impl ShellState {
                 .is_some()
         });
         if over_nested_panel {
-            match (self.dashboard_route, direction) {
+            return match (self.dashboard_route, direction) {
                 (DashboardRoute::Sessions, MouseScrollDirection::Up)
                     if !self.session_list.renaming() =>
                 {
-                    self.session_list.move_selection_up()
+                    self.session_list.move_selection_up();
+                    false
                 }
                 (DashboardRoute::Sessions, MouseScrollDirection::Down)
                     if !self.session_list.renaming() =>
                 {
-                    self.session_list.move_selection_down()
+                    !self.session_list.move_selection_down() && self.session_list.has_more()
                 }
                 (DashboardRoute::Agents, MouseScrollDirection::Up) => {
-                    self.agent_activity.move_selection_up()
+                    self.agent_activity.move_selection_up();
+                    false
                 }
                 (DashboardRoute::Agents, MouseScrollDirection::Down) => {
-                    self.agent_activity.move_selection_down()
+                    self.agent_activity.move_selection_down();
+                    false
                 }
                 (DashboardRoute::Status, MouseScrollDirection::Up) if !self.settings.editing() => {
-                    self.settings.move_up()
+                    self.settings.move_up();
+                    false
                 }
                 (DashboardRoute::Status, MouseScrollDirection::Down)
                     if !self.settings.editing() =>
                 {
-                    self.settings.move_down()
+                    self.settings.move_down();
+                    false
                 }
                 (DashboardRoute::Sessions | DashboardRoute::Status, _)
-                | (DashboardRoute::Help, _) => {}
-            }
-            return;
+                | (DashboardRoute::Help, _) => false,
+            };
         }
 
         let max_scroll = (ShellView { shell: self }).dashboard_scroll_max(area);
@@ -477,5 +486,6 @@ impl ShellState {
                 .saturating_add(DASHBOARD_WHEEL_SCROLL_STEP)
                 .min(max_scroll),
         });
+        false
     }
 }

@@ -746,7 +746,7 @@ terminal. The old/new visible text looks identical; no key or mouse action revea
 
 ### 49. [P1][Availability / Input] Multi-megabyte paste has no size cap and blocks rendering
 
-**Status:** Assigned
+**Status:** Fixed
 
 Composer insertion accepts an arbitrary paste, performs whole-string normalization/insertion, and
 subsequent renders measure and wrap the complete buffer
@@ -759,7 +759,7 @@ during insertion and subsequent frames, with no warning or cancellation path.
 
 ### 50. [P2][Navigation / Sessions] Session browsing has no pagination beyond the first 20 rows
 
-**Status:** Assigned
+**Status:** Fixed
 
 The list limit is 20 and every request sends `cursor: None`
 (`codex-rs/tui/src/app_shell/sessions.rs:17,59-76`). `has_more` only produces a `+` indicator; no key

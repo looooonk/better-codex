@@ -409,6 +409,49 @@ fn renders_multiline_composer_growth_snapshot() {
 }
 
 #[test]
+fn oversized_paste_reports_error_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.set_text("draft stays intact");
+    shell.insert_text(&"x".repeat(composer::MAX_COMPOSER_BYTES));
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    assert_eq!(shell.composer.text(), "draft stays intact");
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[tokio::test]
+async fn oversized_prompt_is_not_submitted() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell
+        .composer
+        .set_text("x".repeat(composer::MAX_COMPOSER_BYTES + 1));
+    let mut backend = RecordingBackend::default();
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("oversized prompt should be handled");
+
+    assert_eq!(backend.calls(), Vec::new());
+    assert_eq!(
+        shell.composer.text().len(),
+        composer::MAX_COMPOSER_BYTES + 1
+    );
+    let expected = composer::input_too_large_message(composer::MAX_COMPOSER_BYTES + 1);
+    assert_eq!(
+        shell.transcript.back().map(|line| line.text.as_str()),
+        Some(expected.as_str())
+    );
+}
+
+#[test]
 fn renders_native_session_list_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.session_list.focused = true;
@@ -2133,10 +2176,12 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
+                cursor: None,
             },
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
+                cursor: None,
             },
         ]
     );
@@ -3367,7 +3412,7 @@ async fn printable_character_repeat_reaches_text_entry_overlays() {
     sessions.session_list.stop_search();
     assert_eq!(
         (
-            sessions.session_list.list_params().search_term,
+            sessions.session_list.first_page_params().search_term,
             sessions.composer.text(),
         ),
         (Some("x".to_string()), "")
@@ -3458,7 +3503,7 @@ async fn editing_shortcuts_reach_dashboard_and_mcp_text_inputs() {
     );
     search.session_list.stop_search();
     assert_eq!(
-        search.session_list.list_params().search_term,
+        search.session_list.first_page_params().search_term,
         Some("alpha Xbeta".to_string())
     );
 
@@ -3961,7 +4006,7 @@ async fn modified_enter_does_not_commit_editors_or_command_palette_actions() {
         .await
         .expect("plain Enter should stop search mode");
     assert_eq!(
-        sessions.session_list.list_params().search_term,
+        sessions.session_list.first_page_params().search_term,
         Some("x".to_string())
     );
 
@@ -4888,6 +4933,7 @@ async fn blocked_session_list_refresh_does_not_block_dashboard_input() {
         vec![RecordedBackendCall::ThreadList {
             archived: Some(false),
             search_term: None,
+            cursor: None,
         }]
     );
 }
@@ -5522,6 +5568,38 @@ fn session_and_agent_wheels_stay_nested_in_both_layouts() {
             (Some("agent-3"), outer_scroll)
         );
     }
+}
+
+#[test]
+fn session_wheel_requests_the_next_page_at_the_loaded_boundary() {
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Sessions;
+    shell.session_list.replace_thread_page(
+        (0..20)
+            .map(|index| {
+                thread_fixture(
+                    test_thread_id(&format!("01900000-0000-7000-8002-{index:012x}")),
+                    Some(&format!("Session {index:02}")),
+                    "wheel pagination fixture",
+                )
+            })
+            .collect(),
+        Some("20".to_string()),
+    );
+    for _ in 1..20 {
+        shell.session_list.move_selection_down();
+    }
+    render_shell(&shell, area);
+    let body = position_in(area, |position| {
+        ShellView { shell: &shell }
+            .dashboard_panel_position_at(area, position, "Sessions")
+            .is_some()
+    });
+
+    assert!(shell.handle_mouse_scroll(area, body, tui::MouseScrollDirection::Down));
 }
 
 #[tokio::test]
@@ -10119,6 +10197,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
         vec![RecordedBackendCall::ThreadList {
             archived: Some(false),
             search_term: None,
+            cursor: None,
         }]
     );
     shell
@@ -10263,6 +10342,7 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
         vec![RecordedBackendCall::ThreadList {
             archived: Some(false),
             search_term: None,
+            cursor: None,
         }]
     );
 
@@ -10302,16 +10382,72 @@ async fn committed_session_search_loads_beyond_initial_page_and_clears_remotely(
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
+                cursor: None,
             },
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: Some("needle".to_string()),
+                cursor: None,
             },
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
+                cursor: None,
             },
         ]
+    );
+}
+
+#[tokio::test]
+async fn session_navigation_appends_the_next_page_snapshot() {
+    let config = test_config().await;
+    let threads = (0..25)
+        .map(|index| {
+            thread_fixture(
+                test_thread_id(&format!("01900000-0000-7000-8001-{index:012x}")),
+                Some(&format!("Session {index:02}")),
+                "pagination fixture",
+            )
+        })
+        .collect::<Vec<_>>();
+    let expected_id = ThreadId::from_string(&threads[20].id).expect("thread id should be valid");
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    let mut backend = RecordingBackend::with_threads(threads);
+
+    refresh_session_list(&mut shell, &backend).await;
+    for _ in 0..20 {
+        shell
+            .handle_session_list_key(key_char('j'), &config, &mut backend)
+            .await
+            .expect("session navigation should succeed");
+    }
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(shell.session_list.selected_thread_id(), Some(expected_id));
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+                cursor: None,
+            },
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+                cursor: Some("20".to_string()),
+            },
+        ]
+    );
+    insta::assert_snapshot!(
+        "session_list_second_page",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
     );
 }
 
@@ -10394,6 +10530,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
+                cursor: None,
             },
             RecordedBackendCall::Resume(resume_id),
             RecordedBackendCall::Unsubscribe(initial_id),
@@ -10404,10 +10541,12 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
+                cursor: None,
             },
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
+                cursor: None,
             },
             RecordedBackendCall::Fork(fork_id),
             RecordedBackendCall::Unsubscribe(resume_id),
@@ -10417,6 +10556,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
+                cursor: None,
             },
         ]
     );
@@ -10641,6 +10781,7 @@ fn newer_session_list_refresh_rejects_an_older_completion() {
 
     assert!(shell.finish_session_list_refresh(
         current_revision,
+        session_hydration::SessionListLoad::Replace,
         Ok(ThreadListResponse {
             data: vec![thread_fixture(current_id, Some("current"), "newer result")],
             next_cursor: None,
@@ -10649,6 +10790,7 @@ fn newer_session_list_refresh_rejects_an_older_completion() {
     ));
     assert!(!shell.finish_session_list_refresh(
         stale_revision,
+        session_hydration::SessionListLoad::Replace,
         Ok(ThreadListResponse {
             data: vec![thread_fixture(stale_id, Some("stale"), "older result")],
             next_cursor: None,
@@ -10709,10 +10851,12 @@ async fn changed_session_list_query_supersedes_a_blocked_refresh() {
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
+                cursor: None,
             },
             RecordedBackendCall::ThreadList {
                 archived: Some(true),
                 search_term: None,
+                cursor: None,
             },
         ]
     );
@@ -10760,14 +10904,17 @@ async fn completed_list_refresh_cannot_restore_a_deleted_session() {
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
+                cursor: None,
             },
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
+                cursor: None,
             },
             RecordedBackendCall::ThreadList {
                 archived: Some(true),
                 search_term: None,
+                cursor: None,
             },
             RecordedBackendCall::Delete(session_id),
         ]
@@ -10990,6 +11137,7 @@ async fn session_switch_waits_for_the_active_turn_to_finish() {
         vec![RecordedBackendCall::ThreadList {
             archived: Some(false),
             search_term: None,
+            cursor: None,
         }]
     );
 }
@@ -11023,6 +11171,7 @@ async fn session_switch_waits_for_pending_agent_input() {
         vec![RecordedBackendCall::ThreadList {
             archived: Some(false),
             search_term: None,
+            cursor: None,
         }]
     );
 }
@@ -11057,6 +11206,7 @@ async fn session_switch_preserves_nonempty_composer_draft() {
         vec![RecordedBackendCall::ThreadList {
             archived: Some(false),
             search_term: None,
+            cursor: None,
         }]
     );
 }
@@ -12476,6 +12626,7 @@ enum RecordedBackendCall {
     ThreadList {
         archived: Option<bool>,
         search_term: Option<String>,
+        cursor: Option<String>,
     },
     ThreadReadFull(codex_protocol::ThreadId),
     RateLimits,
@@ -12625,13 +12776,19 @@ impl backend::AppShellBackend for RecordingBackend {
         &mut self,
         params: ThreadListParams,
     ) -> color_eyre::Result<ThreadListResponse> {
+        let cursor = params.cursor.clone();
         self.push(RecordedBackendCall::ThreadList {
             archived: params.archived,
             search_term: params.search_term.clone(),
+            cursor: cursor.clone(),
         });
         let limit = params.limit.map_or(usize::MAX, |limit| {
             usize::try_from(limit).unwrap_or(usize::MAX)
         });
+        let offset = cursor
+            .as_deref()
+            .and_then(|cursor| cursor.parse::<usize>().ok())
+            .unwrap_or_default();
         let search_term = params.search_term.unwrap_or_default();
         let mut data = {
             let threads = self.threads.lock().expect("threads should lock");
@@ -12669,8 +12826,10 @@ impl backend::AppShellBackend for RecordingBackend {
                 .cloned()
                 .collect::<Vec<_>>()
         };
-        let next_cursor = (data.len() > limit).then(|| "more".to_string());
-        data.truncate(limit);
+        let total = data.len();
+        data = data.into_iter().skip(offset).take(limit).collect();
+        let next_offset = offset.saturating_add(data.len());
+        let next_cursor = (next_offset < total).then(|| next_offset.to_string());
         let response = ThreadListResponse {
             data,
             next_cursor,

@@ -11,6 +11,7 @@ use codex_protocol::ThreadId;
 use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use std::collections::HashSet;
 use std::path::PathBuf;
 use unicode_width::UnicodeWidthStr;
 
@@ -43,7 +44,7 @@ pub(super) struct SessionListState {
     rename_draft: Option<EditableText>,
     last_error: Option<String>,
     loaded: bool,
-    has_more: bool,
+    next_cursor: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,9 +57,20 @@ pub(super) struct SessionRow {
 }
 
 impl SessionListState {
-    pub(super) fn list_params(&self) -> ThreadListParams {
+    pub(super) fn first_page_params(&mut self) -> ThreadListParams {
+        self.next_cursor = None;
+        self.list_params_with_cursor(None)
+    }
+
+    pub(super) fn next_page_params(&self) -> Option<ThreadListParams> {
+        self.next_cursor
+            .clone()
+            .map(|cursor| self.list_params_with_cursor(Some(cursor)))
+    }
+
+    fn list_params_with_cursor(&self, cursor: Option<String>) -> ThreadListParams {
         ThreadListParams {
-            cursor: None,
+            cursor,
             limit: Some(SESSION_LIST_LIMIT),
             sort_key: Some(ThreadSortKey::RecencyAt),
             sort_direction: None,
@@ -77,16 +89,47 @@ impl SessionListState {
     }
 
     pub(super) fn replace_threads(&mut self, threads: Vec<Thread>) {
-        self.replace_thread_page(threads, /*has_more*/ false);
+        self.replace_thread_page(threads, /*next_cursor*/ None);
     }
 
-    pub(super) fn replace_thread_page(&mut self, threads: Vec<Thread>, has_more: bool) {
+    pub(super) fn replace_thread_page(
+        &mut self,
+        threads: Vec<Thread>,
+        next_cursor: Option<String>,
+    ) {
         self.all_rows = threads
             .into_iter()
             .filter_map(SessionRow::from_thread)
             .collect();
-        self.has_more = has_more;
+        self.next_cursor = next_cursor;
         self.apply_search_filter();
+        self.normalize_selection_and_scroll();
+        self.loaded = true;
+        self.last_error = None;
+    }
+
+    pub(super) fn append_thread_page(&mut self, threads: Vec<Thread>, next_cursor: Option<String>) {
+        let selected_thread_id = self.selected_thread_id();
+        let mut existing = self
+            .all_rows
+            .iter()
+            .map(|row| row.thread_id)
+            .collect::<HashSet<_>>();
+        self.all_rows.extend(
+            threads
+                .into_iter()
+                .filter_map(SessionRow::from_thread)
+                .filter(|row| existing.insert(row.thread_id)),
+        );
+        self.next_cursor = next_cursor;
+        self.apply_search_filter();
+        if let Some(index) = selected_thread_id
+            .and_then(|thread_id| self.rows.iter().position(|row| row.thread_id == thread_id))
+        {
+            self.selected = index
+                .saturating_add(1)
+                .min(self.rows.len().saturating_sub(1));
+        }
         self.normalize_selection_and_scroll();
         self.loaded = true;
         self.last_error = None;
@@ -102,12 +145,18 @@ impl SessionListState {
         self.keep_selection_visible(SESSION_LIST_DEFAULT_VISIBLE_ROWS);
     }
 
-    pub(super) fn move_selection_down(&mut self) {
+    pub(super) fn move_selection_down(&mut self) -> bool {
+        let selected = self.selected;
         self.selected = self
             .selected
             .saturating_add(1)
             .min(self.rows.len().saturating_sub(1));
         self.keep_selection_visible(SESSION_LIST_DEFAULT_VISIBLE_ROWS);
+        self.selected != selected
+    }
+
+    pub(super) fn has_more(&self) -> bool {
+        self.next_cursor.is_some()
     }
 
     pub(super) fn selected_thread_id(&self) -> Option<ThreadId> {
@@ -222,7 +271,7 @@ impl SessionListState {
         self.scroll_top = 0;
         self.last_error = None;
         self.loaded = false;
-        self.has_more = false;
+        self.next_cursor = None;
     }
 
     pub(super) fn show_archived(&self) -> bool {
@@ -287,13 +336,13 @@ impl SessionListState {
                 "{} shown / {}{} loaded",
                 self.rows.len(),
                 self.all_rows.len(),
-                if self.has_more { "+" } else { "" }
+                if self.has_more() { "+" } else { "" }
             )
         } else {
             format!(
                 "{}{} sessions",
                 self.rows.len(),
-                if self.has_more { "+" } else { "" }
+                if self.has_more() { "+" } else { "" }
             )
         };
         lines.push(Line::from(vec![

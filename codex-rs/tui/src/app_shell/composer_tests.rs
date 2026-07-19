@@ -68,3 +68,31 @@ fn queue_editing_restores_the_draft_cursor() {
 
     assert_eq!(composer.text(), "draft! tail");
 }
+
+#[test]
+fn oversized_paste_is_rejected_before_normalization() {
+    let mut composer = ComposerState::default();
+    composer.set_text("draft");
+    let pasted = "x".repeat(MAX_COMPOSER_BYTES);
+
+    let result = composer.insert_str(&pasted);
+
+    assert_eq!(
+        result,
+        ComposerInsertResult::TooLarge {
+            attempted_bytes: MAX_COMPOSER_BYTES + "draft".len(),
+        }
+    );
+    assert_eq!(composer.text(), "draft");
+}
+
+#[test]
+fn paste_at_size_limit_is_inserted() {
+    let mut composer = ComposerState::default();
+    let pasted = "x".repeat(MAX_COMPOSER_BYTES);
+
+    let result = composer.insert_str(&pasted);
+
+    assert_eq!(result, ComposerInsertResult::Inserted);
+    assert_eq!(composer.text(), pasted);
+}
