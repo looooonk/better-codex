@@ -1,4 +1,5 @@
 use super::*;
+use clap::error::ErrorKind;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -59,6 +60,21 @@ fn resume_accepts_output_flags_after_subcommand() {
     };
     assert_eq!(args.session_id.as_deref(), Some("session-123"));
     assert_eq!(args.prompt.as_deref(), Some(PROMPT));
+}
+
+#[test]
+fn resume_rejects_dangerous_bypass_with_sandbox_mode() {
+    let error = Cli::try_parse_from([
+        "codex-exec",
+        "resume",
+        "--last",
+        "--sandbox",
+        "workspace-write",
+        "--dangerously-bypass-approvals-and-sandbox",
+    ])
+    .expect_err("conflicting sandbox flags should fail");
+
+    assert_eq!(error.kind(), ErrorKind::ArgumentConflict);
 }
 
 #[test]

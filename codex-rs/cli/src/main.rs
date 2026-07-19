@@ -1005,6 +1005,10 @@ async fn cli_main(
                 root_remote_auth_token_env.as_deref(),
                 "exec",
             )?;
+            reject_subcommand_bypass_overriding_root_sandbox(
+                &interactive.shared,
+                &exec_cli.shared,
+            )?;
             exec_cli
                 .shared
                 .inherit_exec_root_options(&interactive.shared);
@@ -2388,6 +2392,7 @@ fn finalize_resume_interactive(
     interactive.resume_include_non_interactive = include_non_interactive;
 
     // Merge resume-scoped flags and overrides with highest precedence.
+    reject_subcommand_bypass_overriding_root_sandbox(&interactive.shared, &resume_cli.shared)?;
     merge_interactive_cli_flags(&mut interactive, resume_cli);
 
     // Propagate any root-level config overrides (e.g. `-c key=value`).
@@ -2422,6 +2427,7 @@ fn finalize_fork_interactive(
     interactive.fork_show_all = show_all;
 
     // Merge fork-scoped flags and overrides with highest precedence.
+    reject_subcommand_bypass_overriding_root_sandbox(&interactive.shared, &fork_cli.shared)?;
     merge_interactive_cli_flags(&mut interactive, fork_cli);
 
     // Propagate any root-level config overrides (e.g. `-c key=value`).
@@ -2435,6 +2441,18 @@ fn reject_conflicting_interactive_permission_flags(cli: &TuiCli) -> anyhow::Resu
     if cli.dangerously_bypass_approvals_and_sandbox && cli.approval_policy.is_some() {
         anyhow::bail!(
             "`--dangerously-bypass-approvals-and-sandbox` cannot be used with `--ask-for-approval`"
+        );
+    }
+    Ok(())
+}
+
+fn reject_subcommand_bypass_overriding_root_sandbox(
+    root: &SharedCliOptions,
+    subcommand: &SharedCliOptions,
+) -> anyhow::Result<()> {
+    if root.sandbox_mode.is_some() && subcommand.dangerously_bypass_approvals_and_sandbox {
+        anyhow::bail!(
+            "`--dangerously-bypass-approvals-and-sandbox` cannot be used with `--sandbox`"
         );
     }
     Ok(())
@@ -2788,6 +2806,29 @@ mod tests {
     }
 
     #[test]
+    fn dangerous_bypass_conflicts_with_sandbox_mode() {
+        for args in [
+            vec![
+                "codex",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--sandbox",
+                "workspace-write",
+            ],
+            vec![
+                "codex",
+                "exec",
+                "--dangerously-bypass-approvals-and-sandbox",
+                "--sandbox",
+                "workspace-write",
+            ],
+        ] {
+            let err = MultitoolCli::try_parse_from(args)
+                .expect_err("dangerous bypass and sandbox mode should conflict");
+            assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+        }
+    }
+
+    #[test]
     fn session_commands_reject_cross_scope_bypass_and_approval_flags() {
         const BYPASS: &str = "--dangerously-bypass-approvals-and-sandbox";
         const APPROVAL: &str = "--ask-for-approval";
@@ -2808,6 +2849,55 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn session_commands_reject_subcommand_bypass_overriding_root_sandbox() {
+        const BYPASS: &str = "--dangerously-bypass-approvals-and-sandbox";
+        type Finalizer = fn(&[&str]) -> anyhow::Result<TuiCli>;
+
+        for (command, finalize) in [
+            ("resume", try_finalize_resume_from_args as Finalizer),
+            ("fork", try_finalize_fork_from_args as Finalizer),
+        ] {
+            let args = [
+                "codex",
+                "--sandbox",
+                "workspace-write",
+                command,
+                BYPASS,
+                "--last",
+            ];
+            let err = finalize(&args).expect_err("subcommand bypass should conflict");
+            assert_eq!(
+                err.to_string(),
+                "`--dangerously-bypass-approvals-and-sandbox` cannot be used with `--sandbox`"
+            );
+        }
+    }
+
+    #[test]
+    fn exec_rejects_subcommand_bypass_overriding_root_sandbox() {
+        let cli = MultitoolCli::try_parse_from([
+            "codex",
+            "--sandbox",
+            "workspace-write",
+            "exec",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "inspect",
+        ])
+        .expect("cross-scope flags should parse independently");
+        let Some(Subcommand::Exec(exec)) = cli.subcommand else {
+            panic!("expected exec subcommand");
+        };
+
+        let err =
+            reject_subcommand_bypass_overriding_root_sandbox(&cli.interactive.shared, &exec.shared)
+                .expect_err("subcommand bypass should conflict");
+        assert_eq!(
+            err.to_string(),
+            "`--dangerously-bypass-approvals-and-sandbox` cannot be used with `--sandbox`"
+        );
     }
 
     #[test]

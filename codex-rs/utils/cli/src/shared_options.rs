@@ -44,7 +44,8 @@ pub struct SharedCliOptions {
     #[arg(
         long = "dangerously-bypass-approvals-and-sandbox",
         alias = "yolo",
-        default_value_t = false
+        default_value_t = false,
+        conflicts_with = "sandbox_mode"
     )]
     pub dangerously_bypass_approvals_and_sandbox: bool,
 

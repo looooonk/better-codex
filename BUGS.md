@@ -266,7 +266,7 @@ Unlike the same-scope combination, it parses and starts with approvals disabled.
 
 ### 15. [P1][CLI safety] Dangerous bypass silently overrides an explicit sandbox selection
 
-**Status:** Assigned
+**Status:** Fixed
 
 The dangerous root flag can also be combined with `--sandbox workspace-write`. The shared CLI types
 do not declare these as conflicting, and both TUI and exec paths replace the explicit sandbox with
