@@ -270,6 +270,47 @@ fn single_environment_diff_preserves_known_shell_when_current_is_unknown() -> Re
 }
 
 #[test]
+fn subagent_list_change_renders_current_list() {
+    let previous = EnvironmentsState::default().with_subagents("- agent-1: Atlas".to_string());
+    let current = EnvironmentsState::default()
+        .with_subagents("- agent-1: Atlas\n- agent-2: Juniper".to_string());
+    let previous = WorldStateSection::snapshot(&previous);
+
+    assert_eq!(
+        Some(user_message(
+            r#"<environment_context>
+  <subagents>
+    - agent-1: Atlas
+    - agent-2: Juniper
+  </subagents>
+</environment_context>"#,
+        )),
+        render_fragment(WorldStateSection::render_diff(
+            &current,
+            PreviousSectionState::Known(&previous),
+        ))
+    );
+}
+
+#[test]
+fn removed_subagent_list_renders_cleared_marker() {
+    let previous = EnvironmentsState::default().with_subagents("- agent-1: Atlas".to_string());
+    let previous = WorldStateSection::snapshot(&previous);
+
+    assert_eq!(
+        Some(user_message(
+            r#"<environment_context>
+  <subagents />
+</environment_context>"#,
+        )),
+        render_fragment(WorldStateSection::render_diff(
+            &EnvironmentsState::default(),
+            PreviousSectionState::Known(&previous),
+        ))
+    );
+}
+
+#[test]
 fn removed_legacy_environment_renders_unavailable() -> Result<()> {
     let previous = EnvironmentsState {
         environments: [(

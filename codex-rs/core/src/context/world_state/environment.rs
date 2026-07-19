@@ -68,7 +68,7 @@ impl EnvironmentsState {
             timezone: self.timezone.clone(),
             network: self.network.clone(),
             filesystem: self.filesystem.clone(),
-            subagents: self.subagents.clone(),
+            subagents: self.subagents.clone().map(SubagentsUpdate::Current),
         }
     }
 }
@@ -115,6 +115,7 @@ impl WorldStateSection for EnvironmentsState {
             || current.timezone != previous.timezone
             || current.network != previous.network
             || current.filesystem != previous.filesystem;
+        let subagents_changed = current.subagents != previous.subagents;
         let mut updates = self
             .environments
             .iter()
@@ -138,7 +139,7 @@ impl WorldStateSection for EnvironmentsState {
             && updates
                 .values()
                 .all(|update| matches!(update, EnvironmentUpdate::Current(_)));
-        (!updates.is_empty() || turn_context_values_changed).then(|| {
+        (!updates.is_empty() || turn_context_values_changed || subagents_changed).then(|| {
             Box::new(RenderedEnvironments {
                 updates,
                 legacy_single,
@@ -146,7 +147,16 @@ impl WorldStateSection for EnvironmentsState {
                 timezone: self.timezone.clone(),
                 network: self.network.clone(),
                 filesystem: self.filesystem.clone(),
-                subagents: self.subagents.clone(),
+                subagents: self
+                    .subagents
+                    .clone()
+                    .map(SubagentsUpdate::Current)
+                    .or_else(|| {
+                        previous
+                            .subagents
+                            .as_ref()
+                            .map(|_| SubagentsUpdate::Cleared)
+                    }),
             }) as Box<dyn ContextualUserFragment>
         })
     }
@@ -177,12 +187,17 @@ struct RenderedEnvironments {
     timezone: Option<String>,
     network: Option<NetworkContext>,
     filesystem: Option<FileSystemContext>,
-    subagents: Option<String>,
+    subagents: Option<SubagentsUpdate>,
 }
 
 enum EnvironmentUpdate {
     Current(EnvironmentState),
     Unavailable,
+}
+
+enum SubagentsUpdate {
+    Current(String),
+    Cleared,
 }
 
 impl ContextualUserFragment for RenderedEnvironments {
@@ -241,19 +256,23 @@ impl ContextualUserFragment for RenderedEnvironments {
             rendered.push_str(&filesystem.render());
             rendered.push('\n');
         }
-        if let Some(subagents) = &self.subagents {
-            rendered.push_str("  <subagents>\n");
-            let mut lines = subagents.lines();
-            for line in lines.by_ref().take(MAX_RENDERED_SUBAGENT_LINES) {
-                rendered.push_str("    ");
-                push_xml_escaped_text(&mut rendered, line);
-                rendered.push('\n');
+        match &self.subagents {
+            Some(SubagentsUpdate::Current(subagents)) => {
+                rendered.push_str("  <subagents>\n");
+                let mut lines = subagents.lines();
+                for line in lines.by_ref().take(MAX_RENDERED_SUBAGENT_LINES) {
+                    rendered.push_str("    ");
+                    push_xml_escaped_text(&mut rendered, line);
+                    rendered.push('\n');
+                }
+                let omitted = lines.count();
+                if omitted > 0 {
+                    rendered.push_str(&format!("    [additional {omitted} subagents omitted]\n"));
+                }
+                rendered.push_str("  </subagents>\n");
             }
-            let omitted = lines.count();
-            if omitted > 0 {
-                rendered.push_str(&format!("    [additional {omitted} subagents omitted]\n"));
-            }
-            rendered.push_str("  </subagents>\n");
+            Some(SubagentsUpdate::Cleared) => rendered.push_str("  <subagents />\n"),
+            None => {}
         }
         bound_environment_context_body(rendered)
     }

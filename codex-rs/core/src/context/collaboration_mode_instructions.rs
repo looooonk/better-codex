@@ -10,15 +10,19 @@ pub(crate) struct CollaborationModeInstructions {
 }
 
 impl CollaborationModeInstructions {
+    pub(crate) fn new(instructions: &str) -> Self {
+        Self {
+            instructions: bound_developer_configuration_text(instructions),
+        }
+    }
+
     pub(crate) fn from_collaboration_mode(collaboration_mode: &CollaborationMode) -> Option<Self> {
         collaboration_mode
             .settings
             .developer_instructions
             .as_ref()
             .filter(|instructions| !instructions.is_empty())
-            .map(|instructions| Self {
-                instructions: bound_developer_configuration_text(instructions),
-            })
+            .map(|instructions| Self::new(instructions))
     }
 }
 

@@ -71,12 +71,14 @@ fn build_collaboration_mode_update_item(
 
     let prev = previous?;
     if prev.collaboration_mode.as_ref() != Some(&next.collaboration_mode) {
-        // If the next mode has empty developer instructions, this returns None and we emit no
-        // update, so prior collaboration instructions remain in the prompt history.
-        Some(
-            CollaborationModeInstructions::from_collaboration_mode(&next.collaboration_mode)?
-                .render(),
-        )
+        CollaborationModeInstructions::from_collaboration_mode(&next.collaboration_mode)
+            .map(|instructions| instructions.render())
+            .or_else(|| {
+                prev.collaboration_mode
+                    .as_ref()
+                    .and_then(CollaborationModeInstructions::from_collaboration_mode)
+                    .map(|_| CollaborationModeInstructions::new("").render())
+            })
     } else {
         None
     }

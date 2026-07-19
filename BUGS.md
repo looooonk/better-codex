@@ -343,7 +343,7 @@ without changing cwd or status. The next environment diff contains no shell upda
 
 ### 20. [P1][Model correctness / Multi-agent] Subagent-list changes do not trigger environment diffs
 
-**Status:** Assigned
+**Status:** Fixed
 
 The environment snapshot stores `subagents`, but the change predicate checks only date, timezone,
 network, filesystem, and per-environment values
@@ -356,7 +356,7 @@ then inspect the next model request. The subagent list is stale or absent.
 
 ### 21. [P1][Model correctness / Collaboration] Clearing collaboration instructions has no tombstone
 
-**Status:** Assigned
+**Status:** Fixed
 
 `build_collaboration_mode_update_item` returns no item when the new mode has empty developer
 instructions (`codex-rs/core/src/context_manager/updates.rs:64-83`). Because history is incremental,
