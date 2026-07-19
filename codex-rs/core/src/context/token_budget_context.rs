@@ -4,7 +4,11 @@ use codex_protocol::protocol::CONTEXT_WINDOW_CLOSE_TAG;
 use codex_protocol::protocol::CONTEXT_WINDOW_GUIDANCE_CLOSE_TAG;
 use codex_protocol::protocol::CONTEXT_WINDOW_GUIDANCE_OPEN_TAG;
 use codex_protocol::protocol::CONTEXT_WINDOW_OPEN_TAG;
+use codex_utils_output_truncation::TruncationPolicy;
+use codex_utils_output_truncation::truncate_text;
 use uuid::Uuid;
+
+const THREAD_HINT_MAX_TOKENS: usize = 800;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TokenBudgetContext {
@@ -13,6 +17,7 @@ pub(crate) struct TokenBudgetContext {
     previous_window_id: Option<Uuid>,
     window_id: Uuid,
     mcp_result: Option<String>,
+    thread_hint_truncated: bool,
 }
 
 impl TokenBudgetContext {
@@ -23,13 +28,27 @@ impl TokenBudgetContext {
         window_id: Uuid,
         mcp_result: Option<String>,
     ) -> Self {
+        let (mcp_result, thread_hint_truncated) = match mcp_result {
+            Some(result) => {
+                let bounded =
+                    truncate_text(&result, TruncationPolicy::Tokens(THREAD_HINT_MAX_TOKENS));
+                let truncated = bounded != result;
+                (Some(bounded), truncated)
+            }
+            None => (None, false),
+        };
         Self {
             thread_id,
             first_window_id,
             previous_window_id,
             window_id,
             mcp_result,
+            thread_hint_truncated,
         }
+    }
+
+    pub(crate) fn thread_hint_truncated(&self) -> bool {
+        self.thread_hint_truncated
     }
 }
 

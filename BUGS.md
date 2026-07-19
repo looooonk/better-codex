@@ -136,7 +136,7 @@ thread.
 
 ### 7. [P0][Model context / Injection] MCP notes can inject an unbounded developer-priority thread hint
 
-**Status:** Assigned
+**Status:** Fixed
 
 The notes integration joins returned `thread_hint` text without truncation and injects it as
 developer content in `codex-rs/core/src/session/mod.rs:3382-3418`. Token budgeting in

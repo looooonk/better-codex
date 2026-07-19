@@ -16,6 +16,7 @@ use codex_protocol::protocol::HookRunStatus;
 use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
 use codex_protocol::protocol::Op;
+use codex_utils_output_truncation::approx_token_count;
 use core_test_support::PathBufExt;
 use core_test_support::assert_regex_match;
 use core_test_support::context_snapshot;
@@ -265,6 +266,7 @@ async fn token_budget_context_injects_plain_thread_hint_text() -> Result<()> {
 
     let server = start_mock_server().await;
     let rmcp_test_server_bin = stdio_server_bin()?;
+    let oversized_thread_hint = "untrusted thread hint ".repeat(2_000);
     let test = test_codex()
         .with_config(move |config| {
             config.model_context_window = Some(CONFIGURED_CONTEXT_WINDOW);
@@ -280,7 +282,10 @@ async fn token_budget_context_injects_plain_thread_hint_text() -> Result<()> {
                     transport: McpServerTransportConfig::Stdio {
                         command: rmcp_test_server_bin,
                         args: Vec::new(),
-                        env: None,
+                        env: Some(HashMap::from([(
+                            "MCP_TEST_THREAD_HINT_TEXT".to_string(),
+                            oversized_thread_hint,
+                        )])),
                         env_vars: Vec::new(),
                         cwd: None,
                     },
@@ -325,7 +330,7 @@ async fn token_budget_context_injects_plain_thread_hint_text() -> Result<()> {
     assert_eq!(token_budgets.len(), 1);
     let captures = assert_regex_match(
         &format!(
-            r"^{CONTEXT_WINDOW_OPEN_TAG}\nThread id: {thread_id}\nFirst context window id: ([0-9a-f-]{{36}})\nCurrent context window id: ([0-9a-f-]{{36}})\nmanual history hint for thread {thread_id}\nunstructured notes/thread_hint fixture result\n{CONTEXT_WINDOW_CLOSE_TAG}$"
+            r"^{CONTEXT_WINDOW_OPEN_TAG}\nThread id: {thread_id}\nFirst context window id: ([0-9a-f-]{{36}})\nCurrent context window id: ([0-9a-f-]{{36}})\nmanual history hint for thread {thread_id}\n"
         ),
         &token_budgets[0],
     );
@@ -333,6 +338,9 @@ async fn token_budget_context_injects_plain_thread_hint_text() -> Result<()> {
         captures.get(1).expect("first window id capture").as_str(),
         captures.get(2).expect("current window id capture").as_str()
     );
+    assert!(token_budgets[0].contains("tokens truncated"));
+    assert!(token_budgets[0].ends_with(&format!("\n{CONTEXT_WINDOW_CLOSE_TAG}")));
+    assert!(approx_token_count(&token_budgets[0]) < 1_000);
     assert!(
         !tool_names(&request)
             .iter()

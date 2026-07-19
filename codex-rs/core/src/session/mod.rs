@@ -3438,16 +3438,25 @@ impl Session {
                         .join("\n");
                     (!text.is_empty()).then_some(text)
                 });
-            developer_sections.push(
-                crate::context::TokenBudgetContext::new(
-                    self.thread_id(),
-                    auto_compact_window_ids.first_window_id,
-                    auto_compact_window_ids.previous_window_id,
-                    auto_compact_window_ids.window_id,
-                    mcp_result,
-                )
-                .render(),
+            let token_budget_context = crate::context::TokenBudgetContext::new(
+                self.thread_id(),
+                auto_compact_window_ids.first_window_id,
+                auto_compact_window_ids.previous_window_id,
+                auto_compact_window_ids.window_id,
+                mcp_result,
             );
+            if token_budget_context.thread_hint_truncated() {
+                self.send_event_raw(Event {
+                    id: String::new(),
+                    msg: EventMsg::Warning(WarningEvent {
+                        message:
+                            "The notes thread hint exceeded the context limit and was truncated."
+                                .to_string(),
+                    }),
+                })
+                .await;
+            }
+            developer_sections.push(token_budget_context.render());
             if let Some(guidance_message) = turn_context
                 .config
                 .token_budget
