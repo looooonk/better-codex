@@ -720,7 +720,7 @@ children. The RPC returns an error, but some rollout files and auxiliary state a
 
 ### 47. [P2][Data integrity / Settings] TUI settings updates are split across non-atomic writes
 
-**Status:** Assigned
+**Status:** Fixed
 
 Model, effort, service-tier, and approval changes first persist global config and then issue a
 separate `thread/settings/update` (`codex-rs/tui/src/app_shell/settings/controller.rs:300-431`). Some
@@ -734,7 +734,7 @@ the active thread did not.
 
 ### 48. [P2][Review correctness / TUI] Diff lines permanently hide changes beyond the visible width
 
-**Status:** Assigned
+**Status:** Fixed
 
 Each diff side is ellipsis-truncated to its column
 (`codex-rs/tui/src/app_shell/diff_view_view.rs:233-265`). Left/Right select files, and

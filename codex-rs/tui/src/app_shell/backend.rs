@@ -171,19 +171,10 @@ pub(super) trait AppShellBackend {
         edits: Vec<ConfigEdit>,
     ) -> impl std::future::Future<Output = Result<ConfigWriteResponse>> + Send;
 
-    fn write_config_in_background(
+    fn persist_settings_update_in_background(
         &self,
         edits: Vec<ConfigEdit>,
-    ) -> impl std::future::Future<Output = Result<ConfigWriteResponse>> + Send + 'static;
-
-    fn thread_settings_update(
-        &mut self,
-        params: ThreadSettingsUpdateParams,
-    ) -> impl std::future::Future<Output = Result<()>> + Send;
-
-    fn thread_settings_update_in_background(
-        &self,
-        params: ThreadSettingsUpdateParams,
+        thread_update: Option<ThreadSettingsUpdateParams>,
     ) -> impl std::future::Future<Output = Result<()>> + Send + 'static;
 
     fn mcp_server_status_list(
@@ -508,22 +499,18 @@ impl AppShellBackend for AppServerSession {
         write_config_batch(AppServerSession::request_handle(self), edits).await
     }
 
-    fn write_config_in_background(
+    fn persist_settings_update_in_background(
         &self,
         edits: Vec<ConfigEdit>,
-    ) -> impl std::future::Future<Output = Result<ConfigWriteResponse>> + Send + 'static {
-        write_config_batch(AppServerSession::request_handle(self), edits)
-    }
-
-    async fn thread_settings_update(&mut self, params: ThreadSettingsUpdateParams) -> Result<()> {
-        AppServerSession::thread_settings_update(self, params).await
-    }
-
-    fn thread_settings_update_in_background(
-        &self,
-        params: ThreadSettingsUpdateParams,
+        thread_update: Option<ThreadSettingsUpdateParams>,
     ) -> impl std::future::Future<Output = Result<()>> + Send + 'static {
-        AppServerSession::thread_settings_update_in_background(self, params)
+        let thread_update = thread_update
+            .map(|params| AppServerSession::thread_settings_update_in_background(self, params));
+        super::settings::persist_settings_update(
+            AppServerSession::request_handle(self),
+            edits,
+            thread_update,
+        )
     }
 
     async fn mcp_server_status_list(

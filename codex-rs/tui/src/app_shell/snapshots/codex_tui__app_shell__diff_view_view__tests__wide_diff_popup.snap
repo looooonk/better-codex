@@ -32,5 +32,5 @@ expression: "render(&wide, 140, 34)"
   │                                 │                                                 │                                                  │
   │                                 │                                                 │                                                  │
   │                                 │                                                 │                                                  │
-  │  ←/→ files  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  file 1/4  1-15/15                                                       │
+  │  ←/→ files  h/l pan  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  file 1/4  1-15/15                                              │
   ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯

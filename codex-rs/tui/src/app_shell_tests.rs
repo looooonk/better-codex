@@ -8291,6 +8291,70 @@ async fn failed_settings_write_keeps_selector_and_previous_value() {
 }
 
 #[tokio::test]
+async fn failed_thread_settings_update_restores_config_and_previous_value() {
+    let mut shell = ShellState::snapshot_fixture();
+    let previous_policy = shell.approval_policy;
+    let backend = RecordingBackend::default();
+    backend
+        .config_values
+        .lock()
+        .expect("config values should lock")
+        .insert(
+            "approval_policy".to_string(),
+            serde_json::to_value(previous_policy).expect("approval policy should serialize"),
+        );
+    shell.open_approval_selector();
+    backend.fail_next_thread_settings_update("thread update rejected");
+
+    for key in [KeyCode::Down, KeyCode::Down, KeyCode::Enter] {
+        shell
+            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
+            .await
+            .expect("setting update should start");
+    }
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(shell.selector.is_some());
+    assert_eq!(shell.approval_policy, previous_policy);
+    assert_eq!(shell.status, "action failed");
+    assert_eq!(
+        *backend
+            .config_values
+            .lock()
+            .expect("config values should lock"),
+        HashMap::from([(
+            "approval_policy".to_string(),
+            serde_json::to_value(previous_policy).expect("approval policy should serialize"),
+        )])
+    );
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::ConfigWrite(vec![(
+                "approval_policy".to_string(),
+                serde_json::json!("never"),
+            )]),
+            RecordedBackendCall::ThreadSettingsUpdate {
+                model: None,
+                effort: None,
+                service_tier: None,
+                approval_policy: codex_app_server_protocol::AskForApproval::Never,
+            },
+            RecordedBackendCall::ConfigWrite(vec![(
+                "approval_policy".to_string(),
+                serde_json::to_value(previous_policy).expect("approval policy should serialize"),
+            )]),
+        ]
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        ),
+    ));
+}
+
+#[tokio::test]
 async fn failed_session_delete_keeps_confirmation_open() {
     let mut shell = ShellState::snapshot_fixture();
     let backend = RecordingBackend::default();
@@ -12273,6 +12337,8 @@ struct RecordingBackend {
     turn_start_error: Arc<Mutex<Option<String>>>,
     turn_start_gate: Option<Arc<tokio::sync::Semaphore>>,
     action_error: Arc<Mutex<Option<String>>>,
+    thread_settings_error: Arc<Mutex<Option<String>>>,
+    config_values: Arc<Mutex<HashMap<String, serde_json::Value>>>,
     remote_workspace: bool,
     embedded_app_server: bool,
 }
@@ -12299,6 +12365,8 @@ impl Default for RecordingBackend {
             turn_start_error: Arc::new(Mutex::new(None)),
             turn_start_gate: None,
             action_error: Arc::new(Mutex::new(None)),
+            thread_settings_error: Arc::new(Mutex::new(None)),
+            config_values: Arc::new(Mutex::new(HashMap::new())),
             remote_workspace: false,
             embedded_app_server: true,
         }
@@ -12378,10 +12446,24 @@ impl RecordingBackend {
         *self.action_error.lock().expect("action error should lock") = Some(message.to_string());
     }
 
+    fn fail_next_thread_settings_update(&self, message: &str) {
+        *self
+            .thread_settings_error
+            .lock()
+            .expect("thread settings error should lock") = Some(message.to_string());
+    }
+
     fn take_action_error(&self) -> Option<String> {
         self.action_error
             .lock()
             .expect("action error should lock")
+            .take()
+    }
+
+    fn take_thread_settings_error(&self) -> Option<String> {
+        self.thread_settings_error
+            .lock()
+            .expect("thread settings error should lock")
             .take()
     }
 }
@@ -12832,12 +12914,23 @@ impl backend::AppShellBackend for RecordingBackend {
     ) -> color_eyre::Result<ConfigWriteResponse> {
         self.push(RecordedBackendCall::ConfigWrite(
             edits
-                .into_iter()
-                .map(|edit| (edit.key_path, edit.value))
+                .iter()
+                .map(|edit| (edit.key_path.clone(), edit.value.clone()))
                 .collect(),
         ));
         if let Some(error) = self.take_action_error() {
             return Err(color_eyre::eyre::eyre!(error));
+        }
+        let mut values = self
+            .config_values
+            .lock()
+            .expect("config values should lock");
+        for edit in edits {
+            if edit.value.is_null() {
+                values.remove(&edit.key_path);
+            } else {
+                values.insert(edit.key_path, edit.value);
+            }
         }
         Ok(ConfigWriteResponse {
             status: WriteStatus::Ok,
@@ -12847,36 +12940,54 @@ impl backend::AppShellBackend for RecordingBackend {
         })
     }
 
-    fn write_config_in_background(
+    fn persist_settings_update_in_background(
         &self,
         edits: Vec<ConfigEdit>,
-    ) -> impl std::future::Future<Output = color_eyre::Result<ConfigWriteResponse>> + Send + 'static
-    {
-        let mut backend = self.clone();
-        async move { backend.write_config(edits).await }
-    }
-
-    async fn thread_settings_update(
-        &mut self,
-        params: ThreadSettingsUpdateParams,
-    ) -> color_eyre::Result<()> {
-        self.push(RecordedBackendCall::ThreadSettingsUpdate {
-            model: params.model,
-            effort: params.effort,
-            service_tier: params.service_tier,
-            approval_policy: params
-                .approval_policy
-                .unwrap_or(codex_app_server_protocol::AskForApproval::OnRequest),
-        });
-        Ok(())
-    }
-
-    fn thread_settings_update_in_background(
-        &self,
-        params: ThreadSettingsUpdateParams,
+        thread_update: Option<ThreadSettingsUpdateParams>,
     ) -> impl std::future::Future<Output = color_eyre::Result<()>> + Send + 'static {
         let mut backend = self.clone();
-        async move { backend.thread_settings_update(params).await }
+        async move {
+            let rollback_edits = {
+                let values = backend
+                    .config_values
+                    .lock()
+                    .expect("config values should lock");
+                edits
+                    .iter()
+                    .map(|edit| ConfigEdit {
+                        key_path: edit.key_path.clone(),
+                        value: values
+                            .get(&edit.key_path)
+                            .cloned()
+                            .unwrap_or(serde_json::Value::Null),
+                        merge_strategy: MergeStrategy::Replace,
+                    })
+                    .collect()
+            };
+            backend.write_config(edits).await?;
+            let Some(params) = thread_update else {
+                return Ok(());
+            };
+            backend.push(RecordedBackendCall::ThreadSettingsUpdate {
+                model: params.model,
+                effort: params.effort,
+                service_tier: params.service_tier,
+                approval_policy: params
+                    .approval_policy
+                    .unwrap_or(codex_app_server_protocol::AskForApproval::OnRequest),
+            });
+            let Some(error) = backend.take_thread_settings_error() else {
+                return Ok(());
+            };
+            match backend.write_config(rollback_edits).await {
+                Ok(_) => Err(color_eyre::eyre::eyre!(error)).wrap_err(
+                    "thread settings update failed; global config changes were rolled back",
+                ),
+                Err(rollback_error) => Err(color_eyre::eyre::eyre!(
+                    "thread settings update failed: {error}; global config rollback also failed: {rollback_error:#}"
+                )),
+            }
+        }
     }
 
     async fn mcp_server_status_list(

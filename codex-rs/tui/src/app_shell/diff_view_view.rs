@@ -1,6 +1,7 @@
 use super::design::fill_rect;
 use super::design::palette;
 use super::design::pane_style;
+use super::diff_horizontal_scroll::HorizontalScroll;
 use super::diff_view::DiffCell;
 use super::diff_view::DiffFile;
 use super::diff_view::DiffFileKind;
@@ -189,6 +190,7 @@ fn render_files(state: &DiffViewState, area: Rect, buf: &mut Buffer) {
 fn render_diff_rows(state: &DiffViewState, geometry: DiffViewGeometry, buf: &mut Buffer) {
     let Some(file) = state.selected_file() else {
         state.set_scroll_max(0);
+        state.horizontal_scroll.set_max(0);
         return;
     };
     render_file_label(
@@ -205,7 +207,27 @@ fn render_diff_rows(state: &DiffViewState, geometry: DiffViewGeometry, buf: &mut
     let visible = usize::from(geometry.body.height);
     state.set_scroll_max(file.rows().len().saturating_sub(visible));
     let scroll = state.scroll();
-    for (offset, row) in file.rows().iter().skip(scroll).take(visible).enumerate() {
+    let rows = file.rows().iter().skip(scroll).take(visible);
+    let old_text_width = text_viewport_width(geometry.old);
+    let new_text_width = text_viewport_width(geometry.new);
+    let horizontal_max = rows
+        .clone()
+        .flat_map(|row| {
+            [
+                row.old.as_ref().map(|cell| {
+                    UnicodeWidthStr::width(cell.text.as_str()).saturating_sub(old_text_width)
+                }),
+                row.new.as_ref().map(|cell| {
+                    UnicodeWidthStr::width(cell.text.as_str()).saturating_sub(new_text_width)
+                }),
+            ]
+            .into_iter()
+            .flatten()
+        })
+        .max()
+        .unwrap_or_default();
+    state.horizontal_scroll.set_max(horizontal_max);
+    for (offset, row) in rows.enumerate() {
         let y = geometry
             .body
             .y
@@ -213,11 +235,13 @@ fn render_diff_rows(state: &DiffViewState, geometry: DiffViewGeometry, buf: &mut
         render_cell(
             row.old.as_ref(),
             Rect::new(geometry.old.x, y, geometry.old.width, 1),
+            &state.horizontal_scroll,
             buf,
         );
         render_cell(
             row.new.as_ref(),
             Rect::new(geometry.new.x, y, geometry.new.width, 1),
+            &state.horizontal_scroll,
             buf,
         );
     }
@@ -235,7 +259,12 @@ fn render_file_label(label: Option<&str>, area: Rect, buf: &mut Buffer) {
         .render(area, buf);
 }
 
-fn render_cell(cell: Option<&DiffCell>, area: Rect, buf: &mut Buffer) {
+fn render_cell(
+    cell: Option<&DiffCell>,
+    area: Rect,
+    horizontal_scroll: &HorizontalScroll,
+    buf: &mut Buffer,
+) {
     let Some(cell) = cell else {
         return;
     };
@@ -250,24 +279,41 @@ fn render_cell(cell: Option<&DiffCell>, area: Rect, buf: &mut Buffer) {
         DiffLineKind::Removed => ("-", palette::ERROR, palette::DIFF_REMOVED_BACKGROUND, false),
         DiffLineKind::Hunk => (" ", palette::CYAN, palette::SURFACE, true),
     };
-    let text = if bold {
-        Span::from(cell.text.clone()).fg(color).bold()
-    } else {
-        Span::from(cell.text.clone()).fg(color)
-    };
-    let line = Line::from(vec![
+    fill_rect(buf, area, background);
+    let prefix_width = number_width.saturating_add(3);
+    let prefix_area = Rect::new(
+        area.x,
+        area.y,
+        u16::try_from(prefix_width)
+            .unwrap_or(u16::MAX)
+            .min(area.width),
+        area.height,
+    );
+    Paragraph::new(Line::from(vec![
         number.fg(palette::MUTED),
         " ".into(),
         marker.fg(color).bold(),
         " ".into(),
-        text,
-    ]);
-    Paragraph::new(truncate_line_with_ellipsis_if_overflow(
-        line,
-        usize::from(area.width),
-    ))
+    ]))
     .style(pane_style(background))
-    .render(area, buf);
+    .render(prefix_area, buf);
+    let text_area = Rect::new(
+        prefix_area.right(),
+        area.y,
+        area.width.saturating_sub(prefix_area.width),
+        area.height,
+    );
+    let viewport_width = usize::from(text_area.width);
+    let text = Span::from(horizontal_scroll.visible_text(&cell.text, viewport_width)).fg(color);
+    Paragraph::new(if bold { text.bold() } else { text })
+        .style(pane_style(background))
+        .render(text_area, buf);
+}
+
+fn text_viewport_width(area: Rect) -> usize {
+    let width = usize::from(area.width);
+    let number_width = width.saturating_sub(4).min(5);
+    width.saturating_sub(number_width.saturating_add(3))
 }
 
 fn render_separators(geometry: DiffViewGeometry, buf: &mut Buffer) {
@@ -291,17 +337,24 @@ fn render_footer(state: &DiffViewState, area: Rect, visible: usize, buf: &mut Bu
     let file_position = state
         .selected_file()
         .map_or(0, |_| state.selected_file_index().saturating_add(1));
-    let range = format!(
+    let mut range = format!(
         "file {}/{}  {first}-{last}/{total}",
         file_position.min(state.files().len()),
         state.files().len()
     );
+    if state.horizontal_scroll.max() > 0 {
+        range.push_str(&format!(
+            "  col {}",
+            state.horizontal_scroll.offset().saturating_add(1)
+        ));
+    }
     let width = usize::from(area.width);
     let hint = [
-        "←/→ files  j/k scroll  PgUp/PgDn page  g/G ends  Esc close",
-        "←/→ files  j/k scroll  PgUp/PgDn  Esc",
-        "←/→ files  ↑/↓ scroll  Esc",
-        "←/→  ↑/↓  Esc",
+        "←/→ files  h/l pan  j/k scroll  PgUp/PgDn page  g/G ends  Esc close",
+        "←/→ files  h/l pan  j/k scroll  PgUp/PgDn  Esc",
+        "←/→ files  h/l pan  ↑/↓ scroll  Esc",
+        "h/l pan  ↑/↓  Esc",
+        "h/l pan  Esc",
         "",
     ]
     .into_iter()

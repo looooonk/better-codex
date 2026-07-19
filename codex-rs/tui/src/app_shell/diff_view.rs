@@ -1,3 +1,4 @@
+use super::diff_horizontal_scroll::HorizontalScroll;
 use super::diff_model::parse_unified_diff;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::PatchApplyStatus;
@@ -327,6 +328,7 @@ pub(super) struct DiffViewState {
     selected_file: usize,
     scroll: Cell<usize>,
     scroll_max: Cell<usize>,
+    pub(super) horizontal_scroll: HorizontalScroll,
 }
 
 impl DiffViewState {
@@ -343,6 +345,7 @@ impl DiffViewState {
             selected_file: 0,
             scroll: Cell::new(0),
             scroll_max: Cell::new(0),
+            horizontal_scroll: HorizontalScroll::default(),
         }
     }
 
@@ -430,6 +433,9 @@ impl DiffViewState {
         {
             return DiffViewAction::Pending;
         }
+        if self.horizontal_scroll.handle_key(key) {
+            return DiffViewAction::Pending;
+        }
         match key.code {
             KeyCode::Esc => DiffViewAction::Close,
             KeyCode::Left | KeyCode::Char('[') => {
@@ -483,6 +489,7 @@ impl DiffViewState {
     fn reset_scroll(&self) {
         self.scroll.set(0);
         self.scroll_max.set(0);
+        self.horizontal_scroll.reset();
     }
 }
 

@@ -2,6 +2,9 @@ use super::*;
 use crate::app_shell::diff_view::DiffFile;
 use crate::app_shell::diff_view::DiffStatus;
 use crate::app_shell::diff_view::DiffViewState;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+use crossterm::event::KeyModifiers;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -32,6 +35,32 @@ fn renders_retained_diff_subset() {
     .with_retention(DiffRetention::Truncated);
 
     insta::assert_snapshot!("retained_diff_subset", render(&state, 80, 16));
+}
+
+#[test]
+fn horizontally_scrolled_diff_reveals_long_line_suffixes() {
+    let prefix = "same-prefix-".repeat(12);
+    let mut state = DiffViewState::new(
+        "Long line change",
+        /*source_item_id*/ None,
+        vec![DiffFile::modified(
+            "src/long_line.rs",
+            format!("@@ -1 +1 @@\n-{prefix}old-tail\n+{prefix}new-tail"),
+            DiffStatus::Completed,
+        )],
+    );
+    let initial = render(&state, 100, 16);
+    assert!(!initial.contains("old-tail"));
+    assert!(!initial.contains("new-tail"));
+
+    for _ in 0..20 {
+        state.handle_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
+    }
+    let panned = render(&state, 100, 16);
+
+    assert!(panned.contains("old-tail"));
+    assert!(panned.contains("new-tail"));
+    insta::assert_snapshot!("horizontally_scrolled_diff_popup", panned);
 }
 
 #[test]

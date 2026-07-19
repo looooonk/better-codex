@@ -14,5 +14,5 @@ expression: "render(&state, 80, 16)"
   │                  │                          │                            │
   │                  │                          │                            │
   │                  │                          │                            │
-  │  ←/→ files  j/k scroll  PgUp/PgDn  Esc  file 1/1  1-2/2                  │
+  │  ←/→ files  h/l pan  j/k scroll  PgUp/PgDn  Esc  file 1/1  1-2/2         │
   ╰──────────────────────────────────────────────────────────────────────────╯

@@ -52,18 +52,9 @@ impl ShellState {
             edit: self.settings.edit_value(),
             selector: self.selector.clone(),
         };
-        let write = app_server.write_config_in_background(edits);
-        let thread_update =
-            thread_update.map(|params| app_server.thread_settings_update_in_background(params));
+        let persist = app_server.persist_settings_update_in_background(edits, thread_update);
         self.start_backend_action(ActionGroup::Settings, "saving settings", async move {
-            let result = async {
-                write.await?;
-                if let Some(thread_update) = thread_update {
-                    thread_update.await?;
-                }
-                Ok(())
-            }
-            .await;
+            let result = persist.await;
             BackendActionResult::Settings { update, result }
         });
     }

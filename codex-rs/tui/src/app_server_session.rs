@@ -677,20 +677,6 @@ impl AppServerSession {
             .wrap_err("thread/metadata/update failed while syncing git branch")
     }
 
-    pub(crate) async fn thread_settings_update(
-        &mut self,
-        params: ThreadSettingsUpdateParams,
-    ) -> Result<()> {
-        let request_id = self.next_request_id();
-        background::thread_settings_update(
-            self.request_handle(),
-            Arc::clone(&self.thread_settings_update_supported),
-            request_id,
-            params,
-        )
-        .await
-    }
-
     pub(crate) async fn thread_inject_items(
         &mut self,
         thread_id: ThreadId,

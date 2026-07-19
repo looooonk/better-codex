@@ -367,9 +367,11 @@ fn selecting_files_and_keyboard_navigation_reset_scroll() {
     let mut state = DiffViewState::new("Changes", Some("item-1".to_string()), files);
     state.set_scroll_max(40);
     state.scroll_down(/*amount*/ 7);
+    state.horizontal_scroll.set_max(40);
+    state.handle_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE));
 
     assert!(!state.select_file(/*selected*/ 0));
-    assert_eq!(state.scroll(), 7);
+    assert_eq!((state.scroll(), state.horizontal_scroll.offset()), (7, 8));
     assert!(state.select_file(/*selected*/ 1));
     assert_eq!(
         (
@@ -378,8 +380,10 @@ fn selecting_files_and_keyboard_navigation_reset_scroll() {
             state.selected_file_index(),
             state.scroll(),
             state.scroll_max.get(),
+            state.horizontal_scroll.offset(),
+            state.horizontal_scroll.max(),
         ),
-        ("Changes", Some("item-1"), 1, 0, 0)
+        ("Changes", Some("item-1"), 1, 0, 0, 0, 0)
     );
 
     state.set_scroll_max(40);
@@ -406,6 +410,8 @@ fn live_file_replacement_preserves_identity_and_resets_scroll() {
     state.select_file(/*selected*/ 1);
     state.set_scroll_max(20);
     state.scroll_down(/*amount*/ 9);
+    state.horizontal_scroll.set_max(20);
+    state.handle_key(KeyEvent::new(KeyCode::End, KeyModifiers::SHIFT));
     let updated_b = DiffFile::modified(
         "b.rs",
         "@@ -1 +1,2 @@\n-b\n+B\n+more",
@@ -424,8 +430,10 @@ fn live_file_replacement_preserves_identity_and_resets_scroll() {
             state.selected_file_index(),
             state.scroll(),
             state.scroll_max.get(),
+            state.horizontal_scroll.offset(),
+            state.horizontal_scroll.max(),
         ),
-        (0, 0, 0)
+        (0, 0, 0, 0, 0)
     );
 
     state.set_scroll_max(10);
@@ -435,4 +443,13 @@ fn live_file_replacement_preserves_identity_and_resets_scroll() {
     assert_eq!((state.selected_file_index(), state.scroll()), (0, 0));
     state.replace_files(Vec::new(), DiffRetention::Complete);
     assert_eq!(state.selected_file(), None);
+}
+
+#[test]
+fn horizontal_scroll_preserves_columns_across_wide_characters() {
+    let mut state = DiffViewState::new("Changes", None, Vec::new());
+    state.horizontal_scroll.set_max(1);
+    state.handle_key(KeyEvent::new(KeyCode::End, KeyModifiers::SHIFT));
+
+    assert_eq!(state.horizontal_scroll.visible_text("界x", 2), " x");
 }

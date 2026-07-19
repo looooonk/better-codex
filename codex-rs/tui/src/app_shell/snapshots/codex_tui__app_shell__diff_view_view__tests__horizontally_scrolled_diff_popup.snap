@@ -1,0 +1,18 @@
+---
+source: tui/src/app_shell/diff_view_view_tests.rs
+expression: panned
+---
+
+
+  ╭ Long line change ────────────────────────────────────────────────────────────────────────────╮
+  │ CHANGED FILES         │OLD FILE                          │NEW FILE                           │
+  │                       │src/long_line.rs                  │src/long_line.rs                   │
+  │ > M src/long_line.rs  │                                  │                                   │
+  │                       │    1 - refix-same-prefix-old-tail│    1 + refix-same-prefix-new-tail │
+  │                       │                                  │                                   │
+  │                       │                                  │                                   │
+  │                       │                                  │                                   │
+  │                       │                                  │                                   │
+  │                       │                                  │                                   │
+  │  ←/→ files  h/l pan  j/k scroll  PgUp/PgDn  Esc  file 1/1  1-2/2  col 127                    │
+  ╰──────────────────────────────────────────────────────────────────────────────────────────────╯

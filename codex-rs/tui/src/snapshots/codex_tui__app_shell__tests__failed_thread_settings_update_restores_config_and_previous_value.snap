@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ CODEX  Started a fullscreen app shell backed │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+          by app-server turns.                  │ │▎+ New session  Ctrl+N
+ ▎ PLAN  1. Build shell                         ┃ │▎loading sessions
+         2. Wire transcript                     ┃ │
+         3. Rend╭ Select approval policy ──────────────────────────────────────────╮
+                │   1 ● On request  current                                        │
+ ▌ tool exec jus│       Let Codex request approval when an action needs it.        │0000001
+                │   2 ○ Unless trusted                                             │ session list
+ ▌ edited 3 file│       Ask before commands that are not known to be safe.         │
+ ▎ ERROR  failed│ › 3 ○ Never                                                      │
+          settin│       Never pause the agent to request approval.                 │
+          change│  wheel / j k  Enter select  Esc cancel  3/3                      │
+          update╰──────────────────────────────────────────────────────────────────╯
+                                                ┃ │
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │
+          surface.                              ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

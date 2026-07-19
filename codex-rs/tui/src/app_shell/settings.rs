@@ -13,9 +13,11 @@ use ratatui::text::Line;
 
 mod background;
 mod controller;
+mod persistence;
 mod tabs;
 
 pub(super) use background::SettingsUpdate;
+pub(super) use persistence::persist_settings_update;
 pub(super) use tabs::SettingsTabs;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;

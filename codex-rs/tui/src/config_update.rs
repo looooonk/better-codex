@@ -247,6 +247,14 @@ pub(crate) async fn write_config_batch(
     request_handle: AppServerRequestHandle,
     edits: Vec<ConfigEdit>,
 ) -> Result<ConfigWriteResponse> {
+    write_config_batch_at_version(request_handle, edits, /*expected_version*/ None).await
+}
+
+pub(crate) async fn write_config_batch_at_version(
+    request_handle: AppServerRequestHandle,
+    edits: Vec<ConfigEdit>,
+    expected_version: Option<String>,
+) -> Result<ConfigWriteResponse> {
     let request_id = RequestId::String(format!("tui-config-write-{}", Uuid::new_v4()));
     request_handle
         .request_typed(ClientRequest::ConfigBatchWrite {
@@ -254,7 +262,7 @@ pub(crate) async fn write_config_batch(
             params: ConfigBatchWriteParams {
                 edits,
                 file_path: None,
-                expected_version: None,
+                expected_version,
                 reload_user_config: true,
             },
         })
