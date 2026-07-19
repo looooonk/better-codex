@@ -390,6 +390,19 @@ impl ShellState {
             }
             return false;
         }
+        let over_elicitation = self.pending_elicitation.is_some()
+            && (ShellView { shell: self })
+                .input_area(area)
+                .contains(position);
+        if over_elicitation {
+            if let Some(pending) = &mut self.pending_elicitation {
+                match direction {
+                    MouseScrollDirection::Up => pending.scroll_up(/*amount*/ 3),
+                    MouseScrollDirection::Down => pending.scroll_down(/*amount*/ 3),
+                }
+            }
+            return false;
+        }
         if self.has_blocking_overlay() {
             return false;
         }

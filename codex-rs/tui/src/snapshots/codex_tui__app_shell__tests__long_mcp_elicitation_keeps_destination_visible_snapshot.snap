@@ -1,0 +1,22 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+
+  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾   default ▾
+────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+                                                          ┃
+ ▎ CODEX  The new shell owns the fullscreen surface.      ┃
+
+╭──────────────────────────────────────────────────────────╮
+│◆ MCP ELICITATION                                         │
+│? MCP github: URL request                                 │
+│  Review every authorization requirement before           │
+│  continuing. Review every authorization requirement      │
+│  before continuing. Review every authorization           │
+│  ↓ more (j/k or arrows)                                  │
+│  URL: https://auth.example.test/device                   │
+│   Accept ↵   Decline d   Cancel c                        │
+╰──────────────────────────────────────────────────────────╯

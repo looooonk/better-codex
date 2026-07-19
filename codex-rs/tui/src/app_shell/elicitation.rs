@@ -17,6 +17,7 @@ use crossterm::event::KeyModifiers;
 use form::ElicitationFieldView;
 use form::ElicitationForm;
 use serde_json::Value;
+use std::cell::Cell;
 use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,12 +27,24 @@ pub(super) enum ElicitationChoice {
     Cancel,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ElicitationAction {
+    Choose(ElicitationChoice),
+    ScrollUp,
+    ScrollDown,
+    PageUp,
+    PageDown,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct PendingElicitation {
     request_id: RequestId,
     title: String,
-    detail: String,
+    message: String,
+    url: Option<String>,
     form: Option<ElicitationForm>,
+    scroll_offset: Cell<usize>,
+    scroll_max: Cell<usize>,
 }
 
 impl PendingElicitation {
@@ -39,9 +52,9 @@ impl PendingElicitation {
         let ServerRequest::McpServerElicitationRequest { request_id, params } = request else {
             return None;
         };
-        let (summary, detail, form) = match &params.request {
+        let (summary, message, url, form) = match &params.request {
             McpServerElicitationRequest::Url { message, url, .. } => {
-                ("URL request", format!("{message} - {url}"), None)
+                ("URL request", message.clone(), Some(url.clone()), None)
             }
             McpServerElicitationRequest::Form {
                 message,
@@ -50,6 +63,7 @@ impl PendingElicitation {
             } => (
                 "form request",
                 message.clone(),
+                None,
                 Some(ElicitationForm::from_schema(
                     &serde_json::to_value(requested_schema).ok()?,
                 )),
@@ -61,14 +75,18 @@ impl PendingElicitation {
             } => (
                 "OpenAI form request",
                 message.clone(),
+                None,
                 Some(ElicitationForm::from_schema(requested_schema)),
             ),
         };
         Some(Self {
             request_id: request_id.clone(),
             title: format!("MCP {}: {summary}", params.server_name),
-            detail,
+            message,
+            url,
             form,
+            scroll_offset: Cell::new(0),
+            scroll_max: Cell::new(0),
         })
     }
 
@@ -80,8 +98,12 @@ impl PendingElicitation {
         &self.title
     }
 
-    pub(super) fn detail(&self) -> &str {
-        &self.detail
+    pub(super) fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub(super) fn url(&self) -> Option<&str> {
+        self.url.as_deref()
     }
 
     pub(super) fn editing(&self) -> bool {
@@ -106,6 +128,30 @@ impl PendingElicitation {
             .map_or("Accept", ElicitationForm::action_label)
     }
 
+    pub(super) fn scroll_offset(&self) -> usize {
+        self.scroll_offset.get()
+    }
+
+    pub(super) fn set_scroll_max(&self, scroll_max: usize) {
+        self.scroll_max.set(scroll_max);
+        self.scroll_offset
+            .set(self.scroll_offset.get().min(scroll_max));
+    }
+
+    pub(super) fn scroll_up(&self, amount: usize) {
+        self.scroll_offset
+            .set(self.scroll_offset.get().saturating_sub(amount));
+    }
+
+    pub(super) fn scroll_down(&self, amount: usize) {
+        self.scroll_offset.set(
+            self.scroll_offset
+                .get()
+                .saturating_add(amount)
+                .min(self.scroll_max.get()),
+        );
+    }
+
     pub(super) fn result(&self, choice: ElicitationChoice) -> Result<Value, String> {
         if choice == ElicitationChoice::Accept && self.editing() {
             return Err("complete the current MCP form field before submitting".to_string());
@@ -126,7 +172,8 @@ impl PendingElicitation {
     }
 
     pub(super) fn choice_at(&self, line: usize, column: usize) -> Option<ElicitationChoice> {
-        if line != if self.editing() { 4 } else { 2 } {
+        let action_line = 2 + usize::from(self.url.is_some()) + 2 * usize::from(self.editing());
+        if line != action_line {
             return None;
         }
         let primary = format!("{} ↵", self.primary_action_label());
@@ -152,6 +199,42 @@ impl PendingElicitation {
 }
 
 impl ShellState {
+    pub(super) async fn handle_pending_elicitation_action<S>(
+        &mut self,
+        app_server: &mut S,
+        action: ElicitationAction,
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        match action {
+            ElicitationAction::Choose(choice) => {
+                self.resolve_pending_elicitation(app_server, choice).await?;
+            }
+            ElicitationAction::ScrollUp => {
+                if let Some(pending) = &self.pending_elicitation {
+                    pending.scroll_up(1);
+                }
+            }
+            ElicitationAction::ScrollDown => {
+                if let Some(pending) = &self.pending_elicitation {
+                    pending.scroll_down(1);
+                }
+            }
+            ElicitationAction::PageUp => {
+                if let Some(pending) = &self.pending_elicitation {
+                    pending.scroll_up(5);
+                }
+            }
+            ElicitationAction::PageDown => {
+                if let Some(pending) = &self.pending_elicitation {
+                    pending.scroll_down(5);
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub(super) async fn resolve_pending_elicitation<S>(
         &mut self,
         app_server: &mut S,
@@ -237,14 +320,24 @@ impl ShellState {
     }
 }
 
-pub(super) fn elicitation_choice_from_key(key: KeyEvent) -> Option<ElicitationChoice> {
+pub(super) fn elicitation_action_from_key(key: KeyEvent) -> Option<ElicitationAction> {
     if !key.modifiers.is_empty() && key.modifiers != KeyModifiers::SHIFT {
         return None;
     }
     match key.code {
-        KeyCode::Enter | KeyCode::Char('a' | 'A' | 'y' | 'Y') => Some(ElicitationChoice::Accept),
-        KeyCode::Char('d' | 'D' | 'n' | 'N') => Some(ElicitationChoice::Decline),
-        KeyCode::Esc | KeyCode::Char('c' | 'C') => Some(ElicitationChoice::Cancel),
+        KeyCode::Enter | KeyCode::Char('a' | 'A' | 'y' | 'Y') => {
+            Some(ElicitationAction::Choose(ElicitationChoice::Accept))
+        }
+        KeyCode::Char('d' | 'D' | 'n' | 'N') => {
+            Some(ElicitationAction::Choose(ElicitationChoice::Decline))
+        }
+        KeyCode::Esc | KeyCode::Char('c' | 'C') => {
+            Some(ElicitationAction::Choose(ElicitationChoice::Cancel))
+        }
+        KeyCode::Up | KeyCode::Char('k' | 'K') => Some(ElicitationAction::ScrollUp),
+        KeyCode::Down | KeyCode::Char('j' | 'J') => Some(ElicitationAction::ScrollDown),
+        KeyCode::PageUp => Some(ElicitationAction::PageUp),
+        KeyCode::PageDown => Some(ElicitationAction::PageDown),
         _ => None,
     }
 }

@@ -25,8 +25,8 @@ expression: "render_shell(&shell, area)"
 ╭────────────────────────────────────────────────╮│
 │◆ MCP ELICITATION                               ││
 │? MCP github: URL request                       ││
-│  Open the GitHub authorization page? - https://││
-│  github.com/login/device                       ││
+│  Open the GitHub authorization page?           ││
+│  URL: https://github.com/login/device          ││
 │   Accept ↵   Decline d   Cancel c              ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

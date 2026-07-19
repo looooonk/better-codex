@@ -803,7 +803,7 @@ turn.
 
 ### 53. [P2][MCP consent / TUI] Long URL elicitations truncate away the URL and cannot be inspected
 
-**Status:** Assigned
+**Status:** Fixed
 
 The elicitation combines message and URL, then renders at most 42 graphemes
 (`codex-rs/tui/src/app_shell/elicitation.rs:24-35` and
@@ -815,7 +815,7 @@ visible, yet the modal still permits acceptance.
 
 ### 54. [P2][MCP interaction / TUI] The modal advertises Enter for Accept, but Enter does nothing
 
-**Status:** Assigned
+**Status:** Fixed
 
 The renderer labels the action `Accept ↵` (`codex-rs/tui/src/app_shell/input_request_view.rs:255-267`),
 while `elicitation_choice_from_key` accepts only `a/A`, `d/D`, and `c/C`

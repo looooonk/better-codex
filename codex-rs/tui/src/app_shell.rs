@@ -89,6 +89,7 @@ mod elicitation;
 mod events;
 mod external_agent_import;
 mod header;
+mod input_request_layout;
 mod input_request_view;
 mod integrations;
 mod interactive_requests;
@@ -142,7 +143,7 @@ use diff_view::DiffStore;
 use diff_view::DiffViewState;
 use elicitation::ElicitationChoice;
 use elicitation::PendingElicitation;
-use elicitation::elicitation_choice_from_key;
+use elicitation::elicitation_action_from_key;
 use external_agent_import::ExternalAgentImportState;
 use integrations::McpInventorySummary;
 use integrations::PluginInventorySummary;
@@ -1060,8 +1061,9 @@ impl ShellState {
             if editing {
                 return self.handle_user_input_key(key, app_server).await;
             }
-            if let Some(choice) = elicitation_choice_from_key(key) {
-                self.resolve_pending_elicitation(app_server, choice).await?;
+            if let Some(action) = elicitation_action_from_key(key) {
+                self.handle_pending_elicitation_action(app_server, action)
+                    .await?;
             }
             return Ok(false);
         }

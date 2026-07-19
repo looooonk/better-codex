@@ -1,9 +1,9 @@
 use super::ShellState;
 use super::composer_render::wrapped_composer_lines;
 use super::design::pane_content_rect;
+use super::input_request_layout::request_panel_visual_line_count;
 use super::input_request_view::approval_lines;
 use super::input_request_view::elicitation_lines;
-use super::input_request_view::request_panel_visual_line_count;
 use super::input_request_view::user_input_lines;
 use super::navigation::DashboardRoute;
 use ratatui::layout::Constraint;

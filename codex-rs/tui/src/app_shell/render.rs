@@ -12,13 +12,14 @@ use super::design::pane_style;
 use super::design::title_rect;
 use super::header::HeaderControl;
 use super::header::HeaderView;
+use super::input_request_layout::approval_panel_hit;
+use super::input_request_layout::elicitation_panel_hit;
+use super::input_request_layout::request_panel_hit;
+use super::input_request_layout::visible_approval_panel_lines;
+use super::input_request_layout::visible_elicitation_panel_lines;
+use super::input_request_layout::visible_request_panel_lines;
 use super::input_request_view::approval_lines;
-use super::input_request_view::approval_panel_hit;
-use super::input_request_view::elicitation_lines;
-use super::input_request_view::request_panel_hit;
 use super::input_request_view::user_input_lines;
-use super::input_request_view::visible_approval_panel_lines;
-use super::input_request_view::visible_request_panel_lines;
 use super::modal_view::modal_body_width;
 use super::modal_view::render_modal;
 use super::navigation::DashboardRoute;
@@ -296,9 +297,12 @@ impl ShellView<'_> {
         position: Position,
     ) -> Option<super::ElicitationChoice> {
         let pending = self.shell.pending_elicitation.as_ref()?;
-        let width = body_rect_after_title(pane_content_rect(self.input_area(area))).width;
-        let lines = elicitation_lines(pending, &self.shell.composer, width);
-        let hit = request_panel_hit(self.input_area(area), position, &lines)?;
+        let hit = elicitation_panel_hit(
+            self.input_area(area),
+            position,
+            pending,
+            &self.shell.composer,
+        )?;
         pending.choice_at(hit.line, hit.column)
     }
 
@@ -382,14 +386,14 @@ impl ShellView<'_> {
             return;
         }
         if let Some(pending) = &self.shell.pending_elicitation {
-            let width = body_rect_after_title(pane_content_rect(area)).width;
-            self.render_request_panel(
-                area,
-                "MCP ELICITATION",
-                elicitation_lines(pending, &self.shell.composer, width),
-                palette::SURFACE,
-                buf,
+            let body = body_rect_after_title(pane_content_rect(area));
+            let lines = visible_elicitation_panel_lines(
+                pending,
+                &self.shell.composer,
+                body.width,
+                body.height,
             );
+            self.render_titled_panel(area, "MCP ELICITATION", lines, palette::SURFACE, buf);
             return;
         }
         if let Some(pending) = &self.shell.pending_user_input {

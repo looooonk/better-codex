@@ -5622,7 +5622,19 @@ async fn long_narrow_elicitation_and_tool_options_are_clickable() {
         "Open the authorization page after reviewing the extended security notice".to_string();
     *url = "https://github.example.test/login/device/with/a/long/authorization/path".to_string();
     shell.pending_elicitation = PendingElicitation::from_request(&elicitation_request);
-    let accept = rendered_text_position(&render_shell(&shell, area), "Accept ↵");
+    let rendered = render_shell(&shell, area);
+    assert!(rendered.contains("↓ more"));
+    let input = (ShellView { shell: &shell }).input_area(area);
+    let position = Position::new(input.x.saturating_add(1), input.y.saturating_add(1));
+    for _ in 0..20 {
+        shell.handle_mouse_scroll(area, position, tui::MouseScrollDirection::Down);
+    }
+    let rendered = render_shell(&shell, area);
+    assert!(
+        rendered.contains("authorization") && rendered.contains("path"),
+        "URL suffix should be inspectable after scrolling:\n{rendered}"
+    );
+    let accept = rendered_text_position(&rendered, "Accept ↵");
 
     shell
         .handle_mouse_click(area, accept, &config, &mut backend)
@@ -6226,6 +6238,33 @@ fn renders_pending_mcp_elicitation_snapshot() {
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn long_mcp_elicitation_keeps_destination_visible_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    let mut request = mcp_url_elicitation_request();
+    let ServerRequest::McpServerElicitationRequest { params, .. } = &mut request else {
+        panic!("expected MCP elicitation request");
+    };
+    let McpServerElicitationRequest::Url { message, url, .. } = &mut params.request else {
+        panic!("expected URL elicitation request");
+    };
+    *message = "Review every authorization requirement before continuing. ".repeat(30);
+    *url = "https://auth.example.test/device".to_string();
+    shell.pending_elicitation = PendingElicitation::from_request(&request);
+    let rendered = render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 60, /*height*/ 18,
+        ),
+    );
+
+    assert!(rendered.contains("https://auth.example.test/device"));
+    assert!(rendered.contains("↓ more"));
+    assert!(rendered.contains("Accept ↵"));
+    insta::assert_snapshot!(rendered);
 }
 
 #[test]
@@ -9359,8 +9398,42 @@ fn mcp_elicitation_mouse_columns_use_display_width() {
     let column = unicode_width::UnicodeWidthStr::width(&actions[..decline]);
 
     assert_eq!(
-        pending.choice_at(/*line*/ 2, column),
+        pending.choice_at(/*line*/ 3, column),
         Some(ElicitationChoice::Decline)
+    );
+}
+
+#[tokio::test]
+async fn enter_accepts_url_mcp_elicitation() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.pending_elicitation = PendingElicitation::from_request(&mcp_url_elicitation_request());
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Enter should accept the elicitation");
+
+    assert!(shell.pending_elicitation.is_none());
+    assert_eq!(
+        backend
+            .resolved_requests
+            .lock()
+            .expect("requests should lock")
+            .as_slice(),
+        &[(
+            RequestId::Integer(45),
+            json!({
+                "action": "accept",
+                "content": null,
+                "_meta": null
+            }),
+        )]
     );
 }
 
