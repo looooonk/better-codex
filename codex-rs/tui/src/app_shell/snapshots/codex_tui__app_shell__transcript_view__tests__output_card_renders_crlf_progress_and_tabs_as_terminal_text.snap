@@ -1,0 +1,6 @@
+---
+source: tui/src/app_shell/transcript_view_tests.rs
+expression: rendered
+---
+  ▌ output left    right
+  ▌        progress 100%

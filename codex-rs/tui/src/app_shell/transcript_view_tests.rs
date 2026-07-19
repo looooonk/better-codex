@@ -3,6 +3,31 @@ use crate::app_shell::TranscriptLine;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn output_card_renders_crlf_progress_and_tabs_as_terminal_text() {
+    let rendered = tool_block_lines(
+        TranscriptKind::Output,
+        "left\tright\r\nprogress 10%\rprogress 100%\n",
+        /*width*/ 48,
+        ToolBlockStatus::Success,
+        /*selected*/ false,
+    )
+    .into_iter()
+    .map(|line| {
+        line.line
+            .spans
+            .into_iter()
+            .map(|span| span.content)
+            .collect::<String>()
+            .trim_end()
+            .to_string()
+    })
+    .collect::<Vec<_>>()
+    .join("\n");
+
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn output_hit_testing_tracks_the_scrolled_render_viewport() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();

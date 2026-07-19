@@ -813,7 +813,7 @@ fn renders_output_blocks_as_inset_status_rectangles() {
     shell.streaming_assistant.clear();
     shell.push_tool_with_status("exec cargo test", ToolBlockStatus::Success);
     shell.push_output_with_status(
-        "line 1\n\u{1b}[31mline 2\u{1b}[0m\nline 3\twide\nline 4\rline 5\nline 6\nline 7",
+        "line 0\nline 1\n\u{1b}[31mline 2\u{1b}[0m\nline 3\twide\nline 4\rline 5\nline 6\nline 7",
         ToolBlockStatus::Success,
     );
     let area = Rect::new(

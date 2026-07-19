@@ -120,6 +120,7 @@ mod startup_availability_nux;
 mod startup_layout;
 mod startup_login;
 mod startup_model_migration;
+mod terminal_output;
 mod tool_output;
 mod tool_output_view;
 mod transcript_render;
@@ -3221,12 +3222,11 @@ impl ShellState {
         if let Some(existing) = self.transcript.iter_mut().rev().find(|existing| {
             existing.kind == TranscriptKind::Output && existing.item_id.as_deref() == Some(&item_id)
         }) {
-            existing
+            let full_text = existing
                 .full_text
-                .get_or_insert_with(|| existing.text.clone().into())
-                .append(&delta);
-            existing.text.push_str(&delta);
-            existing.text = compact_output_for_transcript(std::mem::take(&mut existing.text));
+                .get_or_insert_with(|| existing.text.clone().into());
+            full_text.append(&delta);
+            existing.text = compact_output_for_transcript(full_text.to_string());
             existing.tool_status = Some(status);
             existing.mark_render_changed();
             return;

@@ -910,7 +910,7 @@ tab or quote, and open Edits. The displayed/associated path is malformed or trun
 
 ### 61. [P2][Visual / Performance] Carriage returns corrupt CRLF and progress output
 
-**Status:** Assigned
+**Status:** Fixed
 
 Both compact transcript and Full Tool Output blindly replace every `\r` with `\n`
 (`codex-rs/tui/src/app_shell/transcript_view.rs:403-408` and
@@ -923,7 +923,7 @@ uses `\r`; every repaint becomes another line instead of updating one line.
 
 ### 62. [P2][Visual / Output] Full Tool Output collapses tab-separated fields
 
-**Status:** Assigned
+**Status:** Fixed
 
 The transcript view expands tabs, but the full-output path sends literal tab controls through ANSI
 processing and Ratatui (`codex-rs/tui/src/app_shell/tool_output.rs:63-77`). Ratatui does not render a

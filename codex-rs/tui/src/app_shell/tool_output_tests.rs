@@ -44,6 +44,75 @@ fn renders_truncated_tool_output_popup() {
 }
 
 #[test]
+fn output_buffer_normalizes_terminal_controls_across_deltas() {
+    let mut output = ToolOutputBuffer::from("alpha\r");
+    output.append("\nbeta 10%\r");
+    output.append("beta 100%\tready\r");
+    output.append("\ngamma\r");
+    output.append("\r\ndone");
+
+    assert_eq!(&*output, "alpha\nbeta 100%    ready\ngamma\ndone");
+    assert_eq!(output.line_breaks, 3);
+}
+
+#[test]
+fn single_large_delta_retention_stays_bounded() {
+    let mut output = ToolOutputBuffer::from("start\n");
+    output.append(&format!(
+        "stale\r{}",
+        "latest line\n".repeat(TOOL_OUTPUT_HIGH_WATER_BYTES)
+    ));
+
+    assert!(output.is_truncated());
+    assert!(output.len() <= TOOL_OUTPUT_HIGH_WATER_BYTES);
+    assert!(output.starts_with(TOOL_OUTPUT_TRUNCATION_NOTICE));
+    assert!(!output.contains("stale"));
+    assert!(output.ends_with("latest line\n"));
+}
+
+#[test]
+fn streamed_output_normalizes_retained_and_preview_text() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_assistant();
+    shell.push_output_with_status_for_item("exec-controls", "alpha\r", ToolBlockStatus::Running);
+    shell.push_output_delta_with_status_for_item(
+        "exec-controls",
+        "\nbeta 10%\r",
+        ToolBlockStatus::Running,
+    );
+    shell.push_output_delta_with_status_for_item(
+        "exec-controls",
+        "beta 100%\tready",
+        ToolBlockStatus::Success,
+    );
+
+    let output = &shell.transcript[0];
+    assert_eq!(output.text, "alpha\nbeta 100%    ready");
+    assert_eq!(
+        &**output
+            .full_text
+            .as_ref()
+            .expect("streamed output should be retained"),
+        output.text
+    );
+}
+
+#[test]
+fn renders_normalized_terminal_controls_in_tool_output_popup() {
+    let output = ToolOutputState::new(
+        ToolOutputTarget {
+            item_id: "exec-controls".to_string(),
+            title: "exec progress-report".to_string(),
+            status: ToolBlockStatus::Success,
+        },
+        "left\tright\r\nprogress 10%\rprogress 100%\n",
+    );
+
+    insta::assert_snapshot!(render_output(&output, 72, 12));
+}
+
+#[test]
 fn live_output_retention_stays_bounded_across_the_core_delta_limit() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();

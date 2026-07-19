@@ -1,0 +1,14 @@
+---
+source: tui/src/app_shell/tool_output_tests.rs
+expression: "render_output(&output, 72, 12)"
+---
+
+
+  ╭ Tool output · exec progress-report ──────────────────────────────╮
+  │ ✓ Completed  Full captured output                                │
+  │ Item  exec-controls                                              │
+  │ left    right                                                    │
+  │ progress 100%                                                    │
+  │                                                                  │
+  │  j/k scroll  PgUp/PgDn  Esc  completed · 1-2/2                   │
+  ╰──────────────────────────────────────────────────────────────────╯

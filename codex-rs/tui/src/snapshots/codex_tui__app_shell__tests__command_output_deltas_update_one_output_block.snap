@@ -9,9 +9,9 @@ expression: "render_shell(&shell, area)"
  ◆ CONVERSATION                                   │▎◆ SESSIONS
  ▌ tool exec cargo test                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
                                                   │▎+ New session  Ctrl+N
-   ▌ output pytest 40%                            │▎loading sessions
-   ▌        pytest 80%                            │
-   ▌        pytest 100%                           │▎◆ THREAD
+   ▌ output pytest 100%                           │▎loading sessions
+                                                  │
+                                                  │▎◆ THREAD
                                                   │▎stage-one
                                                   │▎id 01900000-0000-7000-8000-000000000001
                                                   │▎resume, fork, archive, delete in session list

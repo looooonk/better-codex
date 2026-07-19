@@ -8,6 +8,7 @@ use super::design::pane_style;
 use super::design::selection_style;
 use super::design::title_rect;
 use super::diff_style::diff_stat_spans;
+use super::terminal_output;
 use super::transcript_render::TranscriptLayout;
 use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_to_width;
@@ -404,7 +405,7 @@ fn tool_block_lines(
     let label_width = label.width();
     let label_prefix_width = label_width + 3;
     let content_width = block_width.saturating_sub(label_prefix_width).max(1);
-    let normalized_text = text.replace('\r', "\n").replace('\t', "    ");
+    let normalized_text = terminal_output::normalize(text);
     let visible_text = codex_ansi_escape::ansi_escape(&normalized_text);
     let visible_text_lines = if visible_text.lines.is_empty() {
         vec![String::new()]

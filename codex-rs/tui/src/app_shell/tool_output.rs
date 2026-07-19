@@ -1,6 +1,7 @@
 use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
+use super::terminal_output;
 use crate::session_transcript::TranscriptLines;
 use crate::wrapping::RtOptions;
 use crate::wrapping::word_wrap_lines;
@@ -24,20 +25,36 @@ pub(super) struct ToolOutputBuffer {
     text: String,
     truncated: bool,
     line_breaks: usize,
+    pending_carriage_return: bool,
 }
 
 impl ToolOutputBuffer {
     fn new(text: String) -> Self {
-        let line_breaks = count_line_breaks(&text);
-        let mut output = Self {
-            text,
-            truncated: false,
-            line_breaks,
+        let mut output = if text.contains(['\r', '\t']) {
+            let mut output = Self {
+                text: String::with_capacity(text.len()),
+                truncated: false,
+                line_breaks: 0,
+                pending_carriage_return: false,
+            };
+            output.line_breaks = terminal_output::append(
+                &mut output.text,
+                &mut output.pending_carriage_return,
+                &text,
+            );
+            output
+        } else {
+            Self {
+                line_breaks: count_line_breaks(&text),
+                text,
+                truncated: false,
+                pending_carriage_return: false,
+            }
         };
         if output.text.len() > TOOL_OUTPUT_HIGH_WATER_BYTES
             || output.line_breaks > TOOL_OUTPUT_HIGH_WATER_LINE_BREAKS
         {
-            output.compact("");
+            output.compact();
         }
         output
     }
@@ -46,15 +63,25 @@ impl ToolOutputBuffer {
         if delta.is_empty() {
             return;
         }
-        let delta_line_breaks = count_line_breaks(delta);
-        if delta.len() <= TOOL_OUTPUT_HIGH_WATER_BYTES.saturating_sub(self.text.len())
-            && delta_line_breaks
-                <= TOOL_OUTPUT_HIGH_WATER_LINE_BREAKS.saturating_sub(self.line_breaks)
-        {
-            self.text.push_str(delta);
-            self.line_breaks = self.line_breaks.saturating_add(delta_line_breaks);
-        } else {
-            self.compact(delta);
+        let mut start = 0;
+        while start < delta.len() {
+            let mut end = start
+                .saturating_add(TOOL_OUTPUT_HIGH_WATER_BYTES)
+                .min(delta.len());
+            while !delta.is_char_boundary(end) {
+                end = end.saturating_sub(1);
+            }
+            self.line_breaks = self.line_breaks.saturating_add(terminal_output::append(
+                &mut self.text,
+                &mut self.pending_carriage_return,
+                &delta[start..end],
+            ));
+            if self.text.len() > TOOL_OUTPUT_HIGH_WATER_BYTES
+                || self.line_breaks > TOOL_OUTPUT_HIGH_WATER_LINE_BREAKS
+            {
+                self.compact();
+            }
+            start = end;
         }
     }
 
@@ -62,8 +89,8 @@ impl ToolOutputBuffer {
         self.truncated
     }
 
-    fn compact(&mut self, delta: &str) {
-        let existing = if self.truncated {
+    fn compact(&mut self) {
+        let source = if self.truncated {
             self.text
                 .strip_prefix(TOOL_OUTPUT_TRUNCATION_NOTICE)
                 .unwrap_or(&self.text)
@@ -72,22 +99,10 @@ impl ToolOutputBuffer {
         };
         let payload_bytes =
             TOOL_OUTPUT_LOW_WATER_BYTES.saturating_sub(TOOL_OUTPUT_TRUNCATION_NOTICE.len());
-        let (delta_tail, delta_truncated) =
-            bounded_tail(delta, payload_bytes, TOOL_OUTPUT_LOW_WATER_LINE_BREAKS);
+        let (tail, _) = bounded_tail(source, payload_bytes, TOOL_OUTPUT_LOW_WATER_LINE_BREAKS);
         let mut text = String::with_capacity(TOOL_OUTPUT_LOW_WATER_BYTES);
         text.push_str(TOOL_OUTPUT_TRUNCATION_NOTICE);
-        if delta_truncated {
-            text.push_str(delta_tail);
-        } else {
-            let delta_line_breaks = count_line_breaks(delta_tail);
-            let (existing_tail, _) = bounded_tail(
-                existing,
-                payload_bytes.saturating_sub(delta_tail.len()),
-                TOOL_OUTPUT_LOW_WATER_LINE_BREAKS.saturating_sub(delta_line_breaks),
-            );
-            text.push_str(existing_tail);
-            text.push_str(delta_tail);
-        }
+        text.push_str(tail);
         self.line_breaks = count_line_breaks(&text);
         self.text = text;
         self.truncated = true;
@@ -122,7 +137,7 @@ fn bounded_tail(text: &str, max_bytes: usize, max_line_breaks: usize) -> (&str, 
     let mut line_start = 0;
     let mut line_breaks = 0usize;
     for (index, character) in text.char_indices().rev() {
-        if matches!(character, '\n' | '\r') {
+        if character == '\n' {
             line_breaks = line_breaks.saturating_add(1);
             if line_breaks > max_line_breaks {
                 line_start = index.saturating_add(character.len_utf8());
@@ -132,22 +147,15 @@ fn bounded_tail(text: &str, max_bytes: usize, max_line_breaks: usize) -> (&str, 
     }
     let mut start = byte_start.max(line_start);
     if byte_start > line_start
-        && let Some(boundary) = text[start..].find(['\n', '\r'])
+        && let Some(boundary) = text[start..].find('\n')
     {
         start = start.saturating_add(boundary).saturating_add(1);
-        if text.as_bytes().get(start.saturating_sub(1)) == Some(&b'\r')
-            && text.as_bytes().get(start) == Some(&b'\n')
-        {
-            start = start.saturating_add(1);
-        }
     }
     (&text[start..], start > 0)
 }
 
 fn count_line_breaks(text: &str) -> usize {
-    text.bytes()
-        .filter(|byte| matches!(byte, b'\n' | b'\r'))
-        .count()
+    text.bytes().filter(|byte| *byte == b'\n').count()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,8 +221,7 @@ impl ToolOutputState {
             .as_ref()
             .is_none_or(|cache| cache.width != width);
         if needs_wrap {
-            let normalized = self.output.replace('\r', "\n");
-            let mut lines = codex_ansi_escape::ansi_escape(&normalized).lines;
+            let mut lines = codex_ansi_escape::ansi_escape(&self.output).lines;
             if lines.is_empty() {
                 lines.push(Default::default());
             }
