@@ -1,5 +1,7 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::backend_actions::ActionGroup;
+use super::backend_actions::BackendActionResult;
 use crate::app_server_session::AppServerStartedThread;
 use crate::legacy_core::config::Config;
 use codex_app_server_protocol::ThreadStartSource;
@@ -64,25 +66,22 @@ impl ShellState {
         self.start_session_list_refresh(app_server);
     }
 
-    pub(super) async fn resume_session<S>(
-        &mut self,
-        config: &Config,
-        app_server: &mut S,
-        thread_id: ThreadId,
-    ) -> Result<()>
+    pub(super) fn resume_session<S>(&mut self, config: &Config, app_server: &S, thread_id: ThreadId)
     where
         S: AppShellBackend,
     {
         if self.block_session_switch_if_busy() {
-            return Ok(());
+            return;
         }
         if thread_id == self.thread_id {
             self.push_status("session is already open");
-            return Ok(());
+            return;
         }
-        self.finish_subscription_cleanup().await;
-        let started = app_server.resume_thread(config.clone(), thread_id).await?;
-        self.complete_session_switch(started, app_server).await;
-        Ok(())
+        let request = app_server.resume_thread_in_background(config.clone(), thread_id);
+        self.start_backend_action(ActionGroup::SessionSwitch, "resuming session", async move {
+            BackendActionResult::SessionResume {
+                result: request.await,
+            }
+        });
     }
 }

@@ -573,6 +573,64 @@ impl RemoteAppServerClient {
         request_id: RequestId,
         result: JsonRpcResult,
     ) -> IoResult<()> {
+        self.request_handle()
+            .resolve_server_request(request_id, result)
+            .await
+    }
+
+    pub async fn reject_server_request(
+        &self,
+        request_id: RequestId,
+        error: JSONRPCErrorError,
+    ) -> IoResult<()> {
+        self.request_handle()
+            .reject_server_request(request_id, error)
+            .await
+    }
+
+    pub async fn next_event(&mut self) -> Option<AppServerEvent> {
+        if let Some(event) = self.pending_events.pop_front() {
+            return Some(event);
+        }
+        self.event_rx.recv().await
+    }
+
+    pub async fn shutdown(self) -> IoResult<()> {
+        let Self {
+            command_tx,
+            event_rx,
+            pending_events: _pending_events,
+            pending_requests: _pending_requests,
+            server_version: _server_version,
+            codex_home: _codex_home,
+            worker_handle,
+        } = self;
+        let mut worker_handle = worker_handle;
+        drop(event_rx);
+        let (response_tx, response_rx) = oneshot::channel();
+        if command_tx
+            .send(RemoteClientCommand::Shutdown { response_tx })
+            .await
+            .is_ok()
+            && let Ok(Ok(close_result)) = timeout(SHUTDOWN_TIMEOUT, response_rx).await
+        {
+            close_result?;
+        }
+
+        if let Err(_elapsed) = timeout(SHUTDOWN_TIMEOUT, &mut worker_handle).await {
+            worker_handle.abort();
+            let _ = worker_handle.await;
+        }
+        Ok(())
+    }
+}
+
+impl RemoteAppServerRequestHandle {
+    pub async fn resolve_server_request(
+        &self,
+        request_id: RequestId,
+        result: JsonRpcResult,
+    ) -> IoResult<()> {
         let (response_tx, response_rx) = oneshot::channel();
         self.command_tx
             .send(RemoteClientCommand::ResolveServerRequest {
@@ -622,44 +680,6 @@ impl RemoteAppServerClient {
         })?
     }
 
-    pub async fn next_event(&mut self) -> Option<AppServerEvent> {
-        if let Some(event) = self.pending_events.pop_front() {
-            return Some(event);
-        }
-        self.event_rx.recv().await
-    }
-
-    pub async fn shutdown(self) -> IoResult<()> {
-        let Self {
-            command_tx,
-            event_rx,
-            pending_events: _pending_events,
-            pending_requests: _pending_requests,
-            server_version: _server_version,
-            codex_home: _codex_home,
-            worker_handle,
-        } = self;
-        let mut worker_handle = worker_handle;
-        drop(event_rx);
-        let (response_tx, response_rx) = oneshot::channel();
-        if command_tx
-            .send(RemoteClientCommand::Shutdown { response_tx })
-            .await
-            .is_ok()
-            && let Ok(Ok(close_result)) = timeout(SHUTDOWN_TIMEOUT, response_rx).await
-        {
-            close_result?;
-        }
-
-        if let Err(_elapsed) = timeout(SHUTDOWN_TIMEOUT, &mut worker_handle).await {
-            worker_handle.abort();
-            let _ = worker_handle.await;
-        }
-        Ok(())
-    }
-}
-
-impl RemoteAppServerRequestHandle {
     pub async fn request(&self, request: ClientRequest) -> IoResult<RequestResult> {
         self.request_json_rpc(jsonrpc_request_from_client_request(request))
             .await

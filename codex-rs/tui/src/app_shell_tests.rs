@@ -206,6 +206,7 @@ async fn session_delete_requires_confirmation_and_shows_spawned_descendants_snap
         .handle_session_list_key(key_char('d'), &config, &mut backend)
         .await
         .expect("delete confirmation should open");
+    complete_backend_actions(&mut shell, &backend).await;
 
     assert!(shell.pending_session_delete.is_some());
     assert!(
@@ -3337,6 +3338,7 @@ async fn modified_keys_do_not_trigger_focused_session_settings_or_plugin_actions
         )
         .await
         .expect("plain activation key should work");
+    complete_backend_actions(&mut settings, &settings_backend).await;
     assert_eq!(settings.animations, !initial_animations);
     assert!(matches!(
         settings_backend.calls().as_slice(),
@@ -3429,10 +3431,8 @@ async fn modified_keys_do_not_trigger_mcp_safety_or_import_actions() {
 
     let mut safety = ShellState::snapshot_fixture();
     let mut safety_backend = RecordingBackend::default();
-    safety
-        .submit_prompt(&mut safety_backend, "Explain the request".to_string())
-        .await
-        .expect("turn should start");
+    safety.submit_prompt(&safety_backend, "Explain the request".to_string());
+    complete_backend_actions(&mut safety, &safety_backend).await;
     safety.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
         safety_buffering_notification(
             &safety,
@@ -4036,10 +4036,8 @@ async fn safety_buffering_retry_rolls_back_and_resubmits_without_duplicate_trans
     let mut backend = RecordingBackend::default();
     shell.transcript.clear();
 
-    shell
-        .submit_prompt(&mut backend, "Explain the request".to_string())
-        .await
-        .expect("turn should start");
+    shell.submit_prompt(&backend, "Explain the request".to_string());
+    complete_backend_actions(&mut shell, &backend).await;
     shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
         safety_buffering_notification(
             &shell,
@@ -4097,12 +4095,10 @@ async fn safety_buffering_retry_rolls_back_and_resubmits_without_duplicate_trans
 #[tokio::test]
 async fn renders_safety_buffering_retry_modal_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    let mut backend = RecordingBackend::default();
+    let backend = RecordingBackend::default();
 
-    shell
-        .submit_prompt(&mut backend, "Explain the request".to_string())
-        .await
-        .expect("turn should start");
+    shell.submit_prompt(&backend, "Explain the request".to_string());
+    complete_backend_actions(&mut shell, &backend).await;
     shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
         safety_buffering_notification(
             &shell,
@@ -5247,10 +5243,8 @@ async fn safety_modal_actions_are_clickable() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
-    shell
-        .submit_prompt(&mut backend, "Explain the request".to_string())
-        .await
-        .expect("turn should start");
+    shell.submit_prompt(&backend, "Explain the request".to_string());
+    complete_backend_actions(&mut shell, &backend).await;
     shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
         safety_buffering_notification(
             &shell,
@@ -5277,10 +5271,8 @@ async fn safety_modal_ignores_inside_chrome_and_closes_on_outside_click() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
-    shell
-        .submit_prompt(&mut backend, "Explain the request".to_string())
-        .await
-        .expect("turn should start");
+    shell.submit_prompt(&backend, "Explain the request".to_string());
+    complete_backend_actions(&mut shell, &backend).await;
     shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
         safety_buffering_notification(
             &shell,
@@ -5614,6 +5606,7 @@ async fn approval_keys_take_priority_over_transcript_selection() {
         )
         .await
         .expect("approval should resolve");
+    complete_backend_actions(&mut shell, &backend).await;
 
     assert!(!should_exit);
     assert_eq!(shell.pending_approval, None);
@@ -7607,6 +7600,7 @@ async fn completed_turns_submit_queued_messages_fifo_and_preserve_the_draft() {
         )
         .await
         .expect("completion should submit the first queued message");
+    complete_backend_actions(&mut shell, &backend).await;
 
     assert_eq!(shell.composer.text(), "ordinary draft");
     assert_eq!(shell.composer.queued_count(), 1);
@@ -7619,6 +7613,7 @@ async fn completed_turns_submit_queued_messages_fifo_and_preserve_the_draft() {
         )
         .await
         .expect("failure should submit the next queued message");
+    complete_backend_actions(&mut shell, &backend).await;
 
     let prompts = backend
         .calls()
@@ -7671,6 +7666,7 @@ async fn interrupted_turn_retains_queue_until_idle_enter_resumes_it() {
         )
         .await
         .expect("idle Enter should save the edit and resume the queue");
+    complete_backend_actions(&mut shell, &backend).await;
     assert_eq!(shell.composer.queued_edit_position(), None);
     assert_eq!(shell.composer.queued_count(), 1);
     shell
@@ -7680,6 +7676,7 @@ async fn interrupted_turn_retains_queue_until_idle_enter_resumes_it() {
         )
         .await
         .expect("completion should continue the queue");
+    complete_backend_actions(&mut shell, &backend).await;
 
     let prompts = backend
         .calls()
@@ -7705,7 +7702,6 @@ async fn failed_idle_queue_resume_reports_error_and_retains_message() {
     shell.composer.set_text("queued");
     assert!(shell.composer.queue_current_message());
     let transcript_len = shell.transcript.len();
-    let status = shell.status.clone();
     backend.fail_next_turn_start("turn start failed");
 
     shell
@@ -7716,11 +7712,12 @@ async fn failed_idle_queue_resume_reports_error_and_retains_message() {
         )
         .await
         .expect("failed queue resume should remain in the TUI");
+    complete_backend_actions(&mut shell, &backend).await;
 
     assert_eq!(shell.composer.queued_count(), 1);
     assert_eq!(shell.composer.text(), "");
     assert_eq!(shell.active_turn_id, None);
-    assert_eq!(shell.status, status);
+    assert_eq!(shell.status, "action failed");
     assert_eq!(shell.transcript.len(), transcript_len + 1);
     assert_eq!(
         shell.transcript.back().map(|line| line.kind),
@@ -7728,8 +7725,158 @@ async fn failed_idle_queue_resume_reports_error_and_retains_message() {
     );
     assert_eq!(
         shell.transcript.back().map(|line| line.text.as_str()),
-        Some("Queued message failed to send: turn start failed")
+        Some("failed to submit turn: turn start failed")
     );
+}
+
+#[tokio::test]
+async fn pending_turn_start_keeps_input_responsive() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = None;
+    shell.composer.set_text("first request");
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let backend = RecordingBackend {
+        turn_start_gate: Some(Arc::clone(&gate)),
+        ..RecordingBackend::default()
+    };
+
+    tokio::time::timeout(
+        std::time::Duration::from_millis(50),
+        shell.handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend.clone(),
+        ),
+    )
+    .await
+    .expect("turn submission should not block input")
+    .expect("turn submission should be handled");
+    let thread_id = shell.thread_id;
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('n'), KeyModifiers::CONTROL),
+            &config,
+            &mut backend.clone(),
+        )
+        .await
+        .expect("session switching should remain safely blocked");
+    assert_eq!(shell.thread_id, thread_id);
+    shell
+        .handle_key(key_char('n'), &config, &mut backend.clone())
+        .await
+        .expect("typing should remain responsive");
+
+    assert!(shell.has_pending_backend_actions());
+    assert_eq!(shell.composer.text(), "n");
+    gate.add_permits(1);
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(shell.active_turn_id.as_deref(), Some("turn-submit"));
+    assert_eq!(shell.composer.text(), "n");
+}
+
+#[tokio::test]
+async fn rejected_turn_restores_draft_and_renders_error_snapshot() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = None;
+    shell.transcript.clear();
+    shell.dashboard_visible = false;
+    shell.composer.set_text("retry this request");
+    let backend = RecordingBackend::default();
+    backend.fail_next_turn_start("request rejected");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend.clone(),
+        )
+        .await
+        .expect("rejected turn should remain in the TUI");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(shell.composer.text(), "retry this request");
+    assert_eq!(shell.active_turn_id, None);
+    assert_eq!(
+        shell.transcript.back().map(|line| line.kind),
+        Some(TranscriptKind::Error)
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
+        ),
+    ));
+}
+
+#[tokio::test]
+async fn failed_approval_response_keeps_modal_open() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    shell
+        .handle_app_server_event(
+            &mut backend.clone(),
+            AppServerEvent::ServerRequest(command_approval_request()),
+        )
+        .await
+        .expect("approval request should open");
+    backend.fail_next_action("approval response rejected");
+
+    shell
+        .resolve_pending_approval(&backend, /*option_index*/ 0, None)
+        .expect("approval response should start");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(shell.pending_approval.is_some());
+    assert_eq!(shell.status, "action failed");
+}
+
+#[tokio::test]
+async fn failed_settings_write_keeps_selector_and_previous_value() {
+    let mut shell = ShellState::snapshot_fixture();
+    let previous_policy = shell.approval_policy;
+    let backend = RecordingBackend::default();
+    shell.open_approval_selector();
+    backend.fail_next_action("config write rejected");
+
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend.clone(),
+        )
+        .await
+        .expect("setting update should start");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(shell.selector.is_some());
+    assert_eq!(shell.approval_policy, previous_policy);
+    assert_eq!(shell.status, "action failed");
+}
+
+#[tokio::test]
+async fn failed_session_delete_keeps_confirmation_open() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    let pending = PendingSessionDelete {
+        thread_id: test_thread_id("01900000-0000-7000-8000-000000000099"),
+        title: "keep this session".to_string(),
+        descendant_count: 2,
+    };
+    shell.pending_session_delete = Some(pending.clone());
+    backend.fail_next_action("delete rejected");
+
+    shell
+        .handle_session_delete_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend.clone(),
+        )
+        .await
+        .expect("delete should start");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(shell.pending_session_delete, Some(pending));
+    assert_eq!(shell.status, "action failed");
 }
 
 #[tokio::test]
@@ -8547,6 +8694,17 @@ fn render_shell(shell: &ShellState, area: Rect) -> String {
     buffer_contents(&buf, area)
 }
 
+async fn complete_backend_actions(shell: &mut ShellState, backend: &RecordingBackend) {
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        while shell.has_pending_backend_actions() {
+            tokio::task::yield_now().await;
+            shell.poll_backend_actions(backend).await;
+        }
+    })
+    .await
+    .expect("background action should complete");
+}
+
 fn position_in(area: Rect, predicate: impl Fn(Position) -> bool) -> Position {
     (area.x..area.right())
         .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
@@ -9352,10 +9510,12 @@ async fn native_session_list_search_archive_delete_and_rename() {
         )
         .await
         .expect("rename should resolve");
+    complete_backend_actions(&mut shell, &backend).await;
     shell
         .handle_session_list_key(key_char('d'), &config, &mut backend)
         .await
         .expect("delete confirmation should open");
+    complete_backend_actions(&mut shell, &backend).await;
     shell
         .handle_session_delete_key(
             KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
@@ -9363,6 +9523,7 @@ async fn native_session_list_search_archive_delete_and_rename() {
         )
         .await
         .expect("delete should resolve");
+    complete_backend_actions(&mut shell, &backend).await;
 
     let calls = backend.calls();
     assert!(calls.contains(&RecordedBackendCall::Archive(other_id)));
@@ -9554,6 +9715,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
         .handle_session_list_key(key_char('r'), &config, &mut backend)
         .await
         .expect("resume should resolve");
+    complete_backend_actions(&mut shell, &backend).await;
     finish_session_hydration(&mut shell, &backend).await;
     assert_eq!(shell.thread_id, resume_id);
     assert_eq!(shell.active_goal, Some(resume_goal));
@@ -9688,6 +9850,8 @@ async fn session_switch_hydration_is_nonblocking_and_preserves_newer_state() {
     .expect("session switch should not wait for workspace hydration")
     .expect("session switch should resolve");
 
+    assert!(shell.has_pending_backend_actions());
+    complete_backend_actions(&mut shell, &backend).await;
     assert!(shell.has_pending_session_hydration());
     assert!(
         backend
@@ -9923,6 +10087,7 @@ async fn completed_list_refresh_cannot_restore_a_deleted_session() {
         .handle_session_list_key(key_char('d'), &config, &mut backend)
         .await
         .expect("delete confirmation should open");
+    complete_backend_actions(&mut shell, &backend).await;
     assert!(shell.pending_session_delete.is_some());
     shell
         .handle_session_delete_key(
@@ -9931,6 +10096,7 @@ async fn completed_list_refresh_cannot_restore_a_deleted_session() {
         )
         .await
         .expect("confirmed delete should succeed");
+    complete_backend_actions(&mut shell, &backend).await;
     finish_session_hydration(&mut shell, &backend).await;
 
     assert_eq!(shell.session_list.selected_thread_id(), None);
@@ -10854,6 +11020,7 @@ async fn native_settings_pages_write_config_and_validate_edits() {
         )
         .await
         .expect("low reasoning should persist");
+    complete_backend_actions(&mut shell, &backend).await;
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
@@ -10874,6 +11041,7 @@ async fn native_settings_pages_write_config_and_validate_edits() {
             .await
             .expect("never approval policy should persist");
     }
+    complete_backend_actions(&mut shell, &backend).await;
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
@@ -10895,6 +11063,7 @@ async fn native_settings_pages_write_config_and_validate_edits() {
         )
         .await
         .expect("animations toggle should persist");
+    complete_backend_actions(&mut shell, &backend).await;
 
     let calls = backend.calls();
     assert!(calls.contains(&RecordedBackendCall::ConfigWrite(vec![
@@ -11006,6 +11175,7 @@ async fn ultra_reasoning_warns_about_configured_agent_concurrency() {
         )
         .await
         .expect("ultra reasoning should be selected");
+    complete_backend_actions(&mut shell, &backend).await;
 
     assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Ultra));
     let warning = shell.transcript.back().expect("warning should be rendered");
@@ -11064,6 +11234,7 @@ async fn native_settings_select_models_and_service_tiers() {
         )
         .await
         .expect("visible model should be selected");
+    complete_backend_actions(&mut shell, &backend).await;
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
@@ -11099,6 +11270,7 @@ async fn native_settings_select_models_and_service_tiers() {
         )
         .await
         .expect("fast tier should be selected");
+    complete_backend_actions(&mut shell, &backend).await;
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
@@ -11120,6 +11292,7 @@ async fn native_settings_select_models_and_service_tiers() {
         )
         .await
         .expect("batch tier should be selected");
+    complete_backend_actions(&mut shell, &backend).await;
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
@@ -11141,6 +11314,7 @@ async fn native_settings_select_models_and_service_tiers() {
         )
         .await
         .expect("default tier should be selected");
+    complete_backend_actions(&mut shell, &backend).await;
 
     assert_eq!(shell.model, "gpt-5.5");
     assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Medium));
@@ -11243,6 +11417,7 @@ async fn native_settings_reasoning_selector_resets_active_thread_to_model_defaul
         )
         .await
         .expect("default reasoning should be selected");
+    complete_backend_actions(&mut shell, &backend).await;
 
     assert_eq!(shell.reasoning_effort, None);
     assert_eq!(
@@ -11336,10 +11511,9 @@ async fn native_settings_model_switch_resets_unsupported_runtime_options() {
         )
         .await
         .expect("luna model should be selected");
-    shell
-        .submit_prompt(&mut backend, "Use current settings".to_string())
-        .await
-        .expect("turn should use the locally updated collaboration mode");
+    complete_backend_actions(&mut shell, &backend).await;
+    shell.submit_prompt(&backend, "Use current settings".to_string());
+    complete_backend_actions(&mut shell, &backend).await;
 
     assert_eq!(shell.model, "gpt-5.6-luna");
     assert_eq!(shell.reasoning_effort, Some(ReasoningEffort::Medium));
@@ -11393,10 +11567,8 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
     shell.active_turn_id = None;
     let mut backend = RecordingBackend::default();
 
-    shell
-        .submit_prompt(&mut backend, "hello app shell".to_string())
-        .await
-        .expect("turn submit should succeed");
+    shell.submit_prompt(&backend, "hello app shell".to_string());
+    complete_backend_actions(&mut shell, &backend).await;
     shell
         .handle_app_server_event(
             &mut backend,
@@ -11432,9 +11604,9 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
         .await
         .expect("approval request should be handled");
     shell
-        .resolve_pending_approval(&mut backend, /*option_index*/ 0)
-        .await
+        .resolve_pending_approval(&backend, /*option_index*/ 0, None)
         .expect("approval should resolve");
+    complete_backend_actions(&mut shell, &backend).await;
 
     shell.active_turn_id = Some("turn-interrupt".to_string());
     shell
@@ -11508,6 +11680,8 @@ struct RecordingBackend {
     rate_limits_gate: Option<Arc<tokio::sync::Semaphore>>,
     rate_limits_used_percent: Arc<Mutex<i32>>,
     turn_start_error: Arc<Mutex<Option<String>>>,
+    turn_start_gate: Option<Arc<tokio::sync::Semaphore>>,
+    action_error: Arc<Mutex<Option<String>>>,
     remote_workspace: bool,
     embedded_app_server: bool,
 }
@@ -11531,6 +11705,8 @@ impl Default for RecordingBackend {
             rate_limits_gate: None,
             rate_limits_used_percent: Arc::new(Mutex::new(73)),
             turn_start_error: Arc::new(Mutex::new(None)),
+            turn_start_gate: None,
+            action_error: Arc::new(Mutex::new(None)),
             remote_workspace: false,
             embedded_app_server: true,
         }
@@ -11604,6 +11780,17 @@ impl RecordingBackend {
             .turn_start_error
             .lock()
             .expect("turn-start error should lock") = Some(message.to_string());
+    }
+
+    fn fail_next_action(&self, message: &str) {
+        *self.action_error.lock().expect("action error should lock") = Some(message.to_string());
+    }
+
+    fn take_action_error(&self) -> Option<String> {
+        self.action_error
+            .lock()
+            .expect("action error should lock")
+            .take()
     }
 }
 
@@ -11733,6 +11920,18 @@ impl backend::AppShellBackend for RecordingBackend {
         Ok(started_thread(
             "resumed", thread_id, /*forked_from_id*/ None,
         ))
+    }
+
+    fn resume_thread_in_background(
+        &self,
+        config: Config,
+        thread_id: codex_protocol::ThreadId,
+    ) -> impl std::future::Future<
+        Output = color_eyre::Result<crate::app_server_session::AppServerStartedThread>,
+    > + Send
+    + 'static {
+        let mut backend = self.clone();
+        async move { backend.resume_thread(config, thread_id).await }
     }
 
     async fn fork_thread(
@@ -11900,7 +12099,48 @@ impl backend::AppShellBackend for RecordingBackend {
         thread_id: codex_protocol::ThreadId,
     ) -> color_eyre::Result<()> {
         self.push(RecordedBackendCall::Delete(thread_id));
+        if let Some(error) = self.take_action_error() {
+            return Err(color_eyre::eyre::eyre!(error));
+        }
         Ok(())
+    }
+
+    fn thread_delete_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> impl std::future::Future<Output = color_eyre::Result<()>> + Send + 'static {
+        let mut backend = self.clone();
+        async move { backend.thread_delete(thread_id).await }
+    }
+
+    fn thread_descendant_count_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> impl std::future::Future<Output = color_eyre::Result<usize>> + Send + 'static {
+        let mut backend = self.clone();
+        async move {
+            let mut count = 0;
+            for archived in [false, true] {
+                let response = backend
+                    .thread_list(ThreadListParams {
+                        cursor: None,
+                        limit: None,
+                        sort_key: None,
+                        sort_direction: None,
+                        model_providers: None,
+                        source_kinds: None,
+                        archived: Some(archived),
+                        cwd: None,
+                        use_state_db_only: true,
+                        search_term: None,
+                        parent_thread_id: None,
+                        ancestor_thread_id: Some(thread_id.to_string()),
+                    })
+                    .await?;
+                count += response.data.len();
+            }
+            Ok(count)
+        }
     }
 
     async fn thread_set_name(
@@ -11909,7 +12149,19 @@ impl backend::AppShellBackend for RecordingBackend {
         name: String,
     ) -> color_eyre::Result<()> {
         self.push(RecordedBackendCall::SetName { thread_id, name });
+        if let Some(error) = self.take_action_error() {
+            return Err(color_eyre::eyre::eyre!(error));
+        }
         Ok(())
+    }
+
+    fn thread_set_name_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+        name: String,
+    ) -> impl std::future::Future<Output = color_eyre::Result<()>> + Send + 'static {
+        let mut backend = self.clone();
+        async move { backend.thread_set_name(thread_id, name).await }
     }
 
     async fn thread_goal_get(
@@ -11992,12 +12244,24 @@ impl backend::AppShellBackend for RecordingBackend {
                 .map(|edit| (edit.key_path, edit.value))
                 .collect(),
         ));
+        if let Some(error) = self.take_action_error() {
+            return Err(color_eyre::eyre::eyre!(error));
+        }
         Ok(ConfigWriteResponse {
             status: WriteStatus::Ok,
             version: "1".to_string(),
             file_path: test_absolute_path("codex-home/config.toml"),
             overridden_metadata: None,
         })
+    }
+
+    fn write_config_in_background(
+        &self,
+        edits: Vec<ConfigEdit>,
+    ) -> impl std::future::Future<Output = color_eyre::Result<ConfigWriteResponse>> + Send + 'static
+    {
+        let mut backend = self.clone();
+        async move { backend.write_config(edits).await }
     }
 
     async fn thread_settings_update(
@@ -12013,6 +12277,14 @@ impl backend::AppShellBackend for RecordingBackend {
                 .unwrap_or(codex_app_server_protocol::AskForApproval::OnRequest),
         });
         Ok(())
+    }
+
+    fn thread_settings_update_in_background(
+        &self,
+        params: ThreadSettingsUpdateParams,
+    ) -> impl std::future::Future<Output = color_eyre::Result<()>> + Send + 'static {
+        let mut backend = self.clone();
+        async move { backend.thread_settings_update(params).await }
     }
 
     async fn mcp_server_status_list(
@@ -12253,9 +12525,24 @@ impl backend::AppShellBackend for RecordingBackend {
         {
             return Err(color_eyre::eyre::eyre!(error));
         }
+        if let Some(gate) = self.turn_start_gate.clone() {
+            gate.acquire_owned()
+                .await
+                .expect("turn-start gate should remain open")
+                .forget();
+        }
         Ok(TurnStartResponse {
             turn: test_turn("turn-submit", TurnStatus::InProgress),
         })
+    }
+
+    fn turn_start_in_background(
+        &self,
+        params: backend::AppShellTurnStart,
+    ) -> impl std::future::Future<Output = color_eyre::Result<TurnStartResponse>> + Send + 'static
+    {
+        let mut backend = self.clone();
+        async move { backend.turn_start(params).await }
     }
 
     async fn turn_interrupt(
@@ -12296,7 +12583,19 @@ impl backend::AppShellBackend for RecordingBackend {
         _result: serde_json::Value,
     ) -> std::io::Result<()> {
         self.push(RecordedBackendCall::Resolve(request_id));
+        if let Some(error) = self.take_action_error() {
+            return Err(std::io::Error::other(error));
+        }
         Ok(())
+    }
+
+    fn resolve_server_request_in_background(
+        &self,
+        request_id: RequestId,
+        result: serde_json::Value,
+    ) -> impl std::future::Future<Output = std::io::Result<()>> + Send + 'static {
+        let backend = self.clone();
+        async move { backend.resolve_server_request(request_id, result).await }
     }
 
     async fn reject_server_request(

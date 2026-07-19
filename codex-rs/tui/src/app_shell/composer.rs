@@ -65,6 +65,15 @@ impl ComposerState {
         self.clear_history_recall();
     }
 
+    pub(super) fn restore_failed_submission(&mut self, submission: &str) {
+        let draft = self.input.text().to_string();
+        self.set_text(if draft.is_empty() {
+            submission.to_string()
+        } else {
+            format!("{submission}\n\n{draft}")
+        });
+    }
+
     pub(super) fn reset_for_session(&mut self) {
         *self = Self::default();
     }
@@ -149,8 +158,9 @@ impl ComposerState {
     }
 
     pub(super) fn confirm_next_queued_message(&mut self, message: &str) {
-        let queued = self.queued.pop_front();
-        debug_assert_eq!(queued.as_deref(), Some(message));
+        if self.queued.front().map(String::as_str) == Some(message) {
+            self.queued.pop_front();
+        }
         self.remember_submission(message);
     }
 

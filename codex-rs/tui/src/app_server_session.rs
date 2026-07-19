@@ -4,6 +4,7 @@
 //! request/response plumbing out of `App` and `ChatWidget`.
 
 mod agent_history;
+mod background;
 mod fs;
 
 pub(crate) use agent_history::AgentHistorySnapshot;
@@ -131,6 +132,7 @@ use color_eyre::eyre::Result;
 use color_eyre::eyre::WrapErr;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 use uuid::Uuid;
@@ -167,7 +169,7 @@ pub(crate) struct AppServerSession {
     next_request_id: i64,
     remote_cwd_override: Option<PathBuf>,
     thread_params_mode: ThreadParamsMode,
-    thread_settings_update_supported: bool,
+    thread_settings_update_supported: Arc<AtomicBool>,
     default_model: Option<String>,
     available_models: Vec<ModelPreset>,
     managed_new_thread_defaults: Option<NewThreadModelDefaults>,
@@ -214,7 +216,7 @@ impl AppServerSession {
             next_request_id: 1,
             remote_cwd_override: None,
             thread_params_mode,
-            thread_settings_update_supported: true,
+            thread_settings_update_supported: Arc::new(AtomicBool::new(true)),
             default_model: None,
             available_models: Vec::new(),
             managed_new_thread_defaults: None,
@@ -463,35 +465,16 @@ impl AppServerSession {
     ) -> Result<AppServerStartedThread> {
         let request_id = self.next_request_id();
         let session_config = self.session_config_with_effective_service_tier(&config);
-        let response: ThreadResumeResponse = self
-            .client
-            .request_typed(ClientRequest::ThreadResume {
-                request_id,
-                params: thread_resume_params_from_config(
-                    session_config,
-                    thread_id,
-                    self.thread_params_mode(),
-                    self.remote_cwd_override.as_deref(),
-                ),
-            })
-            .await
-            .map_err(|err| {
-                bootstrap_request_error("thread/resume failed during TUI bootstrap", err)
-            })?;
-        let fork_parent_title = self
-            .fork_parent_title_from_app_server(response.thread.forked_from_id.as_deref())
-            .await;
-        let session_id = response.thread.session_id.clone();
-        let mut started =
-            started_thread_from_resume_response(response, &config, self.thread_params_mode())
-                .await?;
-        started.session.fork_parent_title = fork_parent_title;
-        started.agent_history_task = Some(self.spawn_resumed_agent_history(
-            started.session.thread_id,
-            session_id,
-            &started.turns,
-        ));
-        Ok(started)
+        background::resume_thread(
+            self.request_handle(),
+            config,
+            session_config,
+            thread_id,
+            self.thread_params_mode(),
+            self.remote_cwd_override.clone(),
+            request_id,
+        )
+        .await
     }
 
     pub(crate) async fn fork_thread(
@@ -698,33 +681,14 @@ impl AppServerSession {
         &mut self,
         params: ThreadSettingsUpdateParams,
     ) -> Result<()> {
-        if !self.thread_settings_update_supported {
-            return Ok(());
-        }
         let request_id = self.next_request_id();
-        match self
-            .client
-            .request_typed::<ThreadSettingsUpdateResponse>(ClientRequest::ThreadSettingsUpdate {
-                request_id,
-                params,
-            })
-            .await
-        {
-            Ok(_) => Ok(()),
-            Err(TypedRequestError::Server { source, .. })
-                if is_thread_settings_update_unsupported(&source) =>
-            {
-                // Older remote app servers can reject this experimental method as
-                // method-not-found, experimental-capability-gated, or an unknown
-                // request variant. Treat those as a session-level capability
-                // downgrade so local TUI setting changes stay best-effort instead
-                // of showing an error every time the user changes model, effort,
-                // personality, or mode.
-                self.thread_settings_update_supported = false;
-                Ok(())
-            }
-            Err(err) => Err(err).wrap_err("thread/settings/update failed in TUI"),
-        }
+        background::thread_settings_update(
+            self.request_handle(),
+            Arc::clone(&self.thread_settings_update_supported),
+            request_id,
+            params,
+        )
+        .await
     }
 
     pub(crate) async fn thread_inject_items(
@@ -1316,7 +1280,7 @@ fn permission_profile_id_from_active_profile(active: ActivePermissionProfile) ->
     active.id
 }
 
-fn turn_permissions_overrides(
+pub(crate) fn turn_permissions_overrides(
     permissions_override: TurnPermissionsOverride,
     cwd: &std::path::Path,
 ) -> (

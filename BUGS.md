@@ -485,7 +485,7 @@ session request without responding, and keep the WebSocket open. The request nev
 
 ### 30. [P1][TUI responsiveness] Backend calls block the sole input, render, and event loop
 
-**Status:** Assigned
+**Status:** Fixed
 
 The main shell loop awaits key handling and server-event handling inline
 (`codex-rs/tui/src/app_shell.rs:277-387`). Submit, resume, delete, settings, and approval handlers all
@@ -497,7 +497,7 @@ submit or invoke a Sessions/settings action. The entire UI freezes until the tra
 
 ### 31. [P1][Reliability / TUI] Recoverable action errors terminate the full-screen application
 
-**Status:** Assigned
+**Status:** Fixed
 
 The same top-level loop propagates ordinary RPC/action failures with `?` at
 `codex-rs/tui/src/app_shell.rs:287,312,333,387`. A rejected `turn/start`, failed approval response,

@@ -11,9 +11,11 @@ use ratatui::style::Styled;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
+mod background;
 mod controller;
 mod tabs;
 
+pub(super) use background::SettingsUpdate;
 pub(super) use tabs::SettingsTabs;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
@@ -231,6 +233,18 @@ impl SettingsState {
         self.edit
             .take()
             .map(|edit| (edit.action, edit.draft.into_text().trim().to_string()))
+    }
+
+    pub(super) fn edit_value(&self) -> Option<(SettingsAction, String)> {
+        self.edit
+            .as_ref()
+            .map(|edit| (edit.action, edit.draft.text().trim().to_string()))
+    }
+
+    pub(super) fn finish_edit(&mut self, action: SettingsAction, draft: &str) {
+        if self.edit_value().as_ref() == Some(&(action, draft.to_string())) {
+            self.edit = None;
+        }
     }
 
     pub(super) fn set_info(&mut self, message: impl Into<String>) {

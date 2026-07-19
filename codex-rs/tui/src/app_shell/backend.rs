@@ -3,7 +3,6 @@ use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::config_update::write_config_batch;
 use crate::legacy_core::config::Config;
-use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ClientRequest;
@@ -40,8 +39,6 @@ use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadRollbackResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadStartSource;
-use codex_app_server_protocol::ThreadUnsubscribeParams;
-use codex_app_server_protocol::ThreadUnsubscribeResponse;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput;
@@ -54,16 +51,8 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::Result;
 use std::path::PathBuf;
-use std::time::Duration;
 use tokio::task::JoinHandle;
-use tokio::task::JoinSet;
-use tokio::time::Instant;
-use tokio::time::timeout;
 use uuid::Uuid;
-
-const MAX_CONCURRENT_THREAD_UNSUBSCRIBES: usize = 8;
-const THREAD_UNSUBSCRIBE_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 3);
-const THREAD_UNSUBSCRIBE_CLEANUP_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 5);
 
 /// Backend operations the app shell drives through the app-server boundary.
 ///
@@ -81,6 +70,12 @@ pub(super) trait AppShellBackend {
         config: Config,
         thread_id: ThreadId,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send;
+
+    fn resume_thread_in_background(
+        &self,
+        config: Config,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static;
 
     fn fork_thread(
         &mut self,
@@ -125,11 +120,27 @@ pub(super) trait AppShellBackend {
         thread_id: ThreadId,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
 
+    fn thread_delete_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static;
+
+    fn thread_descendant_count_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<usize>> + Send + 'static;
+
     fn thread_set_name(
         &mut self,
         thread_id: ThreadId,
         name: String,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn thread_set_name_in_background(
+        &self,
+        thread_id: ThreadId,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static;
 
     fn thread_goal_get(
         &mut self,
@@ -160,10 +171,20 @@ pub(super) trait AppShellBackend {
         edits: Vec<ConfigEdit>,
     ) -> impl std::future::Future<Output = Result<ConfigWriteResponse>> + Send;
 
+    fn write_config_in_background(
+        &self,
+        edits: Vec<ConfigEdit>,
+    ) -> impl std::future::Future<Output = Result<ConfigWriteResponse>> + Send + 'static;
+
     fn thread_settings_update(
         &mut self,
         params: ThreadSettingsUpdateParams,
     ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn thread_settings_update_in_background(
+        &self,
+        params: ThreadSettingsUpdateParams,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static;
 
     fn mcp_server_status_list(
         &mut self,
@@ -230,6 +251,11 @@ pub(super) trait AppShellBackend {
         params: AppShellTurnStart,
     ) -> impl std::future::Future<Output = Result<TurnStartResponse>> + Send;
 
+    fn turn_start_in_background(
+        &self,
+        params: AppShellTurnStart,
+    ) -> impl std::future::Future<Output = Result<TurnStartResponse>> + Send + 'static;
+
     fn turn_interrupt(
         &mut self,
         thread_id: ThreadId,
@@ -256,6 +282,12 @@ pub(super) trait AppShellBackend {
         result: serde_json::Value,
     ) -> impl std::future::Future<Output = std::io::Result<()>> + Send;
 
+    fn resolve_server_request_in_background(
+        &self,
+        request_id: RequestId,
+        result: serde_json::Value,
+    ) -> impl std::future::Future<Output = std::io::Result<()>> + Send + 'static;
+
     fn reject_server_request(
         &self,
         request_id: RequestId,
@@ -280,7 +312,7 @@ pub(super) trait AppShellBackend {
         Self: Sized;
 }
 
-fn app_shell_request_id(prefix: &str) -> RequestId {
+pub(super) fn app_shell_request_id(prefix: &str) -> RequestId {
     RequestId::String(format!("{prefix}-{}", Uuid::new_v4()))
 }
 
@@ -318,6 +350,14 @@ impl AppShellBackend for AppServerSession {
         thread_id: ThreadId,
     ) -> Result<AppServerStartedThread> {
         AppServerSession::resume_thread(self, config, thread_id).await
+    }
+
+    fn resume_thread_in_background(
+        &self,
+        config: Config,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
+        AppServerSession::resume_thread_in_background(self, config, thread_id)
     }
 
     async fn fork_thread(
@@ -395,8 +435,37 @@ impl AppShellBackend for AppServerSession {
         AppServerSession::thread_delete(self, thread_id).await
     }
 
+    fn thread_delete_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static {
+        super::backend_background::delete_thread(AppServerSession::request_handle(self), thread_id)
+    }
+
+    fn thread_descendant_count_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<usize>> + Send + 'static {
+        super::backend_background::count_descendants(
+            AppServerSession::request_handle(self),
+            thread_id,
+        )
+    }
+
     async fn thread_set_name(&mut self, thread_id: ThreadId, name: String) -> Result<()> {
         AppServerSession::thread_set_name(self, thread_id, name).await
+    }
+
+    fn thread_set_name_in_background(
+        &self,
+        thread_id: ThreadId,
+        name: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static {
+        super::backend_background::set_thread_name(
+            AppServerSession::request_handle(self),
+            thread_id,
+            name,
+        )
     }
 
     async fn thread_goal_get(&mut self, thread_id: ThreadId) -> Result<ThreadGoalGetResponse> {
@@ -439,8 +508,22 @@ impl AppShellBackend for AppServerSession {
         write_config_batch(AppServerSession::request_handle(self), edits).await
     }
 
+    fn write_config_in_background(
+        &self,
+        edits: Vec<ConfigEdit>,
+    ) -> impl std::future::Future<Output = Result<ConfigWriteResponse>> + Send + 'static {
+        write_config_batch(AppServerSession::request_handle(self), edits)
+    }
+
     async fn thread_settings_update(&mut self, params: ThreadSettingsUpdateParams) -> Result<()> {
         AppServerSession::thread_settings_update(self, params).await
+    }
+
+    fn thread_settings_update_in_background(
+        &self,
+        params: ThreadSettingsUpdateParams,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static {
+        AppServerSession::thread_settings_update_in_background(self, params)
     }
 
     async fn mcp_server_status_list(
@@ -607,6 +690,13 @@ impl AppShellBackend for AppServerSession {
         .await
     }
 
+    fn turn_start_in_background(
+        &self,
+        params: AppShellTurnStart,
+    ) -> impl std::future::Future<Output = Result<TurnStartResponse>> + Send + 'static {
+        super::backend_background::start_turn(AppServerSession::request_handle(self), params)
+    }
+
     async fn turn_interrupt(
         &mut self,
         thread_id: ThreadId,
@@ -640,6 +730,19 @@ impl AppShellBackend for AppServerSession {
         AppServerSession::resolve_server_request(self, request_id, result).await
     }
 
+    fn resolve_server_request_in_background(
+        &self,
+        request_id: RequestId,
+        result: serde_json::Value,
+    ) -> impl std::future::Future<Output = std::io::Result<()>> + Send + 'static {
+        let request_handle = AppServerSession::request_handle(self);
+        async move {
+            request_handle
+                .resolve_server_request(request_id, result)
+                .await
+        }
+    }
+
     async fn reject_server_request(
         &self,
         request_id: RequestId,
@@ -653,71 +756,23 @@ impl AppShellBackend for AppServerSession {
     }
 
     async fn unsubscribe_threads(&self, thread_ids: Vec<ThreadId>) {
-        unsubscribe_threads_with_timeout(AppServerSession::request_handle(self), thread_ids).await;
+        super::backend_cleanup::unsubscribe_threads(
+            AppServerSession::request_handle(self),
+            thread_ids,
+        )
+        .await;
     }
 
     fn unsubscribe_threads_in_background(&self, thread_ids: Vec<ThreadId>) -> JoinHandle<()> {
         let request_handle = AppServerSession::request_handle(self);
-        tokio::spawn(unsubscribe_threads_with_timeout(request_handle, thread_ids))
+        tokio::spawn(super::backend_cleanup::unsubscribe_threads(
+            request_handle,
+            thread_ids,
+        ))
     }
 
     async fn shutdown(self) -> std::io::Result<()> {
         AppServerSession::shutdown(self).await
-    }
-}
-
-async fn unsubscribe_threads_with_timeout(
-    request_handle: AppServerRequestHandle,
-    thread_ids: Vec<ThreadId>,
-) {
-    let deadline = Instant::now() + THREAD_UNSUBSCRIBE_CLEANUP_TIMEOUT;
-    for (batch_index, batch) in thread_ids
-        .chunks(MAX_CONCURRENT_THREAD_UNSUBSCRIBES)
-        .enumerate()
-    {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            tracing::warn!(
-                remaining = thread_ids
-                    .len()
-                    .saturating_sub(batch_index * MAX_CONCURRENT_THREAD_UNSUBSCRIBES),
-                timeout = ?THREAD_UNSUBSCRIBE_CLEANUP_TIMEOUT,
-                "thread subscription cleanup timed out"
-            );
-            break;
-        }
-        let request_timeout = remaining.min(THREAD_UNSUBSCRIBE_TIMEOUT);
-        let mut requests = JoinSet::new();
-        for thread_id in batch.iter().copied() {
-            let request_handle = request_handle.clone();
-            requests.spawn(async move {
-                let request = request_handle.request_typed::<ThreadUnsubscribeResponse>(
-                    ClientRequest::ThreadUnsubscribe {
-                        request_id: app_shell_request_id("app-shell-unsubscribe"),
-                        params: ThreadUnsubscribeParams {
-                            thread_id: thread_id.to_string(),
-                        },
-                    },
-                );
-                (thread_id, timeout(request_timeout, request).await)
-            });
-        }
-        while let Some(result) = requests.join_next().await {
-            match result {
-                Ok((_, Ok(Ok(_)))) => {}
-                Ok((thread_id, Ok(Err(err)))) => {
-                    tracing::warn!(%thread_id, %err, "failed to unsubscribe replaced session thread");
-                }
-                Ok((thread_id, Err(_))) => {
-                    tracing::warn!(
-                        %thread_id,
-                        timeout = ?request_timeout,
-                        "replaced session unsubscribe timed out"
-                    );
-                }
-                Err(err) => tracing::warn!(%err, "replaced session unsubscribe task failed"),
-            }
-        }
     }
 }
 

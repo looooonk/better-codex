@@ -2,7 +2,7 @@ use super::ShellState;
 use super::backend::AppShellBackend;
 
 impl ShellState {
-    pub(super) async fn submit_next_queued_message<S>(&mut self, app_server: &mut S)
+    pub(super) fn submit_next_queued_message<S>(&mut self, app_server: &S)
     where
         S: AppShellBackend,
     {
@@ -12,11 +12,10 @@ impl ShellState {
         let Some(message) = self.composer.prepare_next_queued_message() else {
             return;
         };
-        let mut preserved_composer = self.composer.clone();
-        match self.submit_prompt(app_server, message.clone()).await {
-            Ok(()) => preserved_composer.confirm_next_queued_message(&message),
-            Err(error) => self.push_error(format!("Queued message failed to send: {error}")),
-        }
-        self.composer = preserved_composer;
+        self.start_turn(
+            app_server,
+            message,
+            super::backend_actions::TurnSubmission::Queued,
+        );
     }
 }

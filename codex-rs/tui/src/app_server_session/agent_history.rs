@@ -1,4 +1,3 @@
-use super::AppServerSession;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::RequestId;
@@ -49,35 +48,32 @@ const MAX_AGENT_HISTORY_UPDATE_QUEUE: usize = 32;
 const AGENT_HISTORY_LOAD_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 5);
 const AGENT_THREAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 3);
 
-impl AppServerSession {
-    pub(super) fn spawn_resumed_agent_history(
-        &self,
-        root_thread_id: ThreadId,
-        session_id: String,
-        root_turns: &[Turn],
-    ) -> AgentHistoryTask {
-        let request_handle = self.request_handle();
-        let referenced_thread_ids = referenced_agent_thread_ids(root_turns);
-        let (start_tx, start_rx) = oneshot::channel();
-        let (updates_tx, updates_rx) = mpsc::channel(MAX_AGENT_HISTORY_UPDATE_QUEUE);
-        let subscribed_thread_ids = Arc::new(Mutex::new(HashSet::new()));
-        let task_subscribed_thread_ids = Arc::clone(&subscribed_thread_ids);
-        let handle = tokio::spawn(async move {
-            if start_rx.await.is_err() {
-                return;
-            }
-            load_resumed_agent_threads(
-                request_handle,
-                root_thread_id.to_string(),
-                session_id,
-                referenced_thread_ids,
-                updates_tx,
-                task_subscribed_thread_ids,
-            )
-            .await
-        });
-        AgentHistoryTask::new(start_tx, handle, updates_rx, subscribed_thread_ids)
-    }
+pub(super) fn spawn_resumed_agent_history(
+    request_handle: AppServerRequestHandle,
+    root_thread_id: ThreadId,
+    session_id: String,
+    root_turns: &[Turn],
+) -> AgentHistoryTask {
+    let referenced_thread_ids = referenced_agent_thread_ids(root_turns);
+    let (start_tx, start_rx) = oneshot::channel();
+    let (updates_tx, updates_rx) = mpsc::channel(MAX_AGENT_HISTORY_UPDATE_QUEUE);
+    let subscribed_thread_ids = Arc::new(Mutex::new(HashSet::new()));
+    let task_subscribed_thread_ids = Arc::clone(&subscribed_thread_ids);
+    let handle = tokio::spawn(async move {
+        if start_rx.await.is_err() {
+            return;
+        }
+        load_resumed_agent_threads(
+            request_handle,
+            root_thread_id.to_string(),
+            session_id,
+            referenced_thread_ids,
+            updates_tx,
+            task_subscribed_thread_ids,
+        )
+        .await
+    });
+    AgentHistoryTask::new(start_tx, handle, updates_rx, subscribed_thread_ids)
 }
 
 async fn load_resumed_agent_threads(

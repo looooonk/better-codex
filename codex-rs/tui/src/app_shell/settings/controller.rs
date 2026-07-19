@@ -5,7 +5,7 @@ use super::super::is_unmodified_key_event;
 use super::super::is_unmodified_key_press;
 use super::SettingsAction;
 use super::SettingsView;
-use super::ultra_reasoning_concurrency_warning;
+use super::background::SettingsChange;
 use crate::config_update::build_model_selection_edits;
 use crate::config_update::build_service_tier_selection_edits;
 use crate::config_update::build_syntax_theme_edit;
@@ -143,8 +143,8 @@ impl ShellState {
                 self.settings.cancel_edit();
             }
             KeyCode::Enter => {
-                if let Some((action, draft)) = self.settings.take_edit() {
-                    self.apply_settings_edit(action, draft, app_server).await?;
+                if let Some((action, draft)) = self.settings.edit_value() {
+                    self.apply_settings_edit(action, draft, app_server)?;
                 }
             }
             KeyCode::Char(ch)
@@ -199,22 +199,28 @@ impl ShellState {
             SettingsAction::ReasoningEffort => self.open_reasoning_selector(),
             SettingsAction::ApprovalPolicy => self.open_approval_selector(),
             SettingsAction::Animations => {
-                self.animations = !self.animations;
-                app_server
-                    .write_config(vec![replace_config_value(
+                let animations = !self.animations;
+                self.schedule_settings_update(
+                    app_server,
+                    SettingsChange::Animations(animations),
+                    vec![replace_config_value(
                         "tui.animations",
-                        serde_json::json!(self.animations),
-                    )])
-                    .await?;
+                        serde_json::json!(animations),
+                    )],
+                    None,
+                );
             }
             SettingsAction::Tooltips => {
-                self.show_tooltips = !self.show_tooltips;
-                app_server
-                    .write_config(vec![replace_config_value(
+                let show_tooltips = !self.show_tooltips;
+                self.schedule_settings_update(
+                    app_server,
+                    SettingsChange::Tooltips(show_tooltips),
+                    vec![replace_config_value(
                         "tui.show_tooltips",
-                        serde_json::json!(self.show_tooltips),
-                    )])
-                    .await?;
+                        serde_json::json!(show_tooltips),
+                    )],
+                    None,
+                );
             }
             SettingsAction::McpServers => {
                 if self.mcp_catalog.is_some() {
@@ -234,7 +240,7 @@ impl ShellState {
         Ok(())
     }
 
-    async fn apply_settings_edit<S>(
+    fn apply_settings_edit<S>(
         &mut self,
         action: SettingsAction,
         draft: String,
@@ -253,7 +259,7 @@ impl ShellState {
                     self.settings.set_error("model cannot contain whitespace");
                     return Ok(());
                 }
-                self.apply_model(draft, app_server).await?;
+                self.apply_model(draft, app_server);
             }
             SettingsAction::ServiceTier => {
                 if draft.chars().any(char::is_whitespace) {
@@ -261,23 +267,27 @@ impl ShellState {
                         .set_error("service tier cannot contain whitespace");
                     return Ok(());
                 }
-                let service_tier = (!draft.is_empty()).then_some(draft.clone());
-                self.apply_service_tier(service_tier, app_server).await?;
+                let service_tier = (!draft.is_empty()).then_some(draft);
+                self.apply_service_tier(service_tier, app_server);
             }
             SettingsAction::Theme => {
-                let theme = (!draft.is_empty()).then_some(draft.clone());
+                let theme = (!draft.is_empty()).then_some(draft);
                 if let Some(warning) =
                     validate_theme_name(theme.as_deref(), Some(self.codex_home.as_path()))
                 {
                     self.settings.set_error(warning);
                     return Ok(());
                 }
-                self.tui_theme = theme.clone();
                 let edit = match theme.as_deref() {
                     Some(theme) => build_syntax_theme_edit(theme),
                     None => clear_config_value("tui.theme"),
                 };
-                app_server.write_config(vec![edit]).await?;
+                self.schedule_settings_update(
+                    app_server,
+                    SettingsChange::Theme(theme),
+                    vec![edit],
+                    None,
+                );
             }
             SettingsAction::ReasoningEffort
             | SettingsAction::ApprovalPolicy
@@ -289,11 +299,7 @@ impl ShellState {
         Ok(())
     }
 
-    pub(in crate::app_shell) async fn apply_model<S>(
-        &mut self,
-        model: String,
-        app_server: &mut S,
-    ) -> Result<()>
+    pub(in crate::app_shell) fn apply_model<S>(&mut self, model: String, app_server: &mut S)
     where
         S: AppShellBackend,
     {
@@ -324,55 +330,46 @@ impl ShellState {
         if service_tier_update.is_some() {
             edits.extend(build_service_tier_selection_edits(service_tier.as_deref()));
         }
-        app_server.write_config(edits).await?;
-        app_server
-            .thread_settings_update(self.thread_settings_update_params(
+        self.schedule_settings_update(
+            app_server,
+            SettingsChange::Model {
+                model: model.clone(),
+                effort: effort.clone(),
+                service_tier,
+            },
+            edits,
+            Some(self.thread_settings_update_params(
                 Some(model.clone()),
-                effort.clone(),
+                effort,
                 service_tier_update,
-            ))
-            .await?;
-        if let Some(collaboration_mode) = self.collaboration_mode.as_mut() {
-            **collaboration_mode = collaboration_mode.with_updates(
-                Some(model.clone()),
-                Some(effort.clone()),
-                /*developer_instructions*/ None,
-            );
-        }
-        self.model = model;
-        self.reasoning_effort = effort;
-        self.service_tier = service_tier;
-        Ok(())
+            )),
+        );
     }
 
-    pub(in crate::app_shell) async fn apply_service_tier<S>(
+    pub(in crate::app_shell) fn apply_service_tier<S>(
         &mut self,
         service_tier: Option<String>,
         app_server: &mut S,
-    ) -> Result<()>
-    where
+    ) where
         S: AppShellBackend,
     {
-        self.service_tier = service_tier.clone();
-        app_server
-            .write_config(build_service_tier_selection_edits(service_tier.as_deref()))
-            .await?;
-        app_server
-            .thread_settings_update(self.thread_settings_update_params(
+        self.schedule_settings_update(
+            app_server,
+            SettingsChange::ServiceTier(service_tier.clone()),
+            build_service_tier_selection_edits(service_tier.as_deref()),
+            Some(self.thread_settings_update_params(
                 /*model*/ None,
                 /*effort*/ None,
-                Some(service_tier.clone()),
-            ))
-            .await?;
-        Ok(())
+                Some(service_tier),
+            )),
+        );
     }
 
-    pub(in crate::app_shell) async fn apply_reasoning_effort<S>(
+    pub(in crate::app_shell) fn apply_reasoning_effort<S>(
         &mut self,
         effort: Option<ReasoningEffort>,
         app_server: &mut S,
-    ) -> Result<()>
-    where
+    ) where
         S: AppShellBackend,
     {
         let thread_effort = effort.clone().or_else(|| {
@@ -381,34 +378,22 @@ impl ShellState {
                 .find(|preset| preset.model == self.model)
                 .map(|preset| preset.default_reasoning_effort.clone())
         });
-        self.reasoning_effort = effort.clone();
-        app_server
-            .write_config(build_model_selection_edits(&self.model, effort.as_ref()))
-            .await?;
-        app_server
-            .thread_settings_update(self.thread_settings_update_params(
+        self.schedule_settings_update(
+            app_server,
+            SettingsChange::ReasoningEffort {
+                effort: effort.clone(),
+                thread_effort: thread_effort.clone(),
+            },
+            build_model_selection_edits(&self.model, effort.as_ref()),
+            Some(self.thread_settings_update_params(
                 /*model*/ None,
-                thread_effort.clone(),
+                thread_effort,
                 /*service_tier*/ None,
-            ))
-            .await?;
-        if let Some(collaboration_mode) = self.collaboration_mode.as_mut() {
-            **collaboration_mode = collaboration_mode.with_updates(
-                /*model*/ None,
-                Some(effort.clone()),
-                /*developer_instructions*/ None,
-            );
-        }
-        if let Some(warning) = ultra_reasoning_concurrency_warning(
-            thread_effort.as_ref(),
-            self.max_concurrent_threads_per_session,
-        ) {
-            self.push_status(warning);
-        }
-        Ok(())
+            )),
+        );
     }
 
-    pub(in crate::app_shell) async fn apply_approval_policy<S>(
+    pub(in crate::app_shell) fn apply_approval_policy<S>(
         &mut self,
         policy: AskForApproval,
         app_server: &mut S,
@@ -416,18 +401,19 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        self.approval_policy = policy;
-        app_server
-            .write_config(vec![replace_config_value(
+        let mut params = self.thread_settings_update_params(
+            /*model*/ None, /*effort*/ None, /*service_tier*/ None,
+        );
+        params.approval_policy = Some(policy);
+        self.schedule_settings_update(
+            app_server,
+            SettingsChange::ApprovalPolicy(policy),
+            vec![replace_config_value(
                 "approval_policy",
                 serde_json::to_value(policy)?,
-            )])
-            .await?;
-        app_server
-            .thread_settings_update(self.thread_settings_update_params(
-                /*model*/ None, /*effort*/ None, /*service_tier*/ None,
-            ))
-            .await?;
+            )],
+            Some(params),
+        );
         Ok(())
     }
 

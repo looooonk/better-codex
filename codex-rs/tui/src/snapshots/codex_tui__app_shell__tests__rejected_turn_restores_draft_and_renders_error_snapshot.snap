@@ -1,0 +1,24 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 20,),)"
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex    gpt-5-codex ▾   default ▾   default ▾  ● action failed
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ ERROR  failed to submit turn: request rejected
+
+ ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:19                                                                                   │
+│> retry this request                                                                              │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

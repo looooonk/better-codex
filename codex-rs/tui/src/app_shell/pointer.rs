@@ -270,7 +270,7 @@ impl ShellState {
                     self.start_new_session(config, app_server).await?;
                 }
                 Some(SessionListHit::Thread(thread_id)) => {
-                    self.resume_session(config, app_server, thread_id).await?;
+                    self.resume_session(config, app_server, thread_id);
                 }
                 None => {}
             }

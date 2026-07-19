@@ -1,24 +1,21 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::backend_actions::ActionGroup;
+use super::backend_actions::BackendActionResult;
 use super::design::palette;
-use codex_app_server_protocol::ThreadListParams;
-use codex_app_server_protocol::ThreadSourceKind;
 use codex_protocol::ThreadId;
 use color_eyre::Result;
-use color_eyre::eyre::WrapErr;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
 
-const DESCENDANT_PAGE_SIZE: u32 = 100;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct PendingSessionDelete {
-    thread_id: ThreadId,
-    title: String,
-    descendant_count: usize,
+    pub(super) thread_id: ThreadId,
+    pub(super) title: String,
+    pub(super) descendant_count: usize,
 }
 
 impl PendingSessionDelete {
@@ -60,35 +57,35 @@ impl PendingSessionDelete {
 }
 
 impl ShellState {
-    pub(super) async fn start_session_delete_confirmation<S>(
-        &mut self,
-        app_server: &mut S,
-    ) -> Result<()>
+    pub(super) fn start_session_delete_confirmation<S>(&mut self, app_server: &S)
     where
         S: AppShellBackend,
     {
         let Some(thread_id) = self.session_list.selected_thread_id() else {
             self.push_status("no session selected");
-            return Ok(());
+            return;
         };
         if self.session_list.selected_is_current(self.thread_id) {
             self.push_error("cannot delete the active session");
-            return Ok(());
+            return;
         }
         let title = self
             .session_list
             .selected_title()
             .unwrap_or("untitled thread")
             .to_string();
-        let descendant_count = count_descendants(app_server, thread_id)
-            .await
-            .wrap_err("failed to inspect the session subtree before deletion")?;
-        self.pending_session_delete = Some(PendingSessionDelete {
-            thread_id,
-            title,
-            descendant_count,
-        });
-        Ok(())
+        let request = app_server.thread_descendant_count_in_background(thread_id);
+        self.start_backend_action(
+            ActionGroup::SessionDelete,
+            "inspecting session",
+            async move {
+                BackendActionResult::DescendantCount {
+                    thread_id,
+                    title,
+                    result: request.await,
+                }
+            },
+        );
     }
 
     pub(super) async fn handle_session_delete_key<S>(
@@ -104,7 +101,7 @@ impl ShellState {
         }
         match key.code {
             KeyCode::Enter | KeyCode::Char('y' | 'Y') => {
-                self.confirm_session_delete(app_server).await?;
+                self.confirm_session_delete(app_server);
             }
             KeyCode::Esc | KeyCode::Char('n' | 'N') => {
                 self.pending_session_delete = None;
@@ -115,70 +112,56 @@ impl ShellState {
         Ok(())
     }
 
-    async fn confirm_session_delete<S>(&mut self, app_server: &mut S) -> Result<()>
+    fn confirm_session_delete<S>(&mut self, app_server: &S)
     where
         S: AppShellBackend,
     {
-        let Some(pending) = self.pending_session_delete.take() else {
-            return Ok(());
+        let Some(pending) = self.pending_session_delete.as_ref() else {
+            return;
         };
         if pending.thread_id == self.thread_id {
             self.push_error("cannot delete the active session");
-            return Ok(());
+            return;
         }
-        app_server.thread_delete(pending.thread_id).await?;
-        self.invalidate_session_list_refresh();
-        self.session_list.remove_thread(pending.thread_id);
-        self.push_status(format!("deleted session {}", pending.thread_id));
-        Ok(())
+        let thread_id = pending.thread_id;
+        let request = app_server.thread_delete_in_background(thread_id);
+        self.start_backend_action(ActionGroup::SessionDelete, "deleting session", async move {
+            BackendActionResult::SessionDelete {
+                thread_id,
+                result: request.await,
+            }
+        });
     }
-}
 
-async fn count_descendants<S>(app_server: &mut S, thread_id: ThreadId) -> Result<usize>
-where
-    S: AppShellBackend,
-{
-    let mut count = 0;
-    for archived in [false, true] {
-        let mut cursor = None;
-        loop {
-            let response = app_server
-                .thread_list(ThreadListParams {
-                    cursor,
-                    limit: Some(DESCENDANT_PAGE_SIZE),
-                    sort_key: None,
-                    sort_direction: None,
-                    model_providers: None,
-                    source_kinds: Some(all_thread_source_kinds()),
-                    archived: Some(archived),
-                    cwd: None,
-                    use_state_db_only: true,
-                    search_term: None,
-                    parent_thread_id: None,
-                    ancestor_thread_id: Some(thread_id.to_string()),
-                })
-                .await?;
-            count += response.data.len();
-            let Some(next_cursor) = response.next_cursor else {
-                break;
-            };
-            cursor = Some(next_cursor);
+    pub(super) fn complete_session_delete_inspection(
+        &mut self,
+        thread_id: ThreadId,
+        title: String,
+        result: Result<usize>,
+    ) {
+        match result {
+            Ok(descendant_count) => {
+                self.pending_session_delete = Some(PendingSessionDelete {
+                    thread_id,
+                    title,
+                    descendant_count,
+                });
+                self.status = "confirm deletion".to_string();
+            }
+            Err(err) => self
+                .report_action_error("failed to inspect the session subtree before deletion", err),
         }
     }
-    Ok(count)
-}
 
-fn all_thread_source_kinds() -> Vec<ThreadSourceKind> {
-    vec![
-        ThreadSourceKind::Cli,
-        ThreadSourceKind::VsCode,
-        ThreadSourceKind::Exec,
-        ThreadSourceKind::AppServer,
-        ThreadSourceKind::SubAgent,
-        ThreadSourceKind::SubAgentReview,
-        ThreadSourceKind::SubAgentCompact,
-        ThreadSourceKind::SubAgentThreadSpawn,
-        ThreadSourceKind::SubAgentOther,
-        ThreadSourceKind::Unknown,
-    ]
+    pub(super) fn complete_session_delete(&mut self, thread_id: ThreadId, result: Result<()>) {
+        match result {
+            Ok(()) => {
+                self.pending_session_delete = None;
+                self.invalidate_session_list_refresh();
+                self.session_list.remove_thread(thread_id);
+                self.push_status(format!("deleted session {thread_id}"));
+            }
+            Err(err) => self.report_action_error("failed to delete session", err),
+        }
+    }
 }

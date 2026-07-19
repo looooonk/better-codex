@@ -118,28 +118,25 @@ impl ShellState {
             }
             SelectorOutcome::Selected(value) => value,
         };
-        self.selector = None;
         match value {
-            SelectorValue::Model(model) => self.apply_model(model, app_server).await?,
+            SelectorValue::Model(model) => self.apply_model(model, app_server),
             SelectorValue::ReasoningEffort(ReasoningEffortValue::Default) => {
-                self.apply_reasoning_effort(None, app_server).await?;
+                self.apply_reasoning_effort(None, app_server);
             }
             SelectorValue::ReasoningEffort(ReasoningEffortValue::Explicit(effort)) => {
-                self.apply_reasoning_effort(Some(effort), app_server)
-                    .await?;
+                self.apply_reasoning_effort(Some(effort), app_server);
             }
             SelectorValue::ServiceTier(ServiceTierValue::Default) => {
                 self.apply_service_tier(
                     Some(SERVICE_TIER_DEFAULT_REQUEST_VALUE.to_string()),
                     app_server,
-                )
-                .await?;
+                );
             }
             SelectorValue::ServiceTier(ServiceTierValue::Explicit(tier)) => {
-                self.apply_service_tier(Some(tier), app_server).await?;
+                self.apply_service_tier(Some(tier), app_server);
             }
             SelectorValue::ApprovalPolicy(policy) => {
-                self.apply_approval_policy(policy, app_server).await?;
+                self.apply_approval_policy(policy, app_server)?;
             }
         }
         Ok(())

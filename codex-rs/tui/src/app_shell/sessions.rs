@@ -159,10 +159,7 @@ impl SessionListState {
         self.normalize_selection_and_scroll();
     }
 
-    pub(super) fn rename_selected(&mut self, name: String) {
-        let Some(thread_id) = self.selected_thread_id() else {
-            return;
-        };
+    pub(super) fn rename_thread(&mut self, thread_id: ThreadId, name: String) {
         if let Some(row) = self
             .all_rows
             .iter_mut()
@@ -261,6 +258,12 @@ impl SessionListState {
         self.rename_draft
             .take()
             .map(|draft| draft.into_text().trim().to_string())
+    }
+
+    pub(super) fn rename_draft(&self) -> Option<String> {
+        self.rename_draft
+            .as_ref()
+            .map(|draft| draft.text().trim().to_string())
     }
 
     pub(super) fn renaming(&self) -> bool {

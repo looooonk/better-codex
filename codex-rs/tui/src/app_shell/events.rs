@@ -52,7 +52,7 @@ impl ShellState {
                 };
                 self.handle_notification(notification);
                 if submit_queued_message {
-                    self.submit_next_queued_message(app_server).await;
+                    self.submit_next_queued_message(app_server);
                 }
             }
             AppServerEvent::ServerRequest(request) => {

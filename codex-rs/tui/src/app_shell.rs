@@ -66,6 +66,9 @@ mod agent_log_format;
 mod agent_log_view;
 mod approval;
 mod backend;
+mod backend_actions;
+mod backend_background;
+mod backend_cleanup;
 mod command_palette;
 mod command_palette_view;
 mod composer;
@@ -123,6 +126,9 @@ use approval::PendingApproval;
 use backend::AppShellBackend;
 use backend::AppShellTurnStart;
 use backend::shutdown_app_shell_backend;
+use backend_actions::ActionGroup;
+use backend_actions::BackendActionResult;
+use backend_actions::TurnSubmission;
 use command_palette::CommandPaletteAction;
 use command_palette::CommandPaletteContext;
 use command_palette::CommandPaletteEntry;
@@ -171,6 +177,7 @@ const TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX: &str = "... earlier output omitted ..
 const TRANSCRIPT_PAGE_SCROLL_STEP: usize = 8;
 const TRANSCRIPT_SELECTION_STEP: usize = 1;
 const APP_SERVER_FRAME_INTERVAL: Duration = Duration::from_millis(33);
+const BACKEND_ACTION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const AGENT_HISTORY_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const STATUS_SPINNER_FRAME_INTERVAL: Duration = Duration::from_millis(120);
 
@@ -279,16 +286,15 @@ pub(crate) async fn run(
         let mut tui_events = tui.event_stream();
         let mut agent_history_poll = tokio::time::interval(AGENT_HISTORY_POLL_INTERVAL);
         agent_history_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut backend_action_poll = tokio::time::interval(BACKEND_ACTION_POLL_INTERVAL);
+        backend_action_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut status_spinner = tokio::time::interval(STATUS_SPINNER_FRAME_INTERVAL);
         status_spinner.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let exit_reason = loop {
             if terminal_width_supported(tui.terminal.size()?.width)
                 && let Some(prompt) = pending_initial_prompt.take()
             {
-                shell.submit_prompt(&mut app_server, prompt).await?;
-                // Goal reads and turn starts serialize by thread id. Start this lookup only after
-                // the initial turn is accepted so a slow goal read cannot delay the first prompt.
-                shell.start_initial_goal_hydration(&app_server);
+                shell.start_turn(&app_server, prompt, TurnSubmission::Initial);
                 tui.frame_requester().schedule_frame();
             }
             select! {
@@ -310,8 +316,10 @@ pub(crate) async fn run(
                                 }
                                 continue;
                             }
-                            if shell.handle_key(key, &config, &mut app_server).await? {
-                                break ExitReason::UserRequested;
+                            match shell.handle_key(key, &config, &mut app_server).await {
+                                Ok(true) => break ExitReason::UserRequested,
+                                Ok(false) => {}
+                                Err(err) => shell.report_action_error("action failed", err),
                             }
                             tui.frame_requester().schedule_frame();
                         }
@@ -319,7 +327,7 @@ pub(crate) async fn run(
                             if !accepts_interaction {
                                 continue;
                             }
-                            shell
+                            if let Err(err) = shell
                                 .handle_mouse_click(
                                     ratatui::layout::Rect::new(
                                         /*x*/ 0,
@@ -331,7 +339,10 @@ pub(crate) async fn run(
                                     &config,
                                     &mut app_server,
                                 )
-                                .await?;
+                                .await
+                            {
+                                shell.report_action_error("action failed", err);
+                            }
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::MouseMove(position) => {
@@ -380,12 +391,15 @@ pub(crate) async fn run(
                 event = app_server.next_event() => {
                     match event {
                         Some(event) => {
-                            shell
+                            if let Err(err) = shell
                                 .handle_app_server_event(
                                     &mut app_server,
                                     event,
                                 )
-                                .await?;
+                                .await
+                            {
+                                shell.report_action_error("failed to handle app-server event", err);
+                            }
                             tui.frame_requester()
                                 .schedule_frame_in(APP_SERVER_FRAME_INTERVAL);
                         }
@@ -409,6 +423,11 @@ pub(crate) async fn run(
                         changed |= shell.poll_agent_log().await;
                     }
                     if changed {
+                        tui.frame_requester().schedule_frame();
+                    }
+                }
+                _ = backend_action_poll.tick(), if shell.has_pending_backend_actions() => {
+                    if shell.poll_backend_actions(&app_server).await {
                         tui.frame_requester().schedule_frame();
                     }
                 }
@@ -730,6 +749,7 @@ struct ShellState {
     active_agent_thread_ids: HashSet<String>,
     deferred_unsubscribe_thread_ids: Vec<ThreadId>,
     subscription_cleanup_task: Option<JoinHandle<()>>,
+    backend_actions: backend_actions::BackendActions,
     subagent_activity: VecDeque<ToolActivity>,
     latest_diff: Option<DiffSummary>,
     workspace_git_status: Option<WorkspaceGitStatus>,
@@ -834,6 +854,7 @@ impl ShellState {
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),
             subscription_cleanup_task: None,
+            backend_actions: backend_actions::BackendActions::default(),
             subagent_activity: VecDeque::new(),
             latest_diff: None,
             workspace_git_status: None,
@@ -1168,7 +1189,7 @@ impl ShellState {
                     && self.composer.has_queued_messages()
                     && (finished_queued_edit || prompt.is_empty())
                 {
-                    self.submit_next_queued_message(app_server).await;
+                    self.submit_next_queued_message(app_server);
                     return Ok(false);
                 }
                 if prompt.is_empty() && self.dashboard_visible {
@@ -1194,7 +1215,7 @@ impl ShellState {
                     } else if self.active_turn_id.is_some() {
                         self.steer_active_turn(app_server, prompt).await?;
                     } else {
-                        self.submit_prompt(app_server, prompt).await?;
+                        self.submit_prompt(app_server, prompt);
                     }
                 }
                 Ok(false)
@@ -1470,7 +1491,6 @@ impl ShellState {
         if self.session_list.renaming() {
             return self
                 .handle_session_rename_key(key, app_server)
-                .await
                 .map(|()| true);
         }
         if self.session_list.search_active() {
@@ -1505,7 +1525,7 @@ impl ShellState {
                 Ok(true)
             }
             KeyCode::Enter => {
-                self.resume_selected_session(config, app_server).await?;
+                self.resume_selected_session(config, app_server);
                 Ok(true)
             }
             KeyCode::Char('/') => {
@@ -1518,7 +1538,7 @@ impl ShellState {
                 Ok(true)
             }
             KeyCode::Char('r') => {
-                self.resume_selected_session(config, app_server).await?;
+                self.resume_selected_session(config, app_server);
                 Ok(true)
             }
             KeyCode::Char('f') => {
@@ -1534,7 +1554,7 @@ impl ShellState {
                 Ok(true)
             }
             KeyCode::Char('d') => {
-                self.start_session_delete_confirmation(app_server).await?;
+                self.start_session_delete_confirmation(app_server);
                 Ok(true)
             }
             KeyCode::Char('n') if !self.session_list.show_archived() => {
@@ -1636,11 +1656,7 @@ impl ShellState {
         }
     }
 
-    async fn handle_session_rename_key<S>(
-        &mut self,
-        key: KeyEvent,
-        app_server: &mut S,
-    ) -> Result<()>
+    fn handle_session_rename_key<S>(&mut self, key: KeyEvent, app_server: &S) -> Result<()>
     where
         S: AppShellBackend,
     {
@@ -1662,20 +1678,25 @@ impl ShellState {
                     self.session_list.cancel_rename();
                     return Ok(());
                 };
-                let Some(name) = self.session_list.take_rename_draft() else {
+                let Some(name) = self.session_list.rename_draft() else {
                     return Ok(());
                 };
                 if name.is_empty() {
                     self.push_error("session name cannot be empty");
                     return Ok(());
                 }
-                app_server.thread_set_name(thread_id, name.clone()).await?;
-                self.invalidate_session_list_refresh();
-                self.session_list.rename_selected(name.clone());
-                if thread_id == self.thread_id {
-                    self.thread_name = Some(name.clone());
-                }
-                self.push_status(format!("renamed session {name}"));
+                let request = app_server.thread_set_name_in_background(thread_id, name.clone());
+                self.start_backend_action(
+                    ActionGroup::SessionRename,
+                    "renaming session",
+                    async move {
+                        BackendActionResult::SessionRename {
+                            thread_id,
+                            name,
+                            result: request.await,
+                        }
+                    },
+                );
             }
             KeyCode::Char(ch)
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
@@ -1711,19 +1732,32 @@ impl ShellState {
         Ok(())
     }
 
-    async fn resume_selected_session<S>(
-        &mut self,
-        config: &Config,
-        app_server: &mut S,
-    ) -> Result<()>
+    fn complete_session_rename(&mut self, thread_id: ThreadId, name: String, result: Result<()>) {
+        match result {
+            Ok(()) => {
+                if self.session_list.rename_draft().as_deref() == Some(name.as_str()) {
+                    self.session_list.cancel_rename();
+                }
+                self.invalidate_session_list_refresh();
+                self.session_list.rename_thread(thread_id, name.clone());
+                if thread_id == self.thread_id {
+                    self.thread_name = Some(name.clone());
+                }
+                self.push_status(format!("renamed session {name}"));
+            }
+            Err(err) => self.report_action_error("failed to rename session", err),
+        }
+    }
+
+    fn resume_selected_session<S>(&mut self, config: &Config, app_server: &S)
     where
         S: AppShellBackend,
     {
         let Some(thread_id) = self.session_list.selected_thread_id() else {
             self.push_status("no session selected");
-            return Ok(());
+            return;
         };
-        self.resume_session(config, app_server, thread_id).await
+        self.resume_session(config, app_server, thread_id);
     }
 
     async fn fork_selected_session<S>(&mut self, config: &Config, app_server: &mut S) -> Result<()>
@@ -1744,7 +1778,13 @@ impl ShellState {
     }
 
     fn block_session_switch_if_busy(&mut self) -> bool {
-        let message = if self.active_turn_id.is_some() {
+        let message = if self.has_pending_backend_action(ActionGroup::SessionSwitch) {
+            "wait for the pending session switch to finish"
+        } else if self.has_pending_backend_action(ActionGroup::TurnStart) {
+            "wait for the turn submission to finish"
+        } else if self.has_pending_backend_action(ActionGroup::Settings) {
+            "wait for settings to finish saving"
+        } else if self.active_turn_id.is_some() {
             "finish or interrupt the active turn before switching sessions"
         } else if self.pending_shell_command.is_some() {
             "finish or cancel the shell command before switching sessions"
@@ -2325,13 +2365,20 @@ impl ShellState {
         })
     }
 
-    async fn submit_prompt<S>(&mut self, app_server: &mut S, prompt: String) -> Result<()>
+    fn submit_prompt<S>(&mut self, app_server: &S, prompt: String)
+    where
+        S: AppShellBackend,
+    {
+        self.start_turn(app_server, prompt, TurnSubmission::Interactive);
+    }
+
+    fn start_turn<S>(&mut self, app_server: &S, prompt: String, submission: TurnSubmission)
     where
         S: AppShellBackend,
     {
         if self.active_turn_id.is_some() {
             self.push_system("wait for the current turn to finish before sending another message");
-            return Ok(());
+            return;
         }
 
         let params = AppShellTurnStart {
@@ -2353,14 +2400,53 @@ impl ShellState {
             personality: self.personality,
             output_schema: None,
         };
-        let response = app_server.turn_start(params.clone()).await?;
+        let request = app_server.turn_start_in_background(params.clone());
+        if self.start_backend_action(ActionGroup::TurnStart, "submitting turn", async move {
+            BackendActionResult::TurnStart {
+                params,
+                prompt,
+                submission,
+                result: request.await,
+            }
+        }) && submission == TurnSubmission::Interactive
+        {
+            self.composer.clear();
+        }
+    }
+
+    fn complete_turn_start<S>(
+        &mut self,
+        app_server: &S,
+        params: AppShellTurnStart,
+        prompt: String,
+        submission: TurnSubmission,
+        result: Result<codex_app_server_protocol::TurnStartResponse>,
+    ) where
+        S: AppShellBackend,
+    {
+        let response = match result {
+            Ok(response) => response,
+            Err(err) => {
+                if submission != TurnSubmission::Queued {
+                    self.composer.restore_failed_submission(&prompt);
+                }
+                self.report_action_error("failed to submit turn", err);
+                return;
+            }
+        };
         self.scroll_transcript_to_bottom();
         let transcript_len_before_submit = self.transcript.len();
         self.push_user(prompt.clone());
         self.status = "thinking".to_string();
         self.clear_streaming_transcript();
-        self.composer.remember_submission(&prompt);
-        self.composer.clear();
+        match submission {
+            TurnSubmission::Queued => {
+                self.composer.confirm_next_queued_message(&prompt);
+            }
+            TurnSubmission::Initial | TurnSubmission::Interactive => {
+                self.composer.remember_submission(&prompt);
+            }
+        }
         self.active_turn_id = Some(response.turn.id.clone());
         self.record_safety_buffering_turn(
             response.turn.id,
@@ -2368,7 +2454,9 @@ impl ShellState {
             prompt,
             transcript_len_before_submit,
         );
-        Ok(())
+        if submission == TurnSubmission::Initial {
+            self.start_initial_goal_hydration(app_server);
+        }
     }
 
     async fn interrupt_active_turn<S>(&mut self, app_server: &mut S) -> Result<()>
@@ -2393,7 +2481,7 @@ impl ShellState {
         S: AppShellBackend,
     {
         let Some(turn_id) = self.active_turn_id.clone() else {
-            self.submit_prompt(app_server, prompt).await?;
+            self.submit_prompt(app_server, prompt);
             return Ok(());
         };
         app_server
@@ -2417,10 +2505,11 @@ impl ShellState {
         Ok(())
     }
 
-    async fn resolve_pending_approval<S>(
+    fn resolve_pending_approval<S>(
         &mut self,
-        app_server: &mut S,
+        app_server: &S,
         option_index: usize,
+        edit_prompt: Option<String>,
     ) -> Result<()>
     where
         S: AppShellBackend,
@@ -2430,15 +2519,24 @@ impl ShellState {
         };
         let request_id = pending.request_id();
         let title = pending.title().to_string();
-        let denied = pending.is_denial(option_index);
+        let decision = if edit_prompt.is_some() {
+            "edit"
+        } else if pending.is_denial(option_index) {
+            "denied"
+        } else {
+            "approved"
+        };
         let result = pending.result(option_index)?;
-        app_server
-            .resolve_server_request(request_id, result)
-            .await
-            .wrap_err("failed to resolve app-server approval request")?;
-        self.pending_approval = None;
-        let decision = if denied { "denied" } else { "approved" };
-        self.push_decision_audit("approval", decision, &title);
+        let request = app_server.resolve_server_request_in_background(request_id.clone(), result);
+        self.start_backend_action(ActionGroup::Approval, "resolving approval", async move {
+            BackendActionResult::Approval {
+                request_id,
+                title,
+                decision,
+                edit_prompt,
+                result: request.await,
+            }
+        });
         Ok(())
     }
 
@@ -2452,10 +2550,9 @@ impl ShellState {
     {
         match action {
             ApprovalAction::Choose(option_index) => {
-                self.resolve_pending_approval(app_server, option_index)
-                    .await
+                self.resolve_pending_approval(app_server, option_index, None)
             }
-            ApprovalAction::Edit => self.edit_pending_approval(app_server).await,
+            ApprovalAction::Edit => self.edit_pending_approval(app_server),
             ApprovalAction::Explain => {
                 self.explain_pending_approval();
                 Ok(())
@@ -2463,24 +2560,19 @@ impl ShellState {
         }
     }
 
-    async fn edit_pending_approval<S>(&mut self, app_server: &mut S) -> Result<()>
+    fn edit_pending_approval<S>(&mut self, app_server: &S) -> Result<()>
     where
         S: AppShellBackend,
     {
         let Some(pending) = self.pending_approval.as_ref() else {
             return Ok(());
         };
-        let title = pending.title().to_string();
         let edit_prompt = pending.edit_prompt().to_string();
         let Some(denial_index) = pending.denial_index() else {
             self.push_error("this approval request cannot be denied for editing");
             return Ok(());
         };
-        self.resolve_pending_approval(app_server, denial_index)
-            .await?;
-        self.seed_composer_with_edit_prompt(edit_prompt);
-        self.push_decision_audit("approval", "edit", &title);
-        Ok(())
+        self.resolve_pending_approval(app_server, denial_index, Some(edit_prompt))
     }
 
     fn explain_pending_approval(&mut self) {
@@ -3144,11 +3236,12 @@ impl ShellState {
 
     fn status_spinner_active(&self) -> bool {
         self.animations
-            && self.active_turn_id.is_some()
-            && matches!(
-                self.status.as_str(),
-                "thinking" | "reasoning" | "retrying" | "waiting"
-            )
+            && (self.has_pending_backend_actions()
+                || self.active_turn_id.is_some()
+                    && matches!(
+                        self.status.as_str(),
+                        "thinking" | "reasoning" | "retrying" | "waiting"
+                    ))
     }
 
     #[cfg(test)]
@@ -3244,6 +3337,7 @@ impl ShellState {
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),
             subscription_cleanup_task: None,
+            backend_actions: backend_actions::BackendActions::default(),
             subagent_activity: VecDeque::new(),
             latest_diff: Some(DiffSummary {
                 files: 3,
@@ -3489,6 +3583,7 @@ pub mod bench_support {
             active_agent_thread_ids: HashSet::new(),
             deferred_unsubscribe_thread_ids: Vec::new(),
             subscription_cleanup_task: None,
+            backend_actions: backend_actions::BackendActions::default(),
             subagent_activity: VecDeque::new(),
             latest_diff: Some(DiffSummary {
                 files: 4,
