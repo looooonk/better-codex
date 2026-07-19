@@ -126,6 +126,10 @@ pub struct LandlockCommand {
     #[arg(long = "proxy-route-spec", hide = true)]
     pub proxy_route_spec: Option<String>,
 
+    /// Process-visible argv[0] for the final command.
+    #[arg(long = "command-arg0", hide = true)]
+    pub command_arg0: Option<String>,
+
     /// When set, skip mounting a fresh `/proc` even though PID isolation is
     /// still enabled. This is primarily intended for restrictive container
     /// environments that deny `--proc /proc`.
@@ -153,6 +157,7 @@ pub fn run_main() -> ! {
         apply_seccomp_then_exec,
         allow_network_for_proxy,
         proxy_route_spec,
+        command_arg0,
         no_proc,
         command,
     } = LandlockCommand::parse();
@@ -194,7 +199,7 @@ pub fn run_main() -> ! {
         ) {
             panic!("error applying Linux sandbox restrictions: {e:?}");
         }
-        exec_or_panic(command);
+        exec_or_panic(command, command_arg0.as_deref());
     }
 
     if file_system_sandbox_policy.has_full_disk_write_access() && !allow_network_for_proxy {
@@ -207,7 +212,7 @@ pub fn run_main() -> ! {
         ) {
             panic!("error applying Linux sandbox restrictions: {e:?}");
         }
-        exec_or_panic(command);
+        exec_or_panic(command, command_arg0.as_deref());
     }
 
     if !use_legacy_landlock {
@@ -228,6 +233,7 @@ pub fn run_main() -> ! {
             permission_profile: &permission_profile,
             allow_network_for_proxy,
             proxy_route_spec,
+            command_arg0,
             command,
         });
         run_bwrap_with_proc_fallback(
@@ -251,7 +257,7 @@ pub fn run_main() -> ! {
     ) {
         panic!("error applying legacy Linux sandbox restrictions: {e:?}");
     }
-    exec_or_panic(command);
+    exec_or_panic(command, command_arg0.as_deref());
 }
 
 #[derive(Debug, Clone)]
@@ -1394,6 +1400,7 @@ struct InnerSeccompCommandArgs<'a> {
     permission_profile: &'a PermissionProfile,
     allow_network_for_proxy: bool,
     proxy_route_spec: Option<String>,
+    command_arg0: Option<String>,
     command: Vec<String>,
 }
 
@@ -1405,6 +1412,7 @@ fn build_inner_seccomp_command(args: InnerSeccompCommandArgs<'_>) -> Vec<String>
         permission_profile,
         allow_network_for_proxy,
         proxy_route_spec,
+        command_arg0,
         command,
     } = args;
     let current_exe = match std::env::current_exe() {
@@ -1437,20 +1445,23 @@ fn build_inner_seccomp_command(args: InnerSeccompCommandArgs<'_>) -> Vec<String>
         inner.push("--proxy-route-spec".to_string());
         inner.push(proxy_route_spec);
     }
+    if let Some(command_arg0) = command_arg0 {
+        inner.push(format!("--command-arg0={command_arg0}"));
+    }
     inner.push("--".to_string());
     inner.extend(command);
     inner
 }
 
 /// Exec the provided argv, panicking with context if it fails.
-fn exec_or_panic(command: Vec<String>) -> ! {
+fn exec_or_panic(command: Vec<String>, arg0: Option<&str>) -> ! {
     #[expect(clippy::expect_used)]
     let c_command =
         CString::new(command[0].as_str()).expect("Failed to convert command to CString");
     #[expect(clippy::expect_used)]
-    let c_args: Vec<CString> = command
-        .iter()
-        .map(|arg| CString::new(arg.as_str()).expect("Failed to convert arg to CString"))
+    let c_args: Vec<CString> = std::iter::once(arg0.unwrap_or(command[0].as_str()))
+        .chain(command.iter().skip(1).map(String::as_str))
+        .map(|arg| CString::new(arg).expect("Failed to convert arg to CString"))
         .collect();
 
     let mut c_args_ptrs: Vec<*const libc::c_char> = c_args.iter().map(|arg| arg.as_ptr()).collect();

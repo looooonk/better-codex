@@ -161,6 +161,25 @@ fn rewrites_bwrap_helper_command_not_nested_user_command_when_current_exe_appear
 }
 
 #[test]
+fn inner_seccomp_command_preserves_custom_command_arg0() {
+    let command = build_inner_seccomp_command(InnerSeccompCommandArgs {
+        sandbox_policy_cwd: Path::new("/tmp/cwd"),
+        command_cwd: Some(Path::new("/tmp/cwd")),
+        permission_profile: &PermissionProfile::read_only(),
+        allow_network_for_proxy: false,
+        proxy_route_spec: None,
+        command_arg0: Some("custom-arg0".to_string()),
+        command: vec![
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "exit 0".to_string(),
+        ],
+    });
+
+    assert!(command.contains(&"--command-arg0=custom-arg0".to_string()));
+}
+
+#[test]
 fn inserts_unshare_net_when_network_isolation_requested() {
     let file_system_sandbox_policy = read_only_file_system_policy();
     let argv = build_bwrap_argv(

@@ -1012,7 +1012,7 @@ associating a `threadId`.
 
 ### 69. [P2][Execution correctness] Sandboxed launches silently drop custom `arg0`
 
-**Status:** Assigned
+**Status:** Fixed
 
 The exec protocol promises a process-visible argv0 override
 (`codex-rs/exec-server-protocol/src/protocol.rs:134-136`), and unsandboxed execution preserves it.
@@ -1026,7 +1026,7 @@ sandboxed Windows remote launches are rejected rather than transformed.
 
 ### 70. [P2][Persistence integrity] Thread metadata RPCs can fail after SQLite already committed
 
-**Status:** Assigned
+**Status:** Fixed
 
 `update_thread_metadata` first commits `apply_metadata_update`
 (`codex-rs/thread-store/src/local/update_thread_metadata.rs:72-83,200-373`) and only afterward performs

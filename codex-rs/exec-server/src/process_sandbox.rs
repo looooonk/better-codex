@@ -121,17 +121,33 @@ pub(crate) fn prepare_exec_request(
         .argv
         .split_first()
         .ok_or_else(|| invalid_params("argv must not be empty".to_string()))?;
+    #[cfg(target_os = "macos")]
+    let (program, args) = match params.arg0.as_ref() {
+        Some(arg0) => (
+            "/bin/sh".to_string(),
+            [
+                "-c".to_string(),
+                "exec -a \"$0\" -- \"$@\"".to_string(),
+                arg0.clone(),
+                program.clone(),
+            ]
+            .into_iter()
+            .chain(args.iter().cloned())
+            .collect(),
+        ),
+        None => (program.clone(), args.to_vec()),
+    };
+    #[cfg(not(target_os = "macos"))]
+    let (program, args) = (program.clone(), args.to_vec());
     let request = sandbox_manager
         .transform_for_direct_spawn(SandboxDirectSpawnTransformRequest {
             workspace_roots,
             windows_sandbox_proxy_settings_mode:
                 codex_sandboxing::WindowsSandboxProxySettingsMode::Reconcile,
             transform: SandboxTransformRequest {
-                // TODO(jif): Preserve params.arg0 for the inner command across the sandbox
-                // wrapper, or reject sandboxed requests with a custom arg0.
                 command: SandboxCommand {
                     program: program.into(),
-                    args: args.to_vec(),
+                    args,
                     cwd: params.cwd.clone(),
                     env,
                     managed_network: params.managed_network.clone(),
@@ -150,6 +166,23 @@ pub(crate) fn prepare_exec_request(
             },
         })
         .map_err(|err| invalid_params(format!("failed to prepare process sandbox: {err}")))?;
+    #[cfg(target_os = "linux")]
+    let request = {
+        let mut request = request;
+        if let Some(arg0) = params.arg0.as_ref() {
+            let separator = request
+                .command
+                .iter()
+                .position(|arg| arg == "--")
+                .ok_or_else(|| {
+                    invalid_params("Linux sandbox command is missing its separator".to_string())
+                })?;
+            request
+                .command
+                .insert(separator, format!("--command-arg0={arg0}"));
+        }
+        request
+    };
     Ok(PreparedExecRequest {
         command: request.command,
         cwd: native_path(&request.cwd, "cwd")?,

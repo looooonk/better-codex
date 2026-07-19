@@ -8,6 +8,7 @@ mod read_thread;
 mod search_threads;
 mod unarchive_thread;
 mod update_thread_metadata;
+mod update_thread_metadata_git;
 
 #[cfg(test)]
 mod test_support;

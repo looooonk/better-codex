@@ -80,6 +80,59 @@ fn sandbox_request_wraps_native_argv_on_executor() {
     );
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[test]
+fn sandbox_request_preserves_custom_arg0_for_inner_command() {
+    let cwd: AbsolutePathBuf = std::env::current_dir()
+        .expect("current directory")
+        .try_into()
+        .expect("absolute cwd");
+    let cwd_uri = PathUri::from_abs_path(&cwd);
+    let self_exe = std::env::current_exe().expect("current executable");
+    let runtime_paths =
+        ExecServerRuntimePaths::new(self_exe.clone(), Some(self_exe)).expect("runtime paths");
+    let params = ExecParams {
+        process_id: ProcessId::from("process-custom-arg0"),
+        argv: vec![
+            "/bin/sh".to_string(),
+            "-c".to_string(),
+            "exit 0".to_string(),
+        ],
+        cwd: cwd_uri.clone(),
+        env_policy: None,
+        env: HashMap::new(),
+        tty: false,
+        pipe_stdin: false,
+        arg0: Some("custom-arg0".to_string()),
+        sandbox: Some(FileSystemSandboxContext::from_permission_profile_with_cwd(
+            PermissionProfile::workspace_write(),
+            cwd_uri,
+        )),
+        enforce_managed_network: false,
+        managed_network: None,
+    };
+
+    let prepared = prepare_exec_request(&params, HashMap::new(), Some(&runtime_paths))
+        .expect("prepare sandboxed request");
+
+    #[cfg(target_os = "linux")]
+    assert!(
+        prepared
+            .command
+            .contains(&"--command-arg0=custom-arg0".to_string())
+    );
+    #[cfg(target_os = "macos")]
+    assert!(prepared.command.ends_with(&[
+        "/bin/sh".to_string(),
+        "-c".to_string(),
+        "exec -a \"$0\" -- \"$@\"".to_string(),
+        "custom-arg0".to_string(),
+        "/bin/sh".to_string(),
+        "-c".to_string(),
+        "exit 0".to_string(),
+    ]));
+}
+
 #[cfg(target_os = "macos")]
 #[test]
 fn sandbox_request_allows_prepared_managed_proxy_port() {

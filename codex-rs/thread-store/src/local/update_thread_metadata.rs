@@ -21,6 +21,7 @@ use super::LocalThreadStore;
 use super::helpers::git_info_from_parts;
 use super::helpers::permission_profile_to_metadata_value;
 use super::live_writer;
+use super::update_thread_metadata_git::resolve_git_info_update;
 use crate::GitInfoPatch;
 use crate::ReadThreadParams;
 use crate::StoredThread;
@@ -30,11 +31,6 @@ use crate::ThreadStoreResult;
 use crate::UpdateThreadMetadataParams;
 use crate::error::reject_paginated_history_mode;
 use crate::local::read_thread;
-
-struct ResolvedRolloutPath {
-    path: PathBuf,
-    archived: bool,
-}
 
 pub(super) async fn update_thread_metadata(
     store: &LocalThreadStore,
@@ -56,8 +52,7 @@ pub(super) async fn update_thread_metadata(
 
     let needs_rollout_compat = needs_rollout_compatibility_update(&patch);
     if needs_rollout_compat {
-        // These explicit patches still write legacy rollout/name-index state after the
-        // SQLite update. Paginated threads must fail before either side is mutated.
+        // Paginated threads must fail before either persistence layer is mutated.
         let thread = read_thread::read_thread(
             store,
             ReadThreadParams {
@@ -70,16 +65,15 @@ pub(super) async fn update_thread_metadata(
         reject_paginated_history_mode(thread.history_mode)?;
     }
     let require_sqlite_write = sqlite_write_failure_should_block(&patch);
-    let updated = apply_metadata_update(
-        store,
-        thread_id,
-        patch.clone(),
-        params.include_archived,
-        require_sqlite_write,
-    )
-    .await?;
     if !needs_rollout_compat {
-        return Ok(updated);
+        return apply_metadata_update(
+            store,
+            thread_id,
+            patch,
+            params.include_archived,
+            require_sqlite_write,
+        )
+        .await;
     }
 
     if live_writer::rollout_path(store, thread_id).await.is_ok() {
@@ -87,113 +81,65 @@ pub(super) async fn update_thread_metadata(
     }
     let mut resolved_rollout_path =
         resolve_rollout_path(store, thread_id, params.include_archived).await?;
-    let name = patch.name;
-    let git_info = patch.git_info;
+    let name = patch.name.clone();
+    let git_info = patch.git_info.clone();
+    let resolved_git_info = match git_info {
+        Some(git_info) => Some(
+            resolve_git_info_update(
+                store,
+                thread_id,
+                resolved_rollout_path.as_path(),
+                git_info,
+                patch.memory_mode.map(memory_mode_as_str),
+            )
+            .await?,
+        ),
+        None => None,
+    };
     if let Some(memory_mode) = patch.memory_mode {
-        apply_thread_memory_mode(resolved_rollout_path.path.as_path(), thread_id, memory_mode)
-            .await?;
+        apply_thread_memory_mode(resolved_rollout_path.as_path(), thread_id, memory_mode).await?;
         refresh_resolved_rollout_path(&mut resolved_rollout_path).await;
     }
-
-    let state_db_ctx = store.state_db().await;
-    codex_rollout::state_db::reconcile_rollout(
-        state_db_ctx.as_deref(),
-        resolved_rollout_path.path.as_path(),
-        store.config.default_model_provider_id.as_str(),
-        /*builder*/ None,
-        &[],
-        /*archived_only*/ resolved_rollout_path.archived.then_some(true),
-        /*new_thread_memory_mode*/ None,
-    )
-    .await;
 
     if let Some(name) = name {
         apply_thread_name(store, thread_id, name.unwrap_or_default()).await?;
     }
 
-    let resolved_git_info = match git_info {
-        Some(git_info) => {
-            let Some(state_db) = store.state_db().await else {
-                return Err(ThreadStoreError::Internal {
-                    message: format!("sqlite state db unavailable for thread {thread_id}"),
-                });
-            };
-            let metadata =
-                state_db
-                    .get_thread(thread_id)
-                    .await
-                    .map_err(|err| ThreadStoreError::Internal {
-                        message: format!(
-                            "failed to read git metadata for thread {thread_id}: {err}"
-                        ),
-                    })?;
-            let Some(metadata) = metadata else {
-                return Err(ThreadStoreError::Internal {
-                    message: format!("thread metadata unavailable before git update: {thread_id}"),
-                });
-            };
-            let memory_mode = state_db
-                .get_thread_memory_mode(thread_id)
-                .await
-                .map_err(|err| ThreadStoreError::Internal {
-                    message: format!("failed to read memory mode for thread {thread_id}: {err}"),
-                })?;
-            let existing_git_info = git_info_from_parts(
-                metadata.git_sha,
-                metadata.git_branch,
-                metadata.git_origin_url,
-            );
-            Some((
-                resolve_git_info_patch(existing_git_info, git_info),
-                memory_mode,
-            ))
-        }
-        None => None,
-    };
-    if let Some(((sha, branch, origin_url), memory_mode)) = resolved_git_info.as_ref() {
+    if let Some(git_info) = resolved_git_info.as_ref() {
         apply_thread_git_info_to_rollout(
-            resolved_rollout_path.path.as_path(),
+            resolved_rollout_path.as_path(),
             thread_id,
-            sha,
-            branch,
-            origin_url,
-            memory_mode.as_deref(),
+            &git_info.sha,
+            &git_info.branch,
+            &git_info.origin_url,
+            git_info.memory_mode.as_deref(),
         )
         .await?;
         refresh_resolved_rollout_path(&mut resolved_rollout_path).await;
-        apply_thread_git_info(store, thread_id, sha, branch, origin_url).await?;
     }
 
-    let mut thread = match read_thread::read_thread(
+    let mut sqlite_patch = patch;
+    sqlite_patch.rollout_path = Some(resolved_rollout_path);
+    if let Some(git_info) = resolved_git_info {
+        sqlite_patch.git_info = Some(GitInfoPatch {
+            sha: Some(git_info.sha),
+            branch: Some(git_info.branch),
+            origin_url: Some(git_info.origin_url),
+        });
+    }
+    apply_metadata_update(
         store,
-        ReadThreadParams {
-            thread_id,
-            include_archived: params.include_archived,
-            include_history: false,
-        },
+        thread_id,
+        sqlite_patch,
+        params.include_archived,
+        require_sqlite_write,
     )
     .await
-    {
-        Ok(thread) => thread,
-        Err(_) => {
-            read_thread::read_thread_by_rollout_path(
-                store,
-                resolved_rollout_path.path,
-                params.include_archived,
-                /*include_history*/ false,
-            )
-            .await?
-        }
-    };
-    if let Some(((sha, branch, origin_url), _memory_mode)) = resolved_git_info {
-        thread.git_info = git_info_from_parts(sha, branch, origin_url);
-    }
-    Ok(thread)
 }
 
-async fn refresh_resolved_rollout_path(resolved: &mut ResolvedRolloutPath) {
-    if let Some(path) = codex_rollout::existing_rollout_path(resolved.path.as_path()).await {
-        resolved.path = path;
+async fn refresh_resolved_rollout_path(resolved: &mut PathBuf) {
+    if let Some(path) = codex_rollout::existing_rollout_path(resolved.as_path()).await {
+        *resolved = path;
     }
 }
 
@@ -221,10 +167,11 @@ async fn apply_metadata_update(
                         message: format!("failed to read thread metadata for {thread_id}: {err}"),
                     })?;
             let advance_recency_at = patch.advance_recency_at;
+            let updates_git_info = patch.git_info.is_some();
             if existing.is_none() && rollout_path.is_none() {
                 let resolved = resolve_rollout_path(store, thread_id, include_archived).await?;
-                rollout_path_archived = resolved.archived;
-                rollout_path = Some(resolved.path);
+                rollout_path_archived = rollout_path_is_archived(store, resolved.as_path());
+                rollout_path = Some(resolved);
             }
             let mut metadata = match existing.clone() {
                 Some(metadata) => metadata,
@@ -329,6 +276,28 @@ async fn apply_metadata_update(
                 .map_err(|err| ThreadStoreError::Internal {
                     message: format!("failed to update thread metadata for {thread_id}: {err}"),
                 })?;
+            if updates_git_info && require_sqlite_write {
+                let updated = state_db
+                    .update_thread_git_info(
+                        thread_id,
+                        Some(metadata.git_sha.as_deref()),
+                        Some(metadata.git_branch.as_deref()),
+                        Some(metadata.git_origin_url.as_deref()),
+                    )
+                    .await
+                    .map_err(|err| ThreadStoreError::Internal {
+                        message: format!(
+                            "failed to update git metadata for thread {thread_id}: {err}"
+                        ),
+                    })?;
+                if !updated {
+                    return Err(ThreadStoreError::Internal {
+                        message: format!(
+                            "thread metadata disappeared before update completed: {thread_id}"
+                        ),
+                    });
+                }
+            }
             if existing.is_some()
                 && let Some(recency_at) = advance_recency_at
             {
@@ -511,38 +480,6 @@ fn normalize_cwd(cwd: PathBuf) -> PathBuf {
     codex_utils_path::normalize_for_path_comparison(cwd.as_path()).unwrap_or(cwd)
 }
 
-async fn apply_thread_git_info(
-    store: &LocalThreadStore,
-    thread_id: ThreadId,
-    sha: &Option<String>,
-    branch: &Option<String>,
-    origin_url: &Option<String>,
-) -> ThreadStoreResult<()> {
-    let Some(state_db) = store.state_db().await else {
-        return Err(ThreadStoreError::Internal {
-            message: format!("sqlite state db unavailable for thread {thread_id}"),
-        });
-    };
-    let updated = state_db
-        .update_thread_git_info(
-            thread_id,
-            Some(sha.as_deref()),
-            Some(branch.as_deref()),
-            Some(origin_url.as_deref()),
-        )
-        .await
-        .map_err(|err| ThreadStoreError::Internal {
-            message: format!("failed to update git metadata for thread {thread_id}: {err}"),
-        })?;
-    if updated {
-        Ok(())
-    } else {
-        Err(ThreadStoreError::Internal {
-            message: format!("thread metadata disappeared before update completed: {thread_id}"),
-        })
-    }
-}
-
 fn resolve_git_info_patch(
     existing: Option<GitInfo>,
     git_info: GitInfoPatch,
@@ -602,20 +539,6 @@ async fn apply_thread_name(
     thread_id: ThreadId,
     name: String,
 ) -> ThreadStoreResult<()> {
-    if let Some(state_db) = store.state_db().await {
-        let updated = state_db
-            .update_thread_title(thread_id, &name)
-            .await
-            .map_err(|err| ThreadStoreError::Internal {
-                message: format!("failed to set thread name: {err}"),
-            })?;
-        if !updated {
-            return Err(ThreadStoreError::Internal {
-                message: format!("thread metadata unavailable before name update: {thread_id}"),
-            });
-        }
-    }
-
     append_thread_name(store.config.codex_home.as_path(), thread_id, &name)
         .await
         .map_err(|err| ThreadStoreError::Internal {
@@ -665,10 +588,9 @@ async fn resolve_rollout_path(
     store: &LocalThreadStore,
     thread_id: ThreadId,
     include_archived: bool,
-) -> ThreadStoreResult<ResolvedRolloutPath> {
+) -> ThreadStoreResult<PathBuf> {
     if let Ok(path) = live_writer::rollout_path(store, thread_id).await {
-        let archived = rollout_path_is_archived(store, path.as_path());
-        return Ok(ResolvedRolloutPath { path, archived });
+        return Ok(path);
     }
 
     let state_db_ctx = store.state_db().await;
@@ -682,10 +604,7 @@ async fn resolve_rollout_path(
         message: format!("failed to locate thread id {thread_id}: {err}"),
     })?;
     if let Some(path) = active_path {
-        return Ok(ResolvedRolloutPath {
-            path,
-            archived: false,
-        });
+        return Ok(path);
     }
     if !include_archived {
         return Err(ThreadStoreError::InvalidRequest {
@@ -701,10 +620,6 @@ async fn resolve_rollout_path(
     .map_err(|err| ThreadStoreError::InvalidRequest {
         message: format!("failed to locate archived thread id {thread_id}: {err}"),
     })?
-    .map(|path| ResolvedRolloutPath {
-        path,
-        archived: true,
-    })
     .ok_or_else(|| ThreadStoreError::InvalidRequest {
         message: format!("thread not found: {thread_id}"),
     })
@@ -764,6 +679,60 @@ mod tests {
             .await
             .expect("find thread name");
         assert_eq!(latest_name.as_deref(), Some("A sharper name"));
+    }
+
+    #[tokio::test]
+    async fn name_index_failure_does_not_commit_sqlite_metadata() {
+        let home = TempDir::new().expect("temp dir");
+        let config = test_config(home.path());
+        let runtime = codex_state::StateRuntime::init(
+            home.path().to_path_buf(),
+            config.default_model_provider_id.clone(),
+        )
+        .await
+        .expect("state db should initialize");
+        let store = LocalThreadStore::new(config, Some(runtime.clone()));
+        let uuid = Uuid::from_u128(314);
+        let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
+        write_session_file(home.path(), "2025-01-03T14-15-00", uuid).expect("session file");
+        store
+            .update_thread_metadata(UpdateThreadMetadataParams {
+                thread_id,
+                patch: ThreadMetadataPatch {
+                    title: Some("Original title".to_string()),
+                    ..Default::default()
+                },
+                include_archived: false,
+            })
+            .await
+            .expect("seed sqlite metadata");
+        let before = runtime
+            .get_thread(thread_id)
+            .await
+            .expect("sqlite metadata read");
+        std::fs::create_dir(home.path().join("session_index.jsonl"))
+            .expect("block the name index file");
+
+        let error = store
+            .update_thread_metadata(UpdateThreadMetadataParams {
+                thread_id,
+                patch: ThreadMetadataPatch {
+                    name: Some(Some("Uncommitted title".to_string())),
+                    ..Default::default()
+                },
+                include_archived: false,
+            })
+            .await
+            .expect_err("name index write should fail");
+
+        assert!(error.to_string().contains("failed to index thread name"));
+        assert_eq!(
+            runtime
+                .get_thread(thread_id)
+                .await
+                .expect("sqlite metadata read"),
+            before
+        );
     }
 
     #[tokio::test]

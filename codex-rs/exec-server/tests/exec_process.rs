@@ -114,6 +114,45 @@ async fn assert_exec_process_starts_and_exits(use_remote: bool) -> Result<()> {
     Ok(())
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial_test::serial(remote_exec_server)]
+async fn remote_sandboxed_process_preserves_custom_arg0() -> Result<()> {
+    let context = create_process_context(/*use_remote*/ true).await?;
+    let cwd = PathUri::from_host_native_path(std::env::current_dir()?)?;
+    let sandbox = FileSystemSandboxContext::from_permission_profile_with_cwd(
+        PermissionProfile::Disabled,
+        cwd.clone(),
+    );
+    let session = context
+        .backend
+        .start(ExecParams {
+            process_id: ProcessId::from("proc-custom-arg0"),
+            argv: vec![
+                "/bin/sh".to_string(),
+                "-c".to_string(),
+                "printf %s \"$0\"".to_string(),
+            ],
+            cwd,
+            env_policy: None,
+            env: HashMap::new(),
+            tty: false,
+            pipe_stdin: false,
+            arg0: Some("custom-arg0".to_string()),
+            sandbox: Some(sandbox),
+            enforce_managed_network: false,
+            managed_network: None,
+        })
+        .await?;
+    let output = collect_process_output_from_events(session.process).await?;
+
+    assert_eq!(
+        output,
+        ("custom-arg0".to_string(), String::new(), Some(0), true)
+    );
+    Ok(())
+}
+
 #[cfg(target_os = "linux")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_process_keeps_sandbox_helper_visible_with_restricted_reads() -> Result<()> {
