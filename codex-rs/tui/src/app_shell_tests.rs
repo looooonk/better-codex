@@ -21,6 +21,8 @@ use codex_app_server_protocol::CommandExecutionSource;
 use codex_app_server_protocol::CommandExecutionStatus;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ConfigWriteResponse;
+use codex_app_server_protocol::CurrentTimeReadParams;
+use codex_app_server_protocol::CurrentTimeReadResponse;
 use codex_app_server_protocol::ErrorNotification;
 use codex_app_server_protocol::ExternalAgentConfigDetectParams;
 use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
@@ -81,6 +83,7 @@ use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadRollbackResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
+use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
 use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ToolRequestUserInputOption;
@@ -148,6 +151,95 @@ async fn renders_aggregated_backend_lag_snapshot() {
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn permission_profile_update_refreshes_status_dashboard_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+
+    shell.handle_notification(ServerNotification::ThreadSettingsUpdated(
+        ThreadSettingsUpdatedNotification {
+            thread_id: shell.thread_id.to_string(),
+            thread_settings: codex_app_server_protocol::ThreadSettings {
+                cwd: test_absolute_path("workspace/locked"),
+                approval_policy: codex_app_server_protocol::AskForApproval::Never,
+                approvals_reviewer: codex_app_server_protocol::ApprovalsReviewer::User,
+                sandbox_policy: codex_app_server_protocol::SandboxPolicy::DangerFullAccess,
+                active_permission_profile: Some(
+                    codex_app_server_protocol::ActivePermissionProfile::new(":full"),
+                ),
+                model: "gpt-5.4".to_string(),
+                model_provider: "openai".to_string(),
+                service_tier: None,
+                effort: None,
+                summary: None,
+                collaboration_mode: *collaboration_mode_fixture("gpt-5.4", None),
+                multi_agent_mode: Default::default(),
+                personality: None,
+            },
+        },
+    ));
+
+    assert_eq!(
+        (&shell.permission_profile, &shell.active_permission_profile,),
+        (
+            &codex_protocol::models::PermissionProfile::Disabled,
+            &Some(codex_protocol::models::ActivePermissionProfile::new(
+                ":full"
+            )),
+        )
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        ),
+    ));
+}
+
+#[tokio::test]
+async fn current_time_request_resolves_without_disturbing_pending_approval() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
+        .expect("approval request should be valid");
+    shell.status = "thinking".to_string();
+    let mut backend = RecordingBackend::default();
+    let before = chrono::Utc::now().timestamp();
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerRequest(ServerRequest::CurrentTimeRead {
+                request_id: RequestId::Integer(47),
+                params: CurrentTimeReadParams {
+                    thread_id: shell.thread_id.to_string(),
+                },
+            }),
+        )
+        .await
+        .expect("current time should resolve");
+    let after = chrono::Utc::now().timestamp();
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(shell.pending_approval.is_some());
+    assert_eq!(shell.status, "thinking");
+    let resolved = backend
+        .resolved_requests
+        .lock()
+        .expect("resolved requests should lock")
+        .clone();
+    let [(request_id, result)] = resolved.as_slice() else {
+        panic!("expected one resolved current-time request: {resolved:?}");
+    };
+    assert_eq!(request_id, &RequestId::Integer(47));
+    let response: CurrentTimeReadResponse =
+        serde_json::from_value(result.clone()).expect("current-time response should deserialize");
+    assert!(
+        (before..=after).contains(&response.current_time_at),
+        "current time {} should be between {before} and {after}",
+        response.current_time_at,
+    );
 }
 
 #[test]
@@ -11668,6 +11760,7 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
 #[derive(Clone)]
 struct RecordingBackend {
     calls: Arc<Mutex<Vec<RecordedBackendCall>>>,
+    resolved_requests: Arc<Mutex<Vec<(RequestId, serde_json::Value)>>>,
     start_configs: Arc<Mutex<Vec<Config>>>,
     threads: Arc<Mutex<Vec<Thread>>>,
     mcp_statuses: Arc<Mutex<Vec<McpServerStatus>>>,
@@ -11690,6 +11783,7 @@ impl Default for RecordingBackend {
     fn default() -> Self {
         Self {
             calls: Arc::new(Mutex::new(Vec::new())),
+            resolved_requests: Arc::new(Mutex::new(Vec::new())),
             start_configs: Arc::new(Mutex::new(Vec::new())),
             threads: Arc::new(Mutex::new(Vec::new())),
             mcp_statuses: Arc::new(Mutex::new(Vec::new())),
@@ -12580,8 +12674,12 @@ impl backend::AppShellBackend for RecordingBackend {
     async fn resolve_server_request(
         &self,
         request_id: RequestId,
-        _result: serde_json::Value,
+        result: serde_json::Value,
     ) -> std::io::Result<()> {
+        self.resolved_requests
+            .lock()
+            .expect("resolved requests should lock")
+            .push((request_id.clone(), result));
         self.push(RecordedBackendCall::Resolve(request_id));
         if let Some(error) = self.take_action_error() {
             return Err(std::io::Error::other(error));

@@ -689,6 +689,7 @@ struct ShellState {
     approval_policy: codex_app_server_protocol::AskForApproval,
     approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer,
     permission_profile: codex_protocol::models::PermissionProfile,
+    active_permission_profile: Option<codex_protocol::models::ActivePermissionProfile>,
     runtime_workspace_roots: Vec<codex_utils_absolute_path::AbsolutePathBuf>,
     reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
     service_tier: Option<String>,
@@ -794,6 +795,7 @@ impl ShellState {
             approval_policy: session.approval_policy,
             approvals_reviewer: session.approvals_reviewer,
             permission_profile: session.permission_profile,
+            active_permission_profile: session.active_permission_profile,
             runtime_workspace_roots: session.runtime_workspace_roots,
             reasoning_effort: session.reasoning_effort,
             service_tier: session.service_tier,
@@ -1862,6 +1864,7 @@ impl ShellState {
         self.approval_policy = session.approval_policy;
         self.approvals_reviewer = session.approvals_reviewer;
         self.permission_profile = session.permission_profile;
+        self.active_permission_profile = session.active_permission_profile;
         self.runtime_workspace_roots = session.runtime_workspace_roots;
         self.reasoning_effort = session.reasoning_effort;
         self.service_tier = session.service_tier;
@@ -3256,6 +3259,7 @@ impl ShellState {
             approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
             approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
             permission_profile: codex_protocol::models::PermissionProfile::default(),
+            active_permission_profile: None,
             runtime_workspace_roots: Vec::new(),
             reasoning_effort: None,
             service_tier: None,
@@ -3506,6 +3510,7 @@ pub mod bench_support {
             approval_policy: codex_app_server_protocol::AskForApproval::OnRequest,
             approvals_reviewer: codex_protocol::config_types::ApprovalsReviewer::User,
             permission_profile: codex_protocol::models::PermissionProfile::default(),
+            active_permission_profile: None,
             runtime_workspace_roots: Vec::new(),
             reasoning_effort: None,
             service_tier: None,

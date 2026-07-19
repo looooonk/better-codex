@@ -5,6 +5,7 @@ use super::backend::AppShellBackend;
 use crate::token_usage::TokenUsage;
 use base64::Engine;
 use codex_app_server_client::AppServerEvent;
+use codex_app_server_protocol::CurrentTimeReadResponse;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
@@ -169,17 +170,24 @@ impl ShellState {
             }
             ServerNotification::ThreadSettingsUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
-                    self.model = updated.thread_settings.model;
-                    self.cwd = updated.thread_settings.cwd.to_string_lossy().to_string();
+                    let settings = updated.thread_settings;
+                    self.permission_profile =
+                        codex_protocol::models::PermissionProfile::from_legacy_sandbox_policy_for_cwd(
+                            &settings.sandbox_policy.to_core(),
+                            settings.cwd.as_path(),
+                        );
+                    self.active_permission_profile =
+                        settings.active_permission_profile.map(Into::into);
+                    self.model = settings.model;
+                    self.cwd = settings.cwd.to_string_lossy().to_string();
                     self.mark_workspace_status_refresh_due();
-                    self.approval_policy = updated.thread_settings.approval_policy;
+                    self.approval_policy = settings.approval_policy;
                     self.approvals_reviewer =
-                        approvals_reviewer_from_api(updated.thread_settings.approvals_reviewer);
-                    self.reasoning_effort = updated.thread_settings.effort;
-                    self.service_tier = updated.thread_settings.service_tier;
-                    self.collaboration_mode =
-                        Some(Box::new(updated.thread_settings.collaboration_mode));
-                    self.personality = updated.thread_settings.personality;
+                        approvals_reviewer_from_api(settings.approvals_reviewer);
+                    self.reasoning_effort = settings.effort;
+                    self.service_tier = settings.service_tier;
+                    self.collaboration_mode = Some(Box::new(settings.collaboration_mode));
+                    self.personality = settings.personality;
                 }
             }
             ServerNotification::TurnDiffUpdated(updated) => {
@@ -457,6 +465,19 @@ impl ShellState {
                 format!("interactive request belongs to inactive thread {thread_id}"),
             )
             .await?;
+            return Ok(());
+        }
+        if let ServerRequest::CurrentTimeRead { request_id, .. } = &request {
+            let result = serde_json::to_value(CurrentTimeReadResponse {
+                current_time_at: chrono::Utc::now().timestamp(),
+            })?;
+            let response =
+                app_server.resolve_server_request_in_background(request_id.clone(), result);
+            self.backend_actions.start(None, async move {
+                super::backend_actions::BackendActionResult::CurrentTime {
+                    result: response.await,
+                }
+            });
             return Ok(());
         }
         match super::PendingApproval::from_request(&request) {

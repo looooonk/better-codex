@@ -37,16 +37,16 @@ pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'sta
                 ManagedFileSystemPermissions::Restricted { .. } => "restricted",
                 ManagedFileSystemPermissions::Unrestricted => "unrestricted",
             };
-            workspace_lines.push(Line::from(vec!["profile ".dim(), "managed".into()]));
+            workspace_lines.push(profile_line(shell, width, "managed"));
             workspace_lines.push(Line::from(format!(
                 "files {file_system_label}, net {network}"
             )));
         }
         PermissionProfile::Disabled => {
-            workspace_lines.push(Line::from(vec!["profile ".dim(), "full access".into()]));
+            workspace_lines.push(profile_line(shell, width, "full access"));
         }
         PermissionProfile::External { network } => {
-            workspace_lines.push(Line::from(vec!["profile ".dim(), "external".into()]));
+            workspace_lines.push(profile_line(shell, width, "external"));
             workspace_lines.push(Line::from(format!("net {network}")));
         }
     }
@@ -77,6 +77,18 @@ pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'sta
         }
     }
     workspace_lines
+}
+
+fn profile_line(shell: &ShellState, width: usize, kind: &str) -> Line<'static> {
+    let label = shell
+        .active_permission_profile
+        .as_ref()
+        .map(|profile| format!("{} ({kind})", profile.id))
+        .unwrap_or_else(|| kind.to_string());
+    Line::from(vec![
+        "profile ".dim(),
+        dashboard_value(&label, width, /*prefix_width*/ 8).into(),
+    ])
 }
 
 fn workspace_change_lines(

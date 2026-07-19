@@ -37,6 +37,9 @@ pub(super) enum BackendActionResult {
         edit_prompt: Option<String>,
         result: std::io::Result<()>,
     },
+    CurrentTime {
+        result: std::io::Result<()>,
+    },
     DescendantCount {
         thread_id: ThreadId,
         title: String,
@@ -68,7 +71,7 @@ pub(super) enum BackendActionResult {
 
 #[derive(Debug)]
 struct CompletedAction {
-    group: ActionGroup,
+    group: Option<ActionGroup>,
     result: BackendActionResult,
 }
 
@@ -79,11 +82,11 @@ pub(super) struct BackendActions {
 }
 
 impl BackendActions {
-    pub(super) fn start<F>(&mut self, group: ActionGroup, future: F) -> bool
+    pub(super) fn start<F>(&mut self, group: Option<ActionGroup>, future: F) -> bool
     where
         F: Future<Output = BackendActionResult> + Send + 'static,
     {
-        if !self.groups.insert(group) {
+        if group.is_some_and(|group| !self.groups.insert(group)) {
             return false;
         }
         self.tasks.spawn(async move {
@@ -106,7 +109,9 @@ impl BackendActions {
     fn try_next(&mut self) -> Option<Result<BackendActionResult>> {
         match self.tasks.try_join_next()? {
             Ok(completed) => {
-                self.groups.remove(&completed.group);
+                if let Some(group) = completed.group {
+                    self.groups.remove(&group);
+                }
                 Some(Ok(completed.result))
             }
             Err(err) => {
@@ -127,7 +132,7 @@ impl ShellState {
     where
         F: Future<Output = BackendActionResult> + Send + 'static,
     {
-        if self.backend_actions.start(group, future) {
+        if self.backend_actions.start(Some(group), future) {
             self.status = description.to_string();
             true
         } else {
@@ -216,6 +221,11 @@ impl ShellState {
                     err.into(),
                 ),
             },
+            BackendActionResult::CurrentTime { result } => {
+                if let Err(err) = result {
+                    self.report_action_error("failed to report current time", err.into());
+                }
+            }
             BackendActionResult::Settings { update, result } => {
                 self.complete_settings_update(update, result)
             }

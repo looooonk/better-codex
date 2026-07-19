@@ -511,7 +511,7 @@ a recoverable error.
 
 ### 32. [P1][Security UI / Stale state] Permission-profile updates are ignored by the dashboard
 
-**Status:** Assigned
+**Status:** Fixed
 
 `ThreadSettingsUpdated` carries both `sandbox_policy` and `active_permission_profile`, but the TUI
 event reducer ignores them (`codex-rs/tui/src/app_shell/events.rs:170-183`). The Status dashboard
@@ -524,7 +524,7 @@ emit `thread/settings/updated`. Open Status; the displayed permission profile re
 
 ### 33. [P1][Feature failure / TUI] External-clock current-time reminders make turns fail
 
-**Status:** Assigned
+**Status:** Fixed
 
 The TUI advertises experimental app-server capability
 (`codex-rs/tui/src/lib.rs:359-370,514-535`) but rejects every `CurrentTimeRead` as unsupported
