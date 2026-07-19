@@ -1,5 +1,6 @@
 use super::ShellState;
 use super::TranscriptKind;
+use super::diff_view::DiffRetention;
 use super::diff_view::DiffViewAction;
 use super::diff_view::DiffViewState;
 use codex_app_server_protocol::FileUpdateChange;
@@ -15,7 +16,7 @@ impl ShellState {
         status: PatchApplyStatus,
     ) {
         self.diff_store
-            .upsert_item(turn_id, item_id, changes.to_vec(), status);
+            .upsert_item(turn_id, item_id, changes, status);
         self.refresh_open_diff_view();
     }
 
@@ -40,17 +41,17 @@ impl ShellState {
         if files.is_empty() {
             return false;
         }
+        let retention = retention(self.diff_store.item_is_truncated(&item_id));
 
         self.close_agent_log();
         self.close_tool_output();
         self.command_palette = None;
         self.selector = None;
         self.clear_transcript_selection();
-        self.diff_view = Some(DiffViewState::new(
-            "File changes",
-            /*source_item_id*/ Some(item_id),
-            files,
-        ));
+        self.diff_view = Some(
+            DiffViewState::new("File changes", /*source_item_id*/ Some(item_id), files)
+                .with_retention(retention),
+        );
         true
     }
 
@@ -64,17 +65,17 @@ impl ShellState {
         if files.is_empty() {
             return false;
         }
+        let retention = retention(self.diff_store.session_is_truncated());
 
         self.close_agent_log();
         self.close_tool_output();
         self.command_palette = None;
         self.selector = None;
         self.clear_transcript_selection();
-        self.diff_view = Some(DiffViewState::new(
-            "Session edits",
-            /*source_item_id*/ None,
-            files,
-        ));
+        self.diff_view = Some(
+            DiffViewState::new("Session edits", /*source_item_id*/ None, files)
+                .with_retention(retention),
+        );
         true
     }
 
@@ -111,19 +112,35 @@ impl ShellState {
     }
 
     fn refresh_open_diff_view(&mut self) {
-        let files = match self
+        let update = match self
             .diff_view
             .as_ref()
             .and_then(DiffViewState::source_item_id)
         {
-            Some(item_id) => self.diff_store.item_files(item_id).map(<[_]>::to_vec),
-            None if self.diff_view.is_some() => Some(self.diff_store.session_files()),
+            Some(item_id) => self.diff_store.item_files(item_id).map(|files| {
+                (
+                    files.to_vec(),
+                    retention(self.diff_store.item_is_truncated(item_id)),
+                )
+            }),
+            None if self.diff_view.is_some() => Some((
+                self.diff_store.session_files(),
+                retention(self.diff_store.session_is_truncated()),
+            )),
             None => None,
         };
-        if let Some(files) = files
+        if let Some((files, retention)) = update
             && let Some(view) = &mut self.diff_view
         {
-            view.replace_files(files);
+            view.replace_files(files, retention);
         }
+    }
+}
+
+fn retention(truncated: bool) -> DiffRetention {
+    if truncated {
+        DiffRetention::Truncated
+    } else {
+        DiffRetention::Complete
     }
 }

@@ -1,0 +1,18 @@
+---
+source: tui/src/app_shell/diff_view_view_tests.rs
+expression: "render(&state, 80, 16)"
+---
+
+
+  ╭ Session edits · retained subset ─────────────────────────────────────────╮
+  │ CHANGED FILES    │OLD FILE                  │NEW FILE                    │
+  │                  │src/lib.rs                │src/lib.rs                  │
+  │ > M src/lib.rs   │        @@ -1 +1 @@       │        @@ -1 +1 @@         │
+  │                  │    1 - before            │    1 + after               │
+  │                  │                          │                            │
+  │                  │                          │                            │
+  │                  │                          │                            │
+  │                  │                          │                            │
+  │                  │                          │                            │
+  │  ←/→ files  j/k scroll  PgUp/PgDn  Esc  file 1/1  1-2/2                  │
+  ╰──────────────────────────────────────────────────────────────────────────╯

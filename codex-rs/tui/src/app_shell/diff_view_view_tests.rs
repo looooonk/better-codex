@@ -19,6 +19,22 @@ fn renders_wide_and_compact_diff_popups() {
 }
 
 #[test]
+fn renders_retained_diff_subset() {
+    let state = DiffViewState::new(
+        "Session edits",
+        /*source_item_id*/ None,
+        vec![DiffFile::modified(
+            "src/lib.rs",
+            "@@ -1 +1 @@\n-before\n+after",
+            DiffStatus::Completed,
+        )],
+    )
+    .with_retention(DiffRetention::Truncated);
+
+    insta::assert_snapshot!("retained_diff_subset", render(&state, 80, 16));
+}
+
+#[test]
 fn file_hit_testing_uses_the_visible_file_window() {
     let mut state = DiffViewState::new(
         "Session edits",

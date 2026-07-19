@@ -2,6 +2,8 @@ use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::PatchChangeKind;
 
+const MAX_DIFF_PATH_BYTES: usize = 1_024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DiffFileKind {
     Added,
@@ -160,18 +162,25 @@ impl DiffFile {
     }
 
     pub(super) fn from_change(change: &FileUpdateChange, status: DiffStatus) -> Self {
+        Self::from_change_with_diff(change, &change.diff, status)
+    }
+
+    pub(super) fn from_change_with_diff(
+        change: &FileUpdateChange,
+        diff: &str,
+        status: DiffStatus,
+    ) -> Self {
+        let path = bounded_path(&change.path);
         match &change.kind {
-            PatchChangeKind::Add => Self::added(&change.path, &change.diff, status),
-            PatchChangeKind::Delete => Self::deleted(&change.path, &change.diff, status),
-            PatchChangeKind::Update { move_path: None } => {
-                Self::modified(&change.path, &change.diff, status)
-            }
+            PatchChangeKind::Add => Self::added(path, diff, status),
+            PatchChangeKind::Delete => Self::deleted(path, diff, status),
+            PatchChangeKind::Update { move_path: None } => Self::modified(path, diff, status),
             PatchChangeKind::Update {
                 move_path: Some(move_path),
             } => Self::renamed(
-                &change.path,
-                move_path.to_string_lossy(),
-                &change.diff,
+                path,
+                bounded_path(&move_path.to_string_lossy()),
+                diff,
                 status,
             ),
         }
@@ -231,6 +240,18 @@ impl DiffFile {
 
     pub(super) fn identity(&self) -> (Option<&str>, Option<&str>) {
         (self.old_label(), self.new_label())
+    }
+
+    pub(super) fn retained_text_bytes(&self) -> usize {
+        self.old_path.as_ref().map_or(0, String::len)
+            + self.new_path.as_ref().map_or(0, String::len)
+            + self
+                .rows
+                .iter()
+                .flat_map(|row| [row.old.as_ref(), row.new.as_ref()])
+                .flatten()
+                .map(|cell| cell.text.len())
+                .sum::<usize>()
     }
 }
 
@@ -401,11 +422,23 @@ fn cell(line_number: Option<usize>, text: impl Into<String>, kind: DiffLineKind)
 fn normalize_diff_path(path: &str) -> Option<String> {
     let path = path.trim().trim_matches('"');
     (path != "/dev/null").then(|| {
-        path.strip_prefix("a/")
-            .or_else(|| path.strip_prefix("b/"))
-            .unwrap_or(path)
-            .to_string()
+        bounded_path(
+            path.strip_prefix("a/")
+                .or_else(|| path.strip_prefix("b/"))
+                .unwrap_or(path),
+        )
     })
+}
+
+fn bounded_path(path: &str) -> String {
+    if path.len() <= MAX_DIFF_PATH_BYTES {
+        return path.to_string();
+    }
+    let mut end = MAX_DIFF_PATH_BYTES.saturating_sub(3);
+    while !path.is_char_boundary(end) {
+        end = end.saturating_sub(1);
+    }
+    format!("{}...", &path[..end])
 }
 
 fn parse_git_paths(paths: &str) -> Option<(String, String)> {

@@ -645,7 +645,7 @@ rewrapped.
 
 ### 42. [P1][Availability / TUI diffs] Session diffs grow and clone without a bound
 
-**Status:** Assigned
+**Status:** Fixed
 
 `DiffStore` retains every turn, item, parsed file, and aggregate diff for the session with no cap
 (`codex-rs/tui/src/app_shell/diff_view.rs:19-109`). Parsing occurs synchronously, and opening or

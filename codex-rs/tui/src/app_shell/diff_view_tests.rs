@@ -259,6 +259,106 @@ fn session_aggregation_keeps_item_changes_missing_from_the_turn_diff() {
 }
 
 #[test]
+fn oversized_diff_update_is_bounded_before_parsing() {
+    let path = "p".repeat(8_000);
+    let diff = std::iter::once("@@ -1,5000 +1,5000 @@".to_string())
+        .chain((0..5_000).map(|index| format!(" {index:04} {}", "x".repeat(180))))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut store = DiffStore::default();
+    store.upsert_item(
+        "turn-large",
+        "item-large",
+        &[change(
+            &path,
+            PatchChangeKind::Update { move_path: None },
+            &diff,
+        )],
+        PatchApplyStatus::Completed,
+    );
+
+    let files = store
+        .item_files("item-large")
+        .expect("bounded item should remain available");
+    let size = store.retained_size();
+    assert_eq!(
+        (
+            store.item_is_truncated("item-large"),
+            store.session_is_truncated(),
+            files.len(),
+            files[0].display_path().len() <= 1_024,
+            size.text_bytes <= MAX_DIFF_STORE_TEXT_BYTES,
+            size.rows <= MAX_DIFF_STORE_ROWS,
+            size.files <= MAX_DIFF_STORE_FILES,
+        ),
+        (true, true, 1, true, true, true, true)
+    );
+}
+
+#[test]
+fn diff_store_evicts_oldest_history_at_session_caps() {
+    let content = (0..80)
+        .map(|index| format!("line {index:03}: {}", "x".repeat(80)))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut store = DiffStore::default();
+    for index in 0..=MAX_DIFF_STORE_ITEMS {
+        store.upsert_item(
+            "turn-items",
+            format!("item-{index:03}"),
+            &[change(
+                &format!("src/file-{index:03}.rs"),
+                PatchChangeKind::Add,
+                &content,
+            )],
+            PatchApplyStatus::Completed,
+        );
+    }
+    let item_size = store.retained_size();
+    assert_eq!(
+        (
+            store.item_files("item-000"),
+            store
+                .item_files(&format!("item-{MAX_DIFF_STORE_ITEMS:03}"))
+                .is_some(),
+            item_size.text_bytes <= MAX_DIFF_STORE_TEXT_BYTES,
+            item_size.rows <= MAX_DIFF_STORE_ROWS,
+            item_size.files <= MAX_DIFF_STORE_FILES,
+            item_size.items <= MAX_DIFF_STORE_ITEMS,
+        ),
+        (None, true, true, true, true, true)
+    );
+    for index in 0..=MAX_DIFF_STORE_TURNS {
+        store.upsert_turn_diff(
+            format!("turn-{index:03}"),
+            &format!(
+                "diff --git a/file-{index}.rs b/file-{index}.rs\n--- a/file-{index}.rs\n+++ b/file-{index}.rs\n@@ -1 +1 @@\n-old\n+new\n"
+            ),
+        );
+    }
+
+    let size = store.retained_size();
+    assert_eq!(
+        (
+            store.item_files("item-000"),
+            store.turns.len() <= MAX_DIFF_STORE_TURNS,
+            size.text_bytes <= MAX_DIFF_STORE_TEXT_BYTES,
+            size.rows <= MAX_DIFF_STORE_ROWS,
+            size.files <= MAX_DIFF_STORE_FILES,
+            size.items <= MAX_DIFF_STORE_ITEMS,
+            store.session_is_truncated(),
+        ),
+        (None, true, true, true, true, true, true)
+    );
+    assert!(
+        store
+            .session_files()
+            .iter()
+            .any(|file| { file.display_path() == format!("file-{MAX_DIFF_STORE_TURNS}.rs") })
+    );
+}
+
+#[test]
 fn selecting_files_and_keyboard_navigation_reset_scroll() {
     let files = vec![
         DiffFile::modified("a.rs", "@@\n-a\n+A", DiffStatus::Completed),
@@ -313,7 +413,10 @@ fn live_file_replacement_preserves_identity_and_resets_scroll() {
     );
     let new_c = DiffFile::added("c.rs", "created\n", DiffStatus::Completed);
 
-    state.replace_files(vec![updated_b.clone(), new_c.clone()]);
+    state.replace_files(
+        vec![updated_b.clone(), new_c.clone()],
+        DiffRetention::Complete,
+    );
 
     assert_eq!(state.selected_file(), Some(&updated_b));
     assert_eq!(
@@ -327,9 +430,9 @@ fn live_file_replacement_preserves_identity_and_resets_scroll() {
 
     state.set_scroll_max(10);
     state.scroll_down(/*amount*/ 4);
-    state.replace_files(vec![new_c.clone()]);
+    state.replace_files(vec![new_c.clone()], DiffRetention::Complete);
     assert_eq!(state.selected_file(), Some(&new_c));
     assert_eq!((state.selected_file_index(), state.scroll()), (0, 0));
-    state.replace_files(Vec::new());
+    state.replace_files(Vec::new(), DiffRetention::Complete);
     assert_eq!(state.selected_file(), None);
 }

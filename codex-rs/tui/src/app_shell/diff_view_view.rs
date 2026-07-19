@@ -5,6 +5,7 @@ use super::diff_view::DiffCell;
 use super::diff_view::DiffFile;
 use super::diff_view::DiffFileKind;
 use super::diff_view::DiffLineKind;
+use super::diff_view::DiffRetention;
 use super::diff_view::DiffStatus;
 use super::diff_view::DiffViewState;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
@@ -48,6 +49,10 @@ struct DiffViewGeometry {
 
 pub(super) fn render_diff_view(state: &DiffViewState, screen: Rect, buf: &mut Buffer) {
     let geometry = diff_view_geometry(screen);
+    let title = match state.retention() {
+        DiffRetention::Complete => state.title().to_string(),
+        DiffRetention::Truncated => format!("{} · retained subset", state.title()),
+    };
     buf.set_style(screen, Style::new().add_modifier(Modifier::DIM));
     Clear.render(geometry.modal, buf);
     fill_rect(buf, geometry.modal, palette::SURFACE);
@@ -57,7 +62,7 @@ pub(super) fn render_diff_view(state: &DiffViewState, screen: Rect, buf: &mut Bu
         .border_type(BorderType::Rounded)
         .border_style(Style::new().fg(palette::FOCUS))
         .style(pane_style(palette::SURFACE))
-        .title(Line::from(format!(" {} ", state.title())).bold())
+        .title(Line::from(format!(" {title} ")).bold())
         .render(geometry.modal, buf);
 
     render_headers(geometry, buf);
