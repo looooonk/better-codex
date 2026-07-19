@@ -48,7 +48,7 @@ struct ApprovalOption {
 enum ApprovalDecision {
     Command(CommandExecutionApprovalDecision),
     FileChange(FileChangeApprovalDecision),
-    Permissions(GrantedPermissionProfile),
+    Permissions(PermissionsRequestApprovalResponse),
 }
 
 impl PendingApproval {
@@ -144,8 +144,18 @@ impl PendingApproval {
                         decision: ApprovalDecision::FileChange(FileChangeApprovalDecision::Accept),
                     },
                     ApprovalOption {
+                        label: "Apply for this session".to_string(),
+                        decision: ApprovalDecision::FileChange(
+                            FileChangeApprovalDecision::AcceptForSession,
+                        ),
+                    },
+                    ApprovalOption {
                         label: "Deny".to_string(),
                         decision: ApprovalDecision::FileChange(FileChangeApprovalDecision::Decline),
+                    },
+                    ApprovalOption {
+                        label: "Deny and interrupt".to_string(),
+                        decision: ApprovalDecision::FileChange(FileChangeApprovalDecision::Cancel),
                     },
                 ],
                 scroll_offset: Cell::new(0),
@@ -165,22 +175,51 @@ impl PendingApproval {
                     params.environment_id.as_deref(),
                 );
                 details.push(json_detail("Requested permissions", &params.permissions));
+                let granted = granted_permission_profile_from_request(requested);
                 Ok(Some(Self {
                     request_id: request_id.clone(),
-                    title: "Grant permissions for this turn".to_string(),
+                    title: "Grant permissions".to_string(),
                     details,
                     edit_prompt: "Revise the requested permissions before trying again".to_string(),
                     options: vec![
                         ApprovalOption {
                             label: "Grant for this turn".to_string(),
                             decision: ApprovalDecision::Permissions(
-                                granted_permission_profile_from_request(requested),
+                                PermissionsRequestApprovalResponse {
+                                    permissions: granted.clone(),
+                                    scope: PermissionGrantScope::Turn,
+                                    strict_auto_review: None,
+                                },
+                            ),
+                        },
+                        ApprovalOption {
+                            label: "Grant for this session".to_string(),
+                            decision: ApprovalDecision::Permissions(
+                                PermissionsRequestApprovalResponse {
+                                    permissions: granted.clone(),
+                                    scope: PermissionGrantScope::Session,
+                                    strict_auto_review: None,
+                                },
+                            ),
+                        },
+                        ApprovalOption {
+                            label: "Grant for this turn; review each command".to_string(),
+                            decision: ApprovalDecision::Permissions(
+                                PermissionsRequestApprovalResponse {
+                                    permissions: granted,
+                                    scope: PermissionGrantScope::Turn,
+                                    strict_auto_review: Some(true),
+                                },
                             ),
                         },
                         ApprovalOption {
                             label: "Deny".to_string(),
                             decision: ApprovalDecision::Permissions(
-                                GrantedPermissionProfile::default(),
+                                PermissionsRequestApprovalResponse {
+                                    permissions: GrantedPermissionProfile::default(),
+                                    scope: PermissionGrantScope::Turn,
+                                    strict_auto_review: None,
+                                },
                             ),
                         },
                     ],
@@ -279,13 +318,7 @@ impl PendingApproval {
                     decision: decision.clone(),
                 })
             }
-            ApprovalDecision::Permissions(permissions) => {
-                serde_json::to_value(PermissionsRequestApprovalResponse {
-                    permissions: permissions.clone(),
-                    scope: PermissionGrantScope::Turn,
-                    strict_auto_review: None,
-                })
-            }
+            ApprovalDecision::Permissions(response) => serde_json::to_value(response),
         }
     }
 }
@@ -300,7 +333,9 @@ impl ApprovalDecision {
             | Self::FileChange(
                 FileChangeApprovalDecision::Decline | FileChangeApprovalDecision::Cancel,
             ) => true,
-            Self::Permissions(permissions) => *permissions == GrantedPermissionProfile::default(),
+            Self::Permissions(response) => {
+                response.permissions == GrantedPermissionProfile::default()
+            }
             Self::Command(
                 CommandExecutionApprovalDecision::Accept
                 | CommandExecutionApprovalDecision::AcceptForSession
@@ -325,7 +360,9 @@ impl ApprovalDecision {
             Self::Command(CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
                 network_policy_amendment,
             }) => network_policy_amendment.action == NetworkPolicyRuleAction::Deny,
-            Self::Permissions(permissions) => *permissions == GrantedPermissionProfile::default(),
+            Self::Permissions(response) => {
+                response.permissions == GrantedPermissionProfile::default()
+            }
             Self::Command(
                 CommandExecutionApprovalDecision::Accept
                 | CommandExecutionApprovalDecision::AcceptForSession

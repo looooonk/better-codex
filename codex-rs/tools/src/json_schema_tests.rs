@@ -39,6 +39,26 @@ fn json_schema_serializes_encrypted_marker() {
 }
 
 #[test]
+fn json_schema_serializes_array_item_limits() {
+    let schema = JsonSchema::array(
+        JsonSchema::string(/*description*/ None),
+        /*description*/ None,
+    )
+    .with_min_items(/*min_items*/ 2)
+    .with_max_items(/*max_items*/ 3);
+
+    assert_eq!(
+        serde_json::to_value(schema).expect("serialize schema"),
+        serde_json::json!({
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 3,
+        })
+    );
+}
+
+#[test]
 fn parse_tool_input_schema_infers_object_shape_and_defaults_properties() {
     // Example schema shape:
     // {

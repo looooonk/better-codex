@@ -455,6 +455,65 @@ async fn request_user_input_round_trip_in_default_mode_with_feature() -> anyhow:
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn request_user_input_rejects_invalid_cardinality_before_ui() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let mut builder = test_codex().with_config(|config| {
+        config
+            .features
+            .enable(Feature::DefaultModeRequestUserInput)
+            .expect("test config should allow feature update");
+    });
+    let test = builder.build_with_auto_env(&server).await?;
+    let call_id = "user-input-too-many-options";
+    let request_args = json!({
+        "questions": [{
+            "id": "confirm_path",
+            "header": "Confirm",
+            "question": "Proceed with the plan?",
+            "options": [
+                { "label": "One", "description": "Choose one." },
+                { "label": "Two", "description": "Choose two." },
+                { "label": "Three", "description": "Choose three." },
+                { "label": "Four", "description": "Choose four." }
+            ]
+        }]
+    })
+    .to_string();
+    let response_mock = responses::mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-cardinality-1"),
+                ev_function_call(call_id, "request_user_input", &request_args),
+                ev_completed("resp-cardinality-1"),
+            ]),
+            sse(vec![
+                ev_assistant_message("msg-cardinality", "corrected"),
+                ev_completed("resp-cardinality-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    test.submit_turn("ask a question").await?;
+
+    let request = response_mock
+        .last_request()
+        .expect("function output request recorded");
+    assert_eq!(
+        call_output_content_and_success(&request, call_id),
+        (
+            "request_user_input question 1 requires 2 to 3 options (4 provided)".to_string(),
+            None,
+        )
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn request_user_input_rejected_in_pair_mode_alias() -> anyhow::Result<()> {
     assert_request_user_input_rejected("Pair Programming", |model| CollaborationMode {
         mode: ModeKind::PairProgramming,

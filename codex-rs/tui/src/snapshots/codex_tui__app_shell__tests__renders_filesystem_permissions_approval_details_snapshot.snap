@@ -8,16 +8,14 @@ expression: "render_shell(&permissions_shell, area)"
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
                                                 │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▌ tool exec just test -p codex-tui             │ │▎+ New session  Ctrl+N
+ ▌ edited 3 files +128 -24                      │ │▎+ New session  Ctrl+N
                                                 │ │▎loading sessions
- ▌ edited 3 files +128 -24                      ┃ │
-                                                ┃ │▎◆ THREAD
- ▎ CODEX  The new shell owns the fullscreen     ┃ │▎stage-one
-          surface.                              ┃ │▎id 01900000-0000-7000-8000-000000000001
-                                                  │▎resume, fork, archive, delete in session list
-╭────────────────────────────────────────────────╮│
-│◆ APPROVAL                                      ││
-│? Grant permissions for this turn               ││
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │
+          surface.                              ┃ │▎◆ THREAD
+                                                  │▎stage-one
+╭────────────────────────────────────────────────╮│▎id 01900000-0000-7000-8000-000000000001
+│◆ APPROVAL                                      ││▎resume, fork, archive, delete in session list
+│? Grant permissions                             ││
 │  Reason: Need package registry access          ││
 │  Working directory: /workspace/better-codex    ││
 │  Requested permissions: { network: { enabled:  ││
@@ -27,6 +25,8 @@ expression: "render_shell(&permissions_shell, area)"
 │  { type: "glob_pattern", pattern: "/private/   ││
 │  secrets/**" }, access: "write" }] } }         ││
 │> 1 Grant for this turn                         ││
-│  2 Deny                                        ││
+│  2 Grant for this session                      ││
+│  3 Grant for this turn; review each command    ││
+│  4 Deny                                        ││
 │   e Edit   ? Explain                           ││
 ╰────────────────────────────────────────────────╯│

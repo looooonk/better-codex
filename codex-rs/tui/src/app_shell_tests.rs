@@ -6016,6 +6016,20 @@ fn renders_filesystem_permissions_approval_details_snapshot() {
 }
 
 #[test]
+fn renders_file_change_approval_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.pending_approval = PendingApproval::from_request(&file_change_approval_request())
+        .expect("approval request should be valid");
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28
+        )
+    ));
+}
+
+#[test]
 fn approval_action_keys_cover_full_keyboard_flow() {
     let pending = PendingApproval::from_request(&command_approval_request())
         .expect("approval request should be valid")
@@ -9088,6 +9102,53 @@ fn command_approval_serializes_accept_and_deny() {
 }
 
 #[test]
+fn command_approval_honors_restricted_available_decisions() {
+    let mut request = command_approval_request();
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
+        panic!("expected command approval request");
+    };
+    params.available_decisions = Some(vec![
+        CommandExecutionApprovalDecision::AcceptForSession,
+        CommandExecutionApprovalDecision::Decline,
+    ]);
+    let pending = PendingApproval::from_request(&request)
+        .expect("approval request should be valid")
+        .expect("request should be supported");
+
+    assert_eq!(
+        pending.options().collect::<Vec<_>>(),
+        vec![(0, "Run for this session"), (1, "Deny")]
+    );
+    assert_eq!(
+        pending.result(0).expect("approval should serialize"),
+        json!({ "decision": "acceptForSession" })
+    );
+    assert_eq!(
+        pending.result(1).expect("denial should serialize"),
+        json!({ "decision": "decline" })
+    );
+}
+
+#[test]
+fn file_change_approval_serializes_all_decisions() {
+    let pending = PendingApproval::from_request(&file_change_approval_request())
+        .expect("approval request should be valid")
+        .expect("request should be supported");
+
+    assert_eq!(
+        (0..pending.option_count())
+            .map(|index| pending.result(index).expect("decision should serialize"))
+            .collect::<Vec<_>>(),
+        vec![
+            json!({ "decision": "accept" }),
+            json!({ "decision": "acceptForSession" }),
+            json!({ "decision": "decline" }),
+            json!({ "decision": "cancel" }),
+        ]
+    );
+}
+
+#[test]
 fn permissions_approval_serializes_grant_and_empty_deny() {
     let pending = PendingApproval::from_request(&permissions_approval_request())
         .expect("approval request should be valid")
@@ -9104,6 +9165,25 @@ fn permissions_approval_serializes_grant_and_empty_deny() {
     );
     assert_eq!(
         pending.result(1).expect("denial should serialize"),
+        json!({
+            "permissions": {
+                "network": { "enabled": true }
+            },
+            "scope": "session"
+        })
+    );
+    assert_eq!(
+        pending.result(2).expect("strict grant should serialize"),
+        json!({
+            "permissions": {
+                "network": { "enabled": true }
+            },
+            "scope": "turn",
+            "strictAutoReview": true
+        })
+    );
+    assert_eq!(
+        pending.result(3).expect("denial should serialize"),
         json!({
             "permissions": {},
             "scope": "turn"
@@ -9664,6 +9744,20 @@ fn permissions_approval_request() -> ServerRequest {
                 }),
                 file_system: None,
             },
+        },
+    }
+}
+
+fn file_change_approval_request() -> ServerRequest {
+    ServerRequest::FileChangeRequestApproval {
+        request_id: RequestId::Integer(44),
+        params: codex_app_server_protocol::FileChangeRequestApprovalParams {
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
+            turn_id: "turn-1".to_string(),
+            item_id: "patch-1".to_string(),
+            started_at_ms: 0,
+            reason: Some("Update the dashboard layout".to_string()),
+            grant_root: Some(test_absolute_path("workspace/better-codex").to_path_buf()),
         },
     }
 }

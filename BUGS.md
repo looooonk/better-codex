@@ -773,7 +773,7 @@ session may be found with targeted search, but it cannot be reached by browsing.
 
 ### 51. [P2][Tool contract] `request_user_input` cardinality rules are prose-only and invalid calls reach the UI
 
-**Status:** Assigned
+**Status:** Fixed
 
 The tool promises one to three questions and two to three options, but `JsonSchema::array` cannot
 express min/max items (`codex-rs/tools/src/json_schema.rs:40-74,144-150`) and normalization only checks
@@ -788,7 +788,7 @@ despite the declared maximum and are shown sequentially.
 
 ### 52. [P2][Approval protocol] The TUI ignores all richer or restricted approval decisions
 
-**Status:** Assigned
+**Status:** Fixed
 
 Approve always serializes plain `Accept`, and permissions always use `scope: Turn`
 (`codex-rs/tui/src/app_shell/approval.rs:122-158`). The UI ignores `available_decisions`,

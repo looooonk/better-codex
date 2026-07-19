@@ -85,7 +85,9 @@ fn request_user_input_tool_includes_questions_schema() {
                                             "Provide 2-3 mutually exclusive choices. Put the recommended option first and suffix its label with \"(Recommended)\". Do not include an \"Other\" option in this list; the client will add a free-form \"Other\" option automatically."
                                                 .to_string(),
                                         ),
-                                    ),
+                                    )
+                                    .with_min_items(MIN_OPTIONS)
+                                    .with_max_items(MAX_OPTIONS),
                                 ),
                                 (
                                     "question".to_string(),
@@ -105,7 +107,9 @@ fn request_user_input_tool_includes_questions_schema() {
                         Some(
                             "Questions to show the user. Prefer 1 and do not exceed 3".to_string(),
                         ),
-                    ),
+                    )
+                    .with_min_items(MIN_QUESTIONS)
+                    .with_max_items(MAX_QUESTIONS),
                 ),
             ]), Some(vec!["questions".to_string()]), Some(false.into())),
             output_schema: None,
@@ -122,10 +126,16 @@ fn normalize_request_user_input_args_clamps_out_of_range_auto_resolution_ms() {
             question: "Proceed?".to_string(),
             is_other: false,
             is_secret: false,
-            options: Some(vec![RequestUserInputQuestionOption {
-                label: "Yes (Recommended)".to_string(),
-                description: "Continue.".to_string(),
-            }]),
+            options: Some(vec![
+                RequestUserInputQuestionOption {
+                    label: "Yes (Recommended)".to_string(),
+                    description: "Continue.".to_string(),
+                },
+                RequestUserInputQuestionOption {
+                    label: "No".to_string(),
+                    description: "Stop.".to_string(),
+                },
+            ]),
         }],
         auto_resolution_ms: Some(MIN_AUTO_RESOLUTION_MS - 1),
     };
@@ -164,10 +174,16 @@ fn normalize_request_user_input_args_accepts_auto_resolution_boundaries() {
             question: "Proceed?".to_string(),
             is_other: false,
             is_secret: false,
-            options: Some(vec![RequestUserInputQuestionOption {
-                label: "Yes (Recommended)".to_string(),
-                description: "Continue.".to_string(),
-            }]),
+            options: Some(vec![
+                RequestUserInputQuestionOption {
+                    label: "Yes (Recommended)".to_string(),
+                    description: "Continue.".to_string(),
+                },
+                RequestUserInputQuestionOption {
+                    label: "No".to_string(),
+                    description: "Stop.".to_string(),
+                },
+            ]),
         }],
         auto_resolution_ms: Some(MIN_AUTO_RESOLUTION_MS),
     };
@@ -195,6 +211,57 @@ fn normalize_request_user_input_args_accepts_auto_resolution_boundaries() {
             auto_resolution_ms: Some(MAX_AUTO_RESOLUTION_MS),
         })
     );
+}
+
+#[test]
+fn normalize_request_user_input_args_rejects_invalid_cardinality() {
+    let option = RequestUserInputQuestionOption {
+        label: "Yes".to_string(),
+        description: "Continue.".to_string(),
+    };
+    let question = RequestUserInputQuestion {
+        id: "confirm".to_string(),
+        header: "Confirm".to_string(),
+        question: "Proceed?".to_string(),
+        is_other: false,
+        is_secret: false,
+        options: Some(vec![option.clone(), option.clone()]),
+    };
+
+    let cases = [
+        (
+            Vec::new(),
+            "request_user_input requires 1 to 3 questions (0 provided)",
+        ),
+        (
+            vec![question.clone(); 4],
+            "request_user_input requires 1 to 3 questions (4 provided)",
+        ),
+        (
+            vec![RequestUserInputQuestion {
+                options: Some(vec![option.clone()]),
+                ..question.clone()
+            }],
+            "request_user_input question 1 requires 2 to 3 options (1 provided)",
+        ),
+        (
+            vec![RequestUserInputQuestion {
+                options: Some(vec![option; 4]),
+                ..question
+            }],
+            "request_user_input question 1 requires 2 to 3 options (4 provided)",
+        ),
+    ];
+
+    for (questions, expected) in cases {
+        assert_eq!(
+            normalize_request_user_input_args(RequestUserInputArgs {
+                questions,
+                auto_resolution_ms: None,
+            }),
+            Err(expected.to_string())
+        );
+    }
 }
 
 #[test]
