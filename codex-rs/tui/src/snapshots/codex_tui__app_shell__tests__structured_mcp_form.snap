@@ -1,0 +1,24 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 60, 20))"
+---
+
+  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾   default ▾
+────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+                                                          │
+ ▌ edited 3 files +128 -24                                │
+ ▎ STATUS  elicitation requested: MCP deployments: form   │
+           request                                        ┃
+                                                          ┃
+ ▎ CODEX  The new shell owns the fullscreen surface.      ┃
+
+╭──────────────────────────────────────────────────────────╮
+│◆ MCP ELICITATION                                         │
+│? MCP deployments: form request                           │
+│  Configure the deployment notification.                  │
+│  1/4 Owner email * - Required                            │
+│> ▏text                                                   │
+│   Next ↵   Decline ^D   Cancel Esc                       │
+╰──────────────────────────────────────────────────────────╯

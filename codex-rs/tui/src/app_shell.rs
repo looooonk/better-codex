@@ -140,6 +140,7 @@ use diff_view::DiffStore;
 use diff_view::DiffViewState;
 use elicitation::ElicitationChoice;
 use elicitation::PendingElicitation;
+use elicitation::elicitation_choice_from_key;
 use external_agent_import::ExternalAgentImportState;
 use integrations::McpInventorySummary;
 use integrations::PluginInventorySummary;
@@ -935,7 +936,10 @@ impl ShellState {
                 || self.safety_buffering_modal_lines().is_some()
                 || self.pending_approval.is_some()
                 || self.pending_session_delete.is_some()
-                || self.pending_elicitation.is_some()
+                || self
+                    .pending_elicitation
+                    .as_ref()
+                    .is_some_and(|pending| !pending.editing())
                 || self.pending_external_agent_import.is_some()
             {
                 false
@@ -1041,6 +1045,13 @@ impl ShellState {
             return Ok(false);
         }
         if self.pending_elicitation.is_some() {
+            let editing = self
+                .pending_elicitation
+                .as_ref()
+                .is_some_and(PendingElicitation::editing);
+            if editing {
+                return self.handle_user_input_key(key, app_server).await;
+            }
             if let Some(choice) = elicitation_choice_from_key(key) {
                 self.resolve_pending_elicitation(app_server, choice).await?;
             }
@@ -2636,6 +2647,19 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.pending_elicitation.is_some()
+            && key.modifiers == KeyModifiers::CONTROL
+            && key.code == KeyCode::Char('d')
+        {
+            self.resolve_pending_elicitation(app_server, ElicitationChoice::Decline)
+                .await?;
+            return Ok(false);
+        }
+        if self.pending_elicitation.is_some() && key.code == KeyCode::Esc {
+            self.resolve_pending_elicitation(app_server, ElicitationChoice::Cancel)
+                .await?;
+            return Ok(false);
+        }
         if let Some(action) = text_input_action_from_key(key) {
             self.composer.apply_text_input_action(action);
             return Ok(false);
@@ -2646,6 +2670,9 @@ impl ShellState {
             KeyCode::Enter => {
                 if is_composer_newline_key(key) {
                     self.composer.insert_newline();
+                } else if self.pending_elicitation.is_some() {
+                    self.resolve_pending_elicitation(app_server, ElicitationChoice::Accept)
+                        .await?;
                 } else {
                     self.resolve_pending_user_input(app_server).await?;
                 }
@@ -2733,43 +2760,6 @@ impl ShellState {
             Err(message) => {
                 self.push_error(message);
             }
-        }
-        Ok(())
-    }
-
-    async fn resolve_pending_elicitation<S>(
-        &mut self,
-        app_server: &mut S,
-        choice: ElicitationChoice,
-    ) -> Result<()>
-    where
-        S: AppShellBackend,
-    {
-        let Some(pending) = self.pending_elicitation.as_ref() else {
-            return Ok(());
-        };
-        let request_id = pending.request_id();
-        let title = pending.title().to_string();
-        let result = match pending.result(choice) {
-            Ok(result) => result,
-            Err(message) => {
-                self.push_error(message);
-                return Ok(());
-            }
-        };
-        app_server
-            .resolve_server_request(request_id.clone(), result)
-            .await
-            .wrap_err("failed to resolve app-server MCP elicitation request")?;
-        let removal = self.remove_interactive_request(&request_id);
-        let decision = match choice {
-            ElicitationChoice::Accept => "accepted",
-            ElicitationChoice::Decline => "declined",
-            ElicitationChoice::Cancel => "cancelled",
-        };
-        self.push_decision_audit("elicitation", decision, &title);
-        if removal == InteractiveRequestRemoval::Active {
-            self.activate_next_interactive_request();
         }
         Ok(())
     }
@@ -4097,18 +4087,6 @@ fn approval_action_from_key(pending: &PendingApproval, key: KeyEvent) -> Option<
             .and_then(|index| index.checked_sub(1))
             .filter(|index| *index < pending.option_count())
             .map(ApprovalAction::Choose),
-        _ => None,
-    }
-}
-
-fn elicitation_choice_from_key(key: KeyEvent) -> Option<ElicitationChoice> {
-    if !key.modifiers.is_empty() && key.modifiers != KeyModifiers::SHIFT {
-        return None;
-    }
-    match key.code {
-        KeyCode::Char('a') | KeyCode::Char('A') => Some(ElicitationChoice::Accept),
-        KeyCode::Char('d') | KeyCode::Char('D') => Some(ElicitationChoice::Decline),
-        KeyCode::Char('c') | KeyCode::Char('C') => Some(ElicitationChoice::Cancel),
         _ => None,
     }
 }

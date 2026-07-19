@@ -8990,21 +8990,73 @@ fn mcp_elicitation_mouse_columns_use_display_width() {
     );
 }
 
-#[test]
-fn mcp_elicitation_rejects_rich_form_accept_without_content() {
-    let pending = PendingElicitation::from_request(&mcp_rich_elicitation_request())
-        .expect("request should be supported");
+#[tokio::test]
+async fn mcp_structured_forms_collect_typed_content_and_openai_choices() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerRequest(mcp_form_elicitation_request()),
+        )
+        .await
+        .expect("structured form should open");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 60, /*height*/ 20,
+    );
+    insta::assert_snapshot!("structured_mcp_form", render_shell(&shell, area));
 
-    assert!(pending.result(ElicitationChoice::Accept).is_err());
+    shell.composer.set_text("owner@example.com");
+    let enter = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    shell
+        .handle_key(enter, &config, &mut backend)
+        .await
+        .expect("Enter should advance the form");
+    for answer in ["1,2", "", ""] {
+        shell.composer.set_text(answer);
+        shell
+            .resolve_pending_elicitation(&mut backend, ElicitationChoice::Accept)
+            .await
+            .expect("form answer should resolve");
+    }
+    shell.pending_elicitation = PendingElicitation::from_request(&mcp_rich_elicitation_request());
+    shell.composer.set_text("1");
+    shell
+        .resolve_pending_elicitation(&mut backend, ElicitationChoice::Accept)
+        .await
+        .expect("OpenAI form choice should resolve");
+
+    let resolved = backend
+        .resolved_requests
+        .lock()
+        .expect("requests should lock");
     assert_eq!(
-        pending
-            .result(ElicitationChoice::Decline)
-            .expect("decline should serialize"),
-        json!({
-            "action": "decline",
-            "content": null,
-            "_meta": null
-        })
+        resolved.as_slice(),
+        &[
+            (
+                RequestId::Integer(47),
+                json!({
+                    "action": "accept",
+                    "content": {
+                        "email": "owner@example.com",
+                        "regions": ["us", "eu"],
+                        "retries": 3,
+                        "subscribe": true
+                    },
+                    "_meta": null
+                }),
+            ),
+            (
+                RequestId::Integer(46),
+                json!({
+                    "action": "accept",
+                    "content": { "template": "monthly-review" },
+                    "_meta": null
+                }),
+            ),
+        ]
     );
 }
 
@@ -9423,9 +9475,41 @@ fn mcp_rich_elicitation_request() -> ServerRequest {
                 requested_schema: json!({
                     "type": "object",
                     "properties": {
-                        "email": { "type": "string" }
+                        "template": {
+                            "type": "openai/imagePicker",
+                            "items": [{ "id": "monthly-review" }]
+                        }
                     }
                 }),
+            },
+        },
+    }
+}
+
+fn mcp_form_elicitation_request() -> ServerRequest {
+    ServerRequest::McpServerElicitationRequest {
+        request_id: RequestId::Integer(47),
+        params: McpServerElicitationRequestParams {
+            thread_id: SNAPSHOT_THREAD_ID.to_string(),
+            turn_id: Some("turn-1".to_string()),
+            server_name: "deployments".to_string(),
+            request: McpServerElicitationRequest::Form {
+                meta: None,
+                message: "Configure the deployment notification.".to_string(),
+                requested_schema: serde_json::from_value(json!({
+                    "type": "object",
+                    "properties": {
+                        "email": { "type": "string", "title": "Owner email" },
+                        "regions": {
+                            "type": "array",
+                            "items": { "type": "string", "enum": ["us", "eu", "apac"] }
+                        },
+                        "retries": { "type": "integer", "default": 3 },
+                        "subscribe": { "type": "boolean", "default": true }
+                    },
+                    "required": ["email", "regions"]
+                }))
+                .expect("valid MCP form schema"),
             },
         },
     }

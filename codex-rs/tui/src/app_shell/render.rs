@@ -296,7 +296,8 @@ impl ShellView<'_> {
         position: Position,
     ) -> Option<super::ElicitationChoice> {
         let pending = self.shell.pending_elicitation.as_ref()?;
-        let lines = elicitation_lines(pending);
+        let width = body_rect_after_title(pane_content_rect(self.input_area(area))).width;
+        let lines = elicitation_lines(pending, &self.shell.composer, width);
         let hit = request_panel_hit(self.input_area(area), position, &lines)?;
         pending.choice_at(hit.line, hit.column)
     }
@@ -381,10 +382,11 @@ impl ShellView<'_> {
             return;
         }
         if let Some(pending) = &self.shell.pending_elicitation {
+            let width = body_rect_after_title(pane_content_rect(area)).width;
             self.render_request_panel(
                 area,
                 "MCP ELICITATION",
-                elicitation_lines(pending),
+                elicitation_lines(pending, &self.shell.composer, width),
                 palette::SURFACE,
                 buf,
             );

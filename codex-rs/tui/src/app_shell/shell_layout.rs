@@ -158,7 +158,7 @@ fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u1
     let request_lines = if let Some(pending) = &shell.pending_approval {
         Some(approval_lines(pending))
     } else if let Some(pending) = &shell.pending_elicitation {
-        Some(elicitation_lines(pending))
+        Some(elicitation_lines(pending, &shell.composer, body_width))
     } else {
         shell
             .pending_user_input

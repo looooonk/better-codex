@@ -603,7 +603,7 @@ no truncation marker, yet Approve remains active.
 
 ### 39. [P1][MCP functionality / TUI] Structured elicitation forms cannot be completed
 
-**Status:** Assigned
+**Status:** Fixed
 
 Any MCP form with properties sets `can_accept = false`, and the response type always uses
 `content: None` (`codex-rs/tui/src/app_shell/elicitation.rs:24-54,80-96`). OpenAI forms are also

@@ -5,7 +5,6 @@ use super::composer::ComposerState;
 use super::design::body_rect_after_title;
 use super::design::palette;
 use super::design::pane_content_rect;
-use crate::text_formatting::truncate_text;
 use crate::wrapping::RtOptions;
 use crate::wrapping::word_wrap_lines;
 use crate::wrapping::wrap_ranges_trim;
@@ -400,28 +399,58 @@ pub(super) fn user_input_lines(
     lines
 }
 
-pub(super) fn elicitation_lines(pending: &PendingElicitation) -> Vec<Line<'static>> {
-    let mut action_line = vec!["  ".into()];
-    if pending.can_accept() {
-        action_line.extend([
-            " Accept ↵ ".fg(palette::DARK).bg(palette::SUCCESS).bold(),
-            " ".into(),
-        ]);
-    }
-    action_line.extend([
-        " Decline d ".fg(palette::TEXT).bg(palette::ERROR).bold(),
+pub(super) fn elicitation_lines(
+    pending: &PendingElicitation,
+    composer: &ComposerState,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let editing = pending.editing();
+    let primary = pending.primary_action_label();
+    let mut action_line = vec![
+        "  ".into(),
+        format!(" {primary} ↵ ")
+            .fg(palette::DARK)
+            .bg(palette::SUCCESS)
+            .bold(),
         " ".into(),
-        " Cancel c ".fg(palette::TEXT).bg(palette::ELEVATED).bold(),
+    ];
+    let (decline, cancel) = if editing {
+        (" Decline ^D ", " Cancel Esc ")
+    } else {
+        (" Decline d ", " Cancel c ")
+    };
+    action_line.extend([
+        decline.fg(palette::TEXT).bg(palette::ERROR).bold(),
+        " ".into(),
+        cancel.fg(palette::TEXT).bg(palette::ELEVATED).bold(),
     ]);
 
-    vec![
+    let mut lines = vec![
         Line::from(vec!["? ".cyan().bold(), pending.title().to_string().bold()]),
-        Line::from(vec![
+        Line::from(vec!["  ".into(), pending.detail().to_string().dim()]),
+    ];
+    if let Some(field) = pending.field_view() {
+        let required = if field.required { " *" } else { "" };
+        let label = format!(
+            "{}/{} {}{required}",
+            field.position, field.total, field.label
+        );
+        lines.push(Line::from(vec![
             "  ".into(),
-            truncate_text(pending.detail(), /*max_graphemes*/ 42).dim(),
-        ]),
-        Line::from(action_line),
-    ]
+            label.bold(),
+            " - ".dim(),
+            field.detail.dim(),
+        ]));
+        let answer_width = usize::from(width).saturating_sub(2).max(1);
+        let answer = if composer.is_empty() {
+            format!("▏{}", field.input_hint).dim()
+        } else {
+            composer.text_with_cursor_window(answer_width).into()
+        };
+        lines.push(Line::from(vec!["> ".cyan().bold(), answer]));
+    }
+    lines.push(Line::from(action_line));
+    lines
 }
 
 #[cfg(test)]

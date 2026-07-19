@@ -103,12 +103,16 @@ impl ShellState {
             self.pending_approval = None;
             return InteractiveRequestRemoval::Active;
         }
-        if self
+        if let Some(pending) = self
             .pending_elicitation
             .as_ref()
-            .is_some_and(|pending| pending.request_id() == request_id.clone())
+            .filter(|pending| pending.request_id() == request_id.clone())
         {
+            let uses_composer = pending.uses_composer();
             self.pending_elicitation = None;
+            if uses_composer {
+                self.composer.clear();
+            }
             return InteractiveRequestRemoval::Active;
         }
         if self
@@ -158,6 +162,10 @@ impl ShellState {
                 self.pending_approval = Some(pending);
             }
             PendingInteractiveRequest::Elicitation(pending) => {
+                if pending.editing() {
+                    self.composer
+                        .set_text(pending.default_answer().unwrap_or_default());
+                }
                 self.pending_elicitation = Some(pending);
             }
             PendingInteractiveRequest::UserInput(pending) => {
