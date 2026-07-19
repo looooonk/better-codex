@@ -377,6 +377,19 @@ impl ShellState {
             }
             return;
         }
+        let over_approval = self.pending_approval.is_some()
+            && (ShellView { shell: self })
+                .input_area(area)
+                .contains(position);
+        if over_approval {
+            if let Some(pending) = &mut self.pending_approval {
+                match direction {
+                    MouseScrollDirection::Up => pending.scroll_up(/*amount*/ 3),
+                    MouseScrollDirection::Down => pending.scroll_down(/*amount*/ 3),
+                }
+            }
+            return;
+        }
         if self.has_blocking_overlay() {
             return;
         }

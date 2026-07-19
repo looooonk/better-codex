@@ -7,15 +7,15 @@ expression: rendered
 ────────────────────────────────────────
 ╭──────────────────────────────────────╮
 │◆ APPROVAL                            │
-│? Run command: printf 'validated safe │
+│  ↑ more (j/k or arrows)              │
 │prefix'; printf 'validated safe       │
 │prefix'; printf 'validated safe       │
-│prefix'; printf 'validated safe       │
-│prefix'; printf 'validated safe       │
-│prefix'; printf 'validated safe       │
-│prefix'; printf 'validated safe       │
-│prefix'; printf 'validated safe       │
-│  ↓ more (j/k or arrows)              │
+│prefix'; && rm -rf /workspace/        │
+│production                            │
+│  Reason: Review the full command     │
+│  before approving                    │
+│  Working directory: /workspace/      │
+│  better-codex                        │
 │> 1 Run once                          │
 │  2 Deny and interrupt                │
 │   e Edit   ? Explain                 │

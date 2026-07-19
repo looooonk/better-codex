@@ -13,9 +13,11 @@ use super::design::title_rect;
 use super::header::HeaderControl;
 use super::header::HeaderView;
 use super::input_request_view::approval_lines;
+use super::input_request_view::approval_panel_hit;
 use super::input_request_view::elicitation_lines;
 use super::input_request_view::request_panel_hit;
 use super::input_request_view::user_input_lines;
+use super::input_request_view::visible_approval_panel_lines;
 use super::input_request_view::visible_request_panel_lines;
 use super::modal_view::modal_body_width;
 use super::modal_view::render_modal;
@@ -260,7 +262,7 @@ impl ShellView<'_> {
     ) -> Option<super::ApprovalAction> {
         let pending = self.shell.pending_approval.as_ref()?;
         let lines = approval_lines(pending);
-        let hit = request_panel_hit(self.input_area(area), position, &lines)?;
+        let hit = approval_panel_hit(self.input_area(area), position, pending)?;
         let option_start = pending.details().len().saturating_add(1);
         if (option_start..option_start.saturating_add(pending.option_count())).contains(&hit.line) {
             return Some(super::ApprovalAction::Choose(hit.line - option_start));
@@ -373,13 +375,9 @@ impl ShellView<'_> {
             .style(pane_style(palette::SURFACE))
             .render(area, buf);
         if let Some(pending) = &self.shell.pending_approval {
-            self.render_request_panel(
-                area,
-                "APPROVAL",
-                approval_lines(pending),
-                palette::SURFACE,
-                buf,
-            );
+            let body = body_rect_after_title(pane_content_rect(area));
+            let lines = visible_approval_panel_lines(pending, body.width, body.height);
+            self.render_titled_panel(area, "APPROVAL", lines, palette::SURFACE, buf);
             return;
         }
         if let Some(pending) = &self.shell.pending_elicitation {

@@ -5443,14 +5443,12 @@ fn long_narrow_approval_keeps_wrapped_actions_visible_and_clickable_snapshot() {
     let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
         panic!("expected command approval request");
     };
-    params.command = Some(
-        "cargo test --workspace --package codex-tui --features long-running-integration-checks"
-            .to_string(),
-    );
-    params.reason = Some(
-        "This command needs temporary network access to validate remote fixtures and download test metadata before the release can continue"
-            .to_string(),
-    );
+    let dangerous_suffix = "rm -rf /workspace/production";
+    params.command = Some(format!(
+        "{}&& {dangerous_suffix}",
+        "printf 'validated safe prefix'; ".repeat(20)
+    ));
+    params.reason = Some("Review the full command before approving".to_string());
     shell.pending_approval =
         PendingApproval::from_request(&request).expect("approval request should be valid");
     let area = Rect::new(
@@ -5459,11 +5457,42 @@ fn long_narrow_approval_keeps_wrapped_actions_visible_and_clickable_snapshot() {
     let rendered = render_shell(&shell, area);
     let explain = rendered_text_position(&rendered, "? Explain");
 
+    assert!(rendered.contains("↓ more"));
+    assert!(!rendered.contains(dangerous_suffix));
     assert_eq!(
         ShellView { shell: &shell }.approval_action_at(area, explain),
         Some(ApprovalAction::Explain)
     );
     insta::assert_snapshot!(rendered);
+
+    let input = (ShellView { shell: &shell }).input_area(area);
+    let position = Position::new(input.x.saturating_add(1), input.y.saturating_add(1));
+    for _ in 0..20 {
+        shell.handle_mouse_scroll(area, position, tui::MouseScrollDirection::Down);
+    }
+    let rendered = render_shell(&shell, area);
+
+    assert!(
+        rendered.contains("rm -rf") && rendered.contains("production"),
+        "dangerous suffix should be visible after scrolling:\n{rendered}"
+    );
+    assert!(rendered.contains("↑ more"));
+    insta::assert_snapshot!("long_narrow_approval_scrolled_to_suffix", rendered);
+
+    let end_offset = shell
+        .pending_approval
+        .as_ref()
+        .expect("approval should remain pending")
+        .scroll_offset();
+    shell.handle_mouse_scroll(area, position, tui::MouseScrollDirection::Up);
+    assert!(
+        shell
+            .pending_approval
+            .as_ref()
+            .expect("approval should remain pending")
+            .scroll_offset()
+            < end_offset
+    );
 }
 
 #[tokio::test]
@@ -5791,6 +5820,14 @@ fn approval_action_keys_cover_full_keyboard_flow() {
             KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)
         ),
         None
+    );
+    assert_eq!(
+        approval_action_from_key(&pending, key_char('j')),
+        Some(ApprovalAction::ScrollDown)
+    );
+    assert_eq!(
+        approval_action_from_key(&pending, KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE)),
+        Some(ApprovalAction::PageUp)
     );
 }
 

@@ -44,6 +44,17 @@ pub(super) fn visible_request_panel_lines(
         .collect()
 }
 
+pub(super) fn visible_approval_panel_lines(
+    pending: &PendingApproval,
+    width: u16,
+    height: u16,
+) -> Vec<Line<'static>> {
+    visible_approval_segments(pending, width, height)
+        .into_iter()
+        .map(|segment| segment.content)
+        .collect()
+}
+
 pub(super) fn request_panel_hit(
     panel: Rect,
     position: Position,
@@ -55,13 +66,111 @@ pub(super) fn request_panel_hit(
     }
 
     let segments = visible_segments(lines, body.width, body.height);
+    request_panel_hit_from_segments(body, position, &segments)
+}
+
+pub(super) fn approval_panel_hit(
+    panel: Rect,
+    position: Position,
+    pending: &PendingApproval,
+) -> Option<RequestPanelHit> {
+    let body = body_rect_after_title(pane_content_rect(panel));
+    if !body.contains(position) {
+        return None;
+    }
+    let segments = visible_approval_segments(pending, body.width, body.height);
+    request_panel_hit_from_segments(body, position, &segments)
+}
+
+fn request_panel_hit_from_segments(
+    body: Rect,
+    position: Position,
+    segments: &[RequestPanelSegment],
+) -> Option<RequestPanelHit> {
     let segment = segments.get(usize::from(position.y.saturating_sub(body.y)))?;
+    if segment.logical_line == usize::MAX {
+        return None;
+    }
     let display_column = usize::from(position.x.saturating_sub(body.x));
     let source_offset = display_column.checked_sub(segment.display_prefix_width)?;
     Some(RequestPanelHit {
         line: segment.logical_line,
         column: segment.source_column.saturating_add(source_offset),
     })
+}
+
+fn visible_approval_segments(
+    pending: &PendingApproval,
+    width: u16,
+    height: u16,
+) -> Vec<RequestPanelSegment> {
+    let lines = approval_lines(pending);
+    let segments = wrapped_segments(&lines, width);
+    let visible = usize::from(height).min(segments.len());
+    if visible == segments.len() {
+        pending.set_scroll_max(0);
+        return segments;
+    }
+    if visible == 0 {
+        pending.set_scroll_max(0);
+        return Vec::new();
+    }
+
+    let preferred_pinned_line = pending.details().len().saturating_add(1);
+    let final_line = lines.len().saturating_sub(1);
+    let preferred_start = segments
+        .iter()
+        .position(|segment| segment.logical_line >= preferred_pinned_line)
+        .unwrap_or(segments.len());
+    let final_start = segments
+        .iter()
+        .position(|segment| segment.logical_line == final_line)
+        .unwrap_or(segments.len());
+    let pinned_start =
+        if segments.len().saturating_sub(preferred_start) <= visible.saturating_sub(2) {
+            preferred_start
+        } else {
+            final_start
+        };
+    let (scrollable, pinned) = segments.split_at(pinned_start);
+    let viewport = visible.saturating_sub(pinned.len()).saturating_sub(1);
+    let max_start = scrollable.len().saturating_sub(viewport);
+    pending.set_scroll_max(max_start);
+    let start = pending.scroll_offset();
+    let end = start.saturating_add(viewport).min(scrollable.len());
+    let hidden_above = start > 0;
+    let hidden_below = end < scrollable.len();
+    let marker = approval_overflow_marker(hidden_above, hidden_below);
+    let mut selected = Vec::with_capacity(visible);
+    if hidden_above {
+        selected.push(marker.clone());
+    }
+    selected.extend_from_slice(&scrollable[start..end]);
+    if !hidden_above {
+        selected.push(marker);
+    }
+    selected.extend_from_slice(pinned);
+    selected.truncate(visible);
+    selected
+}
+
+fn approval_overflow_marker(hidden_above: bool, hidden_below: bool) -> RequestPanelSegment {
+    let direction = match (hidden_above, hidden_below) {
+        (true, true) => "↕",
+        (true, false) => "↑",
+        (false, true) => "↓",
+        (false, false) => " ",
+    };
+    RequestPanelSegment {
+        content: Line::from(vec![
+            "  ".into(),
+            format!("{direction} more").fg(palette::WARNING).bold(),
+            " (j/k or arrows)".fg(palette::MUTED),
+        ]),
+        logical_line: usize::MAX,
+        source_column: 0,
+        display_prefix_width: 0,
+    }
 }
 
 fn visible_segments(lines: &[Line<'static>], width: u16, height: u16) -> Vec<RequestPanelSegment> {

@@ -590,7 +590,7 @@ request that no longer exists and may trigger finding 31.
 
 ### 38. [P1][Security / Approval UI] Long commands hide their suffix without ellipsis or scrolling
 
-**Status:** Assigned
+**Status:** Fixed
 
 The request panel is capped at 12 rows (`codex-rs/tui/src/app_shell/shell_layout.rs:141-165`).
 `visible_segment_indices` preserves leading title lines and action lines but silently drops the

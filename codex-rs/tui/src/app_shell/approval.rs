@@ -14,12 +14,17 @@ use codex_app_server_protocol::ServerRequest;
 use codex_protocol::request_permissions::RequestPermissionProfile as CoreRequestPermissionProfile;
 use serde::Serialize;
 use serde_json::Value;
+use std::cell::Cell;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ApprovalAction {
     Choose(usize),
     Edit,
     Explain,
+    ScrollUp,
+    ScrollDown,
+    PageUp,
+    PageDown,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +34,8 @@ pub(super) struct PendingApproval {
     details: Vec<String>,
     edit_prompt: String,
     options: Vec<ApprovalOption>,
+    scroll_offset: Cell<usize>,
+    scroll_max: Cell<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -112,6 +119,8 @@ impl PendingApproval {
                     details,
                     edit_prompt: format!("Revise and retry this command:\n{command}"),
                     options,
+                    scroll_offset: Cell::new(0),
+                    scroll_max: Cell::new(0),
                 }))
             }
             ServerRequest::FileChangeRequestApproval { request_id, params } => Ok(Some(Self {
@@ -139,6 +148,8 @@ impl PendingApproval {
                         decision: ApprovalDecision::FileChange(FileChangeApprovalDecision::Decline),
                     },
                 ],
+                scroll_offset: Cell::new(0),
+                scroll_max: Cell::new(0),
             })),
             ServerRequest::PermissionsRequestApproval { request_id, params } => {
                 let requested = CoreRequestPermissionProfile::try_from(params.permissions.clone())
@@ -173,6 +184,8 @@ impl PendingApproval {
                             ),
                         },
                     ],
+                    scroll_offset: Cell::new(0),
+                    scroll_max: Cell::new(0),
                 }))
             }
             ServerRequest::ExecCommandApproval { .. }
@@ -218,6 +231,30 @@ impl PendingApproval {
 
     pub(super) fn option_count(&self) -> usize {
         self.options.len()
+    }
+
+    pub(super) fn scroll_offset(&self) -> usize {
+        self.scroll_offset.get()
+    }
+
+    pub(super) fn set_scroll_max(&self, scroll_max: usize) {
+        self.scroll_max.set(scroll_max);
+        self.scroll_offset
+            .set(self.scroll_offset.get().min(scroll_max));
+    }
+
+    pub(super) fn scroll_up(&self, amount: usize) {
+        self.scroll_offset
+            .set(self.scroll_offset.get().saturating_sub(amount));
+    }
+
+    pub(super) fn scroll_down(&self, amount: usize) {
+        self.scroll_offset.set(
+            self.scroll_offset
+                .get()
+                .saturating_add(amount)
+                .min(self.scroll_max.get()),
+        );
     }
 
     pub(super) fn denial_index(&self) -> Option<usize> {

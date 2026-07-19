@@ -2573,6 +2573,30 @@ impl ShellState {
                 self.explain_pending_approval();
                 Ok(())
             }
+            ApprovalAction::ScrollUp => {
+                if let Some(pending) = &mut self.pending_approval {
+                    pending.scroll_up(/*amount*/ 1);
+                }
+                Ok(())
+            }
+            ApprovalAction::ScrollDown => {
+                if let Some(pending) = &mut self.pending_approval {
+                    pending.scroll_down(/*amount*/ 1);
+                }
+                Ok(())
+            }
+            ApprovalAction::PageUp => {
+                if let Some(pending) = &mut self.pending_approval {
+                    pending.scroll_up(/*amount*/ 5);
+                }
+                Ok(())
+            }
+            ApprovalAction::PageDown => {
+                if let Some(pending) = &mut self.pending_approval {
+                    pending.scroll_down(/*amount*/ 5);
+                }
+                Ok(())
+            }
         }
     }
 
@@ -4063,6 +4087,10 @@ fn approval_action_from_key(pending: &PendingApproval, key: KeyEvent) -> Option<
         }
         KeyCode::Char('e') | KeyCode::Char('E') => Some(ApprovalAction::Edit),
         KeyCode::Char('?') => Some(ApprovalAction::Explain),
+        KeyCode::Up | KeyCode::Char('k' | 'K') => Some(ApprovalAction::ScrollUp),
+        KeyCode::Down | KeyCode::Char('j' | 'J') => Some(ApprovalAction::ScrollDown),
+        KeyCode::PageUp => Some(ApprovalAction::PageUp),
+        KeyCode::PageDown => Some(ApprovalAction::PageDown),
         KeyCode::Char(ch) => ch
             .to_digit(10)
             .and_then(|digit| usize::try_from(digit).ok())
