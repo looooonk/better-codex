@@ -884,7 +884,7 @@ contains extra whitespace.
 
 ### 59. [P2][Diff correctness] The same file is duplicated across session turns
 
-**Status:** Assigned
+**Status:** Fixed
 
 `session_file_refs` deduplicates item files only against an aggregate diff within the same turn; it
 does not merge the same path across turns (`codex-rs/tui/src/app_shell/diff_view.rs:111-132`). Session
@@ -896,7 +896,7 @@ and the dashboard file count is inflated.
 
 ### 60. [P2][Diff correctness] Git C-quoted paths are parsed incorrectly
 
-**Status:** Assigned
+**Status:** Fixed
 
 `diff_path_token` stops a quoted path at the first quote and only attempts to unescape `\"`; it does
 not parse Git's backslash/octal C quoting. Header normalization merely trims surrounding quotes

@@ -9,6 +9,8 @@ use crossterm::event::KeyModifiers;
 use std::cell::Cell;
 use std::collections::VecDeque;
 
+mod session_files;
+
 pub(super) use super::diff_model::DiffCell;
 pub(super) use super::diff_model::DiffFile;
 pub(super) use super::diff_model::DiffFileKind;
@@ -29,6 +31,7 @@ const MAX_DIFF_STORE_TURNS: usize = 32;
 #[derive(Debug, Default)]
 pub(super) struct DiffStore {
     turns: VecDeque<StoredTurn>,
+    session_files: Vec<DiffFile>,
     history_truncated: bool,
 }
 
@@ -88,12 +91,14 @@ impl DiffStore {
             });
         }
         self.enforce_limits();
+        self.refresh_session_files();
     }
 
     pub(super) fn upsert_turn_diff(&mut self, turn_id: impl Into<String>, unified_diff: &str) {
         let aggregate = bounded_unified_diff(unified_diff);
         self.turn_mut(turn_id.into()).aggregate = Some(aggregate);
         self.enforce_limits();
+        self.refresh_session_files();
     }
 
     pub(super) fn item_files(&self, item_id: &str) -> Option<&[DiffFile]> {
@@ -113,15 +118,15 @@ impl DiffStore {
     }
 
     pub(super) fn session_files(&self) -> Vec<DiffFile> {
-        self.session_file_refs().cloned().collect()
+        self.session_files.clone()
     }
 
     pub(super) fn session_stats(&self) -> DiffStats {
-        DiffStats::from_files(self.session_file_refs())
+        DiffStats::from_files(&self.session_files)
     }
 
     pub(super) fn has_session_edits(&self) -> bool {
-        self.session_file_refs().next().is_some()
+        !self.session_files.is_empty()
     }
 
     pub(super) fn session_is_truncated(&self) -> bool {
@@ -139,10 +144,12 @@ impl DiffStore {
 
     pub(super) fn remove_turn(&mut self, turn_id: &str) {
         self.turns.retain(|turn| turn.turn_id != turn_id);
+        self.refresh_session_files();
     }
 
     pub(super) fn clear(&mut self) {
         self.turns.clear();
+        self.session_files.clear();
         self.history_truncated = false;
     }
 
@@ -157,33 +164,6 @@ impl DiffStore {
             aggregate: None,
         });
         &mut self.turns[index]
-    }
-
-    fn session_file_refs(&self) -> impl Iterator<Item = &DiffFile> {
-        self.turns.iter().flat_map(|turn| {
-            turn.aggregate
-                .iter()
-                .flat_map(|stored| &stored.files)
-                .chain(
-                    turn.items
-                        .iter()
-                        .filter(|item| item.status.is_session_edit())
-                        .flat_map(|item| item.files.iter())
-                        .filter(move |file| {
-                            !turn.aggregate.as_ref().is_some_and(|aggregate| {
-                                aggregate.files.iter().any(|aggregate_file| {
-                                    [file.old_label(), file.new_label()]
-                                        .into_iter()
-                                        .flatten()
-                                        .any(|path| {
-                                            aggregate_file.old_label() == Some(path)
-                                                || aggregate_file.new_label() == Some(path)
-                                        })
-                                })
-                            })
-                        }),
-                )
-        })
     }
 
     fn enforce_limits(&mut self) {

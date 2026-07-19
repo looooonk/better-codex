@@ -81,6 +81,8 @@ mod dashboard_workspace;
 mod design;
 mod diff_horizontal_scroll;
 mod diff_model;
+mod diff_path;
+mod diff_session;
 mod diff_style;
 mod diff_view;
 mod diff_view_controller;

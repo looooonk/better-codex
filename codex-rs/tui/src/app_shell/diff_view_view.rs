@@ -2,6 +2,7 @@ use super::design::fill_rect;
 use super::design::palette;
 use super::design::pane_style;
 use super::diff_horizontal_scroll::HorizontalScroll;
+use super::diff_path::visible_path;
 use super::diff_view::DiffCell;
 use super::diff_view::DiffFile;
 use super::diff_view::DiffFileKind;
@@ -159,9 +160,13 @@ fn render_files(state: &DiffViewState, area: Rect, buf: &mut Buffer) {
         } else {
             match (file.old_label(), file.new_label()) {
                 (Some(old), Some(new)) if old != new => {
-                    format!("{} -> {}", file_name(old), file_name(new))
+                    format!(
+                        "{} -> {}",
+                        visible_path(file_name(old)),
+                        visible_path(file_name(new))
+                    )
                 }
-                (Some(path), _) | (_, Some(path)) => file_name(path).to_string(),
+                (Some(path), _) | (_, Some(path)) => visible_path(file_name(path)),
                 (None, None) => String::new(),
             }
         };
@@ -250,7 +255,7 @@ fn render_diff_rows(state: &DiffViewState, geometry: DiffViewGeometry, buf: &mut
 fn render_file_label(label: Option<&str>, area: Rect, buf: &mut Buffer) {
     let line = label.map_or_else(Line::default, |label| {
         truncate_line_with_ellipsis_if_overflow(
-            Line::from(label.to_string()).fg(palette::CYAN),
+            Line::from(visible_path(label)).fg(palette::CYAN),
             usize::from(area.width),
         )
     });

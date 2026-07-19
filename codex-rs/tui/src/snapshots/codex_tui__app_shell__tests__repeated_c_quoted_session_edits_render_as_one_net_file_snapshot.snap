@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──╭ Session edits ───────────────────────────────────────────────────────────────────────────────╮─
+  │ CHANGED FILES         │OLD FILE                          │NEW FILE                           │
+ ◆│                       │src/tab\tname.rs                  │src/tab\tname.rs                   │
+ ▎│ > M src/tab\tname.rs  │        @@ -1,1 +1,1 @@           │        @@ -1,1 +1,1 @@            │
+ ▎│                       │    1 - old                       │    1 + final                      │
+  │                       │                                  │                                   │
+ ▎│                       │                                  │                                   │
+  │                       │                                  │                                   │
+ ▎│                       │                                  │                                   │
+  │                       │                                  │                                   │
+  │                       │                                  │                                   │
+  │                       │                                  │                                   │
+ ▌│                       │                                  │                                   │
+  │                       │                                  │                                   │
+ ▌│                       │                                  │                                   │
+  │                       │                                  │                                   │
+ ▎│                       │                                  │                                   │
+  │                       │                                  │                                   │
+  │                       │                                  │                                   │
+  │                       │                                  │                                   │
+╭─│                       │                                  │                                   │
+│◆│                       │                                  │                                   │
+│>│  ←/→ files  h/l pan  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  file 1/1  1-2/2        │
+│ ╰──────────────────────────────────────────────────────────────────────────────────────────────╯
+│                                                ││
+╰────────────────────────────────────────────────╯│

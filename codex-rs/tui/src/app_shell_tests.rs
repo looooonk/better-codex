@@ -7687,6 +7687,36 @@ async fn clicking_status_edits_opens_every_session_file() {
 }
 
 #[test]
+fn repeated_c_quoted_session_edits_render_as_one_net_file_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.record_turn_diff(
+        "turn-1",
+        "diff --git \"a/src/tab\\tname.rs\" \"b/src/tab\\tname.rs\"\n--- \"a/src/tab\\tname.rs\"\n+++ \"b/src/tab\\tname.rs\"\n@@ -1 +1 @@\n-old\n+middle\n",
+    );
+    shell.record_turn_diff(
+        "turn-2",
+        "diff --git \"a/src/tab\\tname.rs\" \"b/src/tab\\tname.rs\"\n--- \"a/src/tab\\tname.rs\"\n+++ \"b/src/tab\\tname.rs\"\n@@ -1 +1 @@\n-middle\n+final\n",
+    );
+
+    assert!(shell.open_session_diff_view());
+    assert_eq!(
+        shell
+            .diff_view
+            .as_ref()
+            .expect("session diff should open")
+            .files()
+            .len(),
+        1
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        ),
+    ));
+}
+
+#[test]
 fn mouse_wheel_routes_between_diff_files_and_content_in_both_layouts() {
     for area in [
         Rect::new(

@@ -1,8 +1,10 @@
+use super::diff_path::bounded_path;
+use super::diff_path::header_path;
+use super::diff_path::parse_git_paths;
+use super::diff_path::visible_path;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::PatchChangeKind;
-
-const MAX_DIFF_PATH_BYTES: usize = 1_024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DiffFileKind {
@@ -186,10 +188,28 @@ impl DiffFile {
         }
     }
 
+    pub(super) fn from_composed_parts(
+        old_path: Option<String>,
+        new_path: Option<String>,
+        kind: DiffFileKind,
+        status: DiffStatus,
+        rows: Vec<DiffRow>,
+    ) -> Self {
+        Self {
+            old_path,
+            new_path,
+            kind,
+            status,
+            rows,
+        }
+    }
+
     pub(super) fn display_path(&self) -> String {
         match (self.old_label(), self.new_label()) {
-            (Some(old), Some(new)) if old != new => format!("{old} -> {new}"),
-            (Some(path), _) | (_, Some(path)) => path.to_string(),
+            (Some(old), Some(new)) if old != new => {
+                format!("{} -> {}", visible_path(old), visible_path(new))
+            }
+            (Some(path), _) | (_, Some(path)) => visible_path(path),
             (None, None) => String::new(),
         }
     }
@@ -334,12 +354,6 @@ impl DiffFile {
     }
 }
 
-fn header_path(lines: &[&str], prefix: &str) -> Option<Option<String>> {
-    lines
-        .iter()
-        .find_map(|line| line.strip_prefix(prefix).map(normalize_diff_path))
-}
-
 fn side_by_side_rows(unified_diff: &str) -> Vec<DiffRow> {
     let mut rows = Vec::new();
     let mut removed = Vec::new();
@@ -397,7 +411,7 @@ fn flush_changes(rows: &mut Vec<DiffRow>, removed: &mut Vec<DiffCell>, added: &m
     added.clear();
 }
 
-fn hunk_starts(line: &str) -> Option<(usize, usize)> {
+pub(super) fn hunk_starts(line: &str) -> Option<(usize, usize)> {
     if line == "@@" {
         return Some((1, 1));
     }
@@ -417,42 +431,4 @@ fn cell(line_number: Option<usize>, text: impl Into<String>, kind: DiffLineKind)
         text: text.into(),
         kind,
     }
-}
-
-fn normalize_diff_path(path: &str) -> Option<String> {
-    let path = path.trim().trim_matches('"');
-    (path != "/dev/null").then(|| {
-        bounded_path(
-            path.strip_prefix("a/")
-                .or_else(|| path.strip_prefix("b/"))
-                .unwrap_or(path),
-        )
-    })
-}
-
-fn bounded_path(path: &str) -> String {
-    if path.len() <= MAX_DIFF_PATH_BYTES {
-        return path.to_string();
-    }
-    let mut end = MAX_DIFF_PATH_BYTES.saturating_sub(3);
-    while !path.is_char_boundary(end) {
-        end = end.saturating_sub(1);
-    }
-    format!("{}...", &path[..end])
-}
-
-fn parse_git_paths(paths: &str) -> Option<(String, String)> {
-    let (old, rest) = diff_path_token(paths)?;
-    let (new, _) = diff_path_token(rest)?;
-    Some((normalize_diff_path(&old)?, normalize_diff_path(&new)?))
-}
-
-fn diff_path_token(input: &str) -> Option<(String, &str)> {
-    let input = input.trim_start();
-    if let Some(quoted) = input.strip_prefix('"') {
-        let end = quoted.find('"')?;
-        return Some((quoted[..end].replace("\\\"", "\""), &quoted[end + 1..]));
-    }
-    let end = input.find(char::is_whitespace).unwrap_or(input.len());
-    Some((input[..end].to_string(), &input[end..]))
 }

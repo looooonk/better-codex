@@ -116,6 +116,29 @@ diff --git a/src/from.rs b/src/to.rs
 }
 
 #[test]
+fn parses_git_c_quoted_paths_without_losing_bytes_or_boundaries() {
+    let unified = r#"diff --git "a/quote\"-tab\t-line\n-caf\303\251.txt" "b/quote\"-tab\t-line\n-caf\303\251.txt"
+--- "a/quote\"-tab\t-line\n-caf\303\251.txt"
++++ "b/quote\"-tab\t-line\n-caf\303\251.txt"
+@@ -1 +1 @@
+-old
++new
+"#;
+
+    let files = parse_unified_diff(unified);
+
+    assert_eq!(
+        files,
+        vec![DiffFile::modified(
+            "quote\"-tab\t-line\n-café.txt",
+            "@@ -1 +1 @@\n-old\n+new",
+            DiffStatus::Completed,
+        )]
+    );
+    assert_eq!(files[0].display_path(), "quote\"-tab\\t-line\\n-café.txt");
+}
+
+#[test]
 fn patch_statuses_control_session_eligibility() {
     let statuses = [
         PatchApplyStatus::InProgress,
@@ -255,6 +278,66 @@ fn session_aggregation_keeps_item_changes_missing_from_the_turn_diff() {
             .map(DiffFile::display_path)
             .collect::<Vec<_>>(),
         vec!["edited.txt", "old.txt -> new.txt"]
+    );
+}
+
+#[test]
+fn session_aggregation_composes_cross_turn_updates_and_reversions() {
+    let mut store = DiffStore::default();
+    store.upsert_turn_diff(
+        "turn-1",
+        "diff --git a/shared.txt b/shared.txt\n--- a/shared.txt\n+++ b/shared.txt\n@@ -1 +1 @@\n-original\n+middle\n",
+    );
+    store.upsert_turn_diff(
+        "turn-2",
+        "diff --git a/shared.txt b/shared.txt\n--- a/shared.txt\n+++ b/shared.txt\n@@ -1 +1 @@\n-middle\n+final\n",
+    );
+
+    assert_eq!(
+        (store.session_files(), store.session_stats()),
+        (
+            vec![DiffFile::modified(
+                "shared.txt",
+                "@@ -1,1 +1,1 @@\n-original\n+final",
+                DiffStatus::Completed,
+            )],
+            DiffStats {
+                files: 1,
+                additions: 1,
+                removals: 1,
+            },
+        )
+    );
+
+    store.upsert_turn_diff(
+        "turn-3",
+        "diff --git a/shared.txt b/shared.txt\n--- a/shared.txt\n+++ b/shared.txt\n@@ -1 +1 @@\n-final\n+original\n",
+    );
+    assert_eq!(
+        (store.session_files(), store.session_stats()),
+        (Vec::new(), DiffStats::default())
+    );
+}
+
+#[test]
+fn session_aggregation_composes_large_line_numbers_in_a_bounded_window() {
+    let mut store = DiffStore::default();
+    store.upsert_turn_diff(
+        "turn-1",
+        "diff --git a/large.txt b/large.txt\n--- a/large.txt\n+++ b/large.txt\n@@ -1000000 +1000000 @@\n-original\n+middle\n",
+    );
+    store.upsert_turn_diff(
+        "turn-2",
+        "diff --git a/large.txt b/large.txt\n--- a/large.txt\n+++ b/large.txt\n@@ -1000000 +1000000 @@\n-middle\n+final\n",
+    );
+
+    assert_eq!(
+        store.session_files(),
+        vec![DiffFile::modified(
+            "large.txt",
+            "@@ -1000000,1 +1000000,1 @@\n-original\n+final",
+            DiffStatus::Completed,
+        )]
     );
 }
 
