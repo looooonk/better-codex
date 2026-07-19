@@ -131,7 +131,11 @@ impl Field {
         let answer = answer.trim();
         if answer.is_empty() {
             if let Some(default) = &self.default {
-                return Ok(Some(default.clone()));
+                return self
+                    .kind
+                    .parse(&value_input(default))
+                    .map(Some)
+                    .map_err(|message| format!("{} default: {message}", self.label));
             }
             return if self.required {
                 Err("a value is required".to_string())
@@ -273,8 +277,15 @@ fn parse_number(input: &str, integer: bool) -> Result<serde_json::Number, String
         return Err("enter a finite number".to_string());
     };
     if integer && !value.is_i64() && !value.is_u64() {
-        Err("enter a whole number".to_string())
-    } else {
-        Ok(value)
+        let Some(value) = value.as_f64().filter(|value| value.fract() == 0.0) else {
+            return Err("enter a whole number".to_string());
+        };
+        let value = format!("{value:.0}");
+        return value
+            .parse::<i64>()
+            .map(serde_json::Number::from)
+            .or_else(|_| value.parse::<u64>().map(serde_json::Number::from))
+            .map_err(|_| "enter a whole number".to_string());
     }
+    Ok(value)
 }

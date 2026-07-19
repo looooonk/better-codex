@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ YOU  Create a divergent standalone TUI.      ┃ │▎● FOCUSED  ACTIVE  1 sessions
+                                                ┃ │▎+ New session  Ctrl+N
+ ▎ CODEX  Started a fullscreen app shell backed ┃ │▎› 1/1 remaining [main]  available session
+          by app-server turns.                  ┃ │
+ ▎ PLAN  1. Build shell                         ┃ │▎◆ THREAD
+         2. Wire transcript                     ┃ │▎stage-one
+         3. Render dashboard                    ┃ │▎id 01900000-0000-7000-8000-000000000001
+                                                ┃ │▎resume, fork, archive, delete in session list
+ ▌ tool exec just test -p codex-tui             ┃ │
+                                                ┃ │
+ ▌ edited 3 files +128 -24                      ┃ │
+                                                ┃ │
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │
+          surface.                              ┃ │
+ ▎ ERROR  active session was deleted remotely;  ┃ │
+          choose or start another session       ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:1                                  ││
+│> Type a message, Shift+Enter for newline       ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

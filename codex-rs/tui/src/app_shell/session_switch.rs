@@ -73,7 +73,7 @@ impl ShellState {
         if self.block_session_switch_if_busy() {
             return;
         }
-        if thread_id == self.thread_id {
+        if thread_id == self.thread_id && self.session_unavailable_reason.is_none() {
             self.push_status("session is already open");
             return;
         }

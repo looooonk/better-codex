@@ -615,7 +615,7 @@ no field editor and no Accept action.
 
 ### 40. [P1][Remote session lifecycle / TUI] Thread archive, delete, close, and status notifications are ignored
 
-**Status:** Assigned
+**Status:** Fixed
 
 The event reducer explicitly discards `ThreadStatusChanged`, `ThreadArchived`, `ThreadDeleted`,
 `ThreadUnarchived`, and `ThreadClosed` (`codex-rs/tui/src/app_shell/events.rs:391-431`). Changes from a

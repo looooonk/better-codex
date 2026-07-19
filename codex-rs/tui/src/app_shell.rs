@@ -104,6 +104,7 @@ mod selector;
 mod selector_controller;
 mod session_delete;
 mod session_hydration;
+mod session_lifecycle;
 mod session_switch;
 mod sessions;
 mod settings;
@@ -696,6 +697,7 @@ struct DiffSummary {
 
 struct ShellState {
     thread_id: ThreadId,
+    session_unavailable_reason: Option<&'static str>,
     thread_name: Option<String>,
     model: String,
     available_models: Vec<ModelPreset>,
@@ -803,6 +805,7 @@ impl ShellState {
         };
         let mut shell = Self {
             thread_id: session.thread_id,
+            session_unavailable_reason: None,
             thread_name: session.thread_name,
             model,
             available_models,
@@ -1882,6 +1885,7 @@ impl ShellState {
             agent_history_task,
         } = started;
         self.thread_id = session.thread_id;
+        self.session_unavailable_reason = None;
         self.thread_name = session.thread_name;
         if !session.model.is_empty() {
             self.model = session.model;
@@ -2403,6 +2407,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.reject_unavailable_session_action() {
+            return;
+        }
         if self.active_turn_id.is_some() {
             self.push_system("wait for the current turn to finish before sending another message");
             return;
@@ -3289,6 +3296,7 @@ impl ShellState {
         let mut shell = Self {
             thread_id: ThreadId::from_string("01900000-0000-7000-8000-000000000001")
                 .expect("valid snapshot thread id"),
+            session_unavailable_reason: None,
             thread_name: Some("stage-one".to_string()),
             model: "gpt-5-codex".to_string(),
             available_models: Vec::new(),
@@ -3541,6 +3549,7 @@ pub mod bench_support {
     fn bench_fixture() -> ShellState {
         let mut shell = ShellState {
             thread_id: ThreadId::new(),
+            session_unavailable_reason: None,
             thread_name: Some("bench".to_string()),
             model: "gpt-5-codex".to_string(),
             available_models: Vec::new(),

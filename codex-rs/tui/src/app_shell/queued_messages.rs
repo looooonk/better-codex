@@ -6,7 +6,7 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        if self.active_turn_id.is_some() {
+        if self.active_turn_id.is_some() || self.reject_unavailable_session_action() {
             return;
         }
         let Some(message) = self.composer.prepare_next_queued_message() else {

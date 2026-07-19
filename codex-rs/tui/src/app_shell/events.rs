@@ -2,6 +2,7 @@ use super::ShellState;
 use super::agent_activity::AgentChildEvent;
 use super::agent_activity::AgentItemPhase;
 use super::backend::AppShellBackend;
+use super::session_lifecycle::RemoteThreadLifecycle;
 use crate::token_usage::TokenUsage;
 use base64::Engine;
 use codex_app_server_client::AppServerEvent;
@@ -40,6 +41,16 @@ impl ShellState {
                     self.report_external_agent_import_finished(notification);
                     return Ok(());
                 }
+                let refresh_session_list = matches!(
+                    &notification,
+                    ServerNotification::ThreadStarted(_)
+                        | ServerNotification::ThreadArchived(_)
+                        | ServerNotification::ThreadDeleted(_)
+                        | ServerNotification::ThreadUnarchived(_)
+                );
+                if refresh_session_list {
+                    self.invalidate_session_list_refresh();
+                }
                 let submit_queued_message = match &notification {
                     ServerNotification::TurnCompleted(completed) => {
                         completed.thread_id == self.thread_id.to_string()
@@ -52,6 +63,9 @@ impl ShellState {
                     _ => false,
                 };
                 self.handle_notification(notification);
+                if refresh_session_list {
+                    self.start_session_list_refresh(app_server);
+                }
                 if submit_queued_message {
                     self.submit_next_queued_message(app_server);
                 }
@@ -163,6 +177,22 @@ impl ShellState {
                     self.apply_token_usage(usage.token_usage);
                 }
             }
+            ServerNotification::ThreadStatusChanged(changed) => {
+                self.handle_remote_thread_status(&changed.thread_id, changed.status);
+            }
+            ServerNotification::ThreadArchived(archived) => self.handle_remote_thread_lifecycle(
+                &archived.thread_id,
+                RemoteThreadLifecycle::Archived,
+            ),
+            ServerNotification::ThreadDeleted(deleted) => self
+                .handle_remote_thread_lifecycle(&deleted.thread_id, RemoteThreadLifecycle::Deleted),
+            ServerNotification::ThreadUnarchived(unarchived) => self
+                .handle_remote_thread_lifecycle(
+                    &unarchived.thread_id,
+                    RemoteThreadLifecycle::Unarchived,
+                ),
+            ServerNotification::ThreadClosed(closed) => self
+                .handle_remote_thread_lifecycle(&closed.thread_id, RemoteThreadLifecycle::Closed),
             ServerNotification::ThreadNameUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.thread_name = updated.thread_name;
@@ -411,11 +441,6 @@ impl ShellState {
             | ServerNotification::HookStarted(_)
             | ServerNotification::HookCompleted(_)
             | ServerNotification::ThreadStarted(_)
-            | ServerNotification::ThreadStatusChanged(_)
-            | ServerNotification::ThreadArchived(_)
-            | ServerNotification::ThreadDeleted(_)
-            | ServerNotification::ThreadUnarchived(_)
-            | ServerNotification::ThreadClosed(_)
             | ServerNotification::SkillsChanged(_)
             | ServerNotification::ItemGuardianApprovalReviewStarted(_)
             | ServerNotification::ItemGuardianApprovalReviewCompleted(_)

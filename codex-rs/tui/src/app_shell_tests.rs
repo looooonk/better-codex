@@ -73,6 +73,10 @@ use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::SkillMigration;
 use codex_app_server_protocol::SubAgentActivityKind;
 use codex_app_server_protocol::Thread;
+use codex_app_server_protocol::ThreadActiveFlag;
+use codex_app_server_protocol::ThreadArchivedNotification;
+use codex_app_server_protocol::ThreadClosedNotification;
+use codex_app_server_protocol::ThreadDeletedNotification;
 use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadGoalClearResponse;
 use codex_app_server_protocol::ThreadGoalClearedNotification;
@@ -87,6 +91,8 @@ use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
 use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::ThreadStatus;
+use codex_app_server_protocol::ThreadStatusChangedNotification;
+use codex_app_server_protocol::ThreadUnarchivedNotification;
 use codex_app_server_protocol::ToolRequestUserInputOption;
 use codex_app_server_protocol::ToolRequestUserInputParams;
 use codex_app_server_protocol::ToolRequestUserInputQuestion;
@@ -152,6 +158,152 @@ async fn renders_aggregated_backend_lag_snapshot() {
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn remote_thread_status_updates_the_active_shell() {
+    let mut shell = ShellState::snapshot_fixture();
+    let thread_id = shell.thread_id.to_string();
+    let mut observed = Vec::new();
+    for status in [
+        ThreadStatus::Idle,
+        ThreadStatus::SystemError,
+        ThreadStatus::Active {
+            active_flags: Vec::new(),
+        },
+        ThreadStatus::Active {
+            active_flags: vec![ThreadActiveFlag::WaitingOnApproval],
+        },
+    ] {
+        shell.handle_notification(ServerNotification::ThreadStatusChanged(
+            ThreadStatusChangedNotification {
+                thread_id: thread_id.clone(),
+                status,
+            },
+        ));
+        observed.push(shell.status.clone());
+    }
+
+    assert_eq!(observed, ["ready", "error", "thinking", "waiting"]);
+}
+
+#[tokio::test]
+async fn remote_archive_can_be_unarchived_and_resumed() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    let thread_id = shell.thread_id;
+    shell
+        .session_list
+        .replace_threads(vec![thread_fixture(thread_id, Some("current"), "current")]);
+    let mut backend =
+        RecordingBackend::with_threads(vec![thread_fixture(thread_id, Some("current"), "current")]);
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerNotification(ServerNotification::ThreadArchived(
+                ThreadArchivedNotification {
+                    thread_id: thread_id.to_string(),
+                },
+            )),
+        )
+        .await
+        .expect("archive notification should be handled");
+    assert_eq!(shell.session_list.selected_thread_id(), None);
+    assert_eq!(shell.session_unavailable_reason, Some("archived remotely"));
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerNotification(ServerNotification::ThreadUnarchived(
+                ThreadUnarchivedNotification {
+                    thread_id: thread_id.to_string(),
+                },
+            )),
+        )
+        .await
+        .expect("unarchive notification should be handled");
+    finish_session_hydration(&mut shell, &backend).await;
+    assert_eq!(shell.session_list.selected_thread_id(), Some(thread_id));
+
+    shell.resume_session(&config, &backend, thread_id);
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(shell.session_unavailable_reason, None);
+    assert!(
+        backend
+            .calls()
+            .contains(&RecordedBackendCall::Resume(thread_id))
+    );
+}
+
+#[tokio::test]
+async fn remote_delete_closes_active_session_and_blocks_submission() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.active_turn_id = Some("turn-stale".to_string());
+    let deleted_id = shell.thread_id;
+    let remaining_id = test_thread_id("01900000-0000-7000-8000-000000000902");
+    let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
+        remaining_id,
+        Some("remaining"),
+        "available session",
+    )]);
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerNotification(ServerNotification::ThreadDeleted(
+                ThreadDeletedNotification {
+                    thread_id: deleted_id.to_string(),
+                },
+            )),
+        )
+        .await
+        .expect("delete notification should be handled");
+    finish_session_hydration(&mut shell, &backend).await;
+    assert_eq!(
+        (
+            shell.session_unavailable_reason,
+            shell.active_turn_id.as_deref(),
+            shell.dashboard_route,
+            shell.session_list.focused,
+            shell.session_list.selected_thread_id(),
+        ),
+        (
+            Some("deleted remotely"),
+            None,
+            DashboardRoute::Sessions,
+            true,
+            Some(remaining_id),
+        )
+    );
+    insta::assert_snapshot!(
+        "remote_deleted_active_session",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28
+            )
+        )
+    );
+
+    shell.submit_prompt(&backend, "must not submit".to_string());
+    assert!(!backend.calls().iter().any(|call| matches!(
+        call,
+        RecordedBackendCall::TurnStart { thread_id, .. } if *thread_id == deleted_id
+    )));
+}
+
+#[test]
+fn remote_close_marks_the_active_session_unavailable() {
+    let mut shell = ShellState::snapshot_fixture();
+    let thread_id = shell.thread_id.to_string();
+    shell.handle_notification(ServerNotification::ThreadClosed(ThreadClosedNotification {
+        thread_id,
+    }));
+
+    assert_eq!(shell.session_unavailable_reason, Some("closed remotely"));
 }
 
 #[test]
