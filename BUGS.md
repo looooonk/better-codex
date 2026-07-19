@@ -251,7 +251,7 @@ other agent-path context even if the immediate tool result is truncated.
 
 ### 14. [P1][CLI safety] Root bypass and resume/fork approval flags evade the declared conflict
 
-**Status:** Assigned
+**Status:** Fixed
 
 Clap conflict declarations apply only within one flattened argument scope. A root
 `--dangerously-bypass-approvals-and-sandbox` can therefore be combined with a resume/fork-local

@@ -1257,7 +1257,7 @@ async fn cli_main(
                 all,
                 include_non_interactive,
                 config_overrides,
-            );
+            )?;
             let exit_info = run_interactive_tui(
                 interactive,
                 remote.remote.or(root_remote.clone()),
@@ -1324,7 +1324,7 @@ async fn cli_main(
                 last,
                 all,
                 config_overrides,
-            );
+            )?;
             let exit_info = run_interactive_tui(
                 interactive,
                 remote.remote.or(root_remote.clone()),
@@ -2370,7 +2370,7 @@ fn finalize_resume_interactive(
     show_all: bool,
     include_non_interactive: bool,
     mut resume_cli: TuiCli,
-) -> TuiCli {
+) -> anyhow::Result<TuiCli> {
     // Start with the parsed interactive CLI so resume shares the same
     // configuration surface area as `codex` without additional flags.
     // Clap assigns the first positional to `session_id`. With `--last`, reinterpret it as the
@@ -2393,7 +2393,8 @@ fn finalize_resume_interactive(
     // Propagate any root-level config overrides (e.g. `-c key=value`).
     prepend_config_flags(&mut interactive.config_overrides, root_config_overrides);
 
-    interactive
+    reject_conflicting_interactive_permission_flags(&interactive)?;
+    Ok(interactive)
 }
 
 /// Build the final `TuiCli` for a `codex fork` invocation.
@@ -2404,7 +2405,7 @@ fn finalize_fork_interactive(
     last: bool,
     show_all: bool,
     mut fork_cli: TuiCli,
-) -> TuiCli {
+) -> anyhow::Result<TuiCli> {
     // Start with the parsed interactive CLI so fork shares the same
     // configuration surface area as `codex` without additional flags.
     // Clap assigns the first positional to `session_id`. With `--last`, reinterpret it as the
@@ -2426,7 +2427,17 @@ fn finalize_fork_interactive(
     // Propagate any root-level config overrides (e.g. `-c key=value`).
     prepend_config_flags(&mut interactive.config_overrides, root_config_overrides);
 
-    interactive
+    reject_conflicting_interactive_permission_flags(&interactive)?;
+    Ok(interactive)
+}
+
+fn reject_conflicting_interactive_permission_flags(cli: &TuiCli) -> anyhow::Result<()> {
+    if cli.dangerously_bypass_approvals_and_sandbox && cli.approval_policy.is_some() {
+        anyhow::bail!(
+            "`--dangerously-bypass-approvals-and-sandbox` cannot be used with `--ask-for-approval`"
+        );
+    }
+    Ok(())
 }
 
 fn finalize_session_archive_interactive(
@@ -2558,7 +2569,7 @@ mod tests {
         );
     }
 
-    fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
+    fn try_finalize_resume_from_args(args: &[&str]) -> anyhow::Result<TuiCli> {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
             interactive,
@@ -2592,7 +2603,11 @@ mod tests {
         )
     }
 
-    fn finalize_fork_from_args(args: &[&str]) -> TuiCli {
+    fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
+        try_finalize_resume_from_args(args).expect("finalize resume CLI")
+    }
+
+    fn try_finalize_fork_from_args(args: &[&str]) -> anyhow::Result<TuiCli> {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
             interactive,
@@ -2615,6 +2630,10 @@ mod tests {
         let SessionTuiCli(fork_cli) = fork_cli;
 
         finalize_fork_interactive(interactive, root_overrides, session_id, last, all, fork_cli)
+    }
+
+    fn finalize_fork_from_args(args: &[&str]) -> TuiCli {
+        try_finalize_fork_from_args(args).expect("finalize fork CLI")
     }
 
     fn finalize_archive_from_args(args: &[&str]) -> (String, TuiCli, InteractiveRemoteOptions) {
@@ -2766,6 +2785,53 @@ mod tests {
         .expect_err("conflicting permission flags should be rejected");
 
         assert_eq!(err.kind(), clap::error::ErrorKind::ArgumentConflict);
+    }
+
+    #[test]
+    fn session_commands_reject_cross_scope_bypass_and_approval_flags() {
+        const BYPASS: &str = "--dangerously-bypass-approvals-and-sandbox";
+        const APPROVAL: &str = "--ask-for-approval";
+        type Finalizer = fn(&[&str]) -> anyhow::Result<TuiCli>;
+
+        for (command, finalize) in [
+            ("resume", try_finalize_resume_from_args as Finalizer),
+            ("fork", try_finalize_fork_from_args as Finalizer),
+        ] {
+            for args in [
+                vec!["codex", BYPASS, command, APPROVAL, "on-request", "--last"],
+                vec!["codex", APPROVAL, "on-request", command, BYPASS, "--last"],
+            ] {
+                let err = finalize(&args).expect_err("cross-scope flags should conflict");
+                assert_eq!(
+                    err.to_string(),
+                    "`--dangerously-bypass-approvals-and-sandbox` cannot be used with `--ask-for-approval`"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn session_sandbox_override_can_replace_root_bypass() {
+        let interactive = finalize_resume_from_args(&[
+            "codex",
+            "--dangerously-bypass-approvals-and-sandbox",
+            "resume",
+            "--sandbox",
+            "workspace-write",
+            "--ask-for-approval",
+            "on-request",
+            "--last",
+        ]);
+
+        assert!(!interactive.dangerously_bypass_approvals_and_sandbox);
+        assert_matches!(
+            interactive.sandbox_mode,
+            Some(codex_utils_cli::SandboxModeCliArg::WorkspaceWrite)
+        );
+        assert_matches!(
+            interactive.approval_policy,
+            Some(codex_utils_cli::ApprovalModeCliArg::OnRequest)
+        );
     }
 
     fn app_server_from_args(args: &[&str]) -> AppServerCommand {
