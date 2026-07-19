@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
+use codex_core_skills::ExplicitSkillPromptBudget;
 use codex_core_skills::HostSkillsSnapshot;
+use codex_core_skills::SkillInstructions;
 use codex_core_skills::injection::InjectedHostSkillPrompts;
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
 use codex_extension_api::ConfigContributor;
@@ -31,15 +33,10 @@ use crate::catalog::SkillCatalog;
 use crate::catalog::SkillCatalogEntry;
 use crate::catalog::SkillReadResult;
 use crate::catalog::SkillSourceKind;
-use crate::fragments::SkillInstructions;
 use crate::provider::HostSkillProvider;
 use crate::provider::SkillListQuery;
 use crate::provider::SkillReadRequest;
-use crate::render::MAX_SKILL_NAME_BYTES;
-use crate::render::MAX_SKILL_PATH_BYTES;
 use crate::render::available_skills_fragment;
-use crate::render::truncate_main_prompt_contents;
-use crate::render::truncate_utf8_to_bytes;
 use crate::selection::collect_explicit_skill_mentions;
 use crate::sources::SkillProviders;
 use crate::state::ExecutorSkillsStepState;
@@ -259,14 +256,18 @@ where
             let mut warnings = catalog.warnings.clone();
             let mut main_prompts_injected = false;
             let mut injected_host_skill_prompts = InjectedHostSkillPrompts::default();
+            let mut skill_prompt_budget = ExplicitSkillPromptBudget::default();
             for entry in &selected_entries {
                 match self
                     .read_main_prompt(entry, host_snapshot.clone(), session_store, &thread_state)
                     .await
                 {
                     Ok(read_result) => {
-                        let (contents, truncated) =
-                            truncate_main_prompt_contents(read_result.contents.as_str());
+                        let (fragment, truncated) = SkillInstructions::bounded(
+                            &entry.name,
+                            entry.rendered_path(),
+                            &read_result.contents,
+                        );
                         if truncated {
                             let warning = format!(
                                 "Skill `{}` exceeded the main prompt context limit and was truncated.",
@@ -275,15 +276,15 @@ where
                             self.emit_warning(&input.turn_id, warning.clone());
                             warnings.push(warning);
                         }
-                        let fragment = SkillInstructions {
-                            name: truncate_utf8_to_bytes(&entry.name, MAX_SKILL_NAME_BYTES).0,
-                            path: truncate_utf8_to_bytes(
-                                entry.rendered_path(),
-                                MAX_SKILL_PATH_BYTES,
-                            )
-                            .0,
-                            contents,
-                        };
+                        if !skill_prompt_budget.try_reserve(fragment.rendered_bytes()) {
+                            let warning = format!(
+                                "Skill `{}` was omitted because explicit skill prompts exceeded the turn context limit.",
+                                entry.name
+                            );
+                            self.emit_warning(&input.turn_id, warning.clone());
+                            warnings.push(warning);
+                            continue;
+                        }
                         fragments.push(Box::new(fragment));
                         main_prompts_injected = true;
                         if entry.authority.kind == SkillSourceKind::Host {
@@ -321,6 +322,7 @@ where
                 warnings,
                 main_prompts_injected,
             });
+            turn_store.insert(skill_prompt_budget);
             if !injected_host_skill_prompts.is_empty() {
                 turn_store.insert(injected_host_skill_prompts);
             }

@@ -39,31 +39,3 @@ impl ContextualUserFragment for AvailableSkillsInstructions {
         render_available_skills_body(&[], &self.skill_lines)
     }
 }
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SkillInstructions {
-    pub(crate) name: String,
-    pub(crate) path: String,
-    pub(crate) contents: String,
-}
-
-impl ContextualUserFragment for SkillInstructions {
-    fn role(&self) -> &'static str {
-        "user"
-    }
-
-    fn markers(&self) -> (&'static str, &'static str) {
-        Self::type_markers()
-    }
-
-    fn type_markers() -> (&'static str, &'static str) {
-        ("<skill>", "</skill>")
-    }
-
-    fn body(&self) -> String {
-        let name = &self.name;
-        let path = &self.path;
-        let contents = &self.contents;
-        format!("\n<name>{name}</name>\n<path>{path}</path>\n{contents}\n")
-    }
-}

@@ -75,6 +75,7 @@ use codex_analytics::TurnResolvedConfigFact;
 use codex_analytics::build_track_events_context;
 use codex_async_utils::OrCancelExt;
 use codex_core_plugins::RecommendedPluginCandidatesInput;
+use codex_core_skills::ExplicitSkillPromptBudget;
 use codex_core_skills::injection::InjectedHostSkillPrompts;
 use codex_extension_api::TurnInputContext;
 use codex_extension_api::TurnInputEnvironment;
@@ -602,11 +603,19 @@ async fn build_skills_and_plugins(
     let injected_host_skill_prompts = turn_context
         .extension_data
         .get::<InjectedHostSkillPrompts>();
+    let legacy_mentioned_skills = match &injected_host_skill_prompts {
+        Some(injected) => mentioned_skills
+            .iter()
+            .filter(|skill| !injected.contains_path(&skill.path_to_skills_md.to_string_lossy()))
+            .cloned()
+            .collect(),
+        None => mentioned_skills,
+    };
     let SkillInjections {
         items: skill_injections,
         warnings: skill_warnings,
     } = build_skill_injections(
-        &mentioned_skills,
+        &legacy_mentioned_skills,
         Some(skills_outcome),
         Some(&turn_context.session_telemetry),
         &sess.services.analytics_events_client,
@@ -619,10 +628,36 @@ async fn build_skills_and_plugins(
             .await;
     }
 
-    let skill_items: Vec<ResponseItem> = skill_injections
+    let bounded_skill_items = skill_injections
         .iter()
-        .map(|skill| ContextualUserFragment::into(crate::context::SkillInstructions::from(skill)))
-        .collect();
+        .map(|skill| {
+            let (instructions, truncated) = crate::context::SkillInstructions::bounded(
+                &skill.name,
+                &skill.path,
+                &skill.contents,
+            );
+            let rendered_bytes = instructions.rendered_bytes();
+            (
+                skill,
+                ContextualUserFragment::into(instructions),
+                rendered_bytes,
+                truncated,
+            )
+        })
+        .collect::<Vec<_>>();
+    let mut skill_items = bounded_skill_items
+        .iter()
+        .map(|(_, item, _, _)| item.clone())
+        .collect::<Vec<_>>();
+    skill_items.extend(extension_injection_items.iter().filter(|item| {
+        matches!(
+            item,
+            ResponseItem::Message { content, .. }
+                if content.iter().any(|content| {
+                    matches!(content, ContentItem::InputText { text } if text.starts_with("<skill>"))
+                })
+        )
+    }).cloned());
     let skill_connector_ids = collect_explicit_app_ids_from_skill_items(
         &skill_items,
         &available_connectors,
@@ -661,16 +696,33 @@ async fn build_skills_and_plugins(
         }
     }
 
-    let mut injection_items: Vec<ResponseItem> = match injected_host_skill_prompts {
-        Some(injected_host_skill_prompts) => skill_injections
-            .iter()
-            .filter(|skill| !injected_host_skill_prompts.contains_path(&skill.path))
-            .map(|skill| {
-                ContextualUserFragment::into(crate::context::SkillInstructions::from(skill))
-            })
-            .collect(),
-        None => skill_items,
-    };
+    let mut skill_prompt_budget = turn_context
+        .extension_data
+        .get::<ExplicitSkillPromptBudget>()
+        .as_deref()
+        .copied()
+        .unwrap_or_default();
+    let mut injection_items = Vec::new();
+    for (skill, item, rendered_bytes, truncated) in bounded_skill_items {
+        if !skill_prompt_budget.try_reserve(rendered_bytes) {
+            let message = format!(
+                "Skill `{}` was omitted because explicit skill prompts exceeded the turn context limit.",
+                skill.name
+            );
+            sess.send_event(turn_context, EventMsg::Warning(WarningEvent { message }))
+                .await;
+            continue;
+        }
+        if truncated {
+            let message = format!(
+                "Skill `{}` exceeded the main prompt context limit and was truncated.",
+                skill.name
+            );
+            sess.send_event(turn_context, EventMsg::Warning(WarningEvent { message }))
+                .await;
+        }
+        injection_items.push(item);
+    }
     injection_items.extend(plugin_items);
     injection_items.extend(extension_injection_items);
     Some((injection_items, explicitly_enabled_connectors))

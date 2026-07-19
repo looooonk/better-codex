@@ -101,7 +101,7 @@ schemas without a byte/token ceiling.
 
 ### 5. [P0][Model context / Token usage] Explicit skill bodies can exceed hard caps individually or in aggregate
 
-**Status:** Assigned
+**Status:** Fixed
 
 Legacy skill injection reads an entire `SKILL.md` and places it into one fragment
 (`codex-rs/core-skills/src/injection.rs:63-100` and

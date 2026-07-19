@@ -2,6 +2,7 @@
 #![allow(clippy::unwrap_used)]
 
 use anyhow::Result;
+use codex_core_skills::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::ExecutorFileSystem;
 use codex_protocol::models::PermissionProfile;
@@ -53,9 +54,10 @@ async fn user_turn_includes_skill_instructions() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
-    let skill_body = "skill body";
+    let skill_body = "skill body ".repeat(1_000);
+    let setup_skill_body = skill_body.clone();
     let mut builder = test_codex().with_workspace_setup(move |cwd, fs| async move {
-        write_repo_skill(cwd, fs, "demo", "demo skill", skill_body).await
+        write_repo_skill(cwd, fs, "demo", "demo skill", &setup_skill_body).await
     });
     let test = builder.build_with_auto_env(&server).await?;
 
@@ -121,15 +123,15 @@ async fn user_turn_includes_skill_instructions() -> Result<()> {
     let request = mock.single_request();
     let user_texts = request.message_input_texts("user");
     let skill_path_str = skill_path.to_string_lossy();
-    assert!(
-        user_texts.iter().any(|text| {
-            text.contains("<skill>\n<name>demo</name>")
-                && text.contains("<path>")
-                && text.contains(skill_body)
-                && text.contains(skill_path_str.as_ref())
-        }),
-        "expected skill instructions in user input, got {user_texts:?}"
-    );
+    let skill_prompt = user_texts
+        .iter()
+        .find(|text| text.contains("<skill>\n<name>demo</name>"))
+        .expect("expected skill instructions in user input");
+    assert!(skill_prompt.contains("<path>"));
+    assert!(skill_prompt.contains(skill_path_str.as_ref()));
+    assert!(skill_prompt.contains("[skill prompt truncated]"));
+    assert!(!skill_prompt.contains(&skill_body));
+    assert!(skill_prompt.len() <= MAX_EXPLICIT_SKILL_PROMPT_BYTES);
 
     Ok(())
 }

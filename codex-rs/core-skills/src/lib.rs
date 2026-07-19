@@ -32,4 +32,7 @@ pub use render::render_available_skills_body;
 pub use root_loader::PluginSkillSnapshots;
 pub use service::SkillsLoadInput;
 pub use service::SkillsService;
+pub use skill_instructions::ExplicitSkillPromptBudget;
+pub use skill_instructions::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
+pub use skill_instructions::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
 pub use skill_instructions::SkillInstructions;

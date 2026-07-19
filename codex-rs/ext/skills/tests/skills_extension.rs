@@ -5,6 +5,8 @@ use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
 use codex_core_skills::HostSkillsSnapshot;
+use codex_core_skills::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
+use codex_core_skills::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
 use codex_core_skills::SKILLS_INTRO_WITH_ABSOLUTE_PATHS;
 use codex_core_skills::SkillLoadOutcome;
 use codex_core_skills::SkillMetadata;
@@ -58,6 +60,7 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 static NEXT_CODEX_HOME_ID: AtomicUsize = AtomicUsize::new(0);
 const DEMO_SKILL_CONTENTS: &str =
     "---\nname: demo\ndescription: Demo skill.\n---\n# Demo\n\nUse the demo skill.\n";
+const DEFAULT_PROVIDER_SKILL_CONTENTS: &str = "# Lint Fix\n\nRun the formatter.";
 
 #[tokio::test]
 async fn installed_extension_uses_host_service_snapshot() -> TestResult {
@@ -146,6 +149,90 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
 }
 
 #[tokio::test]
+async fn selected_skill_prompts_have_individual_and_aggregate_bounds() -> TestResult {
+    let entries = (0..12)
+        .map(|index| {
+            test_entry(
+                SkillSourceKind::Orchestrator,
+                "codex_apps",
+                &format!("orchestrator/skill-{index}"),
+                &format!("skill://orchestrator/skill-{index}/SKILL.md"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let user_input = (0..12)
+        .map(|index| UserInput::Mention {
+            name: format!("skill-{index}"),
+            path: format!("skill://orchestrator/skill-{index}/SKILL.md"),
+        })
+        .collect();
+    let providers =
+        SkillProviders::new().with_orchestrator_provider(Arc::new(StaticSkillProvider {
+            catalog: SkillCatalog {
+                entries,
+                warnings: Vec::new(),
+            },
+            read_requests: Arc::new(Mutex::new(Vec::new())),
+            list_calls: None,
+            fail_first_list: false,
+            read_contents: "x".repeat(10_000),
+        }));
+    let mut builder = ExtensionRegistryBuilder::new();
+    install_with_providers(&mut builder, providers, skills_extension_config);
+    let registry = builder.build();
+    let session_store = ExtensionData::new("session");
+    let thread_store = ExtensionData::new("thread");
+    let session_source = SessionSource::Cli;
+    let config = default_config();
+    registry.thread_lifecycle_contributors()[0]
+        .on_thread_start(ThreadStartInput {
+            config: &config,
+            session_source: &session_source,
+            persistent_thread_state_available: true,
+            environments: &[],
+            session_store: &session_store,
+            thread_store: &thread_store,
+        })
+        .await;
+
+    let fragments = registry.turn_input_contributors()[0]
+        .contribute(
+            TurnInputContext {
+                turn_id: "turn-1".to_string(),
+                user_input,
+                environments: Vec::new(),
+            },
+            &session_store,
+            &thread_store,
+            &ExtensionData::new("turn-1"),
+        )
+        .await;
+    let skill_prompts = fragments
+        .iter()
+        .filter(|fragment| fragment.role() == "user")
+        .map(|fragment| fragment.render())
+        .collect::<Vec<_>>();
+
+    assert!(skill_prompts.len() < 12);
+    assert!(
+        skill_prompts
+            .iter()
+            .all(|prompt| prompt.len() <= MAX_EXPLICIT_SKILL_PROMPT_BYTES)
+    );
+    assert!(
+        skill_prompts.iter().map(String::len).sum::<usize>()
+            <= MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES
+    );
+    assert!(
+        skill_prompts
+            .iter()
+            .all(|prompt| prompt.contains("[skill prompt truncated]"))
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cache() -> TestResult {
     let read_requests = Arc::new(Mutex::new(Vec::new()));
     let list_calls = Arc::new(AtomicUsize::new(0));
@@ -162,6 +249,7 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
         read_requests: Arc::clone(&read_requests),
         list_calls: Some(Arc::clone(&list_calls)),
         fail_first_list: false,
+        read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
     });
     let providers = SkillProviders::new().with_executor_provider(executor_provider);
     let mut builder = ExtensionRegistryBuilder::new();
@@ -354,6 +442,7 @@ async fn default_context_truncates_catalog_descriptions() -> TestResult {
             read_requests: Arc::new(Mutex::new(Vec::new())),
             list_calls: None,
             fail_first_list: false,
+            read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
         }));
     let mut builder = ExtensionRegistryBuilder::new();
     install_with_providers(&mut builder, providers, skills_extension_config);
@@ -404,6 +493,7 @@ async fn skills_list_truncates_catalog_descriptions_in_tool_output() -> TestResu
             read_requests: Arc::new(Mutex::new(Vec::new())),
             list_calls: None,
             fail_first_list: false,
+            read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
         }));
     let mut builder = ExtensionRegistryBuilder::new();
     install_with_providers(&mut builder, providers, skills_extension_config);
@@ -474,6 +564,7 @@ async fn orchestrator_catalog_snapshot_caches_failure() -> TestResult {
             read_requests: Arc::new(Mutex::new(Vec::new())),
             list_calls: Some(Arc::clone(&list_calls)),
             fail_first_list: true,
+            read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
         }));
     let (event_tx, event_rx) = std::sync::mpsc::channel();
     let mut builder =
@@ -555,6 +646,7 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
         read_requests: Arc::clone(&read_requests),
         list_calls: None,
         fail_first_list: false,
+        read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
     });
     let providers = SkillProviders::new().with_executor_provider(executor_provider);
     let mut builder = ExtensionRegistryBuilder::new();
@@ -655,6 +747,7 @@ async fn prompt_hidden_skill_can_still_be_invoked() -> TestResult {
         read_requests: Arc::clone(&read_requests),
         list_calls: None,
         fail_first_list: false,
+        read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
     });
     let providers = SkillProviders::new().with_host_provider(provider);
     let mut builder = ExtensionRegistryBuilder::new();
@@ -713,6 +806,7 @@ struct StaticSkillProvider {
     read_requests: Arc<Mutex<Vec<SkillReadRequest>>>,
     list_calls: Option<Arc<AtomicUsize>>,
     fail_first_list: bool,
+    read_contents: String,
 }
 
 struct ChannelEventSink(std::sync::mpsc::Sender<Event>);
@@ -742,6 +836,7 @@ impl SkillProvider for StaticSkillProvider {
 
     fn read(&self, request: SkillReadRequest) -> SkillProviderFuture<'_, SkillReadResult> {
         let read_requests = Arc::clone(&self.read_requests);
+        let contents = self.read_contents.clone();
         Box::pin(async move {
             read_requests
                 .lock()
@@ -749,7 +844,7 @@ impl SkillProvider for StaticSkillProvider {
                 .push(request.clone());
             Ok(SkillReadResult {
                 resource: request.resource,
-                contents: "# Lint Fix\n\nRun the formatter.".to_string(),
+                contents,
             })
         })
     }

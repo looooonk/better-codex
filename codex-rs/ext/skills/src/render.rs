@@ -8,11 +8,8 @@ use crate::catalog::SkillSourceKind;
 use crate::fragments::AvailableSkillsInstructions;
 
 const MAX_AVAILABLE_SKILLS_BYTES: usize = 8_000;
-const MAX_MAIN_PROMPT_BYTES: usize = 8_000;
 const MAX_CATALOG_SKILL_DESCRIPTION_CHARS: usize = 1_024;
 const TRUNCATED_SKILL_DESCRIPTION_SUFFIX: &str = "...";
-pub(crate) const MAX_SKILL_NAME_BYTES: usize = 256;
-pub(crate) const MAX_SKILL_PATH_BYTES: usize = 1_024;
 
 #[tracing::instrument(
     level = "trace",
@@ -97,10 +94,6 @@ fn render_skill_line(entry: &SkillCatalogEntry, description: &str) -> String {
     } else {
         format!("- {name}: {description} ({locator_kind}: {path})")
     }
-}
-
-pub(crate) fn truncate_main_prompt_contents(contents: &str) -> (String, bool) {
-    truncate_utf8_to_bytes(contents, MAX_MAIN_PROMPT_BYTES)
 }
 
 pub(crate) fn truncate_utf8_to_bytes(contents: &str, max_bytes: usize) -> (String, bool) {
