@@ -1,4 +1,5 @@
 use super::ContextualUserFragment;
+use super::bound_developer_configuration_text;
 use codex_prompts::END_INSTRUCTIONS;
 use codex_protocol::protocol::REALTIME_CONVERSATION_CLOSE_TAG;
 use codex_protocol::protocol::REALTIME_CONVERSATION_OPEN_TAG;
@@ -11,7 +12,7 @@ pub(crate) struct RealtimeEndInstructions {
 impl RealtimeEndInstructions {
     pub(crate) fn new(reason: impl Into<String>) -> Self {
         Self {
-            reason: reason.into(),
+            reason: bound_developer_configuration_text(&reason.into()),
         }
     }
 }
@@ -33,6 +34,10 @@ impl ContextualUserFragment for RealtimeEndInstructions {
     }
 
     fn body(&self) -> String {
-        format!("\n{}\n\nReason: {}\n", END_INSTRUCTIONS.trim(), self.reason)
+        bound_developer_configuration_text(&format!(
+            "\n{}\n\nReason: {}\n",
+            END_INSTRUCTIONS.trim(),
+            self.reason
+        ))
     }
 }

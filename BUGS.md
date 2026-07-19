@@ -199,7 +199,7 @@ environment block is forwarded to the model.
 
 ### 11. [P0][Model context / Configuration] Raw developer-mode instruction fields have no hard caps
 
-**Status:** Assigned
+**Status:** Fixed
 
 Thread developer instructions, collaboration instructions, multi-agent guidance, usage hints, and
 realtime instructions are accepted as raw strings and rendered without a shared size bound. Entry

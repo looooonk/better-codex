@@ -1,4 +1,5 @@
 use super::ContextualUserFragment;
+use super::bound_developer_configuration_text;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::CONTEXT_WINDOW_CLOSE_TAG;
 use codex_protocol::protocol::CONTEXT_WINDOW_GUIDANCE_CLOSE_TAG;
@@ -92,7 +93,7 @@ pub(crate) struct ContextWindowGuidance {
 impl ContextWindowGuidance {
     pub(crate) fn new(message: &str) -> Self {
         Self {
-            message: message.to_string(),
+            message: bound_developer_configuration_text(message),
         }
     }
 }
@@ -114,7 +115,7 @@ impl ContextualUserFragment for ContextWindowGuidance {
     }
 
     fn body(&self) -> String {
-        format!("\n{}\n", self.message)
+        bound_developer_configuration_text(&format!("\n{}\n", self.message))
     }
 }
 

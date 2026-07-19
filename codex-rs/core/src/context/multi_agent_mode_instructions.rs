@@ -1,4 +1,5 @@
 use super::ContextualUserFragment;
+use super::bound_developer_configuration_text;
 use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::protocol::MULTI_AGENT_MODE_CLOSE_TAG;
 use codex_protocol::protocol::MULTI_AGENT_MODE_OPEN_TAG;
@@ -12,7 +13,10 @@ pub(crate) struct MultiAgentModeInstructions {
 }
 
 impl MultiAgentModeInstructions {
-    pub(crate) fn new(multi_agent_mode: MultiAgentMode) -> Self {
+    pub(crate) fn new(mut multi_agent_mode: MultiAgentMode) -> Self {
+        if let MultiAgentMode::Custom(hint_text) = &mut multi_agent_mode {
+            *hint_text = bound_developer_configuration_text(hint_text);
+        }
         Self { multi_agent_mode }
     }
 }

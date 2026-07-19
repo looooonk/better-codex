@@ -1,5 +1,7 @@
 use super::residency::is_v2_resident_session_source;
 use super::*;
+use crate::context::ContextualUserFragment;
+use crate::context::DeveloperInstructions;
 use codex_extension_api::ExtensionDataInit;
 
 const AGENT_NAMES: &str = include_str!("../agent_names.txt");
@@ -511,6 +513,7 @@ impl AgentControl {
                     ]
                     .into_iter()
                     .flatten()
+                    .map(|text| DeveloperInstructions::new(text).render())
                     .collect()
                 } else {
                     Vec::new()
@@ -522,6 +525,7 @@ impl AgentControl {
                 ]
                 .into_iter()
                 .flatten()
+                .map(|text| DeveloperInstructions::new(text).render())
                 .collect()
             } else {
                 Vec::new()
@@ -556,7 +560,7 @@ impl AgentControl {
                 config.multi_agent_v2.subagent_usage_hint_text.clone()
             && let Some(subagent_usage_hint_message) =
                 crate::context_manager::updates::build_developer_update_item(vec![
-                    subagent_usage_hint_text,
+                    DeveloperInstructions::new(subagent_usage_hint_text).render(),
                 ])
         {
             forked_rollout_items.push(RolloutItem::ResponseItem(subagent_usage_hint_message));

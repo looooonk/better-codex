@@ -214,6 +214,24 @@ fn spawn_agent_tool_caps_reasoning_effort_value_length() {
 }
 
 #[test]
+fn spawn_agent_tool_caps_configured_usage_hint() {
+    let usage_hint = format!("usage-prefix\n{}\nusage-suffix", "x".repeat(50_000));
+    let tool = create_spawn_agent_tool_v2(SpawnAgentToolOptions {
+        available_models: Vec::new(),
+        agent_type_description: "role help".to_string(),
+        hide_agent_type_model_reasoning: true,
+        usage_hint_text: Some(usage_hint),
+    });
+
+    let ToolSpec::Function(ResponsesApiTool { description, .. }) = tool else {
+        panic!("spawn_agent should be a function tool");
+    };
+    assert!(codex_utils_output_truncation::approx_token_count(&description) <= 1_500);
+    assert!(description.contains("usage-prefix"));
+    assert!(description.contains("usage-suffix"));
+}
+
+#[test]
 fn spawn_agent_tool_hides_service_tier_with_spawn_metadata() {
     let tool = create_spawn_agent_tool_v2(SpawnAgentToolOptions {
         available_models: vec![model_preset("visible", /*show_in_picker*/ true)],

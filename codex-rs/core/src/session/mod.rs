@@ -26,6 +26,7 @@ use crate::context::ApprovedCommandPrefixSaved;
 use crate::context::AvailableSkillsInstructions;
 use crate::context::CollaborationModeInstructions;
 use crate::context::ContextualUserFragment;
+use crate::context::DeveloperInstructions;
 use crate::context::INTER_AGENT_TURN_OMITTED_MESSAGE;
 use crate::context::InterAgentMessageAdmission;
 use crate::context::InterAgentMessageBudget;
@@ -3286,7 +3287,7 @@ impl Session {
             && let Some(developer_instructions) = turn_context.developer_instructions.as_deref()
             && !developer_instructions.is_empty()
         {
-            developer_sections.push(developer_instructions.to_string());
+            developer_sections.push(DeveloperInstructions::new(developer_instructions).render());
         }
         // Add developer instructions from collaboration_mode if they exist and are non-empty
         if turn_context.config.include_collaboration_mode_instructions
@@ -3495,7 +3496,7 @@ impl Session {
         if let Some(usage_hint_text) = multi_agent_v2_usage_hint_text
             && let Some(usage_hint_message) =
                 crate::context_manager::updates::build_developer_update_item(vec![
-                    usage_hint_text.to_string(),
+                    DeveloperInstructions::new(usage_hint_text).render(),
                 ])
         {
             items.push(usage_hint_message);

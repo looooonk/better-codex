@@ -21,6 +21,7 @@ use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_sequence;
+use core_test_support::responses::namespace_child_tool;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
@@ -117,6 +118,92 @@ async fn environment_context_is_aggregate_bounded() -> Result<()> {
     assert!(approx_token_count(&environment_context) <= 8_000);
     assert!(environment_context.contains("&lt;&amp;-"));
     assert!(environment_context.contains("<omitted count=\"92\" />"));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn configured_developer_instructions_are_individually_bounded() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "bounded"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let oversized = |label: &str| format!("{label}-prefix\n{}\n{label}-suffix", "x".repeat(50_000));
+    let collaboration_instructions = oversized("collaboration");
+    let mut builder = test_codex()
+        .with_model("gpt-5.4")
+        .with_config(move |config| {
+            config.developer_instructions = Some(oversized("thread"));
+            config
+                .features
+                .enable(Feature::MultiAgentV2)
+                .expect("test config should allow feature update");
+            config.multi_agent_v2.non_code_mode_only = false;
+            config.multi_agent_v2.root_agent_usage_hint_text = Some(oversized("root-usage"));
+            config.multi_agent_v2.multi_agent_mode_hint_text = Some(oversized("multi-agent-mode"));
+            config.multi_agent_v2.usage_hint_text = Some(oversized("tool-usage"));
+        });
+    let test = builder.build(&server).await?;
+
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "bound configured developer instructions".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                environments: Some(local_selections(test.config.cwd.clone())),
+                collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
+                    mode: codex_protocol::config_types::ModeKind::Default,
+                    settings: codex_protocol::config_types::Settings {
+                        model: test.session_configured.model.clone(),
+                        reasoning_effort: test.config.model_reasoning_effort.clone(),
+                        developer_instructions: Some(collaboration_instructions),
+                    },
+                }),
+                ..Default::default()
+            },
+        })
+        .await?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let request = response.single_request();
+    let configured_fragments = request
+        .message_input_texts("developer")
+        .into_iter()
+        .filter(|text| {
+            ["thread", "collaboration", "root-usage", "multi-agent-mode"]
+                .iter()
+                .any(|label| text.contains(&format!("{label}-prefix")))
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(configured_fragments.len(), 4);
+    for fragment in configured_fragments {
+        assert!(approx_token_count(&fragment) <= 1_000);
+        assert!(fragment.contains("-suffix"));
+    }
+
+    let body = request.body_json();
+    let spawn_agent_description = namespace_child_tool(&body, "collaboration", "spawn_agent")
+        .and_then(|tool| tool["description"].as_str())
+        .expect("spawn_agent tool description");
+    assert!(approx_token_count(spawn_agent_description) <= 1_500);
+    assert!(spawn_agent_description.contains("tool-usage-prefix"));
+    assert!(spawn_agent_description.contains("tool-usage-suffix"));
 
     Ok(())
 }

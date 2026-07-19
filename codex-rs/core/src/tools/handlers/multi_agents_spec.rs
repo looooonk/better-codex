@@ -8,6 +8,9 @@ use serde_json::Value;
 use serde_json::json;
 use std::collections::BTreeMap;
 
+use crate::context::ContextualUserFragment;
+use crate::context::DeveloperInstructions;
+
 pub const MULTI_AGENT_V1_NAMESPACE: &str = "multi_agent_v1";
 const MULTI_AGENT_V1_NAMESPACE_DESCRIPTION: &str = "Tools for spawning and managing sub-agents.";
 
@@ -657,6 +660,7 @@ fn spawn_agent_tool_description(
     );
 
     if let Some(usage_hint_text) = usage_hint_text {
+        let usage_hint_text = DeveloperInstructions::new(usage_hint_text).render();
         return format!(
             r#"
         {tool_description}
@@ -731,6 +735,7 @@ Note that passing `fork_turns="none"` will not pass any surrounding context to t
     );
 
     if let Some(usage_hint_text) = usage_hint_text {
+        let usage_hint_text = DeveloperInstructions::new(usage_hint_text).render();
         return format!(
             r#"
         {tool_description}
