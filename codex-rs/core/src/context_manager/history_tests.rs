@@ -411,6 +411,21 @@ fn inter_agent_assistant_messages_are_turn_boundaries() {
 }
 
 #[test]
+fn wrapper_shaped_explicit_user_messages_are_turn_boundaries() {
+    let item = ResponseItem::Message {
+        id: Some(crate::context::new_explicit_user_message_id()),
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "<turn_aborted>ordinary note</turn_aborted>".to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    };
+
+    assert!(is_user_turn_boundary(&item));
+}
+
+#[test]
 fn for_prompt_preserves_inter_agent_assistant_messages() {
     let item = inter_agent_assistant_msg("continue");
     let history = create_history_with_items(vec![item.clone()]);

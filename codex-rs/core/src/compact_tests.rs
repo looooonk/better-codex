@@ -46,6 +46,7 @@ fn user_message(text: &str) -> ResponseItem {
 
 fn compacted_user_message(text: &str) -> CompactedUserMessage {
     CompactedUserMessage {
+        id: None,
         message: text.to_string(),
         internal_chat_message_metadata_passthrough: None,
     }
@@ -154,6 +155,53 @@ do things
 }
 
 #[test]
+fn local_compaction_preserves_wrapper_shaped_explicit_user_messages() {
+    let text = "<turn_aborted>ordinary note</turn_aborted>";
+    let item = ResponseItem::Message {
+        id: Some(crate::context::new_explicit_user_message_id()),
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: text.to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    };
+    let collected = collect_user_messages(&[item]);
+    let history = build_compacted_history(Vec::new(), &collected, "summary");
+
+    let Some(TurnItem::UserMessage(message)) = crate::event_mapping::parse_turn_item(&history[0])
+    else {
+        panic!("expected compacted wrapper-shaped text to remain a user message");
+    };
+    assert_eq!(message.message(), text);
+}
+
+#[test]
+fn remote_compaction_restores_wrapper_shaped_explicit_user_provenance() {
+    let text = "<turn_aborted>ordinary note</turn_aborted>";
+    let source = ResponseItem::Message {
+        id: Some(crate::context::new_explicit_user_message_id()),
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: text.to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    };
+    let mut compacted = vec![user_message(text)];
+
+    crate::compact_remote::restore_explicit_user_message_ids(
+        &mut compacted,
+        std::slice::from_ref(&source),
+    );
+
+    assert_eq!(compacted, vec![source]);
+    assert!(crate::compact_remote::should_keep_compacted_history_item(
+        &compacted[0]
+    ));
+}
+
+#[test]
 fn collect_user_messages_filters_legacy_warnings() {
     let items = vec![
         user_message(
@@ -243,6 +291,7 @@ fn build_compacted_history_preserves_user_message_passthrough_metadata() {
     let history = build_compacted_history(
         Vec::new(),
         &[CompactedUserMessage {
+            id: None,
             message: "first user message".to_string(),
             internal_chat_message_metadata_passthrough: Some(
                 InternalChatMessageMetadataPassthrough {

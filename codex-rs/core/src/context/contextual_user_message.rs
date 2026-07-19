@@ -1,6 +1,8 @@
+use codex_protocol::ResponseItemId;
 use codex_protocol::items::HookPromptItem;
 use codex_protocol::items::parse_hook_prompt_fragment;
 use codex_protocol::models::ContentItem;
+use codex_protocol::models::ResponseItem;
 
 use super::AdditionalContextUserFragment;
 use super::FragmentRegistration;
@@ -61,6 +63,22 @@ static CONTEXTUAL_USER_FRAGMENTS: &[&dyn FragmentRegistration] = &[
     &LEGACY_MODEL_MISMATCH_WARNING_REGISTRATION,
 ];
 
+// Keep the Responses API's `msg_<UUID>` shape while reserving 48 random tail bits as durable
+// provenance. The remaining v7 timestamp and random bits still make IDs unique in practice.
+const EXPLICIT_USER_MESSAGE_ID_MAGIC: [u8; 6] = [0xc0, 0xde, 0xc0, 0xde, 0xfa, 0xce];
+
+pub(crate) fn new_explicit_user_message_id() -> ResponseItemId {
+    let mut bytes = uuid::Uuid::now_v7().into_bytes();
+    bytes[10..].copy_from_slice(&EXPLICIT_USER_MESSAGE_ID_MAGIC);
+    ResponseItemId::with_suffix("msg", uuid::Uuid::from_bytes(bytes))
+}
+
+fn is_explicit_user_message_id(id: Option<&str>) -> bool {
+    id.and_then(|id| id.strip_prefix("msg_"))
+        .and_then(|id| uuid::Uuid::parse_str(id).ok())
+        .is_some_and(|id| id.as_bytes()[10..] == EXPLICIT_USER_MESSAGE_ID_MAGIC)
+}
+
 fn is_standard_contextual_user_text(text: &str) -> bool {
     CONTEXTUAL_USER_FRAGMENTS
         .iter()
@@ -74,10 +92,29 @@ pub(crate) fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {
     parse_hook_prompt_fragment(text).is_some() || is_standard_contextual_user_text(text)
 }
 
+pub(crate) fn is_contextual_user_message(item: &ResponseItem) -> bool {
+    let ResponseItem::Message { content, .. } = item else {
+        return false;
+    };
+    !is_explicit_user_message(item) && content.iter().any(is_contextual_user_fragment)
+}
+
+pub(crate) fn is_explicit_user_message(item: &ResponseItem) -> bool {
+    matches!(
+        item,
+        ResponseItem::Message { id, role, .. }
+            if role == "user" && is_explicit_user_message_id(id.as_deref())
+    )
+}
+
 pub(crate) fn parse_visible_hook_prompt_message(
     id: Option<&str>,
     content: &[ContentItem],
 ) -> Option<HookPromptItem> {
+    if is_explicit_user_message_id(id) {
+        return None;
+    }
+
     let mut fragments = Vec::new();
 
     for content_item in content {

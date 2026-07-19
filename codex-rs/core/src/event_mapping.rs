@@ -26,7 +26,7 @@ use codex_protocol::user_input::UserInput;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::context::is_contextual_user_fragment;
+use crate::context::is_contextual_user_message;
 use crate::context::parse_visible_hook_prompt_message;
 use crate::web_search::web_search_action_detail;
 
@@ -46,10 +46,6 @@ const CONTEXTUAL_DEVELOPER_PREFIXES: &[&str] = &[
     CONTEXT_WINDOW_GUIDANCE_OPEN_TAG,
     "<rollout_budget>",
 ];
-
-pub(crate) fn is_contextual_user_message_content(message: &[ContentItem]) -> bool {
-    message.iter().any(is_contextual_user_fragment)
-}
 
 /// Returns true when a developer message contains any rollback-trimmable contextual fragment.
 ///
@@ -81,11 +77,7 @@ fn is_contextual_dev_fragment(content_item: &ContentItem) -> bool {
     })
 }
 
-fn parse_user_message(message: &[ContentItem]) -> Option<UserMessageItem> {
-    if is_contextual_user_message_content(message) {
-        return None;
-    }
-
+fn parse_user_message(message: &[ContentItem]) -> UserMessageItem {
     let mut content: Vec<UserInput> = Vec::new();
 
     for (idx, content_item) in message.iter().enumerate() {
@@ -117,7 +109,7 @@ fn parse_user_message(message: &[ContentItem]) -> Option<UserMessageItem> {
         }
     }
 
-    Some(UserMessageItem::new(&content))
+    UserMessageItem::new(&content)
 }
 
 fn parse_agent_message(
@@ -161,7 +153,10 @@ pub fn parse_turn_item(item: &ResponseItem) -> Option<TurnItem> {
         } => match role.as_str() {
             "user" => parse_visible_hook_prompt_message(id.as_deref(), content)
                 .map(TurnItem::HookPrompt)
-                .or_else(|| parse_user_message(content).map(TurnItem::UserMessage)),
+                .or_else(|| {
+                    (!is_contextual_user_message(item))
+                        .then(|| TurnItem::UserMessage(parse_user_message(content)))
+                }),
             "assistant" => Some(TurnItem::AgentMessage(parse_agent_message(
                 id.as_deref(),
                 content,

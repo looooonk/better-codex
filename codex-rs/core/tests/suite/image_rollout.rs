@@ -62,6 +62,11 @@ fn extract_image_url(item: &ResponseItem) -> Option<String> {
     }
 }
 
+fn strip_user_transport(mut item: ResponseItem) -> ResponseItem {
+    item.set_id(/*new_id*/ None);
+    responses::strip_metadata(item)
+}
+
 async fn read_rollout_text(path: &Path) -> anyhow::Result<String> {
     for _ in 0..50 {
         if path.exists()
@@ -181,7 +186,7 @@ async fn copy_paste_local_image_persists_rollout_request_shape() -> anyhow::Resu
         internal_chat_message_metadata_passthrough: None,
     };
 
-    assert_eq!(responses::strip_metadata(actual), expected);
+    assert_eq!(strip_user_transport(actual), expected);
 
     Ok(())
 }
@@ -272,7 +277,7 @@ async fn drag_drop_image_persists_rollout_request_shape() -> anyhow::Result<()> 
         internal_chat_message_metadata_passthrough: None,
     };
 
-    assert_eq!(responses::strip_metadata(actual), expected);
+    assert_eq!(strip_user_transport(actual), expected);
 
     Ok(())
 }

@@ -31,6 +31,7 @@ const CLOSE_CALL_ID: &str = "close-context-worker";
 const SPAWN_PROMPT: &str = "spawn a context worker";
 const CHILD_PROMPT: &str = "inspect context changes";
 const CLOSE_PROMPT: &str = "close the context worker";
+const WRAPPER_SHAPED_USER_PROMPT: &str = "<turn_aborted>ordinary note</turn_aborted>";
 
 fn body_contains(request: &wiremock::Request, text: &str) -> bool {
     decoded_body(request)
@@ -91,6 +92,44 @@ async fn submit_plain_turn(test: &TestCodex, prompt: &str) -> Result<()> {
         matches!(event, EventMsg::TurnComplete(_))
     })
     .await;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn wrapper_shaped_user_input_remains_in_incremental_history() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("wrapper-response"),
+                ev_completed("wrapper-response"),
+            ]),
+            sse(vec![
+                ev_response_created("followup-response"),
+                ev_completed("followup-response"),
+            ]),
+        ],
+    )
+    .await;
+    let mut builder = test_codex();
+    let test = builder.build_with_auto_env(&server).await?;
+
+    test.submit_turn(WRAPPER_SHAPED_USER_PROMPT).await?;
+    test.submit_turn("follow up").await?;
+
+    let requests = responses.requests();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(
+        count_exact(
+            &requests[1].message_input_texts("user"),
+            WRAPPER_SHAPED_USER_PROMPT,
+        ),
+        1
+    );
+
     Ok(())
 }
 

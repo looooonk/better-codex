@@ -2821,10 +2821,12 @@ impl Session {
     }
 
     pub(crate) fn response_item_from_user_input(&self, input: Vec<UserInput>) -> ResponseItem {
-        ResponseItem::from(ResponseInputItem::from_user_input(
+        let mut item = ResponseItem::from(ResponseInputItem::from_user_input(
             input,
             LocalImagePreparation::Defer,
-        ))
+        ));
+        item.set_id(Some(crate::context::new_explicit_user_message_id()));
+        item
     }
 
     #[tracing::instrument(level = "trace", skip_all, fields(item_count = items.len()))]

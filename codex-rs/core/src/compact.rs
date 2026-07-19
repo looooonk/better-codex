@@ -554,6 +554,7 @@ pub fn content_items_to_text(content: &[ContentItem]) -> Option<String> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CompactedUserMessage {
+    id: Option<codex_protocol::ResponseItemId>,
     message: String,
     internal_chat_message_metadata_passthrough: Option<InternalChatMessageMetadataPassthrough>,
 }
@@ -567,6 +568,11 @@ pub(crate) fn collect_user_messages(items: &[ResponseItem]) -> Vec<CompactedUser
                     None
                 } else {
                     Some(CompactedUserMessage {
+                        id: if crate::context::is_explicit_user_message(item) {
+                            item.id().cloned()
+                        } else {
+                            None
+                        },
                         message: user.message(),
                         internal_chat_message_metadata_passthrough: match item {
                             ResponseItem::Message {
@@ -678,6 +684,7 @@ fn build_compacted_history_with_limit(
                 let truncated =
                     truncate_text(&message.message, TruncationPolicy::Tokens(remaining));
                 selected_messages.push(CompactedUserMessage {
+                    id: message.id.clone(),
                     message: truncated,
                     internal_chat_message_metadata_passthrough: message
                         .internal_chat_message_metadata_passthrough
@@ -691,7 +698,7 @@ fn build_compacted_history_with_limit(
 
     for message in &selected_messages {
         history.push(ResponseItem::Message {
-            id: None,
+            id: message.id.clone(),
             role: "user".to_string(),
             content: vec![ContentItem::InputText {
                 text: message.message.clone(),

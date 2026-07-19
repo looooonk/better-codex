@@ -5356,10 +5356,26 @@ async fn remote_v2_compaction_keeps_creation_time_instructions_after_same_path_m
         vec![old_fragment.clone(), replacement_fragment]
     );
     let resumed_input = requests[3].input();
+    let clear_ids = |items: &[Value]| {
+        items
+            .iter()
+            .cloned()
+            .map(|mut item| {
+                if let Value::Object(item) = &mut item {
+                    item.remove("id");
+                }
+                item
+            })
+            .collect::<Vec<_>>()
+    };
     assert_eq!(
-        resumed_input.get(..replacement_history.len()),
-        Some(replacement_history.as_slice()),
-        "remote-v2 cold resume should replay persisted replacement history verbatim"
+        clear_ids(
+            resumed_input
+                .get(..replacement_history.len())
+                .expect("resumed input should contain the replacement history")
+        ),
+        clear_ids(&replacement_history),
+        "remote-v2 cold resume should replay persisted replacement history except transport IDs"
     );
     let post_compact_input = requests[2].input();
     assert_eq!(

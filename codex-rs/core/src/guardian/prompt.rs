@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::compact::content_items_to_text;
-use crate::event_mapping::is_contextual_user_message_content;
+use crate::context::is_contextual_user_message;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use codex_utils_output_truncation::approx_bytes_for_tokens;
@@ -431,8 +431,8 @@ pub(crate) fn collect_guardian_transcript_entries(
 
     for item in items {
         let entry = match item {
-            ResponseItem::Message { role, content, .. } if role == "user" => {
-                if is_contextual_user_message_content(content) {
+            item @ ResponseItem::Message { role, content, .. } if role == "user" => {
+                if is_contextual_user_message(item) {
                     None
                 } else {
                     content_entry(GuardianTranscriptEntryKind::User, content)

@@ -52,10 +52,11 @@ async fn build_prompt_input_includes_context_and_user_message() -> Result<()> {
         phase: None,
         internal_chat_message_metadata_passthrough: None,
     };
-    assert_eq!(
-        input.last().cloned().map(strip_metadata),
-        Some(expected_user_message)
-    );
+    let actual_user_message = input.last().cloned().map(|mut item| {
+        item.set_id(/*new_id*/ None);
+        strip_metadata(item)
+    });
+    assert_eq!(actual_user_message, Some(expected_user_message));
     assert!(input.iter().any(|item| {
         let ResponseItem::Message { content, .. } = item else {
             return false;

@@ -40,6 +40,10 @@ mod request;
 use request::RemoteCompactAttempt;
 use request::run_remote_compact_attempt;
 
+#[path = "compact_remote_user_message_provenance.rs"]
+mod user_message_provenance;
+pub(crate) use user_message_provenance::restore_explicit_user_message_ids;
+
 const CONTEXT_WINDOW_TRUNCATED_OUTPUT_MESSAGE: &str =
     "Output exceeded the available model context and was truncated";
 
@@ -253,9 +257,10 @@ async fn run_remote_compact_task_inner_impl(
         }
     };
     let RemoteCompactAttempt {
-        new_history,
+        mut new_history,
         trace_input_history,
     } = attempt;
+    restore_explicit_user_message_ids(&mut new_history, &trace_input_history);
     let (new_window_number, new_window_ids) = sess.advance_auto_compact_window().await;
     let (new_history, world_state_baseline) = process_compacted_history(
         sess.as_ref(),

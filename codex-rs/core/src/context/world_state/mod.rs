@@ -162,7 +162,7 @@ impl ContextualUserFragment for WorldStateContextFragment {
 pub(crate) enum PreviousSectionState<'a, T> {
     /// No persisted snapshot or matching fragment exists in retained history.
     Absent,
-    /// Retained history contains the section, but its typed snapshot is unavailable.
+    /// Retained history contains the section, but no trustworthy typed snapshot is available.
     Unknown,
     /// The exact persisted snapshot is available.
     Known(&'a T),
@@ -294,20 +294,22 @@ impl WorldState {
         })
     }
 
-    /// Falls back to retained model history when no exact persisted snapshot is available.
+    /// Uses retained model history when it is authoritative for a section, otherwise falling back
+    /// to it only when no exact persisted snapshot is available.
     pub(crate) fn render_history_diff(
         &self,
         previous: Option<&WorldStateSnapshot>,
         items: &[ResponseItem],
     ) -> Vec<Box<dyn ContextualUserFragment>> {
         self.render_with(|id, section| {
-            if let Some(previous) = previous.and_then(|previous| previous.sections.get(id)) {
-                if section.has_retained_fragment_matcher() && !has_retained_fragment(items, section)
-                {
-                    PreviousSectionState::Absent
+            if section.has_retained_fragment_matcher() {
+                if has_retained_fragment(items, section) {
+                    PreviousSectionState::Unknown
                 } else {
-                    PreviousSectionState::Known(previous)
+                    PreviousSectionState::Absent
                 }
+            } else if let Some(previous) = previous.and_then(|previous| previous.sections.get(id)) {
+                PreviousSectionState::Known(previous)
             } else if has_legacy_fragment(items, section) {
                 PreviousSectionState::Unknown
             } else {

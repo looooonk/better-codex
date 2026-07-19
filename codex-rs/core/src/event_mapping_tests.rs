@@ -4,6 +4,7 @@ use super::parse_turn_item;
 use crate::context::ContextualUserFragment;
 use crate::context::InternalContextSource;
 use crate::context::InternalModelContextFragment;
+use crate::context::new_explicit_user_message_id;
 use codex_protocol::ResponseItemId;
 use codex_protocol::items::AgentMessageContent;
 use codex_protocol::items::HookPromptFragment;
@@ -313,6 +314,31 @@ fn skips_user_instructions_and_env() {
         let turn_item = parse_turn_item(&item);
         assert!(turn_item.is_none(), "expected none, got {turn_item:?}");
     }
+}
+
+#[test]
+fn parses_wrapper_shaped_explicit_user_text() {
+    let text = "<turn_aborted>ordinary note</turn_aborted>";
+    let item = ResponseItem::Message {
+        id: Some(new_explicit_user_message_id()),
+        role: "user".to_string(),
+        content: vec![ContentItem::InputText {
+            text: text.to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    };
+
+    let Some(TurnItem::UserMessage(message)) = parse_turn_item(&item) else {
+        panic!("expected wrapper-shaped text to parse as a user message");
+    };
+    assert_eq!(
+        message.content,
+        vec![UserInput::Text {
+            text: text.to_string(),
+            text_elements: Vec::new(),
+        }]
+    );
 }
 
 #[test]

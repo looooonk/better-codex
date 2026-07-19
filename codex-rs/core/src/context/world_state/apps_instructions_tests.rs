@@ -67,3 +67,19 @@ fn persisted_guidance_is_restored_only_when_missing_from_history() {
             .is_empty()
     );
 }
+
+#[test]
+fn retained_guidance_satisfies_reenabled_apps() {
+    let mut unavailable = super::super::WorldState::default();
+    unavailable.add_section(AppsInstructionsState::new(/*available*/ false));
+    let unavailable_snapshot = unavailable.snapshot();
+    let mut reenabled = super::super::WorldState::default();
+    reenabled.add_section(AppsInstructionsState::new(/*available*/ true));
+    let retained: ResponseItem = ContextualUserFragment::into(AppsInstructions);
+
+    assert!(
+        reenabled
+            .render_history_diff(Some(&unavailable_snapshot), &[retained])
+            .is_empty()
+    );
+}

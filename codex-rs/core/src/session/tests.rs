@@ -9722,7 +9722,13 @@ async fn task_finish_emits_turn_item_lifecycle_for_leftover_pending_user_input()
         internal_chat_message_metadata_passthrough: None,
     };
     assert!(
-        strip_metadata_from_items(history.raw_items()).contains(&expected),
+        strip_metadata_from_items(history.raw_items())
+            .into_iter()
+            .map(|mut item| {
+                item.set_id(/*new_id*/ None);
+                item
+            })
+            .any(|item| item == expected),
         "expected pending input to be persisted into history on turn completion"
     );
 

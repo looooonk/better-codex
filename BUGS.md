@@ -368,7 +368,7 @@ and submit another turn. The previous collaboration instructions remain in reque
 
 ### 22. [P2][Model context / Capabilities] Re-enabling apps or plugins duplicates generic guidance
 
-**Status:** Assigned
+**Status:** Fixed
 
 `AppsInstructionsState` and `PluginsInstructionsState` render generic usage guidance only on
 unavailable-to-available transitions and emit nothing for available-to-unavailable transitions
@@ -384,7 +384,7 @@ same generic instructions.
 
 ### 23. [P1][History integrity] Ordinary user text matching an internal wrapper is misclassified
 
-**Status:** Assigned
+**Status:** Fixed
 
 Internal fragment recognition relies on marker text alone. A genuine user message such as
 `<turn_aborted>ordinary note</turn_aborted>` is recognized as an internal contextual fragment.

@@ -1,10 +1,10 @@
 use crate::context::ContextualUserFragment;
+use crate::context::is_contextual_user_message;
 use crate::context::world_state::WorldState;
 use crate::context::world_state::WorldStateSnapshot;
 use crate::context_manager::normalize;
 use crate::event_mapping::has_non_contextual_dev_message_content;
 use crate::event_mapping::is_contextual_dev_message_content;
-use crate::event_mapping::is_contextual_user_message_content;
 use crate::session::turn_context::TurnContext;
 use crate::tools::context::bounded_tool_search_output_values;
 use base64::Engine;
@@ -463,8 +463,8 @@ impl ContextManager {
                     }
                     cut_idx -= 1;
                 }
-                ResponseItem::Message { role, content, .. }
-                    if role == "user" && is_contextual_user_message_content(content) =>
+                item @ ResponseItem::Message { role, .. }
+                    if role == "user" && is_contextual_user_message(item) =>
                 {
                     cut_idx -= 1;
                 }
@@ -573,7 +573,15 @@ fn estimate_response_item_model_visible_bytes(item: &ResponseItem) -> i64 {
             ..
         } => i64::try_from(estimate_reasoning_length(content.len())).unwrap_or(i64::MAX),
         item => {
-            let raw = serde_json::to_string(item)
+            let mut item_without_user_provenance;
+            let serialized_item = if crate::context::is_explicit_user_message(item) {
+                item_without_user_provenance = item.clone();
+                item_without_user_provenance.set_id(/*new_id*/ None);
+                &item_without_user_provenance
+            } else {
+                item
+            };
+            let raw = serde_json::to_string(serialized_item)
                 .map(|serialized| i64::try_from(serialized.len()).unwrap_or(i64::MAX))
                 .unwrap_or_default();
             let (image_payload_bytes, image_replacement_bytes) =
@@ -764,7 +772,7 @@ pub(crate) fn is_user_turn_boundary(item: &ResponseItem) -> bool {
         return false;
     };
 
-    (role == "user" && !is_contextual_user_message_content(content))
+    (role == "user" && !is_contextual_user_message(item))
         || (role == "assistant" && is_inter_agent_instruction_content(content))
 }
 

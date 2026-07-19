@@ -933,6 +933,12 @@ fn normalize_value(value: Value) -> Value {
 }
 
 fn normalize_string(value: &str) -> String {
+    if value
+        .strip_prefix("msg_")
+        .is_some_and(|id| is_uuid_like(id) && id.ends_with("c0dec0deface"))
+    {
+        return "msg_<EXPLICIT_USER_MESSAGE_UUID>".to_string();
+    }
     if is_uuid_like(value) {
         return "<UUID>".to_string();
     }
