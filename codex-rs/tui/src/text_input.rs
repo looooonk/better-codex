@@ -6,6 +6,9 @@ use std::ops::Range;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+mod display;
+pub(crate) use display::EditableTextDisplay;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TextInputAction {
     MoveLeft,
@@ -53,6 +56,15 @@ impl EditableText {
     }
 
     pub(crate) fn text_with_cursor_window(&self, max_width: usize) -> String {
+        let display = self.display();
+        Self {
+            text: display.text.into_owned(),
+            cursor: display.cursor,
+        }
+        .raw_text_with_cursor_window(max_width)
+    }
+
+    fn raw_text_with_cursor_window(&self, max_width: usize) -> String {
         let text = self.text_with_cursor();
         if UnicodeWidthStr::width(text.as_str()) <= max_width {
             return text;

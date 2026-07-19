@@ -275,6 +275,37 @@ fn cursor_window_keeps_long_unicode_input_visible() {
 }
 
 #[test]
+fn cursor_window_expands_tabs_without_changing_input() {
+    let mut input = EditableText::new("a\tb");
+
+    assert_eq!(
+        (
+            input.text(),
+            input.text_with_cursor_window(/*max_width*/ 12)
+        ),
+        ("a\tb", "a       b▏".to_string())
+    );
+
+    input.apply(TextInputAction::MoveLeft);
+    assert_eq!(
+        (
+            input.text(),
+            input.text_with_cursor_window(/*max_width*/ 12)
+        ),
+        ("a\tb", "a       ▏b".to_string())
+    );
+
+    let emoji = EditableText::new("👩‍💻\tb");
+    assert_eq!(
+        (
+            emoji.text(),
+            emoji.text_with_cursor_window(/*max_width*/ 12)
+        ),
+        ("👩‍💻\tb", "👩‍💻      b▏".to_string())
+    );
+}
+
+#[test]
 fn masked_cursor_window_hides_content_and_keeps_cursor_visible() {
     let mut input = EditableText::new("secret-token-value");
     input.apply(TextInputAction::MoveWordLeft);

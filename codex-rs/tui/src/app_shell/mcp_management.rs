@@ -404,7 +404,7 @@ impl McpManagementState {
         self.edit = None;
     }
 
-    fn push_draft(&mut self, text: &str) {
+    pub(super) fn push_draft(&mut self, text: &str) {
         if let Some(edit) = &mut self.edit {
             edit.draft.insert_str(text);
         }

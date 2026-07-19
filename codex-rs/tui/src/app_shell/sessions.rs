@@ -235,6 +235,12 @@ impl SessionListState {
         self.normalize_selection_and_scroll();
     }
 
+    pub(super) fn insert_search_text(&mut self, text: &str) {
+        self.search_query.insert_str(text);
+        self.apply_search_filter();
+        self.normalize_selection_and_scroll();
+    }
+
     pub(super) fn edit_search(&mut self, action: TextInputAction) -> SessionSearchOutcome {
         if !self.search_query.apply(action) {
             return SessionSearchOutcome::LocalFilterOnly;
@@ -294,6 +300,12 @@ impl SessionListState {
     pub(super) fn push_rename_char(&mut self, ch: char) {
         if let Some(draft) = &mut self.rename_draft {
             draft.insert_char(ch);
+        }
+    }
+
+    pub(super) fn insert_rename_text(&mut self, text: &str) {
+        if let Some(draft) = &mut self.rename_draft {
+            draft.insert_str(text);
         }
     }
 

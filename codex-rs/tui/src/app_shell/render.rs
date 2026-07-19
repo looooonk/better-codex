@@ -144,11 +144,8 @@ impl ShellView<'_> {
         }
 
         let input = self.layout(area)?.input;
-        composer_cursor_position(
-            input,
-            self.shell.composer.text(),
-            self.shell.composer.cursor(),
-        )
+        let composer = self.shell.composer.display();
+        composer_cursor_position(input, composer.text(), composer.cursor())
     }
 
     pub(super) fn input_area(&self, area: Rect) -> Rect {
@@ -451,17 +448,18 @@ impl ShellView<'_> {
             .unwrap_or(position);
         let body = body_rect_after_title(pane_content_rect(area));
         let visible_height = usize::from(body.height);
+        let composer = self.shell.composer.display();
         let mut lines = wrapped_composer_lines(
-            self.shell.composer.text(),
+            composer.text(),
             self.shell.composer.is_empty(),
-            self.shell.composer.cursor(),
+            composer.cursor(),
             usize::from(body.width).max(1),
         );
         if visible_height > 0 && lines.len() > visible_height {
             let max_start = lines.len().saturating_sub(visible_height);
             let cursor_line = composer_visual_cursor_line(
-                self.shell.composer.text(),
-                self.shell.composer.cursor(),
+                composer.text(),
+                composer.cursor(),
                 usize::from(body.width).max(1),
             )
             .unwrap_or(line);

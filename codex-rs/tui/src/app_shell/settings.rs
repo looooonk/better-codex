@@ -221,6 +221,12 @@ impl SettingsState {
         }
     }
 
+    pub(super) fn insert_edit_text(&mut self, text: &str) {
+        if let Some(edit) = &mut self.edit {
+            edit.draft.insert_str(text);
+        }
+    }
+
     pub(super) fn edit_text(&mut self, action: TextInputAction) {
         if let Some(edit) = &mut self.edit {
             edit.draft.apply(action);

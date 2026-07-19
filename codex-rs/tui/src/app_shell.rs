@@ -96,6 +96,7 @@ mod interactive_requests;
 mod mcp_management;
 mod modal_view;
 mod navigation;
+mod paste;
 mod plugin_management;
 mod pointer;
 mod queued_messages;
@@ -389,7 +390,7 @@ pub(crate) async fn run(
                             if !accepts_interaction {
                                 continue;
                             }
-                            shell.insert_text(&text);
+                            shell.insert_pasted_text(&text);
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::Resize => {
@@ -1432,29 +1433,6 @@ impl ShellState {
         } else {
             self.rate_limits.push(snapshot);
         }
-    }
-
-    fn insert_text(&mut self, text: &str) {
-        if self.selector.is_some()
-            || self.command_palette.is_some()
-            || self.agent_log.is_some()
-            || self.tool_output.is_some()
-            || self.safety_buffering_modal_lines().is_some()
-            || self.pending_approval.is_some()
-            || self.pending_session_delete.is_some()
-            || self.pending_elicitation.is_some()
-            || self.pending_external_agent_import.is_some()
-            || self.pending_mcp_management.is_some()
-            || self.pending_plugin_management.is_some()
-            || self.dashboard_focused()
-        {
-            return;
-        }
-        let result = self.composer.insert_str(text);
-        if result == composer::ComposerInsertResult::Inserted {
-            self.clear_transcript_selection();
-        }
-        self.report_composer_insert(result);
     }
 
     async fn handle_command_palette_key<S>(

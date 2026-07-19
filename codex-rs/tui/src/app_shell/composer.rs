@@ -1,4 +1,5 @@
 use crate::text_input::EditableText;
+use crate::text_input::EditableTextDisplay;
 use crate::text_input::TextInputAction;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use std::collections::VecDeque;
@@ -60,6 +61,10 @@ impl ComposerState {
         self.input.cursor()
     }
 
+    pub(super) fn display(&self) -> EditableTextDisplay<'_> {
+        self.input.display()
+    }
+
     pub(super) fn text_with_cursor_window(&self, max_width: usize) -> String {
         self.input.text_with_cursor_window(max_width)
     }
@@ -69,8 +74,9 @@ impl ComposerState {
     }
 
     pub(super) fn cursor_position(&self) -> (usize, usize) {
-        let cursor = self.input.cursor();
-        let text = self.input.text();
+        let display = self.input.display();
+        let cursor = display.cursor();
+        let text = display.text();
         let line_start = text[..cursor]
             .rfind('\n')
             .map(|index| index + 1)

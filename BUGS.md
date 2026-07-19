@@ -857,7 +857,7 @@ difference.
 
 ### 57. [P2][Input routing / TUI] Paste behaves differently from typing across modal editors
 
-**Status:** Assigned
+**Status:** Fixed
 
 Paste bypasses the keyboard dispatcher and always calls composer-oriented `insert_text`
 (`codex-rs/tui/src/app_shell.rs:363-368`). That method returns during dashboard or MCP editing
@@ -871,7 +871,7 @@ open Edits, paste, close Edits, and observe the pasted text unexpectedly appear 
 
 ### 58. [P2][Visual / Input] Literal tabs are hidden even though they are submitted
 
-**Status:** Assigned
+**Status:** Fixed
 
 Paste normalization preserves `\t` (`codex-rs/tui/src/app_shell/composer.rs:157-175`), but cursor
 calculation and Ratatui rendering treat the control grapheme as zero-width

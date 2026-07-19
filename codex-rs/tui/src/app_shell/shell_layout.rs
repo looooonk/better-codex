@@ -175,11 +175,12 @@ fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u1
         return desired_height.min(available_height);
     }
 
+    let composer = shell.composer.display();
     let composer_line_count = u16::try_from(
         wrapped_composer_lines(
-            shell.composer.text(),
+            composer.text(),
             shell.composer.is_empty(),
-            shell.composer.cursor(),
+            composer.cursor(),
             usize::from(body_width).max(1),
         )
         .len(),

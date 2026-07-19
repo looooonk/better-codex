@@ -409,10 +409,26 @@ fn renders_multiline_composer_growth_snapshot() {
 }
 
 #[test]
+fn pasted_tabs_use_visible_composer_indentation_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.insert_pasted_text("alpha\tbeta");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    assert_eq!(
+        (shell.composer.text(), shell.composer.submission_text()),
+        ("alpha\tbeta", "alpha\tbeta".to_string())
+    );
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn oversized_paste_reports_error_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.composer.set_text("draft stays intact");
-    shell.insert_text(&"x".repeat(composer::MAX_COMPOSER_BYTES));
+    shell.insert_pasted_text(&"x".repeat(composer::MAX_COMPOSER_BYTES));
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -3468,6 +3484,82 @@ async fn printable_character_repeat_reaches_text_entry_overlays() {
 }
 
 #[tokio::test]
+async fn paste_reaches_text_entry_overlays() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+
+    let mut search = ShellState::snapshot_fixture();
+    search.composer.clear();
+    search.dashboard_route = DashboardRoute::Sessions;
+    search.session_list.focused = true;
+    search.session_list.start_search();
+    search.insert_pasted_text("alpha beta");
+    search.session_list.stop_search();
+    assert_eq!(
+        (
+            search.session_list.first_page_params().search_term,
+            search.composer.text(),
+        ),
+        (Some("alpha beta".to_string()), "")
+    );
+
+    let mut rename = ShellState::snapshot_fixture();
+    rename.composer.clear();
+    rename.dashboard_route = DashboardRoute::Sessions;
+    rename.session_list.focused = true;
+    rename.session_list.start_rename();
+    let previous_name = rename.session_list.rename_draft().unwrap_or_default();
+    rename.insert_pasted_text("pasted");
+    assert_eq!(
+        (rename.session_list.rename_draft(), rename.composer.text()),
+        (Some(format!("{previous_name}pasted")), "")
+    );
+
+    let mut settings = ShellState::snapshot_fixture();
+    settings.composer.clear();
+    settings.dashboard_route = DashboardRoute::Status;
+    settings.settings.focused = true;
+    settings
+        .settings
+        .start_edit(SettingsAction::Theme, String::new());
+    settings.insert_pasted_text("solarized");
+    assert_eq!(
+        (settings.settings.take_edit(), settings.composer.text()),
+        (Some((SettingsAction::Theme, "solarized".to_string())), "")
+    );
+
+    let mut mcp = ShellState::snapshot_fixture();
+    mcp.composer.clear();
+    mcp.mcp_catalog = Some(ListMcpServerStatusResponse {
+        data: vec![mcp_status_fixture(
+            "github",
+            McpAuthStatus::NotLoggedIn,
+            ["search"],
+        )],
+        next_cursor: None,
+    });
+    mcp.open_mcp_management();
+    mcp.handle_key(key_char('a'), &config, &mut backend)
+        .await
+        .expect("MCP add mode should open");
+    mcp.insert_pasted_text("github {\"enabled\":true}");
+    let mcp_lines = mcp
+        .pending_mcp_management
+        .as_ref()
+        .expect("MCP manager should remain open")
+        .lines();
+    let mcp_draft = mcp_lines[3]
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect::<String>();
+    assert_eq!(
+        (mcp_draft, mcp.composer.text(), backend.calls()),
+        ("github {\"enabled\":true}▏".to_string(), "", Vec::new())
+    );
+}
+
+#[tokio::test]
 async fn editing_shortcuts_reach_dashboard_and_mcp_text_inputs() {
     let config = test_config().await;
     let mut backend = RecordingBackend::default();
@@ -5823,7 +5915,7 @@ async fn blocking_overlays_capture_keys_and_paste_before_the_composer() {
     shell.composer.set_text("draft");
     shell.pending_elicitation = PendingElicitation::from_request(&mcp_url_elicitation_request());
 
-    shell.insert_text(" pasted");
+    shell.insert_pasted_text(" pasted");
     shell
         .handle_key(key_char('x'), &config, &mut backend)
         .await
@@ -5841,13 +5933,25 @@ async fn blocking_overlays_capture_keys_and_paste_before_the_composer() {
     assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
 
     shell.pending_elicitation = None;
-    shell.session_list.focused = true;
-    shell.insert_text(" hidden");
+    shell.diff_view = Some(DiffViewState::new(
+        "Session edits",
+        /*source_item_id*/ None,
+        vec![super::diff_view::DiffFile::added(
+            "src/lib.rs",
+            "new line",
+            super::diff_view::DiffStatus::Completed,
+        )],
+    ));
+    shell.insert_pasted_text(" hidden by diff");
     assert_eq!(shell.composer.text(), "draft");
 
-    shell.session_list.focused = false;
+    shell.diff_view = None;
+    shell.session_list.focused = true;
+    shell.insert_pasted_text(" hidden");
+    assert_eq!(shell.composer.text(), "draft");
+
     shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
-    shell.insert_text(" answer");
+    shell.insert_pasted_text(" answer");
     assert_eq!(shell.composer.text(), "draft answer");
 }
 
@@ -8921,7 +9025,7 @@ fn long_pasted_single_line_exposes_every_wrapped_row_at_navigation_extents() {
         .map(|row| format!("R{row:02}{}", "x".repeat(content_width.saturating_sub(3))))
         .collect::<String>();
     pasted.push_str("R11TAIL");
-    shell.insert_text(&pasted);
+    shell.insert_pasted_text(&pasted);
 
     let input = ShellView { shell: &shell }.input_area(area);
     let body = design::body_rect_after_title(design::pane_content_rect(input));
