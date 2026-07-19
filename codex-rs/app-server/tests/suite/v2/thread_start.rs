@@ -555,6 +555,80 @@ async fn thread_start_accepts_absolute_runtime_workspace_roots() -> Result<()> {
 }
 
 #[tokio::test]
+async fn thread_start_rejects_too_many_runtime_workspace_roots() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
+    let codex_home = TempDir::new()?;
+    create_config_toml_without_approval_policy(codex_home.path(), &server.uri())?;
+    let cwd = TempDir::new()?;
+    let runtime_workspace_roots = (0..65)
+        .map(|index| cwd.path().join(format!("root-{index}")).abs())
+        .collect();
+
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build()
+        .await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_thread_start_request_with_auto_env(ThreadStartParams {
+            cwd: Some(cwd.path().to_string_lossy().into_owned()),
+            runtime_workspace_roots: Some(runtime_workspace_roots),
+            ..Default::default()
+        })
+        .await?;
+    let error: JSONRPCError = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+
+    assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
+    assert_eq!(
+        error.error.message,
+        "`runtimeWorkspaceRoots` accepts at most 64 paths"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_start_rejects_oversized_runtime_workspace_root() -> Result<()> {
+    let server = create_mock_responses_server_repeating_assistant("Done").await;
+    let codex_home = TempDir::new()?;
+    create_config_toml_without_approval_policy(codex_home.path(), &server.uri())?;
+    let cwd = TempDir::new()?;
+    let oversized_root = cwd.path().join("x".repeat(16 * 1024)).abs();
+
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build()
+        .await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_thread_start_request_with_auto_env(ThreadStartParams {
+            cwd: Some(cwd.path().to_string_lossy().into_owned()),
+            runtime_workspace_roots: Some(vec![oversized_root]),
+            ..Default::default()
+        })
+        .await?;
+    let error: JSONRPCError = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+
+    assert_eq!(error.error.code, INVALID_REQUEST_ERROR_CODE);
+    assert_eq!(
+        error.error.message,
+        "each `runtimeWorkspaceRoots` path must be at most 16384 bytes"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn thread_start_excludes_profile_workspace_roots_from_runtime_workspace_roots() -> Result<()>
 {
     let server = create_mock_responses_server_repeating_assistant("Done").await;

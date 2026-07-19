@@ -665,8 +665,9 @@ impl TurnRequestProcessor {
             || collaboration_mode.is_some()
             || personality.is_some();
 
-        let runtime_workspace_roots =
-            runtime_workspace_roots_request.map(resolve_runtime_workspace_roots);
+        let runtime_workspace_roots = runtime_workspace_roots_request
+            .map(resolve_runtime_workspace_roots)
+            .transpose()?;
         let approval_policy =
             approval_policy.map(codex_app_server_protocol::AskForApproval::to_core);
         let approvals_reviewer =

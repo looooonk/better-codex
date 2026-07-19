@@ -183,7 +183,7 @@ additional-context messages are retained, or all Stop fragments appear in one ov
 
 ### 10. [P0][Model context / Environment] Environment metadata accepts unbounded paths and policy entries
 
-**Status:** Assigned
+**Status:** Fixed
 
 `codex-rs/core/src/context/environment_context.rs:33-71,115-243` renders every workspace root,
 managed filesystem permission entry (including paths and glob patterns), and allowed/denied domain

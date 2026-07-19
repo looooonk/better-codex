@@ -7,9 +7,16 @@ use crate::context::environment_context::push_xml_escaped_text;
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::session::turn_context::TurnContext;
 use codex_utils_path_uri::PathUri;
+use codex_utils_string::approx_bytes_for_tokens;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::BTreeMap;
+
+const MAX_ENVIRONMENT_CONTEXT_TOKENS: usize = 8_000;
+const MAX_RENDERED_ENVIRONMENTS: usize = 4;
+const MAX_RENDERED_SUBAGENT_LINES: usize = 8;
+const ENVIRONMENT_CONTEXT_OMITTED_BODY: &str =
+    "\n  <metadata_omitted reason=\"environment context exceeded its hard limit\" />\n";
 
 /// Environment values visible to the model.
 #[derive(Clone, Debug, Default)]
@@ -199,7 +206,7 @@ impl ContextualUserFragment for RenderedEnvironments {
             }
         } else if !self.updates.is_empty() {
             rendered.push_str("  <environments>\n");
-            for (id, update) in &self.updates {
+            for (id, update) in self.updates.iter().take(MAX_RENDERED_ENVIRONMENTS) {
                 match update {
                     EnvironmentUpdate::Current(environment) => {
                         rendered.push_str("    <environment id=\"");
@@ -215,6 +222,10 @@ impl ContextualUserFragment for RenderedEnvironments {
                         rendered.push_str("\" status=\"unavailable\" />\n");
                     }
                 }
+            }
+            let omitted = self.updates.len().saturating_sub(MAX_RENDERED_ENVIRONMENTS);
+            if omitted > 0 {
+                rendered.push_str(&format!("    <omitted count=\"{omitted}\" />\n"));
             }
             rendered.push_str("  </environments>\n");
         }
@@ -232,14 +243,31 @@ impl ContextualUserFragment for RenderedEnvironments {
         }
         if let Some(subagents) = &self.subagents {
             rendered.push_str("  <subagents>\n");
-            for line in subagents.lines() {
+            let mut lines = subagents.lines();
+            for line in lines.by_ref().take(MAX_RENDERED_SUBAGENT_LINES) {
                 rendered.push_str("    ");
-                rendered.push_str(line);
+                push_xml_escaped_text(&mut rendered, line);
                 rendered.push('\n');
+            }
+            let omitted = lines.count();
+            if omitted > 0 {
+                rendered.push_str(&format!("    [additional {omitted} subagents omitted]\n"));
             }
             rendered.push_str("  </subagents>\n");
         }
+        bound_environment_context_body(rendered)
+    }
+}
+
+fn bound_environment_context_body(rendered: String) -> String {
+    let (open, close) = environment_context_markers();
+    let max_body_bytes = approx_bytes_for_tokens(MAX_ENVIRONMENT_CONTEXT_TOKENS)
+        .saturating_sub(open.len())
+        .saturating_sub(close.len());
+    if rendered.len() <= max_body_bytes {
         rendered
+    } else {
+        ENVIRONMENT_CONTEXT_OMITTED_BODY.to_string()
     }
 }
 

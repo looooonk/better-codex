@@ -10,6 +10,7 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
+use codex_utils_string::approx_token_count;
 use core_test_support::PathBufExt;
 use core_test_support::context_snapshot;
 use core_test_support::context_snapshot::ContextSnapshotOptions;
@@ -76,6 +77,48 @@ fn format_environment_context_subagents_snapshot(subagents: &[&str]) -> String {
         }],
     })];
     context_snapshot::format_response_items_snapshot(items.as_slice(), &context_snapshot_options())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn environment_context_is_aggregate_bounded() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "bounded"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let mut builder = test_codex().with_config(|config| {
+        let workspace_roots = (0..100)
+            .map(|index| {
+                config
+                    .cwd
+                    .join(format!("root-{index}-<&-{}", "x".repeat(2_000)))
+            })
+            .collect::<Vec<_>>();
+        config.workspace_roots = workspace_roots.clone();
+        config.permissions.set_workspace_roots(workspace_roots);
+    });
+    let test = builder.build(&server).await?;
+
+    test.submit_turn("bound environment context").await?;
+
+    let environment_context = response
+        .single_request()
+        .message_input_texts("user")
+        .into_iter()
+        .find(|text| text.starts_with("<environment_context>"))
+        .expect("environment context should be model visible");
+    assert!(approx_token_count(&environment_context) <= 8_000);
+    assert!(environment_context.contains("&lt;&amp;-"));
+    assert!(environment_context.contains("<omitted count=\"92\" />"));
+
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

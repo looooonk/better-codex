@@ -8,6 +8,11 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+const MAX_ENVIRONMENT_COLLECTION_ITEMS: usize = 8;
+const MAX_NETWORK_DOMAINS_PER_POLICY: usize = 4;
+const MAX_ENVIRONMENT_XML_VALUE_BYTES: usize = 512;
+const XML_VALUE_TRUNCATED_MARKER: &str = "[truncated]";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct FileSystemContext {
     workspace_roots: Vec<String>,
@@ -61,9 +66,19 @@ impl FileSystemContext {
         let mut rendered = "<filesystem>".to_string();
         if !self.workspace_roots.is_empty() {
             rendered.push_str("<workspace_roots>");
-            for root in &self.workspace_roots {
+            for root in self
+                .workspace_roots
+                .iter()
+                .take(MAX_ENVIRONMENT_COLLECTION_ITEMS)
+            {
                 push_text_element(&mut rendered, "root", root);
             }
+            push_omitted_count(
+                &mut rendered,
+                self.workspace_roots
+                    .len()
+                    .saturating_sub(MAX_ENVIRONMENT_COLLECTION_ITEMS),
+            );
             rendered.push_str("</workspace_roots>");
         }
         self.permission_profile.render(&mut rendered);
@@ -129,9 +144,15 @@ impl ManagedFileSystemContext {
                     rendered.push_str(&format!(" glob_scan_max_depth=\"{glob_scan_max_depth}\""));
                 }
                 rendered.push('>');
-                for entry in entries {
+                for entry in entries.iter().take(MAX_ENVIRONMENT_COLLECTION_ITEMS) {
                     render_file_system_entry(rendered, entry);
                 }
+                push_omitted_count(
+                    rendered,
+                    entries
+                        .len()
+                        .saturating_sub(MAX_ENVIRONMENT_COLLECTION_ITEMS),
+                );
                 rendered.push_str("</file_system>");
             }
             Self::Unrestricted => {
@@ -198,15 +219,34 @@ fn push_text_element(rendered: &mut String, name: &str, value: &str) {
 }
 
 pub(crate) fn push_xml_escaped_text(rendered: &mut String, value: &str) {
+    let initial_len = rendered.len();
     for ch in value.chars() {
-        match ch {
-            '&' => rendered.push_str("&amp;"),
-            '<' => rendered.push_str("&lt;"),
-            '>' => rendered.push_str("&gt;"),
-            '"' => rendered.push_str("&quot;"),
-            '\'' => rendered.push_str("&apos;"),
-            _ => rendered.push(ch),
+        let mut encoded = [0; 4];
+        let escaped = match ch {
+            '&' => "&amp;",
+            '<' => "&lt;",
+            '>' => "&gt;",
+            '"' => "&quot;",
+            '\'' => "&apos;",
+            _ => ch.encode_utf8(&mut encoded),
+        };
+        if rendered
+            .len()
+            .saturating_sub(initial_len)
+            .saturating_add(escaped.len())
+            .saturating_add(XML_VALUE_TRUNCATED_MARKER.len())
+            > MAX_ENVIRONMENT_XML_VALUE_BYTES
+        {
+            rendered.push_str(XML_VALUE_TRUNCATED_MARKER);
+            return;
         }
+        rendered.push_str(escaped);
+    }
+}
+
+fn push_omitted_count(rendered: &mut String, count: usize) {
+    if count > 0 {
+        rendered.push_str(&format!("<omitted count=\"{count}\" />"));
     }
 }
 
@@ -238,7 +278,20 @@ impl NetworkContext {
         }
 
         rendered_network.push_str(&format!("<{name}>"));
-        rendered_network.push_str(&domains.join(","));
+        for (index, domain) in domains
+            .iter()
+            .take(MAX_NETWORK_DOMAINS_PER_POLICY)
+            .enumerate()
+        {
+            if index > 0 {
+                rendered_network.push(',');
+            }
+            push_xml_escaped_text(rendered_network, domain);
+        }
+        let omitted = domains.len().saturating_sub(MAX_NETWORK_DOMAINS_PER_POLICY);
+        if omitted > 0 {
+            rendered_network.push_str(&format!(",[{omitted} omitted]"));
+        }
         rendered_network.push_str(&format!("</{name}>"));
     }
 }

@@ -591,14 +591,30 @@ fn resolve_turn_environment_selections(
     Ok(Some(selections))
 }
 
-fn resolve_runtime_workspace_roots(workspace_roots: Vec<AbsolutePathBuf>) -> Vec<AbsolutePathBuf> {
+const MAX_RUNTIME_WORKSPACE_ROOTS: usize = 64;
+const MAX_RUNTIME_WORKSPACE_ROOT_BYTES: usize = 16 * 1024;
+
+fn resolve_runtime_workspace_roots(
+    workspace_roots: Vec<AbsolutePathBuf>,
+) -> Result<Vec<AbsolutePathBuf>, JSONRPCErrorError> {
+    if workspace_roots.len() > MAX_RUNTIME_WORKSPACE_ROOTS {
+        return Err(invalid_request(format!(
+            "`runtimeWorkspaceRoots` accepts at most {MAX_RUNTIME_WORKSPACE_ROOTS} paths"
+        )));
+    }
+
     let mut resolved_roots = Vec::new();
     for root in workspace_roots {
+        if root.as_os_str().len() > MAX_RUNTIME_WORKSPACE_ROOT_BYTES {
+            return Err(invalid_request(format!(
+                "each `runtimeWorkspaceRoots` path must be at most {MAX_RUNTIME_WORKSPACE_ROOT_BYTES} bytes"
+            )));
+        }
         if !resolved_roots.iter().any(|existing| existing == &root) {
             resolved_roots.push(root);
         }
     }
-    resolved_roots
+    Ok(resolved_roots)
 }
 
 mod config_errors;

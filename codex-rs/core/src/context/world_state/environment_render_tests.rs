@@ -11,6 +11,7 @@ use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::permissions::project_roots_glob_pattern;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::test_support::PathBufExt;
+use codex_utils_string::approx_token_count;
 use core_test_support::test_path_buf;
 use pretty_assertions::assert_eq;
 use std::path::Path;
@@ -137,6 +138,68 @@ fn serialize_environment_context_with_network() {
     );
 
     assert_eq!(context.render(), expected);
+}
+
+#[test]
+fn environment_context_bounds_and_escapes_dynamic_metadata() {
+    let long_value = format!("<unsafe>&\"'{}", "x".repeat(2_000));
+    let environments = (0..10).map(|index| {
+        environment(
+            &format!("environment-{index}-{long_value}"),
+            PathUri::from_abs_path(&test_abs_path(&format!("/repo/{index}-{long_value}"))),
+            long_value.clone(),
+        )
+    });
+    let network = NetworkContext::new(
+        (0..12)
+            .map(|index| format!("allowed-{index}-{long_value}"))
+            .collect(),
+        (0..12)
+            .map(|index| format!("denied-{index}-{long_value}"))
+            .collect(),
+    );
+    let entries = (0..12)
+        .map(|index| FileSystemSandboxEntry {
+            path: FileSystemPath::Path {
+                path: test_abs_path(&format!("/entry/{index}-{long_value}")),
+            },
+            access: FileSystemAccessMode::Read,
+        })
+        .collect();
+    let permission_profile = PermissionProfile::from_runtime_permissions(
+        &FileSystemSandboxPolicy::restricted(entries),
+        NetworkSandboxPolicy::Restricted,
+    );
+    let workspace_roots = (0..12)
+        .map(|index| test_abs_path(&format!("/root/{index}-{long_value}")))
+        .collect::<Vec<_>>();
+    let mut context = environment_state(
+        environments,
+        Some(long_value.clone()),
+        Some(long_value.clone()),
+        Some(network),
+        Some(
+            (0..12)
+                .map(|index| format!("agent-{index}-{long_value}"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        ),
+    );
+    context.filesystem = Some(FileSystemContext::from_permission_profile(
+        &permission_profile,
+        &workspace_roots,
+    ));
+
+    let rendered = context.render();
+
+    assert!(approx_token_count(&rendered) <= 8_000);
+    assert!(rendered.contains("&lt;unsafe&gt;&amp;&quot;&apos;"));
+    assert!(!rendered.contains("<unsafe>"));
+    assert!(rendered.contains("[truncated]"));
+    assert!(rendered.contains("<omitted count=\"6\" />"));
+    assert!(rendered.contains("<omitted count=\"4\" />"));
+    assert!(rendered.contains("[8 omitted]"));
+    assert!(rendered.contains("[additional 4 subagents omitted]"));
 }
 
 fn workspace_write_permission_profile_with_private_denials() -> PermissionProfile {

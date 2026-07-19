@@ -642,7 +642,10 @@ async fn additional_context_is_escaped_and_aggregate_bounded() -> Result<()> {
     assert!(!context_texts.is_empty());
     assert!(context_texts.len() < MAX_ADDITIONAL_CONTEXT_ITEMS);
     assert!(
-        context_texts.iter().map(|text| text.len()).sum::<usize>()
+        context_texts
+            .iter()
+            .map(std::string::String::len)
+            .sum::<usize>()
             <= MAX_ADDITIONAL_CONTEXT_TOTAL_TOKENS * 4
     );
     assert!(context_texts[0].contains("&lt;/external_context_00&gt;"));

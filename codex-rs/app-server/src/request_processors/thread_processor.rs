@@ -976,7 +976,9 @@ impl ThreadRequestProcessor {
         }
         let environment_selections =
             resolve_turn_environment_selections(self.thread_manager.as_ref(), environments)?;
-        let runtime_workspace_roots = runtime_workspace_roots.map(resolve_runtime_workspace_roots);
+        let runtime_workspace_roots = runtime_workspace_roots
+            .map(resolve_runtime_workspace_roots)
+            .transpose()?;
         let mut typesafe_overrides = self.build_thread_config_overrides(
             model,
             model_provider,
@@ -2773,7 +2775,9 @@ impl ThreadRequestProcessor {
         };
 
         let history_cwd = thread_history.session_cwd();
-        let runtime_workspace_roots = runtime_workspace_roots.map(resolve_runtime_workspace_roots);
+        let runtime_workspace_roots = runtime_workspace_roots
+            .map(resolve_runtime_workspace_roots)
+            .transpose()?;
         let mut typesafe_overrides = self.build_thread_config_overrides(
             model,
             model_provider,
@@ -3520,7 +3524,9 @@ impl ThreadRequestProcessor {
         } else {
             Some(cli_overrides)
         };
-        let runtime_workspace_roots = runtime_workspace_roots.map(resolve_runtime_workspace_roots);
+        let runtime_workspace_roots = runtime_workspace_roots
+            .map(resolve_runtime_workspace_roots)
+            .transpose()?;
         let mut typesafe_overrides = self.build_thread_config_overrides(
             model,
             model_provider,
