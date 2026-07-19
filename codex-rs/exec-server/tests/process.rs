@@ -10,11 +10,13 @@ use codex_exec_server::ReadResponse;
 use codex_exec_server::TerminateResponse;
 use codex_exec_server::WriteResponse;
 use codex_exec_server::WriteStatus;
+use codex_exec_server_protocol::JSONRPCError;
 use codex_exec_server_protocol::JSONRPCMessage;
 use codex_exec_server_protocol::JSONRPCResponse;
 use codex_utils_path_uri::PathUri;
 use common::exec_server::exec_server;
 use pretty_assertions::assert_eq;
+use tempfile::TempDir;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn exec_server_starts_process_over_websocket() -> anyhow::Result<()> {
@@ -74,6 +76,71 @@ async fn exec_server_starts_process_over_websocket() -> anyhow::Result<()> {
             process_id: ProcessId::from("proc-1"),
         }
     );
+
+    server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exec_server_rejects_managed_network_without_sandbox() -> anyhow::Result<()> {
+    let mut server = exec_server().await?;
+    let initialize_id = server
+        .send_request(
+            "initialize",
+            serde_json::to_value(InitializeParams {
+                client_name: "exec-server-test".to_string(),
+                resume_session_id: None,
+            })?,
+        )
+        .await?;
+    let _ = server
+        .wait_for_event(|event| {
+            matches!(
+                event,
+                JSONRPCMessage::Response(JSONRPCResponse { id, .. }) if id == &initialize_id
+            )
+        })
+        .await?;
+    server
+        .send_notification("initialized", serde_json::json!({}))
+        .await?;
+
+    let temp = TempDir::new()?;
+    let marker = temp.path().join("launched");
+    let process_start_id = server
+        .send_request(
+            "process/start",
+            serde_json::json!({
+                "processId": "proc-managed-network-without-sandbox",
+                "argv": ["/bin/sh", "-c", "printf launched > \"$MARKER\""],
+                "cwd": PathUri::from_host_native_path(temp.path())?,
+                "env": { "MARKER": marker },
+                "tty": false,
+                "pipeStdin": false,
+                "arg0": null,
+                "sandbox": null,
+                "enforceManagedNetwork": true,
+                "managedNetwork": null
+            }),
+        )
+        .await?;
+    let response = server
+        .wait_for_event(|event| {
+            matches!(
+                event,
+                JSONRPCMessage::Error(JSONRPCError { id, .. }) if id == &process_start_id
+            )
+        })
+        .await?;
+    let JSONRPCMessage::Error(JSONRPCError { error, .. }) = response else {
+        panic!("expected process/start error");
+    };
+    assert_eq!(error.code, -32602);
+    assert_eq!(
+        error.message,
+        "managed network enforcement requires sandbox context"
+    );
+    assert!(!marker.exists());
 
     server.shutdown().await?;
     Ok(())

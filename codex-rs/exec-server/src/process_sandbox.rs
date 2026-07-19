@@ -32,6 +32,11 @@ pub(crate) fn prepare_exec_request(
     runtime_paths: Option<&ExecServerRuntimePaths>,
 ) -> Result<PreparedExecRequest, JSONRPCErrorError> {
     let Some(sandbox_context) = params.sandbox.as_ref() else {
+        if params.enforce_managed_network {
+            return Err(invalid_params(
+                "managed network enforcement requires sandbox context".to_string(),
+            ));
+        }
         return Ok(PreparedExecRequest {
             command: params.argv.clone(),
             cwd: native_path(&params.cwd, "cwd")?,

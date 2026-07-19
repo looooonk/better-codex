@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-#[cfg(target_os = "macos")]
 use codex_network_proxy::ManagedNetworkSandboxContext;
 #[cfg(unix)]
 use codex_protocol::models::PermissionProfile;
@@ -153,4 +152,48 @@ fn native_request_preserves_native_launch_fields() {
     assert_eq!(prepared.cwd, cwd);
     assert_eq!(prepared.env, env);
     assert_eq!(prepared.arg0, params.arg0);
+}
+
+#[test]
+fn native_request_rejects_managed_network_enforcement() {
+    let cwd: AbsolutePathBuf = std::env::current_dir()
+        .expect("current directory")
+        .try_into()
+        .expect("absolute cwd");
+    let cwd_uri = PathUri::from_abs_path(&cwd);
+
+    for (process_id, managed_network) in [
+        ("without-details", None),
+        (
+            "with-details",
+            Some(ManagedNetworkSandboxContext {
+                loopback_ports: vec![43123],
+                allow_local_binding: false,
+            }),
+        ),
+    ] {
+        let params = ExecParams {
+            process_id: ProcessId::from(process_id),
+            argv: vec!["true".to_string()],
+            cwd: cwd_uri.clone(),
+            env_policy: None,
+            env: HashMap::new(),
+            tty: false,
+            pipe_stdin: false,
+            arg0: None,
+            sandbox: None,
+            enforce_managed_network: true,
+            managed_network,
+        };
+
+        let Err(error) = prepare_exec_request(&params, HashMap::new(), /*runtime_paths*/ None)
+        else {
+            panic!("managed network enforcement should fail without sandbox context");
+        };
+        assert_eq!(error.code, -32602);
+        assert_eq!(
+            error.message,
+            "managed network enforcement requires sandbox context"
+        );
+    }
 }

@@ -219,7 +219,7 @@ model context.
 
 ### 12. [P0][Security / Sandbox] Managed-network enforcement is bypassed when `sandbox` is omitted
 
-**Status:** Assigned
+**Status:** Fixed
 
 The exec-server wire contract says an executor must fail closed when `enforceManagedNetwork` is true
 but managed-network details are unavailable
