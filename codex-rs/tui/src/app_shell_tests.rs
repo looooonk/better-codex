@@ -5917,7 +5917,9 @@ fn renders_pending_approval_snapshot() {
     params.command_actions = Some(vec![codex_app_server_protocol::CommandAction::Read {
         command: "cat Cargo.toml".to_string(),
         name: "Cargo.toml".to_string(),
-        path: test_absolute_path("workspace/better-codex/Cargo.toml"),
+        path: LegacyAppPathString::from_abs_path(&test_absolute_path(
+            "workspace/better-codex/Cargo.toml",
+        )),
     }]);
     params.additional_permissions = Some(codex_app_server_protocol::AdditionalPermissionProfile {
         network: Some(AdditionalNetworkPermissions {

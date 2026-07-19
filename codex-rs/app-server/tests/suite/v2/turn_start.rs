@@ -22,6 +22,7 @@ use codex_app_server_protocol::ClientInfo;
 use codex_app_server_protocol::CollabAgentStatus;
 use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
+use codex_app_server_protocol::CommandAction;
 use codex_app_server_protocol::CommandExecutionApprovalDecision;
 use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
 use codex_app_server_protocol::CommandExecutionStatus;
@@ -75,6 +76,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::MULTI_AGENT_MODE_OPEN_TAG;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use codex_utils_absolute_path::test_support::PathExt;
+use codex_utils_path_uri::LegacyAppPathString;
 use core_test_support::responses;
 use core_test_support::skip_if_no_network;
 use core_test_support::skip_if_remote;
@@ -4430,6 +4432,115 @@ async fn command_execution_notifications_include_process_id() -> Result<()> {
     assert_eq!(
         completed_process_id.as_deref(),
         Some(started_process_id.as_str())
+    );
+
+    timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("turn/completed"),
+    )
+    .await??;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn command_execution_read_actions_preserve_environment_path() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let tool_args = serde_json::to_string(&json!({
+        "cmd": "cat inspect.txt",
+        "yield_time_ms": 500,
+    }))?;
+    let model_responses = vec![
+        responses::sse(vec![
+            responses::ev_response_created("resp-read"),
+            responses::ev_function_call("read-1", "exec_command", &tool_args),
+            responses::ev_completed("resp-read"),
+        ]),
+        create_final_assistant_message_sse_response("done")?,
+    ];
+    let server = create_mock_responses_server_sequence(model_responses).await;
+    let codex_home = TempDir::new()?;
+    create_config_toml_with_sandbox(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        &BTreeMap::from([(Feature::UnifiedExec, true)]),
+        "danger-full-access",
+    )?;
+
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build()
+        .await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+    let environment = mcp.auto_env_params()?;
+    let expected_path = LegacyAppPathString::from(
+        environment
+            .cwd
+            .to_inferred_path_uri()
+            .context("environment cwd should be an absolute native path")?
+            .join("inspect.txt")?,
+    );
+
+    let start_id = mcp
+        .send_thread_start_request_with_auto_env(ThreadStartParams {
+            model: Some("mock-model".to_string()),
+            ..Default::default()
+        })
+        .await?;
+    let start_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(start_id)),
+    )
+    .await??;
+    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(start_resp)?;
+
+    let turn_id = mcp
+        .send_turn_start_request(TurnStartParams {
+            thread_id: thread.id,
+            input: vec![V2UserInput::Text {
+                text: "read the file".to_string(),
+                text_elements: Vec::new(),
+            }],
+            sandbox_policy: Some(codex_app_server_protocol::SandboxPolicy::DangerFullAccess),
+            ..Default::default()
+        })
+        .await?;
+    let turn_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(turn_id)),
+    )
+    .await??;
+    let _: TurnStartResponse = to_response(turn_resp)?;
+
+    let command_actions = timeout(DEFAULT_READ_TIMEOUT, async {
+        loop {
+            let notif = mcp
+                .read_stream_until_notification_message("item/started")
+                .await?;
+            let started: ItemStartedNotification = serde_json::from_value(
+                notif
+                    .params
+                    .clone()
+                    .expect("item/started should include params"),
+            )?;
+            if let ThreadItem::CommandExecution {
+                command_actions, ..
+            } = started.item
+            {
+                return Ok::<Vec<CommandAction>, anyhow::Error>(command_actions);
+            }
+        }
+    })
+    .await??;
+    assert_eq!(
+        command_actions,
+        vec![CommandAction::Read {
+            command: "cat inspect.txt".to_string(),
+            name: "inspect.txt".to_string(),
+            path: expected_path,
+        }]
     );
 
     timeout(

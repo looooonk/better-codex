@@ -827,7 +827,7 @@ it as accepted.
 
 ### 55. [P2][Session resume compatibility] Custom interactive session sources disappear from normal pickers
 
-**Status:** Assigned
+**Status:** Fixed
 
 Rollout discovery includes custom sources such as `Custom("atlas")` and `Custom("chatgpt")`
 (`codex-rs/rollout/src/lib.rs:25-31`), but app-server's `ThreadSourceKind` cannot represent `Custom`
@@ -841,7 +841,7 @@ exact UUID can resume them.
 
 ### 56. [P2][Windows remote protocol] Read-command file actions are dropped across OS path conventions
 
-**Status:** Assigned
+**Status:** Fixed
 
 When app-server and executor use different path conventions, command item construction cannot
 localize a foreign `PathUri` and deliberately drops Read actions

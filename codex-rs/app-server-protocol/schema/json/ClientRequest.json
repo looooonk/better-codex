@@ -4327,6 +4327,7 @@
       "enum": [
         "cli",
         "vscode",
+        "custom",
         "exec",
         "appServer",
         "subAgent",

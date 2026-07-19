@@ -126,6 +126,7 @@ fn all_thread_source_kinds() -> Vec<ThreadSourceKind> {
     vec![
         ThreadSourceKind::Cli,
         ThreadSourceKind::VsCode,
+        ThreadSourceKind::Custom,
         ThreadSourceKind::Exec,
         ThreadSourceKind::AppServer,
         ThreadSourceKind::SubAgent,

@@ -1233,6 +1233,15 @@ async fn thread_list_empty_source_kinds_defaults_to_interactive_only() -> Result
         /*git_info*/ None,
         CoreSessionSource::Exec,
     )?;
+    let custom_id = create_fake_rollout_with_source(
+        codex_home.path(),
+        "2025-02-01T12-00-00",
+        "2025-02-01T12:00:00Z",
+        "Custom",
+        Some("mock_provider"),
+        /*git_info*/ None,
+        CoreSessionSource::Custom("atlas".to_string()),
+    )?;
 
     let mut mcp = init_mcp(codex_home.path()).await?;
 
@@ -1250,9 +1259,62 @@ async fn thread_list_empty_source_kinds_defaults_to_interactive_only() -> Result
 
     assert_eq!(next_cursor, None);
     let ids: Vec<_> = data.iter().map(|thread| thread.id.as_str()).collect();
-    assert_eq!(ids, vec![cli_id.as_str()]);
+    assert_eq!(ids, vec![custom_id.as_str(), cli_id.as_str()]);
     assert_ne!(cli_id, exec_id);
-    assert_eq!(data[0].source, SessionSource::Cli);
+    assert_eq!(
+        data.iter()
+            .map(|thread| thread.source.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            SessionSource::Custom("atlas".to_string()),
+            SessionSource::Cli,
+        ]
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_list_filters_by_custom_source_kind() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    create_minimal_config(codex_home.path())?;
+
+    let cli_id = create_fake_rollout(
+        codex_home.path(),
+        "2025-02-01T10-00-00",
+        "2025-02-01T10:00:00Z",
+        "CLI",
+        Some("mock_provider"),
+        /*git_info*/ None,
+    )?;
+    let custom_id = create_fake_rollout_with_source(
+        codex_home.path(),
+        "2025-02-01T11-00-00",
+        "2025-02-01T11:00:00Z",
+        "Custom",
+        Some("mock_provider"),
+        /*git_info*/ None,
+        CoreSessionSource::Custom("chatgpt".to_string()),
+    )?;
+
+    let mut mcp = init_mcp(codex_home.path()).await?;
+    let ThreadListResponse {
+        data, next_cursor, ..
+    } = list_threads(
+        &mut mcp,
+        /*cursor*/ None,
+        Some(10),
+        Some(vec!["mock_provider".to_string()]),
+        Some(vec![ThreadSourceKind::Custom]),
+        /*archived*/ None,
+    )
+    .await?;
+
+    assert_eq!(next_cursor, None);
+    assert_eq!(data.len(), 1);
+    assert_eq!(data[0].id, custom_id.to_string());
+    assert_eq!(data[0].source, SessionSource::Custom("chatgpt".to_string()));
+    assert_ne!(cli_id, custom_id);
 
     Ok(())
 }

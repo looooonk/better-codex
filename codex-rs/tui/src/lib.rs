@@ -566,7 +566,11 @@ fn session_target_from_app_server_thread(
 }
 
 pub(crate) fn resume_source_kinds(include_non_interactive: bool) -> Vec<ThreadSourceKind> {
-    let mut source_kinds = vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode];
+    let mut source_kinds = vec![
+        ThreadSourceKind::Cli,
+        ThreadSourceKind::VsCode,
+        ThreadSourceKind::Custom,
+    ];
     if include_non_interactive {
         // `thread/list` treats omitted and empty `sourceKinds` as interactive-only,
         // so include-non-interactive has to name the user-resumable non-interactive
@@ -589,7 +593,7 @@ async fn lookup_session_target_by_name_with_app_server(
                 sort_key: Some(AppServerThreadSortKey::UpdatedAt),
                 sort_direction: None,
                 model_providers: None,
-                source_kinds: Some(vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode]),
+                source_kinds: Some(resume_source_kinds(/*include_non_interactive*/ false)),
                 archived: Some(false),
                 parent_thread_id: None,
                 ancestor_thread_id: None,
@@ -2438,6 +2442,7 @@ mod tests {
             Some(vec![
                 ThreadSourceKind::Cli,
                 ThreadSourceKind::VsCode,
+                ThreadSourceKind::Custom,
                 ThreadSourceKind::Exec,
                 ThreadSourceKind::AppServer,
             ])

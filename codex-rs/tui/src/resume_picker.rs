@@ -3577,7 +3577,11 @@ mod tests {
         assert_eq!(params.model_providers, None);
         assert_eq!(
             params.source_kinds,
-            Some(vec![ThreadSourceKind::Cli, ThreadSourceKind::VsCode])
+            Some(vec![
+                ThreadSourceKind::Cli,
+                ThreadSourceKind::VsCode,
+                ThreadSourceKind::Custom,
+            ])
         );
         assert_eq!(
             params.cwd,

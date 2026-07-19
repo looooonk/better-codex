@@ -17,7 +17,8 @@ pub(crate) fn compute_source_filters(
     let requires_post_filter = source_kinds.iter().any(|kind| {
         matches!(
             kind,
-            ThreadSourceKind::Exec
+            ThreadSourceKind::Custom
+                | ThreadSourceKind::Exec
                 | ThreadSourceKind::AppServer
                 | ThreadSourceKind::SubAgent
                 | ThreadSourceKind::SubAgentReview
@@ -36,7 +37,8 @@ pub(crate) fn compute_source_filters(
             .filter_map(|kind| match kind {
                 ThreadSourceKind::Cli => Some(CoreSessionSource::Cli),
                 ThreadSourceKind::VsCode => Some(CoreSessionSource::VSCode),
-                ThreadSourceKind::Exec
+                ThreadSourceKind::Custom
+                | ThreadSourceKind::Exec
                 | ThreadSourceKind::AppServer
                 | ThreadSourceKind::SubAgent
                 | ThreadSourceKind::SubAgentReview
@@ -54,6 +56,7 @@ pub(crate) fn source_kind_matches(source: &CoreSessionSource, filter: &[ThreadSo
     filter.iter().any(|kind| match kind {
         ThreadSourceKind::Cli => matches!(source, CoreSessionSource::Cli),
         ThreadSourceKind::VsCode => matches!(source, CoreSessionSource::VSCode),
+        ThreadSourceKind::Custom => matches!(source, CoreSessionSource::Custom(_)),
         ThreadSourceKind::Exec => matches!(source, CoreSessionSource::Exec),
         ThreadSourceKind::AppServer => matches!(source, CoreSessionSource::Mcp),
         ThreadSourceKind::SubAgent => matches!(source, CoreSessionSource::SubAgent(_)),
@@ -123,6 +126,19 @@ mod tests {
 
         assert_eq!(allowed_sources, Vec::new());
         assert_eq!(filter, Some(source_kinds));
+    }
+
+    #[test]
+    fn custom_source_kind_matches_named_interactive_sources() {
+        let source_kinds = vec![ThreadSourceKind::Custom];
+        let (allowed_sources, filter) = compute_source_filters(Some(source_kinds.clone()));
+
+        assert_eq!(allowed_sources, Vec::new());
+        assert_eq!(filter, Some(source_kinds));
+        assert!(source_kind_matches(
+            &CoreSessionSource::Custom("atlas".to_string()),
+            &[ThreadSourceKind::Custom]
+        ));
     }
 
     #[test]

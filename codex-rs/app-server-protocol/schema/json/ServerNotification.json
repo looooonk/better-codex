@@ -804,7 +804,12 @@
               "type": "string"
             },
             "path": {
-              "$ref": "#/definitions/AbsolutePathBuf"
+              "allOf": [
+                {
+                  "$ref": "#/definitions/LegacyAppPathString"
+                }
+              ],
+              "description": "Absolute path rendered using the executor's native path convention."
             },
             "type": {
               "enum": [

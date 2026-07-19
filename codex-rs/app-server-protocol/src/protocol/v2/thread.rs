@@ -1158,6 +1158,7 @@ pub enum ThreadSourceKind {
     #[serde(rename = "vscode")]
     #[ts(rename = "vscode")]
     VsCode,
+    Custom,
     Exec,
     AppServer,
     SubAgent,
