@@ -26,10 +26,9 @@
 //! # Backpressure
 //!
 //! Command submission uses `try_send` and can return `WouldBlock`, while event
-//! fanout may drop notifications under saturation. Server requests are never
-//! silently abandoned: if they cannot be queued they are failed back into
-//! `MessageProcessor` with overload or internal errors so approval flows do
-//! not hang indefinitely.
+//! fanout may drop best-effort notifications under saturation. Server requests
+//! apply backpressure until the consumer can receive them so consent flows are
+//! always presented.
 //!
 //! # Relationship to `codex-app-server-client`
 //!
@@ -636,34 +635,21 @@ async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClie
                             }
                         }
                         OutgoingMessage::Request(request) => {
-                            // Send directly to avoid cloning; on failure the
-                            // original value is returned inside the error.
                             if let Err(send_error) = event_tx
-                                .try_send(InProcessServerEvent::ServerRequest(request))
+                                .send(InProcessServerEvent::ServerRequest(request))
+                                .await
                             {
-                                let (error, inner) = match send_error {
-                                    mpsc::error::TrySendError::Full(inner) => (
-                                        JSONRPCErrorError {
-                                            code: OVERLOADED_ERROR_CODE,
-                                            message:
-                                                "in-process server request queue is full".to_string(),
-                                            data: None,
-                                        },
-                                        inner,
-                                    ),
-                                    mpsc::error::TrySendError::Closed(inner) => (
-                                        internal_error(
-                                            "in-process server request consumer is closed",
-                                        ),
-                                        inner,
-                                    ),
-                                };
-                                let request_id = match inner {
+                                let request_id = match send_error.0 {
                                     InProcessServerEvent::ServerRequest(req) => req.id().clone(),
                                     _ => unreachable!("we just sent a ServerRequest variant"),
                                 };
                                 outgoing_message_sender
-                                    .notify_client_error(request_id, error)
+                                    .notify_client_error(
+                                        request_id,
+                                        internal_error(
+                                            "in-process server request consumer is closed",
+                                        ),
+                                    )
                                     .await;
                             }
                         }

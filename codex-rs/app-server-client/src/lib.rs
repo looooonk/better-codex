@@ -113,15 +113,12 @@ impl From<InProcessServerEvent> for AppServerEvent {
 }
 
 fn event_requires_delivery(event: &InProcessServerEvent) -> bool {
-    // These transcript and terminal events must remain lossless. Dropping
-    // streamed assistant text or the authoritative completed item can leave
-    // the TUI with permanently corrupted markdown, while dropping completion
-    // notifications can leave surfaces waiting forever.
     match event {
+        InProcessServerEvent::ServerRequest(_) => true,
         InProcessServerEvent::ServerNotification(notification) => {
             server_notification_requires_delivery(notification)
         }
-        _ => false,
+        InProcessServerEvent::Lagged { .. } => false,
     }
 }
 
@@ -168,22 +165,13 @@ struct DroppedEventCounts {
 /// Forwards a single in-process event to the consumer, respecting the
 /// lossless/best-effort split.
 ///
-/// Lossless events (transcript deltas, item/turn completions) block until the
-/// consumer drains capacity. Best-effort events use `try_send` and accumulate
-/// failures. Command-output delta drops are cleared at the next lossless boundary;
-/// other drops produce one aggregate lag marker at that boundary.
-///
-/// If a dropped event is a `ServerRequest`, `reject_server_request` is called
-/// so the server does not wait for a response that will never come.
-async fn forward_in_process_event<F>(
+/// Server requests and lossless notifications block until the consumer drains
+/// capacity. Best-effort events use `try_send` and accumulate failures.
+async fn forward_in_process_event(
     event_tx: &mpsc::Sender<InProcessServerEvent>,
     dropped_events: &mut DroppedEventCounts,
     event: InProcessServerEvent,
-    mut reject_server_request: F,
-) -> ForwardEventResult
-where
-    F: FnMut(ServerRequest),
-{
+) -> ForwardEventResult {
     if event_requires_delivery(&event) {
         if dropped_events.reportable > 0
             && event_tx
@@ -197,8 +185,6 @@ where
         }
         *dropped_events = DroppedEventCounts::default();
 
-        // Block until the consumer catches up for transcript/completion notifications; this
-        // preserves the visible assistant output even when the queue is otherwise saturated.
         if event_tx.send(event).await.is_err() {
             return ForwardEventResult::DisableStream;
         }
@@ -221,9 +207,6 @@ where
             } else {
                 dropped_events.reportable = dropped_events.reportable.saturating_add(1);
                 warn!("dropping in-process app-server event because consumer queue is full");
-            }
-            if let InProcessServerEvent::ServerRequest(request) = event {
-                reject_server_request(request);
             }
             ForwardEventResult::Continue
         }
@@ -448,8 +431,8 @@ impl InProcessAppServerClient {
     /// Starts the in-process runtime and facade worker task.
     ///
     /// The returned client is ready for requests and event consumption. If the
-    /// internal event queue is saturated later, server requests are rejected
-    /// with overload error instead of being silently dropped.
+    /// internal event queue is saturated later, server requests apply
+    /// backpressure until the consumer can receive them.
     pub async fn start(args: InProcessClientStartArgs) -> IoResult<Self> {
         let channel_capacity = args.channel_capacity.max(1);
         let mut handle =
@@ -538,17 +521,6 @@ impl InProcessAppServerClient {
                             &event_tx,
                             &mut dropped_events,
                             event,
-                            |request| {
-                                let _ = request_sender.fail_server_request(
-                                    request.id().clone(),
-                                    JSONRPCErrorError {
-                                        code: -32001,
-                                        message: "in-process app-server event queue is full"
-                                            .to_string(),
-                                        data: None,
-                                    },
-                                );
-                            },
                         )
                         .await
                         {
@@ -1390,7 +1362,6 @@ mod tests {
                 InProcessServerEvent::ServerNotification(
                     command_execution_output_delta_notification(delta),
                 ),
-                |_| {},
             )
             .await;
             assert_eq!(result, ForwardEventResult::Continue);
@@ -1425,7 +1396,6 @@ mod tests {
                 &event_tx,
                 &mut dropped_events,
                 InProcessServerEvent::ServerNotification(notification),
-                |_| {},
             )
             .await;
             assert_eq!(result, ForwardEventResult::Continue);
@@ -1465,6 +1435,59 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn forward_in_process_event_waits_to_deliver_server_requests() {
+        let (event_tx, mut event_rx) = mpsc::channel(1);
+        event_tx
+            .send(InProcessServerEvent::ServerNotification(
+                command_execution_output_delta_notification("stdout"),
+            ))
+            .await
+            .expect("initial event should enqueue");
+
+        let request_id = RequestId::String("request-1".to_string());
+        let request = ServerRequest::ToolRequestUserInput {
+            request_id: request_id.clone(),
+            params: ToolRequestUserInputParams {
+                thread_id: "thread".to_string(),
+                turn_id: "turn".to_string(),
+                item_id: "item".to_string(),
+                questions: vec![ToolRequestUserInputQuestion {
+                    id: "question".to_string(),
+                    header: "Mode".to_string(),
+                    question: "Pick one".to_string(),
+                    is_other: false,
+                    is_secret: false,
+                    options: Some(vec![]),
+                }],
+                auto_resolution_ms: None,
+            },
+        };
+        let mut dropped_events = DroppedEventCounts::default();
+        let forward = forward_in_process_event(
+            &event_tx,
+            &mut dropped_events,
+            InProcessServerEvent::ServerRequest(request),
+        );
+        tokio::pin!(forward);
+
+        assert!(
+            timeout(Duration::from_millis(50), &mut forward)
+                .await
+                .is_err(),
+            "server request should wait for queue capacity"
+        );
+        event_rx
+            .recv()
+            .await
+            .expect("initial event should remain queued");
+        assert_eq!(forward.await, ForwardEventResult::Continue);
+        assert!(matches!(
+            event_rx.recv().await,
+            Some(InProcessServerEvent::ServerRequest(request)) if request.id() == &request_id
+        ));
+    }
+
+    #[tokio::test]
     async fn forward_in_process_event_aggregates_reportable_lag_until_lossless_event() {
         let (event_tx, mut event_rx) = mpsc::channel(1);
         event_tx
@@ -1490,7 +1513,6 @@ mod tests {
                 &event_tx,
                 &mut dropped_events,
                 InProcessServerEvent::ServerNotification(notification),
-                |_| {},
             )
             .await;
             assert_eq!(result, ForwardEventResult::Continue);
@@ -1520,7 +1542,6 @@ mod tests {
             InProcessServerEvent::ServerNotification(command_execution_output_delta_notification(
                 "stdout-3",
             )),
-            |_| {},
         )
         .await;
         assert_eq!(result, ForwardEventResult::Continue);
@@ -1557,7 +1578,6 @@ mod tests {
             &event_tx,
             &mut dropped_events,
             InProcessServerEvent::ServerNotification(agent_message_delta_notification("hello")),
-            |_| {},
         )
         .await;
         assert_eq!(result, ForwardEventResult::Continue);

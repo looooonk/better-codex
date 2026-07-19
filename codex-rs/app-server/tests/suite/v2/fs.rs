@@ -369,6 +369,28 @@ async fn fs_write_file_accepts_base64_bytes() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn fs_read_file_rejects_files_too_large_for_remote_transport() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let file_path = codex_home.path().join("large.bin");
+    std::fs::File::create(&file_path)?.set_len((64_u64 << 20) + 1)?;
+
+    let mut mcp = initialized_mcp(&codex_home).await?;
+    let request_id = mcp
+        .send_fs_read_file_request(codex_app_server_protocol::FsReadFileParams {
+            path: absolute_path(file_path),
+        })
+        .await?;
+    expect_error_message(
+        &mut mcp,
+        request_id,
+        "fs/readFile supports files up to 67108864 bytes; file is 67108865 bytes",
+    )
+    .await?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn fs_write_file_rejects_invalid_base64() -> Result<()> {
     let codex_home = TempDir::new()?;
     let file_path = codex_home.path().join("blob.bin");

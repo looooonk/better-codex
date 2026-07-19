@@ -1271,7 +1271,7 @@ All filesystem paths in this section must be absolute.
 - `fs/getMetadata` returns whether the path resolves to a directory or regular file, whether the path itself is a symlink, plus `createdAtMs` and `modifiedAtMs` in Unix milliseconds. If a timestamp is unavailable on the current platform, that field is `0`.
 - `fs/createDirectory` defaults `recursive` to `true` when omitted.
 - `fs/remove` defaults both `recursive` and `force` to `true` when omitted.
-- `fs/readFile` always returns base64 bytes via `dataBase64`, and `fs/writeFile` always expects base64 bytes in `dataBase64`.
+- `fs/readFile` returns files up to 64 MiB as base64 bytes via `dataBase64`, and `fs/writeFile` always expects base64 bytes in `dataBase64`.
 - `fs/copy` handles both file copies and directory-tree copies; it requires `recursive: true` when `sourcePath` is a directory. Recursive copies traverse regular files, directories, and symlinks; other entry types are skipped.
 
 ### Example: Filesystem watch

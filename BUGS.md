@@ -1039,7 +1039,7 @@ error, but a fresh database-backed list shows the requested metadata.
 
 ### 71. [P2][Interactive requests / Backpressure] A full in-process queue rejects consent requests
 
-**Status:** Assigned
+**Status:** Fixed
 
 The in-process client classifies every `ServerRequest` as nonessential
 (`codex-rs/app-server-client/src/lib.rs:115-125`). If its bounded event queue is full, `try_send` drops
@@ -1052,7 +1052,7 @@ that transport rejection to a denial or tool failure.
 
 ### 72. [P2][Remote resources / Protocol] `fs/readFile` allows payloads that cannot cross the transport
 
-**Status:** Assigned
+**Status:** Fixed
 
 Local FS accepts files up to 512 MiB (`codex-rs/exec-server/src/local_file_system.rs:30,533-550`).
 App-server reads the whole file and base64-encodes it

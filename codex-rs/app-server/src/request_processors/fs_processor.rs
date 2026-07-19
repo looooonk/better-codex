@@ -30,8 +30,11 @@ use codex_exec_server::EnvironmentManager;
 use codex_exec_server::ExecutorFileSystem;
 use codex_exec_server::RemoveOptions;
 use codex_utils_path_uri::PathUri;
+use futures::StreamExt;
 use std::io;
 use std::sync::Arc;
+
+const MAX_FS_READ_FILE_BYTES: usize = 64 << 20;
 
 #[derive(Clone)]
 pub(crate) struct FsRequestProcessor {
@@ -66,11 +69,28 @@ impl FsRequestProcessor {
         params: FsReadFileParams,
     ) -> Result<FsReadFileResponse, JSONRPCErrorError> {
         let path = PathUri::from_abs_path(&params.path);
-        let bytes = self
-            .file_system()?
-            .read_file(&path, /*sandbox*/ None)
+        let file_system = self.file_system()?;
+        let metadata = file_system
+            .get_metadata(&path, /*sandbox*/ None)
             .await
             .map_err(map_fs_error)?;
+        if metadata.size > MAX_FS_READ_FILE_BYTES as u64 {
+            return Err(read_file_too_large(metadata.size));
+        }
+
+        let mut stream = file_system
+            .read_file_stream(&path, /*sandbox*/ None)
+            .await
+            .map_err(map_fs_error)?;
+        let mut bytes = Vec::with_capacity(metadata.size as usize);
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(map_fs_error)?;
+            let size = bytes.len().saturating_add(chunk.len());
+            if size > MAX_FS_READ_FILE_BYTES {
+                return Err(read_file_too_large(size as u64));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
         Ok(FsReadFileResponse {
             data_base64: STANDARD.encode(bytes),
         })
@@ -208,6 +228,12 @@ impl FsRequestProcessor {
         self.file_system()?;
         self.fs_watch_manager.unwatch(connection_id, params).await
     }
+}
+
+fn read_file_too_large(size: u64) -> JSONRPCErrorError {
+    invalid_request(format!(
+        "fs/readFile supports files up to {MAX_FS_READ_FILE_BYTES} bytes; file is {size} bytes"
+    ))
 }
 
 fn map_fs_error(err: io::Error) -> JSONRPCErrorError {
