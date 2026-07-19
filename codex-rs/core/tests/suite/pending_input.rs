@@ -15,6 +15,7 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::RolloutLine;
 use codex_protocol::user_input::UserInput;
+use codex_utils_output_truncation::approx_token_count;
 use core_test_support::context_snapshot;
 use core_test_support::context_snapshot::ContextSnapshotOptions;
 use core_test_support::responses;
@@ -213,6 +214,64 @@ async fn submit_queue_only_agent_mail(codex: &CodexThread, text: &str) {
         matches!(event, EventMsg::RealtimeConversationListVoicesResponse(_))
     })
     .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn inter_agent_mail_is_individually_and_aggregate_bounded() {
+    let response_chunks = vec![
+        chunk(ev_response_created("resp-1")),
+        chunk(ev_message_item_added("msg-1", "")),
+        chunk(ev_output_text_delta("done")),
+        chunk(ev_message_item_done("msg-1", "done")),
+        chunk(ev_completed("resp-1")),
+    ];
+    let (server, _completions) =
+        start_streaming_sse_server(vec![response_chunks, response_completed_chunks("resp-2")])
+            .await;
+    let codex = build_codex(&server).await;
+    let oversized_message = "message payload ".repeat(3_000);
+
+    for _ in 0..3 {
+        submit_queue_only_agent_mail(&codex, &oversized_message).await;
+    }
+    submit_user_input(&codex, "handle the agent updates").await;
+    wait_for_turn_complete(&codex).await;
+
+    let requests = server.requests().await;
+    assert_eq!(requests.len(), 2);
+    let request: Value = from_slice(&requests[1]).expect("parse follow-up request");
+    let agent_messages = request["input"]
+        .as_array()
+        .expect("request input")
+        .iter()
+        .filter(|item| item["type"] == "agent_message")
+        .collect::<Vec<_>>();
+    assert_eq!(agent_messages.len(), 2);
+    let message_texts = agent_messages
+        .iter()
+        .flat_map(|message| {
+            message["content"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|content| content["text"].as_str())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(message_texts.len(), 2);
+    assert!(message_texts[0].contains("tokens truncated"));
+    assert_eq!(
+        message_texts[1],
+        "Additional inter-agent messages were omitted because they exceeded this turn's context limit."
+    );
+    assert!(
+        message_texts
+            .iter()
+            .map(|text| approx_token_count(text))
+            .sum::<usize>()
+            < 8_000
+    );
+
+    server.shutdown().await;
 }
 
 async fn wait_for_reasoning_item_started(codex: &CodexThread) {

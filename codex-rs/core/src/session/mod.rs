@@ -26,11 +26,15 @@ use crate::context::ApprovedCommandPrefixSaved;
 use crate::context::AvailableSkillsInstructions;
 use crate::context::CollaborationModeInstructions;
 use crate::context::ContextualUserFragment;
+use crate::context::INTER_AGENT_TURN_OMITTED_MESSAGE;
+use crate::context::InterAgentMessageAdmission;
+use crate::context::InterAgentMessageBudget;
 use crate::context::MultiAgentModeInstructions;
 use crate::context::NetworkRuleSaved;
 use crate::context::PermissionsInstructions;
 use crate::context::PersonalitySpecInstructions;
 use crate::context::RecommendedPluginsInstructions;
+use crate::context::bound_inter_agent_model_content;
 use crate::context::world_state::WorldState;
 use crate::current_time::TimeProvider;
 use crate::default_skill_metadata_budget;
@@ -102,6 +106,7 @@ use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
 use codex_protocol::models::ActivePermissionProfile;
 use codex_protocol::models::AdditionalPermissionProfile;
+use codex_protocol::models::AgentMessageInputContent;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::models::SandboxEnforcement;
@@ -2922,7 +2927,33 @@ impl Session {
         mut communication: InterAgentCommunication,
     ) {
         communication.set_turn_id_if_missing(&turn_context.sub_id);
-        let response_item = communication.to_model_input_item();
+        let mut response_item = communication.to_model_input_item();
+        let content_tokens = match &mut response_item {
+            ResponseItem::AgentMessage { content, .. } => bound_inter_agent_model_content(content),
+            _ => unreachable!(),
+        };
+        let budget = turn_context
+            .extension_data
+            .get_or_init(InterAgentMessageBudget::default);
+        match budget.admit(content_tokens) {
+            InterAgentMessageAdmission::Accepted => {}
+            InterAgentMessageAdmission::FirstOmitted => {
+                let ResponseItem::AgentMessage { content, .. } = &mut response_item else {
+                    unreachable!();
+                };
+                *content = vec![AgentMessageInputContent::InputText {
+                    text: INTER_AGENT_TURN_OMITTED_MESSAGE.to_string(),
+                }];
+                self.send_event(
+                    turn_context,
+                    EventMsg::Warning(WarningEvent {
+                        message: INTER_AGENT_TURN_OMITTED_MESSAGE.to_string(),
+                    }),
+                )
+                .await;
+            }
+            InterAgentMessageAdmission::Omitted => return,
+        }
         let items = self.prepare_conversation_items_for_history(
             turn_context,
             std::slice::from_ref(&response_item),

@@ -120,7 +120,7 @@ turn to exceed 10K tokens in aggregate. Inspect the next request; no turn-level 
 
 ### 6. [P0][Model context / Multi-agent] Child completions and inter-agent messages are unbounded
 
-**Status:** Assigned
+**Status:** Fixed
 
 The 1,000-token cap in `codex-rs/core/src/session_prefix.rs:10-43` applies only to error text.
 Successful child final answers, `send_message`, and `followup_task` bodies are stored unchanged via

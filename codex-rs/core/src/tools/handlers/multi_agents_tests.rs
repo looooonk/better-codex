@@ -229,6 +229,30 @@ async fn spawn_agent_rejects_empty_message() {
 }
 
 #[tokio::test]
+async fn send_message_rejects_oversized_message() {
+    let (session, turn) = make_session_and_context().await;
+    let invocation = invocation(
+        Arc::new(session),
+        Arc::new(turn),
+        "send_message",
+        function_payload(json!({
+            "target": "/root/worker",
+            "message": "x".repeat(30_100),
+        })),
+    );
+    let Err(err) = SendMessageHandlerV2.handle(invocation).await else {
+        panic!("oversized message should be rejected");
+    };
+    assert_eq!(
+        err,
+        FunctionCallError::RespondToModel(
+            "Message is too large to send to an agent; the maximum is 7000 approximate tokens"
+                .to_string()
+        )
+    );
+}
+
+#[tokio::test]
 async fn spawn_agent_rejects_when_message_and_items_are_both_set() {
     let (session, turn) = make_session_and_context().await;
     let invocation = invocation(
