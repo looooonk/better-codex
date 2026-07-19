@@ -6852,7 +6852,7 @@ fn command_output_deltas_update_one_output_block() {
         ToolBlockStatus::Success,
         "exec-1".to_string(),
     );
-    completed_output.full_text = Some("pytest 40%\rpytest 80%\rpytest 100%\n".to_string());
+    completed_output.full_text = Some("pytest 40%\rpytest 80%\rpytest 100%\n".to_string().into());
     assert_eq!(
         shell.transcript,
         VecDeque::from([
@@ -6969,7 +6969,7 @@ fn command_output_transcript_text_is_bounded() {
     let mut expected = TranscriptLine::new(TranscriptKind::Output, output.clone())
         .tool_status(ToolBlockStatus::Running)
         .item_id("exec-1");
-    expected.full_text = Some(full_output);
+    expected.full_text = Some(full_output.into());
 
     assert_eq!(shell.transcript, VecDeque::from([expected]));
     assert!(output.starts_with(TRANSCRIPT_OUTPUT_TRUNCATION_PREFIX));

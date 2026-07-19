@@ -628,7 +628,7 @@ stale state.
 
 ### 41. [P1][Availability / TUI output] The TUI can retain and repeatedly rewrap roughly 156 MiB per command
 
-**Status:** Assigned
+**Status:** Fixed
 
 Each `TranscriptLine` keeps the complete streamed `full_text` even after compacting its card
 (`codex-rs/tui/src/app_shell.rs:483-515,3047-3071`). The full-output view invalidates its cache on

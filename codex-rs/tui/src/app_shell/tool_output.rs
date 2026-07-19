@@ -10,8 +10,145 @@ use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 use std::cell::Cell;
 use std::cell::RefCell;
+use std::ops::Deref;
 
 const TOOL_OUTPUT_PAGE_STEP: usize = 12;
+const TOOL_OUTPUT_HIGH_WATER_BYTES: usize = 256 * 1024;
+const TOOL_OUTPUT_LOW_WATER_BYTES: usize = 192 * 1024;
+const TOOL_OUTPUT_HIGH_WATER_LINE_BREAKS: usize = 4_000;
+const TOOL_OUTPUT_LOW_WATER_LINE_BREAKS: usize = 3_000;
+const TOOL_OUTPUT_TRUNCATION_NOTICE: &str = "... earlier tool output omitted ...\n";
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct ToolOutputBuffer {
+    text: String,
+    truncated: bool,
+    line_breaks: usize,
+}
+
+impl ToolOutputBuffer {
+    fn new(text: String) -> Self {
+        let line_breaks = count_line_breaks(&text);
+        let mut output = Self {
+            text,
+            truncated: false,
+            line_breaks,
+        };
+        if output.text.len() > TOOL_OUTPUT_HIGH_WATER_BYTES
+            || output.line_breaks > TOOL_OUTPUT_HIGH_WATER_LINE_BREAKS
+        {
+            output.compact("");
+        }
+        output
+    }
+
+    pub(super) fn append(&mut self, delta: &str) {
+        if delta.is_empty() {
+            return;
+        }
+        let delta_line_breaks = count_line_breaks(delta);
+        if delta.len() <= TOOL_OUTPUT_HIGH_WATER_BYTES.saturating_sub(self.text.len())
+            && delta_line_breaks
+                <= TOOL_OUTPUT_HIGH_WATER_LINE_BREAKS.saturating_sub(self.line_breaks)
+        {
+            self.text.push_str(delta);
+            self.line_breaks = self.line_breaks.saturating_add(delta_line_breaks);
+        } else {
+            self.compact(delta);
+        }
+    }
+
+    pub(super) fn is_truncated(&self) -> bool {
+        self.truncated
+    }
+
+    fn compact(&mut self, delta: &str) {
+        let existing = if self.truncated {
+            self.text
+                .strip_prefix(TOOL_OUTPUT_TRUNCATION_NOTICE)
+                .unwrap_or(&self.text)
+        } else {
+            &self.text
+        };
+        let payload_bytes =
+            TOOL_OUTPUT_LOW_WATER_BYTES.saturating_sub(TOOL_OUTPUT_TRUNCATION_NOTICE.len());
+        let (delta_tail, delta_truncated) =
+            bounded_tail(delta, payload_bytes, TOOL_OUTPUT_LOW_WATER_LINE_BREAKS);
+        let mut text = String::with_capacity(TOOL_OUTPUT_LOW_WATER_BYTES);
+        text.push_str(TOOL_OUTPUT_TRUNCATION_NOTICE);
+        if delta_truncated {
+            text.push_str(delta_tail);
+        } else {
+            let delta_line_breaks = count_line_breaks(delta_tail);
+            let (existing_tail, _) = bounded_tail(
+                existing,
+                payload_bytes.saturating_sub(delta_tail.len()),
+                TOOL_OUTPUT_LOW_WATER_LINE_BREAKS.saturating_sub(delta_line_breaks),
+            );
+            text.push_str(existing_tail);
+            text.push_str(delta_tail);
+        }
+        self.line_breaks = count_line_breaks(&text);
+        self.text = text;
+        self.truncated = true;
+    }
+}
+
+impl Deref for ToolOutputBuffer {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.text
+    }
+}
+
+impl From<String> for ToolOutputBuffer {
+    fn from(text: String) -> Self {
+        Self::new(text)
+    }
+}
+
+impl From<&str> for ToolOutputBuffer {
+    fn from(text: &str) -> Self {
+        Self::new(text.to_string())
+    }
+}
+
+fn bounded_tail(text: &str, max_bytes: usize, max_line_breaks: usize) -> (&str, bool) {
+    let mut byte_start = text.len().saturating_sub(max_bytes);
+    while !text.is_char_boundary(byte_start) {
+        byte_start = byte_start.saturating_add(1);
+    }
+    let mut line_start = 0;
+    let mut line_breaks = 0usize;
+    for (index, character) in text.char_indices().rev() {
+        if matches!(character, '\n' | '\r') {
+            line_breaks = line_breaks.saturating_add(1);
+            if line_breaks > max_line_breaks {
+                line_start = index.saturating_add(character.len_utf8());
+                break;
+            }
+        }
+    }
+    let mut start = byte_start.max(line_start);
+    if byte_start > line_start
+        && let Some(boundary) = text[start..].find(['\n', '\r'])
+    {
+        start = start.saturating_add(boundary).saturating_add(1);
+        if text.as_bytes().get(start.saturating_sub(1)) == Some(&b'\r')
+            && text.as_bytes().get(start) == Some(&b'\n')
+        {
+            start = start.saturating_add(1);
+        }
+    }
+    (&text[start..], start > 0)
+}
+
+fn count_line_breaks(text: &str) -> usize {
+    text.bytes()
+        .filter(|byte| matches!(byte, b'\n' | b'\r'))
+        .count()
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ToolOutputTarget {
@@ -22,7 +159,7 @@ pub(super) struct ToolOutputTarget {
 
 pub(super) struct ToolOutputState {
     pub(super) target: ToolOutputTarget,
-    output: String,
+    output: ToolOutputBuffer,
     wrapped_cache: RefCell<Option<WrappedOutputCache>>,
     scroll: Cell<usize>,
     scroll_max: Cell<usize>,
@@ -41,10 +178,10 @@ pub(super) struct ToolOutputViewport {
 }
 
 impl ToolOutputState {
-    fn new(target: ToolOutputTarget, output: String) -> Self {
+    fn new(target: ToolOutputTarget, output: impl Into<ToolOutputBuffer>) -> Self {
         Self {
             target,
-            output,
+            output: output.into(),
             wrapped_cache: RefCell::new(None),
             scroll: Cell::new(0),
             scroll_max: Cell::new(0),
@@ -54,6 +191,14 @@ impl ToolOutputState {
 
     pub(super) fn output(&self) -> &str {
         &self.output
+    }
+
+    pub(super) fn output_buffer(&self) -> &ToolOutputBuffer {
+        &self.output
+    }
+
+    pub(super) fn is_truncated(&self) -> bool {
+        self.output.is_truncated()
     }
 
     pub(super) fn scroll(&self) -> usize {
@@ -96,14 +241,14 @@ impl ToolOutputState {
         }
     }
 
-    fn replace_output(&mut self, output: String, status: ToolBlockStatus) {
+    fn replace_output(&mut self, output: ToolOutputBuffer, status: ToolBlockStatus) {
         self.output = output;
         self.target.status = status;
         self.wrapped_cache.get_mut().take();
     }
 
     fn append_output(&mut self, delta: &str, status: ToolBlockStatus) {
-        self.output.push_str(delta);
+        self.output.append(delta);
         self.target.status = status;
         self.wrapped_cache.get_mut().take();
     }
@@ -148,7 +293,10 @@ impl ShellState {
         let Some(item_id) = line.item_id.clone() else {
             return false;
         };
-        let output = line.full_text.clone().unwrap_or_else(|| line.text.clone());
+        let output = line
+            .full_text
+            .clone()
+            .unwrap_or_else(|| line.text.clone().into());
         let status = line.tool_status.unwrap_or(ToolBlockStatus::Success);
         let title = self
             .transcript
@@ -195,7 +343,7 @@ impl ShellState {
     pub(super) fn replace_open_tool_output(
         &mut self,
         item_id: &str,
-        output: String,
+        output: ToolOutputBuffer,
         status: ToolBlockStatus,
     ) {
         if let Some(state) = &mut self.tool_output

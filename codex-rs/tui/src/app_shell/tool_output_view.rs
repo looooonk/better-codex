@@ -18,7 +18,8 @@ use ratatui::widgets::Widget;
 pub(super) fn render_tool_output(output: &ToolOutputState, screen: Rect, buf: &mut Buffer) {
     let title = format!(" Tool output · {} ", output.target.title);
     let geometry = render_scrollback_frame(screen, title, buf);
-    let (glyph, label, detail, color, footer_mode) = status_visual(output.target.status);
+    let (glyph, label, detail, color, footer_mode) =
+        status_visual(output.target.status, output.is_truncated());
     let header_width = usize::from(geometry.header.width);
     let mut header = vec![truncate_line_with_ellipsis_if_overflow(
         Line::from(vec![
@@ -65,6 +66,7 @@ pub(super) fn tool_output_panel_area(screen: Rect) -> Rect {
 
 fn status_visual(
     status: ToolBlockStatus,
+    truncated: bool,
 ) -> (
     &'static str,
     &'static str,
@@ -72,25 +74,46 @@ fn status_visual(
     Color,
     ScrollbackFooterMode,
 ) {
-    match status {
-        ToolBlockStatus::Running => (
+    match (status, truncated) {
+        (ToolBlockStatus::Running, false) => (
             "●",
             "Running",
             "Live output updates automatically",
             palette::CYAN,
             ScrollbackFooterMode::ToolOutputRunning,
         ),
-        ToolBlockStatus::Success => (
+        (ToolBlockStatus::Success, false) => (
             "✓",
             "Completed",
             "Full captured output",
             palette::SUCCESS,
             ScrollbackFooterMode::ToolOutputCompleted,
         ),
-        ToolBlockStatus::Fail => (
+        (ToolBlockStatus::Fail, false) => (
             "✕",
             "Failed",
             "Full captured output",
+            palette::ERROR,
+            ScrollbackFooterMode::ToolOutputFailed,
+        ),
+        (ToolBlockStatus::Running, true) => (
+            "●",
+            "Running",
+            "Live tail; earlier output omitted",
+            palette::CYAN,
+            ScrollbackFooterMode::ToolOutputRunning,
+        ),
+        (ToolBlockStatus::Success, true) => (
+            "✓",
+            "Completed",
+            "Retained tail; earlier output omitted",
+            palette::SUCCESS,
+            ScrollbackFooterMode::ToolOutputCompleted,
+        ),
+        (ToolBlockStatus::Fail, true) => (
+            "✕",
+            "Failed",
+            "Retained tail; earlier output omitted",
             palette::ERROR,
             ScrollbackFooterMode::ToolOutputFailed,
         ),

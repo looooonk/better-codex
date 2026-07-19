@@ -167,6 +167,7 @@ pub(crate) use startup::StartupOnboardingOutcome;
 pub(crate) use startup::run_startup_onboarding;
 pub(crate) use startup_login::LoginOnboardingOutcome;
 pub(crate) use startup_login::run_login_onboarding;
+use tool_output::ToolOutputBuffer;
 use tool_output::ToolOutputState;
 use transcript_render::TranscriptRenderCache;
 use user_input::PendingUserInput;
@@ -519,7 +520,7 @@ where
 struct TranscriptLine {
     kind: TranscriptKind,
     text: String,
-    full_text: Option<String>,
+    full_text: Option<ToolOutputBuffer>,
     tool_status: Option<ToolBlockStatus>,
     item_id: Option<String>,
     render_revision: u64,
@@ -537,11 +538,11 @@ impl TranscriptLine {
         }
     }
 
-    fn output(text: impl Into<String>, status: ToolBlockStatus, item_id: String) -> Self {
+    fn output(text: impl Into<ToolOutputBuffer>, status: ToolBlockStatus, item_id: String) -> Self {
         let full_text = text.into();
         Self {
             kind: TranscriptKind::Output,
-            text: compact_output_for_transcript(full_text.clone()),
+            text: compact_output_for_transcript(full_text.to_string()),
             full_text: Some(full_text),
             tool_status: Some(status),
             item_id: Some(item_id),
@@ -3134,7 +3135,7 @@ impl ShellState {
     }
 
     fn push_output_with_status(&mut self, text: impl Into<String>, status: ToolBlockStatus) {
-        self.push_output_with_status_for_item(next_local_output_item_id(), text, status);
+        self.push_output_with_status_for_item(next_local_output_item_id(), text.into(), status);
     }
 
     fn push_turn_separator(&mut self) {
@@ -3144,7 +3145,7 @@ impl ShellState {
     fn push_output_with_status_for_item(
         &mut self,
         item_id: impl Into<String>,
-        text: impl Into<String>,
+        text: impl Into<ToolOutputBuffer>,
         status: ToolBlockStatus,
     ) {
         let item_id = item_id.into();
@@ -3158,7 +3159,13 @@ impl ShellState {
                     && existing.item_id.as_deref() == Some(&item_id)
                     && existing.tool_status == Some(ToolBlockStatus::Running)
             })
-            .map(|existing| existing.full_text.as_deref().unwrap_or(&existing.text))
+            .map(|existing| {
+                existing
+                    .full_text
+                    .as_ref()
+                    .cloned()
+                    .unwrap_or_else(|| existing.text.clone().into())
+            })
             .or_else(|| {
                 self.tool_output
                     .as_ref()
@@ -3166,12 +3173,12 @@ impl ShellState {
                         output.target.item_id == item_id
                             && output.target.status == ToolBlockStatus::Running
                     })
-                    .map(ToolOutputState::output)
+                    .map(|output| output.output_buffer().clone())
             });
         let full_text = if status != ToolBlockStatus::Running {
             existing_full_text
                 .filter(|existing| existing.len() > text.len())
-                .map_or_else(|| text.clone(), str::to_string)
+                .unwrap_or_else(|| text.clone())
         } else {
             text.clone()
         };
@@ -3200,8 +3207,8 @@ impl ShellState {
         }) {
             existing
                 .full_text
-                .get_or_insert_with(|| existing.text.clone())
-                .push_str(&delta);
+                .get_or_insert_with(|| existing.text.clone().into())
+                .append(&delta);
             existing.text.push_str(&delta);
             existing.text = compact_output_for_transcript(std::mem::take(&mut existing.text));
             existing.tool_status = Some(status);
@@ -3213,7 +3220,7 @@ impl ShellState {
             .tool_output
             .as_ref()
             .filter(|output| output.target.item_id == item_id)
-            .map_or(delta, |output| output.output().to_string());
+            .map_or_else(|| delta.into(), |output| output.output_buffer().clone());
         self.push_output_with_status_for_item(item_id, output, status);
     }
 

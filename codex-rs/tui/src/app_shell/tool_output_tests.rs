@@ -17,6 +17,75 @@ fn renders_wide_and_compact_tool_output_popups() {
 }
 
 #[test]
+fn renders_truncated_tool_output_popup() {
+    let output = ToolOutputState::new(
+        ToolOutputTarget {
+            item_id: "exec-large".to_string(),
+            title: "exec generate-large-report".to_string(),
+            status: ToolBlockStatus::Success,
+        },
+        (0..6_000)
+            .map(|index| format!("report line {index:04}: {}", "x".repeat(40)))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    assert!(output.is_truncated());
+    assert!(output.output().len() <= TOOL_OUTPUT_HIGH_WATER_BYTES);
+    assert!(count_line_breaks(output.output()) <= TOOL_OUTPUT_HIGH_WATER_LINE_BREAKS);
+    assert!(output.output().starts_with(TOOL_OUTPUT_TRUNCATION_NOTICE));
+    assert!(!output.output().contains("report line 0000"));
+    assert!(output.output().contains("report line 5999"));
+    output.scroll_to_top();
+
+    insta::assert_snapshot!(
+        "truncated_tool_output_popup",
+        render_output(&output, 80, 16)
+    );
+}
+
+#[test]
+fn live_output_retention_stays_bounded_across_the_core_delta_limit() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_assistant();
+    shell.push_output_with_status_for_item(
+        "exec-large",
+        "stream line 00000: first\n",
+        ToolBlockStatus::Running,
+    );
+    assert!(shell.open_tool_output_at(/*transcript_index*/ 0));
+    let padding = "x".repeat(1_000);
+    for index in 1..=10_000 {
+        shell.push_output_delta_with_status_for_item(
+            "exec-large",
+            format!("stream line {index:05}: {padding}\n"),
+            ToolBlockStatus::Running,
+        );
+    }
+    shell.push_output_delta_with_status_for_item(
+        "exec-large",
+        "stream line final: \u{B05D}\n",
+        ToolBlockStatus::Running,
+    );
+
+    let retained = shell.transcript[0]
+        .full_text
+        .as_ref()
+        .expect("streamed output should be retained");
+    let open = shell
+        .tool_output
+        .as_ref()
+        .expect("streamed output should remain open");
+    assert_eq!(&**retained, open.output());
+    assert!(retained.is_truncated());
+    assert!(retained.len() <= TOOL_OUTPUT_HIGH_WATER_BYTES);
+    assert!(retained.starts_with(TOOL_OUTPUT_TRUNCATION_NOTICE));
+    assert!(!retained.contains("stream line 00000"));
+    assert!(retained.contains("stream line 10000"));
+    assert!(retained.ends_with("stream line final: \u{B05D}\n"));
+}
+
+#[test]
 fn full_output_survives_preview_compaction_and_live_updates() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();

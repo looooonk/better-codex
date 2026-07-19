@@ -1,0 +1,18 @@
+---
+source: tui/src/app_shell/tool_output_tests.rs
+expression: "render_output(&output, 80, 16)"
+---
+
+
+  ╭ Tool output · exec generate-large-report ────────────────────────────────╮
+  │ ✓ Completed  Retained tail; earlier output omitted                       │
+  │ Item  exec-large                                                         │
+  │ ... earlier tool output omitted ...                                      │
+  │ report line 2999: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx               │
+  │ report line 3000: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx               │
+  │ report line 3001: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx               │
+  │ report line 3002: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx               │
+  │ report line 3003: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx               │
+  │ report line 3004: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx               │
+  │  j/k scroll  PgUp/PgDn page  g/G ends  Esc close  completed · 1-7/3002   │
+  ╰──────────────────────────────────────────────────────────────────────────╯
