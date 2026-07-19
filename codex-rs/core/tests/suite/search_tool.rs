@@ -18,6 +18,8 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::McpInvocation;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
+use codex_tools::TOOL_SEARCH_MAX_LIMIT;
+use codex_tools::TOOL_SEARCH_MAX_OUTPUT_BYTES;
 use core_test_support::apps_test_server::AppsTestServer;
 use core_test_support::apps_test_server::AppsTestToolLoading;
 use core_test_support::apps_test_server::CALENDAR_CREATE_EVENT_MCP_APP_RESOURCE_URI;
@@ -166,7 +168,12 @@ async fn search_tool_enabled_by_default_adds_tool_search() -> Result<()> {
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Search query for deferred tools."},
-                    "limit": {"type": "number", "description": "Maximum number of tools to return. Defaults to 8."},
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of tools to return, from 1 to 32. Defaults to 8.",
+                        "minimum": 1,
+                        "maximum": TOOL_SEARCH_MAX_LIMIT,
+                    },
                 },
                 "required": ["query"],
                 "additionalProperties": false,
@@ -1045,6 +1052,99 @@ async fn tool_search_returns_deferred_dynamic_tool_and_routes_follow_up_call() -
         !third_request_tools.iter().any(|name| name == tool_name),
         "post-tool follow-up should rely on tool_search_output history, not tool injection: {third_request_tools:?}"
     );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn tool_search_output_is_bounded_in_follow_up_history() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let call_id = "bounded-tool-search";
+    let mock = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-1"),
+                ev_tool_search_call(
+                    call_id,
+                    &json!({
+                        "query": "bounded result",
+                        "limit": TOOL_SEARCH_MAX_LIMIT + 1,
+                    }),
+                ),
+                ev_completed("resp-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-2"),
+                ev_assistant_message("msg-1", "done"),
+                ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+    let dynamic_tool = DynamicToolSpec::Namespace(DynamicToolNamespaceSpec {
+        name: "bounded_namespace".to_string(),
+        description: "Tools used to verify bounded search results.".to_string(),
+        tools: (0..TOOL_SEARCH_MAX_LIMIT)
+            .map(|index| {
+                DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
+                    name: format!("bounded_result_{index:02}"),
+                    description: format!("bounded result {}", "x".repeat(5_000)),
+                    input_schema: json!({
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": false,
+                    }),
+                    defer_loading: true,
+                })
+            })
+            .collect(),
+    });
+    let mut builder = test_codex().with_config(configure_search_capable_model);
+    let base_test = builder.build(&server).await?;
+    let new_thread = base_test
+        .thread_manager
+        .start_thread_with_tools(base_test.config.clone(), vec![dynamic_tool])
+        .await?;
+    let mut test = base_test;
+    test.codex = new_thread.thread;
+    test.session_configured = new_thread.session_configured;
+
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "Find the bounded tools".to_string(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await?;
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let requests = mock.requests();
+    assert_eq!(requests.len(), 2);
+    let output = tool_search_output_item(&requests[1], call_id);
+    let tools = output
+        .get("tools")
+        .and_then(Value::as_array)
+        .expect("tool search output should contain tools");
+    let children = tools
+        .first()
+        .and_then(|namespace| namespace.get("tools"))
+        .and_then(Value::as_array)
+        .expect("tool search output should contain a namespace");
+    assert!(!children.is_empty());
+    assert!(children.len() < TOOL_SEARCH_MAX_LIMIT);
+    assert!(serde_json::to_vec(tools)?.len() <= TOOL_SEARCH_MAX_OUTPUT_BYTES);
+    assert!(serde_json::to_vec(&output)?.len() < 40_000);
 
     Ok(())
 }

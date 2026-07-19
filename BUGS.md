@@ -85,7 +85,7 @@ such as `foo>bar` also changes the generated marker syntax.
 
 ### 4. [P0][Model context / Token usage] Deferred `tool_search` results have no hard output cap
 
-**Status:** Assigned
+**Status:** Fixed
 
 The tool accepts an unrestricted `usize` limit and the schema has no maximum
 (`codex-rs/core/src/tools/handlers/tool_search_spec.rs:7-22`). The handler serializes full matching

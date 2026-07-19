@@ -6,6 +6,7 @@ use crate::event_mapping::has_non_contextual_dev_message_content;
 use crate::event_mapping::is_contextual_dev_message_content;
 use crate::event_mapping::is_contextual_user_message_content;
 use crate::session::turn_context::TurnContext;
+use crate::tools::context::bounded_tool_search_output_values;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use codex_protocol::models::BaseInstructions;
@@ -394,6 +395,21 @@ impl ContextManager {
                 output: truncate_function_output_payload(output, policy_with_serialization_budget),
                 internal_chat_message_metadata_passthrough: metadata.clone(),
             },
+            ResponseItem::ToolSearchOutput {
+                id,
+                call_id,
+                status,
+                execution,
+                tools,
+                internal_chat_message_metadata_passthrough: metadata,
+            } => ResponseItem::ToolSearchOutput {
+                id: id.clone(),
+                call_id: call_id.clone(),
+                status: status.clone(),
+                execution: execution.clone(),
+                tools: bounded_tool_search_output_values(tools.iter().cloned()),
+                internal_chat_message_metadata_passthrough: metadata.clone(),
+            },
             ResponseItem::AdditionalTools { .. }
             | ResponseItem::Message { .. }
             | ResponseItem::AgentMessage { .. }
@@ -401,7 +417,6 @@ impl ContextManager {
             | ResponseItem::LocalShellCall { .. }
             | ResponseItem::FunctionCall { .. }
             | ResponseItem::ToolSearchCall { .. }
-            | ResponseItem::ToolSearchOutput { .. }
             | ResponseItem::WebSearchCall { .. }
             | ResponseItem::ImageGenerationCall { .. }
             | ResponseItem::CustomToolCall { .. }

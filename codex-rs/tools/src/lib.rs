@@ -89,6 +89,8 @@ pub use tool_discovery::ListAvailablePluginsToInstallResult;
 pub use tool_discovery::REQUEST_PLUGIN_INSTALL_TOOL_NAME;
 pub use tool_discovery::RequestPluginInstallEntry;
 pub use tool_discovery::TOOL_SEARCH_DEFAULT_LIMIT;
+pub use tool_discovery::TOOL_SEARCH_MAX_LIMIT;
+pub use tool_discovery::TOOL_SEARCH_MAX_OUTPUT_BYTES;
 pub use tool_discovery::TOOL_SEARCH_TOOL_NAME;
 pub use tool_discovery::ToolSearchSourceInfo;
 pub use tool_discovery::collect_request_plugin_install_entries;

@@ -224,7 +224,13 @@ fn parse_tool_input_schema_infers_number_from_numeric_keywords() {
     }))
     .expect("parse schema");
 
-    assert_eq!(schema, JsonSchema::number(/*description*/ None));
+    assert_eq!(
+        schema,
+        JsonSchema {
+            minimum: Some(1.into()),
+            ..JsonSchema::number(/*description*/ None)
+        }
+    );
 }
 
 #[test]
