@@ -1,3 +1,16 @@
+use super::ShellState;
+use super::backend::AppShellBackend;
+use super::backend_actions::ActionGroup;
+use super::backend_actions::BackendActionResult;
+use super::is_unmodified_action_key;
+use super::navigation::DashboardRoute;
+use super::settings::SettingsAction;
+use crate::key_hint;
+use crate::legacy_core::config::Config;
+use color_eyre::Result;
+use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum CommandPaletteAction {
     NewSession,
@@ -152,8 +165,177 @@ pub(super) fn command_palette_entries(context: CommandPaletteContext) -> Vec<Com
         CommandPaletteEntry {
             action: CommandPaletteAction::CompactContext,
             title: "Compact context",
-            detail: "Context compaction action is not wired yet",
-            enabled: false,
+            detail: "Compact the current thread context",
+            enabled: context.has_transcript && !context.active_turn,
         },
     ]
+}
+
+impl ShellState {
+    pub(super) async fn handle_command_palette_key<S>(
+        &mut self,
+        key: KeyEvent,
+        config: &Config,
+        app_server: &mut S,
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        if key_hint::ctrl(KeyCode::Char('p')).is_press(key) {
+            self.close_command_palette();
+            return Ok(());
+        }
+        if !is_unmodified_action_key(key) {
+            return Ok(());
+        }
+        match key.code {
+            KeyCode::Esc => {
+                self.close_command_palette();
+            }
+            KeyCode::Enter => {
+                self.execute_selected_command_palette_action(config, app_server)
+                    .await?;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let entries = self.command_palette_entries();
+                if let Some(palette) = &mut self.command_palette {
+                    palette.move_up(&entries);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                let entries = self.command_palette_entries();
+                if let Some(palette) = &mut self.command_palette {
+                    palette.move_down(&entries);
+                }
+            }
+            KeyCode::Home => {
+                self.command_palette = Some(CommandPaletteState::default());
+            }
+            KeyCode::End => {
+                let entries = self.command_palette_entries();
+                if let Some(palette) = &mut self.command_palette {
+                    palette.select_last(&entries);
+                }
+            }
+            KeyCode::Char(_)
+            | KeyCode::Backspace
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Delete
+            | KeyCode::Insert
+            | KeyCode::F(_)
+            | KeyCode::Null
+            | KeyCode::CapsLock
+            | KeyCode::ScrollLock
+            | KeyCode::NumLock
+            | KeyCode::PrintScreen
+            | KeyCode::Pause
+            | KeyCode::Menu
+            | KeyCode::KeypadBegin
+            | KeyCode::Media(_)
+            | KeyCode::Modifier(_)
+            | KeyCode::Tab
+            | KeyCode::BackTab
+            | KeyCode::PageUp
+            | KeyCode::PageDown => {}
+        }
+        Ok(())
+    }
+
+    pub(super) async fn execute_selected_command_palette_action<S>(
+        &mut self,
+        config: &Config,
+        app_server: &mut S,
+    ) -> Result<()>
+    where
+        S: AppShellBackend,
+    {
+        let Some(palette) = &self.command_palette else {
+            return Ok(());
+        };
+        let entries = self.command_palette_entries();
+        let Some(entry) = entries.get(palette.selected()) else {
+            self.close_command_palette();
+            return Ok(());
+        };
+        if !entry.enabled {
+            self.push_status(format!("{}: {}", entry.title, entry.detail));
+            return Ok(());
+        }
+        let Some(action) = palette.selected_action(&entries) else {
+            return Ok(());
+        };
+        self.close_command_palette();
+        match action {
+            CommandPaletteAction::NewSession => {
+                self.start_new_session(config, app_server).await?;
+            }
+            CommandPaletteAction::CopyTranscript => {
+                self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+            }
+            CommandPaletteAction::ClearTranscript => {
+                self.clear_visible_transcript();
+            }
+            CommandPaletteAction::SelectLatestTranscript => {
+                self.select_latest_transcript_item();
+            }
+            CommandPaletteAction::ScrollTranscriptTop => {
+                self.scroll_transcript_to_top();
+            }
+            CommandPaletteAction::ScrollTranscriptBottom => {
+                self.scroll_transcript_to_bottom();
+            }
+            CommandPaletteAction::InterruptTurn => {
+                self.interrupt_active_turn(app_server).await?;
+            }
+            CommandPaletteAction::SwitchModel => {
+                self.set_dashboard_route(DashboardRoute::Status);
+                self.dashboard_scroll.set(0);
+                self.session_list.focused = false;
+                self.settings.focused = true;
+                self.settings.focus_action(SettingsAction::Model);
+                self.open_model_selector();
+            }
+            CommandPaletteAction::ChangePermissions => {
+                self.set_dashboard_route(DashboardRoute::Status);
+                self.dashboard_scroll.set(0);
+                self.session_list.focused = false;
+                self.settings.focused = true;
+                self.settings.focus_action(SettingsAction::ApprovalPolicy);
+                self.open_approval_selector();
+            }
+            CommandPaletteAction::ResumeThread => {
+                self.set_dashboard_route(DashboardRoute::Sessions);
+                self.dashboard_scroll.set(0);
+                self.settings.focused = false;
+                self.session_list.focused = true;
+                self.start_session_list_refresh(app_server);
+                self.push_status("press r to resume selected session");
+            }
+            CommandPaletteAction::ForkThread => {
+                self.set_dashboard_route(DashboardRoute::Sessions);
+                self.dashboard_scroll.set(0);
+                self.settings.focused = false;
+                self.session_list.focused = true;
+                self.start_session_list_refresh(app_server);
+                self.push_status("press f to fork selected session");
+            }
+            CommandPaletteAction::ImportExternalAgentConfig => {
+                self.start_external_agent_import_review(app_server).await?;
+            }
+            CommandPaletteAction::CompactContext => {
+                let request = app_server.thread_compact_start_in_background(self.thread_id);
+                self.start_backend_action(
+                    ActionGroup::Compaction,
+                    "starting context compaction",
+                    async move {
+                        BackendActionResult::Compaction {
+                            result: request.await,
+                        }
+                    },
+                );
+            }
+        }
+        Ok(())
+    }
 }

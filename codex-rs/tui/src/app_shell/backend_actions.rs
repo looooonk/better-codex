@@ -14,6 +14,7 @@ use tokio::task::JoinSet;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum ActionGroup {
     Approval,
+    Compaction,
     SessionDelete,
     SessionRename,
     SessionSwitch,
@@ -40,6 +41,9 @@ pub(super) enum BackendActionResult {
     },
     CurrentTime {
         result: std::io::Result<()>,
+    },
+    Compaction {
+        result: Result<()>,
     },
     UserInputAutoResolution {
         request_id: RequestId,
@@ -229,6 +233,13 @@ impl ShellState {
                     self.report_action_error("failed to report current time", err.into());
                 }
             }
+            BackendActionResult::Compaction { result } => match result {
+                Ok(()) => {
+                    self.status = "context compaction started".to_string();
+                    self.push_status("context compaction started");
+                }
+                Err(err) => self.report_action_error("failed to start context compaction", err),
+            },
             BackendActionResult::UserInputAutoResolution {
                 request_id,
                 title,

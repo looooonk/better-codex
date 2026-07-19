@@ -9,7 +9,7 @@ expression: rendered
  ▎ CODEX  The │                                                                      │
           surf│  Fork thread                                                         │ns
               │  Import Claude Code setup                                            │
-╭─────────────│▌ Compact context  Context compaction action is no...                 │
+╭─────────────│▌ Compact context  Compact the current thread context                 │
 │◆ MESSAGE  1:│↑↓ / j k navigate   Enter select   Esc close  ↑13/13                  │
 │> Summarize t╰──────────────────────────────────────────────────────────────────────╯
 │                                                ││▎stage-one

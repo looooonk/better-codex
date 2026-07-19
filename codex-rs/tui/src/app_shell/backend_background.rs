@@ -3,6 +3,8 @@ use super::backend::app_shell_request_id;
 use crate::app_server_session::turn_permissions_overrides;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::ClientRequest;
+use codex_app_server_protocol::ThreadCompactStartParams;
+use codex_app_server_protocol::ThreadCompactStartResponse;
 use codex_app_server_protocol::ThreadDeleteParams;
 use codex_app_server_protocol::ThreadDeleteResponse;
 use codex_app_server_protocol::ThreadListParams;
@@ -25,6 +27,21 @@ pub(super) async fn delete_thread(
         .request_typed(ClientRequest::ThreadDelete {
             request_id: app_shell_request_id("app-shell-thread-delete"),
             params: ThreadDeleteParams {
+                thread_id: thread_id.to_string(),
+            },
+        })
+        .await?;
+    Ok(())
+}
+
+pub(super) async fn compact_thread(
+    request_handle: AppServerRequestHandle,
+    thread_id: ThreadId,
+) -> Result<()> {
+    let _: ThreadCompactStartResponse = request_handle
+        .request_typed(ClientRequest::ThreadCompactStart {
+            request_id: app_shell_request_id("app-shell-thread-compact"),
+            params: ThreadCompactStartParams {
                 thread_id: thread_id.to_string(),
             },
         })

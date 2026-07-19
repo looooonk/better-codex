@@ -1066,7 +1066,7 @@ base64-copies it, then the response exceeds the WebSocket maximum and the reques
 
 ### 73. [P2][Maintainability / Reliability] The central TUI controller has become an unsafe change unit
 
-**Status:** Assigned
+**Status:** Fixed
 
 `codex-rs/tui/src/app_shell.rs` is 3,961 lines, `ShellState` has 78 fields, and `handle_key` alone is
 382 lines. Its 12,391-line test file reaches into the same private state. Relative to
@@ -1079,7 +1079,7 @@ transcript reducers.
 
 ### 74. [P3][Discoverability / TUI] The command palette advertises an intentionally inert action
 
-**Status:** Assigned
+**Status:** Fixed
 
 The palette includes `Compact context` with the detail `Context compaction action is not wired yet`
 and `enabled: false` (`codex-rs/tui/src/app_shell/command_palette.rs:152-157`). Its dispatch branch is

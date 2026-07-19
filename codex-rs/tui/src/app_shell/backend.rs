@@ -247,6 +247,11 @@ pub(super) trait AppShellBackend {
         params: AppShellTurnStart,
     ) -> impl std::future::Future<Output = Result<TurnStartResponse>> + Send + 'static;
 
+    fn thread_compact_start_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static;
+
     fn turn_interrupt(
         &mut self,
         thread_id: ThreadId,
@@ -682,6 +687,13 @@ impl AppShellBackend for AppServerSession {
         params: AppShellTurnStart,
     ) -> impl std::future::Future<Output = Result<TurnStartResponse>> + Send + 'static {
         super::backend_background::start_turn(AppServerSession::request_handle(self), params)
+    }
+
+    fn thread_compact_start_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static {
+        super::backend_background::compact_thread(AppServerSession::request_handle(self), thread_id)
     }
 
     async fn turn_interrupt(

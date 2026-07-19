@@ -2151,7 +2151,7 @@ fn command_palette_lists_common_actions() {
             (CommandPaletteAction::ResumeThread, true),
             (CommandPaletteAction::ForkThread, true),
             (CommandPaletteAction::ImportExternalAgentConfig, true),
-            (CommandPaletteAction::CompactContext, false),
+            (CommandPaletteAction::CompactContext, true),
         ]
     );
 }
@@ -2176,6 +2176,55 @@ async fn command_palette_starts_a_new_session() {
     );
     assert!(shell.command_palette.is_none());
     assert!(!shell.session_list.focused);
+}
+
+#[tokio::test]
+async fn command_palette_starts_context_compaction_in_background() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.open_command_palette();
+    select_command_palette_action(&mut shell, CommandPaletteAction::CompactContext);
+    let mut backend = RecordingBackend::default();
+
+    shell
+        .execute_selected_command_palette_action(&config, &mut backend)
+        .await
+        .expect("compact action should start in the background");
+
+    assert!(shell.command_palette.is_none());
+    assert!(shell.has_pending_backend_action(ActionGroup::Compaction));
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::Compact(shell.thread_id)]
+    );
+    assert_eq!(shell.status, "context compaction started");
+}
+
+#[tokio::test]
+async fn command_palette_reports_context_compaction_failure() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.open_command_palette();
+    select_command_palette_action(&mut shell, CommandPaletteAction::CompactContext);
+    let mut backend = RecordingBackend::default();
+    backend.fail_next_action("compaction unavailable");
+
+    shell
+        .execute_selected_command_palette_action(&config, &mut backend)
+        .await
+        .expect("compact action should start in the background");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(shell.status, "action failed");
+    assert_eq!(
+        shell.transcript.back().map(|line| line.kind),
+        Some(TranscriptKind::Error)
+    );
+    assert_eq!(
+        shell.transcript.back().map(|line| line.text.as_str()),
+        Some("failed to start context compaction: compaction unavailable")
+    );
 }
 
 #[tokio::test]
@@ -9836,9 +9885,12 @@ fn render_shell(shell: &ShellState, area: Rect) -> String {
 
 async fn complete_backend_actions(shell: &mut ShellState, backend: &RecordingBackend) {
     tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
-        while shell.has_pending_backend_actions() {
+        loop {
             tokio::task::yield_now().await;
             shell.poll_backend_actions(backend).await;
+            if !shell.has_pending_backend_actions() {
+                break;
+            }
         }
     })
     .await
@@ -13164,6 +13216,7 @@ enum RecordedBackendCall {
         effort: Option<ReasoningEffort>,
         collaboration_mode: Option<CollaborationMode>,
     },
+    Compact(codex_protocol::ThreadId),
     Interrupt {
         thread_id: codex_protocol::ThreadId,
         turn_id: String,
@@ -13868,6 +13921,21 @@ impl backend::AppShellBackend for RecordingBackend {
     {
         let mut backend = self.clone();
         async move { backend.turn_start(params).await }
+    }
+
+    fn thread_compact_start_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> impl std::future::Future<Output = color_eyre::Result<()>> + Send + 'static {
+        self.push(RecordedBackendCall::Compact(thread_id));
+        let backend = self.clone();
+        async move {
+            if let Some(error) = backend.take_action_error() {
+                Err(color_eyre::eyre::eyre!(error))
+            } else {
+                Ok(())
+            }
+        }
     }
 
     async fn turn_interrupt(
