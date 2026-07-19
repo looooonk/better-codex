@@ -615,6 +615,7 @@ async fn shutdown_session_runtime(sess: &Arc<Session>) {
         .shutdown()
         .await;
     sess.guardian_review_session.shutdown().await;
+    sess.services.hook_output_spill_tracker.cleanup().await;
 }
 
 async fn emit_thread_stop_lifecycle(sess: &Session) {

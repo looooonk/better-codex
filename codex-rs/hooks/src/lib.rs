@@ -67,6 +67,7 @@ pub use events::user_prompt_submit::UserPromptSubmitOutcome;
 pub use events::user_prompt_submit::UserPromptSubmitRequest;
 pub use legacy_notify::legacy_notify_json;
 pub use legacy_notify::notify_hook;
+pub use output_spill::HookOutputSpillTracker;
 pub use registry::HookListOutcome;
 pub use registry::Hooks;
 pub use registry::HooksConfig;

@@ -5501,6 +5501,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             legacy_notify_argv: config.notify.clone(),
             ..HooksConfig::default()
         })),
+        hook_output_spill_tracker: HookOutputSpillTracker::default(),
         rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
         user_shell: Arc::new(default_user_shell()),
         show_raw_agent_reasoning: config.show_raw_agent_reasoning,
@@ -7632,6 +7633,7 @@ where
             legacy_notify_argv: config.notify.clone(),
             ..HooksConfig::default()
         })),
+        hook_output_spill_tracker: HookOutputSpillTracker::default(),
         rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
         user_shell: Arc::new(default_user_shell()),
         show_raw_agent_reasoning: config.show_raw_agent_reasoning,

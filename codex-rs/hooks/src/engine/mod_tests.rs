@@ -31,6 +31,7 @@ use tempfile::tempdir;
 use super::ClaudeHooksEngine;
 use super::CommandShell;
 use crate::events::pre_tool_use::PreToolUseRequest;
+use crate::output_spill::HookOutputSpillTracker;
 
 fn cwd() -> AbsolutePathBuf {
     AbsolutePathBuf::current_dir().expect("current dir")
@@ -204,6 +205,7 @@ with Path(r"{log_path}").open("a", encoding="utf-8") as handle:
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert!(engine.warnings().is_empty());
@@ -310,6 +312,7 @@ async fn requirements_managed_hooks_execute_windows_command_override() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     let outcome = engine
@@ -389,6 +392,7 @@ fn unknown_requirement_source_hooks_stay_managed() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert_eq!(engine.handlers.len(), 1);
@@ -471,6 +475,7 @@ fn user_disablement_filters_non_managed_hooks_but_not_managed_hooks() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert_eq!(engine.handlers.len(), 1);
@@ -537,6 +542,7 @@ fn user_disablement_does_not_filter_managed_layer_hooks() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert_eq!(engine.handlers.len(), 1);
@@ -698,6 +704,7 @@ fn requirements_managed_hooks_load_when_managed_dir_is_missing() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert!(engine.warnings().is_empty());
@@ -754,6 +761,7 @@ fn allow_managed_hooks_only_false_keeps_unmanaged_hooks() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert!(engine.warnings().is_empty());
@@ -808,6 +816,7 @@ fn allow_managed_hooks_only_in_config_toml_does_not_enable_policy() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert!(engine.warnings().is_empty());
@@ -878,6 +887,7 @@ fn allow_managed_hooks_only_skips_unmanaged_json_and_toml_hooks() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert!(engine.handlers.is_empty());
@@ -917,6 +927,7 @@ fn allow_managed_hooks_only_skips_unmanaged_plugin_hooks() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert!(engine.handlers.is_empty());
@@ -989,6 +1000,7 @@ fn allow_managed_hooks_only_keeps_managed_requirement_and_config_layer_hooks() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert!(engine.warnings().is_empty());
@@ -1099,6 +1111,7 @@ fn discovers_hooks_from_json_and_toml_in_the_same_layer() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert!(engine.warnings().iter().any(|warning| {
@@ -1194,6 +1207,7 @@ fn profile_user_layers_load_shared_hooks_json_once() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert!(engine.warnings().is_empty());
@@ -1268,6 +1282,7 @@ fn malformed_hooks_json_is_reported_as_startup_warning() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert!(engine.handlers.is_empty());
@@ -1339,6 +1354,7 @@ print(json.dumps({
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     let preview = engine.preview_pre_tool_use(&PreToolUseRequest {
@@ -1458,6 +1474,7 @@ fn plugin_hook_sources_expand_plugin_placeholders() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert_eq!(
@@ -1502,6 +1519,7 @@ fn plugin_hook_load_warnings_are_startup_warnings() {
             program: String::new(),
             args: Vec::new(),
         },
+        HookOutputSpillTracker::default(),
     );
 
     assert_eq!(engine.warnings(), &["failed plugin hook".to_string()]);

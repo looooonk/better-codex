@@ -984,7 +984,7 @@ failure rather than an error identifying context compaction as the failed action
 
 ### 67. [P2][Resource leak / Hooks] Codex never removes spilled hook-output files
 
-**Status:** Assigned
+**Status:** Fixed
 
 Every oversized hook result creates a unique spill file
 (`codex-rs/hooks/src/output_spill.rs:20-24,38-60,91-95`), but production ownership has no cleanup
@@ -996,7 +996,7 @@ spill directory after the sessions exit. Each generated file remains.
 
 ### 68. [P2][Documentation / API compatibility] App-server endpoint summaries use incorrect wire field names
 
-**Status:** Assigned
+**Status:** Fixed
 
 Two README endpoint-summary lines do not match the v2 wire contract:
 

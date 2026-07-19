@@ -21,6 +21,7 @@ use crate::events::stop::StopOutcome;
 use crate::events::stop::StopRequest;
 use crate::events::user_prompt_submit::UserPromptSubmitOutcome;
 use crate::events::user_prompt_submit::UserPromptSubmitRequest;
+use crate::output_spill::HookOutputSpillTracker;
 use crate::types::Hook;
 use crate::types::HookEvent;
 use crate::types::HookPayload;
@@ -58,6 +59,14 @@ impl Default for Hooks {
 
 impl Hooks {
     pub fn new(config: HooksConfig) -> Self {
+        Self::new_with_output_spill_tracker(config, HookOutputSpillTracker::default())
+    }
+
+    /// Builds hooks that register spilled output with a session-owned tracker.
+    pub fn new_with_output_spill_tracker(
+        config: HooksConfig,
+        output_spill_tracker: HookOutputSpillTracker,
+    ) -> Self {
         let after_agent = config
             .legacy_notify_argv
             .filter(|argv| !argv.is_empty() && !argv[0].is_empty())
@@ -74,6 +83,7 @@ impl Hooks {
                 program: config.shell_program.unwrap_or_default(),
                 args: config.shell_args,
             },
+            output_spill_tracker,
         );
         Self {
             after_agent,

@@ -70,6 +70,7 @@ use codex_extension_api::TurnContextContributionInput;
 use codex_features::FEATURES;
 use codex_features::Feature;
 use codex_features::unstable_features_warning_event;
+use codex_hooks::HookOutputSpillTracker;
 use codex_hooks::Hooks;
 use codex_hooks::HooksConfig;
 use codex_login::AuthManager;
@@ -1648,6 +1649,7 @@ impl Session {
             config.as_ref(),
             self.services.plugins_manager.as_ref(),
             environments.single_local_environment(),
+            self.services.hook_output_spill_tracker.clone(),
         )
         .await;
 
@@ -4132,6 +4134,7 @@ async fn build_hooks_for_config(
     config: &Config,
     plugins_manager: &PluginsManager,
     environment: Option<&TurnEnvironment>,
+    output_spill_tracker: HookOutputSpillTracker,
 ) -> Hooks {
     let (hook_shell_program, hook_shell_argv) = environment
         .and_then(|environment| environment.shell.as_ref())
@@ -4146,16 +4149,19 @@ async fn build_hooks_for_config(
     let plugin_outcome = plugins_manager.plugins_for_config(&plugins_input).await;
     let plugin_hook_sources = plugin_outcome.effective_plugin_hook_sources();
     let plugin_hook_load_warnings = plugin_outcome.effective_plugin_hook_warnings();
-    Hooks::new(HooksConfig {
-        legacy_notify_argv: config.notify.clone(),
-        feature_enabled: config.features.enabled(Feature::CodexHooks),
-        bypass_hook_trust: config.bypass_hook_trust,
-        config_layer_stack: Some(config.config_layer_stack.clone()),
-        plugin_hook_sources,
-        plugin_hook_load_warnings,
-        shell_program: hook_shell_program,
-        shell_args: hook_shell_argv,
-    })
+    Hooks::new_with_output_spill_tracker(
+        HooksConfig {
+            legacy_notify_argv: config.notify.clone(),
+            feature_enabled: config.features.enabled(Feature::CodexHooks),
+            bypass_hook_trust: config.bypass_hook_trust,
+            config_layer_stack: Some(config.config_layer_stack.clone()),
+            plugin_hook_sources,
+            plugin_hook_load_warnings,
+            shell_program: hook_shell_program,
+            shell_args: hook_shell_argv,
+        },
+        output_spill_tracker,
+    )
 }
 
 #[cfg(test)]

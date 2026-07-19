@@ -30,6 +30,7 @@ use codex_core_plugins::PluginsManager;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionDataInit;
 use codex_extension_api::ExtensionRegistry;
+use codex_hooks::HookOutputSpillTracker;
 use codex_hooks::Hooks;
 use codex_login::AuthManager;
 use codex_mcp::McpConfig;
@@ -63,6 +64,7 @@ pub(crate) struct SessionServices {
     pub(crate) main_execve_wrapper_exe: Option<PathBuf>,
     pub(crate) analytics_events_client: AnalyticsEventsClient,
     pub(crate) hooks: ArcSwap<Hooks>,
+    pub(crate) hook_output_spill_tracker: HookOutputSpillTracker,
     pub(crate) rollout_thread_trace: ThreadTraceContext,
     pub(crate) user_shell: Arc<crate::shell::Shell>,
     pub(crate) show_raw_agent_reasoning: bool,

@@ -4,6 +4,9 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::approx_token_count;
 use codex_utils_output_truncation::formatted_truncate_text;
+use std::io::ErrorKind;
+use std::sync::Arc;
+use std::sync::Mutex;
 use tokio::fs;
 use tracing::warn;
 use uuid::Uuid;
@@ -11,16 +14,92 @@ use uuid::Uuid;
 const HOOK_OUTPUTS_DIR: &str = "hook_outputs";
 const HOOK_OUTPUT_TOKEN_LIMIT: usize = 2_500;
 
+#[derive(Default)]
+struct TrackedHookOutputs {
+    paths: Mutex<Vec<AbsolutePathBuf>>,
+}
+
+impl Drop for TrackedHookOutputs {
+    fn drop(&mut self) {
+        let paths = match self.paths.get_mut() {
+            Ok(paths) => paths,
+            Err(err) => err.into_inner(),
+        };
+        for path in paths.drain(..) {
+            if let Err(err) = std::fs::remove_file(path.as_ref())
+                && err.kind() != ErrorKind::NotFound
+            {
+                warn!("failed to remove hook output {}: {err}", path.display());
+            }
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::remove_dir(parent.as_ref());
+            }
+        }
+    }
+}
+
+/// Tracks spilled hook outputs for one session so its lifecycle owner can remove them.
+#[derive(Clone, Default)]
+pub struct HookOutputSpillTracker {
+    outputs: Arc<TrackedHookOutputs>,
+}
+
+impl HookOutputSpillTracker {
+    /// Removes every spill file registered to this session.
+    pub async fn cleanup(&self) {
+        let paths = {
+            let mut paths = self
+                .outputs
+                .paths
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            std::mem::take(&mut *paths)
+        };
+        let mut failed = Vec::new();
+        for path in paths {
+            match fs::remove_file(path.as_ref()).await {
+                Ok(()) => {}
+                Err(err) if err.kind() == ErrorKind::NotFound => {}
+                Err(err) => {
+                    warn!("failed to remove hook output {}: {err}", path.display());
+                    failed.push(path);
+                    continue;
+                }
+            }
+            if let Some(parent) = path.parent() {
+                let _ = fs::remove_dir(parent.as_ref()).await;
+            }
+        }
+        if !failed.is_empty() {
+            self.outputs
+                .paths
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .extend(failed);
+        }
+    }
+
+    fn track(&self, path: AbsolutePathBuf) {
+        self.outputs
+            .paths
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push(path);
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct HookOutputSpiller {
     output_dir: AbsolutePathBuf,
+    tracker: HookOutputSpillTracker,
 }
 
 impl HookOutputSpiller {
-    pub(crate) fn new() -> Self {
+    pub(crate) fn new(tracker: HookOutputSpillTracker) -> Self {
         Self {
             output_dir: AbsolutePathBuf::resolve_path_against_base(std::env::temp_dir(), "/")
                 .join(HOOK_OUTPUTS_DIR),
+            tracker,
         }
     }
 
@@ -57,6 +136,7 @@ impl HookOutputSpiller {
             );
         }
 
+        self.tracker.track(path.clone());
         spilled_hook_output_preview(&text, &path)
     }
 

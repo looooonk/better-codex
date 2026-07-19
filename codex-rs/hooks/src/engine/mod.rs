@@ -20,6 +20,7 @@ use crate::events::stop::StopOutcome;
 use crate::events::stop::StopRequest;
 use crate::events::user_prompt_submit::UserPromptSubmitOutcome;
 use crate::events::user_prompt_submit::UserPromptSubmitRequest;
+use crate::output_spill::HookOutputSpillTracker;
 use crate::output_spill::HookOutputSpiller;
 use codex_config::ConfigLayerStack;
 use codex_plugin::PluginHookSource;
@@ -112,13 +113,14 @@ impl ClaudeHooksEngine {
         plugin_hook_sources: Vec<PluginHookSource>,
         plugin_hook_load_warnings: Vec<String>,
         shell: CommandShell,
+        output_spill_tracker: HookOutputSpillTracker,
     ) -> Self {
         if !enabled {
             return Self {
                 handlers: Vec::new(),
                 warnings: Vec::new(),
                 shell,
-                output_spiller: HookOutputSpiller::new(),
+                output_spiller: HookOutputSpiller::new(output_spill_tracker),
             };
         }
 
@@ -133,7 +135,7 @@ impl ClaudeHooksEngine {
             handlers: discovered.handlers,
             warnings: discovered.warnings,
             shell,
-            output_spiller: HookOutputSpiller::new(),
+            output_spiller: HookOutputSpiller::new(output_spill_tracker),
         }
     }
 

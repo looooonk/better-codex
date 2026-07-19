@@ -1314,7 +1314,7 @@ async fn session_start_runs_before_user_prompt_submit_on_first_turn() -> Result<
 }
 
 #[tokio::test]
-async fn session_start_hook_spills_large_additional_context() -> Result<()> {
+async fn session_start_hook_spill_is_removed_on_shutdown() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -1338,7 +1338,7 @@ async fn session_start_hook_spills_large_additional_context() -> Result<()> {
             }
         })
         .with_config(trust_discovered_hooks);
-    let test = builder.build(&server).await?;
+    let test = builder.build_with_auto_env(&server).await?;
 
     test.submit_turn("hello").await?;
 
@@ -1351,6 +1351,10 @@ async fn session_start_hook_spills_large_additional_context() -> Result<()> {
     assert!(developer_message.contains("tokens truncated"));
     let path = spilled_hook_output_path(developer_message).context("spill path")?;
     assert_eq!(fs::read_to_string(path)?, additional_context);
+
+    test.codex.shutdown_and_wait().await?;
+
+    assert!(!Path::new(path).exists());
 
     Ok(())
 }

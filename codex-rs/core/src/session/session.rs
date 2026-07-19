@@ -1001,10 +1001,12 @@ impl Session {
                     (None, None)
                 };
 
+            let hook_output_spill_tracker = HookOutputSpillTracker::default();
             let hooks = build_hooks_for_config(
                 &config,
                 plugins_manager.as_ref(),
                 resolved_environments.single_local_environment(),
+                hook_output_spill_tracker.clone(),
             )
             .await;
             for warning in hooks.startup_warnings() {
@@ -1068,6 +1070,7 @@ impl Session {
                 main_execve_wrapper_exe: config.main_execve_wrapper_exe.clone(),
                 analytics_events_client,
                 hooks: arc_swap::ArcSwap::from_pointee(hooks),
+                hook_output_spill_tracker,
                 rollout_thread_trace,
                 user_shell: Arc::new(default_shell),
                 show_raw_agent_reasoning: config.show_raw_agent_reasoning,
