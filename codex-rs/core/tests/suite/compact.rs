@@ -3554,9 +3554,6 @@ async fn manual_compact_retries_after_context_window_error() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-// TODO(ccunningham): Re-enable after the follow-up compaction behavior PR lands.
-// Current main behavior around non-context manual /compact failures is known-incorrect.
-#[ignore = "behavior change covered in follow-up compaction PR"]
 async fn manual_compact_non_context_failure_retries_then_emits_task_error() {
     skip_if_no_network!();
 
@@ -3588,7 +3585,7 @@ async fn manual_compact_non_context_failure_retries_then_emits_task_error() {
             set_test_compact_prompt(config);
             config.model_auto_compact_token_limit = Some(200_000);
         })
-        .build(&server)
+        .build_with_auto_env(&server)
         .await
         .expect("build codex")
         .codex;

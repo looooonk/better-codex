@@ -142,17 +142,8 @@ fn shortcut_matching_is_exact_and_ignores_modifier_only_events() {
     assert_eq!(text_input_action_from_key(release), None);
 }
 
-#[cfg(target_os = "macos")]
 #[test]
-fn fn_navigation_and_delete_remain_unbound() {
-    for code in [KeyCode::Home, KeyCode::End, KeyCode::Delete] {
-        assert_eq!(action(code, KeyModifiers::NONE), None);
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-#[test]
-fn plain_navigation_and_forward_delete_remain_available() {
+fn plain_navigation_and_forward_delete_are_available() {
     let mut input = EditableText::new("alpha beta");
     input.apply(TextInputAction::MoveWordLeft);
 

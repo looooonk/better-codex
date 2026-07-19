@@ -117,7 +117,7 @@ fn wide_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
     };
     [
         "Cmd arrows/⌫ line; Opt/Ctrl word",
-        "Shift/Alt+Enter newline; Fn none",
+        "Shift/Alt+Enter newline; Fn nav/⌫",
         contextual[0],
         contextual[1],
         contextual[2],
@@ -202,7 +202,7 @@ fn compact_key_hint_labels(shell: &ShellState) -> [&'static str; 18] {
     };
     [
         "⌘←→⌫ line · ⌥/^ word",
-        "S/A+↵ newline · Fn none",
+        "S/A+↵ newline · Fn nav/⌫",
         contextual[0],
         contextual[1],
         contextual[2],
@@ -282,7 +282,7 @@ fn dense_key_hint_labels(shell: &ShellState) -> [&'static str; 14] {
     };
     [
         contextual[0],
-        "S/A↵ newline · Fn none",
+        "S/A↵ newline · Fn nav/⌫",
         contextual[1],
         contextual[2],
         "Alt+M/E model/effort",

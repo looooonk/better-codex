@@ -18,7 +18,6 @@ pub(crate) enum TextInputAction {
     MoveWordLeft,
     MoveWordRight,
     DeleteBackward,
-    #[cfg(not(target_os = "macos"))]
     DeleteForward,
     DeleteWordLeft,
     DeleteToLineStart,
@@ -199,7 +198,6 @@ impl EditableText {
             TextInputAction::MoveWordLeft => self.move_word_left(),
             TextInputAction::MoveWordRight => self.move_word_right(),
             TextInputAction::DeleteBackward => return self.backspace(),
-            #[cfg(not(target_os = "macos"))]
             TextInputAction::DeleteForward => return self.delete(),
             TextInputAction::DeleteWordLeft => return self.delete_word_left(),
             TextInputAction::DeleteToLineStart => return self.delete_to_line_start(),
@@ -243,7 +241,6 @@ impl EditableText {
         true
     }
 
-    #[cfg(not(target_os = "macos"))]
     fn delete(&mut self) -> bool {
         let Some(next) = self.next_boundary() else {
             return false;
@@ -457,11 +454,8 @@ fn plain_text_input_action_from_key(key: KeyEvent) -> Option<TextInputAction> {
             KeyCode::Backspace | KeyCode::Char('\u{007f}'),
             KeyModifiers::NONE | KeyModifiers::SHIFT,
         ) => Some(TextInputAction::DeleteBackward),
-        #[cfg(not(target_os = "macos"))]
         (KeyCode::Home, KeyModifiers::NONE) => Some(TextInputAction::MoveLineStart),
-        #[cfg(not(target_os = "macos"))]
         (KeyCode::End, KeyModifiers::NONE) => Some(TextInputAction::MoveLineEnd),
-        #[cfg(not(target_os = "macos"))]
         (KeyCode::Delete, KeyModifiers::NONE | KeyModifiers::SHIFT) => {
             Some(TextInputAction::DeleteForward)
         }

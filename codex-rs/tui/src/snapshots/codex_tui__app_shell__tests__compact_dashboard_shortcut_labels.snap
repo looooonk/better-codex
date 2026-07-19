@@ -3,7 +3,7 @@ source: tui/src/app_shell_tests.rs
 expression: rendered(60)
 ---
 ⌘←→⌫ line · ⌥/^ word         │ ^N new · Session ↵ focus
-S/A+↵ newline · Fn none      │ r resume · f fork
+S/A+↵ newline · Fn nav/⌫     │ r resume · f fork
 ↵ send                       │ a/u archive · v show
 ^C/Esc×2 exit                │ d delete · n rename
 Alt+↑ select  ^O copy        │ / search

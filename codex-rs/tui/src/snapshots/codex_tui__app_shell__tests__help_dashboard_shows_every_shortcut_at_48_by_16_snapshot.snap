@@ -7,7 +7,7 @@ expression: rendered
 │
 │  Status   │  Agents   │  Sessions   │  Help
 │⌘←→⌫ line · ⌥/^ word  │ ^N new · Sess ↵ focus
-│S/A↵ newline · Fn none│ r/f resume/fork
+│S/A↵ newline · Fn nav…│ r/f resume/fork
 │↵ send  ^C/Esc×2 exit │ a/u/v/d arc/show/del
 │Alt+↑/^O select/copy  │ n rename  / search
 │Alt+M/E model/effort  │ Agent ↵ focus/log · j…

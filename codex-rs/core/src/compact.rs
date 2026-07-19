@@ -278,7 +278,18 @@ async fn run_compact_task_inner(
             CompactionAnalyticsDetails::default(),
         )
         .await;
-    result.map(|_| ())
+    match result {
+        Ok(_) => Ok(()),
+        Err(err @ CodexErr::TurnAborted) => Err(err),
+        Err(err) => {
+            sess.track_turn_codex_error(turn_context.as_ref(), &err);
+            let event = EventMsg::Error(
+                err.to_error_event(Some("Error running local compact task".to_string())),
+            );
+            sess.send_event(turn_context.as_ref(), event).await;
+            Err(err)
+        }
+    }
 }
 
 async fn run_compact_task_inner_impl(
@@ -340,9 +351,6 @@ async fn run_compact_task_inner_impl(
                 return Err(err);
             }
             Err(e @ CodexErr::SessionBudgetExceeded) => {
-                sess.track_turn_codex_error(turn_context.as_ref(), &e);
-                let event = EventMsg::Error(e.to_error_event(/*message_prefix*/ None));
-                sess.send_event(&turn_context, event).await;
                 return Err(e);
             }
             Err(e @ CodexErr::ContextWindowExceeded) => {
@@ -356,9 +364,6 @@ async fn run_compact_task_inner_impl(
                     continue;
                 }
                 sess.set_total_tokens_full(turn_context.as_ref()).await;
-                sess.track_turn_codex_error(turn_context.as_ref(), &e);
-                let event = EventMsg::Error(e.to_error_event(/*message_prefix*/ None));
-                sess.send_event(&turn_context, event).await;
                 return Err(e);
             }
             Err(e) => {
@@ -374,9 +379,6 @@ async fn run_compact_task_inner_impl(
                     tokio::time::sleep(delay).await;
                     continue;
                 } else {
-                    sess.track_turn_codex_error(turn_context.as_ref(), &e);
-                    let event = EventMsg::Error(e.to_error_event(/*message_prefix*/ None));
-                    sess.send_event(&turn_context, event).await;
                     return Err(e);
                 }
             }

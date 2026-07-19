@@ -958,7 +958,7 @@ text, then Alt-Down or Enter. The supposedly cleared original remains queued and
 
 ### 65. [P2][macOS input] Home, End, and forward Delete are deliberately unbound
 
-**Status:** Assigned
+**Status:** Fixed
 
 Plain Home/End/Delete actions are compiled only on non-macOS
 (`codex-rs/tui/src/text_input.rs:448-455`), with a test explicitly asserting that macOS leaves them
@@ -970,7 +970,7 @@ the same events work on Linux.
 
 ### 66. [P2][Error reporting / Compaction] Local compaction drops the operation context on failure
 
-**Status:** Assigned
+**Status:** Fixed
 
 The local compaction path emits the raw stream error and discards its task-level contextual result
 (`codex-rs/core/src/compact.rs:300-316` and `core/src/tasks/compact.rs:78-81`). The remote path adds a

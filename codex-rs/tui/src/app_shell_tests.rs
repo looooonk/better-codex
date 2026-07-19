@@ -424,6 +424,70 @@ fn pasted_tabs_use_visible_composer_indentation_snapshot() {
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
+#[tokio::test]
+async fn plain_navigation_and_forward_delete_edit_composer_snapshot() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_route = DashboardRoute::Help;
+    shell.composer.clear();
+    shell.composer.set_text("alphaX beta");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Home should move to the line start");
+    assert_eq!(shell.composer.cursor(), 0);
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::End, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("End should move to the line end");
+    assert_eq!(shell.composer.cursor(), shell.composer.text().len());
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Home, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Home should move back to the line start");
+    for _ in 0..5 {
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Right, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("Right should position the cursor before X");
+    }
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Delete, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Delete should remove X");
+    assert_eq!(shell.composer.text(), "alpha beta");
+    assert_eq!(shell.composer.cursor(), 5);
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        )
+    ));
+}
+
 #[test]
 fn oversized_paste_reports_error_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
