@@ -459,7 +459,7 @@ directory instead of failing localization or using the remote cwd.
 
 ### 28. [P1][Availability / Remote transport] Remote notifications accumulate in an unbounded queue
 
-**Status:** Assigned
+**Status:** Fixed
 
 `RemoteAppServerClient` creates `mpsc::unbounded_channel::<AppServerEvent>()` at
 `codex-rs/app-server-client/src/remote.rs:213-215`. Every notification and server request is drained
@@ -473,7 +473,7 @@ unbounded event backlog.
 
 ### 29. [P1][Availability / Remote transport] Ordinary JSON-RPC requests have no deadline
 
-**Status:** Assigned
+**Status:** Fixed
 
 `request_json_rpc` sends a command and awaits its oneshot indefinitely
 (`codex-rs/app-server-client/src/remote.rs:635-655`). Only initialization and shutdown have explicit

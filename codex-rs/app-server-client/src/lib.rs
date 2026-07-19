@@ -1924,19 +1924,17 @@ mod tests {
             )) if notification.delta == "stdout-1"
         ));
 
-        let mut remaining_events = Vec::new();
-        for _ in 0..4 {
-            remaining_events.push(
-                timeout(Duration::from_secs(2), client.next_event())
-                    .await
-                    .expect("event should arrive before timeout")
-                    .expect("event stream should stay open"),
-            );
-        }
-
         let mut transcript_event_names = Vec::new();
-        for event in &remaining_events {
-            match event {
+        for _ in 0..5 {
+            let event = timeout(Duration::from_secs(2), client.next_event())
+                .await
+                .expect("event should arrive before timeout")
+                .expect("event stream should stay open");
+            let turn_completed = matches!(
+                &event,
+                AppServerEvent::ServerNotification(ServerNotification::TurnCompleted(_))
+            );
+            match &event {
                 AppServerEvent::Lagged { skipped: 1 } => {}
                 AppServerEvent::ServerNotification(
                     ServerNotification::CommandExecutionOutputDelta(notification),
@@ -1963,6 +1961,9 @@ mod tests {
                     transcript_event_names.push("turn_completed");
                 }
                 _ => panic!("unexpected remaining event: {event:?}"),
+            }
+            if turn_completed {
+                break;
             }
         }
         assert_eq!(
