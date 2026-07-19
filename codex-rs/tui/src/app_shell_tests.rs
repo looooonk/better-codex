@@ -1302,6 +1302,28 @@ fn renders_queued_message_editor_snapshot() {
 }
 
 #[test]
+fn renders_removed_queued_message_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Help;
+    shell.composer.clear();
+    queue_messages(
+        &mut shell.composer,
+        &["first queued follow-up", "second queued follow-up"],
+    );
+    shell.composer.set_text("ordinary draft");
+    assert!(shell.composer.edit_previous_queued_message());
+    shell.composer.clear();
+    assert!(shell.composer.finish_queued_message_edit());
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 44,
+    );
+
+    assert_eq!(shell.composer.queued_count(), 1);
+    assert_eq!(shell.composer.text(), "ordinary draft");
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn dashboard_shortcut_guides_only_appear_on_help_route() {
     let mut shell = ShellState::snapshot_fixture();
     let shortcut_guides = [
@@ -8205,6 +8227,53 @@ fn composer_recalls_submission_history_from_draft() {
 }
 
 #[tokio::test]
+async fn turn_submission_and_history_preserve_boundary_whitespace() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let prompt = "  indented content\n\n";
+    shell.active_turn_id = None;
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.composer.clear();
+    shell.composer.set_text(prompt);
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("turn submission should preserve boundary whitespace");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::TurnStart {
+            thread_id: shell.thread_id,
+            prompt: prompt.to_string(),
+            cwd: PathBuf::from("/workspace/better-codex"),
+            model: "gpt-5-codex".to_string(),
+            effort: None,
+            collaboration_mode: None,
+        }]
+    );
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::new(TranscriptKind::User, prompt)])
+    );
+    shell.composer.move_up_or_recall_history();
+    assert_eq!(shell.composer.text(), prompt);
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 16,
+        )
+    ));
+}
+
+#[tokio::test]
 async fn tab_queues_multiple_messages_only_during_an_active_turn() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
@@ -8282,6 +8351,33 @@ async fn alt_arrows_traverse_queued_messages_without_selecting_the_transcript() 
     assert_eq!(shell.composer.text(), "ordinary draft");
     assert_eq!(shell.composer.queued_edit_position(), None);
     assert_eq!(shell.composer.queued_count(), 3);
+    assert_eq!(backend.calls(), Vec::new());
+}
+
+#[tokio::test]
+async fn deleting_the_only_queued_edit_does_not_submit_the_restored_draft() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.active_turn_id = None;
+    shell.composer.clear();
+    queue_messages(&mut shell.composer, &["queued message"]);
+    shell.composer.set_text("ordinary draft");
+    assert!(shell.composer.edit_previous_queued_message());
+    shell.composer.clear();
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("deleting the queue edit should consume Enter");
+
+    assert_eq!(shell.composer.queued_count(), 0);
+    assert_eq!(shell.composer.queued_edit_position(), None);
+    assert_eq!(shell.composer.text(), "ordinary draft");
     assert_eq!(backend.calls(), Vec::new());
 }
 

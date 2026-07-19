@@ -1227,18 +1227,22 @@ impl ShellState {
                     return Ok(false);
                 }
                 let finished_queued_edit = self.composer.finish_queued_message_edit();
-                if finished_queued_edit && self.active_turn_id.is_some() {
+                if finished_queued_edit {
+                    if self.active_turn_id.is_none() && self.composer.has_queued_messages() {
+                        self.submit_next_queued_message(app_server);
+                    }
                     return Ok(false);
                 }
                 let prompt = self.composer.submission_text();
+                let prompt_is_empty = prompt.trim().is_empty();
                 if self.active_turn_id.is_none()
                     && self.composer.has_queued_messages()
-                    && (finished_queued_edit || prompt.is_empty())
+                    && prompt_is_empty
                 {
                     self.submit_next_queued_message(app_server);
                     return Ok(false);
                 }
-                if prompt.is_empty() && self.dashboard_visible {
+                if prompt_is_empty && self.dashboard_visible {
                     match self.dashboard_route {
                         DashboardRoute::Sessions => self.session_list.focused = true,
                         DashboardRoute::Agents => self.agents_focused = true,
@@ -1250,7 +1254,7 @@ impl ShellState {
                         return Ok(false);
                     }
                 }
-                if !prompt.is_empty() {
+                if !prompt_is_empty {
                     if let Some(command) = LocalSlashCommand::parse(&prompt) {
                         let outcome = self
                             .run_local_slash_command(command, prompt, app_server)

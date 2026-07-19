@@ -1,0 +1,48 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│
+                                                  │⌘←→⌫ line · ⌥/^ word   │ ^N new · Sess ↵ focus
+ ◆ CONVERSATION                                   │S/A↵ newline · Fn none │ r/f resume/fork
+ ▎ SYSTEM  Better Codex app shell                 │↵ send/resume  ^C exit │ a/u/v/d arc/show/del
+ ▎ YOU  Create a divergent standalone TUI.        │Alt+↑/↓ edit queue     │ n rename  / search
+                                                  │Alt+M/E model/effort   │ Agent ↵ focus/log · j/k
+ ▎ CODEX  Started a fullscreen app shell backed   │^1 Status · ^2 Agents  │ Tab/j/k nav · ↵ apply
+          by app-server turns.                    │^3 Sessions · ^4 Help  │ Esc×2 exit · ^D hide
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │
+         3. Render dashboard                      │
+                                                  │
+ ▌ tool exec just test -p codex-tui               │
+                                                  │
+ ▌ edited 3 files +128 -24                        │
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │
+          surface.                                │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  QUEUED 1  1:15                       ││
+│> ordinary draft                                ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

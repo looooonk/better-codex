@@ -934,7 +934,7 @@ instead of separated fields.
 
 ### 63. [P2][Prompt fidelity / TUI] Submission strips meaningful leading and trailing whitespace
 
-**Status:** Assigned
+**Status:** Fixed
 
 `ComposerState::submission_text` applies `.trim()` to the entire prompt
 (`codex-rs/tui/src/app_shell/composer.rs:59-60`), and queue/history use the same transformed value.
@@ -946,7 +946,7 @@ material, submit it, and inspect `turn/start`. The leading/trailing whitespace i
 
 ### 64. [P2][Queue interaction / TUI] Clearing a queued edit cannot delete or cancel it
 
-**Status:** Assigned
+**Status:** Fixed
 
 `save_queued_message_edit` writes back only when the edited message is nonempty
 (`codex-rs/tui/src/app_shell/composer.rs:273-290`). Clearing all text therefore preserves the old

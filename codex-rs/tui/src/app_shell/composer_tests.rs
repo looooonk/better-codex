@@ -70,6 +70,75 @@ fn queue_editing_restores_the_draft_cursor() {
 }
 
 #[test]
+fn submission_queue_and_history_preserve_boundary_whitespace() {
+    let mut composer = ComposerState::default();
+    let message = "  indented content\n\n";
+    composer.set_text(message);
+
+    assert_eq!(composer.submission_text(), message);
+    assert!(composer.queue_current_message());
+    assert_eq!(
+        composer.prepare_next_queued_message().as_deref(),
+        Some(message)
+    );
+    composer.confirm_next_queued_message(message);
+    composer.set_text("draft");
+    composer.move_up_or_recall_history();
+
+    assert_eq!(composer.text(), message);
+    assert_eq!(composer.queued_count(), 0);
+}
+
+#[test]
+fn clearing_a_queued_edit_removes_it_and_restores_the_draft() {
+    let mut composer = ComposerState::default();
+    for message in ["first", "second"] {
+        composer.set_text(message);
+        assert!(composer.queue_current_message());
+    }
+    composer.set_text("ordinary draft");
+    assert!(composer.edit_previous_queued_message());
+    composer.clear();
+
+    assert!(composer.finish_queued_message_edit());
+
+    assert_eq!(composer.queued, VecDeque::from(["first".to_string()]));
+    assert_eq!(composer.text(), "ordinary draft");
+    assert_eq!(composer.queued_edit_position(), None);
+}
+
+#[test]
+fn deleting_queued_edits_while_traversing_keeps_adjacent_messages() {
+    let mut composer = ComposerState::default();
+    for message in ["first", "second", "third"] {
+        composer.set_text(message);
+        assert!(composer.queue_current_message());
+    }
+    composer.set_text("ordinary draft");
+    assert!(composer.edit_previous_queued_message());
+    assert!(composer.edit_previous_queued_message());
+    composer.clear();
+
+    assert!(composer.edit_next_queued_message());
+    assert_eq!(composer.text(), "third");
+    assert_eq!(
+        composer.queued,
+        VecDeque::from(["first".to_string(), "third".to_string()])
+    );
+
+    composer.clear();
+    assert!(composer.edit_previous_queued_message());
+    assert_eq!(composer.text(), "first");
+    assert_eq!(composer.queued, VecDeque::from(["first".to_string()]));
+
+    composer.clear();
+    assert!(composer.edit_next_queued_message());
+    assert_eq!(composer.text(), "ordinary draft");
+    assert_eq!(composer.queued, VecDeque::new());
+    assert_eq!(composer.queued_edit_position(), None);
+}
+
+#[test]
 fn oversized_paste_is_rejected_before_normalization() {
     let mut composer = ComposerState::default();
     composer.set_text("draft");
