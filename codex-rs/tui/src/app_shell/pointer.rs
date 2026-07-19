@@ -98,6 +98,20 @@ impl ShellState {
             }
             return Ok(());
         }
+        if let Some(lines) = self
+            .pending_session_delete
+            .as_ref()
+            .map(super::PendingSessionDelete::lines)
+        {
+            let key = modal_click_key(area, position, &lines, |hit| {
+                self.pending_session_delete.as_ref()?.click_key_at(hit.line)
+            });
+            if let Some(key) = key {
+                self.handle_session_delete_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
+                    .await?;
+            }
+            return Ok(());
+        }
         if self.pending_approval.is_some() {
             if let Some(action) = (ShellView { shell: self }).approval_action_at(area, position) {
                 self.handle_pending_approval_action(app_server, action)
@@ -384,6 +398,7 @@ impl ShellState {
             || self.tool_output.is_some()
             || self.agent_log.is_some()
             || self.pending_approval.is_some()
+            || self.pending_session_delete.is_some()
             || self.pending_elicitation.is_some()
             || self.pending_external_agent_import.is_some()
             || self.pending_mcp_management.is_some()

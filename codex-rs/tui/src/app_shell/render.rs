@@ -103,6 +103,9 @@ impl ShellView<'_> {
         if let Some(lines) = self.shell.safety_buffering_modal_lines() {
             render_modal(area, "Safety review", lines, buf);
         }
+        if let Some(pending) = &self.shell.pending_session_delete {
+            render_modal(area, "Delete session", pending.lines(), buf);
+        }
         super::command_palette_view::render(self.shell, area, buf);
         if let Some(selector) = &self.shell.selector {
             selector.render(area, self.shell.pointer_position, buf);
@@ -125,6 +128,7 @@ impl ShellView<'_> {
             || self.shell.tool_output.is_some()
             || self.shell.diff_view.is_some()
             || self.shell.pending_approval.is_some()
+            || self.shell.pending_session_delete.is_some()
             || self.shell.pending_elicitation.is_some()
             || self.shell.pending_external_agent_import.is_some()
             || self.shell.pending_mcp_management.is_some()
@@ -466,6 +470,7 @@ impl ShellView<'_> {
             || self.shell.tool_output.is_some()
             || self.shell.diff_view.is_some()
             || self.shell.pending_approval.is_some()
+            || self.shell.pending_session_delete.is_some()
             || self.shell.pending_elicitation.is_some()
             || self.shell.pending_external_agent_import.is_some()
             || self.shell.pending_mcp_management.is_some()

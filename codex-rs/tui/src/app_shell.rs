@@ -98,6 +98,7 @@ mod safety_buffering;
 mod scrollback_view;
 mod selector;
 mod selector_controller;
+mod session_delete;
 mod session_hydration;
 mod session_switch;
 mod sessions;
@@ -143,6 +144,7 @@ use render::draw_shell;
 use safety_buffering::SafetyBufferingState;
 use selector::SelectorState;
 use selector::SelectorValue;
+use session_delete::PendingSessionDelete;
 use session_hydration::SessionHydrationState;
 use sessions::SessionListState;
 use sessions::SessionSearchOutcome;
@@ -705,6 +707,7 @@ struct ShellState {
     clipboard_lease: Option<ClipboardLease>,
     active_turn_id: Option<String>,
     pending_approval: Option<PendingApproval>,
+    pending_session_delete: Option<PendingSessionDelete>,
     pending_elicitation: Option<PendingElicitation>,
     pending_external_agent_import: Option<ExternalAgentImportState>,
     pending_mcp_management: Option<McpManagementState>,
@@ -808,6 +811,7 @@ impl ShellState {
             clipboard_lease: None,
             active_turn_id: None,
             pending_approval: None,
+            pending_session_delete: None,
             pending_elicitation: None,
             pending_external_agent_import: None,
             pending_mcp_management: None,
@@ -893,6 +897,7 @@ impl ShellState {
                 || self.diff_view.is_some()
                 || self.safety_buffering_modal_lines().is_some()
                 || self.pending_approval.is_some()
+                || self.pending_session_delete.is_some()
                 || self.pending_elicitation.is_some()
                 || self.pending_external_agent_import.is_some()
             {
@@ -981,6 +986,10 @@ impl ShellState {
         }
         if self.safety_buffering_modal_lines().is_some() {
             self.handle_safety_buffering_key(key, app_server).await;
+            return Ok(false);
+        }
+        if self.pending_session_delete.is_some() {
+            self.handle_session_delete_key(key, app_server).await?;
             return Ok(false);
         }
         if self.pending_approval.is_some() {
@@ -1363,6 +1372,7 @@ impl ShellState {
             || self.tool_output.is_some()
             || self.safety_buffering_modal_lines().is_some()
             || self.pending_approval.is_some()
+            || self.pending_session_delete.is_some()
             || self.pending_elicitation.is_some()
             || self.pending_external_agent_import.is_some()
             || self.pending_mcp_management.is_some()
@@ -1521,7 +1531,7 @@ impl ShellState {
                 Ok(true)
             }
             KeyCode::Char('d') => {
-                self.delete_selected_session(app_server).await?;
+                self.start_session_delete_confirmation(app_server).await?;
                 Ok(true)
             }
             KeyCode::Char('n') if !self.session_list.show_archived() => {
@@ -1789,25 +1799,6 @@ impl ShellState {
         Ok(())
     }
 
-    async fn delete_selected_session<S>(&mut self, app_server: &mut S) -> Result<()>
-    where
-        S: AppShellBackend,
-    {
-        let Some(thread_id) = self.session_list.selected_thread_id() else {
-            self.push_status("no session selected");
-            return Ok(());
-        };
-        if self.session_list.selected_is_current(self.thread_id) {
-            self.push_error("cannot delete the active session");
-            return Ok(());
-        }
-        app_server.thread_delete(thread_id).await?;
-        self.invalidate_session_list_refresh();
-        self.session_list.remove_selected();
-        self.push_status(format!("deleted session {thread_id}"));
-        Ok(())
-    }
-
     fn replace_started_session(&mut self, started: AppServerStartedThread) {
         self.invalidate_session_hydration();
         self.close_agent_log();
@@ -1867,6 +1858,7 @@ impl ShellState {
         self.model_context_window = None;
         self.active_turn_id = None;
         self.pending_approval = None;
+        self.pending_session_delete = None;
         self.pending_elicitation = None;
         self.pending_user_input = None;
         self.selector = None;
@@ -3205,6 +3197,7 @@ impl ShellState {
             clipboard_lease: None,
             active_turn_id: None,
             pending_approval: None,
+            pending_session_delete: None,
             pending_elicitation: None,
             pending_external_agent_import: None,
             pending_mcp_management: None,
@@ -3453,6 +3446,7 @@ pub mod bench_support {
             clipboard_lease: None,
             active_turn_id: Some("turn-bench-1234567890".to_string()),
             pending_approval: None,
+            pending_session_delete: None,
             pending_elicitation: None,
             pending_external_agent_import: None,
             pending_mcp_management: None,

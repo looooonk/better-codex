@@ -153,6 +153,12 @@ impl SessionListState {
         Some(removed)
     }
 
+    pub(super) fn remove_thread(&mut self, thread_id: ThreadId) {
+        self.all_rows.retain(|row| row.thread_id != thread_id);
+        self.apply_search_filter();
+        self.normalize_selection_and_scroll();
+    }
+
     pub(super) fn rename_selected(&mut self, name: String) {
         let Some(thread_id) = self.selected_thread_id() else {
             return;

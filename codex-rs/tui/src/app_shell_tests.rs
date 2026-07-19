@@ -185,6 +185,57 @@ fn renders_native_session_list_snapshot() {
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
+#[tokio::test]
+async fn session_delete_requires_confirmation_and_shows_spawned_descendants_snapshot() {
+    let config = test_config().await;
+    let root_id = test_thread_id("01900000-0000-7000-8000-000000000511");
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000512");
+    let grandchild_id = test_thread_id("01900000-0000-7000-8000-000000000513");
+    let root = thread_fixture(root_id, Some("Delete this investigation"), "root");
+    let mut child = thread_fixture(child_id, Some("spawned worker"), "child");
+    child.parent_thread_id = Some(root_id.to_string());
+    let mut grandchild = thread_fixture(grandchild_id, Some("nested worker"), "grandchild");
+    grandchild.parent_thread_id = Some(child_id.to_string());
+    let mut backend = RecordingBackend::with_threads(vec![root.clone(), child, grandchild]);
+    let mut shell = ShellState::snapshot_fixture();
+    shell.session_list.focused = true;
+    shell.session_list.replace_threads(vec![root]);
+
+    shell
+        .handle_session_list_key(key_char('d'), &config, &mut backend)
+        .await
+        .expect("delete confirmation should open");
+
+    assert!(shell.pending_session_delete.is_some());
+    assert!(
+        !backend
+            .calls()
+            .iter()
+            .any(|call| matches!(call, RecordedBackendCall::Delete(_)))
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28
+        )
+    ));
+
+    shell
+        .handle_session_delete_key(
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("delete should cancel");
+    assert_eq!(shell.pending_session_delete, None);
+    assert!(
+        !backend
+            .calls()
+            .iter()
+            .any(|call| matches!(call, RecordedBackendCall::Delete(_)))
+    );
+}
+
 #[test]
 fn renders_loading_archived_session_list_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
@@ -9166,6 +9217,13 @@ async fn native_session_list_search_archive_delete_and_rename() {
     shell
         .handle_session_list_key(key_char('d'), &config, &mut backend)
         .await
+        .expect("delete confirmation should open");
+    shell
+        .handle_session_delete_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
         .expect("delete should resolve");
 
     let calls = backend.calls();
@@ -9726,7 +9784,15 @@ async fn completed_list_refresh_cannot_restore_a_deleted_session() {
     shell
         .handle_session_list_key(key_char('d'), &config, &mut backend)
         .await
-        .expect("delete should succeed");
+        .expect("delete confirmation should open");
+    assert!(shell.pending_session_delete.is_some());
+    shell
+        .handle_session_delete_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("confirmed delete should succeed");
     finish_session_hydration(&mut shell, &backend).await;
 
     assert_eq!(shell.session_list.selected_thread_id(), None);
@@ -9735,6 +9801,14 @@ async fn completed_list_refresh_cannot_restore_a_deleted_session() {
         vec![
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::ThreadList {
+                archived: Some(false),
+                search_term: None,
+            },
+            RecordedBackendCall::ThreadList {
+                archived: Some(true),
                 search_term: None,
             },
             RecordedBackendCall::Delete(session_id),
@@ -11548,21 +11622,42 @@ impl backend::AppShellBackend for RecordingBackend {
             usize::try_from(limit).unwrap_or(usize::MAX)
         });
         let search_term = params.search_term.unwrap_or_default();
-        let mut data = self
-            .threads
-            .lock()
-            .expect("threads should lock")
-            .iter()
-            .filter(|thread| {
-                search_term.is_empty()
-                    || thread
-                        .name
-                        .as_deref()
-                        .is_some_and(|name| name.contains(&search_term))
-                    || thread.preview.contains(&search_term)
-            })
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut data = {
+            let threads = self.threads.lock().expect("threads should lock");
+            threads
+                .iter()
+                .filter(|thread| {
+                    let matches_search = search_term.is_empty()
+                        || thread
+                            .name
+                            .as_deref()
+                            .is_some_and(|name| name.contains(&search_term))
+                        || thread.preview.contains(&search_term);
+                    let matches_ancestor =
+                        params.ancestor_thread_id.as_ref().is_none_or(|ancestor| {
+                            if params.archived == Some(true) {
+                                return false;
+                            }
+                            let mut parent = thread.parent_thread_id.as_deref();
+                            for _ in 0..threads.len() {
+                                let Some(parent_id) = parent else {
+                                    return false;
+                                };
+                                if parent_id == ancestor {
+                                    return true;
+                                }
+                                parent = threads
+                                    .iter()
+                                    .find(|candidate| candidate.id == parent_id)
+                                    .and_then(|candidate| candidate.parent_thread_id.as_deref());
+                            }
+                            false
+                        });
+                    matches_search && matches_ancestor
+                })
+                .cloned()
+                .collect::<Vec<_>>()
+        };
         let next_cursor = (data.len() > limit).then(|| "more".to_string());
         data.truncate(limit);
         let response = ThreadListResponse {

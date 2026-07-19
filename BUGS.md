@@ -35,7 +35,7 @@ The repository remained below the requested 50 GB limit and was about 28 GB afte
 
 ### 1. [P0][Data loss / TUI] One unmodified key recursively deletes a session subtree
 
-**Status:** Assigned
+**Status:** Fixed
 
 `codex-rs/tui/src/app_shell.rs:1523-1525` immediately dispatches deletion when `d` is pressed in the
 focused Sessions list, and `delete_selected_session` at `app_shell.rs:1792-1808` has no confirmation

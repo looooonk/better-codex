@@ -386,6 +386,7 @@ impl ShellState {
                     self.close_agent_log();
                     self.close_tool_output();
                     self.close_diff_view();
+                    self.pending_session_delete = None;
                 }
             }
             ServerNotification::ProcessOutputDelta(_)
@@ -579,6 +580,7 @@ impl ShellState {
         self.pending_external_agent_import = None;
         self.pending_mcp_management = None;
         self.pending_plugin_management = None;
+        self.pending_session_delete = None;
         self.safety_buffering.dismiss();
     }
 }

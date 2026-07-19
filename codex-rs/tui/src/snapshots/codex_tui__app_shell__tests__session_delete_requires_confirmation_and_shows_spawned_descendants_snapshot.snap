@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  Better Codex app shell                 │▎● FOCUSED  ACTIVE  1 sessions
+ ▎ YOU  Create a divergent standalone TUI.        │▎+ New session  Ctrl+N
+                                                  │▎› 1/1 Delete this investigation [main]
+ ▎ CODEX  Star╭──────────────────────────────────────────────────────────────────────╮
+          by a│◆ DELETE SESSION                                                      │
+ ▎ PLAN  1. Bu│Delete session: Delete this investigation                             │
+         2. Wi│Session ID: 01900000-0000-7000-8000-000000000511                      │00001
+         3. Re│2 spawned descendants will also be deleted.                           │ession list
+              │This permanently deletes all persisted history in that subtree.       │
+ ▌ tool exec j│                                                                      │
+              │> Delete permanently Enter/y                                          │
+ ▌ edited 3 fi│  Cancel Esc/n                                                        │
+              │                                                                      │
+ ▎ CODEX  The ╰──────────────────────────────────────────────────────────────────────╯
+          surface.                                │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│
