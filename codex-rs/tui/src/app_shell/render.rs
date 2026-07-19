@@ -261,18 +261,31 @@ impl ShellView<'_> {
         let pending = self.shell.pending_approval.as_ref()?;
         let lines = approval_lines(pending);
         let hit = request_panel_hit(self.input_area(area), position, &lines)?;
-        if hit.line != 2 {
+        let option_start = pending.details().len().saturating_add(1);
+        if (option_start..option_start.saturating_add(pending.option_count())).contains(&hit.line) {
+            return Some(super::ApprovalAction::Choose(hit.line - option_start));
+        }
+        if hit.line != lines.len().saturating_sub(1) {
             return None;
         }
-        match hit.column {
-            2..=12 => Some(super::ApprovalAction::Choose(
-                super::ApprovalChoice::Approve,
-            )),
-            14..=21 => Some(super::ApprovalAction::Choose(super::ApprovalChoice::Deny)),
-            23..=30 => Some(super::ApprovalAction::Edit),
-            32..=42 => Some(super::ApprovalAction::Explain),
-            _ => None,
-        }
+        let text = lines[hit.line]
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+        [
+            ("e Edit", Some(super::ApprovalAction::Edit)),
+            ("? Explain", Some(super::ApprovalAction::Explain)),
+        ]
+        .into_iter()
+        .find_map(|(label, action)| {
+            let byte_start = text.find(label)?;
+            let start = UnicodeWidthStr::width(&text[..byte_start]);
+            (start..start + UnicodeWidthStr::width(label))
+                .contains(&hit.column)
+                .then_some(action)
+                .flatten()
+        })
     }
 
     pub(super) fn elicitation_choice_at(

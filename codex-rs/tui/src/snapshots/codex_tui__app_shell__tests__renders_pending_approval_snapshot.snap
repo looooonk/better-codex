@@ -7,26 +7,26 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.      ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                ┃ │▎+ New session  Ctrl+N
- ▎ CODEX  Started a fullscreen app shell backed ┃ │▎loading sessions
-          by app-server turns.                  ┃ │
- ▎ PLAN  1. Build shell                         ┃ │▎◆ THREAD
-         2. Wire transcript                     ┃ │▎stage-one
-         3. Render dashboard                    ┃ │▎id 01900000-0000-7000-8000-000000000001
-                                                ┃ │▎resume, fork, archive, delete in session list
- ▌ tool exec just test -p codex-tui             ┃ │
-                                                ┃ │
- ▌ edited 3 files +128 -24                      ┃ │
-                                                ┃ │
- ▎ CODEX  The new shell owns the fullscreen     ┃ │
-          surface.                              ┃ │
-                                                  │
-╭────────────────────────────────────────────────╮│
+          surface.                              ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+╭────────────────────────────────────────────────╮│▎loading sessions
 │◆ APPROVAL                                      ││
-│? Run command: cargo test -p codex-tui          ││
-│  Needs network access - /workspace/better-codex││
-│   Approve ↵   Deny n   Edit e   Explain ?      ││
-│                                                ││
-│                                                ││
+│? Run command: cargo test -p codex-tui          ││▎◆ THREAD
+│  Reason: Needs network access                  ││▎stage-one
+│  Working directory: /workspace/better-codex    ││▎id 01900000-0000-7000-8000-000000000001
+│  Command actions: [{ type: "read", command:    ││▎resume, fork, archive, delete in session list
+│  "cat Cargo.toml", name: "Cargo.toml", path: "/││
+│  workspace/better-codex/Cargo.toml" }]         ││
+│  Requested additional per-command permissions: ││
+│  { network: { enabled: true }, fileSystem:     ││
+│  { read: null, write: null, entries: [{ path:  ││
+│  { type: "path", path: "/workspace/shared-     ││
+│  cache" }, access: "write" }] } }              ││
+│  Proposed persistent command rule: ["cargo",   ││
+│  "test"]                                       ││
+│> 1 Run once                                    ││
+│  2 Run and always allow command prefix: cargo  ││
+│  test                                          ││
+│  3 Deny and interrupt                          ││
+│   e Edit   ? Explain                           ││
 ╰────────────────────────────────────────────────╯│

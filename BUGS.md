@@ -50,7 +50,7 @@ confirmation dialog.
 
 ### 2. [P0][Security / Approval UI] Consent dialogs omit security-relevant approval details
 
-**Status:** Assigned
+**Status:** Fixed
 
 `codex-rs/tui/src/app_shell/approval.rs:36-98` builds command consent from only the command, reason,
 and cwd. It discards `network_approval_context` (including the host), parsed command actions,

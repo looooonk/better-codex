@@ -175,26 +175,31 @@ fn line_text(line: &Line<'_>) -> String {
 }
 
 pub(super) fn approval_lines(pending: &PendingApproval) -> Vec<Line<'static>> {
-    vec![
+    let mut lines = vec![Line::from(vec![
+        "? ".fg(palette::WARNING).bold(),
+        pending.title().to_string().fg(palette::TEXT).bold(),
+    ])];
+    lines.extend(
+        pending
+            .details()
+            .iter()
+            .map(|detail| Line::from(vec!["  ".into(), detail.clone().fg(palette::MUTED)])),
+    );
+    lines.extend(pending.options().map(|(index, label)| {
+        let marker = if index == 0 { "> " } else { "  " };
         Line::from(vec![
-            "? ".fg(palette::WARNING).bold(),
-            pending.title().to_string().fg(palette::TEXT).bold(),
-        ]),
-        Line::from(vec![
-            "  ".into(),
-            pending.detail().to_string().fg(palette::MUTED),
-        ]),
-        Line::from(vec![
-            "  ".into(),
-            " Approve ↵ ".fg(palette::DARK).bg(palette::SUCCESS).bold(),
-            " ".into(),
-            " Deny n ".fg(palette::TEXT).bg(palette::ERROR).bold(),
-            " ".into(),
-            " Edit e ".fg(palette::TEXT).bg(palette::ELEVATED).bold(),
-            " ".into(),
-            " Explain ? ".fg(palette::TEXT).bg(palette::ELEVATED).bold(),
-        ]),
-    ]
+            marker.fg(palette::FOCUS).bold(),
+            format!("{} ", index + 1).fg(palette::SUCCESS).bold(),
+            label.to_string().fg(palette::TEXT),
+        ])
+    }));
+    lines.push(Line::from(vec![
+        "  ".into(),
+        " e Edit ".fg(palette::TEXT).bg(palette::ELEVATED).bold(),
+        " ".into(),
+        " ? Explain ".fg(palette::TEXT).bg(palette::ELEVATED).bold(),
+    ]));
+    lines
 }
 
 pub(super) fn user_input_lines(

@@ -14,6 +14,7 @@ use codex_app_server_protocol::CollabAgentTool;
 use codex_app_server_protocol::CollabAgentToolCallStatus;
 use codex_app_server_protocol::CommandExecOutputDeltaNotification;
 use codex_app_server_protocol::CommandExecOutputStream;
+use codex_app_server_protocol::CommandExecutionApprovalDecision;
 use codex_app_server_protocol::CommandExecutionOutputDeltaNotification;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::CommandExecutionSource;
@@ -5229,7 +5230,7 @@ fn long_narrow_approval_keeps_wrapped_actions_visible_and_clickable_snapshot() {
         /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 18,
     );
     let rendered = render_shell(&shell, area);
-    let explain = rendered_text_position(&rendered, "Explain ?");
+    let explain = rendered_text_position(&rendered, "? Explain");
 
     assert_eq!(
         ShellView { shell: &shell }.approval_action_at(area, explain),
@@ -5412,8 +5413,46 @@ Learn more: https://help.openai.com/en/articles/20001326
 #[test]
 fn renders_pending_approval_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
-        .expect("approval request should be valid");
+    let mut request = command_approval_request();
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
+        panic!("expected command approval request");
+    };
+    let amendment = codex_app_server_protocol::ExecPolicyAmendment {
+        command: vec!["cargo".to_string(), "test".to_string()],
+    };
+    params.command_actions = Some(vec![codex_app_server_protocol::CommandAction::Read {
+        command: "cat Cargo.toml".to_string(),
+        name: "Cargo.toml".to_string(),
+        path: test_absolute_path("workspace/better-codex/Cargo.toml"),
+    }]);
+    params.additional_permissions = Some(codex_app_server_protocol::AdditionalPermissionProfile {
+        network: Some(AdditionalNetworkPermissions {
+            enabled: Some(true),
+        }),
+        file_system: Some(codex_app_server_protocol::AdditionalFileSystemPermissions {
+            read: None,
+            write: None,
+            glob_scan_max_depth: None,
+            entries: Some(vec![codex_app_server_protocol::FileSystemSandboxEntry {
+                path: codex_app_server_protocol::FileSystemPath::Path {
+                    path: LegacyAppPathString::from_abs_path(&test_absolute_path(
+                        "workspace/shared-cache",
+                    )),
+                },
+                access: codex_app_server_protocol::FileSystemAccessMode::Write,
+            }]),
+        }),
+    });
+    params.proposed_execpolicy_amendment = Some(amendment.clone());
+    params.available_decisions = Some(vec![
+        CommandExecutionApprovalDecision::Accept,
+        CommandExecutionApprovalDecision::AcceptWithExecpolicyAmendment {
+            execpolicy_amendment: amendment,
+        },
+        CommandExecutionApprovalDecision::Cancel,
+    ]);
+    shell.pending_approval =
+        PendingApproval::from_request(&request).expect("approval request should be valid");
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -5422,34 +5461,139 @@ fn renders_pending_approval_snapshot() {
 }
 
 #[test]
+fn renders_network_approval_details_snapshot() {
+    let mut network_request = command_approval_request();
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut network_request else {
+        panic!("expected command approval request");
+    };
+    let allow = codex_app_server_protocol::NetworkPolicyAmendment {
+        host: "packages.example.com".to_string(),
+        action: codex_app_server_protocol::NetworkPolicyRuleAction::Allow,
+    };
+    params.command = None;
+    params.cwd = None;
+    params.command_actions = None;
+    params.network_approval_context = Some(codex_app_server_protocol::NetworkApprovalContext {
+        host: "packages.example.com".to_string(),
+        protocol: codex_app_server_protocol::NetworkApprovalProtocol::Https,
+    });
+    params.proposed_network_policy_amendments = Some(vec![allow.clone()]);
+    params.available_decisions = Some(vec![
+        CommandExecutionApprovalDecision::Accept,
+        CommandExecutionApprovalDecision::AcceptForSession,
+        CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
+            network_policy_amendment: allow,
+        },
+        CommandExecutionApprovalDecision::Cancel,
+    ]);
+    let mut network_shell = ShellState::snapshot_fixture();
+    network_shell.pending_approval = PendingApproval::from_request(&network_request)
+        .expect("network approval request should be valid");
+    insta::assert_snapshot!(render_shell(
+        &network_shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28
+        )
+    ));
+}
+
+#[test]
+fn renders_filesystem_permissions_approval_details_snapshot() {
+    let mut permissions_request = permissions_approval_request();
+    let ServerRequest::PermissionsRequestApproval { params, .. } = &mut permissions_request else {
+        panic!("expected permissions approval request");
+    };
+    params.permissions.file_system =
+        Some(codex_app_server_protocol::AdditionalFileSystemPermissions {
+            read: None,
+            write: None,
+            glob_scan_max_depth: None,
+            entries: Some(vec![
+                codex_app_server_protocol::FileSystemSandboxEntry {
+                    path: codex_app_server_protocol::FileSystemPath::Special {
+                        value: codex_app_server_protocol::FileSystemSpecialPath::Root,
+                    },
+                    access: codex_app_server_protocol::FileSystemAccessMode::Read,
+                },
+                codex_app_server_protocol::FileSystemSandboxEntry {
+                    path: codex_app_server_protocol::FileSystemPath::GlobPattern {
+                        pattern: "/private/secrets/**".to_string(),
+                    },
+                    access: codex_app_server_protocol::FileSystemAccessMode::Write,
+                },
+            ]),
+        });
+    let mut permissions_shell = ShellState::snapshot_fixture();
+    permissions_shell.pending_approval = PendingApproval::from_request(&permissions_request)
+        .expect("permissions approval request should be valid");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    insta::assert_snapshot!(render_shell(&permissions_shell, area));
+}
+
+#[test]
 fn approval_action_keys_cover_full_keyboard_flow() {
+    let pending = PendingApproval::from_request(&command_approval_request())
+        .expect("approval request should be valid")
+        .expect("request should be supported");
     assert_eq!(
-        approval_action_from_key(key_char('a')),
-        Some(ApprovalAction::Choose(ApprovalChoice::Approve))
+        approval_action_from_key(&pending, key_char('a')),
+        Some(ApprovalAction::Choose(0))
     );
     assert_eq!(
-        approval_action_from_key(key_char('d')),
-        Some(ApprovalAction::Choose(ApprovalChoice::Deny))
+        approval_action_from_key(&pending, key_char('d')),
+        Some(ApprovalAction::Choose(1))
     );
     assert_eq!(
-        approval_action_from_key(key_char('e')),
+        approval_action_from_key(&pending, key_char('e')),
         Some(ApprovalAction::Edit)
     );
     assert_eq!(
-        approval_action_from_key(key_char('?')),
+        approval_action_from_key(&pending, key_char('?')),
         Some(ApprovalAction::Explain)
     );
     assert_eq!(
-        approval_action_from_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
-        Some(ApprovalAction::Choose(ApprovalChoice::Approve))
+        approval_action_from_key(&pending, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        Some(ApprovalAction::Choose(0))
     );
     assert_eq!(
-        approval_action_from_key(key_char('n')),
-        Some(ApprovalAction::Choose(ApprovalChoice::Deny))
+        approval_action_from_key(&pending, key_char('2')),
+        Some(ApprovalAction::Choose(1))
     );
     assert_eq!(
-        approval_action_from_key(KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)),
+        approval_action_from_key(
+            &pending,
+            KeyEvent::new(KeyCode::Char('a'), KeyModifiers::CONTROL)
+        ),
         None
+    );
+}
+
+#[test]
+fn approval_denial_shortcuts_avoid_persistent_network_rules() {
+    let mut request = command_approval_request();
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
+        panic!("expected command approval request");
+    };
+    params.available_decisions = Some(vec![
+        CommandExecutionApprovalDecision::Accept,
+        CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
+            network_policy_amendment: codex_app_server_protocol::NetworkPolicyAmendment {
+                host: "packages.example.com".to_string(),
+                action: codex_app_server_protocol::NetworkPolicyRuleAction::Deny,
+            },
+        },
+        CommandExecutionApprovalDecision::Cancel,
+    ]);
+    let pending = PendingApproval::from_request(&request)
+        .expect("approval request should be valid")
+        .expect("request should be supported");
+
+    assert_eq!(
+        approval_action_from_key(&pending, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        Some(ApprovalAction::Choose(2))
     );
 }
 
@@ -5492,7 +5636,7 @@ fn approval_explain_keeps_request_pending_and_writes_audit() {
         shell.transcript.back(),
         Some(&TranscriptLine::new(
             TranscriptKind::Audit,
-            "approval explained: Run command: cargo test -p codex-tui - Needs network access - /workspace/better-codex",
+            "approval explained: Run command: cargo test -p codex-tui - Reason: Needs network access - Working directory: /workspace/better-codex",
         ))
     );
 }
@@ -8209,16 +8353,12 @@ fn command_approval_serializes_accept_and_deny() {
         .expect("request should be supported");
 
     assert_eq!(
-        pending
-            .result(ApprovalChoice::Approve)
-            .expect("approval should serialize"),
+        pending.result(0).expect("approval should serialize"),
         json!({ "decision": "accept" })
     );
     assert_eq!(
-        pending
-            .result(ApprovalChoice::Deny)
-            .expect("denial should serialize"),
-        json!({ "decision": "decline" })
+        pending.result(1).expect("denial should serialize"),
+        json!({ "decision": "cancel" })
     );
 }
 
@@ -8229,9 +8369,7 @@ fn permissions_approval_serializes_grant_and_empty_deny() {
         .expect("request should be supported");
 
     assert_eq!(
-        pending
-            .result(ApprovalChoice::Approve)
-            .expect("approval should serialize"),
+        pending.result(0).expect("approval should serialize"),
         json!({
             "permissions": {
                 "network": { "enabled": true }
@@ -8240,9 +8378,7 @@ fn permissions_approval_serializes_grant_and_empty_deny() {
         })
     );
     assert_eq!(
-        pending
-            .result(ApprovalChoice::Deny)
-            .expect("denial should serialize"),
+        pending.result(1).expect("denial should serialize"),
         json!({
             "permissions": {},
             "scope": "turn"
@@ -8260,8 +8396,7 @@ fn command_approval_exposes_edit_prompt_and_explanation() {
         (pending.edit_prompt().to_string(), pending.explanation(),),
         (
             "Revise and retry this command:\ncargo test -p codex-tui".to_string(),
-            "Run command: cargo test -p codex-tui - Needs network access - /workspace/better-codex"
-                .to_string(),
+            "Run command: cargo test -p codex-tui - Reason: Needs network access - Working directory: /workspace/better-codex".to_string(),
         )
     );
 }
@@ -8655,7 +8790,10 @@ fn command_approval_request() -> ServerRequest {
             additional_permissions: None,
             proposed_execpolicy_amendment: None,
             proposed_network_policy_amendments: None,
-            available_decisions: None,
+            available_decisions: Some(vec![
+                CommandExecutionApprovalDecision::Accept,
+                CommandExecutionApprovalDecision::Cancel,
+            ]),
         },
     }
 }
@@ -11294,7 +11432,7 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
         .await
         .expect("approval request should be handled");
     shell
-        .resolve_pending_approval(&mut backend, ApprovalChoice::Approve)
+        .resolve_pending_approval(&mut backend, /*option_index*/ 0)
         .await
         .expect("approval should resolve");
 

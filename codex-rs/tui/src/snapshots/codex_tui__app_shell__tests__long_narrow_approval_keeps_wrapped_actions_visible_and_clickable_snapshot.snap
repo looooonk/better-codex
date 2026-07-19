@@ -5,18 +5,18 @@ expression: rendered
 
   Dashboard  ◆ BC        gpt-5-codex ▾
 ────────────────────────────────────────
-
- ◆ CONVERSATION
- ▎ CODEX  The new shell owns the      ┃
-          fullscreen surface.         ┃
-
 ╭──────────────────────────────────────╮
 │◆ APPROVAL                            │
 │? Run command: cargo test --workspace │
 │--package codex-tui --features long-  │
 │running-integration-checks            │
-│  This command needs temporary network│
-│  access to validate remote fixtures  │
-│   Approve ↵   Deny n   Edit e        │
-│  Explain ?                           │
+│  Reason: This command needs temporary│
+│  network access to validate remote   │
+│  fixtures and download test metadata │
+│  before the release can continue     │
+│  Working directory: /workspace/      │
+│  better-codex                        │
+│> 1 Run once                          │
+│  2 Deny and interrupt                │
+│   e Edit   ? Explain                 │
 ╰──────────────────────────────────────╯

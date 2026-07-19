@@ -119,7 +119,6 @@ mod workspace;
 use agent_activity::AgentActivityState;
 use agent_log::AgentLogState;
 use approval::ApprovalAction;
-use approval::ApprovalChoice;
 use approval::PendingApproval;
 use backend::AppShellBackend;
 use backend::AppShellTurnStart;
@@ -993,7 +992,11 @@ impl ShellState {
             return Ok(false);
         }
         if self.pending_approval.is_some() {
-            if let Some(action) = approval_action_from_key(key) {
+            if let Some(action) = self
+                .pending_approval
+                .as_ref()
+                .and_then(|pending| approval_action_from_key(pending, key))
+            {
                 self.handle_pending_approval_action(app_server, action)
                     .await?;
             }
@@ -2417,7 +2420,7 @@ impl ShellState {
     async fn resolve_pending_approval<S>(
         &mut self,
         app_server: &mut S,
-        choice: ApprovalChoice,
+        option_index: usize,
     ) -> Result<()>
     where
         S: AppShellBackend,
@@ -2427,16 +2430,14 @@ impl ShellState {
         };
         let request_id = pending.request_id();
         let title = pending.title().to_string();
-        let result = pending.result(choice)?;
+        let denied = pending.is_denial(option_index);
+        let result = pending.result(option_index)?;
         app_server
             .resolve_server_request(request_id, result)
             .await
             .wrap_err("failed to resolve app-server approval request")?;
         self.pending_approval = None;
-        let decision = match choice {
-            ApprovalChoice::Approve => "approved",
-            ApprovalChoice::Deny => "denied",
-        };
+        let decision = if denied { "denied" } else { "approved" };
         self.push_decision_audit("approval", decision, &title);
         Ok(())
     }
@@ -2450,8 +2451,9 @@ impl ShellState {
         S: AppShellBackend,
     {
         match action {
-            ApprovalAction::Choose(choice) => {
-                self.resolve_pending_approval(app_server, choice).await
+            ApprovalAction::Choose(option_index) => {
+                self.resolve_pending_approval(app_server, option_index)
+                    .await
             }
             ApprovalAction::Edit => self.edit_pending_approval(app_server).await,
             ApprovalAction::Explain => {
@@ -2470,7 +2472,11 @@ impl ShellState {
         };
         let title = pending.title().to_string();
         let edit_prompt = pending.edit_prompt().to_string();
-        self.resolve_pending_approval(app_server, ApprovalChoice::Deny)
+        let Some(denial_index) = pending.denial_index() else {
+            self.push_error("this approval request cannot be denied for editing");
+            return Ok(());
+        };
+        self.resolve_pending_approval(app_server, denial_index)
             .await?;
         self.seed_composer_with_edit_prompt(edit_prompt);
         self.push_decision_audit("approval", "edit", &title);
@@ -3921,19 +3927,23 @@ fn dashboard_route_word_motion_fallback(
     }
 }
 
-fn approval_action_from_key(key: KeyEvent) -> Option<ApprovalAction> {
+fn approval_action_from_key(pending: &PendingApproval, key: KeyEvent) -> Option<ApprovalAction> {
     if !key.modifiers.is_empty() && key.modifiers != KeyModifiers::SHIFT {
         return None;
     }
     match key.code {
-        KeyCode::Enter | KeyCode::Char('a' | 'A' | 'y' | 'Y') => {
-            Some(ApprovalAction::Choose(ApprovalChoice::Approve))
-        }
+        KeyCode::Enter | KeyCode::Char('a' | 'A' | 'y' | 'Y') => Some(ApprovalAction::Choose(0)),
         KeyCode::Esc | KeyCode::Char('d' | 'D' | 'n' | 'N') => {
-            Some(ApprovalAction::Choose(ApprovalChoice::Deny))
+            pending.denial_index().map(ApprovalAction::Choose)
         }
         KeyCode::Char('e') | KeyCode::Char('E') => Some(ApprovalAction::Edit),
         KeyCode::Char('?') => Some(ApprovalAction::Explain),
+        KeyCode::Char(ch) => ch
+            .to_digit(10)
+            .and_then(|digit| usize::try_from(digit).ok())
+            .and_then(|index| index.checked_sub(1))
+            .filter(|index| *index < pending.option_count())
+            .map(ApprovalAction::Choose),
         _ => None,
     }
 }

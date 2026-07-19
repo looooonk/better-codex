@@ -21,6 +21,7 @@ const PADDED_HEADER_MIN_SCREEN_HEIGHT: u16 = 17;
 const INPUT_PANEL_MIN_HEIGHT: u16 = 6;
 const INPUT_PANEL_MAX_HEIGHT: u16 = 12;
 const INPUT_REQUEST_PANEL_MIN_HEIGHT: u16 = 8;
+const INPUT_REQUEST_PANEL_MAX_HEIGHT: u16 = 24;
 const COMPACT_INPUT_PANEL_MIN_HEIGHT: u16 = 4;
 const HELP_OVERLAY_MIN_HEIGHT: u16 = 10;
 const PANE_CHROME_HEIGHT: u16 = 3;
@@ -77,7 +78,7 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(header_height),
-                Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
+                Constraint::Min(transcript_min_height(shell)),
                 Constraint::Length(input_height),
             ])
             .split(area);
@@ -116,7 +117,7 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(header_height),
-            Constraint::Min(TRANSCRIPT_MIN_HEIGHT),
+            Constraint::Min(transcript_min_height(shell)),
             Constraint::Length(input_height),
         ])
         .split(horizontal[0]);
@@ -126,6 +127,14 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
         input: main[2],
         dashboard: Some(DashboardPlacement::Sidebar(horizontal[1])),
     })
+}
+
+fn transcript_min_height(shell: &ShellState) -> u16 {
+    if shell.pending_approval.is_some() {
+        0
+    } else {
+        TRANSCRIPT_MIN_HEIGHT
+    }
 }
 
 fn dashboard_width(terminal_width: u16) -> u16 {
@@ -159,9 +168,10 @@ fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u1
     if let Some(lines) = request_lines {
         let visual_line_count =
             u16::try_from(request_panel_visual_line_count(&lines, body_width)).unwrap_or(u16::MAX);
-        let desired_height = visual_line_count
-            .saturating_add(PANE_CHROME_HEIGHT)
-            .clamp(INPUT_REQUEST_PANEL_MIN_HEIGHT, INPUT_PANEL_MAX_HEIGHT);
+        let desired_height = visual_line_count.saturating_add(PANE_CHROME_HEIGHT).clamp(
+            INPUT_REQUEST_PANEL_MIN_HEIGHT,
+            INPUT_REQUEST_PANEL_MAX_HEIGHT,
+        );
         return desired_height.min(available_height);
     }
 
