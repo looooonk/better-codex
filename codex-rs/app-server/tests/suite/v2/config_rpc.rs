@@ -19,12 +19,15 @@ use codex_app_server_protocol::ConfigValueWriteParams;
 use codex_app_server_protocol::ConfigWriteResponse;
 use codex_app_server_protocol::ForcedChatgptWorkspaceIds;
 use codex_app_server_protocol::JSONRPCError;
+use codex_app_server_protocol::JSONRPCMessage;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::SandboxMode;
 use codex_app_server_protocol::ToolsV2;
 use codex_app_server_protocol::WriteStatus;
+use codex_config::ConfigFileLock;
+use codex_config::version_for_toml;
 use codex_core::config::set_project_trust_level;
 use codex_protocol::config_types::TrustLevel;
 use codex_protocol::config_types::WebSearchContextSize;
@@ -35,6 +38,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use tempfile::TempDir;
+use tokio::time::sleep;
 use tokio::time::timeout;
 
 // Bazel CI can spend tens of seconds starting app-server subprocesses or
@@ -46,6 +50,24 @@ fn write_config(codex_home: &TempDir, contents: &str) -> Result<()> {
         codex_home.path().join("config.toml"),
         contents,
     )?)
+}
+
+async fn read_request_result(mcp: &mut TestAppServer, request_id: i64) -> Result<JSONRPCMessage> {
+    loop {
+        let message = mcp.read_next_message().await?;
+        match &message {
+            JSONRPCMessage::Response(response) if response.id == RequestId::Integer(request_id) => {
+                return Ok(message);
+            }
+            JSONRPCMessage::Error(error) if error.id == RequestId::Integer(request_id) => {
+                return Ok(message);
+            }
+            JSONRPCMessage::Request(_)
+            | JSONRPCMessage::Response(_)
+            | JSONRPCMessage::Notification(_)
+            | JSONRPCMessage::Error(_) => {}
+        }
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1054,6 +1076,111 @@ model = "gpt-old"
         .and_then(|d| d.get("config_write_error_code"))
         .and_then(|v| v.as_str());
     assert_eq!(code, Some("configVersionConflict"));
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn config_value_write_expected_version_is_atomic_across_processes() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_config(&codex_home, "model = \"gpt-old\"\n")?;
+    let config_path = codex_home.path().join("config.toml");
+
+    let mut first = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .build()
+        .await?;
+    let mut second = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .build()
+        .await?;
+    let (first_init, second_init) = tokio::join!(first.initialize(), second.initialize());
+    first_init?;
+    second_init?;
+
+    let read_id = first
+        .send_config_read_request(ConfigReadParams {
+            include_layers: false,
+            cwd: None,
+        })
+        .await?;
+    let read: ConfigReadResponse = to_response(
+        timeout(
+            DEFAULT_READ_TIMEOUT,
+            first.read_stream_until_response_message(RequestId::Integer(read_id)),
+        )
+        .await??,
+    )?;
+    let expected_version = read.origins["model"].version.clone();
+
+    let config_lock = ConfigFileLock::acquire(&config_path)?;
+    let first_id = first
+        .send_config_value_write_request(ConfigValueWriteParams {
+            file_path: None,
+            key_path: "model".to_string(),
+            value: json!("gpt-first"),
+            merge_strategy: MergeStrategy::Replace,
+            expected_version: Some(expected_version.clone()),
+        })
+        .await?;
+    let second_id = second
+        .send_config_value_write_request(ConfigValueWriteParams {
+            file_path: None,
+            key_path: "model".to_string(),
+            value: json!("gpt-second"),
+            merge_strategy: MergeStrategy::Replace,
+            expected_version: Some(expected_version),
+        })
+        .await?;
+    sleep(std::time::Duration::from_secs(/*secs*/ 1)).await;
+    drop(config_lock);
+
+    let (first_result, second_result) = tokio::join!(
+        timeout(
+            DEFAULT_READ_TIMEOUT,
+            read_request_result(&mut first, first_id)
+        ),
+        timeout(
+            DEFAULT_READ_TIMEOUT,
+            read_request_result(&mut second, second_id)
+        ),
+    );
+    let outcomes = [
+        (first_result??, "gpt-first"),
+        (second_result??, "gpt-second"),
+    ];
+    let mut success = None;
+    let mut conflict_count = 0;
+    for (message, model) in outcomes {
+        match message {
+            JSONRPCMessage::Response(response) => {
+                assert!(success.is_none(), "both writes unexpectedly succeeded");
+                let write: ConfigWriteResponse = to_response(response)?;
+                success = Some((model, write.version));
+            }
+            JSONRPCMessage::Error(error) => {
+                let code = error
+                    .error
+                    .data
+                    .as_ref()
+                    .and_then(|data| data.get("config_write_error_code"))
+                    .and_then(serde_json::Value::as_str);
+                assert_eq!(code, Some("configVersionConflict"));
+                conflict_count += 1;
+            }
+            JSONRPCMessage::Request(_) | JSONRPCMessage::Notification(_) => {
+                anyhow::bail!("unexpected config write result: {message:?}");
+            }
+        }
+    }
+
+    let (successful_model, returned_version) = success.expect("one write should succeed");
+    assert_eq!(conflict_count, 1);
+    let persisted: toml::Value = toml::from_str(&std::fs::read_to_string(config_path)?)?;
+    assert_eq!(persisted["model"].as_str(), Some(successful_model));
+    assert_eq!(returned_version, version_for_toml(&persisted));
 
     Ok(())
 }

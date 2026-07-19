@@ -12,6 +12,7 @@ use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::OverriddenMetadata;
 use codex_app_server_protocol::WriteStatus;
 use codex_config::CONFIG_TOML_FILE;
+use codex_config::ConfigFileLock;
 use codex_config::ConfigLayerEntry;
 use codex_config::ConfigLayerMetadata;
 use codex_config::ConfigLayerSource;
@@ -217,6 +218,12 @@ impl ConfigManager {
             ));
         }
 
+        let lock_path = provided_path.as_path().to_path_buf();
+        let config_lock = task::spawn_blocking(move || ConfigFileLock::acquire(&lock_path))
+            .await
+            .map_err(|err| ConfigManagerError::anyhow("config lock task panicked", err.into()))?
+            .map_err(|err| ConfigManagerError::io("failed to lock user config", err))?;
+
         let layers = self
             .load_thread_agnostic_config()
             .await
@@ -327,13 +334,15 @@ impl ConfigManager {
             )
         })?;
 
-        if !config_edits.is_empty() {
+        let config_lock = if config_edits.is_empty() {
+            config_lock
+        } else {
             ConfigEditsBuilder::for_config_path(provided_path.as_path())
                 .with_edits(config_edits)
-                .apply()
+                .apply_with_lock(config_lock)
                 .await
-                .map_err(|err| ConfigManagerError::anyhow("failed to persist config.toml", err))?;
-        }
+                .map_err(|err| ConfigManagerError::anyhow("failed to persist config.toml", err))?
+        };
 
         let overridden = first_overridden_edit(&updated_layers, &effective, &parsed_segments);
         let status = overridden
@@ -341,7 +350,7 @@ impl ConfigManager {
             .map(|_| WriteStatus::OkOverridden)
             .unwrap_or(WriteStatus::Ok);
 
-        Ok(ConfigWriteResponse {
+        let response = ConfigWriteResponse {
             status,
             version: updated_layers
                 .get_active_user_layer()
@@ -355,7 +364,9 @@ impl ConfigManager {
                 .clone(),
             file_path: provided_path,
             overridden_metadata: overridden,
-        })
+        };
+        drop(config_lock);
+        Ok(response)
     }
 
     /// Loads a "thread-agnostic" config, which means the config layers do not

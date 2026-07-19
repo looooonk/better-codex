@@ -2,6 +2,9 @@ use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
 
+use codex_utils_path::SymlinkWritePaths;
+use codex_utils_path::resolve_symlink_write_paths;
+use codex_utils_path::write_atomically;
 use toml_edit::DocumentMut;
 use toml_edit::Item as TomlItem;
 use toml_edit::Table as TomlTable;
@@ -9,6 +12,7 @@ use toml_edit::Value as TomlValue;
 use toml_edit::value;
 
 use crate::CONFIG_TOML_FILE;
+use crate::ConfigFileLock;
 
 pub struct MarketplaceConfigUpdate<'a> {
     pub last_updated: &'a str,
@@ -31,11 +35,9 @@ pub fn record_user_marketplace(
     marketplace_name: &str,
     update: &MarketplaceConfigUpdate<'_>,
 ) -> std::io::Result<()> {
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
-    let mut doc = read_or_create_document(&config_path)?;
+    let (write_paths, _config_lock, mut doc) = load_config_for_update(codex_home)?;
     upsert_marketplace(&mut doc, marketplace_name, update);
-    fs::create_dir_all(codex_home)?;
-    fs::write(config_path, doc.to_string())
+    write_atomically(&write_paths.write_path, &doc.to_string())
 }
 
 pub fn remove_user_marketplace(codex_home: &Path, marketplace_name: &str) -> std::io::Result<bool> {
@@ -47,28 +49,31 @@ pub fn remove_user_marketplace_config(
     codex_home: &Path,
     marketplace_name: &str,
 ) -> std::io::Result<RemoveMarketplaceConfigOutcome> {
-    let config_path = codex_home.join(CONFIG_TOML_FILE);
-    let mut doc = match fs::read_to_string(&config_path) {
-        Ok(raw) => raw
-            .parse::<DocumentMut>()
-            .map_err(|err| std::io::Error::new(ErrorKind::InvalidData, err))?,
-        Err(err) if err.kind() == ErrorKind::NotFound => {
-            return Ok(RemoveMarketplaceConfigOutcome::NotFound);
-        }
-        Err(err) => return Err(err),
-    };
+    let (write_paths, _config_lock, mut doc) = load_config_for_update(codex_home)?;
 
     let outcome = remove_marketplace(&mut doc, marketplace_name);
     if outcome != RemoveMarketplaceConfigOutcome::Removed {
         return Ok(outcome);
     }
 
-    fs::create_dir_all(codex_home)?;
-    fs::write(config_path, doc.to_string())?;
+    write_atomically(&write_paths.write_path, &doc.to_string())?;
     Ok(RemoveMarketplaceConfigOutcome::Removed)
 }
 
-fn read_or_create_document(config_path: &Path) -> std::io::Result<DocumentMut> {
+fn load_config_for_update(
+    codex_home: &Path,
+) -> std::io::Result<(SymlinkWritePaths, ConfigFileLock, DocumentMut)> {
+    let config_path = codex_home.join(CONFIG_TOML_FILE);
+    let write_paths = resolve_symlink_write_paths(&config_path)?;
+    let config_lock = ConfigFileLock::acquire_for_write_path(&write_paths.write_path)?;
+    let doc = read_or_create_document(write_paths.read_path.as_deref())?;
+    Ok((write_paths, config_lock, doc))
+}
+
+fn read_or_create_document(config_path: Option<&Path>) -> std::io::Result<DocumentMut> {
+    let Some(config_path) = config_path else {
+        return Ok(DocumentMut::new());
+    };
     match fs::read_to_string(config_path) {
         Ok(raw) => raw
             .parse::<DocumentMut>()

@@ -658,7 +658,7 @@ Session Edits. RSS spikes and the event loop stalls while all parsed files are c
 
 ### 43. [P2][Data integrity / Config API] `expectedVersion` is not an atomic compare-and-swap across processes
 
-**Status:** Assigned
+**Status:** Fixed
 
 `apply_edits` reads and checks the version at
 `codex-rs/app-server/src/config_manager_service.rs:220-236`, validates, and only much later writes at

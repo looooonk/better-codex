@@ -4,6 +4,8 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::path::PathBuf;
 
+use codex_utils_path::resolve_symlink_write_paths;
+use codex_utils_path::write_atomically;
 use tokio::task;
 use toml::Value as TomlValue;
 use toml_edit::DocumentMut;
@@ -13,6 +15,7 @@ use toml_edit::value;
 
 use crate::AppToolApproval;
 use crate::CONFIG_TOML_FILE;
+use crate::ConfigFileLock;
 use crate::McpServerAuth;
 use crate::McpServerConfig;
 use crate::McpServerEnvVar;
@@ -88,16 +91,20 @@ impl ConfigEditsBuilder {
 
     fn apply_blocking(self) -> std::io::Result<()> {
         let config_path = self.codex_home.join(CONFIG_TOML_FILE);
-        let mut doc = read_or_create_document(&config_path)?;
+        let write_paths = resolve_symlink_write_paths(&config_path)?;
+        let _config_lock = ConfigFileLock::acquire_for_write_path(&write_paths.write_path)?;
+        let mut doc = read_or_create_document(write_paths.read_path.as_deref())?;
         if let Some(servers) = self.mcp_servers.as_ref() {
             replace_mcp_servers(&mut doc, servers);
         }
-        fs::create_dir_all(&self.codex_home)?;
-        fs::write(config_path, doc.to_string())
+        write_atomically(&write_paths.write_path, &doc.to_string())
     }
 }
 
-fn read_or_create_document(config_path: &Path) -> std::io::Result<DocumentMut> {
+fn read_or_create_document(config_path: Option<&Path>) -> std::io::Result<DocumentMut> {
+    let Some(config_path) = config_path else {
+        return Ok(DocumentMut::new());
+    };
     match fs::read_to_string(config_path) {
         Ok(raw) => raw
             .parse::<DocumentMut>()

@@ -2,6 +2,7 @@ use crate::path_utils::resolve_symlink_write_paths;
 use crate::path_utils::write_atomically;
 use anyhow::Context;
 use codex_config::CONFIG_TOML_FILE;
+use codex_config::ConfigFileLock;
 use codex_config::types::McpServerConfig;
 use codex_config::types::SessionPickerViewMode;
 use codex_config::types::ToolSuggestDisabledTool;
@@ -702,8 +703,30 @@ fn apply_blocking_to_resolved_file(
     }
 
     let write_paths = resolve_symlink_write_paths(resolved_config_file)?;
+    let _config_lock = ConfigFileLock::acquire_for_write_path(&write_paths.write_path)?;
+    apply_blocking_to_write_paths(&write_paths, edits)
+}
+
+fn apply_blocking_to_resolved_file_with_lock(
+    resolved_config_file: &Path,
+    edits: &[ConfigEdit],
+    config_lock: &ConfigFileLock,
+) -> anyhow::Result<()> {
+    if edits.is_empty() {
+        return Ok(());
+    }
+
+    let write_paths = resolve_symlink_write_paths(resolved_config_file)?;
+    config_lock.ensure_protects(&write_paths.write_path)?;
+    apply_blocking_to_write_paths(&write_paths, edits)
+}
+
+fn apply_blocking_to_write_paths(
+    write_paths: &crate::path_utils::SymlinkWritePaths,
+    edits: &[ConfigEdit],
+) -> anyhow::Result<()> {
     let serialized = match write_paths.read_path {
-        Some(path) => match std::fs::read_to_string(&path) {
+        Some(ref path) => match std::fs::read_to_string(path) {
             Ok(contents) => contents,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
             Err(err) => return Err(err.into()),
@@ -979,6 +1002,23 @@ impl ConfigEditsBuilder {
     pub async fn apply(self) -> anyhow::Result<()> {
         task::spawn_blocking(move || {
             apply_blocking_to_resolved_file(&self.config_path, &self.edits)
+        })
+        .await
+        .context("config persistence task panicked")?
+    }
+
+    /// Apply edits while retaining a config lock acquired before validation.
+    pub async fn apply_with_lock(
+        self,
+        config_lock: ConfigFileLock,
+    ) -> anyhow::Result<ConfigFileLock> {
+        task::spawn_blocking(move || {
+            apply_blocking_to_resolved_file_with_lock(
+                &self.config_path,
+                &self.edits,
+                &config_lock,
+            )?;
+            Ok(config_lock)
         })
         .await
         .context("config persistence task panicked")?
