@@ -77,5 +77,6 @@ pub use state::ExtensionData;
 pub use state::ExtensionDataInit;
 pub use user_instructions::LoadUserInstructionsFuture;
 pub use user_instructions::LoadedUserInstructions;
+pub use user_instructions::USER_INSTRUCTIONS_MAX_BYTES;
 pub use user_instructions::UserInstructions;
 pub use user_instructions::UserInstructionsProvider;

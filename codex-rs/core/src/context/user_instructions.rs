@@ -1,4 +1,8 @@
 use super::ContextualUserFragment;
+use codex_utils_output_truncation::TruncationPolicy;
+use codex_utils_output_truncation::truncate_text;
+
+const USER_INSTRUCTIONS_BODY_MAX_TOKENS: usize = 8_000;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct UserInstructions {
@@ -25,6 +29,10 @@ impl ContextualUserFragment for UserInstructions {
             .as_ref()
             .map(|directory| format!(" for {directory}"))
             .unwrap_or_default();
-        format!("{directory}\n\n<INSTRUCTIONS>\n{}\n", self.text)
+        let body = format!("{directory}\n\n<INSTRUCTIONS>\n{}\n", self.text);
+        truncate_text(
+            &body,
+            TruncationPolicy::Tokens(USER_INSTRUCTIONS_BODY_MAX_TOKENS),
+        )
     }
 }

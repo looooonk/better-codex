@@ -15,6 +15,7 @@ use codex_protocol::protocol::RolloutLine;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_output_truncation::approx_token_count;
 use codex_utils_path_uri::PathUri;
 use core_test_support::PathBufExt;
 use core_test_support::create_directory_symlink;
@@ -69,6 +70,35 @@ async fn agents_instructions(mut builder: TestCodexBuilder) -> Result<String> {
         .into_iter()
         .find(|text| text.starts_with("# AGENTS.md instructions"))
         .ok_or_else(|| anyhow::anyhow!("instructions message not found"))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn oversized_global_and_project_instructions_are_bounded() -> Result<()> {
+    let global = format!("global instructions start\n{}", "G".repeat(16_000));
+    let project = format!("project instructions start\n{}", "PROJECT".repeat(8_000));
+    let home = Arc::new(TempDir::new()?);
+    write_global_file(home.as_ref(), GLOBAL_AGENTS_FILENAME, global)?;
+
+    let builder = test_codex()
+        .with_home(home)
+        .with_config(|config| config.project_doc_max_bytes = usize::MAX)
+        .with_workspace_setup(move |cwd, fs| async move {
+            fs.write_file(
+                &PathUri::from_host_native_path(cwd.join(GLOBAL_AGENTS_FILENAME))?,
+                project.into_bytes(),
+                /*sandbox*/ None,
+            )
+            .await?;
+            Ok(())
+        });
+    let instructions = agents_instructions(builder).await?;
+
+    assert!(instructions.contains("global instructions start"));
+    assert!(instructions.contains("PROJECT"));
+    assert!(instructions.contains("tokens truncated"));
+    assert!(approx_token_count(&instructions) < 10_000);
+
+    Ok(())
 }
 
 fn write_global_file(

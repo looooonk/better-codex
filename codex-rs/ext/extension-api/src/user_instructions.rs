@@ -3,6 +3,9 @@ use std::pin::Pin;
 
 use codex_utils_absolute_path::AbsolutePathBuf;
 
+/// Maximum host-provided user instruction text accepted for model context.
+pub const USER_INSTRUCTIONS_MAX_BYTES: usize = 32 * 1024;
+
 /// User instructions supplied by the host.
 ///
 /// `source` must be an absolute filesystem path because the app-server

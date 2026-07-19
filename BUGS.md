@@ -150,7 +150,7 @@ inference.
 
 ### 8. [P0][Model context / AGENTS.md] Project-instruction limits are not global or reliably bounded
 
-**Status:** Assigned
+**Status:** Fixed
 
 The global Codex-home AGENTS file is read in full
 (`codex-rs/codex-home/src/instructions/mod.rs:24-60`). `project_doc_max_bytes` has no safe upper

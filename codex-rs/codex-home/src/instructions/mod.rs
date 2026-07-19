@@ -2,6 +2,7 @@ use std::io;
 
 use codex_extension_api::LoadUserInstructionsFuture;
 use codex_extension_api::LoadedUserInstructions;
+use codex_extension_api::USER_INSTRUCTIONS_MAX_BYTES;
 use codex_extension_api::UserInstructions;
 use codex_extension_api::UserInstructionsProvider;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -37,7 +38,7 @@ impl CodexHomeUserInstructionsProvider {
                     continue;
                 }
             }
-            let data = match tokio::fs::read(path.as_path()).await {
+            let mut data = match tokio::fs::read(path.as_path()).await {
                 Ok(data) => data,
                 Err(err) if err.kind() == io::ErrorKind::NotFound => continue,
                 Err(err) => {
@@ -48,6 +49,13 @@ impl CodexHomeUserInstructionsProvider {
                     continue;
                 }
             };
+            if data.len() > USER_INSTRUCTIONS_MAX_BYTES {
+                warnings.push(format!(
+                    "Global AGENTS.md instructions from `{}` exceeded {USER_INSTRUCTIONS_MAX_BYTES} bytes and were truncated.",
+                    path.display()
+                ));
+                data.truncate(USER_INSTRUCTIONS_MAX_BYTES);
+            }
             let contents = String::from_utf8_lossy(&data);
             let trimmed = contents.trim();
             if !trimmed.is_empty() {

@@ -24,11 +24,13 @@ use codex_config::default_project_root_markers;
 use codex_config::merge_toml_values;
 use codex_config::project_root_markers_from_config;
 use codex_exec_server::ExecutorFileSystem;
+use codex_extension_api::USER_INSTRUCTIONS_MAX_BYTES;
 use codex_extension_api::UserInstructions;
 use codex_file_system::FindUpErrorPolicy;
 use codex_file_system::find_nearest_ancestor_with_markers;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
+use codex_utils_string::take_bytes_at_char_boundary;
 use futures::StreamExt;
 use std::io;
 use toml::Value as TomlValue;
@@ -42,6 +44,7 @@ pub const LOCAL_AGENTS_MD_FILENAME: &str = "AGENTS.override.md";
 /// When both user and project AGENTS.md docs are present, they will be
 /// concatenated with the following separator.
 const AGENTS_MD_SEPARATOR: &str = "\n\n--- project-doc ---\n\n";
+const AGENTS_MD_TRUNCATION_NOTICE: &str = "\n\n[AGENTS.md instructions truncated]";
 
 // Metadata probes are cheap and the exec-server transport already bounds total in-flight calls.
 // This covers typical project hierarchies in one remote round trip without monopolizing that
@@ -56,17 +59,36 @@ pub(crate) async fn load_project_instructions(
     environments: &TurnEnvironmentSnapshot,
 ) -> Option<LoadedAgentsMd> {
     let mut loaded = LoadedAgentsMd::from_user_instructions(user_instructions);
+    let global_bytes = loaded
+        .user_instructions
+        .as_ref()
+        .map_or(0, |instructions| instructions.text.len());
+    let mut remaining = config
+        .project_doc_max_bytes
+        .min(USER_INSTRUCTIONS_MAX_BYTES.saturating_sub(global_bytes));
     for turn_environment in &environments.turn_environments {
+        if remaining == 0 {
+            break;
+        }
         let filesystem = turn_environment.environment.get_filesystem();
         match read_agents_md(
             config,
             filesystem.as_ref(),
             &turn_environment.environment_id,
             turn_environment.cwd(),
+            remaining,
         )
         .await
         {
-            Ok(Some(docs)) => loaded.entries.extend(docs.entries),
+            Ok(Some(docs)) => {
+                remaining = remaining.saturating_sub(
+                    docs.entries
+                        .iter()
+                        .map(|entry| entry.contents.len())
+                        .sum::<usize>(),
+                );
+                loaded.entries.extend(docs.entries);
+            }
             Ok(None) => {}
             Err(e) => {
                 error!(
@@ -91,9 +113,8 @@ async fn read_agents_md(
     fs: &dyn ExecutorFileSystem,
     environment_id: &str,
     cwd: &PathUri,
+    max_total: usize,
 ) -> io::Result<Option<LoadedAgentsMd>> {
-    let max_total = config.project_doc_max_bytes;
-
     if max_total == 0 {
         return Ok(None);
     }
@@ -266,7 +287,7 @@ impl LoadedAgentsMd {
         }
         Self {
             user_instructions: Some(UserInstructions {
-                text: contents,
+                text: truncate_instruction_text(contents),
                 source: path,
             }),
             entries: Vec::new(),
@@ -276,7 +297,11 @@ impl LoadedAgentsMd {
     fn from_user_instructions(user_instructions: Option<UserInstructions>) -> Self {
         Self {
             user_instructions: user_instructions
-                .filter(|instructions| !instructions.text.trim().is_empty()),
+                .filter(|instructions| !instructions.text.trim().is_empty())
+                .map(|mut instructions| {
+                    instructions.text = truncate_instruction_text(instructions.text);
+                    instructions
+                }),
             entries: Vec::new(),
         }
     }
@@ -440,6 +465,18 @@ impl LoadedAgentsMd {
                 InstructionProvenance::Internal => None,
             })
     }
+}
+
+fn truncate_instruction_text(text: String) -> String {
+    if text.len() <= USER_INSTRUCTIONS_MAX_BYTES {
+        return text;
+    }
+    let prefix_bytes =
+        USER_INSTRUCTIONS_MAX_BYTES.saturating_sub(AGENTS_MD_TRUNCATION_NOTICE.len());
+    format!(
+        "{}{AGENTS_MD_TRUNCATION_NOTICE}",
+        take_bytes_at_char_boundary(&text, prefix_bytes)
+    )
 }
 
 /// One model-visible instruction and its provenance.

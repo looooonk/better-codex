@@ -2,6 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use codex_extension_api::LoadedUserInstructions;
+use codex_extension_api::USER_INSTRUCTIONS_MAX_BYTES;
 use codex_extension_api::UserInstructions;
 use codex_extension_api::UserInstructionsProvider;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -142,6 +143,28 @@ async fn invalid_utf8_is_lossy() {
             DEFAULT_AGENTS_MD_FILENAME,
             "global\u{fffd} doc",
             Vec::new()
+        )
+    );
+}
+
+#[tokio::test]
+async fn oversized_instructions_are_truncated_with_warning() {
+    let home = TempDir::new().expect("temp dir");
+    let path = home.path().join(DEFAULT_AGENTS_MD_FILENAME);
+    fs::write(&path, "x".repeat(USER_INSTRUCTIONS_MAX_BYTES + 1))
+        .expect("write oversized instructions");
+    let warning = format!(
+        "Global AGENTS.md instructions from `{}` exceeded {USER_INSTRUCTIONS_MAX_BYTES} bytes and were truncated.",
+        path.display()
+    );
+
+    assert_eq!(
+        provider(&home).load_user_instructions().await,
+        expected(
+            &home,
+            DEFAULT_AGENTS_MD_FILENAME,
+            &"x".repeat(USER_INSTRUCTIONS_MAX_BYTES),
+            vec![warning]
         )
     );
 }
