@@ -7,17 +7,14 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ YOU  Create a divergent standalone TUI.      ┃ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-                                                ┃ │▎+ New session  Ctrl+N
- ▎ CODEX  Started a fullscreen app shell backed ┃ │▎loading sessions
-          by app-server turns.                  ┃ │
- ▎ PLAN  1. Build shell                         ┃ │▎◆ THREAD
-         2. Wire transcript                     ┃ │▎stage-one
-         3. Render dashboard                    ┃ │▎id 01900000-0000-7000-8000-000000000001
-                                                ┃ │▎resume, fork, archive, delete in session list
- ▌ tool exec just test -p codex-tui             ┃ │
-                                                ┃ │
- ▌ edited 3 files +128 -24                      ┃ │
+          by app-server turns.                  │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ PLAN  1. Build shell                         │ │▎+ New session  Ctrl+N
+         2. Wire transcript                     ┃ │▎loading sessions
+         3. Render dashboard                    ┃ │
+                                                ┃ │▎◆ THREAD
+ ▌ tool exec just test -p codex-tui             ┃ │▎stage-one
+                                                ┃ │▎id 01900000-0000-7000-8000-000000000001
+ ▌ edited 3 files +128 -24                      ┃ │▎resume, fork, archive, delete in session list
                                                 ┃ │
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
           surface.                              ┃ │
@@ -27,6 +24,9 @@ expression: "render_shell(&shell, area)"
 │? Tool input: tool-input-1 (1/1)                ││
 │  Environment: Which environment should the tool││
 │  use?                                          ││
-│> 2▏  1 Production  2 Staging                   ││
-│                                                ││
+│  1 Production - Use the live service           ││
+│  2 Staging - Use the staging service           ││
+│  Other (free-form) - Type a custom answer      ││
+│  below.                                        ││
+│> 2▏                                            ││
 ╰────────────────────────────────────────────────╯│

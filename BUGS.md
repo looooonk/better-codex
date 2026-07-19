@@ -538,7 +538,7 @@ the TUI, and submit a turn. The `currentTime/read` request receives `-32000` and
 
 ### 34. [P1][Tool interaction / TUI] `request_user_input` auto-resolution is ignored
 
-**Status:** Assigned
+**Status:** Fixed
 
 The protocol carries `auto_resolution_ms`
 (`codex-rs/app-server-protocol/src/protocol/v2/item.rs:1622-1629`), and the tool promises a 60-240
@@ -551,7 +551,7 @@ modal remains after a minute and the turn never resumes.
 
 ### 35. [P2][Tool interaction / TUI] The promised free-form Other choice and option explanations are hidden
 
-**Status:** Assigned
+**Status:** Fixed
 
 The tool contract says the client adds `Other (free-form)` and requires every option to include a
 tradeoff description (`codex-rs/core/src/tools/handlers/request_user_input_spec.rs:14-64`). The TUI

@@ -5280,7 +5280,12 @@ async fn long_narrow_elicitation_and_tool_options_are_clickable() {
     question.header = "Deployment environment and release channel".to_string();
     question.question = "Which environment should receive the carefully validated release after all preflight checks complete?".to_string();
     shell.pending_user_input = PendingUserInput::from_request(&user_input_request);
-    let staging = rendered_text_position(&render_shell(&shell, area), "Staging");
+    let rendered = render_shell(&shell, area);
+    assert!(
+        rendered.contains("Staging"),
+        "narrow tool input should keep choices visible:\n{rendered}"
+    );
+    let staging = rendered_text_position(&rendered, "Staging");
     shell
         .handle_mouse_click(area, staging, &config, &mut backend)
         .await
@@ -5755,6 +5760,22 @@ fn renders_empty_pending_user_input_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.composer.clear();
     shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        )
+    ));
+}
+
+#[test]
+fn renders_auto_resolving_user_input_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    shell.pending_user_input = PendingUserInput::from_request(
+        &tool_user_input_request_with_auto_resolution(/*auto_resolution_ms*/ 60_000),
+    );
 
     insta::assert_snapshot!(render_shell(
         &shell,
@@ -8685,6 +8706,67 @@ fn user_input_serializes_option_selection() {
 }
 
 #[test]
+fn user_input_serializes_other_answer() {
+    let mut pending = PendingUserInput::from_request(&tool_user_input_request())
+        .expect("request should be supported");
+
+    assert_eq!(
+        pending
+            .answer_current("Use the canary environment".to_string())
+            .expect("other answer should serialize"),
+        UserInputAdvance::Complete {
+            request_id: RequestId::Integer(43),
+            result: json!({
+                "answers": {
+                    "environment": {
+                        "answers": ["user_note: Use the canary environment"]
+                    }
+                }
+            })
+        }
+    );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn user_input_auto_resolves_only_after_its_deadline() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    shell.pending_user_input = PendingUserInput::from_request(
+        &tool_user_input_request_with_auto_resolution(/*auto_resolution_ms*/ 60_000),
+    );
+
+    assert!(!shell.start_expired_user_input_resolution(&backend));
+    tokio::time::advance(Duration::from_millis(/*millis*/ 59_999)).await;
+    assert!(!shell.start_expired_user_input_resolution(&backend));
+    tokio::time::advance(Duration::from_millis(/*millis*/ 1)).await;
+    assert!(shell.start_expired_user_input_resolution(&backend));
+    assert!(shell.has_pending_backend_action(ActionGroup::UserInput));
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(shell.pending_user_input.is_none());
+    assert_eq!(
+        backend
+            .resolved_requests
+            .lock()
+            .expect("resolved requests should lock")
+            .clone(),
+        vec![(
+            RequestId::Integer(43),
+            json!({
+                "answers": {}
+            }),
+        )]
+    );
+    assert_eq!(
+        shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Audit,
+            "tool input auto-resolved: Tool input: tool-input-1",
+        ))
+    );
+}
+
+#[test]
 fn mcp_elicitation_serializes_accept_decline_and_cancel() {
     let pending = PendingElicitation::from_request(&mcp_url_elicitation_request())
         .expect("request should be supported");
@@ -9080,7 +9162,7 @@ fn tool_user_input_request() -> ServerRequest {
                 id: "environment".to_string(),
                 header: "Environment".to_string(),
                 question: "Which environment should the tool use?".to_string(),
-                is_other: false,
+                is_other: true,
                 is_secret: false,
                 options: Some(vec![
                     ToolRequestUserInputOption {
@@ -9096,6 +9178,15 @@ fn tool_user_input_request() -> ServerRequest {
             auto_resolution_ms: None,
         },
     }
+}
+
+fn tool_user_input_request_with_auto_resolution(auto_resolution_ms: u64) -> ServerRequest {
+    let mut request = tool_user_input_request();
+    let ServerRequest::ToolRequestUserInput { params, .. } = &mut request else {
+        unreachable!("tool user input fixture should return a tool input request");
+    };
+    params.auto_resolution_ms = Some(auto_resolution_ms);
+    request
 }
 
 fn tool_free_form_user_input_request() -> ServerRequest {

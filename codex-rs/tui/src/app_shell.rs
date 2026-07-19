@@ -297,6 +297,8 @@ pub(crate) async fn run(
                 shell.start_turn(&app_server, prompt, TurnSubmission::Initial);
                 tui.frame_requester().schedule_frame();
             }
+            let user_input_auto_resolution_deadline =
+                shell.pending_user_input_auto_resolution_deadline();
             select! {
                 event = tui_events.next() => {
                     let Some(event) = event else {
@@ -428,6 +430,14 @@ pub(crate) async fn run(
                 }
                 _ = backend_action_poll.tick(), if shell.has_pending_backend_actions() => {
                     if shell.poll_backend_actions(&app_server).await {
+                        tui.frame_requester().schedule_frame();
+                    }
+                }
+                _ = tokio::time::sleep_until(
+                    user_input_auto_resolution_deadline
+                        .unwrap_or_else(tokio::time::Instant::now)
+                ), if user_input_auto_resolution_deadline.is_some() => {
+                    if shell.start_expired_user_input_resolution(&app_server) {
                         tui.frame_requester().schedule_frame();
                     }
                 }
@@ -2665,6 +2675,10 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.has_pending_backend_action(ActionGroup::UserInput) {
+            self.push_status("tool input is already being resolved");
+            return Ok(());
+        }
         let answer = self.composer.submission_text();
         let Some(pending) = self.pending_user_input.as_ref() else {
             return Ok(());

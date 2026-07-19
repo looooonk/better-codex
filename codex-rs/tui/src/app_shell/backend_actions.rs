@@ -19,6 +19,7 @@ pub(super) enum ActionGroup {
     SessionSwitch,
     Settings,
     TurnStart,
+    UserInput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +39,11 @@ pub(super) enum BackendActionResult {
         result: std::io::Result<()>,
     },
     CurrentTime {
+        result: std::io::Result<()>,
+    },
+    UserInputAutoResolution {
+        request_id: RequestId,
+        title: String,
         result: std::io::Result<()>,
     },
     DescendantCount {
@@ -226,6 +232,27 @@ impl ShellState {
                     self.report_action_error("failed to report current time", err.into());
                 }
             }
+            BackendActionResult::UserInputAutoResolution {
+                request_id,
+                title,
+                result,
+            } => match result {
+                Ok(()) => {
+                    if self
+                        .pending_user_input
+                        .as_ref()
+                        .is_some_and(|pending| pending.request_id() == &request_id)
+                    {
+                        self.pending_user_input = None;
+                        self.composer.clear();
+                        self.push_decision_audit("tool input", "auto-resolved", &title);
+                    }
+                }
+                Err(err) => self.report_action_error(
+                    "failed to auto-resolve app-server tool input request",
+                    err.into(),
+                ),
+            },
             BackendActionResult::Settings { update, result } => {
                 self.complete_settings_update(update, result)
             }

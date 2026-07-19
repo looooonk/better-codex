@@ -92,32 +92,51 @@ fn visible_segment_indices(
     let title = segments
         .iter()
         .enumerate()
-        .filter_map(|(index, segment)| (segment.logical_line == 0).then_some(index))
-        .collect::<Vec<_>>();
+        .find_map(|(index, segment)| (segment.logical_line == 0).then_some(index));
     let actions = segments
         .iter()
         .enumerate()
         .filter_map(|(index, segment)| (segment.logical_line == final_line).then_some(index))
         .collect::<Vec<_>>();
 
-    let action_count = actions.len().min(
-        visible
-            .saturating_sub(usize::from(!title.is_empty()))
-            .max(1),
-    );
+    let action_count = actions
+        .len()
+        .min(visible.saturating_sub(usize::from(title.is_some())).max(1));
     let leading_count = visible.saturating_sub(action_count);
-    let title_count = title.len().min(leading_count);
+    let title_count = usize::from(title.is_some()).min(leading_count);
     let detail_count = leading_count.saturating_sub(title_count);
-    let details = segments.iter().enumerate().filter_map(|(index, segment)| {
-        (segment.logical_line != 0 && segment.logical_line != final_line).then_some(index)
-    });
-
-    title
+    let mut previous_logical_line = None;
+    let mut selected = title
         .into_iter()
         .take(title_count)
-        .chain(details.take(detail_count))
+        .chain(
+            segments
+                .iter()
+                .enumerate()
+                .filter_map(|(index, segment)| {
+                    let first_segment = previous_logical_line != Some(segment.logical_line);
+                    previous_logical_line = Some(segment.logical_line);
+                    (first_segment
+                        && segment.logical_line != 0
+                        && segment.logical_line != final_line)
+                        .then_some(index)
+                })
+                .take(detail_count),
+        )
         .chain(actions.into_iter().take(action_count))
-        .collect()
+        .collect::<Vec<_>>();
+    if selected.len() < visible {
+        for index in 0..segments.len() {
+            if selected.len() >= visible {
+                break;
+            }
+            if !selected.contains(&index) {
+                selected.push(index);
+            }
+        }
+    }
+    selected.sort_unstable();
+    selected
 }
 
 fn wrapped_segments(lines: &[Line<'static>], width: u16) -> Vec<RequestPanelSegment> {
@@ -221,6 +240,40 @@ pub(super) fn user_input_lines(
             ": ".dim(),
             question.question.clone().into(),
         ]));
+        if let Some(options) = question
+            .options
+            .as_deref()
+            .filter(|options| !options.is_empty())
+        {
+            lines.extend(options.iter().enumerate().map(|(index, option)| {
+                Line::from(vec![
+                    "  ".into(),
+                    format!("{} ", index + 1).green().bold(),
+                    option.label.clone().into(),
+                    " - ".dim(),
+                    option.description.clone().dim(),
+                ])
+            }));
+            if question.is_other {
+                lines.push(Line::from(vec![
+                    "  ".into(),
+                    "Other (free-form)".into(),
+                    " - Type a custom answer below.".dim(),
+                ]));
+            }
+        }
+    }
+
+    if let Some(delay_ms) = pending.auto_resolution_ms() {
+        let delay = if delay_ms.is_multiple_of(1_000) {
+            format!("{}s", delay_ms / 1_000)
+        } else {
+            format!("{delay_ms}ms")
+        };
+        lines.push(Line::from(vec![
+            "  ".into(),
+            format!("Auto-continue after {delay} if unanswered").dim(),
+        ]));
     }
 
     let secret = pending
@@ -234,26 +287,7 @@ pub(super) fn user_input_lines(
     } else {
         composer.text_with_cursor_window(answer_width).into()
     };
-    let mut answer_line = vec!["> ".cyan().bold(), answer];
-    if let Some(question) = pending.current_question()
-        && let Some(options) = question.options.as_ref()
-    {
-        answer_line.push("  ".dim());
-        answer_line.extend(
-            options
-                .iter()
-                .take(3)
-                .enumerate()
-                .flat_map(|(index, option)| {
-                    vec![
-                        format!("{} ", index + 1).green().bold(),
-                        option.label.clone().dim(),
-                        "  ".dim(),
-                    ]
-                }),
-        );
-    }
-    lines.push(Line::from(answer_line));
+    lines.push(Line::from(vec!["> ".cyan().bold(), answer]));
     lines
 }
 

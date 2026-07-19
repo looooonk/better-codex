@@ -305,29 +305,23 @@ impl ShellView<'_> {
         let width = body_rect_after_title(pane_content_rect(input_area)).width;
         let lines = user_input_lines(pending, &self.shell.composer, width);
         let hit = request_panel_hit(input_area, position, &lines)?;
-        if hit.line != 2 {
-            return None;
-        }
-        let text = lines[2]
+        let option_index = hit.line.checked_sub(2)?;
+        let option = pending
+            .current_question()?
+            .options
+            .as_ref()?
+            .get(option_index)?;
+        let text = lines[hit.line]
             .spans
             .iter()
             .map(|span| span.content.as_ref())
             .collect::<String>();
-        pending
-            .current_question()?
-            .options
-            .as_ref()?
-            .iter()
-            .take(3)
-            .enumerate()
-            .find_map(|(index, option)| {
-                let label = format!("{} {}", index + 1, option.label);
-                let byte_start = text.find(&label)?;
-                let start = UnicodeWidthStr::width(&text[..byte_start]);
-                (start..start + UnicodeWidthStr::width(label.as_str()))
-                    .contains(&hit.column)
-                    .then_some(index)
-            })
+        let label = format!("{} {}", option_index + 1, option.label);
+        let byte_start = text.find(&label)?;
+        let start = UnicodeWidthStr::width(&text[..byte_start]);
+        (start..start + UnicodeWidthStr::width(label.as_str()))
+            .contains(&hit.column)
+            .then_some(option_index)
     }
 
     fn layout(&self, area: Rect) -> Option<ShellLayout> {

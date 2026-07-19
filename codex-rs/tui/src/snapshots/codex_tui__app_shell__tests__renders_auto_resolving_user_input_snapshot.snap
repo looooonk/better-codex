@@ -7,15 +7,14 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
-          by app-server turns.                  │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
- ▎ PLAN  1. Build shell                         │ │▎+ New session  Ctrl+N
-         2. Wire transcript                     ┃ │▎loading sessions
-         3. Render dashboard                    ┃ │
-                                                ┃ │▎◆ THREAD
- ▌ tool exec just test -p codex-tui             ┃ │▎stage-one
-                                                ┃ │▎id 01900000-0000-7000-8000-000000000001
- ▌ edited 3 files +128 -24                      ┃ │▎resume, fork, archive, delete in session list
+ ▎ PLAN  1. Build shell                         │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         2. Wire transcript                     │ │▎+ New session  Ctrl+N
+         3. Render dashboard                    │ │▎loading sessions
                                                 ┃ │
+ ▌ tool exec just test -p codex-tui             ┃ │▎◆ THREAD
+                                                ┃ │▎stage-one
+ ▌ edited 3 files +128 -24                      ┃ │▎id 01900000-0000-7000-8000-000000000001
+                                                ┃ │▎resume, fork, archive, delete in session list
  ▎ CODEX  The new shell owns the fullscreen     ┃ │
           surface.                              ┃ │
                                                   │
@@ -28,5 +27,6 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
 │  2 Staging - Use the staging service           ││
 │  Other (free-form) - Type a custom answer      ││
 │  below.                                        ││
+│  Auto-continue after 60s if unanswered         ││
 │> ▏answer                                       ││
 ╰────────────────────────────────────────────────╯│
