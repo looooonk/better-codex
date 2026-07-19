@@ -688,12 +688,15 @@ impl Session {
     ) -> Arc<TurnContext> {
         let turn_environments = self.services.turn_environments.snapshot().await;
         let primary_turn_environment = turn_environments.primary().cloned();
-        // TODO(anp): Migrate per-turn config and legacy TurnContext cwd consumers to PathUri so
-        // a foreign primary environment does not fall back to the session's host cwd.
-        let cwd = primary_turn_environment
-            .as_ref()
-            .and_then(|turn_environment| turn_environment.cwd().to_abs_path().ok())
-            .unwrap_or_else(|| session_configuration.cwd().clone());
+        let cwd = match primary_turn_environment.as_ref() {
+            Some(turn_environment) => match turn_environment.cwd().to_abs_path() {
+                Ok(cwd) => cwd,
+                Err(err) => unreachable!(
+                    "turn environment cwd should be validated before building a turn: {err}"
+                ),
+            },
+            None => session_configuration.cwd().clone(),
+        };
         let per_turn_config = Self::build_per_turn_config(&session_configuration, cwd.clone());
         {
             let mcp_runtime = self.services.latest_mcp_runtime();

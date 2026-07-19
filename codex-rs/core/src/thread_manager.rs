@@ -534,6 +534,12 @@ impl ThreadManager {
                         environment.environment_id
                     ))
                 })?;
+            if environment.cwd.to_abs_path().is_err() {
+                return Err(CodexErr::InvalidRequest(format!(
+                    "turn environment `{}` cwd `{}` uses a path convention unsupported by this host",
+                    environment.environment_id, environment.cwd
+                )));
+            }
         }
         Ok(())
     }

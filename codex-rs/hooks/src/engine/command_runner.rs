@@ -3,6 +3,8 @@ use std::process::Stdio;
 use std::time::Duration;
 use std::time::Instant;
 
+use tokio::io::AsyncRead;
+use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::time::timeout;
@@ -18,6 +20,8 @@ use super::dispatcher::hook_source_label;
 use super::dispatcher::scope_for_event;
 use codex_protocol::protocol::HookExecutionMode;
 use codex_protocol::protocol::HookHandlerType;
+
+const MAX_HOOK_OUTPUT_BYTES_PER_STREAM: usize = 1024 * 1024;
 
 #[derive(Debug)]
 pub(crate) struct CommandRunResult {
@@ -98,19 +102,46 @@ pub(crate) async fn run_command(
         );
     }
 
+    let Some(stdout) = child.stdout.take() else {
+        unreachable!("hook stdout is configured as piped");
+    };
+    let Some(stderr) = child.stderr.take() else {
+        unreachable!("hook stderr is configured as piped");
+    };
+    let wait = async {
+        let (status, stdout, stderr) =
+            tokio::join!(child.wait(), capture_output(stdout), capture_output(stderr));
+        Ok::<_, std::io::Error>((status?, stdout?, stderr?))
+    };
     let timeout_duration = Duration::from_secs(handler.timeout_sec);
-    match timeout(timeout_duration, child.wait_with_output()).await {
-        Ok(Ok(output)) => finish_command_run(
-            started_at,
-            started,
-            CommandRunCompletion {
-                exit_code: output.status.code(),
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                error: None,
-                outcome: "completed",
-            },
-        ),
+    match timeout(timeout_duration, wait).await {
+        Ok(Ok((status, stdout, stderr))) => {
+            let exceeded_streams = match (stdout.truncated, stderr.truncated) {
+                (false, false) => None,
+                (true, false) => Some("stdout"),
+                (false, true) => Some("stderr"),
+                (true, true) => Some("stdout and stderr"),
+            };
+            finish_command_run(
+                started_at,
+                started,
+                CommandRunCompletion {
+                    exit_code: status.code(),
+                    stdout: String::from_utf8_lossy(&stdout.bytes).to_string(),
+                    stderr: String::from_utf8_lossy(&stderr.bytes).to_string(),
+                    error: exceeded_streams.map(|streams| {
+                        format!(
+                            "hook {streams} exceeded the {MAX_HOOK_OUTPUT_BYTES_PER_STREAM}-byte capture limit"
+                        )
+                    }),
+                    outcome: if exceeded_streams.is_some() {
+                        "output_limit"
+                    } else {
+                        "completed"
+                    },
+                },
+            )
+        }
         Ok(Err(err)) => finish_command_run(
             started_at,
             started,
@@ -134,6 +165,27 @@ pub(crate) async fn run_command(
             },
         ),
     }
+}
+
+struct CapturedOutput {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+async fn capture_output(mut reader: impl AsyncRead + Unpin) -> std::io::Result<CapturedOutput> {
+    let mut bytes = Vec::new();
+    let mut chunk = [0; 8192];
+    let mut truncated = false;
+    loop {
+        let read = reader.read(&mut chunk).await?;
+        if read == 0 {
+            break;
+        }
+        let remaining = MAX_HOOK_OUTPUT_BYTES_PER_STREAM.saturating_sub(bytes.len());
+        bytes.extend_from_slice(&chunk[..read.min(remaining)]);
+        truncated |= read > remaining;
+    }
+    Ok(CapturedOutput { bytes, truncated })
 }
 
 struct CommandRunCompletion {
@@ -194,3 +246,7 @@ fn default_shell_command() -> Command {
         command
     }
 }
+
+#[cfg(test)]
+#[path = "command_runner_tests.rs"]
+mod tests;

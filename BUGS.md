@@ -431,7 +431,7 @@ launched concurrently rather than queued under a bounded worker limit.
 
 ### 26. [P1][Availability / Hooks] Hook output is buffered without a memory cap before truncation
 
-**Status:** Assigned
+**Status:** Fixed
 
 The command runner uses `wait_with_output` and holds complete stdout/stderr in memory
 (`codex-rs/hooks/src/engine/command_runner.rs:59-65,101-110`). Truncation/spilling occurs only afterward in
@@ -443,7 +443,7 @@ exiting. RSS grows with the complete output before spill logic runs.
 
 ### 27. [P2][Windows remote execution correctness] Foreign Windows cwd silently becomes the host cwd
 
-**Status:** Assigned
+**Status:** Fixed
 
 When a remote turn cwd cannot be represented as a native path, `TurnContext` falls back to the local
 host cwd (`codex-rs/core/src/session/turn_context.rs:691-697`). The remote command path continues to
