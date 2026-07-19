@@ -35,12 +35,16 @@ use codex_protocol::protocol::HookSource;
 use codex_protocol::protocol::HookStartedEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::protocol::WarningEvent;
 use codex_thread_store::ReadThreadParams;
 use serde_json::Value;
 use tracing::instrument;
 
 use crate::context::ContextualUserFragment;
+use crate::context::HOOK_CONTEXT_OMITTED_MESSAGE;
 use crate::context::HookAdditionalContext;
+use crate::context::HookContextAdmission;
+use crate::context::HookContextBudget;
 use crate::event_mapping::parse_turn_item;
 use crate::session::TurnInput;
 use crate::session::session::Session;
@@ -597,7 +601,20 @@ pub(crate) async fn record_additional_contexts(
     turn_context: &Arc<TurnContext>,
     additional_contexts: Vec<String>,
 ) {
-    let developer_messages = additional_context_messages(additional_contexts);
+    let budget = turn_context
+        .extension_data
+        .get_or_init(HookContextBudget::default);
+    let (developer_messages, first_omitted) =
+        additional_context_messages(budget.as_ref(), additional_contexts);
+    if first_omitted {
+        sess.send_event(
+            turn_context,
+            EventMsg::Warning(WarningEvent {
+                message: HOOK_CONTEXT_OMITTED_MESSAGE.to_string(),
+            }),
+        )
+        .await;
+    }
     if developer_messages.is_empty() {
         return;
     }
@@ -606,12 +623,28 @@ pub(crate) async fn record_additional_contexts(
         .await;
 }
 
-fn additional_context_messages(additional_contexts: Vec<String>) -> Vec<ResponseItem> {
-    additional_contexts
-        .into_iter()
-        .map(HookAdditionalContext::new)
-        .map(ContextualUserFragment::into)
-        .collect()
+fn additional_context_messages(
+    budget: &HookContextBudget,
+    additional_contexts: Vec<String>,
+) -> (Vec<ResponseItem>, bool) {
+    let mut messages = Vec::new();
+    let mut first_omitted = false;
+    for context in additional_contexts {
+        let context = HookAdditionalContext::new(context);
+        match budget.admit(context.token_count()) {
+            HookContextAdmission::Accepted => {
+                messages.push(ContextualUserFragment::into(context));
+            }
+            HookContextAdmission::FirstOmitted => {
+                messages.push(ContextualUserFragment::into(HookAdditionalContext::new(
+                    HOOK_CONTEXT_OMITTED_MESSAGE,
+                )));
+                first_omitted = true;
+            }
+            HookContextAdmission::Omitted => {}
+        }
+    }
+    (messages, first_omitted)
 }
 
 async fn emit_hook_started_events(
@@ -788,6 +821,7 @@ mod tests {
     use super::additional_context_messages;
     use super::hook_run_analytics_payload;
     use super::hook_run_metric_tags;
+    use crate::context::HookContextBudget;
     use crate::session::tests::make_session_and_context;
     use codex_protocol::protocol::HookCompletedEvent;
     use codex_protocol::protocol::HookRunSummary;
@@ -796,11 +830,15 @@ mod tests {
 
     #[test]
     fn additional_context_messages_stay_separate_and_ordered() {
-        let messages = additional_context_messages(vec![
-            "first tide note".to_string(),
-            "second tide note".to_string(),
-        ]);
+        let (messages, first_omitted) = additional_context_messages(
+            &HookContextBudget::default(),
+            vec![
+                "first tide note".to_string(),
+                "second tide note".to_string(),
+            ],
+        );
 
+        assert!(!first_omitted);
         assert_eq!(messages.len(), 2);
         assert_eq!(
             messages

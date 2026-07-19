@@ -17,6 +17,9 @@ use crate::compact_remote::run_inline_remote_auto_compact_task;
 use crate::compact_remote_v2::run_inline_remote_auto_compact_task as run_inline_remote_auto_compact_task_v2;
 use crate::connectors;
 use crate::context::ContextualUserFragment;
+use crate::context::HOOK_CONTEXT_OMITTED_MESSAGE;
+use crate::context::HookContextBudget;
+use crate::context::build_bounded_hook_prompt_message;
 use crate::feedback_tags;
 use crate::hook_runtime::inspect_pending_input;
 use crate::hook_runtime::record_additional_contexts;
@@ -89,7 +92,6 @@ use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::PlanItem;
 use codex_protocol::items::TurnItem;
-use codex_protocol::items::build_hook_prompt_message;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::MessagePhase;
@@ -381,9 +383,24 @@ pub(crate) async fn run_turn(
                     )
                     .await;
                     if stop_outcome.should_block {
-                        if let Some(hook_prompt_message) =
-                            build_hook_prompt_message(&stop_outcome.continuation_fragments)
-                        {
+                        let budget = turn_context
+                            .extension_data
+                            .get_or_init(HookContextBudget::default);
+                        let (hook_prompt_message, first_omitted) =
+                            build_bounded_hook_prompt_message(
+                                budget.as_ref(),
+                                stop_outcome.continuation_fragments,
+                            );
+                        if first_omitted {
+                            sess.send_event(
+                                &turn_context,
+                                EventMsg::Warning(WarningEvent {
+                                    message: HOOK_CONTEXT_OMITTED_MESSAGE.to_string(),
+                                }),
+                            )
+                            .await;
+                        }
+                        if let Some(hook_prompt_message) = hook_prompt_message {
                             sess.record_response_item_and_emit_turn_item(
                                 &turn_context,
                                 hook_prompt_message,

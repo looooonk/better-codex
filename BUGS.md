@@ -166,7 +166,7 @@ initial user-instruction item; the effective total is not constrained by one har
 
 ### 9. [P0][Model context / Hooks] Hook context has no aggregate hard cap
 
-**Status:** Assigned
+**Status:** Fixed
 
 Each hook-supplied additional-context or Stop continuation fragment is capped at about 2,500 tokens
 (`codex-rs/hooks/src/output_spill.rs:11-87`), but discovery and execution permit an arbitrary number

@@ -26,6 +26,7 @@ use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_output_truncation::approx_token_count;
 use core_test_support::TestTargetOs;
 use core_test_support::hooks::trust_discovered_hooks;
 use core_test_support::hooks::trust_hooks;
@@ -263,6 +264,51 @@ if payload.get("prompt") == {blocked_prompt_json}:
     });
 
     fs::write(&script_path, script).context("write user prompt submit hook script")?;
+    fs::write(home.join("hooks.json"), hooks.to_string()).context("write hooks.json")?;
+    Ok(())
+}
+
+fn write_parallel_user_prompt_submit_hooks(home: &Path, contexts: &[String]) -> Result<()> {
+    let hook_entries = contexts
+        .iter()
+        .enumerate()
+        .map(|(index, context)| {
+            let script_path = home.join(format!("user_prompt_submit_hook_{index}.py"));
+            let context = serde_json::to_string(context)
+                .context("serialize user prompt submit hook context")?;
+            let script = format!(
+                r#"import json
+import sys
+
+json.load(sys.stdin)
+print(json.dumps({{
+    "hookSpecificOutput": {{
+        "hookEventName": "UserPromptSubmit",
+        "additionalContext": {context}
+    }}
+}}))
+"#
+            );
+            fs::write(&script_path, script).with_context(|| {
+                format!(
+                    "write user prompt submit hook fixture at {}",
+                    script_path.display()
+                )
+            })?;
+            Ok(serde_json::json!({
+                "type": "command",
+                "command": format!("python3 {}", script_path.display()),
+            }))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let hooks = serde_json::json!({
+        "hooks": {
+            "UserPromptSubmit": [{
+                "hooks": hook_entries,
+            }]
+        }
+    });
+
     fs::write(home.join("hooks.json"), hooks.to_string()).context("write hooks.json")?;
     Ok(())
 }
@@ -1708,6 +1754,113 @@ async fn multiple_blocking_stop_hooks_persist_multiple_hook_prompt_fragments() -
             SECOND_CONTINUATION_PROMPT.to_string(),
         ],
         "rollout should preserve both hook prompt fragments in order",
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn blocking_stop_hook_prompts_are_aggregate_bounded() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-1"),
+                ev_assistant_message("msg-1", "draft one"),
+                ev_completed("resp-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-2"),
+                ev_assistant_message("msg-2", "final draft"),
+                ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+    let prompts = (0..5)
+        .map(|index| format!("stop prompt {index}\n{}", "P".repeat(8_000)))
+        .collect::<Vec<_>>();
+    let mut builder = test_codex()
+        .with_pre_build_hook(move |home| {
+            let prompt_refs = prompts.iter().map(String::as_str).collect::<Vec<_>>();
+            write_parallel_stop_hooks(home, &prompt_refs)
+                .expect("failed to write aggregate stop hook fixtures");
+        })
+        .with_config(trust_discovered_hooks);
+    let test = builder.build(&server).await?;
+
+    test.submit_turn("bound every stop hook prompt").await?;
+
+    let requests = responses.requests();
+    assert_eq!(requests.len(), 2);
+    let hook_prompt_texts = request_hook_prompt_texts(&requests[1]);
+    assert_eq!(hook_prompt_texts.len(), 4);
+    assert_eq!(
+        hook_prompt_texts.last().map(String::as_str),
+        Some("Additional hook context was omitted because it exceeded this turn's context limit.")
+    );
+    let model_tokens = requests[1]
+        .message_input_texts("user")
+        .into_iter()
+        .filter(|text| parse_hook_prompt_fragment(text).is_some())
+        .map(|text| approx_token_count(&text))
+        .sum::<usize>();
+    assert!(model_tokens <= 8_000);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn hook_additional_contexts_are_aggregate_bounded() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let response = mount_sse_once(
+        &server,
+        sse(vec![
+            ev_response_created("resp-1"),
+            ev_assistant_message("msg-1", "context bounded"),
+            ev_completed("resp-1"),
+        ]),
+    )
+    .await;
+    let contexts = (0..5)
+        .map(|index| format!("hook context {index}\n{}", "C".repeat(8_000)))
+        .collect::<Vec<_>>();
+    let mut builder = test_codex()
+        .with_pre_build_hook(move |home| {
+            write_parallel_user_prompt_submit_hooks(home, &contexts)
+                .expect("failed to write aggregate user prompt hook fixtures");
+        })
+        .with_config(trust_discovered_hooks);
+    let test = builder.build(&server).await?;
+
+    test.submit_turn("bound every additional context").await?;
+
+    let hook_contexts = response
+        .single_request()
+        .message_input_texts("developer")
+        .into_iter()
+        .filter(|text| {
+            text.starts_with("hook context ")
+                || text
+                    == "Additional hook context was omitted because it exceeded this turn's context limit."
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(hook_contexts.len(), 4);
+    assert_eq!(
+        hook_contexts.last().map(String::as_str),
+        Some("Additional hook context was omitted because it exceeded this turn's context limit.")
+    );
+    assert!(
+        hook_contexts
+            .iter()
+            .map(|text| approx_token_count(text))
+            .sum::<usize>()
+            <= 8_000
     );
 
     Ok(())
