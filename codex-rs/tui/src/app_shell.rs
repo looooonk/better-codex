@@ -90,6 +90,7 @@ mod external_agent_import;
 mod header;
 mod input_request_view;
 mod integrations;
+mod interactive_requests;
 mod mcp_management;
 mod modal_view;
 mod navigation;
@@ -142,6 +143,8 @@ use elicitation::PendingElicitation;
 use external_agent_import::ExternalAgentImportState;
 use integrations::McpInventorySummary;
 use integrations::PluginInventorySummary;
+use interactive_requests::InteractiveRequestRemoval;
+use interactive_requests::PendingInteractiveRequest;
 use mcp_management::McpManagementState;
 use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
@@ -738,6 +741,7 @@ struct ShellState {
     pending_approval: Option<PendingApproval>,
     pending_session_delete: Option<PendingSessionDelete>,
     pending_elicitation: Option<PendingElicitation>,
+    queued_interactive_requests: VecDeque<PendingInteractiveRequest>,
     pending_external_agent_import: Option<ExternalAgentImportState>,
     pending_mcp_management: Option<McpManagementState>,
     pending_plugin_management: Option<PluginManagementState>,
@@ -844,6 +848,7 @@ impl ShellState {
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,
+            queued_interactive_requests: VecDeque::new(),
             pending_external_agent_import: None,
             pending_mcp_management: None,
             pending_plugin_management: None,
@@ -1913,10 +1918,8 @@ impl ShellState {
         self.context_token_usage = TokenUsage::default();
         self.model_context_window = None;
         self.active_turn_id = None;
-        self.pending_approval = None;
+        self.clear_interactive_requests();
         self.pending_session_delete = None;
-        self.pending_elicitation = None;
-        self.pending_user_input = None;
         self.selector = None;
         self.safety_buffering.clear();
         self.status = "ready".to_string();
@@ -2692,13 +2695,16 @@ impl ShellState {
                 self.push_decision_audit("tool input", "answered", &title);
             }
             Ok(UserInputAdvance::Complete { request_id, result }) => {
+                let completed_request_id = request_id.clone();
                 app_server
                     .resolve_server_request(request_id, result)
                     .await
                     .wrap_err("failed to resolve app-server tool input request")?;
-                self.pending_user_input = None;
-                self.composer.clear();
+                let removal = self.remove_interactive_request(&completed_request_id);
                 self.push_decision_audit("tool input", "submitted", &title);
+                if removal == InteractiveRequestRemoval::Active {
+                    self.activate_next_interactive_request();
+                }
             }
             Err(message) => {
                 self.push_error(message);
@@ -2728,16 +2734,19 @@ impl ShellState {
             }
         };
         app_server
-            .resolve_server_request(request_id, result)
+            .resolve_server_request(request_id.clone(), result)
             .await
             .wrap_err("failed to resolve app-server MCP elicitation request")?;
-        self.pending_elicitation = None;
+        let removal = self.remove_interactive_request(&request_id);
         let decision = match choice {
             ElicitationChoice::Accept => "accepted",
             ElicitationChoice::Decline => "declined",
             ElicitationChoice::Cancel => "cancelled",
         };
         self.push_decision_audit("elicitation", decision, &title);
+        if removal == InteractiveRequestRemoval::Active {
+            self.activate_next_interactive_request();
+        }
         Ok(())
     }
 
@@ -3316,6 +3325,7 @@ impl ShellState {
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,
+            queued_interactive_requests: VecDeque::new(),
             pending_external_agent_import: None,
             pending_mcp_management: None,
             pending_plugin_management: None,
@@ -3567,6 +3577,7 @@ pub mod bench_support {
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,
+            queued_interactive_requests: VecDeque::new(),
             pending_external_agent_import: None,
             pending_mcp_management: None,
             pending_plugin_management: None,

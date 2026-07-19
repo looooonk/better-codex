@@ -317,8 +317,16 @@ impl ShellState {
                 }
             }
             ServerNotification::ServerRequestResolved(resolved) => {
-                if resolved.thread_id == self.thread_id.to_string() {
+                if resolved.thread_id == self.thread_id.to_string()
+                    || self.is_active_agent_thread(&resolved.thread_id)
+                    || self.has_interactive_request(&resolved.request_id)
+                {
                     self.push_status(format!("request resolved: {}", resolved.request_id));
+                    if self.remove_interactive_request(&resolved.request_id)
+                        == super::InteractiveRequestRemoval::Active
+                    {
+                        self.activate_next_interactive_request();
+                    }
                 }
             }
             ServerNotification::CommandExecOutputDelta(delta) => {
@@ -480,58 +488,19 @@ impl ShellState {
             });
             return Ok(());
         }
-        match super::PendingApproval::from_request(&request) {
-            Ok(Some(pending)) => {
-                let title = pending.title().to_string();
-                if self.has_pending_interactive_request() {
+        match super::PendingInteractiveRequest::from_request(&request) {
+            Ok(Some(pending)) => match self.receive_interactive_request(pending) {
+                Ok(()) => Ok(()),
+                Err(pending) => {
                     self.reject_request_with_message(
                         app_server,
-                        request.id().clone(),
-                        format!("approval already pending: {title}"),
+                        pending.request_id(),
+                        format!("interactive request queue is full: {}", pending.title()),
                     )
-                    .await?;
-                    return Ok(());
+                    .await
                 }
-                self.close_overlays_for_interactive_request();
-                self.pending_approval = Some(pending);
-                self.push_status(format!("approval requested: {title}"));
-                Ok(())
-            }
-            Ok(None) => {
-                if let Some(pending) = super::PendingElicitation::from_request(&request) {
-                    let title = pending.title().to_string();
-                    if self.has_pending_interactive_request() {
-                        self.reject_request_with_message(
-                            app_server,
-                            request.id().clone(),
-                            format!("interactive request already pending: {title}"),
-                        )
-                        .await?;
-                        return Ok(());
-                    }
-                    self.close_overlays_for_interactive_request();
-                    self.pending_elicitation = Some(pending);
-                    self.push_status(format!("elicitation requested: {title}"));
-                    Ok(())
-                } else if let Some(pending) = super::PendingUserInput::from_request(&request) {
-                    let title = pending.title().to_string();
-                    if self.has_pending_interactive_request() {
-                        self.reject_request_with_message(
-                            app_server,
-                            request.id().clone(),
-                            format!("interactive request already pending: {title}"),
-                        )
-                        .await?;
-                        return Ok(());
-                    }
-                    self.close_overlays_for_interactive_request();
-                    self.pending_user_input = Some(pending);
-                    self.push_status(format!("input requested: {title}"));
-                    Ok(())
-                } else {
-                    self.reject_unsupported_request(app_server, request).await
-                }
-            }
+            },
+            Ok(None) => self.reject_unsupported_request(app_server, request).await,
             Err(message) => {
                 self.reject_request_with_message(app_server, request.id().clone(), message)
                     .await
@@ -583,26 +552,6 @@ impl ShellState {
         self.token_usage = token_usage_from_breakdown(usage.total);
         self.context_token_usage = token_usage_from_breakdown(usage.last);
         self.model_context_window = usage.model_context_window;
-    }
-
-    fn has_pending_interactive_request(&self) -> bool {
-        self.pending_approval.is_some()
-            || self.pending_elicitation.is_some()
-            || self.pending_user_input.is_some()
-    }
-
-    fn close_overlays_for_interactive_request(&mut self) {
-        self.composer.finish_queued_message_edit();
-        self.close_agent_log();
-        self.close_tool_output();
-        self.close_diff_view();
-        self.selector = None;
-        self.command_palette = None;
-        self.pending_external_agent_import = None;
-        self.pending_mcp_management = None;
-        self.pending_plugin_management = None;
-        self.pending_session_delete = None;
-        self.safety_buffering.dismiss();
     }
 }
 

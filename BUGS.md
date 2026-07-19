@@ -565,7 +565,7 @@ is accepted.
 
 ### 36. [P1][Interactive requests / Protocol] A second concurrent request is auto-rejected
 
-**Status:** Assigned
+**Status:** Fixed
 
 `handle_server_request` permits only one approval, elicitation, or user-input request. If another
 arrives, it immediately sends JSON-RPC `-32000` rather than queuing it
@@ -577,7 +577,7 @@ elicitation. Only the first modal appears; the second backend operation receives
 
 ### 37. [P1][Interactive requests / Lifecycle] Resolved requests leave stale modals on screen
 
-**Status:** Assigned
+**Status:** Fixed
 
 On `ServerRequestResolved`, the TUI only appends a status line
 (`codex-rs/tui/src/app_shell/events.rs:311-315`). It does not match the request ID against and clear

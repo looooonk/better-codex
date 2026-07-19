@@ -209,18 +209,15 @@ impl ShellState {
                 result,
             } => match result {
                 Ok(()) => {
-                    if self
-                        .pending_approval
-                        .as_ref()
-                        .is_some_and(|pending| pending.request_id() == request_id)
-                    {
-                        self.pending_approval = None;
-                    }
+                    let removal = self.remove_interactive_request(&request_id);
                     if let Some(edit_prompt) = edit_prompt {
                         self.seed_composer_with_edit_prompt(edit_prompt);
                     }
                     self.push_decision_audit("approval", decision, &title);
                     self.status = "ready".to_string();
+                    if removal == super::InteractiveRequestRemoval::Active {
+                        self.activate_next_interactive_request();
+                    }
                 }
                 Err(err) => self.report_action_error(
                     "failed to resolve app-server approval request",
@@ -238,14 +235,10 @@ impl ShellState {
                 result,
             } => match result {
                 Ok(()) => {
-                    if self
-                        .pending_user_input
-                        .as_ref()
-                        .is_some_and(|pending| pending.request_id() == &request_id)
-                    {
-                        self.pending_user_input = None;
-                        self.composer.clear();
+                    let removal = self.remove_interactive_request(&request_id);
+                    if removal == super::InteractiveRequestRemoval::Active {
                         self.push_decision_audit("tool input", "auto-resolved", &title);
+                        self.activate_next_interactive_request();
                     }
                 }
                 Err(err) => self.report_action_error(

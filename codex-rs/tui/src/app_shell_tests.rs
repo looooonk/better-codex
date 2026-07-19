@@ -68,6 +68,7 @@ use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::ServerRequestResolvedNotification;
 use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::SkillMigration;
 use codex_app_server_protocol::SubAgentActivityKind;
@@ -2073,6 +2074,139 @@ async fn interactive_requests_preempt_management_overlays() {
     assert!(shell.pending_external_agent_import.is_none());
     assert!(shell.command_palette.is_none());
     assert!(shell.selector.is_none());
+}
+
+#[tokio::test]
+async fn concurrent_interactive_requests_wait_and_resolve_in_order() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.dashboard_visible = false;
+    let mut backend = RecordingBackend::default();
+
+    for request in [
+        command_approval_request(),
+        tool_user_input_request(),
+        mcp_url_elicitation_request(),
+    ] {
+        shell
+            .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request))
+            .await
+            .expect("interactive request should be accepted");
+    }
+
+    assert!(shell.pending_approval.is_some());
+    assert_eq!(
+        shell
+            .queued_interactive_requests
+            .iter()
+            .map(PendingInteractiveRequest::request_id)
+            .collect::<Vec<_>>(),
+        vec![RequestId::Integer(43), RequestId::Integer(45)]
+    );
+    assert_eq!(backend.calls(), Vec::new());
+    insta::assert_snapshot!(
+        "queued_interactive_requests",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            ),
+        )
+    );
+
+    shell
+        .resolve_pending_approval(&backend, /*option_index*/ 0, None)
+        .expect("approval should resolve");
+    complete_backend_actions(&mut shell, &backend).await;
+    assert!(shell.pending_user_input.is_some());
+    assert_eq!(shell.queued_interactive_requests.len(), 1);
+
+    shell.composer.set_text("2");
+    shell
+        .resolve_pending_user_input(&mut backend)
+        .await
+        .expect("tool input should resolve");
+    assert!(shell.pending_elicitation.is_some());
+    assert!(shell.queued_interactive_requests.is_empty());
+
+    shell
+        .resolve_pending_elicitation(&mut backend, ElicitationChoice::Accept)
+        .await
+        .expect("elicitation should resolve");
+
+    assert!(shell.pending_approval.is_none());
+    assert!(shell.pending_elicitation.is_none());
+    assert!(shell.pending_user_input.is_none());
+    assert!(shell.queued_interactive_requests.is_empty());
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::Resolve(RequestId::Integer(41)),
+            RecordedBackendCall::Resolve(RequestId::Integer(43)),
+            RecordedBackendCall::Resolve(RequestId::Integer(45)),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn resolved_notifications_remove_only_the_matching_interactive_request() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    for request in [
+        tool_user_input_request(),
+        command_approval_request(),
+        mcp_url_elicitation_request(),
+    ] {
+        shell
+            .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request))
+            .await
+            .expect("interactive request should be accepted");
+    }
+    shell.composer.set_text("stale answer");
+
+    for request_id in [RequestId::Integer(41), RequestId::Integer(999)] {
+        shell.handle_notification(ServerNotification::ServerRequestResolved(
+            ServerRequestResolvedNotification {
+                thread_id: shell.thread_id.to_string(),
+                request_id,
+            },
+        ));
+    }
+
+    assert!(shell.pending_user_input.is_some());
+    assert_eq!(shell.composer.text(), "stale answer");
+    assert_eq!(
+        shell
+            .queued_interactive_requests
+            .iter()
+            .map(PendingInteractiveRequest::request_id)
+            .collect::<Vec<_>>(),
+        vec![RequestId::Integer(45)]
+    );
+
+    shell.handle_notification(ServerNotification::ServerRequestResolved(
+        ServerRequestResolvedNotification {
+            thread_id: shell.thread_id.to_string(),
+            request_id: RequestId::Integer(43),
+        },
+    ));
+
+    assert!(shell.pending_user_input.is_none());
+    assert!(shell.pending_elicitation.is_some());
+    assert!(shell.composer.text().is_empty());
+    assert!(shell.queued_interactive_requests.is_empty());
+
+    shell.handle_notification(ServerNotification::ServerRequestResolved(
+        ServerRequestResolvedNotification {
+            thread_id: shell.thread_id.to_string(),
+            request_id: RequestId::Integer(45),
+        },
+    ));
+
+    assert!(shell.pending_approval.is_none());
+    assert!(shell.pending_elicitation.is_none());
+    assert!(shell.pending_user_input.is_none());
+    assert_eq!(backend.calls(), Vec::new());
 }
 
 #[tokio::test]

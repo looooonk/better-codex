@@ -416,9 +416,7 @@ impl ShellState {
         self.agent_activity = super::agent_activity::AgentActivityState::default();
         self.subagent_activity.clear();
         self.latest_diff = None;
-        self.pending_approval = None;
-        self.pending_elicitation = None;
-        self.pending_user_input = None;
+        self.clear_interactive_requests();
         self.active_turn_id = None;
         self.safety_buffering.clear();
         self.push_user(submitted.transcript_text.clone());
@@ -447,9 +445,7 @@ impl ShellState {
         }
         self.safety_buffering.clear();
         self.active_turn_id = None;
-        self.pending_approval = None;
-        self.pending_elicitation = None;
-        self.pending_user_input = None;
+        self.clear_interactive_requests();
         self.status = "blocked".to_string();
         self.push_line(TranscriptLine::new(
             TranscriptKind::Status,
