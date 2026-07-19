@@ -69,7 +69,7 @@ displayed.
 
 ### 3. [P0][Model context / Injection] `additionalContext` has unbounded keys and item count
 
-**Status:** Assigned
+**Status:** Fixed
 
 Only each value is truncated to roughly 1,000 tokens. The number and length of keys are unrestricted,
 and keys are interpolated into XML-like markers in
