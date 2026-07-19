@@ -119,7 +119,7 @@ impl codex_extension_api::ContextContributor for GuardianMemoryContextProbe {
                 .is_some_and(|enabled| enabled.0)
             {
                 vec![codex_extension_api::PromptFragment::developer_policy(
-                    GUARDIAN_MEMORY_CONTEXT_PROBE,
+                    crate::context::DeveloperInstructions::new(GUARDIAN_MEMORY_CONTEXT_PROBE),
                 )]
             } else {
                 Vec::new()

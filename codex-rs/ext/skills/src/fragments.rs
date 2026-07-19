@@ -9,6 +9,14 @@ pub(crate) struct AvailableSkillsInstructions {
     skill_lines: Vec<String>,
 }
 
+pub(crate) struct SkillsUpdate(String);
+
+impl SkillsUpdate {
+    pub(crate) fn new(body: impl Into<String>) -> Self {
+        Self(body.into())
+    }
+}
+
 impl AvailableSkillsInstructions {
     pub(crate) fn from_skill_lines(
         mut skill_lines: Vec<String>,
@@ -37,5 +45,23 @@ impl ContextualUserFragment for AvailableSkillsInstructions {
 
     fn body(&self) -> String {
         render_available_skills_body(&[], &self.skill_lines)
+    }
+}
+
+impl ContextualUserFragment for SkillsUpdate {
+    fn role(&self) -> &'static str {
+        "developer"
+    }
+
+    fn markers(&self) -> (&'static str, &'static str) {
+        Self::type_markers()
+    }
+
+    fn type_markers() -> (&'static str, &'static str) {
+        (SKILLS_INSTRUCTIONS_OPEN_TAG, SKILLS_INSTRUCTIONS_CLOSE_TAG)
+    }
+
+    fn body(&self) -> String {
+        self.0.clone()
     }
 }

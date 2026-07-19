@@ -1,4 +1,5 @@
 use super::*;
+use codex_extension_api::ContextualUserFragment;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
@@ -19,7 +20,8 @@ async fn build_memory_tool_developer_instructions_renders_embedded_template() {
 
     let instructions = build_memory_tool_developer_instructions(&codex_home)
         .await
-        .unwrap();
+        .unwrap()
+        .render();
 
     assert!(instructions.contains(&format!(
         "- {}/memory_summary.md (already provided below; do NOT open again)",

@@ -8342,7 +8342,7 @@ impl codex_extension_api::ContextContributor for PromptExtensionTestContributor 
                 .is_some()
                 .then(|| {
                     codex_extension_api::PromptFragment::developer_policy(
-                        "prompt extension enabled",
+                        crate::context::DeveloperInstructions::new("prompt extension enabled"),
                     )
                 })
                 .into_iter()
@@ -8374,7 +8374,7 @@ impl codex_extension_api::ContextContributor for TurnContextExtensionTestContrib
                 && !input.turn_id.is_empty())
             .then(|| {
                 codex_extension_api::PromptFragment::developer_policy(
-                    "turn context extension enabled",
+                    crate::context::DeveloperInstructions::new("turn context extension enabled"),
                 )
             })
             .into_iter()

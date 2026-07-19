@@ -4,6 +4,7 @@ mod environment;
 mod plugins_instructions;
 
 use crate::context::ContextualUserFragment;
+use crate::context::ExtensionContextBudget;
 use codex_extension_api::PreviousWorldStateSection;
 use codex_extension_api::RenderedWorldStateFragment;
 use codex_extension_api::WorldStateSectionContribution;
@@ -34,7 +35,12 @@ trait ErasedWorldStateSection: Send + Sync {
     fn render_diff(
         &self,
         previous: PreviousSectionState<'_, Value>,
-    ) -> Option<Box<dyn ContextualUserFragment>>;
+    ) -> Option<RenderedSectionFragment>;
+}
+
+enum RenderedSectionFragment {
+    Core(Box<dyn ContextualUserFragment>),
+    Extension(Box<dyn ContextualUserFragment + Send>),
 }
 
 impl<S: WorldStateSection> ErasedWorldStateSection for S {
@@ -76,7 +82,7 @@ impl<S: WorldStateSection> ErasedWorldStateSection for S {
     fn render_diff(
         &self,
         previous: PreviousSectionState<'_, Value>,
-    ) -> Option<Box<dyn ContextualUserFragment>> {
+    ) -> Option<RenderedSectionFragment> {
         let typed_snapshot;
         let previous = match previous {
             PreviousSectionState::Known(previous) => {
@@ -98,7 +104,7 @@ impl<S: WorldStateSection> ErasedWorldStateSection for S {
             PreviousSectionState::Absent => PreviousSectionState::Absent,
             PreviousSectionState::Unknown => PreviousSectionState::Unknown,
         };
-        WorldStateSection::render_diff(self, previous)
+        WorldStateSection::render_diff(self, previous).map(RenderedSectionFragment::Core)
     }
 }
 
@@ -126,7 +132,7 @@ impl ErasedWorldStateSection for ExtensionWorldStateSection {
     fn render_diff(
         &self,
         previous: PreviousSectionState<'_, Value>,
-    ) -> Option<Box<dyn ContextualUserFragment>> {
+    ) -> Option<RenderedSectionFragment> {
         let previous = match previous {
             PreviousSectionState::Absent => PreviousWorldStateSection::Absent,
             PreviousSectionState::Unknown => PreviousWorldStateSection::Unknown,
@@ -134,27 +140,8 @@ impl ErasedWorldStateSection for ExtensionWorldStateSection {
         };
         self.0
             .render_diff(previous)
-            .map(|fragment| Box::new(WorldStateContextFragment(fragment)) as _)
-    }
-}
-
-struct WorldStateContextFragment(RenderedWorldStateFragment);
-
-impl ContextualUserFragment for WorldStateContextFragment {
-    fn role(&self) -> &'static str {
-        self.0.role()
-    }
-
-    fn markers(&self) -> (&'static str, &'static str) {
-        self.0.markers()
-    }
-
-    fn body(&self) -> String {
-        self.0.body().to_string()
-    }
-
-    fn type_markers() -> (&'static str, &'static str) {
-        ("", "")
+            .map(RenderedWorldStateFragment::into_context_fragment)
+            .map(RenderedSectionFragment::Extension)
     }
 }
 
@@ -322,9 +309,17 @@ impl WorldState {
         &self,
         mut previous: impl FnMut(&str, &dyn ErasedWorldStateSection) -> PreviousSectionState<'a, Value>,
     ) -> Vec<Box<dyn ContextualUserFragment>> {
+        let mut extension_context_budget = ExtensionContextBudget::default();
         self.sections
             .iter()
-            .filter_map(|(id, section)| section.render_diff(previous(id, section.as_ref())))
+            .filter_map(|(id, section)| {
+                match section.render_diff(previous(id, section.as_ref()))? {
+                    RenderedSectionFragment::Core(fragment) => Some(fragment),
+                    RenderedSectionFragment::Extension(fragment) => extension_context_budget
+                        .admit(fragment, None)
+                        .map(|fragment| Box::new(fragment) as Box<dyn ContextualUserFragment>),
+                }
+            })
             .collect()
     }
 }

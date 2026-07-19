@@ -34,6 +34,40 @@ use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::WarningEvent;
 use pretty_assertions::assert_eq;
 
+struct TestPromptFragment {
+    role: &'static str,
+    text: &'static str,
+}
+
+impl ContextualUserFragment for TestPromptFragment {
+    fn role(&self) -> &'static str {
+        self.role
+    }
+
+    fn markers(&self) -> (&'static str, &'static str) {
+        Self::type_markers()
+    }
+
+    fn body(&self) -> String {
+        self.text.to_string()
+    }
+
+    fn type_markers() -> (&'static str, &'static str) {
+        ("", "")
+    }
+}
+
+fn developer_fragment(text: &'static str) -> TestPromptFragment {
+    TestPromptFragment {
+        role: "developer",
+        text,
+    }
+}
+
+fn user_fragment(text: &'static str) -> TestPromptFragment {
+    TestPromptFragment { role: "user", text }
+}
+
 struct AllContributors;
 
 impl ContextContributor for AllContributors {
@@ -160,7 +194,7 @@ impl ContextContributor for NamedContextContributor {
         _thread_store: &'a ExtensionData,
     ) -> ExtensionFuture<'a, Vec<PromptFragment>> {
         Box::pin(std::future::ready(vec![PromptFragment::developer_policy(
-            self.0,
+            developer_fragment(self.0),
         )]))
     }
 }
@@ -174,7 +208,7 @@ impl ContextContributor for NamedTurnContextContributor {
     ) -> ExtensionFuture<'a, Vec<PromptFragment>> {
         Box::pin(std::future::ready(vec![PromptFragment::new(
             PromptSlot::ContextualUser,
-            self.0,
+            user_fragment(self.0),
         )]))
     }
 }
@@ -254,12 +288,15 @@ async fn contributors_preserve_registration_order() {
     }
 
     assert_eq!(
-        fragments,
+        fragments
+            .iter()
+            .map(|fragment| (fragment.slot(), fragment.render()))
+            .collect::<Vec<_>>(),
         vec![
-            PromptFragment::developer_policy("first"),
-            PromptFragment::developer_policy("second"),
-            PromptFragment::new(PromptSlot::ContextualUser, "turn-first"),
-            PromptFragment::new(PromptSlot::ContextualUser, "turn-second"),
+            (PromptSlot::DeveloperPolicy, "first".to_string()),
+            (PromptSlot::DeveloperPolicy, "second".to_string()),
+            (PromptSlot::ContextualUser, "turn-first".to_string()),
+            (PromptSlot::ContextualUser, "turn-second".to_string()),
         ]
     );
     assert_eq!(

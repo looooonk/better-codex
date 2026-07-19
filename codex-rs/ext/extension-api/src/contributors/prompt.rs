@@ -1,4 +1,4 @@
-// All this file should be replaced by the existing fragment implementation ofc
+use codex_context_fragments::ContextualUserFragment;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum PromptSlot {
@@ -8,34 +8,36 @@ pub enum PromptSlot {
     SeparateDeveloper,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PromptFragment {
     slot: PromptSlot,
-    text: String,
+    fragment: Box<dyn ContextualUserFragment + Send>,
 }
 
 impl PromptFragment {
     /// Creates a prompt fragment for the given slot.
-    pub fn new(slot: PromptSlot, text: impl Into<String>) -> Self {
+    ///
+    /// The fragment role must be `developer` for developer slots and `user`
+    /// for the contextual-user slot. The host validates this before injection.
+    pub fn new(slot: PromptSlot, fragment: impl ContextualUserFragment + Send + 'static) -> Self {
         Self {
             slot,
-            text: text.into(),
+            fragment: Box::new(fragment),
         }
     }
 
     /// Creates a developer-policy prompt fragment.
-    pub fn developer_policy(text: impl Into<String>) -> Self {
-        Self::new(PromptSlot::DeveloperPolicy, text)
+    pub fn developer_policy(fragment: impl ContextualUserFragment + Send + 'static) -> Self {
+        Self::new(PromptSlot::DeveloperPolicy, fragment)
     }
 
     /// Creates a developer-capabilities prompt fragment.
-    pub fn developer_capability(text: impl Into<String>) -> Self {
-        Self::new(PromptSlot::DeveloperCapabilities, text)
+    pub fn developer_capability(fragment: impl ContextualUserFragment + Send + 'static) -> Self {
+        Self::new(PromptSlot::DeveloperCapabilities, fragment)
     }
 
     /// Creates a separate top-level developer prompt fragment.
-    pub fn separate_developer(text: impl Into<String>) -> Self {
-        Self::new(PromptSlot::SeparateDeveloper, text)
+    pub fn separate_developer(fragment: impl ContextualUserFragment + Send + 'static) -> Self {
+        Self::new(PromptSlot::SeparateDeveloper, fragment)
     }
 
     /// Returns the target prompt slot.
@@ -43,8 +45,12 @@ impl PromptFragment {
         self.slot
     }
 
-    /// Returns the model-visible text.
-    pub fn text(&self) -> &str {
-        &self.text
+    /// Returns the rendered model-visible fragment.
+    pub fn render(&self) -> String {
+        self.fragment.render()
+    }
+
+    pub fn into_context_fragment(self) -> Box<dyn ContextualUserFragment + Send> {
+        self.fragment
     }
 }

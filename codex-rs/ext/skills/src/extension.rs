@@ -131,7 +131,7 @@ where
                 .get::<ModelInfo>()
                 .is_some_and(|model_info| model_info.include_skills_usage_instructions);
             available_skills_fragment(&catalog, include_usage)
-                .map(|fragment| PromptFragment::developer_capability(fragment.render()))
+                .map(PromptFragment::developer_capability)
                 .into_iter()
                 .collect()
         })

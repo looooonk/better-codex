@@ -1,4 +1,5 @@
 use crate::MEMORY_TOOL_DEVELOPER_INSTRUCTIONS_SUMMARY_TOKEN_LIMIT;
+use codex_extension_api::ContextualUserFragment;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::truncate_text;
@@ -13,6 +14,26 @@ static MEMORY_TOOL_DEVELOPER_INSTRUCTIONS_TEMPLATE: LazyLock<Template> = LazyLoc
     )
 });
 
+pub(crate) struct MemoryToolDeveloperInstructions(String);
+
+impl ContextualUserFragment for MemoryToolDeveloperInstructions {
+    fn role(&self) -> &'static str {
+        "developer"
+    }
+
+    fn markers(&self) -> (&'static str, &'static str) {
+        Self::type_markers()
+    }
+
+    fn body(&self) -> String {
+        self.0.clone()
+    }
+
+    fn type_markers() -> (&'static str, &'static str) {
+        ("", "")
+    }
+}
+
 fn parse_embedded_template(source: &'static str, template_name: &str) -> Template {
     match Template::parse(source) {
         Ok(template) => template,
@@ -26,7 +47,7 @@ fn parse_embedded_template(source: &'static str, template_name: &str) -> Templat
 /// [MEMORY_TOOL_DEVELOPER_INSTRUCTIONS_SUMMARY_TOKEN_LIMIT].
 pub(crate) async fn build_memory_tool_developer_instructions(
     codex_home: &AbsolutePathBuf,
-) -> Option<String> {
+) -> Option<MemoryToolDeveloperInstructions> {
     let base_path = codex_home.join("memories");
     let memory_summary_path = base_path.join("memory_summary.md");
     let memory_summary = fs::read_to_string(&memory_summary_path)
@@ -48,6 +69,7 @@ pub(crate) async fn build_memory_tool_developer_instructions(
             ("memory_summary", memory_summary.as_str()),
         ])
         .ok()
+        .map(MemoryToolDeveloperInstructions)
 }
 
 #[cfg(test)]

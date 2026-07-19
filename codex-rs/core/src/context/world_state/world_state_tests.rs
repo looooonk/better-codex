@@ -53,6 +53,26 @@ impl ContextualUserFragment for TestFragment {
     }
 }
 
+struct ExtensionTestFragment(&'static str);
+
+impl ContextualUserFragment for ExtensionTestFragment {
+    fn role(&self) -> &'static str {
+        "developer"
+    }
+
+    fn markers(&self) -> (&'static str, &'static str) {
+        Self::type_markers()
+    }
+
+    fn type_markers() -> (&'static str, &'static str) {
+        ("<extension_test>", "</extension_test>")
+    }
+
+    fn body(&self) -> String {
+        self.0.to_string()
+    }
+}
+
 struct DuplicateTestSection;
 
 impl WorldStateSection for DuplicateTestSection {
@@ -120,11 +140,9 @@ fn extension_owned_section_uses_its_snapshot_and_renderer() {
             PreviousWorldStateSection::Known(previous)
                 if previous == &json!({"value": "before"}) =>
             {
-                Some(RenderedWorldStateFragment::new(
-                    "developer",
-                    ("<extension_test>", "</extension_test>"),
+                Some(RenderedWorldStateFragment::new(ExtensionTestFragment(
                     "after",
-                ))
+                )))
             }
             PreviousWorldStateSection::Absent
             | PreviousWorldStateSection::Unknown
@@ -158,9 +176,7 @@ fn missing_retained_fragment_is_rendered_again() {
             json!({"body": "current catalog"}),
             |previous| match previous {
                 PreviousWorldStateSection::Absent => Some(RenderedWorldStateFragment::new(
-                    "developer",
-                    ("<extension_test>", "</extension_test>"),
-                    "current catalog",
+                    ExtensionTestFragment("current catalog"),
                 )),
                 PreviousWorldStateSection::Unknown | PreviousWorldStateSection::Known(_) => None,
             },

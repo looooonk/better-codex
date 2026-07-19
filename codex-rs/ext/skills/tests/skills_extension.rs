@@ -466,7 +466,7 @@ async fn default_context_truncates_catalog_descriptions() -> TestResult {
         .contribute_thread_context(&session_store, &thread_store)
         .await;
     assert_eq!(1, fragments.len());
-    let rendered = fragments[0].text();
+    let rendered = fragments[0].render();
     assert!(rendered.contains(&("x".repeat(1_021) + "...")));
     assert!(!rendered.contains(&"x".repeat(1_024)));
     assert!(!rendered.contains(&description));

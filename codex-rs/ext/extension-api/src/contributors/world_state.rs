@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use codex_context_fragments::ContextualUserFragment;
 use codex_protocol::ThreadId;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::protocol::TurnEnvironmentSelection;
@@ -26,37 +27,24 @@ pub enum PreviousWorldStateSection<'a> {
     Known(&'a Value),
 }
 
-/// Plain model-visible data rendered by an extension-owned World State section.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Typed model-visible data rendered by an extension-owned World State section.
 pub struct RenderedWorldStateFragment {
-    role: &'static str,
-    markers: (&'static str, &'static str),
-    body: String,
+    fragment: Box<dyn ContextualUserFragment + Send>,
 }
 
 impl RenderedWorldStateFragment {
-    pub fn new(
-        role: &'static str,
-        markers: (&'static str, &'static str),
-        body: impl Into<String>,
-    ) -> Self {
+    pub fn new(fragment: impl ContextualUserFragment + Send + 'static) -> Self {
         Self {
-            role,
-            markers,
-            body: body.into(),
+            fragment: Box::new(fragment),
         }
     }
 
-    pub fn role(&self) -> &'static str {
-        self.role
+    pub fn into_context_fragment(self) -> Box<dyn ContextualUserFragment + Send> {
+        self.fragment
     }
 
-    pub fn markers(&self) -> (&'static str, &'static str) {
-        self.markers
-    }
-
-    pub fn body(&self) -> &str {
-        &self.body
+    pub fn body(&self) -> String {
+        self.fragment.body()
     }
 }
 

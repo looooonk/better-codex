@@ -7,6 +7,7 @@ use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
 use serde_json::json;
 
 use crate::catalog::SkillCatalog;
+use crate::fragments::SkillsUpdate;
 use crate::render::available_skills_fragment;
 
 pub(crate) const SKILLS_WORLD_STATE_ID: &str = "skills";
@@ -52,11 +53,7 @@ pub(crate) fn executor_skills_world_state_section(
                 None if !include_instructions => HIDDEN_EXECUTOR_SKILLS_BODY,
                 None => NO_EXECUTOR_SKILLS_BODY,
             };
-            Some(RenderedWorldStateFragment::new(
-                "developer",
-                (SKILLS_INSTRUCTIONS_OPEN_TAG, SKILLS_INSTRUCTIONS_CLOSE_TAG),
-                body,
-            ))
+            Some(RenderedWorldStateFragment::new(SkillsUpdate::new(body)))
         })
         .with_legacy_matcher(|role, text| {
             role == "developer"

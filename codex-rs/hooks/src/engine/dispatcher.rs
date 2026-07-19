@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use futures::StreamExt;
-use futures::stream::FuturesUnordered;
+use futures::stream;
 
 use codex_protocol::protocol::HookCompletedEvent;
 use codex_protocol::protocol::HookEventName;
@@ -16,6 +16,8 @@ use super::ConfiguredHandler;
 use super::command_runner::CommandRunResult;
 use super::command_runner::run_command;
 use crate::events::common::matches_matcher;
+
+const MAX_CONCURRENT_HOOK_COMMANDS: usize = 16;
 
 #[derive(Debug)]
 pub(crate) struct ParsedHandler<T> {
@@ -94,15 +96,17 @@ pub(crate) async fn execute_handlers<T>(
     turn_id: Option<String>,
     parse: fn(&ConfiguredHandler, CommandRunResult, Option<String>) -> ParsedHandler<T>,
 ) -> Vec<ParsedHandler<T>> {
-    let mut pending = FuturesUnordered::new();
-    for (configured_order, handler) in handlers.into_iter().enumerate() {
-        let input_json = input_json.clone();
-        let turn_id = turn_id.clone();
-        pending.push(async move {
-            let result = run_command(shell, &handler, configured_order, &input_json, cwd).await;
-            (configured_order, parse(&handler, result, turn_id))
-        });
-    }
+    let mut pending = stream::iter(handlers.into_iter().enumerate().map(
+        |(configured_order, handler)| {
+            let input_json = input_json.clone();
+            let turn_id = turn_id.clone();
+            async move {
+                let result = run_command(shell, &handler, configured_order, &input_json, cwd).await;
+                (configured_order, parse(&handler, result, turn_id))
+            }
+        },
+    ))
+    .buffer_unordered(MAX_CONCURRENT_HOOK_COMMANDS);
 
     let mut completed = Vec::new();
     let mut completion_order = 0;
@@ -210,13 +214,25 @@ pub(crate) fn hook_source_label(source: codex_protocol::protocol::HookSource) ->
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use codex_protocol::protocol::HookCompletedEvent;
     use codex_protocol::protocol::HookEventName;
     use codex_protocol::protocol::HookSource;
     use codex_utils_absolute_path::test_support::PathBufExt;
     use codex_utils_absolute_path::test_support::test_path_buf;
     use pretty_assertions::assert_eq;
+    use tempfile::tempdir;
+    use tokio::time::sleep;
+    use tokio::time::timeout;
 
+    use super::CommandRunResult;
+    use super::CommandShell;
     use super::ConfiguredHandler;
+    use super::MAX_CONCURRENT_HOOK_COMMANDS;
+    use super::ParsedHandler;
+    use super::completed_summary;
+    use super::execute_handlers;
     use super::select_handlers;
     use super::select_handlers_for_matcher_inputs;
 
@@ -237,6 +253,96 @@ mod tests {
             display_order,
             env: std::collections::HashMap::new(),
         }
+    }
+
+    fn parse_test_handler(
+        handler: &ConfiguredHandler,
+        result: CommandRunResult,
+        turn_id: Option<String>,
+    ) -> ParsedHandler<()> {
+        ParsedHandler {
+            completed: HookCompletedEvent {
+                turn_id,
+                run: completed_summary(
+                    handler,
+                    &result,
+                    codex_protocol::protocol::HookRunStatus::Completed,
+                    Vec::new(),
+                ),
+            },
+            data: (),
+            completion_order: 0,
+        }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn execute_handlers_limits_concurrent_commands() {
+        let temp = tempdir().expect("create temp dir");
+        let started_dir = temp.path().join("started");
+        let gate = temp.path().join("gate");
+        std::fs::create_dir(&started_dir).expect("create started dir");
+
+        let handlers = (0..=MAX_CONCURRENT_HOOK_COMMANDS)
+            .map(|index| {
+                let mut handler = make_handler(
+                    HookEventName::Stop,
+                    /*matcher*/ None,
+                    "touch \"$STARTED_DIR/$HOOK_INDEX\"; while [ ! -e \"$GATE\" ]; do sleep 0.01; done",
+                    index as i64,
+                );
+                handler.env.extend([
+                    (
+                        "STARTED_DIR".to_string(),
+                        started_dir.display().to_string(),
+                    ),
+                    ("GATE".to_string(), gate.display().to_string()),
+                    ("HOOK_INDEX".to_string(), index.to_string()),
+                ]);
+                handler
+            })
+            .collect();
+        let shell = CommandShell {
+            program: "/bin/sh".to_string(),
+            args: vec!["-c".to_string()],
+        };
+        let cwd = temp.path().to_path_buf();
+        let task = tokio::spawn(async move {
+            execute_handlers(
+                &shell,
+                handlers,
+                String::new(),
+                &cwd,
+                /*turn_id*/ None,
+                parse_test_handler,
+            )
+            .await
+        });
+
+        timeout(Duration::from_secs(5), async {
+            loop {
+                let started = std::fs::read_dir(&started_dir)
+                    .expect("read started dir")
+                    .count();
+                if started == MAX_CONCURRENT_HOOK_COMMANDS {
+                    break;
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("concurrent hooks should start");
+        sleep(Duration::from_millis(100)).await;
+        assert_eq!(
+            std::fs::read_dir(&started_dir)
+                .expect("read started dir")
+                .count(),
+            MAX_CONCURRENT_HOOK_COMMANDS
+        );
+
+        std::fs::write(&gate, "open").expect("open hook gate");
+        let results = task.await.expect("join hook task");
+        assert_eq!(results.len(), MAX_CONCURRENT_HOOK_COMMANDS + 1);
     }
 
     #[test]

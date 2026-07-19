@@ -400,7 +400,7 @@ is absent as an ordinary user turn or handled as contextual state.
 
 ### 24. [P0][Architecture / Model context] Extension APIs bypass the required contextual-fragment boundary
 
-**Status:** Assigned
+**Status:** Fixed
 
 The extension `PromptFragment` and `WorldState` APIs accept arbitrary `String` content directly
 (`codex-rs/ext/extension-api/src/contributors/prompt.rs:1-49` and
@@ -418,7 +418,7 @@ tokens. The entire body reaches model history without a shared cap at the extens
 
 ### 25. [P1][Availability / Hooks] Hook discovery permits unbounded process fan-out
 
-**Status:** Assigned
+**Status:** Fixed
 
 Hook discovery accepts an arbitrary number of matching commands and the dispatcher starts them all
 without a concurrency ceiling (`codex-rs/hooks/src/engine/discovery.rs:63-73,441-461` and

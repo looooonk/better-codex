@@ -188,7 +188,7 @@ async fn prompt_contribution_uses_memory_summary_when_enabled() {
     assert_eq!(fragments[0].slot(), PromptSlot::DeveloperPolicy);
     assert!(
         fragments[0]
-            .text()
+            .render()
             .contains("Remember repository-specific implementation preferences.")
     );
 }
