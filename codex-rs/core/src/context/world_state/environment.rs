@@ -332,8 +332,7 @@ impl EnvironmentSnapshot {
             && self
                 .shell
                 .as_ref()
-                .zip(other.shell.as_ref())
-                .is_none_or(|(current, previous)| current == previous)
+                .is_none_or(|current| other.shell.as_ref() == Some(current))
     }
 }
 

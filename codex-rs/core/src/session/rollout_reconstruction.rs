@@ -237,7 +237,11 @@ impl Session {
                         if matches!(
                             active_segment.reference_context_item,
                             TurnReferenceContextItem::NeverSet
-                        ) {
+                        ) || (matches!(
+                            active_segment.reference_context_item,
+                            TurnReferenceContextItem::Cleared
+                        ) && active_segment.base_replacement_history.is_some())
+                        {
                             active_segment.reference_context_item =
                                 TurnReferenceContextItem::Latest(Box::new(ctx.clone()));
                         }

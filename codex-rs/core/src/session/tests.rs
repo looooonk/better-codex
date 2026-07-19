@@ -2805,9 +2805,12 @@ async fn start_new_context_window_assigns_and_persists_item_ids() {
         attach_thread_persistence(Arc::get_mut(&mut session).expect("unique session")).await;
     let world_state =
         Arc::new(build_world_state_from_turn_context(session.as_ref(), &turn_context).await);
+    let step_context = session
+        .capture_step_context(Arc::clone(&turn_context))
+        .await;
 
     session
-        .start_new_context_window(turn_context.as_ref(), world_state)
+        .start_new_context_window(&step_context, world_state, Vec::new())
         .await;
 
     let live_history = session.clone_history().await;

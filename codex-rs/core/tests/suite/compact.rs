@@ -408,8 +408,8 @@ fn assert_pre_sampling_switch_compaction_requests(
         "pre-sampling compact request should include summarization prompt"
     );
     assert!(
-        !compact_body.contains("<model_switch>"),
-        "pre-sampling compact request should strip trailing model-switch update item"
+        compact_body.contains("<model_switch>"),
+        "pre-sampling compact request should include the incoming model-switch update item"
     );
     let follow_up_body = follow_up.to_string();
     assert!(
@@ -2192,7 +2192,7 @@ async fn pre_sampling_compact_runs_on_switch_to_smaller_context_model() {
     insta::assert_snapshot!(
         "pre_sampling_model_switch_compaction_shapes",
         format_labeled_requests_snapshot(
-            "Pre-sampling compaction on model switch to a smaller context window: current behavior compacts using prior-turn history only (incoming user message excluded), and the follow-up request carries compacted history plus the new user message.",
+            "Pre-sampling compaction on model switch to a smaller context window: the compact request includes the incoming user message and model-switch update, and the follow-up preserves both after the compacted history.",
             &[
                 ("Initial Request (Previous Model)", &requests[0]),
                 ("Pre-sampling Compaction Request", &requests[1]),
@@ -4273,8 +4273,8 @@ async fn auto_compact_body_after_prefix_counts_growth_after_compaction() {
             first_turn,
             first_auto_compact_turn,
             second_turn,
-            third_turn,
             second_auto_compact_turn,
+            third_turn,
             fourth_turn,
         ],
     )
@@ -4315,8 +4315,13 @@ async fn auto_compact_body_after_prefix_counts_growth_after_compaction() {
     let requests = request_log.requests();
     assert_eq!(
         requests.len(),
-        4,
-        "the first server-observed input in the new window should become the prefill baseline"
+        5,
+        "the incoming third turn should compact once it pushes post-compaction growth over the body budget"
+    );
+    let compact_body = requests[3].body_json().to_string();
+    assert!(
+        body_contains_text(&compact_body, SUMMARIZATION_PROMPT),
+        "incoming post-compaction growth should trigger a second body-after-prefix compaction"
     );
 
     test.submit_turn("AFTER_GROWTH_TRIGGER")
@@ -4327,12 +4332,7 @@ async fn auto_compact_body_after_prefix_counts_growth_after_compaction() {
     assert_eq!(
         requests.len(),
         6,
-        "fourth turn should compact because later post-compaction growth counted against the body budget"
-    );
-    let compact_body = requests[4].body_json().to_string();
-    assert!(
-        body_contains_text(&compact_body, SUMMARIZATION_PROMPT),
-        "post-compaction growth should trigger a second body-after-prefix compaction"
+        "the first server-observed input after the second compaction should establish the new prefill baseline"
     );
 }
 
@@ -4354,15 +4354,8 @@ async fn auto_compact_body_after_prefix_still_caps_at_context_window() {
         ev_assistant_message("m3", AUTO_SUMMARY_TEXT),
         ev_completed_with_tokens("r3", /*total_tokens*/ 20),
     ]);
-    let third_turn = sse(vec![
-        ev_assistant_message("m4", FINAL_REPLY),
-        ev_completed_with_usage("r4", /*input_tokens*/ 80, /*output_tokens*/ 5),
-    ]);
-    let request_log = mount_sse_sequence(
-        &server,
-        vec![first_turn, second_turn, auto_compact_turn, third_turn],
-    )
-    .await;
+    let request_log =
+        mount_sse_sequence(&server, vec![first_turn, auto_compact_turn, second_turn]).await;
 
     let model_provider = non_openai_model_provider(&server);
     let test = test_codex()
@@ -4378,17 +4371,17 @@ async fn auto_compact_body_after_prefix_still_caps_at_context_window() {
         .await
         .expect("build codex");
 
-    for user in ["CONTEXT_CAP_ONE", "CONTEXT_CAP_TWO", "CONTEXT_CAP_THREE"] {
+    for user in ["CONTEXT_CAP_ONE", "CONTEXT_CAP_TWO"] {
         test.submit_turn(user).await.expect("submit turn");
     }
 
     let requests = request_log.requests();
     assert_eq!(
         requests.len(),
-        4,
-        "third turn should compact before sampling because total context hit the usable window"
+        3,
+        "second turn should compact before sampling because its incoming prompt hits the usable window"
     );
-    let compact_body = requests[2].body_json().to_string();
+    let compact_body = requests[1].body_json().to_string();
     assert!(
         body_contains_text(&compact_body, SUMMARIZATION_PROMPT),
         "body-after-prefix mode should still clamp the total threshold to the usable context window"
@@ -4403,22 +4396,16 @@ async fn auto_compact_counts_encrypted_reasoning_before_last_user() {
 
     let first_user = "COUNT_PRE_LAST_REASONING";
     let second_user = "TRIGGER_COMPACT_AT_LIMIT";
-    let third_user = "AFTER_REMOTE_COMPACT";
 
     let pre_last_reasoning_content = "a".repeat(2_400);
-    let post_last_reasoning_content = "b".repeat(4_000);
 
     let first_turn = sse(vec![
         ev_reasoning_item("pre-reasoning", &["pre"], &[&pre_last_reasoning_content]),
         ev_completed_with_tokens("r1", /*total_tokens*/ 10),
     ]);
     let second_turn = sse(vec![
-        ev_reasoning_item("post-reasoning", &["post"], &[&post_last_reasoning_content]),
+        ev_assistant_message("m2", FINAL_REPLY),
         ev_completed_with_tokens("r2", /*total_tokens*/ 80),
-    ]);
-    let third_turn = sse(vec![
-        ev_assistant_message("m4", FINAL_REPLY),
-        ev_completed_with_tokens("r4", /*total_tokens*/ 1),
     ]);
 
     let request_log = mount_sse_sequence(
@@ -4426,10 +4413,8 @@ async fn auto_compact_counts_encrypted_reasoning_before_last_user() {
         vec![
             // Turn 1: reasoning before last user (should count).
             first_turn,
-            // Turn 2: reasoning after last user (should be ignored for compaction).
+            // Turn 2: sampled after the first turn's reasoning triggers compaction.
             second_turn,
-            // Turn 3: next user turn after remote compaction.
-            third_turn,
         ],
     )
     .await;
@@ -4467,10 +4452,7 @@ async fn auto_compact_counts_encrypted_reasoning_before_last_user() {
         .expect("build codex")
         .codex;
 
-    for (idx, user) in [first_user, second_user, third_user]
-        .into_iter()
-        .enumerate()
-    {
+    for (idx, user) in [first_user, second_user].into_iter().enumerate() {
         codex
             .submit(Op::UserInput {
                 items: vec![UserInput::Text {
@@ -4486,7 +4468,7 @@ async fn auto_compact_counts_encrypted_reasoning_before_last_user() {
             .unwrap();
         wait_for_event(&codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
-        if idx < 2 {
+        if idx == 0 {
             assert!(
                 compact_mock.requests().is_empty(),
                 "remote compaction should not run before the next user turn"
@@ -4498,7 +4480,7 @@ async fn auto_compact_counts_encrypted_reasoning_before_last_user() {
     assert_eq!(
         compact_requests.len(),
         1,
-        "remote compaction should run once after the second turn"
+        "remote compaction should run once before the second turn is sampled"
     );
     assert_eq!(
         compact_requests[0].path(),
@@ -4509,23 +4491,17 @@ async fn auto_compact_counts_encrypted_reasoning_before_last_user() {
     let requests = request_log.requests();
     assert_eq!(
         requests.len(),
-        3,
-        "conversation should include three user turns"
+        2,
+        "conversation should include both user turns"
     );
     let second_request_body = requests[1].body_json().to_string();
     assert!(
-        !second_request_body.contains("REMOTE_COMPACT_SUMMARY"),
-        "second turn should not include compacted history"
-    );
-    let third_request_body = requests[2].body_json().to_string();
-    assert!(
-        third_request_body.contains("REMOTE_COMPACT_SUMMARY")
-            || third_request_body.contains(FINAL_REPLY),
-        "third turn should include compacted history"
+        second_request_body.contains("REMOTE_COMPACT_SUMMARY"),
+        "second turn should include compacted history"
     );
     assert!(
-        third_request_body.contains("ENCRYPTED_COMPACTION_SUMMARY"),
-        "third turn should include compaction summary item"
+        second_request_body.contains("ENCRYPTED_COMPACTION_SUMMARY"),
+        "second turn should include the encrypted compaction summary item"
     );
 }
 
@@ -4585,7 +4561,7 @@ async fn auto_compact_runs_when_reasoning_header_clears_between_turns() {
         .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
         .with_config(|config| {
             set_test_compact_prompt(config);
-            config.model_auto_compact_token_limit = Some(300);
+            config.model_auto_compact_token_limit = Some(800);
             let _ = config.features.disable(Feature::RemoteCompactionV2);
         })
         .build(&server)
@@ -4619,7 +4595,6 @@ async fn auto_compact_runs_when_reasoning_header_clears_between_turns() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-// TODO(ccunningham): Update once pre-turn compaction includes incoming user input.
 async fn snapshot_request_shape_pre_turn_compaction_including_incoming_user_message() {
     skip_if_no_network!();
 
@@ -4711,7 +4686,7 @@ async fn snapshot_request_shape_pre_turn_compaction_including_incoming_user_mess
     insta::assert_snapshot!(
         "pre_turn_compaction_including_incoming_shapes",
         format_labeled_requests_snapshot(
-            "Pre-turn auto-compaction with a context override emits the context diff in the compact request while the incoming user message is still excluded.",
+            "Pre-turn auto-compaction includes the context diff and incoming user message, then restores lossless turn input after the summary.",
             &[
                 ("Local Compaction Request", &requests[2]),
                 ("Local Post-Compaction History Layout", &requests[3]),
@@ -4720,29 +4695,120 @@ async fn snapshot_request_shape_pre_turn_compaction_including_incoming_user_mess
     );
     let compact_request_user_texts = requests[2].message_input_texts("user");
     assert!(
-        !compact_request_user_texts
+        compact_request_user_texts
             .iter()
             .any(|text| text == "USER_THREE"),
-        "current behavior excludes incoming user message from pre-turn compaction input"
+        "pre-turn compaction input should include incoming user text"
     );
-    let follow_up_user_texts = requests[3].message_input_texts("user");
     assert!(
-        follow_up_user_texts.iter().any(|text| text == "USER_THREE"),
-        "expected post-compaction follow-up request to keep incoming user text"
-    );
-    let follow_up_user_images = requests[3].message_input_image_urls("user");
-    assert!(
-        follow_up_user_images
+        requests[2]
+            .message_input_image_urls("user")
             .iter()
             .any(|url| url == image_url.as_str()),
-        "expected post-compaction follow-up request to keep incoming user image content"
+        "pre-turn compaction input should include incoming user image content"
+    );
+    let follow_up_user_texts = requests[3].message_input_texts("user");
+    assert_eq!(
+        follow_up_user_texts
+            .iter()
+            .filter(|text| text.as_str() == "USER_THREE")
+            .count(),
+        1,
+        "post-compaction follow-up should keep incoming user text exactly once"
+    );
+    let follow_up_user_images = requests[3].message_input_image_urls("user");
+    assert_eq!(
+        follow_up_user_images
+            .iter()
+            .filter(|url| url.as_str() == image_url.as_str())
+            .count(),
+        1,
+        "post-compaction follow-up should keep incoming user image content exactly once"
     );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-// TODO(ccunningham): Update once pre-turn compaction context-overflow handling includes incoming
-// user input and emits richer oversized-input messaging.
-async fn snapshot_request_shape_pre_turn_compaction_strips_incoming_model_switch() {
+async fn incoming_prompt_can_trigger_pre_turn_compaction() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let request_log = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_assistant_message("m1", FIRST_REPLY),
+                ev_completed_with_tokens("r1", /*total_tokens*/ 150),
+            ]),
+            sse(vec![
+                ev_assistant_message("m2", "INCOMING_PROMPT_SUMMARY"),
+                ev_completed_with_tokens("r2", /*total_tokens*/ 100),
+            ]),
+            sse(vec![
+                ev_assistant_message("m3", FINAL_REPLY),
+                ev_completed_with_tokens("r3", /*total_tokens*/ 80),
+            ]),
+        ],
+    )
+    .await;
+
+    let model_provider = non_openai_model_provider(&server);
+    let test = test_codex()
+        .with_config(move |config| {
+            config.model_provider = model_provider;
+            set_test_compact_prompt(config);
+            config.model_auto_compact_token_limit = Some(200);
+        })
+        .build_with_auto_env(&server)
+        .await?;
+
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "INITIAL_USER".to_string(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await?;
+    wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    let incoming_prompt = "INCOMING_PROMPT ".repeat(40);
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: incoming_prompt.clone(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await?;
+    wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    let requests = request_log.requests();
+    assert_eq!(
+        requests.len(),
+        3,
+        "expected turn, compaction, and follow-up"
+    );
+    assert!(
+        requests[1]
+            .message_input_texts("user")
+            .iter()
+            .any(|text| text == &incoming_prompt),
+        "the incoming prompt should push estimated usage over the compaction threshold"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn snapshot_request_shape_pre_turn_compaction_includes_incoming_model_switch() {
     skip_if_no_network!();
 
     let server = start_mock_server().await;
@@ -4821,20 +4887,33 @@ async fn snapshot_request_shape_pre_turn_compaction_strips_incoming_model_switch
         "pre-turn compaction request should include summarization prompt"
     );
     assert!(
-        !compact_body.contains("<model_switch>"),
-        "pre-turn compaction request should strip incoming model-switch update item"
+        compact_body.contains("AFTER_SWITCH_USER"),
+        "pre-turn compaction request should include incoming user input"
+    );
+    assert!(
+        compact_body.contains("<model_switch>"),
+        "pre-turn compaction request should include incoming model-switch update item"
     );
 
     let follow_up_body = requests[2].body_json().to_string();
+    assert_eq!(
+        requests[2]
+            .message_input_texts("user")
+            .iter()
+            .filter(|text| text.as_str() == "AFTER_SWITCH_USER")
+            .count(),
+        1,
+        "post-compaction follow-up should preserve incoming user input exactly once"
+    );
     assert!(
         follow_up_body.contains("<model_switch>"),
         "post-compaction follow-up should include model-switch update item"
     );
 
     insta::assert_snapshot!(
-        "pre_turn_compaction_strips_incoming_model_switch_shapes",
+        "pre_turn_compaction_includes_incoming_model_switch_shapes",
         format_labeled_requests_snapshot(
-            "Pre-turn compaction during model switch (without pre-sampling model-switch compaction): current behavior strips incoming <model_switch> from the compact request and restores it in the post-compaction follow-up request.",
+            "Pre-turn compaction during model switch includes the incoming model-switch context and user input, then restores both after the summary.",
             &[
                 ("Initial Request (Previous Model)", &requests[0]),
                 ("Local Compaction Request", &requests[1]),
@@ -4856,7 +4935,7 @@ async fn snapshot_request_shape_pre_turn_compaction_context_window_exceeded() {
     ]);
     let mut responses = vec![first_turn];
     responses.extend(
-        (0..5).map(|_| {
+        (0..6).map(|_| {
             sse_failed(
                 "compact-failed",
                 "context_length_exceeded",
@@ -4923,12 +5002,17 @@ async fn snapshot_request_shape_pre_turn_compaction_context_window_exceeded() {
     insta::assert_snapshot!(
         "pre_turn_compaction_context_window_exceeded_shapes",
         format_labeled_requests_snapshot(
-            "Pre-turn auto-compaction context-window failure: compaction request excludes the incoming user message and the turn errors.",
-            &[(
-                "Local Compaction Request (Incoming User Excluded)",
-                &requests[1]
-            ),]
+            "Pre-turn auto-compaction context-window failure includes the incoming user message in the failed compaction request.",
+            &[("Local Compaction Request", &requests[1]),]
         )
+    );
+
+    assert!(
+        requests[1]
+            .message_input_texts("user")
+            .iter()
+            .any(|text| text == "USER_TWO"),
+        "failed pre-turn compaction should still include incoming user input"
     );
 
     assert!(

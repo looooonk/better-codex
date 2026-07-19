@@ -193,7 +193,7 @@ fn persisted_snapshot_uses_model_visible_path_and_context_values() -> Result<()>
 }
 
 #[test]
-fn single_environment_diff_ignores_unknown_shell() -> Result<()> {
+fn single_environment_diff_renders_newly_known_shell() -> Result<()> {
     let previous = EnvironmentsState {
         environments: [(
             LOCAL_ENVIRONMENT_ID.to_string(),
@@ -211,6 +211,47 @@ fn single_environment_diff_ignores_unknown_shell() -> Result<()> {
         environments: [(
             LOCAL_ENVIRONMENT_ID.to_string(),
             available("file:///repo", "zsh")?,
+        )]
+        .into_iter()
+        .collect(),
+        ..Default::default()
+    };
+    let previous = WorldStateSection::snapshot(&previous);
+
+    assert_eq!(
+        Some(user_message(
+            r#"<environment_context>
+  <cwd>/repo</cwd>
+  <shell>zsh</shell>
+</environment_context>"#,
+        )),
+        render_fragment(WorldStateSection::render_diff(
+            &current,
+            PreviousSectionState::Known(&previous),
+        ))
+    );
+    Ok(())
+}
+
+#[test]
+fn single_environment_diff_preserves_known_shell_when_current_is_unknown() -> Result<()> {
+    let previous = EnvironmentsState {
+        environments: [(
+            LOCAL_ENVIRONMENT_ID.to_string(),
+            available("file:///repo", "zsh")?,
+        )]
+        .into_iter()
+        .collect(),
+        ..Default::default()
+    };
+    let current = EnvironmentsState {
+        environments: [(
+            LOCAL_ENVIRONMENT_ID.to_string(),
+            EnvironmentState {
+                cwd: PathUri::parse("file:///repo")?,
+                status: EnvironmentStatus::Available,
+                shell: None,
+            },
         )]
         .into_iter()
         .collect(),

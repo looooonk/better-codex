@@ -15,6 +15,7 @@ use crate::responses_metadata::CompactionTurnMetadata;
 #[cfg(test)]
 use crate::session::PreviousTurnSettings;
 use crate::session::session::Session;
+use crate::session::step_context::StepContext;
 use crate::session::turn::get_last_assistant_message_from_turn;
 use crate::session::turn_context::TurnContext;
 use crate::util::backoff;
@@ -36,6 +37,7 @@ use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::CompactedItem;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::TurnContextItem;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
@@ -54,17 +56,38 @@ const COMPACT_USER_MESSAGE_MAX_TOKENS: usize = 20_000;
 
 /// Controls whether compaction replacement history must include initial context.
 ///
-/// Pre-turn/manual compaction variants use `DoNotInject`: they replace history with a summary and
-/// clear `reference_context_item`, so the next regular turn will fully reinject initial context
-/// after compaction.
+/// Manual compaction uses `DoNotInject`: it replaces history with a summary and clears
+/// `reference_context_item`, so the next regular turn will fully reinject initial context.
+/// Pre-turn compaction uses `AfterSummary` to reinstall the already prepared current-turn context
+/// and lossless user input after the compacted history.
 ///
 /// Mid-turn compaction must use `BeforeLastUserMessage` because the model is trained to see the
 /// compaction summary as the last item in history after mid-turn compaction; we therefore inject
 /// initial context into the replacement history just above the last real user message.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum InitialContextInjection {
     BeforeLastUserMessage(Arc<WorldState>),
+    AfterSummary {
+        step_context: Arc<StepContext>,
+        world_state: Arc<WorldState>,
+        turn_items: Vec<ResponseItem>,
+    },
     DoNotInject,
+}
+
+impl InitialContextInjection {
+    pub(crate) fn reference_context_item(
+        &self,
+        compaction_turn_context: &TurnContext,
+    ) -> Option<TurnContextItem> {
+        match self {
+            Self::BeforeLastUserMessage(_) => Some(compaction_turn_context.to_turn_context_item()),
+            Self::AfterSummary { step_context, .. } => {
+                Some(step_context.turn.to_turn_context_item())
+            }
+            Self::DoNotInject => None,
+        }
+    }
 }
 
 pub(crate) async fn build_compaction_initial_context(
@@ -80,7 +103,48 @@ pub(crate) async fn build_compaction_initial_context(
                 .await;
             (items, Some(Arc::clone(world_state)))
         }
+        InitialContextInjection::AfterSummary {
+            step_context,
+            world_state,
+            ..
+        } => {
+            let items = sess
+                .build_reset_initial_context_for_step(step_context, world_state.as_ref())
+                .await;
+            (items, Some(Arc::clone(world_state)))
+        }
         InitialContextInjection::DoNotInject => (Vec::new(), None),
+    }
+}
+
+pub(crate) fn place_compaction_context(
+    mut compacted_history: Vec<ResponseItem>,
+    initial_context: Vec<ResponseItem>,
+    turn_context: &TurnContext,
+    initial_context_injection: &InitialContextInjection,
+) -> Vec<ResponseItem> {
+    match initial_context_injection {
+        InitialContextInjection::BeforeLastUserMessage(_) => {
+            insert_initial_context_before_last_real_user_or_summary(
+                compacted_history,
+                initial_context,
+            )
+        }
+        InitialContextInjection::AfterSummary { turn_items, .. } => {
+            compacted_history.retain(|item| {
+                matches!(
+                    item,
+                    ResponseItem::Compaction { .. } | ResponseItem::ContextCompaction { .. }
+                ) || matches!(
+                    crate::event_mapping::parse_turn_item(item),
+                    Some(TurnItem::UserMessage(user)) if is_summary_message(&user.message())
+                ) || item.turn_id() != Some(turn_context.sub_id.as_str())
+            });
+            compacted_history.extend(initial_context);
+            compacted_history.extend(turn_items.iter().cloned());
+            compacted_history
+        }
+        InitialContextInjection::DoNotInject => compacted_history,
     }
 }
 
@@ -339,16 +403,14 @@ async fn run_compact_task_inner_impl(
         &initial_context_injection,
     )
     .await;
-    if !initial_context.is_empty() {
-        new_history =
-            insert_initial_context_before_last_real_user_or_summary(new_history, initial_context);
-    }
-    let reference_context_item = match initial_context_injection {
-        InitialContextInjection::DoNotInject => None,
-        InitialContextInjection::BeforeLastUserMessage(_) => {
-            Some(turn_context.to_turn_context_item())
-        }
-    };
+    new_history = place_compaction_context(
+        new_history,
+        initial_context,
+        turn_context.as_ref(),
+        &initial_context_injection,
+    );
+    let reference_context_item =
+        initial_context_injection.reference_context_item(turn_context.as_ref());
     let compacted_item = CompactedItem {
         message: summary_text.clone(),
         replacement_history: Some(new_history.clone()),

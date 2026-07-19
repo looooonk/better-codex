@@ -1,8 +1,8 @@
 ---
 source: core/tests/suite/compact_remote.rs
-expression: "format_labeled_requests_snapshot(\"Remote pre-turn auto-compaction with a context override emits the context diff in the compact request while excluding the incoming user message.\",\n&[(\"Remote Compaction Request\", &compact_request),\n(\"Remote Post-Compaction History Layout\", &requests[2]),])"
+expression: "format_labeled_requests_snapshot(\"Remote pre-turn auto-compaction includes the context diff and incoming user message, then restores lossless turn input after the summary.\",\n&[(\"Remote Compaction Request\", &compact_request),\n(\"Remote Post-Compaction History Layout\", &requests[2]),])"
 ---
-Scenario: Remote pre-turn auto-compaction with a context override emits the context diff in the compact request while excluding the incoming user message.
+Scenario: Remote pre-turn auto-compaction includes the context diff and incoming user message, then restores lossless turn input after the summary.
 
 ## Remote Compaction Request
 00:message/developer:<PERMISSIONS_INSTRUCTIONS>
@@ -11,6 +11,8 @@ Scenario: Remote pre-turn auto-compaction with a context override emits the cont
 03:message/assistant:REMOTE_FIRST_REPLY
 04:message/user:USER_TWO
 05:message/assistant:REMOTE_SECOND_REPLY
+06:message/user:<ENVIRONMENT_CONTEXT:cwd=PRETURN_CONTEXT_DIFF_CWD>
+07:message/user:USER_THREE
 
 ## Remote Post-Compaction History Layout
 00:message/user:USER_ONE

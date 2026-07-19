@@ -6,7 +6,7 @@ use crate::compact::CompactionAnalyticsDetails;
 use crate::compact::InitialContextInjection;
 use crate::compact::build_compaction_initial_context;
 use crate::compact::compaction_status_from_result;
-use crate::compact::insert_initial_context_before_last_real_user_or_summary;
+use crate::compact::place_compaction_context;
 use crate::compact_model_fallback::record_model_fallback;
 use crate::context::world_state::WorldState;
 use crate::context_manager::ContextManager;
@@ -265,12 +265,8 @@ async fn run_remote_compact_task_inner_impl(
     )
     .await;
 
-    let reference_context_item = match initial_context_injection {
-        InitialContextInjection::DoNotInject => None,
-        InitialContextInjection::BeforeLastUserMessage(_) => {
-            Some(compaction_turn_context.to_turn_context_item())
-        }
-    };
+    let reference_context_item =
+        initial_context_injection.reference_context_item(compaction_turn_context.as_ref());
     let compacted_item = CompactedItem {
         message: String::new(),
         replacement_history: Some(new_history.clone()),
@@ -315,7 +311,12 @@ pub(crate) async fn process_compacted_history(
 
     compacted_history.retain(should_keep_compacted_history_item);
     (
-        insert_initial_context_before_last_real_user_or_summary(compacted_history, initial_context),
+        place_compaction_context(
+            compacted_history,
+            initial_context,
+            turn_context,
+            initial_context_injection,
+        ),
         world_state_baseline,
     )
 }
@@ -391,7 +392,9 @@ pub(crate) fn trim_function_call_history_to_fit_context_window(
             .get(index)
             .and_then(rewritten_output_for_context_window)
         else {
-            break;
+            // The incoming user prompt is part of pre-turn compaction history, so tool outputs
+            // that can be trimmed may no longer be the final items in the request.
+            continue;
         };
         let mut items = history.raw_items().to_vec();
         items[index] = rewritten_item;

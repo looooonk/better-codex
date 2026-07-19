@@ -153,20 +153,6 @@ pub(crate) async fn run_turn(
 ) -> CodexResult<Option<String>> {
     let mut client_session =
         prewarmed_client_session.unwrap_or_else(|| sess.services.model_client.new_session());
-    // TODO(ccunningham): Pre-turn compaction runs before context updates and the
-    // new user message are recorded. Estimate pending incoming items (context
-    // diffs/full reinjection + user input) and trigger compaction preemptively
-    // when they would push the thread over the compaction threshold.
-    if let Err(err) = run_pre_sampling_compact(&sess, &turn_context, &mut client_session).await {
-        if matches!(err, CodexErr::TurnAborted) {
-            return Err(err);
-        }
-        let error = err.to_codex_protocol_error();
-        sess.emit_turn_error_lifecycle(turn_context.as_ref(), error.clone())
-            .await;
-        error!("Failed to run pre-sampling compact");
-        return Ok(None);
-    }
 
     // Ordinary environments are frozen for the turn, but project instructions can change between
     // turns without changing the environment selection. Deferred environments refresh both from
@@ -189,6 +175,7 @@ pub(crate) async fn run_turn(
         sess.record_context_updates_and_set_reference_context_item(first_step_context.as_ref()),
         turn_diff_display_roots(turn_context.as_ref()),
     );
+    let turn_items_start = sess.clone_history().await.raw_items().len();
 
     let Some((injection_items, explicitly_enabled_connectors)) = build_skills_and_plugins(
         &sess,
@@ -211,18 +198,49 @@ pub(crate) async fn run_turn(
 
     sess.merge_connector_selection(explicitly_enabled_connectors.clone())
         .await;
-    sess.set_previous_turn_settings(Some(PreviousTurnSettings {
-        model: turn_context.model_info.slug.clone(),
-        comp_hash: turn_context.model_info.comp_hash.clone(),
-        realtime_active: Some(turn_context.realtime_active),
-    }))
-    .await;
     for response_item in injection_items {
         sess.record_conversation_items(&turn_context, std::slice::from_ref(&response_item))
             .await;
     }
 
     track_turn_resolved_config_analytics(&sess, &turn_context, &input).await;
+
+    let prepared_history = sess.clone_history().await;
+    let turn_items = prepared_history.raw_items()[turn_items_start..].to_vec();
+    drop(prepared_history);
+    let initial_context_injection = InitialContextInjection::AfterSummary {
+        step_context: Arc::clone(&first_step_context),
+        world_state: Arc::clone(&world_state),
+        turn_items,
+    };
+    if let Err(err) = run_pre_sampling_compact(
+        &sess,
+        &first_step_context,
+        &mut client_session,
+        initial_context_injection,
+    )
+    .await
+    {
+        if matches!(err, CodexErr::TurnAborted) {
+            return Err(err);
+        }
+        let error = err.to_codex_protocol_error();
+        sess.emit_turn_error_lifecycle(turn_context.as_ref(), error.clone())
+            .await;
+        error!("Failed to run pre-sampling compact");
+        return Ok(None);
+    }
+
+    if run_pending_session_start_hooks(&sess, &turn_context).await {
+        return Ok(None);
+    }
+
+    sess.set_previous_turn_settings(Some(PreviousTurnSettings {
+        model: turn_context.model_info.slug.clone(),
+        comp_hash: turn_context.model_info.comp_hash.clone(),
+        realtime_active: Some(turn_context.realtime_active),
+    }))
+    .await;
 
     let mut last_agent_message: Option<String> = None;
     let mut stop_hook_active = false;
@@ -881,23 +899,29 @@ async fn track_turn_resolved_config_analytics(
 #[instrument(level = "trace", skip_all)]
 async fn run_pre_sampling_compact(
     sess: &Arc<Session>,
-    turn_context: &Arc<TurnContext>,
+    step_context: &Arc<StepContext>,
     client_session: &mut ModelClientSession,
+    initial_context_injection: InitialContextInjection,
 ) -> CodexResult<()> {
-    maybe_run_previous_model_inline_compact(sess, turn_context, client_session).await?;
+    let turn_context = &step_context.turn;
+    maybe_run_previous_model_inline_compact(
+        sess,
+        turn_context,
+        client_session,
+        &initial_context_injection,
+    )
+    .await?;
     let token_status =
         super::context_window::context_window_token_status(sess.as_ref(), turn_context.as_ref())
             .await;
     // Compact if the configured auto-compaction budget or usable context window is exhausted.
     if token_status.token_limit_reached {
-        // Pre-turn compaction runs before run_turn creates the normal sampling step.
-        let step_context = sess.capture_step_context(Arc::clone(turn_context)).await;
         run_auto_compact(
             sess,
-            step_context,
+            Arc::clone(step_context),
             /*fallback_step_context*/ None,
             client_session,
-            InitialContextInjection::DoNotInject,
+            initial_context_injection,
             CompactionReason::ContextLimit,
             CompactionPhase::PreTurn,
         )
@@ -944,6 +968,7 @@ async fn maybe_run_previous_model_inline_compact(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     client_session: &mut ModelClientSession,
+    initial_context_injection: &InitialContextInjection,
 ) -> CodexResult<()> {
     let Some(previous_turn_settings) = sess.previous_turn_settings().await else {
         return Ok(());
@@ -974,7 +999,7 @@ async fn maybe_run_previous_model_inline_compact(
             step_context,
             fallback_step_context,
             client_session,
-            InitialContextInjection::DoNotInject,
+            initial_context_injection.clone(),
             CompactionReason::CompHashChanged,
             CompactionPhase::PreTurn,
         )
@@ -1021,7 +1046,7 @@ async fn maybe_run_previous_model_inline_compact(
             step_context,
             fallback_step_context,
             client_session,
-            InitialContextInjection::DoNotInject,
+            initial_context_injection.clone(),
             CompactionReason::ModelDownshift,
             CompactionPhase::PreTurn,
         )

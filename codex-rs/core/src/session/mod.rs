@@ -302,6 +302,12 @@ pub(crate) struct PreviousTurnSettings {
     pub(crate) realtime_active: Option<bool>,
 }
 
+#[derive(Clone, Copy)]
+enum InitialContextReference {
+    Session,
+    Reset,
+}
+
 #[cfg(test)]
 use crate::SkillMetadata;
 use crate::SkillsService;
@@ -3068,8 +3074,11 @@ impl Session {
         };
         // Compaction starts a new history window, so its WorldState baseline must be full.
         let mut world_state_item = None;
+        let persist_reference_context_item;
         {
             let mut state = self.state.lock().await;
+            persist_reference_context_item =
+                state.reference_context_item() != reference_context_item;
             state.replace_history(items, reference_context_item.clone());
             if let Some(world_state) = world_state_baseline {
                 let snapshot = world_state.snapshot();
@@ -3085,7 +3094,7 @@ impl Session {
             self.persist_rollout_items(&[RolloutItem::WorldState(world_state_item)])
                 .await;
         }
-        if let Some(turn_context_item) = reference_context_item {
+        if persist_reference_context_item && let Some(turn_context_item) = reference_context_item {
             self.persist_rollout_items(&[RolloutItem::TurnContext(turn_context_item)])
                 .await;
         }
@@ -3212,8 +3221,27 @@ impl Session {
         world_state: &WorldState,
     ) -> Vec<ResponseItem> {
         let mcp = self.services.latest_mcp_runtime();
-        self.build_initial_context_with_world_state_and_mcp(turn_context, world_state, &mcp)
-            .await
+        self.build_initial_context_with_world_state_and_mcp(
+            turn_context,
+            world_state,
+            &mcp,
+            InitialContextReference::Session,
+        )
+        .await
+    }
+
+    pub(crate) async fn build_reset_initial_context_for_step(
+        &self,
+        step_context: &StepContext,
+        world_state: &WorldState,
+    ) -> Vec<ResponseItem> {
+        self.build_initial_context_with_world_state_and_mcp(
+            step_context.turn.as_ref(),
+            world_state,
+            step_context.mcp.as_ref(),
+            InitialContextReference::Reset,
+        )
+        .await
     }
 
     async fn build_initial_context_with_world_state_and_mcp(
@@ -3221,6 +3249,7 @@ impl Session {
         turn_context: &TurnContext,
         world_state: &WorldState,
         mcp: &McpRuntimeSnapshot,
+        reference: InitialContextReference,
     ) -> Vec<ResponseItem> {
         let mut developer_sections = Vec::<String>::with_capacity(8);
         let mut contextual_user_sections = Vec::<String>::with_capacity(2);
@@ -3235,7 +3264,10 @@ impl Session {
         ) = {
             let state = self.state.lock().await;
             (
-                state.reference_context_item(),
+                match reference {
+                    InitialContextReference::Session => state.reference_context_item(),
+                    InitialContextReference::Reset => None,
+                },
                 state.previous_turn_settings(),
                 state.session_configuration.collaboration_mode.clone(),
                 state.session_configuration.base_instructions.clone(),
@@ -3568,17 +3600,20 @@ impl Session {
 
     pub(crate) async fn start_new_context_window(
         &self,
-        turn_context: &TurnContext,
+        step_context: &StepContext,
         world_state: Arc<WorldState>,
+        preserved_turn_items: Vec<ResponseItem>,
     ) -> u64 {
+        let turn_context = step_context.turn.as_ref();
         let window = {
             let mut state = self.state.lock().await;
             state.start_new_context_window()
         };
         let (window_number, window_ids) = window;
-        let context_items = self
-            .build_initial_context_with_world_state(turn_context, world_state.as_ref())
+        let mut context_items = self
+            .build_reset_initial_context_for_step(step_context, world_state.as_ref())
             .await;
+        context_items.extend(preserved_turn_items);
         let turn_context_item = turn_context.to_turn_context_item();
         self.replace_compacted_history(
             turn_context,
@@ -3638,6 +3673,7 @@ impl Session {
                     turn_context,
                     world_state.as_ref(),
                     step_context.mcp.as_ref(),
+                    InitialContextReference::Session,
                 )
                 .await;
             let snapshot = world_state.snapshot();

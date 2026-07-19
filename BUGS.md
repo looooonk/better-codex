@@ -308,7 +308,7 @@ remain effective.
 
 ### 18. [P1][Model correctness / Compaction] Automatic pre-turn compaction ignores the incoming prompt
 
-**Status:** Assigned
+**Status:** Fixed
 
 The threshold estimate considers only retained history, with a source TODO acknowledging that the
 new turn input is excluded (`codex-rs/core/src/session/turn.rs:153-157,798-823`). A large prompt can
@@ -326,7 +326,7 @@ request: it summarizes without the pending question.
 
 ### 19. [P2][Model correctness / World state] Newly known shell metadata is suppressed when the prior snapshot lacks it
 
-**Status:** Assigned
+**Status:** Fixed
 
 `EnvironmentSnapshot::has_same_diff_value` compares optional shells with `zip(...).is_none_or(...)`
 in `codex-rs/core/src/context/world_state/environment.rs:300-309`. When the prior snapshot has

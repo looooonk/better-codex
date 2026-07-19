@@ -2032,9 +2032,9 @@ async fn auto_remote_compact_failure_stops_agent_loop() -> Result<()> {
     insta::assert_snapshot!(
         "remote_pre_turn_compaction_failure_shapes",
         format_labeled_requests_snapshot(
-            "Remote pre-turn auto-compaction parse failure: compaction request excludes the incoming user message and the turn stops.",
+            "Remote pre-turn auto-compaction parse failure: the compaction request includes the incoming user message and the turn stops.",
             &[(
-                "Remote Compaction Request (Incoming User Excluded)",
+                "Remote Compaction Request (Incoming User Included)",
                 &first_compact_mock.single_request()
             ),]
         )
@@ -3136,7 +3136,8 @@ async fn snapshot_request_shape_remote_mid_turn_compaction_does_not_restate_real
     let server = wiremock::MockServer::start().await;
     let realtime_server = start_remote_realtime_server().await;
     let mut builder = remote_realtime_test_codex_builder(&realtime_server).with_config(|config| {
-        config.model_auto_compact_token_limit = Some(200);
+        config.model_context_window = Some(1_000_000);
+        config.model_auto_compact_token_limit = Some(500_000);
     });
     let test = builder.build(&server).await?;
 
@@ -3149,7 +3150,7 @@ async fn snapshot_request_shape_remote_mid_turn_compaction_does_not_restate_real
             ]),
             responses::sse(vec![
                 responses::ev_function_call("call-remote-mid-turn", DUMMY_FUNCTION_NAME, "{}"),
-                responses::ev_completed_with_tokens("r1", /*total_tokens*/ 500),
+                responses::ev_completed_with_tokens("r1", /*total_tokens*/ 600_000),
             ]),
             responses::sse(vec![
                 responses::ev_assistant_message("m2", "REMOTE_MID_TURN_FINAL_REPLY"),
@@ -3202,10 +3203,14 @@ async fn snapshot_request_shape_remote_mid_turn_compaction_does_not_restate_real
 
     assert_eq!(compact_mock.requests().len(), 1);
     let requests = responses_mock.requests();
+    let compact_request = compact_mock.single_request();
+    assert!(
+        compact_request.has_function_call("call-remote-mid-turn"),
+        "remote compaction should run after the second turn's function call"
+    );
     assert_eq!(requests.len(), 3, "expected three model requests");
 
     let second_turn_request = &requests[1];
-    let compact_request = compact_mock.single_request();
     let post_compact_request = &requests[2];
     assert_request_contains_realtime_end(second_turn_request);
     assert!(
@@ -3345,7 +3350,6 @@ async fn snapshot_request_shape_remote_compact_resume_restates_realtime_end() ->
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-// TODO(ccunningham): Update once remote pre-turn compaction includes incoming user input.
 async fn snapshot_request_shape_remote_pre_turn_compaction_including_incoming_user_message()
 -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -3425,12 +3429,19 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_including_incoming_us
     insta::assert_snapshot!(
         "remote_pre_turn_compaction_including_incoming_shapes",
         format_labeled_requests_snapshot(
-            "Remote pre-turn auto-compaction with a context override emits the context diff in the compact request while excluding the incoming user message.",
+            "Remote pre-turn auto-compaction includes the context diff and incoming user message, then restores lossless turn input after the summary.",
             &[
                 ("Remote Compaction Request", &compact_request),
                 ("Remote Post-Compaction History Layout", &requests[2]),
             ]
         )
+    );
+    assert!(
+        compact_request
+            .message_input_texts("user")
+            .iter()
+            .any(|text| text == "USER_THREE"),
+        "remote pre-turn compaction input should include incoming user text"
     );
     assert_eq!(
         requests[2]
@@ -3446,7 +3457,7 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_including_incoming_us
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn snapshot_request_shape_remote_pre_turn_compaction_strips_incoming_model_switch()
+async fn snapshot_request_shape_remote_pre_turn_compaction_includes_incoming_model_switch()
 -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -3542,12 +3553,12 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_strips_incoming_model
     let post_compact_turn_request = post_compact_turn_request_mock.single_request();
     let compact_body = compact_request.body_json().to_string();
     assert!(
-        !compact_body.contains("AFTER_SWITCH_USER"),
-        "current behavior excludes incoming user from the pre-turn remote compaction request"
+        compact_body.contains("AFTER_SWITCH_USER"),
+        "pre-turn remote compaction request should include incoming user input"
     );
     assert!(
-        !compact_body.contains("<model_switch>"),
-        "pre-turn remote compaction request should strip incoming model-switch update item"
+        compact_body.contains("<model_switch>"),
+        "pre-turn remote compaction request should include incoming model-switch update item"
     );
 
     let follow_up_body = post_compact_turn_request.body_json().to_string();
@@ -3565,9 +3576,9 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_strips_incoming_model
     );
 
     insta::assert_snapshot!(
-        "remote_pre_turn_compaction_strips_incoming_model_switch_shapes",
+        "remote_pre_turn_compaction_includes_incoming_model_switch_shapes",
         format_labeled_requests_snapshot(
-            "Remote pre-turn compaction during model switch currently excludes incoming user input, strips incoming <model_switch> from the compact request payload, and restores it in the post-compaction follow-up request.",
+            "Remote pre-turn compaction during model switch includes the incoming model-switch context and user input, then restores both after the summary.",
             &[
                 ("Initial Request (Previous Model)", &initial_turn_request),
                 ("Remote Compaction Request", &compact_request),
@@ -3583,8 +3594,6 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_strips_incoming_model
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-// TODO(ccunningham): Update once remote pre-turn compaction context-overflow handling includes
-// incoming user input and emits richer oversized-input messaging.
 async fn snapshot_request_shape_remote_pre_turn_compaction_context_window_exceeded() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
@@ -3675,12 +3684,16 @@ async fn snapshot_request_shape_remote_pre_turn_compaction_context_window_exceed
     insta::assert_snapshot!(
         "remote_pre_turn_compaction_context_window_exceeded_shapes",
         format_labeled_requests_snapshot(
-            "Remote pre-turn auto-compaction context-window failure: compaction request excludes the incoming user message and the turn errors.",
-            &[(
-                "Remote Compaction Request (Incoming User Excluded)",
-                &include_attempt_request
-            ),]
+            "Remote pre-turn auto-compaction context-window failure includes the incoming user message in the failed compaction request.",
+            &[("Remote Compaction Request", &include_attempt_request),]
         )
+    );
+    assert!(
+        include_attempt_request
+            .message_input_texts("user")
+            .iter()
+            .any(|text| text == "USER_TWO"),
+        "failed remote pre-turn compaction should still include incoming user input"
     );
     assert!(
         error_message.to_lowercase().contains("context window"),
@@ -4298,7 +4311,7 @@ async fn snapshot_request_shape_remote_mid_turn_compaction_multi_summary_reinjec
     insta::assert_snapshot!(
         "remote_mid_turn_compaction_multi_summary_reinjects_above_last_summary_shapes",
         format_labeled_requests_snapshot(
-            "After a prior manual /compact produced an older remote compaction item, the next turn hits remote auto-compaction before the next sampling request. The compact request carries forward that earlier compaction item, and the next sampling request shows the latest compaction item with context reinjected before USER_TWO.",
+            "After a prior manual /compact produced an older remote compaction item, the next turn hits remote pre-turn auto-compaction. The compact request includes USER_TWO alongside the earlier compaction item, and the next sampling request preserves USER_TWO after the latest compaction item.",
             &[
                 ("Remote Compaction Request", &compact_request),
                 (
