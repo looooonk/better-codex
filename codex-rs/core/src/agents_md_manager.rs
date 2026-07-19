@@ -3,7 +3,6 @@ use crate::agents_md::load_project_instructions;
 use crate::config::Config;
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use codex_extension_api::UserInstructions;
-use codex_protocol::protocol::TurnEnvironmentSelection;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -15,7 +14,6 @@ pub(crate) struct AgentsMdManager {
 
 #[derive(Default)]
 struct AgentsMdCache {
-    selections: Option<Vec<TurnEnvironmentSelection>>,
     loaded: Option<Arc<LoadedAgentsMd>>,
 }
 
@@ -29,17 +27,11 @@ impl AgentsMdManager {
     }
 
     pub(crate) async fn refresh(&self, config: &Config, environments: &TurnEnvironmentSnapshot) {
-        let selections = environments.to_selections();
-        if self.cache.lock().await.selections.as_ref() == Some(&selections) {
-            return;
-        }
-
         let loaded =
             load_project_instructions(config, self.user_instructions.clone(), environments)
                 .await
                 .map(Arc::new);
         let mut cache = self.cache.lock().await;
-        cache.selections = Some(selections);
         cache.loaded = loaded;
     }
 

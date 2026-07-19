@@ -292,7 +292,6 @@ pub struct ConfigLayer {
     pub name: ConfigLayerSource,
     pub version: String,
     pub config: JsonValue,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub disabled_reason: Option<String>,
 }
 
@@ -364,7 +363,6 @@ pub struct ConfigReadResponse {
     #[experimental(nested)]
     pub config: Config,
     pub origins: HashMap<String, ConfigLayerMetadata>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub layers: Option<Vec<ConfigLayer>>,
 }
 

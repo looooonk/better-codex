@@ -49,6 +49,67 @@ fn write_config(codex_home: &TempDir, contents: &str) -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn config_read_serializes_required_nullable_layer_fields() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    write_config(&codex_home, "model = \"gpt-5.2\"\n")?;
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .build()
+        .await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_config_read_request(ConfigReadParams {
+            include_layers: false,
+            cwd: None,
+        })
+        .await?;
+    let response: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    assert_eq!(
+        response.result.get("layers"),
+        Some(&serde_json::Value::Null)
+    );
+
+    let request_id = mcp
+        .send_config_read_request(ConfigReadParams {
+            include_layers: true,
+            cwd: None,
+        })
+        .await?;
+    let response: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let layers = response.result["layers"]
+        .as_array()
+        .expect("config/read layers array");
+    assert!(
+        !layers.is_empty(),
+        "expected at least the user config layer"
+    );
+    assert!(
+        layers
+            .iter()
+            .all(|layer| layer.get("disabledReason").is_some()),
+        "every config layer must serialize disabledReason, including null values"
+    );
+    assert!(
+        layers
+            .iter()
+            .any(|layer| layer.get("disabledReason") == Some(&serde_json::Value::Null)),
+        "expected an enabled layer to serialize disabledReason as null"
+    );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn config_requirements_read_includes_allow_remote_control() -> Result<()> {
     let codex_home = TempDir::new()?;
     std::fs::write(

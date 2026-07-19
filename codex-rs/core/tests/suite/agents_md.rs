@@ -606,7 +606,8 @@ async fn fresh_thread_composes_global_before_project_and_reports_sources() -> Re
     assert_eq!(test.codex.instruction_sources().await, creation_sources);
 
     // Materialize the initial snapshot, then rewrite both selected files in place before another
-    // ordinary turn.
+    // ordinary turn. Global provider instructions stay session-scoped, while project instructions
+    // refresh from the selected environment.
     test.submit_turn("first turn").await?;
     let rewritten_global_source = write_global_file(
         home.as_ref(),
@@ -626,16 +627,26 @@ async fn fresh_thread_composes_global_before_project_and_reports_sources() -> Re
     );
     test.submit_turn("second turn").await?;
 
-    // Assert the running thread keeps its original rendering and structured prefix even though
-    // both files at the reported source paths now contain different text.
+    // Assert the running thread appends one replacement containing the refreshed project rules.
     let requests = response_mock.requests();
     assert_eq!(requests.len(), 2);
-    let expected_contents =
+    let initial_contents =
         format!("{GLOBAL_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{PROJECT_INSTRUCTIONS}");
-    let expected_fragment = expected_instruction_fragment(&test.config.cwd, &expected_contents);
+    let expected_fragment = expected_instruction_fragment(&test.config.cwd, &initial_contents);
+    let replacement_contents =
+        format!("{GLOBAL_INSTRUCTIONS}\n\n{PROJECT_SEPARATOR}\n\n{NEW_PROJECT_INSTRUCTIONS}");
+    let replacement_fragment = expected_instruction_fragment(
+        &test.config.cwd,
+        &format!(
+            "These AGENTS.md instructions replace all previously provided AGENTS.md instructions.\n\n{replacement_contents}"
+        ),
+    );
     let fragments = instruction_fragments(&requests[0]);
     assert_eq!(fragments, vec![expected_fragment.clone()]);
-    assert_single_instruction_fragment(&requests[1], &expected_fragment);
+    assert_eq!(
+        instruction_fragments(&requests[1]),
+        vec![expected_fragment.clone(), replacement_fragment]
+    );
     let rendered = fragments
         .into_iter()
         .next()

@@ -168,6 +168,20 @@ pub(crate) async fn run_turn(
         return Ok(None);
     }
 
+    // Ordinary environments are frozen for the turn, but project instructions can change between
+    // turns without changing the environment selection. Deferred environments refresh both from
+    // capture_step_context so their request-scoped snapshot stays internally consistent.
+    if !turn_context
+        .config
+        .features
+        .enabled(Feature::DeferredExecutor)
+    {
+        sess.services
+            .agents_md_manager
+            .refresh(&turn_context.config, &turn_context.environments)
+            .await;
+    }
+
     // run_turn owns the step used to seed context and make the first sampling request.
     let first_step_context = sess.capture_step_context(Arc::clone(&turn_context)).await;
     // Keep the exact model-visible state used by this turn and its inline compactions.

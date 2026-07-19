@@ -279,7 +279,7 @@ The command is accepted and the explicit workspace-write policy is discarded.
 
 ### 16. [P1][API compatibility] Config responses omit fields that generated clients require
 
-**Status:** Assigned
+**Status:** Fixed
 
 `ConfigReadResponse.layers` and `ConfigLayer.disabled_reason` use
 `skip_serializing_if = "Option::is_none"` in
@@ -293,7 +293,7 @@ reason. The JSON omits the required property instead of returning `null`.
 
 ### 17. [P1][Model correctness / AGENTS.md] AGENTS instructions never refresh during a normal thread
 
-**Status:** Assigned
+**Status:** Fixed
 
 The initial session loads AGENTS once (`codex-rs/core/src/session/session.rs:909-923`). Per-turn
 refresh is behind the disabled deferred executor, while `AgentsMdManager` caches by environment
