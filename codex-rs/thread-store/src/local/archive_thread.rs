@@ -2,6 +2,7 @@ use chrono::Utc;
 use codex_rollout::find_thread_path_by_id_str;
 
 use super::LocalThreadStore;
+use super::helpers::file_move_error_with_rollback;
 use super::helpers::matching_rollout_file_name;
 use super::helpers::scoped_rollout_path;
 use crate::ArchiveThreadParams;
@@ -53,9 +54,16 @@ pub(super) async fn archive_thread(
     })?;
 
     if let Some(ctx) = state_db_ctx {
-        let _ = ctx
-            .mark_archived(thread_id, archived_path.as_path(), Utc::now())
-            .await;
+        ctx.mark_archived(thread_id, archived_path.as_path(), Utc::now())
+            .await
+            .map_err(|err| {
+                file_move_error_with_rollback(
+                    archived_path.as_path(),
+                    canonical_rollout_path.as_path(),
+                    "archive",
+                    err,
+                )
+            })?;
     }
     Ok(())
 }
@@ -175,5 +183,51 @@ mod tests {
         assert_eq!(updated.rollout_path, archived_path);
         assert!(updated.archived_at.is_some());
         assert_eq!(updated.recency_at, metadata.recency_at);
+    }
+
+    #[tokio::test]
+    async fn archive_thread_restores_rollout_when_sqlite_update_fails() {
+        let home = TempDir::new().expect("temp dir");
+        let config = test_config(home.path());
+        let uuid = Uuid::from_u128(206);
+        let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
+        let active_path =
+            write_session_file(home.path(), "2025-01-03T12-00-00", uuid).expect("session file");
+        let runtime = codex_state::StateRuntime::init(
+            home.path().to_path_buf(),
+            config.default_model_provider_id.clone(),
+        )
+        .await
+        .expect("state db should initialize");
+        let store = LocalThreadStore::new(config.clone(), Some(runtime.clone()));
+        let mut builder = codex_state::ThreadMetadataBuilder::new(
+            thread_id,
+            active_path.clone(),
+            Utc::now(),
+            SessionSource::Cli,
+        );
+        builder.model_provider = Some(config.default_model_provider_id.clone());
+        builder.cwd = home.path().to_path_buf();
+        let metadata = builder.build(config.default_model_provider_id.as_str());
+        runtime
+            .upsert_thread(&metadata)
+            .await
+            .expect("state db upsert should succeed");
+        runtime.close().await;
+
+        let error = store
+            .archive_thread(ArchiveThreadParams { thread_id })
+            .await
+            .expect_err("closed state db should fail archive");
+
+        assert!(matches!(error, ThreadStoreError::Internal { .. }));
+        assert!(active_path.exists());
+        assert!(
+            !home
+                .path()
+                .join(ARCHIVED_SESSIONS_SUBDIR)
+                .join(active_path.file_name().expect("file name"))
+                .exists()
+        );
     }
 }

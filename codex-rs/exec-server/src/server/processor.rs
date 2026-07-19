@@ -1,7 +1,11 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use codex_exec_server_protocol::JSONRPCRequest;
+use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use tokio::sync::mpsc;
+use tokio::sync::watch;
 use tracing::Instrument;
 use tracing::debug;
 use tracing::warn;
@@ -11,8 +15,10 @@ use crate::connection::CHANNEL_CAPACITY;
 use crate::connection::JsonRpcConnection;
 use crate::connection::JsonRpcConnectionEvent;
 use crate::rpc::RpcNotificationSender;
+use crate::rpc::RpcRouter;
 use crate::rpc::RpcServerOutboundMessage;
 use crate::rpc::encode_server_message;
+use crate::rpc::internal_error;
 use crate::rpc::invalid_request;
 use crate::rpc::method_not_found;
 use crate::server::ExecServerHandler;
@@ -20,6 +26,8 @@ use crate::server::registry::build_router;
 use crate::server::session_registry::SessionRegistry;
 use crate::telemetry::ConnectionTransport;
 use crate::telemetry::ExecServerTelemetry;
+
+const MAX_CONCURRENT_PROCESS_READS: usize = CHANNEL_CAPACITY;
 
 #[derive(Clone)]
 pub(crate) struct ConnectionProcessor {
@@ -105,8 +113,20 @@ async fn run_connection(
         }
     });
 
-    // Process inbound events sequentially to preserve initialize/initialized ordering.
-    while let Some(event) = incoming_rx.recv().await {
+    let mut process_reads = FuturesUnordered::new();
+    loop {
+        let event = tokio::select! {
+            event = incoming_rx.recv() => event,
+            outcome = process_reads.next(), if !process_reads.is_empty() => {
+                if matches!(outcome, Some(RequestOutcome::ConnectionClosed)) {
+                    break;
+                }
+                continue;
+            }
+        };
+        let Some(event) = event else {
+            break;
+        };
         if !handler.is_session_attached() {
             debug!("exec-server connection evicted after session resume");
             break;
@@ -127,61 +147,54 @@ async fn run_connection(
             }
             JsonRpcConnectionEvent::Message(message) => match message {
                 codex_exec_server_protocol::JSONRPCMessage::Request(request) => {
-                    let request_started_at = Instant::now();
-                    if let Some((method, route)) = router.request_route(request.method.as_str()) {
-                        let request_span = request_span(method, &request);
-                        let message = tokio::select! {
-                            message = route(Arc::clone(&handler), request).instrument(request_span.clone()) => message,
-                            _ = disconnected_rx.changed() => {
+                    if request.method == codex_exec_server_protocol::EXEC_READ_METHOD {
+                        if process_reads.len() >= MAX_CONCURRENT_PROCESS_READS {
+                            let method = codex_exec_server_protocol::EXEC_READ_METHOD;
+                            let request_started_at = Instant::now();
+                            let request_span = request_span(method, &request);
+                            let message = RpcServerOutboundMessage::Error {
+                                request_id: request.id,
+                                error: internal_error(format!(
+                                    "at most {MAX_CONCURRENT_PROCESS_READS} process/read requests may be in flight"
+                                )),
+                            };
+                            if outgoing_tx.send(message).await.is_err() {
                                 request_span.record("result", "disconnected");
                                 telemetry.request_completed(
                                     method,
                                     "disconnected",
                                     request_started_at.elapsed(),
                                 );
-                                debug!("exec-server transport disconnected while handling request");
                                 break;
                             }
-                        };
-                        let result = request_result(&message);
-                        if let Some(message) = message
-                            && outgoing_tx.send(message).await.is_err()
-                        {
-                            request_span.record("result", "disconnected");
+                            request_span.record("result", "error");
                             telemetry.request_completed(
                                 method,
-                                "disconnected",
+                                "error",
                                 request_started_at.elapsed(),
                             );
-                            break;
+                            continue;
                         }
-                        request_span.record("result", result);
-                        telemetry.request_completed(method, result, request_started_at.elapsed());
-                        drop(request_span);
-                    } else {
-                        let method = "unknown";
-                        let request_span = request_span(method, &request);
-                        if outgoing_tx
-                            .send(RpcServerOutboundMessage::Error {
-                                request_id: request.id,
-                                error: method_not_found(format!(
-                                    "exec-server stub does not implement `{}` yet",
-                                    request.method
-                                )),
-                            })
-                            .await
-                            .is_err()
-                        {
-                            request_span.record("result", "disconnected");
-                            telemetry.request_completed(
-                                method,
-                                "disconnected",
-                                request_started_at.elapsed(),
-                            );
-                            break;
-                        }
-                        request_span.record("result", "error");
-                        telemetry.request_completed(method, "error", request_started_at.elapsed());
+                        process_reads.push(handle_request(
+                            Arc::clone(&router),
+                            Arc::clone(&handler),
+                            outgoing_tx.clone(),
+                            disconnected_rx.clone(),
+                            telemetry.clone(),
+                            request,
+                        ));
+                    } else if handle_request(
+                        Arc::clone(&router),
+                        Arc::clone(&handler),
+                        outgoing_tx.clone(),
+                        disconnected_rx.clone(),
+                        telemetry.clone(),
+                        request,
+                    )
+                    .await
+                        == RequestOutcome::ConnectionClosed
+                    {
+                        break;
                     }
                 }
                 codex_exec_server_protocol::JSONRPCMessage::Notification(notification) => {
@@ -231,6 +244,7 @@ async fn run_connection(
         }
     }
 
+    drop(process_reads);
     handler.shutdown().await;
     drop(handler);
     drop(outgoing_tx);
@@ -239,6 +253,64 @@ async fn run_connection(
         let _ = task.await;
     }
     let _ = outbound_task.await;
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum RequestOutcome {
+    Continue,
+    ConnectionClosed,
+}
+
+async fn handle_request(
+    router: Arc<RpcRouter<ExecServerHandler>>,
+    handler: Arc<ExecServerHandler>,
+    outgoing_tx: mpsc::Sender<RpcServerOutboundMessage>,
+    mut disconnected_rx: watch::Receiver<bool>,
+    telemetry: ExecServerTelemetry,
+    request: JSONRPCRequest,
+) -> RequestOutcome {
+    let request_started_at = Instant::now();
+    let Some((method, route)) = router.request_route(request.method.as_str()) else {
+        let method = "unknown";
+        let request_span = request_span(method, &request);
+        let message = RpcServerOutboundMessage::Error {
+            request_id: request.id,
+            error: method_not_found(format!(
+                "exec-server stub does not implement `{}` yet",
+                request.method
+            )),
+        };
+        if outgoing_tx.send(message).await.is_err() {
+            request_span.record("result", "disconnected");
+            telemetry.request_completed(method, "disconnected", request_started_at.elapsed());
+            return RequestOutcome::ConnectionClosed;
+        }
+        request_span.record("result", "error");
+        telemetry.request_completed(method, "error", request_started_at.elapsed());
+        return RequestOutcome::Continue;
+    };
+
+    let request_span = request_span(method, &request);
+    let message = tokio::select! {
+        message = route(handler, request).instrument(request_span.clone()) => message,
+        _ = disconnected_rx.changed() => {
+            request_span.record("result", "disconnected");
+            telemetry.request_completed(method, "disconnected", request_started_at.elapsed());
+            debug!("exec-server transport disconnected while handling request");
+            return RequestOutcome::ConnectionClosed;
+        }
+    };
+    let result = request_result(&message);
+    if let Some(message) = message
+        && outgoing_tx.send(message).await.is_err()
+    {
+        request_span.record("result", "disconnected");
+        telemetry.request_completed(method, "disconnected", request_started_at.elapsed());
+        return RequestOutcome::ConnectionClosed;
+    }
+    request_span.record("result", result);
+    telemetry.request_completed(method, result, request_started_at.elapsed());
+    RequestOutcome::Continue
 }
 
 fn request_span(

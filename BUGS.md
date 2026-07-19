@@ -677,7 +677,7 @@ return success while only the later value remains on disk.
 
 ### 44. [P1][Availability / Exec server] A long `process/read` blocks every later request on the connection
 
-**Status:** Assigned
+**Status:** Fixed
 
 The exec-server connection loop routes requests sequentially
 (`codex-rs/exec-server/src/server/processor.rs:108-145`). `process/read` accepts arbitrary `u64`
@@ -691,7 +691,7 @@ until the read expires.
 
 ### 45. [P2][Persistence integrity] Archive/unarchive report success or failure after divergent partial writes
 
-**Status:** Assigned
+**Status:** Fixed
 
 Archive renames the rollout and discards the result of `mark_archived`
 (`codex-rs/thread-store/src/local/archive_thread.rs:41-60`). Unarchive also renames first, may then

@@ -386,7 +386,7 @@ impl LocalProcess {
         let after_seq = params.after_seq.unwrap_or(0);
         let max_bytes = params.max_bytes.unwrap_or(usize::MAX);
         let wait = Duration::from_millis(params.wait_ms.unwrap_or(0));
-        let deadline = tokio::time::Instant::now() + wait;
+        let deadline = tokio::time::Instant::now().checked_add(wait);
 
         loop {
             let (response, output_notify) = {
@@ -442,7 +442,7 @@ impl LocalProcess {
             if !response.chunks.is_empty()
                 || response.closed
                 || has_new_terminal_event
-                || tokio::time::Instant::now() >= deadline
+                || deadline.is_some_and(|deadline| tokio::time::Instant::now() >= deadline)
             {
                 let _total_bytes: usize = response
                     .chunks
@@ -452,11 +452,15 @@ impl LocalProcess {
                 return Ok(response);
             }
 
-            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-            if remaining.is_zero() {
-                return Ok(response);
+            if let Some(deadline) = deadline {
+                let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+                if remaining.is_zero() {
+                    return Ok(response);
+                }
+                let _ = tokio::time::timeout(remaining, output_notify.notified()).await;
+            } else {
+                output_notify.notified().await;
             }
-            let _ = tokio::time::timeout(remaining, output_notify.notified()).await;
         }
     }
 

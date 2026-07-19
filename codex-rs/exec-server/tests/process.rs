@@ -82,6 +82,90 @@ async fn exec_server_starts_process_over_websocket() -> anyhow::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn long_process_read_does_not_block_terminate() -> anyhow::Result<()> {
+    let mut server = exec_server().await?;
+    let initialize_id = server
+        .send_request(
+            "initialize",
+            serde_json::to_value(InitializeParams {
+                client_name: "exec-server-test".to_string(),
+                resume_session_id: None,
+            })?,
+        )
+        .await?;
+    let _ = server
+        .wait_for_event(|event| {
+            matches!(
+                event,
+                JSONRPCMessage::Response(JSONRPCResponse { id, .. }) if id == &initialize_id
+            )
+        })
+        .await?;
+    server
+        .send_notification("initialized", serde_json::json!({}))
+        .await?;
+
+    let process_start_id = server
+        .send_request(
+            "process/start",
+            serde_json::json!({
+                "processId": "proc-long-read",
+                "argv": ["/bin/sh", "-c", "sleep 30"],
+                "cwd": PathUri::from_host_native_path(std::env::current_dir()?)?,
+                "env": {},
+                "tty": false,
+                "pipeStdin": false,
+                "arg0": null
+            }),
+        )
+        .await?;
+    let _ = server
+        .wait_for_event(|event| {
+            matches!(
+                event,
+                JSONRPCMessage::Response(JSONRPCResponse { id, .. }) if id == &process_start_id
+            )
+        })
+        .await?;
+
+    server
+        .send_request(
+            "process/read",
+            serde_json::json!({
+                "processId": "proc-long-read",
+                "afterSeq": 0,
+                "maxBytes": null,
+                "waitMs": u64::MAX
+            }),
+        )
+        .await?;
+    let terminate_id = server
+        .send_request(
+            "process/terminate",
+            serde_json::json!({
+                "processId": "proc-long-read"
+            }),
+        )
+        .await?;
+    let response = server
+        .wait_for_event(|event| {
+            matches!(
+                event,
+                JSONRPCMessage::Response(JSONRPCResponse { id, .. }) if id == &terminate_id
+            )
+        })
+        .await?;
+    let JSONRPCMessage::Response(JSONRPCResponse { result, .. }) = response else {
+        panic!("expected process/terminate response");
+    };
+    let terminate_response: TerminateResponse = serde_json::from_value(result)?;
+    assert_eq!(terminate_response, TerminateResponse { running: true });
+
+    server.shutdown().await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn exec_server_rejects_managed_network_without_sandbox() -> anyhow::Result<()> {
     let mut server = exec_server().await?;
     let initialize_id = server

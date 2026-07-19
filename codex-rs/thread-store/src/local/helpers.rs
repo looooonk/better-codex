@@ -92,8 +92,30 @@ pub(super) fn matching_rollout_file_name(
 }
 
 pub(super) fn touch_modified_time(path: &Path) -> std::io::Result<()> {
-    let times = FileTimes::new().set_modified(SystemTime::now());
+    set_modified_time(path, SystemTime::now())
+}
+
+pub(super) fn set_modified_time(path: &Path, modified: SystemTime) -> std::io::Result<()> {
+    let times = FileTimes::new().set_modified(modified);
     OpenOptions::new().append(true).open(path)?.set_times(times)
+}
+
+pub(super) fn file_move_error_with_rollback(
+    moved_path: &Path,
+    original_path: &Path,
+    operation: &str,
+    cause: impl std::fmt::Display,
+) -> ThreadStoreError {
+    let message = format!("failed to {operation} thread: {cause}");
+    match std::fs::rename(moved_path, original_path) {
+        Ok(()) => ThreadStoreError::Internal { message },
+        Err(rollback_err) => ThreadStoreError::Internal {
+            message: format!(
+                "{message}; failed to restore rollout to {}: {rollback_err}",
+                original_path.display()
+            ),
+        },
+    }
 }
 
 pub(super) fn stored_thread_from_rollout_item(

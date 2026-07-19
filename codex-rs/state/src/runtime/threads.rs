@@ -4,6 +4,11 @@ use codex_protocol::protocol::SessionSource;
 use std::sync::atomic::AtomicI64;
 use std::sync::atomic::Ordering;
 
+enum ThreadArchiveState {
+    Active,
+    Archived(DateTime<Utc>),
+}
+
 impl StateRuntime {
     pub async fn get_thread(&self, id: ThreadId) -> anyhow::Result<Option<crate::ThreadMetadata>> {
         let row = sqlx::query(
@@ -955,21 +960,12 @@ ON CONFLICT(id) DO UPDATE SET
         rollout_path: &Path,
         archived_at: DateTime<Utc>,
     ) -> anyhow::Result<()> {
-        let Some(mut metadata) = self.get_thread(thread_id).await? else {
-            return Ok(());
-        };
-        metadata.archived_at = Some(archived_at);
-        metadata.rollout_path = rollout_path.to_path_buf();
-        if let Some(updated_at) = file_modified_time_utc(rollout_path).await {
-            metadata.updated_at = updated_at;
-        }
-        if metadata.id != thread_id {
-            warn!(
-                "thread id mismatch during archive: expected {thread_id}, got {}",
-                metadata.id
-            );
-        }
-        self.upsert_thread(&metadata).await
+        self.set_thread_archive_state(
+            thread_id,
+            rollout_path,
+            ThreadArchiveState::Archived(archived_at),
+        )
+        .await
     }
 
     /// Mark a thread as unarchived using the underlying database.
@@ -978,21 +974,45 @@ ON CONFLICT(id) DO UPDATE SET
         thread_id: ThreadId,
         rollout_path: &Path,
     ) -> anyhow::Result<()> {
-        let Some(mut metadata) = self.get_thread(thread_id).await? else {
-            return Ok(());
+        self.set_thread_archive_state(thread_id, rollout_path, ThreadArchiveState::Active)
+            .await
+    }
+
+    async fn set_thread_archive_state(
+        &self,
+        thread_id: ThreadId,
+        rollout_path: &Path,
+        state: ThreadArchiveState,
+    ) -> anyhow::Result<()> {
+        let archived_at = match state {
+            ThreadArchiveState::Active => None,
+            ThreadArchiveState::Archived(archived_at) => Some(archived_at),
         };
-        metadata.archived_at = None;
-        metadata.rollout_path = rollout_path.to_path_buf();
-        if let Some(updated_at) = file_modified_time_utc(rollout_path).await {
-            metadata.updated_at = updated_at;
-        }
-        if metadata.id != thread_id {
-            warn!(
-                "thread id mismatch during unarchive: expected {thread_id}, got {}",
-                metadata.id
-            );
-        }
-        self.upsert_thread(&metadata).await
+        let updated_at = match file_modified_time_utc(rollout_path).await {
+            Some(updated_at) => Some(self.allocate_thread_updated_at(updated_at)?),
+            None => None,
+        };
+        sqlx::query(
+            r#"
+UPDATE threads
+SET
+    rollout_path = ?,
+    archived = ?,
+    archived_at = ?,
+    updated_at = COALESCE(?, updated_at),
+    updated_at_ms = COALESCE(?, updated_at_ms)
+WHERE id = ?
+            "#,
+        )
+        .bind(rollout_path.display().to_string())
+        .bind(archived_at.is_some())
+        .bind(archived_at.map(datetime_to_epoch_seconds))
+        .bind(updated_at.map(datetime_to_epoch_seconds))
+        .bind(updated_at.map(datetime_to_epoch_millis))
+        .bind(thread_id.to_string())
+        .execute(self.pool.as_ref())
+        .await?;
+        Ok(())
     }
 
     /// Delete a thread and all associated state by id.
