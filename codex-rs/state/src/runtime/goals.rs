@@ -385,6 +385,25 @@ WHERE thread_id = ?
         &self,
         thread_id: ThreadId,
     ) -> anyhow::Result<Option<crate::ThreadGoal>> {
+        let mut tx = self.pool.begin().await?;
+        let goal = self
+            .delete_thread_goal_in_transaction(thread_id, &mut tx)
+            .await?;
+        tx.commit().await?;
+        Ok(goal)
+    }
+
+    pub(super) async fn begin_thread_delete(
+        &self,
+    ) -> anyhow::Result<sqlx::Transaction<'static, Sqlite>> {
+        Ok(self.pool.begin().await?)
+    }
+
+    pub(super) async fn delete_thread_goal_in_transaction(
+        &self,
+        thread_id: ThreadId,
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+    ) -> anyhow::Result<Option<crate::ThreadGoal>> {
         let row = sqlx::query(
             r#"
 DELETE FROM thread_goals
@@ -402,7 +421,7 @@ RETURNING
             "#,
         )
         .bind(thread_id.to_string())
-        .fetch_optional(self.pool.as_ref())
+        .fetch_optional(&mut **tx)
         .await?;
 
         row.map(|row| thread_goal_from_row(&row)).transpose()

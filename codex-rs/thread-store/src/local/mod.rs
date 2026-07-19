@@ -136,6 +136,11 @@ impl LocalThreadStore {
         live_writer::rollout_path(self, thread_id).await
     }
 
+    /// Delete local rollout files and associated state as one recoverable batch.
+    pub async fn delete_threads(&self, thread_ids: &[ThreadId]) -> ThreadStoreResult<()> {
+        delete_thread::delete_threads(self, thread_ids).await
+    }
+
     pub(super) async fn live_recorder(
         &self,
         thread_id: ThreadId,

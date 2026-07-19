@@ -1033,17 +1033,25 @@ WHERE id = ?
             .iter()
             .map(ThreadId::to_string)
             .collect::<Vec<_>>();
+        let mut logs_tx = self.logs_pool.begin().await?;
+        let mut memories_tx = self.memories.begin_thread_delete().await?;
+        let mut goals_tx = self.thread_goals.begin_thread_delete().await?;
+        let mut state_tx = self.pool.begin().await?;
+
         for (thread_id, thread_id_string) in thread_ids.iter().zip(&thread_id_strings) {
             sqlx::query("DELETE FROM logs WHERE thread_id = ?")
                 .bind(thread_id_string)
-                .execute(self.logs_pool.as_ref())
+                .execute(&mut *logs_tx)
                 .await?;
-            self.memories.delete_thread_memory(*thread_id).await?;
-            self.thread_goals.delete_thread_goal(*thread_id).await?;
+            self.memories
+                .delete_thread_memory(*thread_id, &mut memories_tx)
+                .await?;
+            self.thread_goals
+                .delete_thread_goal_in_transaction(*thread_id, &mut goals_tx)
+                .await?;
         }
 
         let now = Utc::now().timestamp();
-        let mut tx = self.pool.begin().await?;
         for thread_id_string in &thread_id_strings {
             for parent_thread_id_string in &thread_id_strings {
                 // If both the job runner and worker are being deleted, requeueing
@@ -1070,12 +1078,12 @@ WHERE status IN (?, ?)
                 .bind(AgentJobItemStatus::Running.as_str())
                 .bind(thread_id_string)
                 .bind(parent_thread_id_string)
-                .execute(&mut *tx)
+                .execute(&mut *state_tx)
                 .await?;
             }
             sqlx::query("DELETE FROM thread_dynamic_tools WHERE thread_id = ?")
                 .bind(thread_id_string)
-                .execute(&mut *tx)
+                .execute(&mut *state_tx)
                 .await?;
             sqlx::query(
                 r#"
@@ -1093,7 +1101,7 @@ WHERE assigned_thread_id = ? AND status = ?
             .bind("assigned thread was deleted")
             .bind(thread_id_string)
             .bind(AgentJobItemStatus::Running.as_str())
-            .execute(&mut *tx)
+            .execute(&mut *state_tx)
             .await?;
             sqlx::query(
                 r#"
@@ -1104,7 +1112,7 @@ WHERE assigned_thread_id = ?
             )
             .bind(now)
             .bind(thread_id_string)
-            .execute(&mut *tx)
+            .execute(&mut *state_tx)
             .await?;
         }
         for thread_id_string in &thread_id_strings {
@@ -1113,18 +1121,30 @@ WHERE assigned_thread_id = ?
             )
             .bind(thread_id_string)
             .bind(thread_id_string)
-            .execute(&mut *tx)
+            .execute(&mut *state_tx)
             .await?;
         }
         let mut rows_affected = 0;
         for thread_id_string in &thread_id_strings {
             rows_affected += sqlx::query("DELETE FROM threads WHERE id = ?")
                 .bind(thread_id_string)
-                .execute(&mut *tx)
+                .execute(&mut *state_tx)
                 .await?
                 .rows_affected();
         }
-        tx.commit().await?;
+        state_tx.commit().await?;
+
+        // Once the authoritative thread rows commit, auxiliary cleanup cannot make deletion
+        // retryable. Report it for repair without turning a completed deletion into an error.
+        if let Err(err) = logs_tx.commit().await {
+            warn!("failed to commit deleted thread logs: {err}");
+        }
+        if let Err(err) = memories_tx.commit().await {
+            warn!("failed to commit deleted thread memories: {err}");
+        }
+        if let Err(err) = goals_tx.commit().await {
+            warn!("failed to commit deleted thread goals: {err}");
+        }
 
         Ok(rows_affected)
     }
@@ -1629,6 +1649,52 @@ mod tests {
         assert_eq!(
             runtime.list_thread_spawn_descendants(thread_id).await?,
             vec![child_thread_id]
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn delete_thread_keeps_auxiliary_state_when_a_transaction_cannot_start() -> Result<()> {
+        let codex_home = unique_temp_dir();
+        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
+        let thread_id = ThreadId::from_string("00000000-0000-0000-0000-000000000407")?;
+        let child_thread_id = ThreadId::from_string("00000000-0000-0000-0000-000000000408")?;
+        runtime
+            .upsert_thread(&test_thread_metadata(
+                &codex_home,
+                thread_id,
+                codex_home.clone(),
+            ))
+            .await?;
+        seed_thread_cleanup_state(&runtime, thread_id, child_thread_id).await?;
+
+        runtime.memories().close().await;
+        runtime
+            .delete_thread(thread_id)
+            .await
+            .expect_err("closed memories db should fail deletion");
+
+        assert!(runtime.get_thread(thread_id).await?.is_some());
+        assert_eq!(
+            runtime.list_thread_spawn_descendants(thread_id).await?,
+            vec![child_thread_id]
+        );
+        assert!(
+            runtime
+                .thread_goals()
+                .get_thread_goal(thread_id)
+                .await?
+                .is_some()
+        );
+        assert_eq!(
+            runtime
+                .query_logs(&LogQuery {
+                    thread_ids: vec![thread_id.to_string()],
+                    ..Default::default()
+                })
+                .await?
+                .len(),
+            1
         );
         Ok(())
     }

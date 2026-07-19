@@ -273,10 +273,19 @@ FROM threads
         Ok(claimed)
     }
 
-    pub(super) async fn delete_thread_memory(&self, thread_id: ThreadId) -> anyhow::Result<()> {
+    pub(super) async fn begin_thread_delete(
+        &self,
+    ) -> anyhow::Result<sqlx::Transaction<'static, Sqlite>> {
+        Ok(self.pool.begin().await?)
+    }
+
+    pub(super) async fn delete_thread_memory(
+        &self,
+        thread_id: ThreadId,
+        tx: &mut sqlx::Transaction<'_, Sqlite>,
+    ) -> anyhow::Result<()> {
         let now = Utc::now().timestamp();
         let thread_id = thread_id.to_string();
-        let mut tx = self.pool.begin().await?;
 
         let existing_output = sqlx::query(
             r#"
@@ -286,7 +295,7 @@ WHERE thread_id = ?
             "#,
         )
         .bind(thread_id.as_str())
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await?;
         let was_selected_for_phase2 = existing_output
             .map(|row| row.try_get::<i64, _>("selected_for_phase2"))
@@ -300,7 +309,7 @@ WHERE thread_id = ?
             "#,
         )
         .bind(thread_id.as_str())
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?
         .rows_affected();
 
@@ -312,14 +321,13 @@ WHERE kind = ? AND job_key = ?
         )
         .bind(JOB_KIND_MEMORY_STAGE1)
         .bind(thread_id.as_str())
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
 
         if deleted_rows > 0 && was_selected_for_phase2 {
-            enqueue_global_consolidation_with_executor(&mut *tx, now).await?;
+            enqueue_global_consolidation_with_executor(&mut **tx, now).await?;
         }
 
-        tx.commit().await?;
         Ok(())
     }
 

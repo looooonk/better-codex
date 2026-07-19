@@ -47,35 +47,43 @@ impl ThreadRequestProcessor {
         let mut delete_order: Vec<_> = thread_ids.iter().skip(1).rev().copied().collect();
         delete_order.push(thread_id);
 
-        for thread_id_to_delete in delete_order.iter().copied() {
-            match self
-                .thread_store
-                .delete_thread(StoreDeleteThreadParams {
-                    thread_id: thread_id_to_delete,
-                })
+        if let Some(local_store) = self
+            .thread_store
+            .as_any()
+            .downcast_ref::<LocalThreadStore>()
+        {
+            local_store
+                .delete_threads(thread_ids.as_slice())
                 .await
-            {
-                Ok(()) => {}
-                Err(ThreadStoreError::ThreadNotFound { .. }) => {
-                    warn!(
-                        "thread {thread_id_to_delete} was already missing while deleting {thread_id}"
-                    );
-                }
-                Err(err) => {
-                    return Err(thread_store_delete_error(err));
+                .map_err(thread_store_delete_error)?;
+        } else {
+            if let Some(state_db) = self.state_db.as_ref() {
+                state_db
+                    .delete_threads_strict(thread_ids.as_slice())
+                    .await
+                    .map_err(|err| {
+                        internal_error(format!(
+                            "failed to delete app-server state for {thread_id}: {err}"
+                        ))
+                    })?;
+            }
+            for thread_id_to_delete in delete_order.iter().copied() {
+                match self
+                    .thread_store
+                    .delete_thread(StoreDeleteThreadParams {
+                        thread_id: thread_id_to_delete,
+                    })
+                    .await
+                {
+                    Ok(()) => {}
+                    Err(ThreadStoreError::ThreadNotFound { .. }) => {
+                        warn!(
+                            "thread {thread_id_to_delete} was already missing while deleting {thread_id}"
+                        );
+                    }
+                    Err(err) => return Err(thread_store_delete_error(err)),
                 }
             }
-        }
-
-        if let Some(state_db) = self.state_db.as_ref() {
-            state_db
-                .delete_threads_strict(thread_ids.as_slice())
-                .await
-                .map_err(|err| {
-                    internal_error(format!(
-                        "failed to delete app-server state for {thread_id}: {err}"
-                    ))
-                })?;
         }
 
         deleted_thread_ids.extend(

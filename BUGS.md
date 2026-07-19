@@ -706,7 +706,7 @@ returns failure after the rollout has already moved.
 
 ### 46. [P1][Data integrity] Thread deletion is non-transactional and can fail after data is gone
 
-**Status:** Assigned
+**Status:** Fixed
 
 App-server deletes every subtree rollout before state rows
 (`codex-rs/app-server/src/request_processors/thread_delete.rs:39-79`). Local storage removes rollout
