@@ -7862,7 +7862,7 @@ async fn refresh_mcp_servers_keeps_the_previous_runtime_alive() {
 }
 
 #[tokio::test]
-async fn plugin_availability_change_reuses_the_mcp_manager() {
+async fn pending_environment_roots_refresh_plugin_availability() {
     struct ReadyPluginContributor;
 
     impl codex_extension_api::McpServerContributor<Config> for ReadyPluginContributor {
@@ -7877,8 +7877,8 @@ async fn plugin_availability_change_reuses_the_mcp_manager() {
         {
             Box::pin(async move {
                 let available = context
-                    .available_environment_ids()
-                    .is_some_and(|ids| ids.iter().any(|id| id == "executor"));
+                    .ready_selected_capability_roots()
+                    .is_some_and(|roots| roots.iter().any(|root| root.id == "skill-only"));
                 available
                     .then(
                         || codex_extension_api::McpServerContribution::SelectedPluginPackage {
@@ -7921,29 +7921,121 @@ async fn plugin_availability_change_reuses_the_mcp_manager() {
                 .expect("selected capability root URI"),
         },
     };
-    let environment = Arc::clone(
-        &turn_context
-            .environments
-            .primary()
-            .expect("ready test environment")
-            .environment,
+    let environment_manager = session.services.turn_environments.environment_manager();
+    let registration = environment_manager
+        .register_pending_environment("executor".to_string())
+        .expect("register pending environment");
+    let environment = environment_manager
+        .get_environment("executor")
+        .expect("pending environment");
+    assert!(environment.selected_capability_roots().is_empty());
+    registration
+        .complete(Ok(codex_exec_server::EnvironmentReadyInfo {
+            exec_server_url: "ws://127.0.0.1:9".to_string(),
+            selected_capability_roots: vec![selected_root.clone()],
+        }))
+        .expect("complete pending environment");
+    assert_eq!(
+        environment.selected_capability_roots(),
+        std::slice::from_ref(&selected_root)
     );
-    let captured_environments = HashMap::from([("executor".to_string(), Some(environment))]);
+    let local_environment = turn_context
+        .environments
+        .primary()
+        .expect("ready local environment");
+    let environments = TurnEnvironmentSnapshot {
+        turn_environments: vec![TurnEnvironment::new(
+            "executor".to_string(),
+            environment,
+            local_environment.cwd().clone(),
+            local_environment.shell.clone(),
+        )],
+        starting: Vec::new(),
+    };
     let resolved_roots = session
-        .services
-        .turn_environments
-        .environment_manager()
-        .resolve_selected_capability_roots(&[selected_root], &captured_environments)
+        .resolve_selected_capability_roots_for_step(&environments)
         .await;
+    assert_eq!(
+        resolved_roots
+            .iter()
+            .map(|root| root.selected_root().clone())
+            .collect::<Vec<_>>(),
+        vec![selected_root]
+    );
 
     let new_runtime = session
-        .mcp_runtime_for_step(&turn_context, &turn_context.environments, &resolved_roots)
+        .mcp_runtime_for_step(&turn_context, &environments, &resolved_roots)
         .await;
 
     assert!(!old_runtime.plugins_available());
     assert!(new_runtime.plugins_available());
     assert!(!Arc::ptr_eq(&old_runtime, &new_runtime));
     assert!(Arc::ptr_eq(&old_manager, &new_runtime.manager_arc()));
+}
+
+#[tokio::test]
+#[tracing_test::traced_test]
+async fn conflicting_pending_environment_root_ids_keep_first_location() {
+    let (session, turn_context) = make_session_and_context().await;
+    let environment_manager = session.services.turn_environments.environment_manager();
+    let selected_root =
+        |environment_id: &str, path: &str| codex_protocol::capabilities::SelectedCapabilityRoot {
+            id: "shared-root".to_string(),
+            location: codex_protocol::capabilities::CapabilityRootLocation::Environment {
+                environment_id: environment_id.to_string(),
+                path: PathUri::parse(path).expect("root URI"),
+            },
+        };
+    let selected_roots = [
+        selected_root("executor-a", "file:///plugins/a"),
+        selected_root("executor-b", "file:///plugins/b"),
+    ];
+    let local_environment = turn_context
+        .environments
+        .primary()
+        .expect("ready local environment");
+    let mut turn_environments = Vec::new();
+    for selected_root in &selected_roots {
+        let codex_protocol::capabilities::CapabilityRootLocation::Environment {
+            environment_id,
+            ..
+        } = &selected_root.location;
+        let registration = environment_manager
+            .register_pending_environment(environment_id.clone())
+            .expect("register pending environment");
+        let environment = environment_manager
+            .get_environment(environment_id)
+            .expect("pending environment");
+        registration
+            .complete(Ok(codex_exec_server::EnvironmentReadyInfo {
+                exec_server_url: "ws://127.0.0.1:9".to_string(),
+                selected_capability_roots: vec![selected_root.clone()],
+            }))
+            .expect("complete pending environment");
+        turn_environments.push(TurnEnvironment::new(
+            environment_id.clone(),
+            environment,
+            local_environment.cwd().clone(),
+            local_environment.shell.clone(),
+        ));
+    }
+    let resolved_roots = session
+        .resolve_selected_capability_roots_for_step(&TurnEnvironmentSnapshot {
+            turn_environments,
+            starting: Vec::new(),
+        })
+        .await;
+
+    assert_eq!(
+        resolved_roots
+            .iter()
+            .map(|root| root.selected_root().clone())
+            .collect::<Vec<_>>(),
+        vec![selected_roots[0].clone()]
+    );
+    assert!(logs_contain(
+        "ignoring selected capability root with conflicting location"
+    ));
 }
 
 #[tokio::test]

@@ -7,11 +7,14 @@ use codex_core::compact::SUMMARIZATION_PROMPT;
 use codex_core::config::Constrained;
 use codex_exec_server::CopyOptions;
 use codex_exec_server::CreateDirectoryOptions;
+use codex_exec_server::EnvironmentReadyInfo;
 use codex_exec_server::FileSystemSandboxContext;
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
 use codex_exec_server::REMOTE_ENVIRONMENT_ID;
 use codex_exec_server::RemoveOptions;
 use codex_features::Feature;
+use codex_protocol::capabilities::CapabilityRootLocation;
+use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::models::FileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::FileSystemAccessMode;
@@ -582,7 +585,16 @@ async fn deferred_executor_updates_context_and_tools_after_startup() -> Result<(
         .await?;
     wait_for_response_request_count(&response_mock, /*expected_count*/ 1).await;
     assert_eq!(response_mock.requests().len(), 1);
-    registration.complete(Ok(format!("ws://{}", listener.local_addr()?)))?;
+    registration.complete(Ok(EnvironmentReadyInfo {
+        exec_server_url: format!("ws://{}", listener.local_addr()?),
+        selected_capability_roots: vec![SelectedCapabilityRoot {
+            id: "remote-environment-capability@1".to_string(),
+            location: CapabilityRootLocation::Environment {
+                environment_id: REMOTE_ENVIRONMENT_ID.to_string(),
+                path: PathUri::parse("file:///opt/remote-capability")?,
+            },
+        }],
+    }))?;
     serve_environment_info(listener).await;
     let event = wait_for_event(&test.codex, |event| {
         matches!(

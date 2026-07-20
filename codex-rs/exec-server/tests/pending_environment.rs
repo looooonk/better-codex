@@ -1,8 +1,29 @@
 mod common;
 
 use codex_exec_server::EnvironmentManager;
+use codex_exec_server::EnvironmentReadyInfo;
+use codex_protocol::capabilities::CapabilityRootLocation;
+use codex_protocol::capabilities::SelectedCapabilityRoot;
+use codex_utils_path_uri::PathUri;
 use common::exec_server::exec_server;
 use futures::poll;
+
+fn ready_info(exec_server_url: String) -> EnvironmentReadyInfo {
+    EnvironmentReadyInfo {
+        exec_server_url,
+        selected_capability_roots: Vec::new(),
+    }
+}
+
+fn selected_root(root_id: &str, environment_id: &str) -> anyhow::Result<SelectedCapabilityRoot> {
+    Ok(SelectedCapabilityRoot {
+        id: root_id.to_string(),
+        location: CapabilityRootLocation::Environment {
+            environment_id: environment_id.to_string(),
+            path: PathUri::parse("file:///plugins/root")?,
+        },
+    })
+}
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn pending_environment_connects_and_reconnects_after_completion() -> anyhow::Result<()> {
@@ -12,7 +33,15 @@ async fn pending_environment_connects_and_reconnects_after_completion() -> anyho
     let registration = manager.register_pending_environment("tools".to_string())?;
     let environment = manager.get_environment("tools").expect("environment");
 
-    registration.complete(Ok(proxy.websocket_url().to_string()))?;
+    let selected_capability_roots = vec![selected_root("selected-root", "tools")?];
+    registration.complete(Ok(EnvironmentReadyInfo {
+        exec_server_url: proxy.websocket_url().to_string(),
+        selected_capability_roots: selected_capability_roots.clone(),
+    }))?;
+    assert_eq!(
+        environment.selected_capability_roots(),
+        selected_capability_roots
+    );
     environment.wait_until_ready().await?;
     proxy.pause_and_disconnect().await?;
     proxy.resume()?;
@@ -42,10 +71,35 @@ async fn failure_and_dropped_registration_are_terminal() -> anyhow::Result<()> {
 
     let invalid = manager.register_pending_environment("invalid".to_string())?;
     let invalid_environment = manager.get_environment("invalid").expect("environment");
-    let error = invalid.complete(Ok(String::new())).unwrap_err();
+    let error = invalid.complete(Ok(ready_info(String::new()))).unwrap_err();
     assert!(error.to_string().contains("requires an exec-server url"));
     let error = invalid_environment.wait_until_ready().await.unwrap_err();
     assert!(error.to_string().contains("requires an exec-server url"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_ready_capability_roots_are_terminal() -> anyhow::Result<()> {
+    let manager = EnvironmentManager::without_environments();
+    let registration = manager.register_pending_environment("tools".to_string())?;
+    let environment = manager.get_environment("tools").expect("environment");
+    let error = registration
+        .complete(Ok(EnvironmentReadyInfo {
+            exec_server_url: "ws://127.0.0.1:9".to_string(),
+            selected_capability_roots: vec![selected_root("selected-root", "other")?],
+        }))
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        codex_exec_server::ExecServerError::Protocol(_)
+    ));
+    let readiness_error = environment.wait_until_ready().await.unwrap_err();
+    assert!(
+        readiness_error
+            .to_string()
+            .contains("belong to environment")
+    );
+    assert!(environment.selected_capability_roots().is_empty());
     Ok(())
 }
 
@@ -58,12 +112,12 @@ async fn late_completion_is_isolated_from_replacement() -> anyhow::Result<()> {
     let current_registration = manager.register_pending_environment("tools".to_string())?;
     let current = manager.get_environment("tools").expect("current");
 
-    old_registration.complete(Ok(server.websocket_url().to_string()))?;
+    old_registration.complete(Ok(ready_info(server.websocket_url().to_string())))?;
     old_environment.wait_until_ready().await?;
     let mut current_readiness = Box::pin(current.wait_until_ready());
     assert!(poll!(&mut current_readiness).is_pending());
 
-    current_registration.complete(Ok(server.websocket_url().to_string()))?;
+    current_registration.complete(Ok(ready_info(server.websocket_url().to_string())))?;
     current_readiness.await?;
     server.shutdown().await?;
     Ok(())

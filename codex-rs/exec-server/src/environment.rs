@@ -1,8 +1,12 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::sync::RwLock;
 
+use codex_protocol::capabilities::CapabilityRootLocation;
+use codex_protocol::capabilities::SelectedCapabilityRoot;
 use futures::FutureExt;
 
 use crate::ExecServerError;
@@ -62,10 +66,24 @@ pub struct EnvironmentManager {
     local_runtime_paths: Option<ExecServerRuntimePaths>,
 }
 
+/// Information supplied by the environment owner when a pending environment is ready.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct EnvironmentReadyInfo {
+    /// Stable exec-server URL for the pending environment.
+    pub exec_server_url: String,
+    /// Ordered capability roots selected for this environment.
+    pub selected_capability_roots: Vec<SelectedCapabilityRoot>,
+}
 /// The one-shot capability to complete a pending environment registration.
 #[must_use = "the pending environment cannot connect until registration is completed"]
-pub struct PendingEnvironmentRegistration(oneshot::Sender<Result<String, String>>);
+pub struct PendingEnvironmentRegistration {
+    completion: oneshot::Sender<Result<String, String>>,
+    environment_id: String,
+    selected_capability_roots: Arc<OnceLock<Vec<SelectedCapabilityRoot>>>,
+}
 
+/// Maximum capability roots accepted from pending environment ready information.
+pub const MAX_SELECTED_CAPABILITY_ROOTS: usize = 256;
 pub const LOCAL_ENVIRONMENT_ID: &str = "local";
 pub const REMOTE_ENVIRONMENT_ID: &str = "remote";
 
@@ -326,16 +344,23 @@ impl EnvironmentManager {
     ) -> Result<PendingEnvironmentRegistration, ExecServerError> {
         validate_environment_id(&environment_id)?;
         let (completion, websocket_url) = oneshot::channel();
-        let environment = Arc::new(Environment::remote_with_transport(
+        let selected_capability_roots = Arc::new(OnceLock::new());
+        let mut environment = Environment::remote_with_transport(
             ExecServerTransportParams::PendingWebSocketUrl(websocket_url.shared()),
             self.local_runtime_paths.clone(),
-        ));
+        );
+        environment.selected_capability_roots = Some(Arc::clone(&selected_capability_roots));
+        let environment = Arc::new(environment);
         environment.start_connecting();
         self.environments
             .write()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(environment_id, environment);
-        Ok(PendingEnvironmentRegistration(completion))
+            .insert(environment_id.clone(), environment);
+        Ok(PendingEnvironmentRegistration {
+            completion,
+            environment_id,
+            selected_capability_roots,
+        })
     }
 
     /// Adds or replaces a named remote environment that connects through an
@@ -368,19 +393,62 @@ impl EnvironmentManager {
 }
 
 impl PendingEnvironmentRegistration {
-    /// Completes provisioning with the stable URL or a terminal error message.
-    pub fn complete(self, result: Result<String, String>) -> Result<(), ExecServerError> {
+    /// Completes provisioning with ready information or a terminal error message.
+    pub fn complete(
+        self,
+        result: Result<EnvironmentReadyInfo, String>,
+    ) -> Result<(), ExecServerError> {
         let result = match result {
-            Ok(exec_server_url) => match validate_remote_exec_server_url(exec_server_url) {
-                Ok(exec_server_url) => Ok(exec_server_url),
-                Err(error) => {
-                    let _ = self.0.send(Err(error.to_string()));
+            Ok(ready_info) => {
+                let EnvironmentReadyInfo {
+                    exec_server_url,
+                    selected_capability_roots,
+                } = ready_info;
+                let exec_server_url = match validate_remote_exec_server_url(exec_server_url) {
+                    Ok(exec_server_url) => exec_server_url,
+                    Err(error) => {
+                        let _ = self.completion.send(Err(error.to_string()));
+                        return Err(error);
+                    }
+                };
+                if selected_capability_roots.len() > MAX_SELECTED_CAPABILITY_ROOTS {
+                    let error = ExecServerError::Protocol(format!(
+                        "environment ready info contains more than {MAX_SELECTED_CAPABILITY_ROOTS} selected capability roots"
+                    ));
+                    let _ = self.completion.send(Err(error.to_string()));
                     return Err(error);
                 }
-            },
+                let mut root_ids = HashSet::with_capacity(selected_capability_roots.len());
+                for root in &selected_capability_roots {
+                    let CapabilityRootLocation::Environment { environment_id, .. } = &root.location;
+                    if root.id.trim().is_empty()
+                        || environment_id != &self.environment_id
+                        || !root_ids.insert(root.id.as_str())
+                    {
+                        let error = ExecServerError::Protocol(format!(
+                            "selected capability roots must have unique non-empty IDs and belong to environment `{}`",
+                            self.environment_id
+                        ));
+                        let _ = self.completion.send(Err(error.to_string()));
+                        return Err(error);
+                    }
+                }
+                if self
+                    .selected_capability_roots
+                    .set(selected_capability_roots)
+                    .is_err()
+                {
+                    let error = ExecServerError::Protocol(
+                        "pending environment ready info was already set".to_string(),
+                    );
+                    let _ = self.completion.send(Err(error.to_string()));
+                    return Err(error);
+                }
+                Ok(exec_server_url)
+            }
             Err(message) => Err(message),
         };
-        self.0.send(result).map_err(|_| {
+        self.completion.send(result).map_err(|_| {
             ExecServerError::Disconnected("pending environment registration is inactive".into())
         })
     }
@@ -461,6 +529,7 @@ fn optional_environment_value(name: &str) -> Option<String> {
 #[derive(Clone)]
 pub struct Environment {
     remote_client: Option<LazyRemoteExecServerClient>,
+    selected_capability_roots: Option<Arc<OnceLock<Vec<SelectedCapabilityRoot>>>>,
     // Dropping the environment stops unfinished background startup work.
     startup_task: Arc<Mutex<Option<AbortOnDropHandle<()>>>>,
     exec_backend: Arc<dyn ExecBackend>,
@@ -474,6 +543,7 @@ impl Environment {
     pub fn default_for_tests() -> Self {
         Self {
             remote_client: None,
+            selected_capability_roots: None,
             startup_task: Arc::new(Mutex::new(None)),
             exec_backend: Arc::new(LocalProcess::default()),
             filesystem: Arc::new(LocalFileSystem::unsandboxed()),
@@ -528,6 +598,7 @@ impl Environment {
     pub(crate) fn local(local_runtime_paths: ExecServerRuntimePaths) -> Self {
         Self {
             remote_client: None,
+            selected_capability_roots: None,
             startup_task: Arc::new(Mutex::new(None)),
             exec_backend: Arc::new(LocalProcess::with_local_runtime_paths(
                 local_runtime_paths.clone(),
@@ -564,6 +635,7 @@ impl Environment {
 
         Self {
             remote_client: Some(client.clone()),
+            selected_capability_roots: None,
             startup_task: Arc::new(Mutex::new(None)),
             exec_backend,
             filesystem,
@@ -574,6 +646,14 @@ impl Environment {
 
     pub fn is_remote(&self) -> bool {
         self.remote_client.is_some()
+    }
+
+    /// Returns capability roots supplied with the pending environment's ready signal.
+    pub fn selected_capability_roots(&self) -> &[SelectedCapabilityRoot] {
+        self.selected_capability_roots
+            .as_ref()
+            .and_then(|selected_capability_roots| selected_capability_roots.get())
+            .map_or(&[], Vec::as_slice)
     }
 
     pub fn local_runtime_paths(&self) -> Option<&ExecServerRuntimePaths> {

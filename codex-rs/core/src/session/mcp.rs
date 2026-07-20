@@ -1,10 +1,12 @@
 use super::*;
 use crate::mcp::McpRuntimeProjection;
+use codex_exec_server::MAX_SELECTED_CAPABILITY_ROOTS;
 use codex_exec_server::ResolvedSelectedCapabilityRoot;
 use codex_mcp::ElicitationReviewRequest;
 use codex_mcp::ElicitationReviewer;
 use codex_mcp::ElicitationReviewerHandle;
 use codex_protocol::capabilities::CapabilityRootLocation;
+use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::mcp_approval_meta::APPROVAL_KIND_KEY as MCP_ELICITATION_APPROVAL_KIND_KEY;
 use codex_protocol::mcp_approval_meta::APPROVAL_KIND_MCP_TOOL_CALL as MCP_ELICITATION_APPROVAL_KIND_MCP_TOOL_CALL;
@@ -83,8 +85,8 @@ impl Session {
         let selected_capability_roots = self
             .resolve_selected_capability_roots_for_step(&environments)
             .await;
-        let available_environment_ids =
-            Self::available_selected_environment_ids(&selected_capability_roots);
+        let ready_selected_capability_roots =
+            Self::ready_selected_capability_roots(&selected_capability_roots);
         self.services
             .mcp_manager
             .runtime_config_for_step(
@@ -92,7 +94,7 @@ impl Session {
                 &self.services.mcp_thread_init,
                 &self.services.thread_extension_data,
                 &originator,
-                &available_environment_ids,
+                &ready_selected_capability_roots,
             )
             .await
             .config
@@ -115,16 +117,18 @@ impl Session {
         environments: &TurnEnvironmentSnapshot,
         selected_capability_roots: &[ResolvedSelectedCapabilityRoot],
     ) -> Arc<McpRuntimeSnapshot> {
+        let ready_selected_capability_roots =
+            Self::ready_selected_capability_roots(selected_capability_roots);
         let available_environment_ids =
             Self::available_selected_environment_ids(selected_capability_roots);
         let current = self.services.latest_mcp_runtime();
-        if current.available_environment_ids() == available_environment_ids {
+        if current.ready_selected_capability_roots() == ready_selected_capability_roots {
             return current;
         }
 
         let _guard = self.services.mcp_projection_lock.lock().await;
         let current = self.services.latest_mcp_runtime();
-        if current.available_environment_ids() == available_environment_ids {
+        if current.ready_selected_capability_roots() == ready_selected_capability_roots {
             return current;
         }
         let mcp_projection = self
@@ -135,7 +139,7 @@ impl Session {
                 &self.services.mcp_thread_init,
                 &self.services.thread_extension_data,
                 &turn_context.originator,
-                &available_environment_ids,
+                &ready_selected_capability_roots,
             )
             .await;
         let mcp_config = &mcp_projection.config;
@@ -145,8 +149,13 @@ impl Session {
             .values()
             .any(|server| {
                 let was_available = current
-                    .available_environment_ids()
-                    .contains(&server.environment_id);
+                    .ready_selected_capability_roots()
+                    .iter()
+                    .any(|root| {
+                        let CapabilityRootLocation::Environment { environment_id, .. } =
+                            &root.location;
+                        environment_id == &server.environment_id
+                    });
                 let is_available = available_environment_ids.contains(&server.environment_id);
                 server.enabled && was_available != is_available
             });
@@ -157,15 +166,15 @@ impl Session {
                 .has_same_servers(&mcp_config.mcp_server_catalog)
             && current.config().connector_snapshot == mcp_config.connector_snapshot
         {
-            // Availability is only an input to the MCP projection. When that input changes but
-            // the projected servers and connectors do not, advance the input key without
+            // Selected roots are only an input to the MCP projection. When they change but the
+            // projected servers and connectors do not, advance the input key without
             // replacing the live manager and restarting its processes.
             let runtime = Arc::new(McpRuntimeSnapshot::new(
                 Arc::new(current.config().clone()),
                 mcp_projection.plugins_available,
                 current.manager_arc(),
                 current.runtime_context().clone(),
-                available_environment_ids,
+                ready_selected_capability_roots,
             ));
             self.services
                 .mcp_runtime_snapshot
@@ -176,7 +185,7 @@ impl Session {
             turn_context,
             mcp_projection,
             environments,
-            &available_environment_ids,
+            &ready_selected_capability_roots,
             Some(self.mcp_elicitation_reviewer()),
         )
         .await
@@ -186,11 +195,51 @@ impl Session {
         &self,
         environments: &TurnEnvironmentSnapshot,
     ) -> Vec<ResolvedSelectedCapabilityRoot> {
+        let thread_root_count = self.services.selected_capability_roots.len();
+        let mut root_locations_by_id = HashMap::new();
+        let mut selected_capability_roots = Vec::new();
+        let mut ready_environment_root_count = 0;
+        for (index, root) in self
+            .services
+            .selected_capability_roots
+            .iter()
+            .chain(
+                environments
+                    .turn_environments
+                    .iter()
+                    .flat_map(|environment| environment.environment.selected_capability_roots()),
+            )
+            .enumerate()
+        {
+            if let Some(kept_location) = root_locations_by_id.get(&root.id) {
+                if kept_location != &root.location {
+                    tracing::warn!(
+                        root_id = root.id,
+                        ?kept_location,
+                        ignored_location = ?root.location,
+                        "ignoring selected capability root with conflicting location"
+                    );
+                }
+                continue;
+            }
+            if index >= thread_root_count {
+                if ready_environment_root_count == MAX_SELECTED_CAPABILITY_ROOTS {
+                    tracing::warn!(
+                        max_root_count = MAX_SELECTED_CAPABILITY_ROOTS,
+                        "ignoring excess selected capability roots from ready environments"
+                    );
+                    break;
+                }
+                ready_environment_root_count += 1;
+            }
+            root_locations_by_id.insert(root.id.clone(), root.location.clone());
+            selected_capability_roots.push(root.clone());
+        }
         self.services
             .turn_environments
             .environment_manager()
             .resolve_selected_capability_roots(
-                &self.services.selected_capability_roots,
+                &selected_capability_roots,
                 &environments.captured_environments(),
             )
             .await
@@ -326,7 +375,7 @@ impl Session {
         turn_context: &TurnContext,
         mcp_projection: McpRuntimeProjection,
         environments: &TurnEnvironmentSnapshot,
-        available_environment_ids: &[String],
+        ready_selected_capability_roots: &[SelectedCapabilityRoot],
         elicitation_reviewer: Option<ElicitationReviewerHandle>,
     ) -> Arc<McpRuntimeSnapshot> {
         let auth = self.services.auth_manager.auth().await;
@@ -403,7 +452,7 @@ impl Session {
             mcp_config,
             plugins_available,
             mcp_runtime_context,
-            available_environment_ids.to_vec(),
+            ready_selected_capability_roots.to_vec(),
             refreshed_manager,
         )
     }
@@ -469,11 +518,9 @@ impl Session {
         }
 
         let _guard = self.services.mcp_projection_lock.lock().await;
-        let available_environment_ids = self
-            .services
-            .latest_mcp_runtime()
-            .available_environment_ids()
-            .to_vec();
+        let current_runtime = self.services.latest_mcp_runtime();
+        let ready_selected_capability_roots =
+            current_runtime.ready_selected_capability_roots().to_vec();
         let mut mcp_projection = self
             .services
             .mcp_manager
@@ -482,7 +529,7 @@ impl Session {
                 &self.services.mcp_thread_init,
                 &self.services.thread_extension_data,
                 &turn_context.originator,
-                &available_environment_ids,
+                &ready_selected_capability_roots,
             )
             .await;
         mcp_projection.config.mcp_server_catalog = mcp_projection
@@ -493,7 +540,7 @@ impl Session {
             turn_context,
             mcp_projection,
             &turn_context.environments,
-            &available_environment_ids,
+            &ready_selected_capability_roots,
             elicitation_reviewer,
         )
         .await;
@@ -538,11 +585,9 @@ impl Session {
         elicitation_reviewer: Option<ElicitationReviewerHandle>,
     ) {
         let _guard = self.services.mcp_projection_lock.lock().await;
-        let available_environment_ids = self
-            .services
-            .latest_mcp_runtime()
-            .available_environment_ids()
-            .to_vec();
+        let current_runtime = self.services.latest_mcp_runtime();
+        let ready_selected_capability_roots =
+            current_runtime.ready_selected_capability_roots().to_vec();
         let mcp_projection = self
             .services
             .mcp_manager
@@ -551,14 +596,14 @@ impl Session {
                 &self.services.mcp_thread_init,
                 &self.services.thread_extension_data,
                 &turn_context.originator,
-                &available_environment_ids,
+                &ready_selected_capability_roots,
             )
             .await;
         self.refresh_mcp_servers_inner(
             turn_context,
             mcp_projection,
             &turn_context.environments,
-            &available_environment_ids,
+            &ready_selected_capability_roots,
             elicitation_reviewer,
         )
         .await;
@@ -576,6 +621,15 @@ impl Session {
             }
         }
         available
+    }
+
+    pub(crate) fn ready_selected_capability_roots(
+        selected_capability_roots: &[ResolvedSelectedCapabilityRoot],
+    ) -> Vec<SelectedCapabilityRoot> {
+        selected_capability_roots
+            .iter()
+            .map(|root| root.selected_root().clone())
+            .collect()
     }
 
     #[cfg(test)]

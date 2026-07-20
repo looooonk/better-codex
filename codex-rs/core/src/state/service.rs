@@ -114,14 +114,14 @@ impl SessionServices {
         config: Arc<McpConfig>,
         plugins_available: bool,
         runtime_context: McpRuntimeContext,
-        available_environment_ids: Vec<String>,
+        ready_selected_capability_roots: Vec<SelectedCapabilityRoot>,
         connections: McpConnectionManager,
     ) -> Result<()> {
         let runtime = self.publish_mcp_runtime(
             config,
             plugins_available,
             runtime_context,
-            available_environment_ids,
+            ready_selected_capability_roots,
             connections,
         );
         runtime.manager().validate_required_servers().await
@@ -132,7 +132,7 @@ impl SessionServices {
         config: Arc<McpConfig>,
         plugins_available: bool,
         runtime_context: McpRuntimeContext,
-        available_environment_ids: Vec<String>,
+        ready_selected_capability_roots: Vec<SelectedCapabilityRoot>,
         connections: McpConnectionManager,
     ) -> Arc<McpRuntimeSnapshot> {
         let connections = self.mcp_runtime.replace(connections);
@@ -141,7 +141,7 @@ impl SessionServices {
             plugins_available,
             connections,
             runtime_context,
-            available_environment_ids,
+            ready_selected_capability_roots,
         ));
         self.mcp_runtime_snapshot.store(Some(Arc::clone(&runtime)));
         runtime
