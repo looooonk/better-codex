@@ -245,6 +245,7 @@ impl McpRequestProcessor {
         };
         let mcp_manager = self.thread_manager.mcp_manager();
         let codex_apps_tools_cache = mcp_manager.codex_apps_tools_cache();
+        let tool_catalog_cache = mcp_manager.tool_catalog_cache();
         let auth = self.auth_manager.auth().await;
         let (mcp_config, runtime_context) = match thread {
             Some(thread) => {
@@ -271,12 +272,14 @@ impl McpRequestProcessor {
                 auth,
                 runtime_context,
                 codex_apps_tools_cache,
+                tool_catalog_cache,
             )
             .await;
         });
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn list_mcp_server_status_task(
         outgoing: Arc<OutgoingMessageSender>,
         request_id: ConnectionRequestId,
@@ -285,6 +288,7 @@ impl McpRequestProcessor {
         auth: Option<CodexAuth>,
         runtime_context: McpRuntimeContext,
         codex_apps_tools_cache: codex_mcp::CodexAppsToolsCache,
+        tool_catalog_cache: codex_mcp::McpToolCatalogCache,
     ) {
         let result = Self::list_mcp_server_status_response(
             request_id.request_id.to_string(),
@@ -293,6 +297,7 @@ impl McpRequestProcessor {
             auth,
             runtime_context,
             codex_apps_tools_cache,
+            tool_catalog_cache,
         )
         .await;
         outgoing.send_result(request_id, result).await;
@@ -305,6 +310,7 @@ impl McpRequestProcessor {
         auth: Option<CodexAuth>,
         runtime_context: McpRuntimeContext,
         codex_apps_tools_cache: codex_mcp::CodexAppsToolsCache,
+        tool_catalog_cache: codex_mcp::McpToolCatalogCache,
     ) -> Result<ListMcpServerStatusResponse, JSONRPCErrorError> {
         let detail = match params.detail.unwrap_or(McpServerStatusDetail::Full) {
             McpServerStatusDetail::Full => McpSnapshotDetail::Full,
@@ -317,6 +323,7 @@ impl McpRequestProcessor {
             request_id,
             runtime_context,
             codex_apps_tools_cache,
+            tool_catalog_cache,
             detail,
         )
         .await;
@@ -410,6 +417,7 @@ impl McpRequestProcessor {
         let mcp_manager = self.thread_manager.mcp_manager();
         let mcp_config = mcp_manager.runtime_config(&config).await;
         let codex_apps_tools_cache = mcp_manager.codex_apps_tools_cache();
+        let tool_catalog_cache = mcp_manager.tool_catalog_cache();
         let auth = self.auth_manager.auth().await;
         let environment_manager = self.thread_manager.environment_manager();
         // This threadless resource-read path has no turn cwd or turn-selected
@@ -425,6 +433,7 @@ impl McpRequestProcessor {
                 auth.as_ref(),
                 runtime_context,
                 codex_apps_tools_cache,
+                tool_catalog_cache,
                 &server,
                 &uri,
             )

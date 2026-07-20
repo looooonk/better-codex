@@ -34,6 +34,7 @@ use crate::runtime::McpRuntimeContext;
 use crate::runtime::emit_duration;
 use crate::server::EffectiveMcpServer;
 use crate::server::McpServerMetadata;
+use crate::tool_catalog_cache::McpToolCatalogCache;
 use crate::tools::ToolInfo;
 use crate::tools::filter_tools;
 use crate::tools::normalize_tools_for_model_with_prefix;
@@ -136,6 +137,7 @@ impl McpConnectionManager {
         runtime_context: McpRuntimeContext,
         codex_home: PathBuf,
         codex_apps_tools_cache: CodexAppsToolsCache,
+        tool_catalog_cache: McpToolCatalogCache,
         codex_apps_tools_cache_key: CodexAppsToolsCacheKey,
         prefix_mcp_tool_names: bool,
         client_elicitation_capability: ElicitationCapability,
@@ -189,18 +191,24 @@ impl McpConnectionManager {
                 },
             )
             .await;
-            let configured_config = server.configured_config();
+            let configured_config = server.configured_config().cloned();
+            let resolved_environment = configured_config.as_ref().map_or_else(
+                || Ok(None),
+                |config| runtime_context.resolve_server_environment(&server_name, config),
+            );
             // For built-in Codex Apps, `CODEX_CONNECTORS_TOKEN` is a debug
             // override: it supplies runtime auth but bypasses the shared tools
             // cache.
             let uses_env_bearer_token =
-                configured_config.is_some_and(|config| match &config.transport {
-                    McpServerTransportConfig::StreamableHttp {
-                        bearer_token_env_var,
-                        ..
-                    } => bearer_token_env_var.is_some(),
-                    McpServerTransportConfig::Stdio { .. } => false,
-                });
+                configured_config
+                    .as_ref()
+                    .is_some_and(|config| match &config.transport {
+                        McpServerTransportConfig::StreamableHttp {
+                            bearer_token_env_var,
+                            ..
+                        } => bearer_token_env_var.is_some(),
+                        McpServerTransportConfig::Stdio { .. } => false,
+                    });
             let shares_codex_apps_tools_cache =
                 should_share_codex_apps_tools_cache(&server_name, uses_env_bearer_token);
             let codex_apps_tools_cache_context = shares_codex_apps_tools_cache.then(|| {
@@ -226,6 +234,22 @@ impl McpConnectionManager {
                 } else {
                     chatgpt_auth_provider_for_server(&server, chatgpt_auth_provider)
                 };
+            let tool_catalog_cache_context = if server_name == CODEX_APPS_MCP_SERVER_NAME {
+                None
+            } else if let Some(config) = configured_config.as_ref()
+                && let Ok(environment) = resolved_environment.as_ref()
+            {
+                tool_catalog_cache.context(
+                    &server_name,
+                    config,
+                    &runtime_context,
+                    environment.as_ref(),
+                    &client_elicitation_capability,
+                    supports_openai_form_elicitation,
+                )
+            } else {
+                None
+            };
             let async_managed_client = AsyncManagedClient::new(
                 server_name.clone(),
                 startup_submit_id.clone(),
@@ -236,8 +260,10 @@ impl McpConnectionManager {
                 tx_event.clone(),
                 elicitation_requests.clone(),
                 codex_apps_tools_cache_context,
+                tool_catalog_cache_context,
                 Arc::clone(&tool_plugin_provenance),
                 runtime_context.clone(),
+                resolved_environment,
                 runtime_auth_provider,
                 client_elicitation_capability.clone(),
                 supports_openai_form_elicitation,

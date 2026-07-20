@@ -13,6 +13,7 @@ use rmcp::ServiceExt;
 use rmcp::handler::server::ServerHandler;
 use rmcp::model::CallToolRequestParams;
 use rmcp::model::CallToolResult;
+use rmcp::model::Implementation;
 use rmcp::model::InitializeRequestParams;
 use rmcp::model::InitializeResult;
 use rmcp::model::JsonObject;
@@ -50,6 +51,14 @@ const MEMO_URI: &str = "memo://codex/example-note";
 const MEMO_CONTENT: &str = "This is a sample MCP resource served by the rmcp test server.";
 const SANDBOX_STATE_META_CAPABILITY: &str = "codex/sandbox-state-meta";
 const SMALL_PNG_BASE64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+const DYNAMIC_SERVER_METADATA_ENV: &str = "MCP_TEST_DYNAMIC_SERVER_METADATA";
+const INITIALIZE_BARRIER_FILE_ENV: &str = "MCP_TEST_INITIALIZE_BARRIER_FILE";
+
+fn dynamic_server_process_label() -> Option<String> {
+    std::env::var_os(DYNAMIC_SERVER_METADATA_ENV)
+        .is_some()
+        .then(|| format!("rmcp-test-process-{}", std::process::id()))
+}
 
 pub fn stdio() -> (tokio::io::Stdin, tokio::io::Stdout) {
     (tokio::io::stdin(), tokio::io::stdout())
@@ -88,7 +97,7 @@ impl TestToolServer {
         thread_hint_meta.insert("ui".to_string(), json!({ "visibility": [] }));
         thread_hint_tool.meta = Some(thread_hint_meta);
 
-        let tools = vec![
+        let mut tools = vec![
             Self::echo_tool(),
             Self::echo_dash_tool(),
             thread_hint_tool,
@@ -100,6 +109,11 @@ impl TestToolServer {
             Self::image_scenario_tool(),
             sandbox_meta_tool,
         ];
+        if let Some(process_label) = dynamic_server_process_label()
+            && let Some(echo) = tools.iter_mut().find(|tool| tool.name == "echo")
+        {
+            echo.description = Some(Cow::Owned(format!("Echo from {process_label}.")));
+        }
         let resources = vec![Self::memo_resource()];
         let resource_templates = vec![Self::memo_template()];
         Self {
@@ -445,6 +459,11 @@ impl ServerHandler for TestToolServer {
         request: InitializeRequestParams,
         context: rmcp::service::RequestContext<rmcp::service::RoleServer>,
     ) -> Result<InitializeResult, McpError> {
+        if let Ok(barrier_file) = std::env::var(INITIALIZE_BARRIER_FILE_ENV) {
+            while !std::path::Path::new(&barrier_file).is_file() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        }
         self.supports_openai_form_elicitation.store(
             request
                 .capabilities
@@ -468,8 +487,18 @@ impl ServerHandler for TestToolServer {
             JsonObject::new(),
         )]));
 
-        ServerInfo::new(capabilities)
-            .with_instructions("Use these tools to exercise the rmcp test server.")
+        let server_info = ServerInfo::new(capabilities);
+        match dynamic_server_process_label() {
+            Some(process_label) => server_info
+                .with_server_info(
+                    Implementation::new("codex-rmcp-test-server", env!("CARGO_PKG_VERSION"))
+                        .with_title(process_label.clone()),
+                )
+                .with_instructions(format!("Use the tools from {process_label}.")),
+            None => {
+                server_info.with_instructions("Use these tools to exercise the rmcp test server.")
+            }
+        }
     }
 
     fn list_tools(

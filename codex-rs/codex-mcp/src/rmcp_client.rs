@@ -32,6 +32,8 @@ use crate::runtime::McpRuntimeContext;
 use crate::runtime::emit_duration;
 use crate::server::EffectiveMcpServer;
 use crate::server::McpServerLaunch;
+use crate::tool_catalog_cache::McpToolCatalogCacheContext;
+use crate::tool_catalog_cache::McpToolCatalogFetchTicket;
 use crate::tools::ToolFilter;
 use crate::tools::ToolInfo;
 use crate::tools::filter_tools;
@@ -45,6 +47,7 @@ use codex_config::McpServerConfig;
 use codex_config::McpServerTransportConfig;
 use codex_config::types::AuthKeyringBackendKind;
 use codex_config::types::OAuthCredentialsStoreMode;
+use codex_exec_server::Environment;
 use codex_exec_server::HttpClient;
 use codex_exec_server::ReqwestHttpClient;
 use codex_protocol::mcp::McpServerInfo;
@@ -77,6 +80,10 @@ use tracing::warn;
 /// MCP server capability indicating that Codex should include [`SandboxState`]
 /// in tool-call request `_meta` under this key.
 pub const MCP_SANDBOX_STATE_META_CAPABILITY: &str = "codex/sandbox-state-meta";
+/// Experimental MCP server capability for development and testing only; production servers should
+/// not use it. Its `cacheable: false` property disables sharing tool definitions across connections.
+const MCP_TOOL_CATALOG_CACHE_CAPABILITY: &str = "codex/tool-catalog-cache";
+const MCP_TOOL_CATALOG_CACHEABLE_PROPERTY: &str = "cacheable";
 pub const OPENAI_FORM_CAPABILITY: &str = "openai/form";
 
 pub(crate) const MCP_TOOLS_LIST_DURATION_METRIC: &str = "codex.mcp.tools.list.duration_ms";
@@ -110,7 +117,7 @@ pub(crate) struct ManagedClient {
 }
 
 impl ManagedClient {
-    fn listed_tools(&self) -> Vec<ToolInfo> {
+    pub(crate) fn listed_tools(&self) -> Vec<ToolInfo> {
         let total_start = Instant::now();
         if let Some(tools) = self
             .codex_apps_tools_cache_context
@@ -273,7 +280,9 @@ struct ManagedClientStartup {
     tx_event: Sender<Event>,
     elicitation_requests: ElicitationRequestManager,
     codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
+    tool_catalog_cache_context: Option<McpToolCatalogCacheContext>,
     runtime_context: McpRuntimeContext,
+    resolved_environment: std::result::Result<Option<Arc<Environment>>, String>,
     runtime_auth_provider: Option<SharedAuthProvider>,
     client_elicitation_capability: ElicitationCapability,
     supports_openai_form_elicitation: bool,
@@ -291,7 +300,9 @@ impl ManagedClientStartup {
             tx_event,
             elicitation_requests,
             codex_apps_tools_cache_context,
+            tool_catalog_cache_context,
             runtime_context,
+            resolved_environment,
             runtime_auth_provider,
             client_elicitation_capability,
             supports_openai_form_elicitation,
@@ -308,6 +319,9 @@ impl ManagedClientStartup {
             .and_then(|config| config.startup_timeout_sec)
             .unwrap_or(DEFAULT_STARTUP_TIMEOUT);
         let cancel_token_for_fut = cancel_token;
+        let tool_catalog_fetch_ticket = tool_catalog_cache_context
+            .as_ref()
+            .map(McpToolCatalogCacheContext::begin_fetch);
         async move {
             let refresh_start = is_codex_apps_mcp_server.then(Instant::now);
             let outcome = match async {
@@ -323,6 +337,7 @@ impl ManagedClientStartup {
                         store_mode,
                         keyring_backend_kind,
                         runtime_context,
+                        resolved_environment,
                         runtime_auth_provider,
                     ),
                 )
@@ -349,6 +364,8 @@ impl ManagedClientStartup {
                         tx_event,
                         elicitation_requests,
                         codex_apps_tools_cache_context,
+                        tool_catalog_cache_context,
+                        tool_catalog_fetch_ticket,
                         client_elicitation_capability,
                         supports_openai_form_elicitation,
                     },
@@ -386,6 +403,7 @@ pub(crate) struct AsyncManagedClient {
     pub(crate) is_codex_apps_mcp_server: bool,
     pub(crate) cached_server_info: Option<McpServerInfo>,
     pub(crate) codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
+    pub(crate) tool_catalog_cache_context: Option<McpToolCatalogCacheContext>,
     pub(crate) tool_filter: ToolFilter,
     pub(crate) startup_complete: Arc<AtomicBool>,
     pub(crate) startup_reconnect: Option<Arc<CodexAppsStartupReconnect>>,
@@ -408,8 +426,10 @@ impl AsyncManagedClient {
         tx_event: Sender<Event>,
         elicitation_requests: ElicitationRequestManager,
         codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
+        tool_catalog_cache_context: Option<McpToolCatalogCacheContext>,
         tool_plugin_provenance: Arc<ToolPluginProvenance>,
         runtime_context: McpRuntimeContext,
+        resolved_environment: std::result::Result<Option<Arc<Environment>>, String>,
         runtime_auth_provider: Option<SharedAuthProvider>,
         client_elicitation_capability: ElicitationCapability,
         supports_openai_form_elicitation: bool,
@@ -437,7 +457,9 @@ impl AsyncManagedClient {
             tx_event,
             elicitation_requests,
             codex_apps_tools_cache_context: codex_apps_tools_cache_context.clone(),
+            tool_catalog_cache_context: tool_catalog_cache_context.clone(),
             runtime_context,
+            resolved_environment,
             runtime_auth_provider,
             client_elicitation_capability,
             supports_openai_form_elicitation,
@@ -459,6 +481,9 @@ impl AsyncManagedClient {
         if codex_apps_tools_cache_context
             .as_ref()
             .is_some_and(CodexAppsToolsCacheContext::has_current_tools)
+            || tool_catalog_cache_context
+                .as_ref()
+                .is_some_and(McpToolCatalogCacheContext::has_tools)
         {
             let startup_task = client.clone();
             tokio::spawn(async move {
@@ -471,6 +496,7 @@ impl AsyncManagedClient {
             is_codex_apps_mcp_server,
             cached_server_info,
             codex_apps_tools_cache_context,
+            tool_catalog_cache_context,
             tool_filter,
             startup_complete,
             startup_reconnect,
@@ -517,12 +543,21 @@ impl AsyncManagedClient {
         self.codex_apps_tools_cache_context
             .as_ref()
             .is_some_and(CodexAppsToolsCacheContext::has_current_tools)
+            || self
+                .tool_catalog_cache_context
+                .as_ref()
+                .is_some_and(McpToolCatalogCacheContext::has_tools)
     }
 
     fn cached_tools(&self) -> Option<Vec<ToolInfo>> {
         self.codex_apps_tools_cache_context
             .as_ref()
             .and_then(CodexAppsToolsCacheContext::current_tools)
+            .or_else(|| {
+                self.tool_catalog_cache_context
+                    .as_ref()
+                    .and_then(McpToolCatalogCacheContext::current_tools)
+            })
             .map(|tools| filter_tools(tools, &self.tool_filter))
     }
 
@@ -535,7 +570,7 @@ impl AsyncManagedClient {
     }
 
     pub(crate) async fn listed_tools(&self) -> Option<Vec<ToolInfo>> {
-        // Keep cache payloads raw; plugin provenance is resolved per-session at read time.
+        // Plugin provenance is resolved per-session rather than stored in shared cache payloads.
         let tools = if !self.startup_complete.load(Ordering::Acquire)
             && let Some(startup_tools) = self.cached_tools()
         {
@@ -543,7 +578,8 @@ impl AsyncManagedClient {
         } else {
             match self.client().await {
                 Ok(client) => Some(client.listed_tools()),
-                Err(_) => self.cached_tools(),
+                Err(_) if self.is_codex_apps_mcp_server => self.cached_tools(),
+                Err(_) => None,
             }
         }?;
         Some(self.prepare_tools(tools))
@@ -840,6 +876,8 @@ async fn start_server_task(
         tx_event,
         elicitation_requests,
         codex_apps_tools_cache_context,
+        tool_catalog_cache_context,
+        tool_catalog_fetch_ticket,
         client_elicitation_capability,
         supports_openai_form_elicitation,
     } = params;
@@ -855,6 +893,19 @@ async fn start_server_task(
         .await
         .map_err(StartupOutcomeError::from)?;
 
+    let server_disables_tool_catalog_cache = initialize_result
+        .capabilities
+        .experimental
+        .as_ref()
+        .and_then(|experimental| experimental.get(MCP_TOOL_CATALOG_CACHE_CAPABILITY))
+        .and_then(|capability| capability.get(MCP_TOOL_CATALOG_CACHEABLE_PROPERTY))
+        .and_then(serde_json::Value::as_bool)
+        == Some(false);
+    if server_disables_tool_catalog_cache
+        && let Some(cache_context) = tool_catalog_cache_context.as_ref()
+    {
+        cache_context.disable();
+    }
     let server_supports_sandbox_state_meta_capability = initialize_result
         .capabilities
         .experimental
@@ -883,7 +934,14 @@ async fn start_server_task(
         (None, None) => tools,
         _ => unreachable!("Codex Apps fetch ticket requires cache context"),
     };
-    if is_codex_apps_mcp_server {
+    let has_shared_tool_catalog = is_codex_apps_mcp_server || tool_catalog_cache_context.is_some();
+    if let (Some(cache_context), Some(fetch_ticket)) = (
+        tool_catalog_cache_context.as_ref(),
+        tool_catalog_fetch_ticket,
+    ) {
+        cache_context.publish_if_newest(fetch_ticket, &tools);
+    }
+    if has_shared_tool_catalog {
         emit_duration(
             MCP_TOOLS_LIST_DURATION_METRIC,
             list_start.elapsed(),
@@ -949,6 +1007,8 @@ struct StartServerTaskParams {
     tx_event: Sender<Event>,
     elicitation_requests: ElicitationRequestManager,
     codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
+    tool_catalog_cache_context: Option<McpToolCatalogCacheContext>,
+    tool_catalog_fetch_ticket: Option<McpToolCatalogFetchTicket>,
     client_elicitation_capability: ElicitationCapability,
     supports_openai_form_elicitation: bool,
 }
@@ -960,14 +1020,14 @@ async fn make_rmcp_client(
     store_mode: OAuthCredentialsStoreMode,
     keyring_backend_kind: AuthKeyringBackendKind,
     runtime_context: McpRuntimeContext,
+    resolved_environment: std::result::Result<Option<Arc<Environment>>, String>,
     runtime_auth_provider: Option<SharedAuthProvider>,
 ) -> Result<RmcpClient, StartupOutcomeError> {
     let config = match server.launch() {
         McpServerLaunch::Configured(config) => config.as_ref().clone(),
     };
-    let resolved_environment = runtime_context
-        .resolve_server_environment(server_name, &config)
-        .map_err(|err| StartupOutcomeError::from(anyhow!(err)))?;
+    let resolved_environment =
+        resolved_environment.map_err(|err| StartupOutcomeError::from(anyhow!(err)))?;
     let is_local_environment = config.is_local_environment();
     let McpServerConfig { transport, .. } = config;
 
