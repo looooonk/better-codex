@@ -198,7 +198,7 @@ async fn configured_developer_instructions_are_individually_bounded() -> Result<
     }
 
     let body = request.body_json();
-    let spawn_agent_description = namespace_child_tool(&body, "agents", "spawn_agent")
+    let spawn_agent_description = namespace_child_tool(&body, "collaboration", "spawn_agent")
         .and_then(|tool| tool["description"].as_str())
         .expect("spawn_agent tool description");
     assert!(approx_token_count(spawn_agent_description) <= 1_500);

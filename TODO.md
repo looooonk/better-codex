@@ -119,18 +119,18 @@ improvements that do not redefine Codex behavior.
 
 ## Multi-agent behavior
 
-- [ ] **P1 · CHANGE — Restore the default `collaboration` namespace.** Model-visible
+- [x] **P1 · CHANGE — Restore the default `collaboration` namespace.** Model-visible
   tools should use `functions.collaboration.*`; do not reserve the upstream default
   as an invalid custom namespace.
-- [ ] **P1 · CHANGE — Sync multi-agent configuration vocabulary and defaults.** Port
+- [x] **P1 · CHANGE — Sync multi-agent configuration vocabulary and defaults.** Port
   per-session concurrency, default child model, default reasoning effort, and current
   backend-aware enablement behavior; retire superseded fork-only settings where safe.
-- [ ] **P1 · CHANGE — Align spawn schema exposure.** Advertise validated model and
+- [x] **P1 · CHANGE — Align spawn schema exposure.** Advertise validated model and
   reasoning overrides by default and expose roles only when configured.
-- [ ] **P1 · CHANGE — Align child model and role application.** Preserve explicit
+- [x] **P1 · CHANGE — Align child model and role application.** Preserve explicit
   model/reasoning choices through role loading, validate final combinations, and
   allow upstream-supported overrides on full-history forks.
-- [ ] **P1 · CHANGE — Remove recent task messages from `list_agents`.** Match the
+- [x] **P1 · CHANGE — Remove recent task messages from `list_agents`.** Match the
   smaller upstream identity/status result and avoid unnecessarily re-exposing child
   prompts.
 - [x] **P1 · KEEP — Retain the 64-character task-name limit.** This is a sensible

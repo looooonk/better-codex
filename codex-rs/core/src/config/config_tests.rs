@@ -7348,8 +7348,11 @@ async fn load_config_rejects_missing_agent_role_config_file() -> std::io::Result
     let missing_path = codex_home.path().join("agents").join("researcher.toml");
     let cfg = ConfigToml {
         agents: Some(AgentsToml {
-            max_threads: None,
+            enabled: None,
+            max_concurrent_threads_per_session: None,
             max_depth: None,
+            default_subagent_model: None,
+            default_subagent_reasoning_effort: None,
             job_max_runtime_seconds: None,
             interrupt_message: None,
             roles: BTreeMap::from([(
@@ -8269,10 +8272,14 @@ model = "gpt-5-mini"
 }
 
 #[tokio::test]
-async fn load_config_resolves_agent_interrupt_message() -> std::io::Result<()> {
+async fn load_config_resolves_agent_controls() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {
         agents: Some(AgentsToml {
+            enabled: Some(false),
+            max_depth: Some(2),
+            default_subagent_model: Some("gpt-5.6-terra".to_string()),
+            default_subagent_reasoning_effort: Some(ReasoningEffort::High),
             interrupt_message: Some(false),
             ..Default::default()
         }),
@@ -8286,9 +8293,45 @@ async fn load_config_resolves_agent_interrupt_message() -> std::io::Result<()> {
     )
     .await?;
 
-    assert!(!config.agent_interrupt_message_enabled);
+    assert_eq!(
+        (
+            config.agents_enabled,
+            config.agent_max_depth,
+            config.agent_default_subagent_model.as_deref(),
+            config.agent_default_subagent_reasoning_effort,
+            config.agent_interrupt_message_enabled,
+        ),
+        (
+            false,
+            2,
+            Some("gpt-5.6-terra"),
+            Some(ReasoningEffort::High),
+            false,
+        )
+    );
 
     Ok(())
+}
+
+#[test]
+fn agents_max_threads_alias_matches_canonical_config() {
+    let canonical: ConfigToml = toml::from_str(
+        r#"[agents]
+max_concurrent_threads_per_session = 7
+"#,
+    )
+    .expect("canonical agents thread limit should parse");
+    let legacy: ConfigToml = toml::from_str(
+        r#"[agents]
+max_threads = 7
+"#,
+    )
+    .expect("legacy agents thread limit should parse");
+
+    assert_eq!(legacy, canonical);
+    let serialized = toml::to_string(&legacy).expect("agents config should serialize");
+    assert!(serialized.contains("max_concurrent_threads_per_session = 7"));
+    assert!(!serialized.contains("max_threads"));
 }
 
 #[tokio::test]
@@ -8296,8 +8339,11 @@ async fn load_config_normalizes_agent_role_nickname_candidates() -> std::io::Res
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {
         agents: Some(AgentsToml {
-            max_threads: None,
+            enabled: None,
+            max_concurrent_threads_per_session: None,
             max_depth: None,
+            default_subagent_model: None,
+            default_subagent_reasoning_effort: None,
             job_max_runtime_seconds: None,
             interrupt_message: None,
             roles: BTreeMap::from([(
@@ -8339,8 +8385,11 @@ async fn load_config_rejects_empty_agent_role_nickname_candidates() -> std::io::
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {
         agents: Some(AgentsToml {
-            max_threads: None,
+            enabled: None,
+            max_concurrent_threads_per_session: None,
             max_depth: None,
+            default_subagent_model: None,
+            default_subagent_reasoning_effort: None,
             job_max_runtime_seconds: None,
             interrupt_message: None,
             roles: BTreeMap::from([(
@@ -8376,8 +8425,11 @@ async fn load_config_rejects_duplicate_agent_role_nickname_candidates() -> std::
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {
         agents: Some(AgentsToml {
-            max_threads: None,
+            enabled: None,
+            max_concurrent_threads_per_session: None,
             max_depth: None,
+            default_subagent_model: None,
+            default_subagent_reasoning_effort: None,
             job_max_runtime_seconds: None,
             interrupt_message: None,
             roles: BTreeMap::from([(
@@ -8413,8 +8465,11 @@ async fn load_config_rejects_unsafe_agent_role_nickname_candidates() -> std::io:
     let codex_home = TempDir::new()?;
     let cfg = ConfigToml {
         agents: Some(AgentsToml {
-            max_threads: None,
+            enabled: None,
+            max_concurrent_threads_per_session: None,
             max_depth: None,
+            default_subagent_model: None,
+            default_subagent_reasoning_effort: None,
             job_max_runtime_seconds: None,
             interrupt_message: None,
             roles: BTreeMap::from([(
@@ -10387,7 +10442,11 @@ subagent_usage_hint_text = "Subagent guidance."
 multi_agent_mode_hint_text = "Custom mode guidance."
 tool_namespace = "agents"
 hide_spawn_agent_metadata = true
+expose_spawn_agent_model_overrides = false
 non_code_mode_only = true
+
+[agents]
+max_concurrent_threads_per_session = 9
 "#,
     )?;
 
@@ -10407,7 +10466,7 @@ non_code_mode_only = true
             config.agent_max_threads,
             config.effective_agent_max_threads(MultiAgentVersion::V2)
         ),
-        (None, Some(4))
+        (Some(9), Some(4))
     );
     assert_eq!(
         config.multi_agent_v2.usage_hint_text.as_deref(),
@@ -10430,6 +10489,7 @@ non_code_mode_only = true
         Some("agents")
     );
     assert!(config.multi_agent_v2.hide_spawn_agent_metadata);
+    assert!(!config.multi_agent_v2.expose_spawn_agent_model_overrides);
     assert!(config.multi_agent_v2.non_code_mode_only);
 
     Ok(())
@@ -10451,7 +10511,10 @@ enabled = true
         .build()
         .await?;
 
-    assert_eq!(config.multi_agent_v2, MultiAgentV2Config::default());
+    assert_eq!(
+        config.multi_agent_v2,
+        resolve_multi_agent_v2_config(&ConfigToml::default())
+    );
     assert_eq!(
         (
             config.agent_max_threads,
@@ -10483,7 +10546,50 @@ max_concurrent_threads_per_session = 17
             config.subagent_usage_hint_text,
         ]
         .into_iter()
-        .all(|hint| hint.is_some_and(|hint| hint.ends_with(expected_suffix.as_str())))
+        .all(|hint| hint.is_some_and(|hint| hint.contains(expected_suffix.as_str())))
+    );
+}
+
+#[test]
+fn multi_agent_v2_model_override_exposure_preserves_configured_usage_hints() {
+    let config_toml = toml::from_str(
+        r#"[features.multi_agent_v2]
+enabled = true
+root_agent_usage_hint_text = "Root guidance."
+subagent_usage_hint_text = "Subagent guidance."
+expose_spawn_agent_model_overrides = true
+"#,
+    )
+    .expect("multi-agent v2 config should parse");
+
+    let config = resolve_multi_agent_v2_config(&config_toml);
+    assert!(config.expose_spawn_agent_model_overrides);
+    assert_eq!(
+        config.root_agent_usage_hint_text.as_deref(),
+        Some("Root guidance.")
+    );
+    assert_eq!(
+        config.subagent_usage_hint_text.as_deref(),
+        Some("Subagent guidance.")
+    );
+}
+
+#[test]
+fn multi_agent_v2_exposes_model_overrides_by_default() {
+    let config_toml =
+        toml::from_str(r#"[features.multi_agent_v2]"#).expect("multi-agent v2 config should parse");
+
+    let config = resolve_multi_agent_v2_config(&config_toml);
+    assert!(config.expose_spawn_agent_model_overrides);
+    assert!(
+        [
+            config.root_agent_usage_hint_text,
+            config.subagent_usage_hint_text,
+        ]
+        .into_iter()
+        .all(|hint| hint.is_some_and(|hint| {
+            hint.ends_with(DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT)
+        }))
     );
 }
 
@@ -10498,7 +10604,7 @@ multi_agent_mode_hint_text = ""
 
     let expected = MultiAgentV2Config {
         multi_agent_mode_hint_text: Some(String::new()),
-        ..Default::default()
+        ..resolve_multi_agent_v2_config(&ConfigToml::default())
     };
     assert_eq!(resolve_multi_agent_v2_config(&config_toml), expected);
 }
@@ -10528,7 +10634,7 @@ subagent_usage_hint_text = ""
 }
 
 #[tokio::test]
-async fn multi_agent_v2_feature_rejects_agents_max_threads() -> std::io::Result<()> {
+async fn multi_agent_v2_uses_agents_max_concurrent_threads_per_session() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     std::fs::write(
         codex_home.path().join(CONFIG_TOML_FILE),
@@ -10536,7 +10642,7 @@ async fn multi_agent_v2_feature_rejects_agents_max_threads() -> std::io::Result<
 enabled = true
 
 [agents]
-max_threads = 3
+max_concurrent_threads_per_session = 7
 "#,
     )?;
 
@@ -10545,25 +10651,19 @@ max_threads = 3
         .fallback_cwd(Some(codex_home.path().to_path_buf()))
         .build()
         .await?;
-    let err = config
-        .validate_multi_agent_v2_config()
-        .expect_err("agents.max_threads should conflict with multi_agent_v2");
-
-    assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
     assert_eq!(
-        err.to_string(),
-        "agents.max_threads cannot be set when features.multi_agent_v2 is enabled"
-    );
-    assert_eq!(
-        config.effective_agent_max_threads(MultiAgentVersion::V2),
-        Some(3)
+        (
+            config.multi_agent_v2.max_concurrent_threads_per_session,
+            config.effective_agent_max_threads(MultiAgentVersion::V2),
+        ),
+        (8, Some(7))
     );
 
     Ok(())
 }
 
 #[tokio::test]
-async fn catalog_v2_allows_agents_max_threads_when_feature_disabled() -> std::io::Result<()> {
+async fn catalog_v2_allows_agents_thread_limit_when_feature_disabled() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
     std::fs::write(
         codex_home.path().join(CONFIG_TOML_FILE),
@@ -10571,7 +10671,7 @@ async fn catalog_v2_allows_agents_max_threads_when_feature_disabled() -> std::io
 enabled = false
 
 [agents]
-max_threads = 3
+max_concurrent_threads_per_session = 3
 "#,
     )?;
 
@@ -10581,10 +10681,12 @@ max_threads = 3
         .build()
         .await?;
 
-    config.validate_multi_agent_v2_config()?;
     assert_eq!(
-        config.effective_agent_max_threads(MultiAgentVersion::V2),
-        Some(3)
+        (
+            config.multi_agent_v2.max_concurrent_threads_per_session,
+            config.effective_agent_max_threads(MultiAgentVersion::V2),
+        ),
+        (4, Some(3))
     );
 
     Ok(())
@@ -10800,10 +10902,6 @@ async fn multi_agent_v2_rejects_invalid_tool_namespace() -> std::io::Result<()> 
             "functions",
             "features.multi_agent_v2.tool_namespace uses a reserved namespace: functions",
         ),
-        (
-            "collaboration",
-            "features.multi_agent_v2.tool_namespace uses a reserved namespace: collaboration",
-        ),
     ] {
         let codex_home = TempDir::new()?;
         std::fs::write(
@@ -10825,6 +10923,31 @@ tool_namespace = "{namespace}"
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
         assert_eq!(err.to_string(), expected_message);
     }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn multi_agent_v2_accepts_collaboration_tool_namespace() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join(CONFIG_TOML_FILE),
+        r#"[features.multi_agent_v2]
+enabled = true
+tool_namespace = "collaboration"
+"#,
+    )?;
+
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(codex_home.path().to_path_buf()))
+        .build()
+        .await?;
+
+    assert_eq!(
+        config.multi_agent_v2.tool_namespace.as_deref(),
+        Some("collaboration")
+    );
 
     Ok(())
 }

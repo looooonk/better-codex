@@ -248,8 +248,9 @@ Payload:
 ```
 You may also see them addressed as to=/root/..., which indicates your identity is /root/...
 "#;
-const DEFAULT_MULTI_AGENT_V2_TOOL_NAMESPACE: &str = "agents";
-const DEFAULT_MULTI_AGENT_V2_SHARED_USAGE_HINT_TEXT: &str = r#"Note that collaboration tools cannot be called from inside `functions.exec`. Call `spawn_agent`, `send_message`, `followup_task`, `wait_agent`, `interrupt_agent`, and `list_agents` only as direct tool calls using the recipient shown in their tool definitions, such as `to=functions.agents.spawn_agent`, since they are intentionally absent from the `functions.exec` `tools.*` namespace. Available tools in `functions.exec` are explicitly described with a `tools` namespace in the developer message.
+const DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT: &str = "Full-history forks (`fork_turns` omitted or `\"all\"`) inherit the parent model and reasoning effort unless overrides are supplied. Only set `model` or `reasoning_effort` when explicitly requested by the user, applicable `AGENTS.md` instructions, or skill instructions.";
+const DEFAULT_MULTI_AGENT_V2_TOOL_NAMESPACE: &str = "collaboration";
+const DEFAULT_MULTI_AGENT_V2_SHARED_USAGE_HINT_TEXT: &str = r#"Note that collaboration tools cannot be called from inside `functions.exec`. Call `spawn_agent`, `send_message`, `followup_task`, `wait_agent`, `interrupt_agent`, and `list_agents` only as direct tool calls using the recipient shown in their tool definitions, such as `to=functions.collaboration.spawn_agent`, since they are intentionally absent from the `functions.exec` `tools.*` namespace. Available tools in `functions.exec` are explicitly described with a `tools` namespace in the developer message.
 
 All agents share the same directory. In detail:
 - All agents have access to the same container and filesystem as you.
@@ -858,15 +859,25 @@ pub struct Config {
     /// Token budget applied when storing tool/function outputs in the context manager.
     pub tool_output_token_limit: Option<usize>,
 
-    /// User-configured maximum number of agent threads that can be open concurrently.
+    /// Whether multi-agent tools are enabled through `[agents]`.
+    pub agents_enabled: bool,
+
+    /// User-configured maximum number of spawned agent threads per session.
     pub agent_max_threads: Option<usize>,
+
+    /// Default model for spawned subagents when the spawn call does not select one.
+    pub agent_default_subagent_model: Option<String>,
+
+    /// Default reasoning effort for spawned subagents when the spawn call does not select one.
+    pub agent_default_subagent_reasoning_effort: Option<ReasoningEffort>,
+
     /// Maximum runtime in seconds for agent job workers before they are failed.
     pub agent_job_max_runtime_seconds: Option<u64>,
 
     /// Whether to record a model-visible message when an agent turn is interrupted.
     pub agent_interrupt_message_enabled: bool,
 
-    /// Maximum nesting depth allowed for spawned agent threads.
+    /// Maximum nesting depth for V1 agent threads. Ignored by V2.
     pub agent_max_depth: i32,
 
     /// User-defined role declarations keyed by role name.
@@ -1165,6 +1176,7 @@ pub struct MultiAgentV2Config {
     pub multi_agent_mode_hint_text: Option<String>,
     pub tool_namespace: Option<String>,
     pub hide_spawn_agent_metadata: bool,
+    pub expose_spawn_agent_model_overrides: bool,
     pub non_code_mode_only: bool,
 }
 
@@ -1187,6 +1199,7 @@ impl MultiAgentV2Config {
             multi_agent_mode_hint_text: None,
             tool_namespace: Some(DEFAULT_MULTI_AGENT_V2_TOOL_NAMESPACE.to_string()),
             hide_spawn_agent_metadata: true,
+            expose_spawn_agent_model_overrides: true,
             non_code_mode_only: true,
         }
     }
@@ -1419,25 +1432,33 @@ impl ConfigBuilder {
 }
 
 impl Config {
-    pub(crate) fn multi_agent_version_from_features(&self) -> MultiAgentVersion {
+    pub(crate) fn multi_agent_version_override(&self) -> Option<MultiAgentVersion> {
         if self.features.enabled(Feature::MultiAgentV2) {
-            MultiAgentVersion::V2
-        } else if self.features.enabled(Feature::Collab) {
-            MultiAgentVersion::V1
+            Some(MultiAgentVersion::V2)
+        } else if !self.agents_enabled {
+            Some(MultiAgentVersion::Disabled)
         } else {
-            MultiAgentVersion::Disabled
+            None
         }
     }
 
-    pub(crate) fn validate_multi_agent_v2_config(&self) -> std::io::Result<()> {
-        if self.features.enabled(Feature::MultiAgentV2) && self.agent_max_threads.is_some() {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "agents.max_threads cannot be set when features.multi_agent_v2 is enabled",
-            ))
-        } else {
-            Ok(())
-        }
+    pub(crate) fn multi_agent_version_from_features(&self) -> MultiAgentVersion {
+        self.multi_agent_version_override().unwrap_or_else(|| {
+            if self.features.enabled(Feature::Collab) {
+                MultiAgentVersion::V1
+            } else {
+                MultiAgentVersion::Disabled
+            }
+        })
+    }
+
+    pub(crate) fn multi_agent_version_for_model(
+        &self,
+        model_multi_agent_version: Option<MultiAgentVersion>,
+    ) -> MultiAgentVersion {
+        self.multi_agent_version_override()
+            .or(model_multi_agent_version)
+            .unwrap_or_else(|| self.multi_agent_version_from_features())
     }
 
     pub(crate) fn effective_agent_max_threads(
@@ -2515,6 +2536,13 @@ fn resolve_multi_agent_v2_config(config_toml: &ConfigToml) -> MultiAgentV2Config
     let base = multi_agent_v2_toml_config(config_toml.features.as_ref());
     let max_concurrent_threads_per_session = base
         .and_then(|config| config.max_concurrent_threads_per_session)
+        .or_else(|| {
+            config_toml
+                .agents
+                .as_ref()
+                .and_then(|agents| agents.max_concurrent_threads_per_session)
+                .map(|max_threads| max_threads.saturating_add(1))
+        })
         .unwrap_or(DEFAULT_MULTI_AGENT_V2_MAX_CONCURRENT_THREADS_PER_SESSION);
     let default =
         MultiAgentV2Config::defaults_for_max_concurrency(max_concurrent_threads_per_session);
@@ -2531,13 +2559,31 @@ fn resolve_multi_agent_v2_config(config_toml: &ConfigToml) -> MultiAgentV2Config
         .and_then(|config| config.usage_hint_text.as_ref())
         .cloned()
         .or(default.usage_hint_text);
+    let hide_spawn_agent_metadata = base
+        .and_then(|config| config.hide_spawn_agent_metadata)
+        .unwrap_or(default.hide_spawn_agent_metadata);
+    let expose_spawn_agent_model_overrides = base
+        .and_then(|config| config.expose_spawn_agent_model_overrides)
+        .unwrap_or(default.expose_spawn_agent_model_overrides);
+    let mut default_root_agent_usage_hint_text = default.root_agent_usage_hint_text;
+    let mut default_subagent_usage_hint_text = default.subagent_usage_hint_text;
+    if expose_spawn_agent_model_overrides {
+        default_root_agent_usage_hint_text = Some(append_usage_hint_text(
+            default_root_agent_usage_hint_text.as_deref(),
+            DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT,
+        ));
+        default_subagent_usage_hint_text = Some(append_usage_hint_text(
+            default_subagent_usage_hint_text.as_deref(),
+            DEFAULT_MULTI_AGENT_V2_MODEL_OVERRIDE_USAGE_HINT_TEXT,
+        ));
+    }
     let root_agent_usage_hint_text = resolve_optional_prompt_text(
         base.map(|config| &config.root_agent_usage_hint_text),
-        default.root_agent_usage_hint_text,
+        default_root_agent_usage_hint_text,
     );
     let subagent_usage_hint_text = resolve_optional_prompt_text(
         base.map(|config| &config.subagent_usage_hint_text),
-        default.subagent_usage_hint_text,
+        default_subagent_usage_hint_text,
     );
     let multi_agent_mode_hint_text = base
         .and_then(|config| config.multi_agent_mode_hint_text.as_ref())
@@ -2547,9 +2593,6 @@ fn resolve_multi_agent_v2_config(config_toml: &ConfigToml) -> MultiAgentV2Config
         .and_then(|config| config.tool_namespace.as_ref())
         .cloned()
         .or(default.tool_namespace);
-    let hide_spawn_agent_metadata = base
-        .and_then(|config| config.hide_spawn_agent_metadata)
-        .unwrap_or(default.hide_spawn_agent_metadata);
     let non_code_mode_only = base
         .and_then(|config| config.non_code_mode_only)
         .unwrap_or(default.non_code_mode_only);
@@ -2565,6 +2608,7 @@ fn resolve_multi_agent_v2_config(config_toml: &ConfigToml) -> MultiAgentV2Config
         multi_agent_mode_hint_text,
         tool_namespace,
         hide_spawn_agent_metadata,
+        expose_spawn_agent_model_overrides,
         non_code_mode_only,
     }
 }
@@ -2783,6 +2827,13 @@ fn resolve_optional_prompt_text(
     }
 }
 
+fn append_usage_hint_text(usage_hint_text: Option<&str>, additional_text: &str) -> String {
+    match usage_hint_text {
+        Some(usage_hint_text) => format!("{usage_hint_text}\n\n{additional_text}"),
+        None => additional_text.to_string(),
+    }
+}
+
 fn code_mode_toml_config(features: Option<&FeaturesToml>) -> Option<&CodeModeConfigToml> {
     match features?.code_mode.as_ref()? {
         FeatureToml::Enabled(_) => None,
@@ -2908,7 +2959,6 @@ fn validate_multi_agent_v2_tool_namespace(namespace: Option<&str>) -> std::io::R
     const RESERVED_RESPONSES_NAMESPACES: &[&str] = &[
         "api_tool",
         "browser",
-        "collaboration",
         "computer",
         "container",
         "file_search",
@@ -3535,11 +3585,19 @@ impl Config {
             ));
         }
         validate_multi_agent_v2_tool_namespace(multi_agent_v2.tool_namespace.as_deref())?;
-        let agent_max_threads = cfg.agents.as_ref().and_then(|agents| agents.max_threads);
+        let agents_enabled = cfg
+            .agents
+            .as_ref()
+            .and_then(|agents| agents.enabled)
+            .unwrap_or(true);
+        let agent_max_threads = cfg
+            .agents
+            .as_ref()
+            .and_then(|agents| agents.max_concurrent_threads_per_session);
         if agent_max_threads == Some(0) {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                "agents.max_threads must be at least 1",
+                "agents.max_concurrent_threads_per_session must be at least 1",
             ));
         }
         let agent_max_depth = cfg
@@ -3547,12 +3605,14 @@ impl Config {
             .as_ref()
             .and_then(|agents| agents.max_depth)
             .unwrap_or(DEFAULT_AGENT_MAX_DEPTH);
-        if agent_max_depth < 1 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidInput,
-                "agents.max_depth must be at least 1",
-            ));
-        }
+        let agent_default_subagent_model = cfg
+            .agents
+            .as_ref()
+            .and_then(|agents| agents.default_subagent_model.clone());
+        let agent_default_subagent_reasoning_effort = cfg
+            .agents
+            .as_ref()
+            .and_then(|agents| agents.default_subagent_reasoning_effort.clone());
         let agent_job_max_runtime_seconds = cfg
             .agents
             .as_ref()
@@ -3903,7 +3963,10 @@ impl Config {
                 })
                 .collect(),
             tool_output_token_limit: cfg.tool_output_token_limit,
+            agents_enabled,
             agent_max_threads,
+            agent_default_subagent_model,
+            agent_default_subagent_reasoning_effort,
             agent_max_depth,
             agent_roles,
             memories: memories_config,

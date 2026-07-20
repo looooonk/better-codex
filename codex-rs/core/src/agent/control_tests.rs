@@ -776,66 +776,6 @@ async fn resume_agent_from_rollout_does_not_reopen_v2_descendants() {
 }
 
 #[tokio::test]
-async fn encrypted_inter_agent_communication_clears_existing_last_task_message() {
-    let harness = AgentControlHarness::new().await;
-    let (parent_thread_id, _) = harness.start_thread().await;
-    let agent_path = AgentPath::try_from("/root/worker").expect("agent path");
-    let spawned_agent = harness
-        .control
-        .spawn_agent_with_metadata(
-            harness.config.clone(),
-            text_input("old plaintext task"),
-            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
-                parent_thread_id,
-                depth: 1,
-                agent_path: Some(agent_path.clone()),
-                agent_nickname: None,
-                agent_role: None,
-            })),
-            SpawnAgentOptions {
-                parent_thread_id: Some(parent_thread_id),
-                ..Default::default()
-            },
-        )
-        .await
-        .expect("spawn_agent should succeed");
-    assert_eq!(
-        harness
-            .control
-            .state
-            .agent_metadata_for_thread(spawned_agent.thread_id)
-            .and_then(|metadata| metadata.last_task_message),
-        Some("old plaintext task".to_string())
-    );
-
-    let communication = InterAgentCommunication::new_encrypted(
-        AgentPath::root(),
-        agent_path,
-        Vec::new(),
-        "encrypted-task".to_string(),
-        /*trigger_turn*/ true,
-    );
-    harness
-        .control
-        .send_inter_agent_communication(
-            spawned_agent.thread_id,
-            communication,
-            AgentCommunicationContext::new(AgentCommunicationKind::Followup, ThreadId::new()),
-        )
-        .await
-        .expect("send_inter_agent_communication should succeed");
-
-    assert_eq!(
-        harness
-            .control
-            .state
-            .agent_metadata_for_thread(spawned_agent.thread_id)
-            .and_then(|metadata| metadata.last_task_message),
-        None
-    );
-}
-
-#[tokio::test]
 async fn spawn_agent_creates_thread_and_sends_prompt() {
     let harness = AgentControlHarness::new().await;
     let thread_id = harness
@@ -1706,7 +1646,7 @@ async fn spawn_agent_fork_last_n_turns_strips_parent_usage_hints() {
 }
 
 #[tokio::test]
-async fn spawn_agent_respects_max_threads_limit() {
+async fn spawn_agent_respects_legacy_max_threads_alias() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
         "agents.max_threads".to_string(),
@@ -1761,7 +1701,7 @@ async fn spawn_agent_respects_max_threads_limit() {
 async fn spawn_agent_releases_slot_after_shutdown() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
-        "agents.max_threads".to_string(),
+        "agents.max_concurrent_threads_per_session".to_string(),
         TomlValue::Integer(max_threads as i64),
     )])
     .await;
@@ -1804,7 +1744,7 @@ async fn spawn_agent_releases_slot_after_shutdown() {
 async fn spawn_agent_limit_shared_across_clones() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
-        "agents.max_threads".to_string(),
+        "agents.max_concurrent_threads_per_session".to_string(),
         TomlValue::Integer(max_threads as i64),
     )])
     .await;
@@ -1849,7 +1789,7 @@ async fn spawn_agent_limit_shared_across_clones() {
 async fn resume_agent_respects_max_threads_limit() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
-        "agents.max_threads".to_string(),
+        "agents.max_concurrent_threads_per_session".to_string(),
         TomlValue::Integer(max_threads as i64),
     )])
     .await;
@@ -1905,7 +1845,7 @@ async fn resume_agent_respects_max_threads_limit() {
 async fn resume_agent_releases_slot_after_resume_failure() {
     let max_threads = 1usize;
     let (_home, config) = test_config_with_cli_overrides(vec![(
-        "agents.max_threads".to_string(),
+        "agents.max_concurrent_threads_per_session".to_string(),
         TomlValue::Integer(max_threads as i64),
     )])
     .await;

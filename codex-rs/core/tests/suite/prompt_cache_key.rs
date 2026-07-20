@@ -19,7 +19,7 @@ use serde_json::json;
 const ROOT_PROMPT: &str = "delegate the cache audit";
 const CHILD_TASK: &str = "inspect the repository";
 const SPAWN_CALL_ID: &str = "spawn-worker";
-const COLLABORATION_NAMESPACE: &str = "agents";
+const COLLABORATION_NAMESPACE: &str = "collaboration";
 
 fn body_contains(request: &wiremock::Request, text: &str) -> bool {
     serde_json::from_slice::<Value>(&request.body).is_ok_and(|body| body.to_string().contains(text))
