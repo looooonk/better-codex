@@ -1,4 +1,5 @@
 mod capability_discovery;
+mod capability_discovery_cache;
 mod client;
 mod client_api;
 mod client_transport;
@@ -36,6 +37,7 @@ use codex_exec_server_protocol as protocol;
 
 pub use capability_discovery::CapabilityDiscoveryError;
 pub use capability_discovery::discover_capability_roots;
+pub use capability_discovery_cache::ExecutorCapabilityDiscoveryCache;
 pub use client::ExecServerClient;
 pub use client::ExecServerError;
 pub use client::http_client::HttpResponseBodyStream;
@@ -46,6 +48,7 @@ pub use client_api::NoiseRendezvousConnectArgs;
 pub use client_api::NoiseRendezvousConnectBundle;
 pub use client_api::NoiseRendezvousConnectProvider;
 pub use client_api::RemoteExecServerConnectArgs;
+pub use codex_exec_server_protocol::ExecutorCapabilityDiscoverySnapshot;
 pub use codex_exec_server_protocol::ProcessId;
 pub use codex_file_system::CopyOptions;
 pub use codex_file_system::CreateDirectoryOptions;

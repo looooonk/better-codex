@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use codex_file_system::FileSystemSandboxContext;
 pub use codex_file_system::WalkOptions;
 pub use codex_file_system::WalkOutcome;
 use codex_network_proxy::ManagedNetworkSandboxContext;
+use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::config_types::ShellEnvironmentPolicyInherit;
 use codex_shell_command::shell_detect::DetectedShell;
 use codex_utils_path_uri::PathUri;
@@ -492,6 +494,44 @@ pub struct CapabilityRootDiscovery {
     pub warnings: Vec<String>,
     #[serde(default)]
     pub error: Option<String>,
+}
+
+/// Immutable results for the selected capability roots visible in one model step.
+#[derive(Clone, Debug)]
+pub struct ExecutorCapabilityDiscoverySnapshot {
+    roots: Arc<[ExecutorCapabilityDiscoverySnapshotEntry]>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ExecutorCapabilityDiscoverySnapshotEntry {
+    pub selected_root: SelectedCapabilityRoot,
+    pub result: Result<Arc<CapabilityRootDiscovery>, String>,
+}
+
+impl ExecutorCapabilityDiscoverySnapshot {
+    pub fn new(
+        selected_roots: &[SelectedCapabilityRoot],
+        discoveries: Vec<Result<Arc<CapabilityRootDiscovery>, String>>,
+    ) -> Self {
+        debug_assert_eq!(selected_roots.len(), discoveries.len());
+        Self {
+            roots: selected_roots
+                .iter()
+                .cloned()
+                .zip(discoveries)
+                .map(
+                    |(selected_root, result)| ExecutorCapabilityDiscoverySnapshotEntry {
+                        selected_root,
+                        result,
+                    },
+                )
+                .collect(),
+        }
+    }
+
+    pub fn roots(&self) -> &[ExecutorCapabilityDiscoverySnapshotEntry] {
+        &self.roots
+    }
 }
 
 /// HTTP header represented in the executor protocol.

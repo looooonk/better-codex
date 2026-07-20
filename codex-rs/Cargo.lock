@@ -3011,6 +3011,7 @@ version = "0.0.0"
 dependencies = [
  "codex-config",
  "codex-context-fragments",
+ "codex-exec-server-protocol",
  "codex-protocol",
  "codex-tools",
  "codex-utils-absolute-path",
@@ -3412,6 +3413,7 @@ name = "codex-mcp-extension"
 version = "0.0.0"
 dependencies = [
  "codex-config",
+ "codex-connectors",
  "codex-connectors-extension",
  "codex-core",
  "codex-core-plugins",
