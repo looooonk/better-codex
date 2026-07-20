@@ -38,17 +38,17 @@ improvements that do not redefine Codex behavior.
 
 ## Models, prompts, and context
 
-- [ ] **P1 · CHANGE — Sync generic skill-usage flags.** Enable the upstream generic
+- [x] **P1 · CHANGE — Sync generic skill-usage flags.** Enable the upstream generic
   skill workflow for GPT-5.4, GPT-5.4-mini, GPT-5.2, and Codex Auto Review.
-- [ ] **P2 · CHANGE — Sync model capability metadata.** Add current reasoning-summary
+- [x] **P2 · CHANGE — Sync model capability metadata.** Add current reasoning-summary
   and catalog-authored review/permission fields so live and fallback catalogs behave
   consistently.
-- [ ] **P2 · CHANGE — Sync memory-maintenance model preferences.** Use GPT-5.6 Luna
+- [x] **P2 · CHANGE — Sync memory-maintenance model preferences.** Use GPT-5.6 Luna
   for extraction and GPT-5.6 Terra for consolidation.
-- [ ] **P2 · CHANGE — Narrow recommended-plugin prompting.** Do not proactively
+- [x] **P2 · CHANGE — Narrow recommended-plugin prompting.** Do not proactively
   interrupt loosely related tasks with install suggestions; follow upstream's
   discovery and exact-match guidance.
-- [ ] **P1 · CHANGE — Sync image-generation instructions and completion behavior.**
+- [x] **P1 · CHANGE — Sync image-generation instructions and completion behavior.**
   Remove the Better-only silence rule and align code-mode wait/return guidance with
   the current upstream tool contract.
 - [ ] **P1 · CHANGE — Match upstream default collaboration-mode instructions.**
