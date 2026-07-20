@@ -1,0 +1,18 @@
+---
+source: tui/src/app_shell/diff_view_view_tests.rs
+expression: "render(&state, 90, 16)"
+---
+
+
+  ╭ Metadata changes ──────────────────────────────────────────────────────────────────╮
+  │ CHANGED FILES       │OLD FILE                      │NEW FILE                       │
+  │                     │src/before.rs                 │src/after.rs                   │
+  │   M assets/logo.bin │renamed from                  │renamed to                     │
+  │ > R before.rs -> af…│                              │                               │
+  │                     │                              │                               │
+  │                     │                              │                               │
+  │                     │                              │                               │
+  │                     │                              │                               │
+  │                     │                              │                               │
+  │  ←/→ files  h/l pan  j/k scroll  PgUp/PgDn  Esc  file 2/2  0-0/0                   │
+  ╰────────────────────────────────────────────────────────────────────────────────────╯

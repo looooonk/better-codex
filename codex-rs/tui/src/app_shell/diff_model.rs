@@ -1,10 +1,16 @@
-use super::diff_path::bounded_path;
+use super::diff_path::DiffPath;
+use super::diff_path::bounded_visible_path;
 use super::diff_path::header_path;
+use super::diff_path::metadata_path;
 use super::diff_path::parse_git_paths;
-use super::diff_path::visible_path;
 use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::PatchChangeKind;
+use std::path::Path;
+
+pub(super) use metadata::DiffMetadata;
+
+mod metadata;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DiffFileKind {
@@ -81,11 +87,12 @@ impl DiffStats {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct DiffFile {
-    old_path: Option<String>,
-    new_path: Option<String>,
+    old_path: Option<DiffPath>,
+    new_path: Option<DiffPath>,
     kind: DiffFileKind,
     status: DiffStatus,
     rows: Vec<DiffRow>,
+    metadata: DiffMetadata,
 }
 
 impl DiffFile {
@@ -94,9 +101,10 @@ impl DiffFile {
         content: impl AsRef<str>,
         status: DiffStatus,
     ) -> Self {
+        let path = path.into();
         Self {
             old_path: None,
-            new_path: Some(path.into()),
+            new_path: Some(DiffPath::new(path)),
             kind: DiffFileKind::Added,
             status,
             rows: content
@@ -108,6 +116,7 @@ impl DiffFile {
                     new: Some(cell(Some(index + 1), text, DiffLineKind::Added)),
                 })
                 .collect(),
+            metadata: DiffMetadata::default(),
         }
     }
 
@@ -116,8 +125,9 @@ impl DiffFile {
         content: impl AsRef<str>,
         status: DiffStatus,
     ) -> Self {
+        let path = path.into();
         Self {
-            old_path: Some(path.into()),
+            old_path: Some(DiffPath::new(path)),
             new_path: None,
             kind: DiffFileKind::Deleted,
             status,
@@ -130,6 +140,7 @@ impl DiffFile {
                     new: None,
                 })
                 .collect(),
+            metadata: DiffMetadata::default(),
         }
     }
 
@@ -139,12 +150,20 @@ impl DiffFile {
         status: DiffStatus,
     ) -> Self {
         let path = path.into();
+        let path = DiffPath::new(path);
+        let rows = side_by_side_rows(unified_diff.as_ref());
+        let metadata = if rows.is_empty() {
+            DiffMetadata::from_rowless_modified_diff(unified_diff.as_ref())
+        } else {
+            DiffMetadata::from_diff(unified_diff.as_ref()).for_existing_file()
+        };
         Self {
             old_path: Some(path.clone()),
             new_path: Some(path),
             kind: DiffFileKind::Modified,
             status,
-            rows: side_by_side_rows(unified_diff.as_ref()),
+            metadata,
+            rows,
         }
     }
 
@@ -154,12 +173,16 @@ impl DiffFile {
         unified_diff: impl AsRef<str>,
         status: DiffStatus,
     ) -> Self {
+        let old_path = old_path.into();
+        let new_path = new_path.into();
+        let rows = side_by_side_rows(unified_diff.as_ref());
         Self {
-            old_path: Some(old_path.into()),
-            new_path: Some(new_path.into()),
+            old_path: Some(DiffPath::new(old_path)),
+            new_path: Some(DiffPath::new(new_path)),
             kind: DiffFileKind::Renamed,
             status,
-            rows: side_by_side_rows(unified_diff.as_ref()),
+            metadata: DiffMetadata::from_diff(unified_diff.as_ref()).for_existing_file(),
+            rows,
         }
     }
 
@@ -172,28 +195,24 @@ impl DiffFile {
         diff: &str,
         status: DiffStatus,
     ) -> Self {
-        let path = bounded_path(&change.path);
+        let path = change.path.clone();
         match &change.kind {
             PatchChangeKind::Add => Self::added(path, diff, status),
             PatchChangeKind::Delete => Self::deleted(path, diff, status),
             PatchChangeKind::Update { move_path: None } => Self::modified(path, diff, status),
             PatchChangeKind::Update {
                 move_path: Some(move_path),
-            } => Self::renamed(
-                path,
-                bounded_path(&move_path.to_string_lossy()),
-                diff,
-                status,
-            ),
+            } => Self::renamed(path, move_path.to_string_lossy(), diff, status),
         }
     }
 
     pub(super) fn from_composed_parts(
-        old_path: Option<String>,
-        new_path: Option<String>,
+        old_path: Option<DiffPath>,
+        new_path: Option<DiffPath>,
         kind: DiffFileKind,
         status: DiffStatus,
         rows: Vec<DiffRow>,
+        metadata: DiffMetadata,
     ) -> Self {
         Self {
             old_path,
@@ -201,25 +220,38 @@ impl DiffFile {
             kind,
             status,
             rows,
+            metadata,
         }
     }
 
     pub(super) fn display_path(&self) -> String {
-        match (self.old_label(), self.new_label()) {
-            (Some(old), Some(new)) if old != new => {
-                format!("{} -> {}", visible_path(old), visible_path(new))
+        match (self.old_path(), self.new_path()) {
+            (Some(old), Some(new)) if !old.equivalent(new) => {
+                format!(
+                    "{} -> {}",
+                    bounded_visible_path(old.label()),
+                    bounded_visible_path(new.label())
+                )
             }
-            (Some(path), _) | (_, Some(path)) => visible_path(path),
+            (Some(path), _) | (_, Some(path)) => bounded_visible_path(path.label()),
             (None, None) => String::new(),
         }
     }
 
     pub(super) fn old_label(&self) -> Option<&str> {
-        self.old_path.as_deref()
+        self.old_path.as_ref().map(DiffPath::label)
     }
 
     pub(super) fn new_label(&self) -> Option<&str> {
-        self.new_path.as_deref()
+        self.new_path.as_ref().map(DiffPath::label)
+    }
+
+    pub(super) fn old_path(&self) -> Option<&DiffPath> {
+        self.old_path.as_ref()
+    }
+
+    pub(super) fn new_path(&self) -> Option<&DiffPath> {
+        self.new_path.as_ref()
     }
 
     pub(super) fn kind(&self) -> DiffFileKind {
@@ -232,6 +264,10 @@ impl DiffFile {
 
     pub(super) fn rows(&self) -> &[DiffRow] {
         &self.rows
+    }
+
+    pub(super) fn metadata(&self) -> &DiffMetadata {
+        &self.metadata
     }
 
     pub(super) fn stats(&self) -> DiffStats {
@@ -258,13 +294,58 @@ impl DiffFile {
         }
     }
 
-    pub(super) fn identity(&self) -> (Option<&str>, Option<&str>) {
-        (self.old_label(), self.new_label())
+    pub(super) fn overlaps(&self, other: &Self) -> bool {
+        [self.old_path(), self.new_path()]
+            .into_iter()
+            .flatten()
+            .any(|path| {
+                [other.old_path(), other.new_path()]
+                    .into_iter()
+                    .flatten()
+                    .any(|other_path| path.equivalent(other_path))
+            })
+    }
+
+    pub(super) fn same_identity(&self, other: &Self) -> bool {
+        paths_are_equivalent(self.old_path(), other.old_path())
+            && paths_are_equivalent(self.new_path(), other.new_path())
+    }
+
+    pub(super) fn rebase_display_root(&mut self, root: &Path) {
+        for path in [&mut self.old_path, &mut self.new_path]
+            .into_iter()
+            .flatten()
+        {
+            path.rebase(root);
+        }
+    }
+
+    pub(super) fn resolve_paths(&mut self, anchor: &Path, display_root: &Path) {
+        for path in [&mut self.old_path, &mut self.new_path]
+            .into_iter()
+            .flatten()
+        {
+            path.resolve(anchor, display_root);
+        }
+    }
+
+    pub(super) fn reroot_paths(&mut self, anchor: &Path, display_root: &Path) {
+        for path in [&mut self.old_path, &mut self.new_path]
+            .into_iter()
+            .flatten()
+        {
+            path.reroot(anchor, display_root);
+        }
     }
 
     pub(super) fn retained_text_bytes(&self) -> usize {
-        self.old_path.as_ref().map_or(0, String::len)
-            + self.new_path.as_ref().map_or(0, String::len)
+        self.old_path
+            .as_ref()
+            .map_or(0, DiffPath::retained_text_bytes)
+            + self
+                .new_path
+                .as_ref()
+                .map_or(0, DiffPath::retained_text_bytes)
             + self
                 .rows
                 .iter()
@@ -272,6 +353,15 @@ impl DiffFile {
                 .flatten()
                 .map(|cell| cell.text.len())
                 .sum::<usize>()
+            + self.metadata.retained_text_bytes()
+    }
+}
+
+fn paths_are_equivalent(left: Option<&DiffPath>, right: Option<&DiffPath>) -> bool {
+    match (left, right) {
+        (Some(left), Some(right)) => left.equivalent(right),
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
     }
 }
 
@@ -297,10 +387,37 @@ fn parse_unified_section(lines: &[&str]) -> Option<DiffFile> {
     let git_paths = lines
         .iter()
         .find_map(|line| line.strip_prefix("diff --git ").and_then(parse_git_paths));
-    let old_path = header_path(lines, "--- ")
-        .unwrap_or_else(|| git_paths.as_ref().map(|paths| paths.0.clone()));
-    let new_path = header_path(lines, "+++ ")
-        .unwrap_or_else(|| git_paths.as_ref().map(|paths| paths.1.clone()));
+    let is_added = lines.iter().any(|line| line.starts_with("new file mode "));
+    let is_deleted = lines
+        .iter()
+        .any(|line| line.starts_with("deleted file mode "));
+    let rename_from = metadata_path(lines, "rename from ");
+    let rename_to = metadata_path(lines, "rename to ");
+    let copy_to = metadata_path(lines, "copy to ");
+    let old_path = if is_added || copy_to.is_some() {
+        None
+    } else if rename_from.is_some() {
+        rename_from
+    } else {
+        reconciled_header_path(
+            lines,
+            "--- ",
+            git_paths.as_ref().map(|paths| paths.0.as_str()),
+        )
+        .unwrap_or_else(|| git_paths.as_ref().map(|paths| paths.0.clone()))
+    };
+    let new_path = if is_deleted {
+        None
+    } else if rename_to.is_some() || copy_to.is_some() {
+        rename_to.or(copy_to)
+    } else {
+        reconciled_header_path(
+            lines,
+            "+++ ",
+            git_paths.as_ref().map(|paths| paths.1.as_str()),
+        )
+        .unwrap_or_else(|| git_paths.as_ref().map(|paths| paths.1.clone()))
+    };
     let status = DiffStatus::Completed;
     let body = lines.join("\n");
     match (old_path, new_path) {
@@ -312,9 +429,23 @@ fn parse_unified_section(lines: &[&str]) -> Option<DiffFile> {
     }
 }
 
+fn reconciled_header_path(
+    lines: &[&str],
+    prefix: &str,
+    git_path: Option<&str>,
+) -> Option<Option<String>> {
+    match header_path(lines, prefix)? {
+        Some(header_path) if git_path.is_some_and(|git_path| git_path != header_path) => {
+            Some(git_path.map(str::to_string))
+        }
+        header_path => Some(header_path),
+    }
+}
+
 impl DiffFile {
     fn added_from_unified(path: String, lines: &[&str], status: DiffStatus) -> Self {
-        let rows = side_by_side_rows(&lines.join("\n"))
+        let unified_diff = lines.join("\n");
+        let rows = side_by_side_rows(&unified_diff)
             .into_iter()
             .filter_map(|row| {
                 let new = row.new?;
@@ -326,15 +457,17 @@ impl DiffFile {
             .collect();
         Self {
             old_path: None,
-            new_path: Some(path),
+            new_path: Some(DiffPath::new(path)),
             kind: DiffFileKind::Added,
             status,
             rows,
+            metadata: DiffMetadata::from_diff(&unified_diff).for_added_file(),
         }
     }
 
     fn deleted_from_unified(path: String, lines: &[&str], status: DiffStatus) -> Self {
-        let rows = side_by_side_rows(&lines.join("\n"))
+        let unified_diff = lines.join("\n");
+        let rows = side_by_side_rows(&unified_diff)
             .into_iter()
             .filter_map(|row| {
                 let old = row.old?;
@@ -345,11 +478,12 @@ impl DiffFile {
             })
             .collect();
         Self {
-            old_path: Some(path),
+            old_path: Some(DiffPath::new(path)),
             new_path: None,
             kind: DiffFileKind::Deleted,
             status,
             rows,
+            metadata: DiffMetadata::from_diff(&unified_diff).for_deleted_file(),
         }
     }
 }
@@ -361,10 +495,16 @@ fn side_by_side_rows(unified_diff: &str) -> Vec<DiffRow> {
     let mut old_line = 1;
     let mut new_line = 1;
     let mut in_hunk = false;
+    let mut numbered_hunk = false;
     for line in unified_diff.lines() {
-        if let Some((old_start, new_start)) = hunk_starts(line) {
+        if is_hunk_header(line) {
             flush_changes(&mut rows, &mut removed, &mut added);
-            (old_line, new_line, in_hunk) = (old_start, new_start, true);
+            if let Some((old_start, new_start)) = hunk_starts(line) {
+                (old_line, new_line, numbered_hunk) = (old_start, new_start, true);
+            } else {
+                (old_line, new_line, numbered_hunk) = (1, 1, false);
+            }
+            in_hunk = true;
             let hunk = cell(None, line, DiffLineKind::Hunk);
             rows.push(DiffRow {
                 old: Some(hunk.clone()),
@@ -377,18 +517,34 @@ fn side_by_side_rows(unified_diff: &str) -> Vec<DiffRow> {
         }
         match line.as_bytes().first() {
             Some(b'-') => {
-                removed.push(cell(Some(old_line), &line[1..], DiffLineKind::Removed));
+                removed.push(cell(
+                    numbered_hunk.then_some(old_line),
+                    &line[1..],
+                    DiffLineKind::Removed,
+                ));
                 old_line += 1;
             }
             Some(b'+') => {
-                added.push(cell(Some(new_line), &line[1..], DiffLineKind::Added));
+                added.push(cell(
+                    numbered_hunk.then_some(new_line),
+                    &line[1..],
+                    DiffLineKind::Added,
+                ));
                 new_line += 1;
             }
             Some(b' ') => {
                 flush_changes(&mut rows, &mut removed, &mut added);
                 rows.push(DiffRow {
-                    old: Some(cell(Some(old_line), &line[1..], DiffLineKind::Context)),
-                    new: Some(cell(Some(new_line), &line[1..], DiffLineKind::Context)),
+                    old: Some(cell(
+                        numbered_hunk.then_some(old_line),
+                        &line[1..],
+                        DiffLineKind::Context,
+                    )),
+                    new: Some(cell(
+                        numbered_hunk.then_some(new_line),
+                        &line[1..],
+                        DiffLineKind::Context,
+                    )),
                 });
                 old_line += 1;
                 new_line += 1;
@@ -411,10 +567,13 @@ fn flush_changes(rows: &mut Vec<DiffRow>, removed: &mut Vec<DiffCell>, added: &m
     added.clear();
 }
 
+pub(super) fn is_hunk_header(line: &str) -> bool {
+    hunk_starts(line).is_some()
+        || line == "@@"
+        || line.starts_with("@@ ") && !line.starts_with("@@ -")
+}
+
 pub(super) fn hunk_starts(line: &str) -> Option<(usize, usize)> {
-    if line == "@@" {
-        return Some((1, 1));
-    }
     let ranges = line.strip_prefix("@@ -")?;
     let (old, rest) = ranges.split_once(" +")?;
     let new = rest.split_once(" @@").map_or(rest, |(range, _)| range);

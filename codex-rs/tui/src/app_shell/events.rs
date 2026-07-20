@@ -32,6 +32,9 @@ impl ShellState {
         match event {
             AppServerEvent::Lagged { skipped } => {
                 self.push_system(format!("skipped {skipped} best-effort backend events"));
+                self.diff_store.mark_history_truncated();
+                self.refresh_open_diff_view();
+                self.mark_workspace_status_refresh_due();
             }
             AppServerEvent::ServerNotification(notification) => {
                 if let ServerNotification::ExternalAgentConfigImportCompleted(notification) =
@@ -209,7 +212,12 @@ impl ShellState {
                     self.active_permission_profile =
                         settings.active_permission_profile.map(Into::into);
                     self.model = settings.model;
+                    if std::path::Path::new(&self.cwd) != settings.cwd.as_path() {
+                        self.reset_workspace_git_status();
+                    }
                     self.cwd = settings.cwd.to_string_lossy().to_string();
+                    self.diff_store.set_display_root(settings.cwd.as_path());
+                    self.refresh_open_diff_view();
                     self.mark_workspace_status_refresh_due();
                     self.approval_policy = settings.approval_policy;
                     self.approvals_reviewer =
@@ -223,7 +231,10 @@ impl ShellState {
             ServerNotification::TurnDiffUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
                     self.record_turn_diff(&updated.turn_id, &updated.diff);
-                    self.latest_diff = Some(super::diff_summary_from_unified_diff(&updated.diff));
+                    self.mark_workspace_status_refresh_due();
+                } else if self.is_active_agent_thread(&updated.thread_id) {
+                    self.diff_store.mark_history_truncated();
+                    self.refresh_open_diff_view();
                     self.mark_workspace_status_refresh_due();
                 }
             }
@@ -283,6 +294,12 @@ impl ShellState {
                     );
                     self.mark_agent_item_live(&completed.item);
                 } else if self.prepare_active_agent_thread(&completed.thread_id) {
+                    let changed_workspace = matches!(
+                        &completed.item,
+                        ThreadItem::FileChange { .. } | ThreadItem::CommandExecution { .. }
+                    );
+                    let incomplete_edit_history =
+                        matches!(&completed.item, ThreadItem::FileChange { .. });
                     self.mark_active_agent_threads(&completed.item);
                     self.agent_activity.reduce_completed(&completed.item);
                     self.agent_activity.record_child_item(
@@ -292,6 +309,13 @@ impl ShellState {
                     );
                     self.agent_activity.mark_live_thread(&completed.thread_id);
                     self.mark_agent_item_live(&completed.item);
+                    if incomplete_edit_history {
+                        self.diff_store.mark_history_truncated();
+                        self.refresh_open_diff_view();
+                    }
+                    if changed_workspace {
+                        self.mark_workspace_status_refresh_due();
+                    }
                 }
             }
             ServerNotification::CommandExecutionOutputDelta(delta) => {
@@ -319,13 +343,16 @@ impl ShellState {
                         &updated.changes,
                         codex_app_server_protocol::PatchApplyStatus::InProgress,
                     );
-                    self.latest_diff = Some(super::diff_summary_from_changes(&updated.changes));
                     self.mark_workspace_status_refresh_due();
                     self.push_diff_with_status_for_item(
                         updated.item_id,
                         super::file_change_detail(&updated.changes),
                         super::ToolBlockStatus::Running,
                     );
+                } else if self.prepare_active_agent_thread(&updated.thread_id) {
+                    self.diff_store.mark_history_truncated();
+                    self.refresh_open_diff_view();
+                    self.mark_workspace_status_refresh_due();
                 }
             }
             ServerNotification::McpToolCallProgress(progress) => {

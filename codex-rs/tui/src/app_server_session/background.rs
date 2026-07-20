@@ -64,12 +64,12 @@ pub(super) async fn resume_thread(
     let mut started =
         started_thread_from_resume_response(response, &config, thread_params_mode).await?;
     started.session.fork_parent_title = fork_parent_title;
-    started.agent_history_task = Some(agent_history::spawn_resumed_agent_history(
+    started.agent_history_task = agent_history::spawn_resumed_agent_history(
         request_handle,
         started.session.thread_id,
         session_id,
         &started.turns,
-    ));
+    );
     Ok(started)
 }
 

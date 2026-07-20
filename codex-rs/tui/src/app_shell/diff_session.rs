@@ -5,37 +5,70 @@ use super::diff_model::DiffLineKind;
 use super::diff_model::DiffRow;
 use super::diff_model::DiffStatus;
 use super::diff_model::hunk_starts;
+use super::diff_path::DiffPath;
+use budget::CompositionBudget;
+use metadata::SessionMetadata;
+
+mod budget;
+mod metadata;
+mod reconcile;
+
+#[cfg(test)]
+#[path = "diff_session_tests.rs"]
+mod tests;
 
 const MAX_SESSION_COMPOSE_LINES: usize = 8_000;
 
-pub(super) fn compose_session_files(files: Vec<DiffFile>) -> Vec<DiffFile> {
+pub(super) struct ComposedSessionFiles {
+    pub(super) files: Vec<DiffFile>,
+    pub(super) truncated: bool,
+}
+
+pub(super) fn compose_session_files(
+    files: impl IntoIterator<Item = DiffFile>,
+) -> ComposedSessionFiles {
     let mut histories = Vec::<SessionFileHistory>::new();
+    let mut budget = CompositionBudget::new();
+    let mut truncated = false;
     for file in files {
-        let source = file.old_label().or_else(|| file.new_label());
-        if let Some(history) = histories
-            .iter_mut()
-            .find(|history| history.current_path.as_deref() == source)
-        {
-            history.apply(&file);
-        } else {
-            histories.push(SessionFileHistory::new(&file));
+        truncated |= reconcile::has_possible_namespace_transition(&histories, &file);
+        match reconcile::matching_history(&histories, &file) {
+            reconcile::HistoryMatch::Unique(index) => {
+                histories[index].apply(&file, &mut budget);
+            }
+            reconcile::HistoryMatch::None => {
+                histories.push(SessionFileHistory::new(&file, &mut budget));
+            }
+            reconcile::HistoryMatch::Ambiguous => {
+                truncated = true;
+                histories.push(SessionFileHistory::new(&file, &mut budget));
+            }
         }
     }
-    histories
-        .into_iter()
-        .filter_map(SessionFileHistory::finish)
-        .collect()
+    truncated |= reconcile::reconnect_extinct_originals(&mut histories, &mut budget);
+    let mut composed = Vec::new();
+    for history in histories {
+        let (file, history_truncated) = history.finish();
+        truncated |= history_truncated;
+        composed.extend(file);
+    }
+    ComposedSessionFiles {
+        files: composed,
+        truncated,
+    }
 }
 
 struct SessionFileHistory {
-    original_path: Option<String>,
-    current_path: Option<String>,
+    original_path: Option<DiffPath>,
+    current_path: Option<DiffPath>,
     original_exists: bool,
     current_exists: bool,
+    current_incarnation_was_added: bool,
     baseline: Vec<Option<String>>,
     current: Vec<TrackedLine>,
     status: DiffStatus,
     latest_file: DiffFile,
+    metadata: SessionMetadata,
     applied_files: usize,
     line_offset: usize,
     composable: bool,
@@ -47,55 +80,65 @@ struct TrackedLine {
 }
 
 impl SessionFileHistory {
-    fn new(file: &DiffFile) -> Self {
+    fn new(file: &DiffFile, budget: &mut CompositionBudget) -> Self {
         let original_exists = file.kind() != DiffFileKind::Added;
         let original_path = original_exists
-            .then(|| file.old_label().or_else(|| file.new_label()))
+            .then(|| file.old_path().or_else(|| file.new_path()))
             .flatten()
-            .map(str::to_owned);
+            .cloned();
         let mut history = Self {
             current_path: original_path.clone(),
             original_path,
             original_exists,
             current_exists: original_exists,
+            current_incarnation_was_added: false,
             baseline: Vec::new(),
             current: Vec::new(),
             status: file.status(),
             latest_file: file.clone(),
+            metadata: SessionMetadata::default(),
             applied_files: 0,
             line_offset: 0,
             composable: true,
         };
-        history.apply(file);
+        history.apply(file, budget);
         history
     }
 
-    fn apply(&mut self, file: &DiffFile) {
+    fn apply(&mut self, file: &DiffFile, budget: &mut CompositionBudget) {
         self.applied_files += 1;
         self.latest_file = file.clone();
-        if file.kind() == DiffFileKind::Added && !self.current_exists {
+        self.metadata.apply(file);
+        if file.kind() == DiffFileKind::Added {
+            if self.current_exists && !self.current_incarnation_was_added {
+                self.composable = false;
+            }
             self.current.clear();
+            self.line_offset = 0;
         }
         if self.composable {
-            self.apply_rows(file.rows());
+            self.apply_rows(file.rows(), budget);
         }
         self.status = file.status();
         match file.kind() {
-            DiffFileKind::Added | DiffFileKind::Modified | DiffFileKind::Renamed => {
+            DiffFileKind::Added => {
                 self.current_exists = true;
-                self.current_path = file
-                    .new_label()
-                    .or_else(|| file.old_label())
-                    .map(str::to_owned);
+                self.current_incarnation_was_added = true;
+                self.current_path = file.new_path().or_else(|| file.old_path()).cloned();
+            }
+            DiffFileKind::Modified | DiffFileKind::Renamed => {
+                self.current_exists = true;
+                self.current_path = file.new_path().or_else(|| file.old_path()).cloned();
             }
             DiffFileKind::Deleted => {
                 self.current_exists = false;
+                self.current_incarnation_was_added = false;
                 self.current.clear();
             }
         }
     }
 
-    fn apply_rows(&mut self, rows: &[DiffRow]) {
+    fn apply_rows(&mut self, rows: &[DiffRow], budget: &mut CompositionBudget) {
         let mut position = None;
         let mut batch = Vec::new();
         for row in rows {
@@ -107,33 +150,52 @@ impl SessionFileHistory {
                 .as_ref()
                 .filter(|cell| cell.kind == DiffLineKind::Hunk)
             {
-                self.apply_batch(position, &batch);
+                if !hunk.text.starts_with("@@ -") {
+                    self.composable = false;
+                    return;
+                }
+                self.apply_batch(position, &batch, budget);
                 batch.clear();
-                position = hunk_starts(&hunk.text).map(|(_, new)| new.saturating_sub(1));
+                position = hunk_starts(&hunk.text).map(|(_, new)| new);
             } else {
                 batch.push(row);
             }
         }
-        self.apply_batch(position, &batch);
+        self.apply_batch(position, &batch, budget);
     }
 
-    fn apply_batch(&mut self, position: Option<usize>, rows: &[&DiffRow]) {
+    fn apply_batch(
+        &mut self,
+        position: Option<usize>,
+        rows: &[&DiffRow],
+        budget: &mut CompositionBudget,
+    ) {
         if rows.is_empty() {
             return;
         }
-        let position = position.unwrap_or_else(|| {
-            rows.iter()
-                .find_map(|row| {
-                    row.new
-                        .as_ref()
-                        .and_then(|cell| cell.line_number)
-                        .or_else(|| row.old.as_ref().and_then(|cell| cell.line_number))
-                })
-                .unwrap_or(1)
-                .saturating_sub(1)
-        });
         let consumed = rows.iter().filter(|row| row.old.is_some()).count();
-        let position = self.local_position(position);
+        let produced = rows.iter().filter(|row| row.new.is_some()).count();
+        let position = position.map_or_else(
+            || {
+                rows.iter()
+                    .find_map(|row| {
+                        row.new
+                            .as_ref()
+                            .and_then(|cell| cell.line_number)
+                            .or_else(|| row.old.as_ref().and_then(|cell| cell.line_number))
+                    })
+                    .unwrap_or(1)
+                    .saturating_sub(1)
+            },
+            |new_start| {
+                if produced == 0 {
+                    new_start
+                } else {
+                    new_start.saturating_sub(1)
+                }
+            },
+        );
+        let position = self.local_position(position, budget);
         if !self.composable {
             return;
         }
@@ -144,7 +206,6 @@ impl SessionFileHistory {
             self.composable = false;
             return;
         };
-        let produced = rows.iter().filter(|row| row.new.is_some()).count();
         let Some(_) = self
             .current
             .len()
@@ -156,6 +217,18 @@ impl SessionFileHistory {
             self.composable = false;
             return;
         };
+        let missing = required_len.saturating_sub(self.current.len());
+        let Some(required_slots) = missing
+            .checked_mul(2)
+            .and_then(|slots| slots.checked_add(produced.saturating_sub(consumed)))
+        else {
+            self.composable = false;
+            return;
+        };
+        if !budget.reserve(required_slots) {
+            self.composable = false;
+            return;
+        }
         self.ensure_current_len(required_len);
         let mut cursor = position;
         for row in rows {
@@ -182,7 +255,7 @@ impl SessionFileHistory {
         }
     }
 
-    fn local_position(&mut self, position: usize) -> usize {
+    fn local_position(&mut self, position: usize, budget: &mut CompositionBudget) -> usize {
         if self.baseline.is_empty() && self.current.is_empty() {
             self.line_offset = position;
             return 0;
@@ -193,6 +266,7 @@ impl SessionFileHistory {
         let prefix = self.line_offset - position;
         if prefix.saturating_add(self.baseline.len().max(self.current.len()))
             > MAX_SESSION_COMPOSE_LINES
+            || !budget.reserve(prefix.saturating_mul(2))
         {
             self.composable = false;
             return 0;
@@ -226,33 +300,104 @@ impl SessionFileHistory {
         }
     }
 
-    fn finish(self) -> Option<DiffFile> {
-        if self.applied_files == 1 || !self.composable {
-            return Some(self.latest_file);
+    fn finish(self) -> (Option<DiffFile>, bool) {
+        let metadata_inexact = !self.metadata.is_exact();
+        if self.applied_files == 1 {
+            return (Some(self.latest_file), metadata_inexact);
+        }
+        if !self.composable {
+            return (Some(self.latest_file), true);
         }
         if !self.original_exists && !self.current_exists {
-            return None;
+            return (None, false);
+        }
+        let renamed = match (&self.original_path, &self.current_path) {
+            (Some(original), Some(current)) => !original.equivalent(current),
+            (None, None) => false,
+            (Some(_), None) | (None, Some(_)) => true,
+        };
+        if self.original_exists == self.current_exists
+            && !renamed
+            && known_contents_equal(&self.baseline, &self.current)
+        {
+            return (self.metadata_file(), metadata_inexact);
         }
         let rows = composed_rows(&self.baseline, &self.current, self.line_offset);
-        let renamed = self.original_path != self.current_path;
         if rows.is_empty() && !renamed {
-            return None;
+            return (self.metadata_file(), metadata_inexact);
         }
         let kind = match (self.original_exists, self.current_exists, renamed) {
             (false, true, _) => DiffFileKind::Added,
             (true, false, _) => DiffFileKind::Deleted,
             (true, true, true) => DiffFileKind::Renamed,
             (true, true, false) => DiffFileKind::Modified,
-            (false, false, _) => return None,
+            (false, false, _) => return (None, false),
         };
+        let rows = match kind {
+            DiffFileKind::Added => rows
+                .into_iter()
+                .filter_map(|row| {
+                    let new = row.new?;
+                    (new.kind == DiffLineKind::Added).then_some(DiffRow {
+                        old: None,
+                        new: Some(new),
+                    })
+                })
+                .collect(),
+            DiffFileKind::Deleted => rows
+                .into_iter()
+                .filter_map(|row| {
+                    let old = row.old?;
+                    (old.kind == DiffLineKind::Removed).then_some(DiffRow {
+                        old: Some(old),
+                        new: None,
+                    })
+                })
+                .collect(),
+            DiffFileKind::Modified | DiffFileKind::Renamed => rows,
+        };
+        let (old_path, new_path) = if self.original_exists && self.current_exists && !renamed {
+            let path = self.current_path.or(self.original_path);
+            (path.clone(), path)
+        } else {
+            (self.original_path, self.current_path)
+        };
+        (
+            Some(DiffFile::from_composed_parts(
+                old_path,
+                new_path,
+                kind,
+                self.status,
+                rows,
+                self.metadata.finish(),
+            )),
+            metadata_inexact,
+        )
+    }
+
+    fn metadata_file(self) -> Option<DiffFile> {
+        if !self.metadata.changed() {
+            return None;
+        }
+        let path = self.current_path.or(self.original_path);
         Some(DiffFile::from_composed_parts(
-            self.original_path,
-            self.current_path,
-            kind,
+            path.clone(),
+            path,
+            DiffFileKind::Modified,
             self.status,
-            rows,
+            Vec::new(),
+            self.metadata.finish(),
         ))
     }
+}
+
+fn known_contents_equal(baseline: &[Option<String>], current: &[TrackedLine]) -> bool {
+    baseline.len() == current.len()
+        && baseline.iter().zip(current).all(|(old, new)| {
+            old.as_deref()
+                .zip(new.text.as_deref())
+                .is_some_and(|(old, new)| old == new)
+        })
 }
 
 #[derive(Default)]

@@ -53,8 +53,11 @@ pub(super) fn spawn_resumed_agent_history(
     root_thread_id: ThreadId,
     session_id: String,
     root_turns: &[Turn],
-) -> AgentHistoryTask {
+) -> Option<AgentHistoryTask> {
     let referenced_thread_ids = referenced_agent_thread_ids(root_turns);
+    if referenced_thread_ids.is_empty() {
+        return None;
+    }
     let (start_tx, start_rx) = oneshot::channel();
     let (updates_tx, updates_rx) = mpsc::channel(MAX_AGENT_HISTORY_UPDATE_QUEUE);
     let subscribed_thread_ids = Arc::new(Mutex::new(HashSet::new()));
@@ -73,7 +76,12 @@ pub(super) fn spawn_resumed_agent_history(
         )
         .await
     });
-    AgentHistoryTask::new(start_tx, handle, updates_rx, subscribed_thread_ids)
+    Some(AgentHistoryTask::new(
+        start_tx,
+        handle,
+        updates_rx,
+        subscribed_thread_ids,
+    ))
 }
 
 async fn load_resumed_agent_threads(
