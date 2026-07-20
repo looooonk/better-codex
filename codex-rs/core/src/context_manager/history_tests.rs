@@ -27,7 +27,6 @@ use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::PLUGINS_INSTRUCTIONS_OPEN_TAG;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::TurnContextItem;
-use codex_tools::TOOL_SEARCH_MAX_OUTPUT_BYTES;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::truncate_text;
@@ -1861,33 +1860,6 @@ fn normalize_keeps_server_tool_search_output_without_matching_call() {
             internal_chat_message_metadata_passthrough: None,
         }]
     );
-}
-
-#[test]
-fn record_items_bounds_tool_search_output_before_retaining_it() {
-    let item = ResponseItem::ToolSearchOutput {
-        id: None,
-        call_id: Some("server-search".to_string()),
-        status: "completed".to_string(),
-        execution: "server".to_string(),
-        tools: (0..10)
-            .map(|index| {
-                serde_json::json!({
-                    "type": "function",
-                    "name": format!("large_tool_{index}"),
-                    "description": "x".repeat(10_000),
-                })
-            })
-            .collect(),
-        internal_chat_message_metadata_passthrough: None,
-    };
-
-    let history = create_history_with_items(vec![item]);
-    let [ResponseItem::ToolSearchOutput { tools, .. }] = history.raw_items() else {
-        panic!("expected one tool search output");
-    };
-    assert!(tools.len() < 10);
-    assert!(serde_json::to_vec(tools).unwrap().len() <= TOOL_SEARCH_MAX_OUTPUT_BYTES);
 }
 
 #[cfg(debug_assertions)]

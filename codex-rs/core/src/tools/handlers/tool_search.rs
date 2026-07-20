@@ -12,8 +12,6 @@ use bm25::SearchEngine;
 use bm25::SearchEngineBuilder;
 use codex_tools::LoadableToolSpec;
 use codex_tools::TOOL_SEARCH_DEFAULT_LIMIT;
-use codex_tools::TOOL_SEARCH_MAX_LIMIT;
-use codex_tools::TOOL_SEARCH_MAX_OUTPUT_BYTES;
 use codex_tools::TOOL_SEARCH_TOOL_NAME;
 use codex_tools::ToolName;
 use codex_tools::ToolSearchEntry;
@@ -143,8 +141,6 @@ impl ToolSearchHandler {
                 "limit must be greater than zero".to_string(),
             ));
         }
-        let limit = limit.min(TOOL_SEARCH_MAX_LIMIT);
-
         if self.search_infos.is_empty() {
             return Ok(boxed_tool_output(ToolSearchOutput { tools: Vec::new() }));
         }
@@ -177,24 +173,9 @@ impl ToolSearchHandler {
         &self,
         results: impl IntoIterator<Item = &'a ToolSearchEntry>,
     ) -> Result<Vec<LoadableToolSpec>, FunctionCallError> {
-        let mut tools = Vec::new();
-        for entry in results {
-            let candidate = coalesce_loadable_tool_specs(
-                tools
-                    .iter()
-                    .cloned()
-                    .chain(std::iter::once(entry.output.clone())),
-            );
-            let serialized = serde_json::to_vec(&candidate).map_err(|err| {
-                FunctionCallError::Fatal(format!(
-                    "failed to serialize {TOOL_SEARCH_TOOL_NAME} output: {err}"
-                ))
-            })?;
-            if serialized.len() <= TOOL_SEARCH_MAX_OUTPUT_BYTES {
-                tools = candidate;
-            }
-        }
-        Ok(tools)
+        Ok(coalesce_loadable_tool_specs(
+            results.into_iter().map(|entry| entry.output.clone()),
+        ))
     }
 }
 

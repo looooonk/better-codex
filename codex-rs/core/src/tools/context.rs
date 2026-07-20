@@ -16,7 +16,6 @@ use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::function_call_output_content_items_to_text;
 use codex_tools::LoadableToolSpec;
-use codex_tools::TOOL_SEARCH_MAX_OUTPUT_BYTES;
 use codex_tools::ToolName;
 use codex_utils_output_truncation::TruncationPolicy;
 use codex_utils_output_truncation::approx_token_count;
@@ -155,11 +154,15 @@ pub struct ToolSearchOutput {
 
 impl ToolOutput for ToolSearchOutput {
     fn log_preview(&self) -> String {
-        let tools = bounded_tool_search_output_values(self.tools.iter().map(|tool| {
-            serde_json::to_value(tool).unwrap_or_else(|err| {
-                JsonValue::String(format!("failed to serialize tool_search output: {err}"))
+        let tools = self
+            .tools
+            .iter()
+            .map(|tool| {
+                serde_json::to_value(tool).unwrap_or_else(|err| {
+                    JsonValue::String(format!("failed to serialize tool_search output: {err}"))
+                })
             })
-        }));
+            .collect();
         telemetry_preview(&JsonValue::Array(tools).to_string())
     }
 
@@ -172,34 +175,17 @@ impl ToolOutput for ToolSearchOutput {
             call_id: call_id.to_string(),
             status: "completed".to_string(),
             execution: "client".to_string(),
-            tools: bounded_tool_search_output_values(self.tools.iter().map(|tool| {
-                serde_json::to_value(tool).unwrap_or_else(|err| {
-                    JsonValue::String(format!("failed to serialize tool_search output: {err}"))
+            tools: self
+                .tools
+                .iter()
+                .map(|tool| {
+                    serde_json::to_value(tool).unwrap_or_else(|err| {
+                        JsonValue::String(format!("failed to serialize tool_search output: {err}"))
+                    })
                 })
-            })),
+                .collect(),
         }
     }
-}
-
-pub(crate) fn bounded_tool_search_output_values(
-    values: impl IntoIterator<Item = JsonValue>,
-) -> Vec<JsonValue> {
-    let mut bounded = Vec::new();
-    let mut serialized_bytes = 2usize;
-    for value in values {
-        let Ok(serialized) = serde_json::to_vec(&value) else {
-            continue;
-        };
-        let separator_bytes = usize::from(!bounded.is_empty());
-        let candidate_bytes = serialized_bytes
-            .saturating_add(separator_bytes)
-            .saturating_add(serialized.len());
-        if candidate_bytes <= TOOL_SEARCH_MAX_OUTPUT_BYTES {
-            bounded.push(value);
-            serialized_bytes = candidate_bytes;
-        }
-    }
-    bounded
 }
 
 pub struct FunctionToolOutput {

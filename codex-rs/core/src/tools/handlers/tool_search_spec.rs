@@ -1,5 +1,4 @@
 use codex_tools::JsonSchema;
-use codex_tools::TOOL_SEARCH_MAX_LIMIT;
 use codex_tools::TOOL_SEARCH_TOOL_NAME;
 use codex_tools::ToolSearchSourceInfo;
 use codex_tools::ToolSpec;
@@ -9,17 +8,17 @@ pub(crate) fn create_tool_search_tool(
     searchable_sources: &[ToolSearchSourceInfo],
     default_limit: usize,
 ) -> ToolSpec {
-    let mut limit_schema = JsonSchema::integer(Some(format!(
-        "Maximum number of tools to return, from 1 to {TOOL_SEARCH_MAX_LIMIT}. Defaults to {default_limit}."
-    )));
-    limit_schema.minimum = Some(1.into());
-    limit_schema.maximum = Some(TOOL_SEARCH_MAX_LIMIT.into());
     let properties = BTreeMap::from([
         (
             "query".to_string(),
             JsonSchema::string(Some("Search query for deferred tools.".to_string())),
         ),
-        ("limit".to_string(), limit_schema),
+        (
+            "limit".to_string(),
+            JsonSchema::number(Some(format!(
+                "Maximum number of tools to return. Defaults to {default_limit}."
+            ))),
+        ),
     ]);
 
     let mut source_descriptions = BTreeMap::new();
@@ -98,14 +97,10 @@ mod tests {
                 parameters: JsonSchema::object(BTreeMap::from([
                         (
                             "limit".to_string(),
-                            JsonSchema {
-                                minimum: Some(1.into()),
-                                maximum: Some(TOOL_SEARCH_MAX_LIMIT.into()),
-                                ..JsonSchema::integer(Some(
-                                    "Maximum number of tools to return, from 1 to 32. Defaults to 8."
+                            JsonSchema::number(Some(
+                                    "Maximum number of tools to return. Defaults to 8."
                                         .to_string(),
-                                ))
-                            },
+                                ),),
                         ),
                         (
                             "query".to_string(),

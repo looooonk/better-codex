@@ -168,6 +168,37 @@ fn extension_owned_section_uses_its_snapshot_and_renderer() {
 }
 
 #[test]
+fn extension_world_state_keeps_every_rendered_fragment() {
+    let section_ids = (0..40)
+        .map(|index| {
+            let id: &'static str = Box::leak(format!("extension_test_{index}").into_boxed_str());
+            id
+        })
+        .collect::<Vec<_>>();
+    let mut world_state = WorldState::default();
+    for id in &section_ids {
+        let body = *id;
+        world_state.add_extension_section(WorldStateSectionContribution::new(
+            id,
+            json!({"body": body}),
+            move |_| Some(RenderedWorldStateFragment::new(ExtensionTestFragment(body))),
+        ));
+    }
+
+    assert_eq!(
+        world_state
+            .render_full()
+            .into_iter()
+            .map(|fragment| fragment.body())
+            .collect::<Vec<_>>(),
+        section_ids
+            .into_iter()
+            .map(str::to_string)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn missing_retained_fragment_is_rendered_again() {
     let mut world_state = WorldState::default();
     world_state.add_extension_section(

@@ -16,8 +16,7 @@ pub struct PromptFragment {
 impl PromptFragment {
     /// Creates a prompt fragment for the given slot.
     ///
-    /// The fragment role must be `developer` for developer slots and `user`
-    /// for the contextual-user slot. The host validates this before injection.
+    /// The slot determines which top-level message receives the rendered fragment.
     pub fn new(slot: PromptSlot, fragment: impl ContextualUserFragment + Send + 'static) -> Self {
         Self {
             slot,

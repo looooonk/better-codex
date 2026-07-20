@@ -5,8 +5,6 @@ use serde::Serialize;
 const TUI_CLIENT_NAME: &str = "codex-tui";
 pub const TOOL_SEARCH_TOOL_NAME: &str = "tool_search";
 pub const TOOL_SEARCH_DEFAULT_LIMIT: usize = 8;
-pub const TOOL_SEARCH_MAX_LIMIT: usize = 32;
-pub const TOOL_SEARCH_MAX_OUTPUT_BYTES: usize = 24_000;
 pub const LIST_AVAILABLE_PLUGINS_TO_INSTALL_TOOL_NAME: &str = "list_available_plugins_to_install";
 pub const REQUEST_PLUGIN_INSTALL_TOOL_NAME: &str = "request_plugin_install";
 

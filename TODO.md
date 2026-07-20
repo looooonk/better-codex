@@ -69,7 +69,7 @@ improvements that do not redefine Codex behavior.
   and token budgets across global and project instructions.
 - [x] **P1 · KEEP — Bound environment and world-state rendering.** Retain caps on
   roots, rules, domains, environments, subagent lines, and escaped field values.
-- [ ] **P1 · CHANGE — Match upstream extension-context handling.** Remove Better's
+- [x] **P1 · CHANGE — Match upstream extension-context handling.** Remove Better's
   fragment-count and aggregate-token admission limits, which can silently discard
   extension-provided context and world-state fragments. Accept every fragment as
   Codex does.
@@ -78,7 +78,7 @@ improvements that do not redefine Codex behavior.
   markers.
 - [x] **P1 · KEEP — Bound hook execution resources.** Retain stdout/stderr limits and
   the hook fan-out ceiling.
-- [ ] **P1 · CHANGE — Match upstream `tool_search` handling.** Remove Better's local
+- [x] **P1 · CHANGE — Match upstream `tool_search` handling.** Remove Better's local
   result-count and serialized-size caps, including bounded reserialization during
   history reconstruction. Return every coalesced result selected by the requested
   search limit as Codex does.

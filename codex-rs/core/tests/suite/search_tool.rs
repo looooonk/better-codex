@@ -18,8 +18,6 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::McpInvocation;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
-use codex_tools::TOOL_SEARCH_MAX_LIMIT;
-use codex_tools::TOOL_SEARCH_MAX_OUTPUT_BYTES;
 use core_test_support::apps_test_server::AppsTestServer;
 use core_test_support::apps_test_server::AppsTestToolLoading;
 use core_test_support::apps_test_server::CALENDAR_CREATE_EVENT_MCP_APP_RESOURCE_URI;
@@ -169,10 +167,8 @@ async fn search_tool_enabled_by_default_adds_tool_search() -> Result<()> {
                 "properties": {
                     "query": {"type": "string", "description": "Search query for deferred tools."},
                     "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of tools to return, from 1 to 32. Defaults to 8.",
-                        "minimum": 1,
-                        "maximum": TOOL_SEARCH_MAX_LIMIT,
+                        "type": "number",
+                        "description": "Maximum number of tools to return. Defaults to 8.",
                     },
                 },
                 "required": ["query"],
@@ -1057,11 +1053,13 @@ async fn tool_search_returns_deferred_dynamic_tool_and_routes_follow_up_call() -
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn tool_search_output_is_bounded_in_follow_up_history() -> Result<()> {
+async fn tool_search_returns_every_result_selected_by_requested_limit() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
+    const TOOL_COUNT: usize = 40;
+
     let server = start_mock_server().await;
-    let call_id = "bounded-tool-search";
+    let call_id = "unbounded-tool-search";
     let mock = mount_sse_sequence(
         &server,
         vec![
@@ -1070,8 +1068,8 @@ async fn tool_search_output_is_bounded_in_follow_up_history() -> Result<()> {
                 ev_tool_search_call(
                     call_id,
                     &json!({
-                        "query": "bounded result",
-                        "limit": TOOL_SEARCH_MAX_LIMIT + 1,
+                        "query": "unbounded result",
+                        "limit": TOOL_COUNT,
                     }),
                 ),
                 ev_completed("resp-1"),
@@ -1085,13 +1083,13 @@ async fn tool_search_output_is_bounded_in_follow_up_history() -> Result<()> {
     )
     .await;
     let dynamic_tool = DynamicToolSpec::Namespace(DynamicToolNamespaceSpec {
-        name: "bounded_namespace".to_string(),
-        description: "Tools used to verify bounded search results.".to_string(),
-        tools: (0..TOOL_SEARCH_MAX_LIMIT)
+        name: "unbounded_namespace".to_string(),
+        description: "Tools used to verify complete search results.".to_string(),
+        tools: (0..TOOL_COUNT)
             .map(|index| {
                 DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
-                    name: format!("bounded_result_{index:02}"),
-                    description: format!("bounded result {}", "x".repeat(5_000)),
+                    name: format!("unbounded_result_{index:02}"),
+                    description: format!("unbounded result {}", "x".repeat(5_000)),
                     input_schema: json!({
                         "type": "object",
                         "properties": {},
@@ -1115,7 +1113,7 @@ async fn tool_search_output_is_bounded_in_follow_up_history() -> Result<()> {
     test.codex
         .submit(Op::UserInput {
             items: vec![UserInput::Text {
-                text: "Find the bounded tools".to_string(),
+                text: "Find every matching tool".to_string(),
                 text_elements: Vec::new(),
             }],
             final_output_json_schema: None,
@@ -1141,10 +1139,17 @@ async fn tool_search_output_is_bounded_in_follow_up_history() -> Result<()> {
         .and_then(|namespace| namespace.get("tools"))
         .and_then(Value::as_array)
         .expect("tool search output should contain a namespace");
-    assert!(!children.is_empty());
-    assert!(children.len() < TOOL_SEARCH_MAX_LIMIT);
-    assert!(serde_json::to_vec(tools)?.len() <= TOOL_SEARCH_MAX_OUTPUT_BYTES);
-    assert!(serde_json::to_vec(&output)?.len() < 40_000);
+    let mut actual_names = children
+        .iter()
+        .filter_map(|child| child.get("name").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    let mut expected_names = (0..TOOL_COUNT)
+        .map(|index| format!("unbounded_result_{index:02}"))
+        .collect::<Vec<_>>();
+    actual_names.sort();
+    expected_names.sort();
+    assert_eq!(actual_names, expected_names);
 
     Ok(())
 }

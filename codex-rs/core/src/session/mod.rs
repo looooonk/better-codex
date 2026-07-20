@@ -1000,30 +1000,21 @@ async fn thread_title_from_thread_store(
 
 fn push_prompt_fragment(
     fragment: PromptFragment,
-    budget: &mut crate::context::ExtensionContextBudget,
     developer_sections: &mut Vec<String>,
     contextual_user_sections: &mut Vec<String>,
     separate_developer_sections: &mut Vec<String>,
 ) {
     let slot = fragment.slot();
-    let expected_role = match slot {
-        PromptSlot::DeveloperPolicy
-        | PromptSlot::DeveloperCapabilities
-        | PromptSlot::SeparateDeveloper => "developer",
-        PromptSlot::ContextualUser => "user",
-    };
-    let Some(fragment) = budget.admit(fragment.into_context_fragment(), Some(expected_role)) else {
-        return;
-    };
+    let rendered = fragment.render();
     match slot {
         PromptSlot::DeveloperPolicy | PromptSlot::DeveloperCapabilities => {
-            developer_sections.push(fragment.render());
+            developer_sections.push(rendered);
         }
         PromptSlot::ContextualUser => {
-            contextual_user_sections.push(fragment.render());
+            contextual_user_sections.push(rendered);
         }
         PromptSlot::SeparateDeveloper => {
-            separate_developer_sections.push(fragment.render());
+            separate_developer_sections.push(rendered);
         }
     }
 }
@@ -3155,7 +3146,6 @@ impl Session {
         let mut developer_sections = Vec::new();
         let mut contextual_user_sections = Vec::new();
         let mut separate_developer_sections = Vec::new();
-        let mut extension_context_budget = crate::context::ExtensionContextBudget::default();
         let context_contributors = self.services.extensions.context_contributors().to_vec();
 
         for contributor in &context_contributors {
@@ -3172,7 +3162,6 @@ impl Session {
             {
                 push_prompt_fragment(
                     fragment,
-                    &mut extension_context_budget,
                     &mut developer_sections,
                     &mut contextual_user_sections,
                     &mut separate_developer_sections,
@@ -3240,7 +3229,6 @@ impl Session {
         let mut developer_sections = Vec::<String>::with_capacity(8);
         let mut contextual_user_sections = Vec::<String>::with_capacity(2);
         let mut separate_developer_sections = Vec::<String>::new();
-        let mut extension_context_budget = crate::context::ExtensionContextBudget::default();
         let (
             reference_context_item,
             previous_turn_settings,
@@ -3409,7 +3397,6 @@ impl Session {
             {
                 push_prompt_fragment(
                     fragment,
-                    &mut extension_context_budget,
                     &mut developer_sections,
                     &mut contextual_user_sections,
                     &mut separate_developer_sections,
@@ -3430,7 +3417,6 @@ impl Session {
             {
                 push_prompt_fragment(
                     fragment,
-                    &mut extension_context_budget,
                     &mut developer_sections,
                     &mut contextual_user_sections,
                     &mut separate_developer_sections,

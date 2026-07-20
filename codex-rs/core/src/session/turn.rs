@@ -816,7 +816,6 @@ async fn build_extension_turn_input_items(
     };
 
     let mut items = Vec::new();
-    let mut extension_context_budget = crate::context::ExtensionContextBudget::default();
     for contributor in contributors {
         let contributed_fragments = contributor
             .contribute(
@@ -831,8 +830,7 @@ async fn build_extension_turn_input_items(
         items.extend(
             contributed_fragments
                 .into_iter()
-                .filter_map(|fragment| extension_context_budget.admit(fragment, None))
-                .map(ContextualUserFragment::into),
+                .map(ContextualUserFragment::into_boxed_response_item),
         );
     }
 

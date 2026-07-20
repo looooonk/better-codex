@@ -8324,7 +8324,9 @@ async fn make_multi_agent_v2_usage_hint_test_session(
 }
 
 struct PromptExtensionTestContributor;
-struct PromptExtensionTestState;
+struct PromptExtensionTestState {
+    fragment_count: usize,
+}
 struct TurnContextExtensionTestContributor;
 struct TurnContextExtensionTestState {
     expected_model_context_window: Option<i64>,
@@ -8339,15 +8341,18 @@ impl codex_extension_api::ContextContributor for PromptExtensionTestContributor 
         Box<dyn std::future::Future<Output = Vec<codex_extension_api::PromptFragment>> + Send + 'a>,
     > {
         Box::pin(async move {
-            thread_store
+            let fragment_count = thread_store
                 .get::<PromptExtensionTestState>()
-                .is_some()
-                .then(|| {
+                .map(|state| state.fragment_count)
+                .unwrap_or_default();
+            (0..fragment_count)
+                .map(|index| {
                     codex_extension_api::PromptFragment::developer_policy(
-                        crate::context::DeveloperInstructions::new("prompt extension enabled"),
+                        crate::context::DeveloperInstructions::new(format!(
+                            "prompt extension enabled {index}"
+                        )),
                     )
                 })
-                .into_iter()
                 .collect()
         })
     }
@@ -8387,23 +8392,31 @@ impl codex_extension_api::ContextContributor for TurnContextExtensionTestContrib
 
 #[tokio::test]
 async fn build_initial_context_includes_prompt_fragments_from_extensions() {
+    const FRAGMENT_COUNT: usize = 40;
+
     let (mut session, turn_context) = make_session_and_context().await;
     session.services.extensions = prompt_extension_test_registry();
     session
         .services
         .thread_extension_data
-        .insert(PromptExtensionTestState);
+        .insert(PromptExtensionTestState {
+            fragment_count: FRAGMENT_COUNT,
+        });
     let turn_context = Arc::new(turn_context);
 
     let initial_context = build_initial_context(&session, &turn_context).await;
     let developer_messages = developer_message_texts(&initial_context);
 
-    assert!(
+    assert_eq!(
         developer_messages
-            .iter()
+            .into_iter()
             .flatten()
-            .any(|text| *text == "prompt extension enabled"),
-        "expected prompt extension developer text, got {developer_messages:?}"
+            .filter(|text| text.starts_with("prompt extension enabled "))
+            .map(str::to_string)
+            .collect::<Vec<_>>(),
+        (0..FRAGMENT_COUNT)
+            .map(|index| format!("prompt extension enabled {index}"))
+            .collect::<Vec<_>>()
     );
 }
 
