@@ -31,6 +31,7 @@ SELECT
     threads.cwd,
     threads.cli_version,
     threads.title,
+    threads.name,
     threads.preview,
     threads.sandbox_policy,
     threads.approval_mode,
@@ -561,6 +562,7 @@ INSERT INTO threads (
     cwd,
     cli_version,
     title,
+    name,
     preview,
     sandbox_policy,
     approval_mode,
@@ -572,7 +574,7 @@ INSERT INTO threads (
     git_branch,
     git_origin_url,
     memory_mode
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO NOTHING
             "#,
         )
@@ -606,6 +608,7 @@ ON CONFLICT(id) DO NOTHING
         .bind(metadata.cwd.display().to_string())
         .bind(metadata.cli_version.as_str())
         .bind(metadata.title.as_str())
+        .bind(metadata.name.as_deref())
         .bind(preview)
         .bind(metadata.sandbox_policy.as_str())
         .bind(metadata.approval_mode.as_str())
@@ -644,6 +647,19 @@ ON CONFLICT(id) DO NOTHING
     ) -> anyhow::Result<bool> {
         let result = sqlx::query("UPDATE threads SET title = ? WHERE id = ?")
             .bind(title)
+            .bind(thread_id.to_string())
+            .execute(self.pool.as_ref())
+            .await?;
+        Ok(result.rows_affected() > 0)
+    }
+
+    pub async fn update_thread_name(
+        &self,
+        thread_id: ThreadId,
+        name: Option<&str>,
+    ) -> anyhow::Result<bool> {
+        let result = sqlx::query("UPDATE threads SET name = ? WHERE id = ?")
+            .bind(name)
             .bind(thread_id.to_string())
             .execute(self.pool.as_ref())
             .await?;
@@ -815,6 +831,7 @@ INSERT INTO threads (
     cwd,
     cli_version,
     title,
+    name,
     preview,
     sandbox_policy,
     approval_mode,
@@ -826,7 +843,7 @@ INSERT INTO threads (
     git_branch,
     git_origin_url,
     memory_mode
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     rollout_path = excluded.rollout_path,
     created_at = excluded.created_at,
@@ -889,6 +906,7 @@ ON CONFLICT(id) DO UPDATE SET
         .bind(metadata.cwd.display().to_string())
         .bind(metadata.cli_version.as_str())
         .bind(metadata.title.as_str())
+        .bind(metadata.name.as_deref())
         .bind(preview)
         .bind(metadata.sandbox_policy.as_str())
         .bind(metadata.approval_mode.as_str())
@@ -1263,6 +1281,7 @@ SELECT
     threads.cwd,
     threads.cli_version,
     threads.title,
+    threads.name,
     threads.preview,
     threads.sandbox_policy,
     threads.approval_mode,
@@ -1362,7 +1381,9 @@ pub(super) fn push_thread_filters<'a>(
         None => {}
     }
     if let Some(search_term) = search_term {
-        builder.push(" AND (instr(threads.title, ");
+        builder.push(" AND (instr(COALESCE(threads.name, ''), ");
+        builder.push_bind(search_term);
+        builder.push(") > 0 OR instr(threads.title, ");
         builder.push_bind(search_term);
         builder.push(") > 0 OR instr(threads.preview, ");
         builder.push_bind(search_term);
@@ -2269,6 +2290,7 @@ mod tests {
                 selected_capability_roots: Vec::new(),
                 memory_mode: Some("polluted".to_string()),
                 history_mode: Default::default(),
+                history_base: None,
                 subagent_history_start_ordinal: None,
                 multi_agent_version: None,
                 context_window: None,
@@ -2335,6 +2357,7 @@ mod tests {
                 selected_capability_roots: Vec::new(),
                 memory_mode: None,
                 history_mode: Default::default(),
+                history_base: None,
                 subagent_history_start_ordinal: None,
                 multi_agent_version: None,
                 context_window: None,

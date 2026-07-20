@@ -176,6 +176,29 @@ impl AgentControlHarness {
             .expect("start paginated thread");
         (new_thread.thread_id, new_thread.thread)
     }
+
+    async fn spawn_anonymous_child(
+        &self,
+        parent_thread_id: ThreadId,
+        options: SpawnAgentOptions,
+    ) -> ThreadId {
+        self.control
+            .spawn_agent_with_metadata(
+                self.config.clone(),
+                text_input("child task"),
+                Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                    parent_thread_id,
+                    depth: 1,
+                    agent_path: None,
+                    agent_nickname: None,
+                    agent_role: None,
+                })),
+                options,
+            )
+            .await
+            .expect("child spawn should succeed")
+            .thread_id
+    }
 }
 
 async fn persisted_originator(thread: &CodexThread) -> String {
@@ -899,7 +922,6 @@ async fn spawn_agent_fork_from_paginated_parent_persists_model_context_prefix() 
             &[spawn_agent_call(&parent_spawn_call_id)],
         )
         .await;
-
     let child_thread_id = harness
         .control
         .spawn_agent_with_metadata(
@@ -2673,6 +2695,70 @@ async fn resume_agent_from_rollout_reads_archived_rollout_path() {
         .shutdown_live_agent(child_thread_id)
         .await
         .expect("resumed child shutdown should succeed");
+}
+
+#[tokio::test]
+async fn resume_agent_from_paginated_rollout_loads_model_context() {
+    let harness = AgentControlHarness::new().await;
+    let (parent_thread_id, parent_thread) = harness.start_paginated_thread().await;
+    let child_thread_id = harness
+        .spawn_anonymous_child(
+            parent_thread_id,
+            SpawnAgentOptions {
+                parent_thread_id: Some(parent_thread_id),
+                ..Default::default()
+            },
+        )
+        .await;
+    let child_thread = harness
+        .manager
+        .get_thread(child_thread_id)
+        .await
+        .expect("child thread should exist");
+    assert_eq!(
+        child_thread.config_snapshot().await.history_mode,
+        ThreadHistoryMode::Paginated
+    );
+    persist_thread_for_tree_resume(&child_thread, "persist before resume").await;
+    let _ = harness
+        .control
+        .shutdown_live_agent(child_thread_id)
+        .await
+        .expect("child shutdown should succeed");
+
+    let resumed_thread_id = harness
+        .control
+        .resume_agent_from_rollout(harness.config.clone(), child_thread_id, SessionSource::Exec)
+        .await
+        .expect("resume should load paginated model context");
+    assert_eq!(resumed_thread_id, child_thread_id);
+    let resumed_thread = harness
+        .manager
+        .get_thread(resumed_thread_id)
+        .await
+        .expect("resumed child thread should exist");
+    assert!(
+        history_contains_text(
+            resumed_thread
+                .codex
+                .session
+                .clone_history()
+                .await
+                .raw_items(),
+            "persist before resume",
+        ),
+        "resumed child should keep its persisted model context"
+    );
+
+    let _ = harness
+        .control
+        .shutdown_live_agent(child_thread_id)
+        .await
+        .expect("resumed child shutdown should succeed");
+    let _ = parent_thread
+        .submit(Op::Shutdown {})
+        .await
+        .expect("parent shutdown should submit");
 }
 
 #[tokio::test]

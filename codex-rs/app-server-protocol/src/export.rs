@@ -48,6 +48,8 @@ const EXPERIMENTAL_CLIENT_METHOD_DEPENDENCY_TYPES: &[&str] = &[
     "RemoteControlClient",
     "RemoteControlClientsListOrder",
     "ThreadBackgroundTerminal",
+    "ThreadSearchOccurrence",
+    "ThreadSearchTextRange",
 ];
 const SPECIAL_DEFINITIONS: &[&str] = &[
     "ClientNotification",

@@ -196,7 +196,7 @@ improvements that do not redefine Codex behavior.
 - [x] **P2 · CHANGE — Port upstream raw-response completion events.** Preserve the
   response ID and token usage from every completed model response and expose the
   upstream `RawResponseCompleted` event so malformed generations can be traced.
-- [ ] **P1 · CHANGE — Port paginated rollout and history infrastructure.** Add bounded
+- [x] **P1 · CHANGE — Port paginated rollout and history infrastructure.** Add bounded
   context-suffix loading, SQLite history materialization, paginated thread/child
   reads and resumes, and explicit unsupported-operation checks.
 - [ ] **P1 · CHANGE — Port retry/edit/fork-before-turn semantics.** Support

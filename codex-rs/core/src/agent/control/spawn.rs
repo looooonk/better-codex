@@ -838,7 +838,7 @@ impl AgentControl {
             .read_stored_thread(ReadThreadParams {
                 thread_id,
                 include_archived: true,
-                include_history: true,
+                include_history: false,
             })
             .await?;
         let resumed_agent_path = stored_thread
