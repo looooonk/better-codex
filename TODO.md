@@ -87,7 +87,7 @@ improvements that do not redefine Codex behavior.
   interaction bounded and predictable.
 - [x] **P1 · KEEP — Keep the 64 MiB app-server file-read cap.** Continue checking both
   initial metadata and streamed growth.
-- [ ] **P1 · CHANGE — Port upstream exec-server robustness bounds.** Add JSON tree,
+- [x] **P1 · CHANGE — Port upstream exec-server robustness bounds.** Add JSON tree,
   retained-output-chunk, directory-entry, and capability/skill discovery-walk limits.
 
 ## Context lifecycle and compaction
