@@ -119,6 +119,7 @@ impl WebSearchTool {
                     id: call.call_id.clone(),
                     query: String::new(),
                     action: None,
+                    results: None,
                 },
                 EventMsg::WebSearchBegin(WebSearchBeginEvent {
                     call_id: call.call_id.clone(),
@@ -129,6 +130,8 @@ impl WebSearchTool {
             .search(&request, HeaderMap::new())
             .await
             .map_err(|err| FunctionCallError::Fatal(err.to_string()))?;
+        let output = response.output;
+        let results = response.results;
         let legacy_action = match &command_action {
             WebSearchAction::Search { query, queries } => CoreWebSearchAction::Search {
                 query: query.clone(),
@@ -148,16 +151,18 @@ impl WebSearchTool {
                     id: call.call_id.clone(),
                     query: query.clone(),
                     action: Some(command_action),
+                    results: results.clone(),
                 },
                 EventMsg::WebSearchEnd(WebSearchEndEvent {
                     call_id: call.call_id.clone(),
                     query,
                     action: legacy_action,
+                    results,
                 }),
             ))
             .await;
 
-        Ok(Box::new(SearchOutput::new(response.output)))
+        Ok(Box::new(SearchOutput::new(output)))
     }
 }
 

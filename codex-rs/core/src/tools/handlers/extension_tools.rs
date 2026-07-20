@@ -261,6 +261,7 @@ mod tests {
                         id: call.call_id.clone(),
                         query: String::new(),
                         action: None,
+                        results: None,
                     }),
                     legacy_events: Vec::new(),
                 })
@@ -410,6 +411,7 @@ mod tests {
                 id: "call-extension".to_string(),
                 query: String::new(),
                 action: None,
+                results: None,
             }
         );
     }

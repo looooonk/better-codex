@@ -155,17 +155,17 @@ improvements that do not redefine Codex behavior.
   runtime management, complete startup timeout coverage, pre-planning construction,
   serialized stdio writes, reusable catalogs with opt-out, executor capability-root
   discovery, and upstream metadata visibility rules.
-- [ ] **P1 · CHANGE — Preserve encrypted MCP content precedence.** Prefer
+- [x] **P1 · CHANGE — Preserve encrypted MCP content precedence.** Prefer
   `_meta["codex/encryptedContent"]` over structured content for replay/privacy-safe
   model and rollout representation.
 - [x] **P1 · KEEP — Keep Better's `request_user_input` limits and deadline semantics.**
   The bounded schema and use of the requested 60–240 second duration are clearer and
   more faithful than treating the field as a fixed-duration switch.
-- [ ] **P2 · CHANGE — Align plugin-install execution mechanics.** Mark installation
+- [x] **P2 · CHANGE — Align plugin-install execution mechanics.** Mark installation
   non-parallel and follow upstream list/search/install sequencing.
-- [ ] **P2 · CHANGE — Make `write_stdin` parallel-capable per session.** Use
+- [x] **P2 · CHANGE — Make `write_stdin` parallel-capable per session.** Use
   process-level locking so writes to independent terminals do not serialize globally.
-- [ ] **P2 · CHANGE — Port structured web-search results.** Preserve current upstream
+- [x] **P2 · CHANGE — Port structured web-search results.** Preserve current upstream
   standalone result structure and metadata across supported tool surfaces.
 
 ## Execution, sandboxing, approvals, and hooks

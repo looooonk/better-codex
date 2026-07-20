@@ -4741,6 +4741,7 @@ fn completed_extension_items_render_as_successful_tools() {
             id: "web-1".to_string(),
             query: "latest protocol changes".to_string(),
             action: None,
+            results: None,
         }),
         CompletedItemOrigin::Live,
     );
