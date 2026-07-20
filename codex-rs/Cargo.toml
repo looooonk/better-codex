@@ -48,6 +48,7 @@ members = [
     "exec-server-protocol",
     "exec-server",
     "execpolicy",
+    "ext/agent",
     "ext/connectors",
     "ext/extension-api",
     "ext/goal",
@@ -170,6 +171,7 @@ codex-http-client = { path = "http-client" }
 codex-websocket-client = { path = "websocket-client" }
 codex-config = { path = "config" }
 codex-connectors = { path = "connectors" }
+codex-agent-extension = { path = "ext/agent" }
 codex-connectors-extension = { path = "ext/connectors" }
 codex-context-fragments = { path = "context-fragments" }
 codex-core = { path = "core" }

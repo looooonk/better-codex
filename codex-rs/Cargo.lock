@@ -1867,6 +1867,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-agent-extension"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "codex-core",
+ "codex-protocol",
+ "core_test_support",
+ "pretty_assertions",
+ "tokio",
+]
+
+[[package]]
 name = "codex-agent-graph-store"
 version = "0.0.0"
 dependencies = [
@@ -1975,6 +1987,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "clap",
+ "codex-agent-extension",
  "codex-analytics",
  "codex-app-server-protocol",
  "codex-app-server-transport",
@@ -2016,6 +2029,7 @@ dependencies = [
  "codex-rollout",
  "codex-sandboxing",
  "codex-shell-command",
+ "codex-skills",
  "codex-skills-extension",
  "codex-state",
  "codex-thread-store",

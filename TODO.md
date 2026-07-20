@@ -145,7 +145,7 @@ improvements that do not redefine Codex behavior.
 - [x] **P1 · CHANGE — Align the final-answer mailbox boundary.** Leave non-triggering
   child mail for the next turn instead of forcing another sample after a terminal
   answer.
-- [ ] **P2 · CHANGE — Sync remaining upstream agent dispatch behavior.** Port
+- [x] **P2 · CHANGE — Sync remaining upstream agent dispatch behavior.** Port
   model-backed availability rules, proactive-delegation wording, review-agent turns,
   extension execution, and current job/CSV role defaults.
 
