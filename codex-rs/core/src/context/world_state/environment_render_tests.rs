@@ -87,7 +87,7 @@ fn serialize_workspace_write_environment_context() {
 
 #[test]
 fn serialize_environment_context_with_foreign_windows_cwd() {
-    let context = environment_state(
+    let mut context = environment_state(
         [environment(
             "remote",
             PathUri::parse("file:///C:/windows").expect("Windows cwd URI"),
@@ -98,12 +98,17 @@ fn serialize_environment_context_with_foreign_windows_cwd() {
         /*network*/ None,
         /*subagents*/ None,
     );
+    context.filesystem = Some(FileSystemContext::from_permission_profile(
+        &PermissionProfile::Disabled,
+        &[PathUri::parse("file:///D:/workspace").expect("Windows workspace root URI")],
+    ));
 
     assert_eq!(
         context.render(),
         r#"<environment_context>
   <cwd>C:\windows</cwd>
   <shell>powershell</shell>
+  <filesystem><workspace_roots><root>D:\workspace</root></workspace_roots><permission_profile type="disabled"><file_system type="unrestricted" /></permission_profile></filesystem>
 </environment_context>"#
     );
 }
@@ -171,7 +176,7 @@ fn environment_context_bounds_and_escapes_dynamic_metadata() {
         NetworkSandboxPolicy::Restricted,
     );
     let workspace_roots = (0..12)
-        .map(|index| test_abs_path(&format!("/root/{index}-{long_value}")))
+        .map(|index| PathUri::from_abs_path(&test_abs_path(&format!("/root/{index}-{long_value}"))))
         .collect::<Vec<_>>();
     let mut context = environment_state(
         environments,
@@ -251,7 +256,10 @@ fn serialize_environment_context_with_full_filesystem_profile() {
     );
     context.filesystem = Some(FileSystemContext::from_permission_profile(
         &workspace_write_permission_profile_with_private_denials(),
-        &[repo.clone(), other_repo.clone()],
+        &[
+            PathUri::from_abs_path(&repo),
+            PathUri::from_abs_path(&other_repo),
+        ],
     ));
 
     let expected = format!(

@@ -170,7 +170,7 @@ improvements that do not redefine Codex behavior.
 
 ## Execution, sandboxing, approvals, and hooks
 
-- [ ] **P1 · CHANGE — Materialize sandbox roots per execution environment.** Resolve
+- [x] **P1 · CHANGE — Materialize sandbox roots per execution environment.** Resolve
   selected-environment workspace roots and permissions for every tool attempt rather
   than using turn-wide host roots.
 - [ ] **P1 · CHANGE — Align network attribution and cancellation.** Attribute every

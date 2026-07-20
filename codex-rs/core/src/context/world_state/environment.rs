@@ -6,6 +6,7 @@ use crate::context::environment_context::NetworkContext;
 use crate::context::environment_context::push_xml_escaped_text;
 use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::session::turn_context::TurnContext;
+use crate::session::turn_context::TurnEnvironment;
 use codex_utils_path_uri::PathUri;
 use codex_utils_string::approx_bytes_for_tokens;
 use serde::Deserialize;
@@ -34,14 +35,18 @@ impl EnvironmentsState {
         turn_context: &TurnContext,
         environments: &TurnEnvironmentSnapshot,
     ) -> Self {
+        let workspace_roots = environments
+            .primary()
+            .map(TurnEnvironment::workspace_roots)
+            .unwrap_or_default();
         Self {
             environments: environment_states(environments),
             current_date: turn_context.current_date.clone(),
             timezone: turn_context.timezone.clone(),
             network: network_from_turn_context(turn_context),
             filesystem: Some(FileSystemContext::from_permission_profile(
-                &turn_context.permission_profile,
-                &turn_context.config.effective_workspace_roots(),
+                turn_context.config.permissions.permission_profile(),
+                workspace_roots,
             )),
             subagents: None,
         }
