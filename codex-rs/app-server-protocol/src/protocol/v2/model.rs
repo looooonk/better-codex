@@ -5,6 +5,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::default_input_modalities;
 use codex_protocol::protocol::ModelRerouteReason as CoreModelRerouteReason;
 use codex_protocol::protocol::ModelVerification as CoreModelVerification;
+use codex_protocol::protocol::MultiAgentVersion;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
@@ -92,6 +93,7 @@ pub struct Model {
     pub default_reasoning_effort: ReasoningEffort,
     #[serde(default = "default_input_modalities")]
     pub input_modalities: Vec<InputModality>,
+    pub multi_agent_version: Option<MultiAgentVersion>,
     #[serde(default)]
     pub supports_personality: bool,
     /// Deprecated: use `serviceTiers` instead.

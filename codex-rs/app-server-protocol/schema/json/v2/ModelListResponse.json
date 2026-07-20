@@ -17,6 +17,13 @@
             "image"
           ],
           "type": "string"
+        },
+        {
+          "description": "Audio attachments included in user turns.",
+          "enum": [
+            "audio"
+          ],
+          "type": "string"
         }
       ]
     },
@@ -78,6 +85,16 @@
         },
         "model": {
           "type": "string"
+        },
+        "multiAgentVersion": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MultiAgentVersion"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "serviceTiers": {
           "default": [],
@@ -183,6 +200,14 @@
         "model"
       ],
       "type": "object"
+    },
+    "MultiAgentVersion": {
+      "enum": [
+        "disabled",
+        "v1",
+        "v2"
+      ],
+      "type": "string"
     },
     "ReasoningEffort": {
       "description": "A non-empty reasoning effort value advertised by the model.",

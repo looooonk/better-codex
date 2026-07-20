@@ -2766,6 +2766,8 @@ fn format_user_inputs(content: &[UserInput]) -> String {
             UserInput::Text { text, .. } => text.clone(),
             UserInput::Image { url, .. } => format!("[image {url}]"),
             UserInput::LocalImage { path, .. } => format!("[image {}]", path.display()),
+            UserInput::Audio { .. } => "[audio]".to_string(),
+            UserInput::LocalAudio { path } => format!("[audio {}]", path.display()),
             UserInput::Skill { name, path } => format!("[skill {name} {}]", path.display()),
             UserInput::Mention { name, path } => format!("[mention {name} {path}]"),
         })

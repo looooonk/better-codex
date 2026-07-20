@@ -8677,6 +8677,7 @@ async fn token_usage_notification_uses_last_usage_for_context_pressure() {
                             total_tokens: 900_000,
                             input_tokens: 800_000,
                             cached_input_tokens: 100_000,
+                            cache_write_input_tokens: 0,
                             output_tokens: 100_000,
                             reasoning_output_tokens: 0,
                         },
@@ -8684,6 +8685,7 @@ async fn token_usage_notification_uses_last_usage_for_context_pressure() {
                             total_tokens: 24_000,
                             input_tokens: 20_000,
                             cached_input_tokens: 4_000,
+                            cache_write_input_tokens: 0,
                             output_tokens: 4_000,
                             reasoning_output_tokens: 0,
                         },
@@ -10523,6 +10525,7 @@ fn model_preset_fixture(
         is_default: false,
         upgrade: None,
         show_in_picker,
+        multi_agent_version: None,
         availability_nux: None,
         supported_in_api: true,
         input_modalities: Vec::new(),
@@ -14314,6 +14317,8 @@ impl backend::AppShellBackend for RecordingBackend {
                 ApiUserInput::Text { text, .. } => Some(text.clone()),
                 ApiUserInput::Image { .. }
                 | ApiUserInput::LocalImage { .. }
+                | ApiUserInput::Audio { .. }
+                | ApiUserInput::LocalAudio { .. }
                 | ApiUserInput::Skill { .. }
                 | ApiUserInput::Mention { .. } => None,
             })
@@ -14748,4 +14753,21 @@ fn test_turn(id: &str, status: TurnStatus) -> Turn {
 
 fn test_thread_id(value: &str) -> codex_protocol::ThreadId {
     codex_protocol::ThreadId::from_string(value).expect("test thread id should be valid")
+}
+
+#[test]
+fn format_user_inputs_renders_audio_without_embedding_payloads() {
+    let inputs = vec![
+        ApiUserInput::Audio {
+            url: "data:audio/wav;base64,YXVkaW8=".to_string(),
+        },
+        ApiUserInput::LocalAudio {
+            path: PathBuf::from("recordings/note.mp3"),
+        },
+    ];
+
+    insta::assert_snapshot!(format_user_inputs(&inputs), @r###"
+    [audio]
+    [audio recordings/note.mp3]
+    "###);
 }

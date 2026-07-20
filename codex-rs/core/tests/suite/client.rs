@@ -42,6 +42,7 @@ use codex_protocol::models::ReasoningItemContent;
 use codex_protocol::models::ReasoningItemReasoningSummary;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::models::WebSearchAction;
+use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
@@ -301,6 +302,119 @@ async fn non_openai_responses_requests_omit_item_passthrough_metadata() {
             "input item should omit generated IDs: {item}"
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sends_audio_urls_to_responses() {
+    skip_if_no_network!();
+
+    let server = MockServer::start().await;
+    let response_mock = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
+    )
+    .await;
+    let codex = test_codex()
+        .with_model_info_override("gpt-5.5", |model_info| {
+            model_info.input_modalities.push(InputModality::Audio);
+        })
+        .build(&server)
+        .await
+        .unwrap()
+        .codex;
+    let audio_url = "data:audio/wav;base64,AAAA";
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Audio {
+                audio_url: audio_url.to_string(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await
+        .unwrap();
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    let user_message = response_mock
+        .single_request()
+        .input()
+        .into_iter()
+        .rev()
+        .find(|item| item.get("role").and_then(serde_json::Value::as_str) == Some("user"))
+        .expect("request should include a user message");
+    assert_eq!(
+        user_message["content"],
+        json!([{
+            "type": "input_audio",
+            "audio_url": audio_url,
+        }])
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sends_local_audio_to_responses() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = MockServer::start().await;
+    let response_mock = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp1"), ev_completed("resp1")]),
+    )
+    .await;
+    let codex = test_codex()
+        .with_model_info_override("gpt-5.5", |model_info| {
+            model_info.input_modalities.push(InputModality::Audio);
+        })
+        .build(&server)
+        .await?
+        .codex;
+    let temp_dir = tempfile::tempdir()?;
+    let audio_path = temp_dir.path().join("recording.wav");
+    std::fs::write(&audio_path, b"audio")?;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::LocalAudio {
+                path: audio_path.clone(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await?;
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    let user_message = response_mock
+        .single_request()
+        .input()
+        .into_iter()
+        .rev()
+        .find(|item| item.get("role").and_then(serde_json::Value::as_str) == Some("user"))
+        .expect("request should include a user message");
+    let audio_path = audio_path.display();
+    assert_eq!(
+        user_message["content"],
+        json!([
+            {
+                "type": "input_text",
+                "text": format!(r#"<audio name=[Audio #1] path="{audio_path}">"#),
+            },
+            {
+                "type": "input_audio",
+                "audio_url": "data:audio/wav;base64,YXVkaW8=",
+            },
+            {
+                "type": "input_text",
+                "text": "</audio>",
+            },
+        ])
+    );
+
+    Ok(())
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

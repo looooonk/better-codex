@@ -18,7 +18,6 @@ impl AgentPath {
     pub const ROOT: &str = "/root";
     pub const MORPHEUS: &str = "/morpheus";
     pub const MAX_NAME_LENGTH: usize = 64;
-    pub const MAX_PATH_LENGTH: usize = 1024;
     const ROOT_SEGMENT: &str = "root";
 
     pub fn root() -> Self {
@@ -175,12 +174,6 @@ fn validate_absolute_path(path: &str) -> Result<(), String> {
     for segment in segments {
         validate_agent_name(segment)?;
     }
-    if path.len() > AgentPath::MAX_PATH_LENGTH {
-        return Err(format!(
-            "agent path must be at most {} characters",
-            AgentPath::MAX_PATH_LENGTH
-        ));
-    }
     Ok(())
 }
 
@@ -253,7 +246,7 @@ mod tests {
     }
 
     #[test]
-    fn names_and_paths_have_hard_length_limits() {
+    fn names_are_bounded_but_paths_can_grow_with_depth() {
         let maximum_name = "a".repeat(AgentPath::MAX_NAME_LENGTH);
         assert!(AgentPath::root().join(&maximum_name).is_ok());
         assert_eq!(
@@ -266,11 +259,8 @@ mod tests {
 
         let deep_path = format!("/root/{}", vec![maximum_name; 16].join("/"));
         assert_eq!(
-            AgentPath::try_from(deep_path),
-            Err(format!(
-                "agent path must be at most {} characters",
-                AgentPath::MAX_PATH_LENGTH
-            ))
+            AgentPath::try_from(deep_path.clone()),
+            Ok(AgentPath(deep_path))
         );
     }
 }

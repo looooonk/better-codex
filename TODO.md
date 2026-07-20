@@ -135,10 +135,10 @@ improvements that do not redefine Codex behavior.
   prompts.
 - [x] **P1 · KEEP — Retain the 64-character task-name limit.** This is a sensible
   model-visible context bound even though upstream currently accepts longer names.
-- [ ] **P1 · CHANGE — Match upstream inter-agent payload handling.** Remove Better's
+- [x] **P1 · CHANGE — Match upstream inter-agent payload handling.** Remove Better's
   message and completion-prefix caps so send, follow-up, and child-completion payloads
   retain the same content Codex would deliver.
-- [ ] **P2 · CHANGE — Port audio and local-audio agent messages.** Support upstream's
+- [x] **P2 · CHANGE — Port audio and local-audio agent messages.** Support upstream's
   current media forms throughout subagent communication.
 - [ ] **P1 · CHANGE — Restore cold-resume child identity and roles.** Rehydrate V2
   descendants, persisted roles, routing identity, and paginated child history.

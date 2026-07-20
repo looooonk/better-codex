@@ -56,6 +56,7 @@ fn test_models() -> Vec<ModelPreset> {
             is_default: false,
             upgrade: None,
             show_in_picker: true,
+            multi_agent_version: None,
             availability_nux: None,
             supported_in_api: true,
             input_modalities: Vec::new(),

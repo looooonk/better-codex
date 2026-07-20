@@ -128,3 +128,7 @@ pub(crate) async fn handle_message_string_tool(
 
     Ok(FunctionToolOutput::from_text(String::new(), Some(true)))
 }
+
+#[cfg(test)]
+#[path = "message_tool_tests.rs"]
+mod tests;
