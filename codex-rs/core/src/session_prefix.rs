@@ -9,7 +9,7 @@ use crate::context::SubagentNotification;
 
 const COMPLETION_MESSAGE_MAX_TOKENS: usize = 1_000;
 const COMPLETION_MESSAGE_ENVELOPE_TOKEN_RESERVE: usize = 100;
-const COMPLETION_PAYLOAD_MAX_TOKENS: usize =
+const ERROR_MAX_TOKENS: usize =
     COMPLETION_MESSAGE_MAX_TOKENS - COMPLETION_MESSAGE_ENVELOPE_TOKEN_RESERVE;
 const ERROR_NEXT_ACTION: &str = "This agent's turn failed. If you still need this agent, use the available collaboration tools to give it another task.";
 
@@ -30,16 +30,10 @@ pub(crate) fn format_inter_agent_completion_message(
     status: &AgentStatus,
 ) -> Option<String> {
     let payload = match status {
-        AgentStatus::Completed(Some(message)) => truncate_text(
-            message,
-            TruncationPolicy::Tokens(COMPLETION_PAYLOAD_MAX_TOKENS),
-        ),
+        AgentStatus::Completed(Some(message)) => message.clone(),
         AgentStatus::Completed(None) => String::new(),
         AgentStatus::Errored(error) => {
-            let error = truncate_text(
-                error,
-                TruncationPolicy::Tokens(COMPLETION_PAYLOAD_MAX_TOKENS),
-            );
+            let error = truncate_text(error, TruncationPolicy::Tokens(ERROR_MAX_TOKENS));
             format!("Agent errored: {error}\n\n{ERROR_NEXT_ACTION}")
         }
         AgentStatus::Shutdown => "Agent shut down.".to_string(),

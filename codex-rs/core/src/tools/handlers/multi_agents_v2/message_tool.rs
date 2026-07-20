@@ -6,10 +6,8 @@
 use super::*;
 use crate::agent_communication::AgentCommunicationContext;
 use crate::agent_communication::AgentCommunicationKind;
-use crate::context::INTER_AGENT_PAYLOAD_MAX_TOKENS;
 use crate::tools::context::FunctionToolOutput;
 use codex_protocol::protocol::InterAgentCommunication;
-use codex_utils_output_truncation::approx_token_count;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MessageDeliveryMode {
@@ -54,11 +52,6 @@ pub(super) fn message_content(message: String) -> Result<String, FunctionCallErr
         return Err(FunctionCallError::RespondToModel(
             "Empty message can't be sent to an agent".to_string(),
         ));
-    }
-    if approx_token_count(&message) > INTER_AGENT_PAYLOAD_MAX_TOKENS {
-        return Err(FunctionCallError::RespondToModel(format!(
-            "Message is too large to send to an agent; the maximum is {INTER_AGENT_PAYLOAD_MAX_TOKENS} approximate tokens"
-        )));
     }
     Ok(message)
 }

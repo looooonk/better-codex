@@ -51,16 +51,16 @@ improvements that do not redefine Codex behavior.
 - [x] **P1 · CHANGE — Sync image-generation instructions and completion behavior.**
   Remove the Better-only silence rule and align code-mode wait/return guidance with
   the current upstream tool contract.
-- [ ] **P1 · CHANGE — Match upstream default collaboration-mode instructions.**
+- [x] **P1 · CHANGE — Match upstream default collaboration-mode instructions.**
   Supply the same Default-mode developer fragment as Codex instead of leaving it
   null, including upstream's incremental update and clearing behavior.
-- [ ] **P1 · CHANGE — Match upstream additional-context handling.** Remove Better's
+- [x] **P1 · CHANGE — Match upstream additional-context handling.** Remove Better's
   item-count and aggregate-token admission limits, which can silently discard
   entries. Accept all supplied entries as Codex does, while retaining upstream's
   per-value truncation behavior.
 - [x] **P1 · KEEP — Bound explicit skill prompts.** Retain per-skill and per-turn
   limits, name/path validation, and visible truncation warnings.
-- [ ] **P1 · CHANGE — Match upstream inter-agent context handling.** Remove Better's
+- [x] **P1 · CHANGE — Match upstream inter-agent context handling.** Remove Better's
   outbound, per-item, aggregate, and child-completion admission limits. Record every
   delivered communication in model history as Codex does instead of omitting it.
 - [x] **P1 · KEEP — Bound developer instructions and MCP thread hints.** These caps
