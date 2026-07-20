@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::protocol::CAPABILITY_ROOTS_DISCOVER_METHOD;
+use crate::protocol::CapabilityRootsDiscoverParams;
 use crate::protocol::ENVIRONMENT_INFO_METHOD;
 use crate::protocol::EXEC_METHOD;
 use crate::protocol::EXEC_READ_METHOD;
@@ -70,6 +72,12 @@ pub(crate) fn build_router() -> RpcRouter<ExecServerHandler> {
     router.request(
         ENVIRONMENT_INFO_METHOD,
         |handler: Arc<ExecServerHandler>, _params: ()| async move { handler.environment_info() },
+    );
+    router.request(
+        CAPABILITY_ROOTS_DISCOVER_METHOD,
+        |handler: Arc<ExecServerHandler>, params: CapabilityRootsDiscoverParams| async move {
+            handler.discover_capability_roots(params).await
+        },
     );
     router.request(
         EXEC_READ_METHOD,

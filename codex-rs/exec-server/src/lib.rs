@@ -1,3 +1,4 @@
+mod capability_discovery;
 mod client;
 mod client_api;
 mod client_transport;
@@ -33,6 +34,8 @@ mod websocket_pong_watchdog;
 
 use codex_exec_server_protocol as protocol;
 
+pub use capability_discovery::CapabilityDiscoveryError;
+pub use capability_discovery::discover_capability_roots;
 pub use client::ExecServerClient;
 pub use client::ExecServerError;
 pub use client::http_client::HttpResponseBodyStream;
@@ -96,6 +99,14 @@ pub use process::ExecProcessEventReceiver;
 pub use process::ExecProcessFuture;
 pub use process::StartedExecProcess;
 pub use protocol::ByteChunk;
+pub use protocol::CAPABILITY_ROOTS_DISCOVER_METHOD;
+pub use protocol::CapabilityRootDiscoverRequest;
+pub use protocol::CapabilityRootDiscovery;
+pub use protocol::CapabilityRootsDiscoverParams;
+pub use protocol::CapabilityRootsDiscoverResponse;
+pub use protocol::CapabilityTextFile;
+pub use protocol::DiscoveredPluginFiles;
+pub use protocol::DiscoveredSkillFiles;
 pub use protocol::EnvironmentInfo;
 pub use protocol::ExecClosedNotification;
 pub use protocol::ExecEnvPolicy;

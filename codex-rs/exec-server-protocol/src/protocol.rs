@@ -36,6 +36,14 @@ pub const FS_READ_DIRECTORY_METHOD: &str = "fs/readDirectory";
 pub const FS_WALK_METHOD: &str = "fs/walk";
 pub const FS_REMOVE_METHOD: &str = "fs/remove";
 pub const FS_COPY_METHOD: &str = "fs/copy";
+/// Discovers capability manifests below selected roots using executor-local filesystem access.
+pub const CAPABILITY_ROOTS_DISCOVER_METHOD: &str = "capabilityRoots/discoverV1";
+/// Ordered plugin manifest paths recognized beneath a plugin root.
+pub const DISCOVERABLE_PLUGIN_MANIFEST_PATHS: &[&str] = &[
+    ".codex-plugin/plugin.json",
+    ".claude-plugin/plugin.json",
+    ".cursor-plugin/plugin.json",
+];
 /// JSON-RPC request method for executor-side HTTP requests.
 pub const HTTP_REQUEST_METHOD: &str = "http/request";
 /// JSON-RPC notification method for streamed executor HTTP response bodies.
@@ -410,6 +418,81 @@ pub struct FsCopyParams {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FsCopyResponse {}
+
+/// Roots to inspect for plugin and skill capability manifests.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityRootsDiscoverParams {
+    pub roots: Vec<CapabilityRootDiscoverRequest>,
+}
+
+/// One caller-selected capability root.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityRootDiscoverRequest {
+    /// Opaque caller identity returned unchanged in the response.
+    pub id: String,
+    /// Absolute root URI interpreted using the exec-server host's path rules.
+    pub path: PathUri,
+}
+
+/// Executor-local discovery results in request order.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityRootsDiscoverResponse {
+    pub roots: Vec<CapabilityRootDiscovery>,
+}
+
+/// Recognized UTF-8 capability file materialized by the exec-server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityTextFile {
+    pub path: PathUri,
+    pub contents: String,
+}
+
+/// Plugin files declared directly by a selected root.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredPluginFiles {
+    pub manifest: CapabilityTextFile,
+    /// File-backed MCP declarations, including the conventional `.mcp.json` fallback.
+    #[serde(default)]
+    pub mcp_config: Option<CapabilityTextFile>,
+    /// File-backed connector declarations.
+    #[serde(default)]
+    pub apps_config: Option<CapabilityTextFile>,
+}
+
+/// A skill instructions file and its optional sibling metadata.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscoveredSkillFiles {
+    pub instructions: CapabilityTextFile,
+    #[serde(default)]
+    pub metadata: Option<CapabilityTextFile>,
+}
+
+/// Manifest bundle for one selected root.
+///
+/// Discovery failures are root-local so one broken package does not discard valid siblings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapabilityRootDiscovery {
+    pub id: String,
+    pub path: PathUri,
+    #[serde(default)]
+    pub plugin: Option<DiscoveredPluginFiles>,
+    #[serde(default)]
+    pub skills: Vec<DiscoveredSkillFiles>,
+    /// Plugin manifests found while scanning the root, used to namespace nested skills.
+    #[serde(default)]
+    pub namespace_manifests: Vec<CapabilityTextFile>,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
 
 /// HTTP header represented in the executor protocol.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -38,6 +38,9 @@ use crate::connection::JsonRpcConnection;
 use crate::process::ExecProcessEvent;
 use crate::process::ExecProcessEventLog;
 use crate::process::ExecProcessEventReceiver;
+use crate::protocol::CAPABILITY_ROOTS_DISCOVER_METHOD;
+use crate::protocol::CapabilityRootsDiscoverParams;
+use crate::protocol::CapabilityRootsDiscoverResponse;
 use crate::protocol::ENVIRONMENT_INFO_METHOD;
 use crate::protocol::EXEC_CLOSED_METHOD;
 use crate::protocol::EXEC_EXITED_METHOD;
@@ -653,6 +656,13 @@ impl ExecServerClient {
             },
         )
         .await
+    }
+
+    pub async fn discover_capability_roots(
+        &self,
+        params: CapabilityRootsDiscoverParams,
+    ) -> Result<CapabilityRootsDiscoverResponse, ExecServerError> {
+        self.call(CAPABILITY_ROOTS_DISCOVER_METHOD, &params).await
     }
 
     pub async fn fs_read_file(
