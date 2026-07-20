@@ -106,15 +106,15 @@ improvements that do not redefine Codex behavior.
 - [x] **P1 · CHANGE — Port current upstream world-state fragments.** Add full rendered
   permission hashing, bounded host-skill snapshots, deferred-executor guidance,
   current collaboration revocation wording, and broad per-step refresh.
-- [ ] **P1 · CHANGE — Port buffered auto-compaction fallback.** Support the configured
+- [x] **P1 · CHANGE — Port buffered auto-compaction fallback.** Support the configured
   reserve, one-time fallback prompt, and buffered/full-window boundary behavior.
-- [ ] **P2 · CHANGE — Broaden previous-model compaction fallback.** Retry/fallback for
+- [x] **P2 · CHANGE — Broaden previous-model compaction fallback.** Retry/fallback for
   the same transient, status, context, usage, and server failures as upstream.
-- [ ] **P2 · CHANGE — Align prompt-cache identity.** Default to the Responses metadata
+- [x] **P2 · CHANGE — Align prompt-cache identity.** Default to the Responses metadata
   session ID rather than the thread ID so root and child cache reuse matches upstream.
-- [ ] **P2 · CHANGE — Record cache-write token usage.** Keep cache accounting in sync
+- [x] **P2 · CHANGE — Record cache-write token usage.** Keep cache accounting in sync
   with upstream in addition to existing cache-read accounting.
-- [ ] **P1 · CHANGE — Align `get_context_remaining`.** Report base-window tokens
+- [x] **P1 · CHANGE — Align `get_context_remaining`.** Report base-window tokens
   remaining rather than tokens until compaction, matching the upstream tool contract.
 
 ## Multi-agent behavior

@@ -9,6 +9,7 @@ use crate::compact::CompactionAnalyticsDetails;
 use crate::compact::InitialContextInjection;
 use crate::compact::compaction_status_from_result;
 use crate::compact_model_fallback::record_model_fallback;
+use crate::compact_model_fallback::should_retry_with_current_model;
 use crate::compact_remote::process_compacted_history;
 use crate::compact_remote::should_keep_compacted_history_item;
 use crate::hook_runtime::PostCompactHookOutcome;
@@ -230,7 +231,7 @@ async fn run_remote_compact_task_inner_impl(
             let Some(fallback_step_context) = fallback_step_context else {
                 return Err(error);
             };
-            if !matches!(&error, CodexErr::InvalidRequest(_)) {
+            if !should_retry_with_current_model(&error) {
                 return Err(error);
             }
             let fallback_turn_context = &fallback_step_context.turn;
@@ -276,6 +277,7 @@ async fn run_remote_compact_task_inner_impl(
         analytics_details.active_context_tokens_before = Some(token_usage.input_tokens);
         analytics_details.compaction_summary_tokens = Some(token_usage.output_tokens);
         analytics_details.cached_input_tokens = Some(token_usage.cached_input_tokens);
+        analytics_details.cache_write_input_tokens = Some(token_usage.cache_write_input_tokens);
     }
     let (compacted_history, retained_images) =
         build_v2_compacted_history(&prompt_input, compaction_output);
@@ -819,6 +821,7 @@ mod tests {
                 token_usage: Some(TokenUsage {
                     input_tokens: 123_456,
                     cached_input_tokens: 7_890,
+                    cache_write_input_tokens: 0,
                     output_tokens: 42,
                     reasoning_output_tokens: 5,
                     total_tokens: 123_498,
@@ -837,6 +840,7 @@ mod tests {
             Some(TokenUsage {
                 input_tokens: 123_456,
                 cached_input_tokens: 7_890,
+                cache_write_input_tokens: 0,
                 output_tokens: 42,
                 reasoning_output_tokens: 5,
                 total_tokens: 123_498,

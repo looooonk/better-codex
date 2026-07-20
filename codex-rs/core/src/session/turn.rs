@@ -351,17 +351,19 @@ pub(crate) async fn run_turn(
                     "post sampling token usage"
                 );
 
+                let should_roll_over = needs_follow_up
+                    && (sess.take_new_context_window_request().await || token_limit_reached);
+                let allow_auto_compact_fallback = !should_roll_over && !token_limit_reached;
                 super::token_budget::maybe_record(
                     sess.as_ref(),
                     turn_context.as_ref(),
-                    token_status.tokens_until_compaction,
+                    token_status.base_window_tokens_remaining,
+                    allow_auto_compact_fallback,
                 )
                 .await;
 
                 // as long as compaction works well in getting us way below the token limit, we shouldn't worry about being in an infinite loop.
-                if needs_follow_up
-                    && (sess.take_new_context_window_request().await || token_limit_reached)
-                {
+                if should_roll_over {
                     if let Err(err) = run_auto_compact(
                         &sess,
                         Arc::clone(&step_context),
@@ -2098,6 +2100,7 @@ async fn try_run_sampling_request(
             codex.request.reasoning_effort = %reasoning_effort,
             gen_ai.usage.input_tokens = field::Empty,
             gen_ai.usage.cache_read.input_tokens = field::Empty,
+            gen_ai.usage.cache_write.input_tokens = field::Empty,
             gen_ai.usage.output_tokens = field::Empty,
             codex.usage.reasoning_output_tokens = field::Empty,
             codex.usage.total_tokens = field::Empty,

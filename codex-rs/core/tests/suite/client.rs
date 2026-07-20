@@ -1224,7 +1224,7 @@ async fn includes_session_id_thread_id_and_model_headers_in_request() {
     assert_eq!(request_authorization, "Bearer Test API Key");
     assert_eq!(
         request_body["prompt_cache_key"].as_str(),
-        Some(thread_id_string.as_str())
+        Some(session_id_string.as_str())
     );
     assert_codex_client_metadata(
         &request_body,
@@ -3294,6 +3294,7 @@ async fn token_count_includes_rate_limits_snapshot() {
                 "total_token_usage": {
                     "input_tokens": 123,
                     "cached_input_tokens": 0,
+                    "cache_write_input_tokens": 0,
                     "output_tokens": 0,
                     "reasoning_output_tokens": 0,
                     "total_tokens": 123
@@ -3301,6 +3302,7 @@ async fn token_count_includes_rate_limits_snapshot() {
                 "last_token_usage": {
                     "input_tokens": 123,
                     "cached_input_tokens": 0,
+                    "cache_write_input_tokens": 0,
                     "output_tokens": 0,
                     "reasoning_output_tokens": 0,
                     "total_tokens": 123
