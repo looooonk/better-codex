@@ -32,7 +32,7 @@ improvements that do not redefine Codex behavior.
   not justified as a TUI-specific improvement.
 - [x] **P0 · CHANGE — Sync the GPT-5.6 base instructions.** Include upstream's
   destructive-action safeguards and `HOME`/`CODEX_HOME` variable rules.
-- [ ] **P0 · CHANGE — Reconcile Guardian with upstream.** Port the current policy
+- [x] **P0 · CHANGE — Reconcile Guardian with upstream.** Port the current policy
   source, trust model, catalog integration, tool-mode behavior, and permission
   instructions so identical actions receive equivalent review outcomes.
 

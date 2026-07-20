@@ -51,6 +51,8 @@ fn model_with_approval_messages(
             on_request: Some(on_request.to_string()),
             on_request_auto_review: Some(on_request_auto_review.to_string()),
         }),
+        auto_review: None,
+        permissions: None,
     });
     model
 }
@@ -691,7 +693,11 @@ async fn permissions_message_includes_writable_roots() -> Result<()> {
     let expected = PermissionsInstructions::from_permission_profile(
         &permission_profile,
         AskForApproval::OnRequest,
-        ApprovalPromptContext::new(test.config.approvals_reviewer, /*messages*/ None),
+        ApprovalPromptContext::new(
+            test.config.approvals_reviewer,
+            /*messages*/ None,
+            /*permission_messages*/ None,
+        ),
         &exec_policy,
         test.config.cwd.as_path(),
         /*exec_permission_approvals_enabled*/ false,
