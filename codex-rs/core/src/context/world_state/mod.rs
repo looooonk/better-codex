@@ -1,6 +1,9 @@
 mod agents_md;
 mod apps_instructions;
+mod collaboration_mode;
 mod environment;
+mod environments_instructions;
+mod permissions;
 mod plugins_instructions;
 
 use crate::context::ContextualUserFragment;
@@ -14,12 +17,17 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::Map;
 use serde_json::Value;
+use sha1::Digest;
+use sha1::Sha1;
 use std::collections::BTreeMap;
 use std::fmt;
 
 pub(crate) use agents_md::AgentsMdState;
 pub(crate) use apps_instructions::AppsInstructionsState;
+pub(crate) use collaboration_mode::CollaborationModeState;
 pub(crate) use environment::EnvironmentsState;
+pub(crate) use environments_instructions::EnvironmentsInstructionsState;
+pub(crate) use permissions::PermissionsState;
 pub(crate) use plugins_instructions::PluginsInstructionsState;
 
 trait ErasedWorldStateSection: Send + Sync {
@@ -70,7 +78,7 @@ impl<S: WorldStateSection> ErasedWorldStateSection for S {
     }
 
     fn matches_retained_fragment(&self, role: &str, text: &str) -> bool {
-        S::matches_retained_fragment(role, text)
+        WorldStateSection::matches_retained_fragment(self, role, text)
     }
 
     fn render_diff(
@@ -175,14 +183,35 @@ pub(crate) trait WorldStateSection: Send + Sync + 'static {
     }
 
     /// Recognizes this section's rendered fragment in retained model history.
-    fn matches_retained_fragment(_role: &str, _text: &str) -> bool {
-        false
+    fn matches_retained_fragment(&self, role: &str, text: &str) -> bool {
+        Self::matches_legacy_fragment(role, text)
     }
 
     fn render_diff(
         &self,
         previous: PreviousSectionState<'_, Self::Snapshot>,
     ) -> Option<Box<dyn ContextualUserFragment>>;
+}
+
+/// Stable fingerprint of a fully rendered model-visible World State fragment.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub(crate) struct WorldStateHash(String);
+
+impl WorldStateHash {
+    pub(crate) fn from_fragment(fragment: &(impl ContextualUserFragment + ?Sized)) -> Self {
+        let mut hasher = Sha1::new();
+        hasher.update(b"codex-world-state-fragment-v1\0");
+        hash_component(&mut hasher, fragment.role());
+        hash_component(&mut hasher, &fragment.render());
+        Self(format!("{:x}", hasher.finalize()))
+    }
+}
+
+fn hash_component(hasher: &mut Sha1, value: &str) {
+    let value = value.replace("\r\n", "\n");
+    hasher.update((value.len() as u64).to_be_bytes());
+    hasher.update(value.as_bytes());
 }
 
 /// Live model-visible state, keyed by the same stable section IDs used in rollouts.
@@ -276,28 +305,39 @@ impl WorldState {
         })
     }
 
-    /// Uses retained model history when it is authoritative for a section, otherwise falling back
-    /// to it only when no exact persisted snapshot is available.
+    /// Uses an exact retained fragment as authoritative while requiring sections with retained
+    /// matchers to restore themselves whenever that fragment has fallen out of history.
     pub(crate) fn render_history_diff(
         &self,
         previous: Option<&WorldStateSnapshot>,
         items: &[ResponseItem],
     ) -> Vec<Box<dyn ContextualUserFragment>> {
-        self.render_with(|id, section| {
-            if section.has_retained_fragment_matcher() {
-                if has_retained_fragment(items, section) {
+        self.sections
+            .iter()
+            .filter_map(|(id, section)| {
+                if section.has_retained_fragment_matcher()
+                    && has_retained_fragment(items, section.as_ref())
+                {
+                    return None;
+                }
+
+                let previous = if section.has_retained_fragment_matcher()
+                    && previous.is_some_and(|previous| previous.sections.contains_key(*id))
+                    && !has_legacy_fragment(items, section.as_ref())
+                {
+                    PreviousSectionState::Absent
+                } else if let Some(previous) =
+                    previous.and_then(|previous| previous.sections.get(*id))
+                {
+                    PreviousSectionState::Known(previous)
+                } else if has_legacy_fragment(items, section.as_ref()) {
                     PreviousSectionState::Unknown
                 } else {
                     PreviousSectionState::Absent
-                }
-            } else if let Some(previous) = previous.and_then(|previous| previous.sections.get(id)) {
-                PreviousSectionState::Known(previous)
-            } else if has_legacy_fragment(items, section) {
-                PreviousSectionState::Unknown
-            } else {
-                PreviousSectionState::Absent
-            }
-        })
+                };
+                section.render_diff(previous)
+            })
+            .collect()
     }
 
     fn render_with<'a>(

@@ -31,10 +31,6 @@ impl WorldStateSection for AppsInstructionsState {
         true
     }
 
-    fn matches_retained_fragment(role: &str, text: &str) -> bool {
-        Self::matches_legacy_fragment(role, text)
-    }
-
     fn render_diff(
         &self,
         previous: PreviousSectionState<'_, Self::Snapshot>,

@@ -103,7 +103,7 @@ improvements that do not redefine Codex behavior.
 - [x] **P1 · KEEP — Preserve complete world-state diffs and tombstones.** Retain
   subagent-only change detection and cleared-state markers for collaboration and
   developer instructions.
-- [ ] **P1 · CHANGE — Port current upstream world-state fragments.** Add full rendered
+- [x] **P1 · CHANGE — Port current upstream world-state fragments.** Add full rendered
   permission hashing, bounded host-skill snapshots, deferred-executor guidance,
   current collaboration revocation wording, and broad per-step refresh.
 - [ ] **P1 · CHANGE — Port buffered auto-compaction fallback.** Support the configured

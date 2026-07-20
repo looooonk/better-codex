@@ -21,15 +21,12 @@ use crate::build_available_skills;
 use crate::compact;
 use crate::config::ManagedFeatures;
 use crate::config::resolve_tool_suggest_config_from_layer_stack;
-use crate::context::ApprovalPromptContext;
 use crate::context::ApprovedCommandPrefixSaved;
 use crate::context::AvailableSkillsInstructions;
-use crate::context::CollaborationModeInstructions;
 use crate::context::ContextualUserFragment;
 use crate::context::DeveloperInstructions;
 use crate::context::MultiAgentModeInstructions;
 use crate::context::NetworkRuleSaved;
-use crate::context::PermissionsInstructions;
 use crate::context::PersonalitySpecInstructions;
 use crate::context::RecommendedPluginsInstructions;
 use crate::context::world_state::WorldState;
@@ -56,6 +53,7 @@ use codex_analytics::SubAgentThreadStartedInput;
 use codex_analytics::TurnCodexErrorFact;
 use codex_config::types::AuthKeyringBackendKind;
 use codex_config::types::OAuthCredentialsStoreMode;
+use codex_core_skills::injection::HostSkillsCatalogInWorldState;
 use codex_exec_server::Environment;
 use codex_exec_server::EnvironmentManager;
 use codex_extension_api::ExtensionDataInit;
@@ -1748,18 +1746,16 @@ impl Session {
     ) -> Vec<ResponseItem> {
         // TODO: Make context updates a pure diff of persisted previous/current TurnContextItem
         // state so replay/backtracking is deterministic. Runtime inputs that affect model-visible
-        // context (exec policy, feature gates, previous-turn bridge) should be persisted
+        // context (feature gates and the previous-turn bridge) should be persisted
         // state or explicit non-state replay events.
         let previous_turn_settings = {
             let state = self.state.lock().await;
             state.previous_turn_settings()
         };
-        let exec_policy = self.services.exec_policy.current();
         crate::context_manager::updates::build_settings_update_items(
             reference_context_item,
             previous_turn_settings.as_ref(),
             current_context,
-            exec_policy.as_ref(),
             self.features.enabled(Feature::Personality),
         )
     }
@@ -2893,22 +2889,11 @@ impl Session {
         self: &Arc<Self>,
         turn_context: Arc<TurnContext>,
     ) -> Arc<StepContext> {
-        let deferred_executor_enabled = turn_context
-            .config
-            .features
-            .enabled(Feature::DeferredExecutor);
-        // Keep the old turn-frozen environment view unless deferred executors are enabled.
-        let environments = if deferred_executor_enabled {
-            self.services.turn_environments.snapshot().await
-        } else {
-            turn_context.environments.clone()
-        };
-        if deferred_executor_enabled {
-            self.services
-                .agents_md_manager
-                .refresh(&turn_context.config, &environments)
-                .await;
-        }
+        let environments = self.services.turn_environments.snapshot().await;
+        self.services
+            .agents_md_manager
+            .refresh(&turn_context.config, &environments)
+            .await;
         let loaded_agents_md = self.services.agents_md_manager.get_loaded().await;
         let selected_capability_roots = self
             .resolve_selected_capability_roots_for_step(&environments)
@@ -3232,7 +3217,6 @@ impl Session {
         let (
             reference_context_item,
             previous_turn_settings,
-            collaboration_mode,
             base_instructions,
             session_source,
             auto_compact_window_ids,
@@ -3244,7 +3228,6 @@ impl Session {
                     InitialContextReference::Reset => None,
                 },
                 state.previous_turn_settings(),
-                state.session_configuration.collaboration_mode.clone(),
                 state.session_configuration.base_instructions.clone(),
                 state.session_configuration.session_source.clone(),
                 state.auto_compact_window_ids(),
@@ -3258,39 +3241,6 @@ impl Session {
         {
             developer_sections.push(model_switch_message);
         }
-        if turn_context.config.include_permissions_instructions {
-            developer_sections.push(
-                PermissionsInstructions::from_permission_profile(
-                    &turn_context.permission_profile,
-                    turn_context.approval_policy.value(),
-                    ApprovalPromptContext::new(
-                        turn_context.config.approvals_reviewer,
-                        turn_context
-                            .model_info
-                            .model_messages
-                            .as_ref()
-                            .and_then(|messages| messages.approvals.as_ref()),
-                        turn_context
-                            .model_info
-                            .model_messages
-                            .as_ref()
-                            .and_then(|messages| messages.permissions.as_ref()),
-                    ),
-                    self.services.exec_policy.current().as_ref(),
-                    #[allow(deprecated)]
-                    &turn_context.cwd,
-                    turn_context
-                        .config
-                        .features
-                        .enabled(Feature::ExecPermissionApprovals),
-                    turn_context
-                        .config
-                        .features
-                        .enabled(Feature::RequestPermissionsTool),
-                )
-                .render(),
-            );
-        }
         let separate_guardian_developer_message =
             crate::guardian::is_guardian_reviewer_source(&session_source);
         // Keep the guardian policy prompt out of the aggregated developer bundle so it
@@ -3300,13 +3250,6 @@ impl Session {
             && !developer_instructions.is_empty()
         {
             developer_sections.push(DeveloperInstructions::new(developer_instructions).render());
-        }
-        // Add developer instructions from collaboration_mode if they exist and are non-empty
-        if turn_context.config.include_collaboration_mode_instructions
-            && let Some(collab_instructions) =
-                CollaborationModeInstructions::from_collaboration_mode(&collaboration_mode)
-        {
-            developer_sections.push(collab_instructions.render());
         }
         if let Some(realtime_update) = crate::context_manager::updates::build_initial_realtime_item(
             reference_context_item.as_ref(),
@@ -3333,6 +3276,10 @@ impl Session {
             }
         }
         if turn_context.config.include_skill_instructions {
+            let host_catalog_in_world_state = turn_context
+                .extension_data
+                .get::<HostSkillsCatalogInWorldState>()
+                .is_some();
             let available_skills = build_available_skills(
                 turn_context.turn_skills.snapshot.outcome(),
                 default_skill_metadata_budget(turn_context.model_info.context_window),
@@ -3355,7 +3302,9 @@ impl Session {
                     })
                     .await;
                 }
-                developer_sections.push(skills_instructions.render());
+                if !host_catalog_in_world_state {
+                    developer_sections.push(skills_instructions.render());
+                }
             }
         }
         let loaded_plugins = self

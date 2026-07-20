@@ -1,30 +1,30 @@
 use super::PreviousSectionState;
 use super::WorldStateSection;
-use crate::context::AvailablePluginsInstructions;
 use crate::context::ContextualUserFragment;
+use crate::context::EnvironmentsInstructions;
 
-/// Whether generic plugin usage guidance should be visible to the model.
+/// Whether generic execution-environment guidance should be visible to the model.
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct PluginsInstructionsState {
-    available: bool,
+pub(crate) struct EnvironmentsInstructionsState {
+    enabled: bool,
 }
 
-impl PluginsInstructionsState {
-    pub(crate) fn new(available: bool) -> Self {
-        Self { available }
+impl EnvironmentsInstructionsState {
+    pub(crate) fn new(enabled: bool) -> Self {
+        Self { enabled }
     }
 }
 
-impl WorldStateSection for PluginsInstructionsState {
-    const ID: &'static str = "plugins_instructions";
+impl WorldStateSection for EnvironmentsInstructionsState {
+    const ID: &'static str = "environments_instructions";
     type Snapshot = bool;
 
     fn snapshot(&self) -> Self::Snapshot {
-        self.available
+        self.enabled
     }
 
     fn matches_legacy_fragment(role: &str, text: &str) -> bool {
-        role == "developer" && AvailablePluginsInstructions::matches_text(text)
+        role == "developer" && EnvironmentsInstructions::matches_text(text)
     }
 
     fn has_retained_fragment_matcher() -> bool {
@@ -35,17 +35,17 @@ impl WorldStateSection for PluginsInstructionsState {
         &self,
         previous: PreviousSectionState<'_, Self::Snapshot>,
     ) -> Option<Box<dyn ContextualUserFragment>> {
-        if !self.available
+        if !self.enabled
             || matches!(previous, PreviousSectionState::Known(previous) if *previous)
             || matches!(previous, PreviousSectionState::Unknown)
         {
             return None;
         }
 
-        Some(Box::new(AvailablePluginsInstructions))
+        Some(Box::new(EnvironmentsInstructions))
     }
 }
 
 #[cfg(test)]
-#[path = "plugins_instructions_tests.rs"]
+#[path = "environments_instructions_tests.rs"]
 mod tests;

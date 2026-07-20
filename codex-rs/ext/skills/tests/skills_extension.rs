@@ -10,7 +10,7 @@ use codex_core_skills::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
 use codex_core_skills::SKILLS_INTRO_WITH_ABSOLUTE_PATHS;
 use codex_core_skills::SkillLoadOutcome;
 use codex_core_skills::SkillMetadata;
-use codex_core_skills::injection::InjectedHostSkillPrompts;
+use codex_core_skills::injection::HostSkillsCatalogInWorldState;
 use codex_extension_api::ConversationHistory;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionEventSink;
@@ -110,6 +110,22 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
     let turn_store = ExtensionData::new("turn-1");
     turn_store.insert(HostSkillsSnapshot::new(Arc::clone(&loaded_skills)));
 
+    let world_state_sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-1",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &turn_store,
+        })
+        .await;
+    assert_eq!(2, world_state_sections.len());
+    let host_catalog = world_state_sections[1]
+        .render_diff(PreviousWorldStateSection::Absent)
+        .ok_or("host catalog should render through world state")?;
+
     let fragments = registry.turn_input_contributors()[0]
         .contribute(
             TurnInputContext {
@@ -129,20 +145,52 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
     let expected_catalog = format!(
         "{SKILLS_INSTRUCTIONS_OPEN_TAG}\n## Skills\n{SKILLS_INTRO_WITH_ABSOLUTE_PATHS}\n### Available skills\n- demo: Demo skill. (file: {skill_prompt_path})\n{SKILLS_INSTRUCTIONS_CLOSE_TAG}"
     );
-    let expected_skill = format!(
-        "<skill>\n<name>demo</name>\n<path>{skill_prompt_path}</path>\n{DEMO_SKILL_CONTENTS}\n</skill>"
+    assert_eq!(
+        expected_catalog,
+        host_catalog.into_context_fragment().render(),
     );
     assert_eq!(
-        vec![("developer", expected_catalog), ("user", expected_skill),],
+        Vec::<(&str, String)>::new(),
         fragments
             .iter()
             .map(|fragment| (fragment.role(), fragment.render()))
             .collect::<Vec<_>>()
     );
-    let injected_host_skill_prompts = turn_store
-        .get::<InjectedHostSkillPrompts>()
-        .ok_or("host skill prompt marker should be set")?;
-    assert!(injected_host_skill_prompts.contains_path(&skill_path_string));
+    assert!(turn_store.get::<HostSkillsCatalogInWorldState>().is_some());
+
+    let oversized_skills = (0..64)
+        .map(|index| SkillMetadata {
+            name: format!("skill-{index}"),
+            description: "x".repeat(2_000),
+            short_description: None,
+            interface: None,
+            dependencies: None,
+            policy: None,
+            path_to_skills_md: AbsolutePathBuf::try_from(format!("/skills/skill-{index}/SKILL.md"))
+                .expect("absolute skill path"),
+            scope: SkillScope::User,
+            plugin_id: None,
+        })
+        .collect();
+    let mut oversized_outcome = SkillLoadOutcome::default();
+    oversized_outcome.skills = oversized_skills;
+    let oversized_turn_store = ExtensionData::new("turn-oversized");
+    oversized_turn_store.insert(HostSkillsSnapshot::new(Arc::new(oversized_outcome)));
+    let oversized_sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-oversized",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &oversized_turn_store,
+        })
+        .await;
+    let bounded_body = oversized_sections[1].snapshot()["body"]
+        .as_str()
+        .ok_or("bounded host catalog body")?;
+    assert!(bounded_body.chars().count() <= 9_024);
 
     std::fs::remove_dir_all(codex_home)?;
     Ok(())

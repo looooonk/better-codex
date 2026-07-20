@@ -154,20 +154,6 @@ pub(crate) async fn run_turn(
     let mut client_session =
         prewarmed_client_session.unwrap_or_else(|| sess.services.model_client.new_session());
 
-    // Ordinary environments are frozen for the turn, but project instructions can change between
-    // turns without changing the environment selection. Deferred environments refresh both from
-    // capture_step_context so their request-scoped snapshot stays internally consistent.
-    if !turn_context
-        .config
-        .features
-        .enabled(Feature::DeferredExecutor)
-    {
-        sess.services
-            .agents_md_manager
-            .refresh(&turn_context.config, &turn_context.environments)
-            .await;
-    }
-
     // run_turn owns the step used to seed context and make the first sampling request.
     let first_step_context = sess.capture_step_context(Arc::clone(&turn_context)).await;
     // Keep the exact model-visible state used by this turn and its inline compactions.
@@ -293,15 +279,9 @@ pub(crate) async fn run_turn(
             )
             .await?;
 
-            if turn_context
-                .config
-                .features
-                .enabled(Feature::DeferredExecutor)
-            {
-                world_state = sess
-                    .record_step_world_state_if_changed(&world_state, step_context.as_ref())
-                    .await;
-            }
+            world_state = sess
+                .record_step_world_state_if_changed(&world_state, step_context.as_ref())
+                .await;
 
             // Construct the input that we will send to the model.
             let sampling_request_input: Vec<ResponseItem> = async {

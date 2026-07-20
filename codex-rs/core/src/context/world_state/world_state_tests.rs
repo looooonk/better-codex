@@ -53,6 +53,14 @@ impl ContextualUserFragment for TestFragment {
     }
 }
 
+#[test]
+fn world_state_hash_normalizes_crlf_line_endings() {
+    assert_eq!(
+        WorldStateHash::from_fragment(&TestFragment("line one\r\nline two".to_string())),
+        WorldStateHash::from_fragment(&TestFragment("line one\nline two".to_string())),
+    );
+}
+
 struct ExtensionTestFragment(&'static str);
 
 impl ContextualUserFragment for ExtensionTestFragment {
@@ -216,7 +224,12 @@ fn missing_retained_fragment_is_rendered_again() {
             role == "developer" && text.contains("current catalog")
         }),
     );
-    let previous = world_state.snapshot();
+    let previous = WorldStateSnapshot {
+        sections: BTreeMap::from([(
+            "extension_test".to_string(),
+            json!({"body": "stale catalog"}),
+        )]),
+    };
     let retained = ResponseItem::Message {
         id: None,
         role: "developer".to_string(),

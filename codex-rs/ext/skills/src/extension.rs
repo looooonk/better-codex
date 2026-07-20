@@ -3,6 +3,8 @@ use std::sync::Arc;
 use codex_core_skills::ExplicitSkillPromptBudget;
 use codex_core_skills::HostSkillsSnapshot;
 use codex_core_skills::SkillInstructions;
+use codex_core_skills::default_skill_metadata_budget;
+use codex_core_skills::injection::HostSkillsCatalogInWorldState;
 use codex_core_skills::injection::InjectedHostSkillPrompts;
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
 use codex_extension_api::ConfigContributor;
@@ -44,6 +46,7 @@ use crate::state::SkillsThreadState;
 use crate::state::SkillsTurnState;
 use crate::tools::skill_tools;
 use crate::world_state::executor_skills_world_state_section;
+use crate::world_state::host_skills_world_state_section;
 
 struct SkillsExtension<C> {
     providers: SkillProviders,
@@ -163,15 +166,31 @@ where
             input
                 .turn_store
                 .insert(ExecutorSkillsStepState(catalog.clone()));
-            let include_usage = input
-                .thread_store
-                .get::<ModelInfo>()
+            let model_info = input.thread_store.get::<ModelInfo>();
+            let include_usage = model_info
+                .as_deref()
                 .is_some_and(|model_info| model_info.include_skills_usage_instructions);
-            vec![executor_skills_world_state_section(
+            let mut sections = vec![executor_skills_world_state_section(
                 &catalog,
                 config.include_instructions,
                 include_usage,
-            )]
+            )];
+            if let Some(host_snapshot) = input.turn_store.get::<HostSkillsSnapshot>()
+                && self.providers.has_host_provider()
+            {
+                input.turn_store.insert(HostSkillsCatalogInWorldState);
+                sections.push(host_skills_world_state_section(
+                    &host_snapshot,
+                    config.include_instructions,
+                    include_usage,
+                    default_skill_metadata_budget(
+                        model_info
+                            .as_deref()
+                            .and_then(|model_info| model_info.context_window),
+                    ),
+                ));
+            }
+            sections
         })
     }
 }
@@ -220,26 +239,31 @@ where
 
             let config = thread_state.config();
             let host_snapshot = turn_store.get::<HostSkillsSnapshot>();
+            let host_catalog_in_world_state =
+                turn_store.get::<HostSkillsCatalogInWorldState>().is_some();
             let query = SkillListQuery {
                 turn_id: input.turn_id.clone(),
                 executor_roots: Vec::new(),
                 host_snapshot: host_snapshot.clone(),
-                include_host_skills: true,
+                include_host_skills: !host_catalog_in_world_state,
                 include_bundled_skills: config.bundled_skills_enabled,
                 include_orchestrator_skills: thread_state.orchestrator_skills_enabled(),
                 mcp_resources: session_store.get::<McpResourceClient>(),
             };
-            let mut catalog = self.list_skills(query, &thread_state).await;
-            if let Some(executor_skills) = turn_store.get::<ExecutorSkillsStepState>() {
-                catalog.extend(executor_skills.0.clone());
-            }
+            let mut catalog = turn_store
+                .get::<ExecutorSkillsStepState>()
+                .map(|executor_skills| executor_skills.0.clone())
+                .unwrap_or_default();
+            catalog.extend(self.list_skills(query, &thread_state).await);
             for warning in &catalog.warnings {
                 self.emit_warning(&input.turn_id, warning.clone());
             }
 
             let selected_entries = collect_explicit_skill_mentions(&input.user_input, &catalog);
             let mut fragments: Vec<Box<dyn ContextualUserFragment + Send>> = Vec::new();
-            if config.include_instructions {
+            if config.include_instructions
+                && turn_store.get::<HostSkillsCatalogInWorldState>().is_none()
+            {
                 let mut turn_catalog = catalog.clone();
                 turn_catalog.entries.retain(|entry| {
                     entry.authority.kind != SkillSourceKind::Executor
