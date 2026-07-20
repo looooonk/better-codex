@@ -10727,6 +10727,10 @@ async fn multi_agent_v2_rejects_invalid_tool_namespace() -> std::io::Result<()> 
             "functions",
             "features.multi_agent_v2.tool_namespace uses a reserved namespace: functions",
         ),
+        (
+            "collaboration",
+            "features.multi_agent_v2.tool_namespace uses a reserved namespace: collaboration",
+        ),
     ] {
         let codex_home = TempDir::new()?;
         std::fs::write(
