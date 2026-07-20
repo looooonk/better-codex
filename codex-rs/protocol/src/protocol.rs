@@ -1487,6 +1487,7 @@ pub enum HookEventName {
     PreCompact,
     PostCompact,
     SessionStart,
+    SessionEnd,
     UserPromptSubmit,
     SubagentStart,
     SubagentStop,

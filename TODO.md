@@ -186,7 +186,7 @@ improvements that do not redefine Codex behavior.
   of silently letting bypass win.
 - [x] **P1 · KEEP — Preserve hook output, context, and fan-out bounds.** Also retain
   cleanup of hook spill files during shutdown.
-- [ ] **P1 · CHANGE — Add root `SessionEnd` hook semantics.** Flush the rollout and
+- [x] **P1 · CHANGE — Add root `SessionEnd` hook semantics.** Flush the rollout and
   invoke the root-only lifecycle hook during teardown as upstream does.
 - [x] **P2 · KEEP — Preserve concurrent exec-server process reads.** Long reads should
   not block writes, termination, or unrelated RPCs.
