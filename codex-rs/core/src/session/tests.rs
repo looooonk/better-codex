@@ -655,8 +655,7 @@ fn test_tool_runtime(session: Arc<Session>, turn_context: Arc<TurnContext>) -> T
         step_context.as_ref(),
         crate::tools::router::ToolRouterParams {
             tool_suggest_candidates: None,
-            mcp_tools: None,
-            deferred_mcp_tools: None,
+            tool_runtimes: Vec::new(),
             extension_tool_executors: Vec::new(),
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
         },
@@ -5487,11 +5486,14 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         /*bundled_skills_enabled*/ true,
     ));
     let network_approval = Arc::new(NetworkApprovalService::default());
-    let mcp_runtime =
+    let mcp_runtime_snapshot =
         crate::session::McpRuntimeSnapshot::new_uninitialized_for_test(config.as_ref());
+    let mcp_runtime = Arc::new(codex_mcp::McpRuntime::new(
+        mcp_runtime_snapshot.manager_arc(),
+    ));
     let services = SessionServices {
-        mcp_connection_manager: Arc::new(arc_swap::ArcSwap::from(mcp_runtime.manager_arc())),
-        mcp_runtime: arc_swap::ArcSwapOption::from(Some(mcp_runtime)),
+        mcp_runtime,
+        mcp_runtime_snapshot: arc_swap::ArcSwapOption::from(Some(mcp_runtime_snapshot)),
         mcp_projection_lock: Mutex::new(()),
         mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
         unified_exec_manager: UnifiedExecProcessManager::new(
@@ -7621,11 +7623,14 @@ where
         /*bundled_skills_enabled*/ true,
     ));
     let network_approval = Arc::new(NetworkApprovalService::default());
-    let mcp_runtime =
+    let mcp_runtime_snapshot =
         crate::session::McpRuntimeSnapshot::new_uninitialized_for_test(config.as_ref());
+    let mcp_runtime = Arc::new(codex_mcp::McpRuntime::new(
+        mcp_runtime_snapshot.manager_arc(),
+    ));
     let services = SessionServices {
-        mcp_connection_manager: Arc::new(arc_swap::ArcSwap::from(mcp_runtime.manager_arc())),
-        mcp_runtime: arc_swap::ArcSwapOption::from(Some(mcp_runtime)),
+        mcp_runtime,
+        mcp_runtime_snapshot: arc_swap::ArcSwapOption::from(Some(mcp_runtime_snapshot)),
         mcp_projection_lock: Mutex::new(()),
         mcp_startup_cancellation_token: Mutex::new(CancellationToken::new()),
         unified_exec_manager: UnifiedExecProcessManager::new(
@@ -10556,22 +10561,12 @@ async fn abort_review_task_emits_exited_then_aborted_and_records_history() {
 #[tokio::test]
 async fn fatal_tool_error_stops_turn_and_reports_error() {
     let (session, turn_context, _rx) = make_session_and_context_with_rx().await;
-    let tools = {
-        session
-            .services
-            .latest_mcp_runtime()
-            .manager()
-            .list_all_tools()
-            .await
-    };
-    let deferred_mcp_tools = Some(tools.clone());
     let step_context = StepContext::for_test(Arc::clone(&turn_context));
     let router = ToolRouter::from_context(
         step_context.as_ref(),
         crate::tools::router::ToolRouterParams {
             tool_suggest_candidates: None,
-            deferred_mcp_tools,
-            mcp_tools: Some(tools),
+            tool_runtimes: Vec::new(),
             extension_tool_executors: Vec::new(),
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
         },
