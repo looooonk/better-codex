@@ -151,7 +151,7 @@ improvements that do not redefine Codex behavior.
 
 ## Tools and MCP runtime
 
-- [ ] **P1 · CHANGE — Port the current MCP runtime lifecycle.** Adopt centralized
+- [x] **P1 · CHANGE — Port the current MCP runtime lifecycle.** Adopt centralized
   runtime management, complete startup timeout coverage, pre-planning construction,
   serialized stdio writes, reusable catalogs with opt-out, executor capability-root
   discovery, and upstream metadata visibility rules.

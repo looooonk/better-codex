@@ -123,6 +123,7 @@ where
                         include_bundled_skills: config.bundled_skills_enabled,
                         include_orchestrator_skills: thread_state.orchestrator_skills_enabled(),
                         mcp_resources: session_store.get::<McpResourceClient>(),
+                        executor_capability_discovery: None,
                     },
                     &thread_state,
                 )
@@ -160,6 +161,7 @@ where
                         include_bundled_skills: config.bundled_skills_enabled,
                         include_orchestrator_skills: false,
                         mcp_resources: input.session_store.get::<McpResourceClient>(),
+                        executor_capability_discovery: input.executor_capability_discovery.cloned(),
                     },
                 )
                 .await;
@@ -249,6 +251,7 @@ where
                 include_bundled_skills: config.bundled_skills_enabled,
                 include_orchestrator_skills: thread_state.orchestrator_skills_enabled(),
                 mcp_resources: session_store.get::<McpResourceClient>(),
+                executor_capability_discovery: None,
             };
             let mut catalog = turn_store
                 .get::<ExecutorSkillsStepState>()
