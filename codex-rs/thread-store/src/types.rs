@@ -94,6 +94,8 @@ pub struct CreateThreadParams {
     pub multi_agent_version: Option<MultiAgentVersion>,
     /// Persisted thread history contract selected when the thread was created.
     pub history_mode: ThreadHistoryMode,
+    /// First rollout ordinal that belongs to this subagent's projected history.
+    pub subagent_history_start_ordinal: Option<u64>,
     /// Initial context-window identity captured when the thread was created.
     pub initial_window_id: String,
     /// Metadata captured for the newly created thread.
@@ -154,6 +156,19 @@ pub struct LoadThreadHistoryParams {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StoredThreadHistory {
     /// Thread id represented by the history.
+    pub thread_id: ThreadId,
+    /// Persisted rollout items in replay order.
+    pub items: Vec<RolloutItem>,
+}
+
+/// Persisted rollout items needed to reconstruct the latest model-visible context.
+///
+/// Local stores may return only a resumable suffix while stores without targeted reads may return
+/// the full persisted history. In either case, `items` remain in replay order and are suitable for
+/// the existing rollout reconstruction path.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct StoredModelContext {
+    /// Thread id represented by the model context.
     pub thread_id: ThreadId,
     /// Persisted rollout items in replay order.
     pub items: Vec<RolloutItem>,

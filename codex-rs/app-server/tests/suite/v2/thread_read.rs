@@ -1546,6 +1546,7 @@ async fn seed_pathless_store_thread(
             selected_capability_roots: Vec::new(),
             multi_agent_version: None,
             history_mode: Default::default(),
+            subagent_history_start_ordinal: None,
             initial_window_id: Uuid::now_v7().to_string(),
             metadata: ThreadPersistenceMetadata {
                 cwd: None,

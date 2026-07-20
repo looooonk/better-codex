@@ -4,6 +4,7 @@ mod delete_thread;
 mod helpers;
 mod list_threads;
 mod live_writer;
+mod model_context;
 mod read_thread;
 mod search_threads;
 mod unarchive_thread;
@@ -33,6 +34,7 @@ use crate::ReadThreadByRolloutPathParams;
 use crate::ReadThreadParams;
 use crate::ResumeThreadParams;
 use crate::SearchThreadsParams;
+use crate::StoredModelContext;
 use crate::StoredThread;
 use crate::StoredThreadHistory;
 use crate::ThreadPage;
@@ -281,6 +283,13 @@ impl ThreadStore for LocalThreadStore {
         params: LoadThreadHistoryParams,
     ) -> ThreadStoreFuture<'_, StoredThreadHistory> {
         Box::pin(LocalThreadStore::load_history(self, params))
+    }
+
+    fn load_latest_model_context(
+        &self,
+        params: LoadThreadHistoryParams,
+    ) -> ThreadStoreFuture<'_, StoredModelContext> {
+        Box::pin(model_context::load_latest_model_context(self, params))
     }
 
     fn read_thread(&self, params: ReadThreadParams) -> ThreadStoreFuture<'_, StoredThread> {
@@ -1192,7 +1201,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn paginated_threads_allow_metadata_reads_and_reject_legacy_history_paths() {
+    async fn paginated_threads_allow_metadata_reads_and_live_resume() {
         let home = TempDir::new().expect("temp dir");
         let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
         let uuid = uuid::Uuid::from_u128(408);
@@ -1256,18 +1265,20 @@ mod tests {
                 .await
                 .expect_err("history load should fail"),
         );
-        assert_paginated_threads_unsupported(
-            store
-                .resume_thread(ResumeThreadParams {
-                    thread_id,
-                    rollout_path: Some(rollout_path),
-                    history: None,
-                    include_archived: false,
-                    metadata: thread_metadata(),
-                })
-                .await
-                .expect_err("resume should fail"),
-        );
+        store
+            .resume_thread(ResumeThreadParams {
+                thread_id,
+                rollout_path: Some(rollout_path),
+                history: None,
+                include_archived: false,
+                metadata: thread_metadata(),
+            })
+            .await
+            .expect("live resume should succeed");
+        store
+            .shutdown_thread(thread_id)
+            .await
+            .expect("resumed writer should shut down");
     }
 
     #[tokio::test]
@@ -1339,6 +1350,7 @@ mod tests {
             selected_capability_roots: Vec::new(),
             multi_agent_version: None,
             history_mode: ThreadHistoryMode::Legacy,
+            subagent_history_start_ordinal: None,
             initial_window_id: uuid::Uuid::now_v7().to_string(),
             metadata: thread_metadata(),
         }

@@ -32,8 +32,10 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::RolloutItem;
+use codex_protocol::protocol::RolloutLine;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
+use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
@@ -150,6 +152,28 @@ impl AgentControlHarness {
             .start_thread(self.config.clone())
             .await
             .expect("start thread");
+        (new_thread.thread_id, new_thread.thread)
+    }
+
+    async fn start_paginated_thread(&self) -> (ThreadId, Arc<CodexThread>) {
+        let new_thread = self
+            .manager
+            .start_thread_with_options(StartThreadOptions {
+                config: self.config.clone(),
+                allow_provider_model_fallback: false,
+                initial_history: InitialHistory::New,
+                history_mode: Some(ThreadHistoryMode::Paginated),
+                session_source: None,
+                thread_source: None,
+                dynamic_tools: Vec::new(),
+                metrics_service_name: None,
+                parent_trace: None,
+                environments: Vec::new(),
+                thread_extension_init: ExtensionDataInit::default(),
+                supports_openai_form_elicitation: false,
+            })
+            .await
+            .expect("start paginated thread");
         (new_thread.thread_id, new_thread.thread)
     }
 }
@@ -597,7 +621,7 @@ async fn ensure_v2_agent_loaded_reloads_registered_unloaded_agent() {
     let _ = config.features.enable(Feature::MultiAgentV2);
     let _ = config.features.enable(Feature::Sqlite);
     let harness = AgentControlHarness::new_with_config(home, config).await;
-    let (parent_thread_id, _parent_thread) = harness.start_thread().await;
+    let (parent_thread_id, _parent_thread) = harness.start_paginated_thread().await;
     let agent_path = AgentPath::try_from("/root/worker").expect("agent path");
     let spawned_agent = harness
         .control
@@ -634,6 +658,13 @@ async fn ensure_v2_agent_loaded_reloads_registered_unloaded_agent() {
         .shutdown_and_wait()
         .await
         .expect("child thread should shut down");
+    let stored_child = child_thread
+        .read_thread(
+            /*include_archived*/ true, /*include_history*/ false,
+        )
+        .await
+        .expect("child metadata should be readable");
+    assert_eq!(stored_child.history_mode, ThreadHistoryMode::Paginated);
 
     assert!(
         harness
@@ -849,6 +880,108 @@ async fn ephemeral_spawn_does_not_persist_agent_graph_edge() {
         harness.manager.get_thread(child_thread_id).await.is_ok(),
         "ephemeral child should remain live"
     );
+}
+
+#[tokio::test]
+async fn spawn_agent_fork_from_paginated_parent_persists_model_context_prefix() {
+    let harness = AgentControlHarness::new().await;
+    let (parent_thread_id, parent_thread) = harness.start_paginated_thread().await;
+    parent_thread
+        .inject_user_message_without_turn("paginated parent context".to_string())
+        .await;
+    let turn_context = parent_thread.codex.session.new_default_turn().await;
+    let parent_spawn_call_id = "spawn-call-paginated".to_string();
+    parent_thread
+        .codex
+        .session
+        .record_conversation_items(
+            turn_context.as_ref(),
+            &[spawn_agent_call(&parent_spawn_call_id)],
+        )
+        .await;
+
+    let child_thread_id = harness
+        .control
+        .spawn_agent_with_metadata(
+            harness.config.clone(),
+            text_input("child task"),
+            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id,
+                depth: 1,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: None,
+            })),
+            SpawnAgentOptions {
+                fork_parent_spawn_call_id: Some(parent_spawn_call_id),
+                fork_mode: Some(SpawnAgentForkMode::FullHistory),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("forked spawn should succeed")
+        .thread_id;
+    let child_thread = harness
+        .manager
+        .get_thread(child_thread_id)
+        .await
+        .expect("child thread should be registered");
+    assert!(history_contains_text(
+        child_thread.codex.session.clone_history().await.raw_items(),
+        "paginated parent context",
+    ));
+    child_thread.ensure_rollout_materialized().await;
+    child_thread
+        .flush_rollout()
+        .await
+        .expect("child rollout should flush");
+    let rollout_path = child_thread
+        .rollout_path()
+        .expect("child rollout should exist");
+    let lines = std::fs::read_to_string(&rollout_path)
+        .expect("read child rollout")
+        .lines()
+        .map(|line| serde_json::from_str::<RolloutLine>(line).expect("parse rollout line"))
+        .collect::<Vec<_>>();
+    let RolloutItem::SessionMeta(meta_line) = &lines[0].item else {
+        panic!("child rollout should start with session metadata");
+    };
+    assert_eq!(meta_line.meta.history_mode, ThreadHistoryMode::Paginated);
+    assert_eq!(meta_line.meta.parent_thread_id, Some(parent_thread_id));
+    assert_eq!(meta_line.meta.forked_from_id, Some(parent_thread_id));
+    let prefix_end = usize::try_from(
+        meta_line
+            .meta
+            .subagent_history_start_ordinal
+            .expect("paginated child should mark its local history boundary"),
+    )
+    .expect("history boundary should fit in usize");
+    assert!(lines[1..prefix_end].iter().any(|line| {
+        serde_json::to_string(&line.item)
+            .expect("serialize rollout item")
+            .contains("paginated parent context")
+    }));
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|line| {
+                serde_json::to_string(&line.item)
+                    .expect("serialize rollout item")
+                    .contains("paginated parent context")
+            })
+            .count(),
+        1,
+    );
+
+    let _ = harness
+        .control
+        .shutdown_live_agent(child_thread_id)
+        .await
+        .expect("child shutdown should submit");
+    let _ = parent_thread
+        .submit(Op::Shutdown {})
+        .await
+        .expect("parent shutdown should submit");
 }
 
 #[tokio::test]

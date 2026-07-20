@@ -27,6 +27,7 @@ use crate::LoadThreadHistoryParams;
 use crate::ReadThreadByRolloutPathParams;
 use crate::ReadThreadParams;
 use crate::ResumeThreadParams;
+use crate::StoredModelContext;
 use crate::StoredThread;
 use crate::StoredThreadHistory;
 use crate::ThreadMetadataPatch;
@@ -132,6 +133,7 @@ mod tests {
                     selected_capability_roots: Vec::new(),
                     multi_agent_version: None,
                     history_mode: ThreadHistoryMode::Legacy,
+                    subagent_history_start_ordinal: None,
                     initial_window_id: uuid::Uuid::now_v7().to_string(),
                     metadata: ThreadPersistenceMetadata {
                         cwd: None,
@@ -327,6 +329,7 @@ mod tests {
             selected_capability_roots: Vec::new(),
             multi_agent_version: None,
             history_mode,
+            subagent_history_start_ordinal: None,
             initial_window_id: uuid::Uuid::now_v7().to_string(),
             metadata: thread_metadata(),
         }
@@ -368,6 +371,7 @@ pub struct InMemoryThreadStoreCalls {
     pub shutdown_thread: usize,
     pub discard_thread: usize,
     pub load_history: usize,
+    pub load_latest_model_context: usize,
     pub read_thread: usize,
     pub read_thread_with_history: usize,
     pub read_thread_by_rollout_path: usize,
@@ -442,6 +446,7 @@ impl InMemoryThreadStore {
             memory_mode: matches!(params.metadata.memory_mode, ThreadMemoryMode::Disabled)
                 .then_some("disabled".to_string()),
             history_mode: params.history_mode,
+            subagent_history_start_ordinal: params.subagent_history_start_ordinal,
             multi_agent_version: params.multi_agent_version,
             context_window: Some(SessionContextWindow::new(params.initial_window_id.clone())),
             ..SessionMeta::default()
@@ -516,6 +521,25 @@ impl InMemoryThreadStore {
         let history_mode = history_mode_from_state(&state, params.thread_id);
         reject_paginated_history_mode(history_mode)?;
         Ok(StoredThreadHistory {
+            thread_id: params.thread_id,
+            items: items.clone(),
+        })
+    }
+
+    async fn load_latest_model_context(
+        &self,
+        params: LoadThreadHistoryParams,
+    ) -> ThreadStoreResult<StoredModelContext> {
+        let mut state = self.state.lock().await;
+        state.calls.load_latest_model_context += 1;
+        let items =
+            state
+                .histories
+                .get(&params.thread_id)
+                .ok_or(ThreadStoreError::ThreadNotFound {
+                    thread_id: params.thread_id,
+                })?;
+        Ok(StoredModelContext {
             thread_id: params.thread_id,
             items: items.clone(),
         })
@@ -657,6 +681,13 @@ impl ThreadStore for InMemoryThreadStore {
         params: LoadThreadHistoryParams,
     ) -> ThreadStoreFuture<'_, StoredThreadHistory> {
         Box::pin(InMemoryThreadStore::load_history(self, params))
+    }
+
+    fn load_latest_model_context(
+        &self,
+        params: LoadThreadHistoryParams,
+    ) -> ThreadStoreFuture<'_, StoredModelContext> {
+        Box::pin(InMemoryThreadStore::load_latest_model_context(self, params))
     }
 
     fn read_thread(&self, params: ReadThreadParams) -> ThreadStoreFuture<'_, StoredThread> {

@@ -140,7 +140,7 @@ improvements that do not redefine Codex behavior.
   retain the same content Codex would deliver.
 - [x] **P2 · CHANGE — Port audio and local-audio agent messages.** Support upstream's
   current media forms throughout subagent communication.
-- [ ] **P1 · CHANGE — Restore cold-resume child identity and roles.** Rehydrate V2
+- [x] **P1 · CHANGE — Restore cold-resume child identity and roles.** Rehydrate V2
   descendants, persisted roles, routing identity, and paginated child history.
 - [ ] **P1 · CHANGE — Align the final-answer mailbox boundary.** Leave non-triggering
   child mail for the next turn instead of forcing another sample after a terminal

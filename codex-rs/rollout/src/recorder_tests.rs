@@ -178,6 +178,7 @@ async fn state_db_init_backfills_before_returning() -> anyhow::Result<()> {
             selected_capability_roots: Vec::new(),
             memory_mode: None,
             history_mode: Default::default(),
+            subagent_history_start_ordinal: None,
             multi_agent_version: None,
             context_window: None,
         },
@@ -835,6 +836,46 @@ async fn resumed_paginated_rollout_continues_after_ordinal_gap() -> std::io::Res
         vec![Some(0), Some(4), Some(5)]
     );
     recorder.shutdown().await
+}
+
+#[tokio::test]
+async fn resumed_paginated_subagent_rollout_rejects_incomplete_prefix() -> std::io::Result<()> {
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let rollout_path = home.path().join("rollout.jsonl");
+    let thread_id = ThreadId::new();
+    let mut session_meta = paginated_session_meta_item(thread_id, home.path());
+    let RolloutItem::SessionMeta(meta_line) = &mut session_meta else {
+        panic!("fixture should be session metadata");
+    };
+    meta_line.meta.subagent_history_start_ordinal = Some(3);
+    let lines = [
+        RolloutLine {
+            timestamp: "2026-07-09T00:00:00Z".to_string(),
+            ordinal: Some(0),
+            item: session_meta,
+        },
+        RolloutLine {
+            timestamp: "2026-07-09T00:00:01Z".to_string(),
+            ordinal: Some(1),
+            item: agent_message_item("partial inherited prefix"),
+        },
+    ];
+    let jsonl = lines
+        .iter()
+        .map(serde_json::to_string)
+        .collect::<Result<Vec<_>, _>>()?
+        .join("\n");
+    fs::write(&rollout_path, format!("{jsonl}\n"))?;
+
+    let err = match RolloutRecorder::new(&config, RolloutRecorderParams::resume(rollout_path)).await
+    {
+        Ok(_) => panic!("incomplete prefix should fail resume"),
+        Err(err) => err,
+    };
+
+    assert!(err.to_string().contains("incomplete"));
+    Ok(())
 }
 
 #[tokio::test]

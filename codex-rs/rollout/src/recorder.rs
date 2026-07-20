@@ -89,6 +89,7 @@ pub struct RolloutRecorder {
 }
 
 #[derive(Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum RolloutRecorderParams {
     Create {
         session_id: SessionId,
@@ -103,6 +104,7 @@ pub enum RolloutRecorderParams {
         selected_capability_roots: Vec<SelectedCapabilityRoot>,
         multi_agent_version: Option<MultiAgentVersion>,
         history_mode: ThreadHistoryMode,
+        subagent_history_start_ordinal: Option<u64>,
         initial_window_id: Option<String>,
     },
     Resume {
@@ -196,6 +198,7 @@ impl RolloutRecorderParams {
             selected_capability_roots: Vec::new(),
             multi_agent_version: None,
             history_mode: Default::default(),
+            subagent_history_start_ordinal: None,
             initial_window_id: None,
         }
     }
@@ -241,6 +244,20 @@ impl RolloutRecorderParams {
         } = &mut self
         {
             *mode = history_mode;
+        }
+        self
+    }
+
+    pub fn with_subagent_history_start_ordinal(
+        mut self,
+        subagent_history_start_ordinal: Option<u64>,
+    ) -> Self {
+        if let Self::Create {
+            subagent_history_start_ordinal: ordinal,
+            ..
+        } = &mut self
+        {
+            *ordinal = subagent_history_start_ordinal;
         }
         self
     }
@@ -774,6 +791,7 @@ impl RolloutRecorder {
                 selected_capability_roots,
                 multi_agent_version,
                 history_mode,
+                subagent_history_start_ordinal,
                 initial_window_id,
             } => {
                 let ordinal_state = RolloutOrdinalState::for_new_rollout(history_mode);
@@ -814,6 +832,7 @@ impl RolloutRecorder {
                     selected_capability_roots,
                     memory_mode: (!config.generate_memories()).then_some("disabled".to_string()),
                     history_mode,
+                    subagent_history_start_ordinal,
                     multi_agent_version,
                     context_window: initial_window_id.map(SessionContextWindow::new),
                 };
