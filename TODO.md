@@ -51,25 +51,37 @@ improvements that do not redefine Codex behavior.
 - [ ] **P1 · CHANGE — Sync image-generation instructions and completion behavior.**
   Remove the Better-only silence rule and align code-mode wait/return guidance with
   the current upstream tool contract.
-- [x] **P1 · KEEP — Bound and sanitize additional context.** Retain item, key,
-  per-value, and aggregate limits together with validation and XML escaping.
+- [ ] **P1 · CHANGE — Match upstream default collaboration-mode instructions.**
+  Supply the same Default-mode developer fragment as Codex instead of leaving it
+  null, including upstream's incremental update and clearing behavior.
+- [ ] **P1 · CHANGE — Match upstream additional-context handling.** Remove Better's
+  item-count and aggregate-token admission limits, which can silently discard
+  entries. Accept all supplied entries as Codex does, while retaining upstream's
+  per-value truncation behavior.
 - [x] **P1 · KEEP — Bound explicit skill prompts.** Retain per-skill and per-turn
   limits, name/path validation, and visible truncation warnings.
-- [x] **P1 · KEEP — Bound inter-agent context.** Retain outbound, per-item, aggregate,
-  and child-completion limits with omission markers.
+- [ ] **P1 · CHANGE — Match upstream inter-agent context handling.** Remove Better's
+  outbound, per-item, aggregate, and child-completion admission limits. Record every
+  delivered communication in model history as Codex does instead of omitting it.
 - [x] **P1 · KEEP — Bound developer instructions and MCP thread hints.** These caps
   prevent configuration or server metadata from consuming unbounded model context.
 - [x] **P1 · KEEP — Bound combined `AGENTS.md` instructions.** Retain the shared byte
   and token budgets across global and project instructions.
 - [x] **P1 · KEEP — Bound environment and world-state rendering.** Retain caps on
   roots, rules, domains, environments, subagent lines, and escaped field values.
-- [x] **P1 · KEEP — Structure and bound extension and hook context.** Retain typed
-  fragments, role/slot validation, per-item caps, aggregate caps, and omission
+- [ ] **P1 · CHANGE — Match upstream extension-context handling.** Remove Better's
+  fragment-count and aggregate-token admission limits, which can silently discard
+  extension-provided context and world-state fragments. Accept every fragment as
+  Codex does.
+- [x] **P1 · KEEP — Structure and bound hook context.** Retain typed fragments,
+  role/slot validation, per-item caps, aggregate caps, warnings, and omission
   markers.
 - [x] **P1 · KEEP — Bound hook execution resources.** Retain stdout/stderr limits and
   the hook fan-out ceiling.
-- [x] **P1 · KEEP — Bound `tool_search`.** Retain the result-count and serialized-size
-  limits, including when results are rebound into history.
+- [ ] **P1 · CHANGE — Match upstream `tool_search` handling.** Remove Better's local
+  result-count and serialized-size caps, including bounded reserialization during
+  history reconstruction. Return every coalesced result selected by the requested
+  search limit as Codex does.
 - [x] **P2 · KEEP — Keep narrow interactive-input and task-name bounds.** The 1–3
   question, 2–3 option, and 64-character V2 task-name limits keep model-visible
   interaction bounded and predictable.
@@ -123,8 +135,9 @@ improvements that do not redefine Codex behavior.
   prompts.
 - [x] **P1 · KEEP — Retain the 64-character task-name limit.** This is a sensible
   model-visible context bound even though upstream currently accepts longer names.
-- [x] **P1 · KEEP — Retain inter-agent payload caps.** Bounded messages and completion
-  prefixes are intentional resource-safety improvements.
+- [ ] **P1 · CHANGE — Match upstream inter-agent payload handling.** Remove Better's
+  message and completion-prefix caps so send, follow-up, and child-completion payloads
+  retain the same content Codex would deliver.
 - [ ] **P2 · CHANGE — Port audio and local-audio agent messages.** Support upstream's
   current media forms throughout subagent communication.
 - [ ] **P1 · CHANGE — Restore cold-resume child identity and roles.** Rehydrate V2
@@ -180,6 +193,9 @@ improvements that do not redefine Codex behavior.
 
 ## Sessions, app-server, and persistence
 
+- [ ] **P2 · CHANGE — Port upstream raw-response completion events.** Preserve the
+  response ID and token usage from every completed model response and expose the
+  upstream `RawResponseCompleted` event so malformed generations can be traced.
 - [ ] **P1 · CHANGE — Port paginated rollout and history infrastructure.** Add bounded
   context-suffix loading, SQLite history materialization, paginated thread/child
   reads and resumes, and explicit unsupported-operation checks.
