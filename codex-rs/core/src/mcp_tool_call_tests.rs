@@ -190,6 +190,30 @@ async fn execute_mcp_tool_call_records_replayable_correlation() -> anyhow::Resul
     Ok(())
 }
 
+#[tokio::test]
+async fn mcp_dispatch_rejects_a_tool_missing_from_the_live_catalog() {
+    let (session, turn_context, _rx_event) = make_session_and_context_with_rx().await;
+    let step_context = StepContext::for_test(Arc::clone(&turn_context));
+
+    let handled = handle_mcp_tool_call(
+        session,
+        &step_context,
+        "call-missing".to_string(),
+        "docs".to_string(),
+        "forged".to_string(),
+        HookToolName::new("mcp__docs__forged"),
+        "{}".to_string(),
+    )
+    .await;
+
+    assert_eq!(
+        handled.result,
+        CallToolResult::from_error_text(
+            "MCP tool `docs/forged` is not available to the model".to_string()
+        )
+    );
+}
+
 fn install_mcp_permission_request_hook(
     session: &mut Session,
     turn_context: &TurnContext,

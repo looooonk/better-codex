@@ -548,6 +548,17 @@ impl McpConnectionManager {
         tools
     }
 
+    /// Returns a model-visible tool from the current live connection.
+    pub async fn model_visible_tool_info(&self, server: &str, tool: &str) -> Option<ToolInfo> {
+        let client = self.clients.get(server)?;
+        let managed_client = client.client().await.ok()?;
+        let tool = client
+            .prepare_tools(managed_client.tools)
+            .into_iter()
+            .find(|tool_info| tool_info.tool.name == tool && tool_is_model_visible(tool_info))?;
+        Some(self.with_server_metadata(tool))
+    }
+
     /// Force-refresh codex apps tools by bypassing the in-process cache.
     ///
     /// On success, the refreshed tools replace shared cache contents when the

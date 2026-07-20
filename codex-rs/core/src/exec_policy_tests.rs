@@ -1346,6 +1346,28 @@ async fn exec_approval_requirement_rejects_unmatched_sandbox_escalation_when_gra
     .await;
 }
 
+#[test]
+fn other_danger_preserves_rejected_prompt_reason() {
+    assert_eq!(
+        derive_rejected_prompt_reason(
+            REJECT_SANDBOX_APPROVAL_REASON,
+            Some(DangerousCommandMatch::Other),
+        ),
+        REJECT_SANDBOX_APPROVAL_REASON
+    );
+}
+
+#[test]
+fn forced_rm_rejected_prompt_reason_does_not_repeat_command() {
+    assert_eq!(
+        derive_rejected_prompt_reason(
+            REJECT_SANDBOX_APPROVAL_REASON,
+            Some(DangerousCommandMatch::ForcedRm),
+        ),
+        "rm -f style commands are not permitted. Use a safer approach"
+    );
+}
+
 #[tokio::test]
 async fn mixed_rule_and_sandbox_prompt_prioritizes_rule_for_rejection_decision() {
     let policy_src = r#"prefix_rule(pattern=["git"], decision="prompt")"#;
@@ -1384,7 +1406,7 @@ async fn mixed_rule_and_sandbox_prompt_prioritizes_rule_for_rejection_decision()
 }
 
 #[tokio::test]
-async fn mixed_rule_and_sandbox_prompt_rejects_when_granular_rules_are_disabled() {
+async fn forced_rm_preserves_rule_rejection_when_granular_rules_are_disabled() {
     let policy_src = r#"prefix_rule(pattern=["git"], decision="prompt")"#;
     let mut parser = PolicyParser::new();
     parser
@@ -1394,7 +1416,7 @@ async fn mixed_rule_and_sandbox_prompt_rejects_when_granular_rules_are_disabled(
     let command = vec![
         "bash".to_string(),
         "-lc".to_string(),
-        "git status && madeup-cmd".to_string(),
+        "git status && rm -rf /tmp/example".to_string(),
     ];
 
     let requirement = manager
@@ -2015,6 +2037,31 @@ async fn dangerous_rm_rf_requires_approval_in_danger_full_access() {
     .await;
 }
 
+#[tokio::test]
+async fn dangerous_rm_rf_in_shell_loop_requires_approval_in_danger_full_access() {
+    let command = vec_str(&[
+        "bash",
+        "-lc",
+        "for target in /tmp/a /tmp/b; do rm -rf \"$target\"; done",
+    ]);
+
+    assert_exec_approval_requirement_for_command(
+        ExecApprovalRequirementScenario {
+            policy_src: None,
+            command: command.clone(),
+            approval_policy: AskForApproval::OnRequest,
+            permission_profile: PermissionProfile::Disabled,
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            prefix_rule: None,
+        },
+        ExecApprovalRequirement::NeedsApproval {
+            reason: None,
+            proposed_execpolicy_amendment: Some(ExecPolicyAmendment::new(command)),
+        },
+    )
+    .await;
+}
+
 fn vec_str(items: &[&str]) -> Vec<String> {
     items.iter().map(std::string::ToString::to_string).collect()
 }
@@ -2104,7 +2151,8 @@ async fn verify_approval_requirement_for_unsafe_powershell_command() {
     // AskForApproval::Never.
     assert_eq!(
         ExecApprovalRequirement::Forbidden {
-            reason: "`rm -rf /important/data` rejected: blocked by policy".to_string(),
+            reason: "`rm -rf /important/data` rejected: rm -f style commands are not permitted. Use a safer approach"
+                .to_string(),
         },
         policy
             .create_exec_approval_requirement_for_command(ExecApprovalRequest {
@@ -2122,7 +2170,7 @@ async fn verify_approval_requirement_for_unsafe_powershell_command() {
 }
 
 #[tokio::test]
-async fn dangerous_command_allowed_when_sandbox_is_explicitly_disabled() {
+async fn dangerous_command_forbidden_when_sandbox_is_explicitly_disabled() {
     let command = vec_str(&["rm", "-rf", "/tmp/nonexistent"]);
     assert_exec_approval_requirement_for_command(
         ExecApprovalRequirementScenario {
@@ -2135,11 +2183,9 @@ async fn dangerous_command_allowed_when_sandbox_is_explicitly_disabled() {
             sandbox_permissions: SandboxPermissions::UseDefault,
             prefix_rule: None,
         },
-        ExecApprovalRequirement::Skip {
-            bypass_sandbox: false,
-            proposed_execpolicy_amendment: Some(ExecPolicyAmendment {
-                command: vec_str(&["rm", "-rf", "/tmp/nonexistent"]),
-            }),
+        ExecApprovalRequirement::Forbidden {
+            reason: "`rm -rf /tmp/nonexistent` rejected: rm -f style commands are not permitted. Use a safer approach"
+                .to_string(),
         },
     )
     .await;

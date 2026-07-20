@@ -516,6 +516,14 @@ impl AsyncManagedClient {
             .map(|tools| filter_tools(tools, &self.tool_filter))
     }
 
+    pub(crate) fn prepare_tools(&self, tools: Vec<ToolInfo>) -> Vec<ToolInfo> {
+        if self.is_codex_apps_mcp_server {
+            prepare_codex_apps_tools_for_model(tools, &self.tool_plugin_provenance)
+        } else {
+            prepare_regular_mcp_tools_for_model(tools, &self.tool_plugin_provenance)
+        }
+    }
+
     pub(crate) async fn listed_tools(&self) -> Option<Vec<ToolInfo>> {
         // Keep cache payloads raw; plugin provenance is resolved per-session at read time.
         let tools = if !self.startup_complete.load(Ordering::Acquire)
@@ -528,11 +536,7 @@ impl AsyncManagedClient {
                 Err(_) => self.cached_tools(),
             }
         }?;
-        Some(if self.is_codex_apps_mcp_server {
-            prepare_codex_apps_tools_for_model(tools, &self.tool_plugin_provenance)
-        } else {
-            prepare_regular_mcp_tools_for_model(tools, &self.tool_plugin_provenance)
-        })
+        Some(self.prepare_tools(tools))
     }
 }
 

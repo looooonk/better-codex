@@ -19,18 +19,18 @@ improvements that do not redefine Codex behavior.
 
 ## Safety and inference parity
 
-- [ ] **P0 · CHANGE — Enforce MCP model visibility at dispatch.** Reject calls when
+- [x] **P0 · CHANGE — Enforce MCP model visibility at dispatch.** Reject calls when
   current tool metadata is missing or the tool is hidden from the model; do not
   dispatch stale or forged calls.
-- [ ] **P0 · CHANGE — Forbid dangerous commands under `Never`.** Match upstream by
+- [x] **P0 · CHANGE — Forbid dangerous commands under `Never`.** Match upstream by
   rejecting dangerous unmatched commands even when the permission profile is
   `Disabled` or `External`.
-- [ ] **P0 · CHANGE — Port upstream forced-`rm` detection.** Recognize long, split,
+- [x] **P0 · CHANGE — Port upstream forced-`rm` detection.** Recognize long, split,
   and clustered force flags, executable paths, wrappers, and nested shell syntax.
-- [ ] **P0 · CHANGE — Restore the bundled GPT-5.6 window to 272,000 tokens.** The
+- [x] **P0 · CHANGE — Restore the bundled GPT-5.6 window to 272,000 tokens.** The
   current 372,000-token fallback delays compaction by about 90,000 tokens and is
   not justified as a TUI-specific improvement.
-- [ ] **P0 · CHANGE — Sync the GPT-5.6 base instructions.** Include upstream's
+- [x] **P0 · CHANGE — Sync the GPT-5.6 base instructions.** Include upstream's
   destructive-action safeguards and `HOME`/`CODEX_HOME` variable rules.
 - [ ] **P0 · CHANGE — Reconcile Guardian with upstream.** Port the current policy
   source, trust model, catalog integration, tool-mode behavior, and permission

@@ -38,6 +38,7 @@ use rmcp::model::CreateElicitationRequestParams;
 use rmcp::model::ElicitationAction;
 use rmcp::model::ElicitationCapability;
 use rmcp::model::JsonObject;
+use rmcp::model::Meta;
 use rmcp::model::NumberOrString;
 use rmcp::model::Tool;
 use std::collections::HashMap;
@@ -1331,6 +1332,72 @@ async fn list_all_tools_adds_server_metadata_to_tools() {
     assert_eq!(tool.server_name, server_name);
     assert!(tool.supports_parallel_tool_calls);
     assert_eq!(tool.server_origin.as_deref(), Some("https://docs.example"));
+}
+
+#[tokio::test]
+async fn model_visible_tool_info_uses_live_tools_instead_of_cached_tools() {
+    let server_name = CODEX_APPS_MCP_SERVER_NAME;
+    let cached_tool = create_test_tool(server_name, "search");
+    let mut live_tool = create_test_tool(server_name, "search");
+    let mut meta = Meta::new();
+    meta.insert("ui".to_string(), serde_json::json!({ "visibility": [] }));
+    live_tool.tool.meta = Some(meta);
+
+    let codex_home = tempdir().expect("tempdir");
+    let cache_context = create_codex_apps_tools_cache_context(
+        codex_home.path().to_path_buf(),
+        Some("dispatch-account"),
+        Some("dispatch-user"),
+    );
+    cache_context.store_current_tools_for_test(vec![cached_tool]);
+    let live_client = create_test_managed_client(vec![live_tool]).await;
+    let managed_client = AsyncManagedClient {
+        client: futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Ok(
+            live_client,
+        ))
+        .boxed()
+        .shared(),
+        is_codex_apps_mcp_server: true,
+        cached_server_info: None,
+        codex_apps_tools_cache_context: Some(cache_context),
+        tool_filter: ToolFilter::default(),
+        startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+        startup_reconnect: None,
+        tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
+        cancel_token: CancellationToken::new(),
+    };
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let mut manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    manager
+        .clients
+        .insert(server_name.to_string(), managed_client);
+
+    assert_eq!(
+        manager
+            .list_all_tools()
+            .await
+            .into_iter()
+            .map(|tool| tool.tool.name.to_string())
+            .collect::<Vec<_>>(),
+        vec!["search"]
+    );
+    assert!(
+        manager
+            .model_visible_tool_info(server_name, "search")
+            .await
+            .is_none()
+    );
+    assert!(
+        manager
+            .model_visible_tool_info(server_name, "missing")
+            .await
+            .is_none()
+    );
 }
 
 #[test]
