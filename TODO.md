@@ -173,11 +173,11 @@ improvements that do not redefine Codex behavior.
 - [x] **P1 · CHANGE — Materialize sandbox roots per execution environment.** Resolve
   selected-environment workspace roots and permissions for every tool attempt rather
   than using turn-wide host roots.
-- [ ] **P1 · CHANGE — Align network attribution and cancellation.** Attribute every
+- [x] **P1 · CHANGE — Align network attribution and cancellation.** Attribute every
   sandbox execution and cancel the owning call when managed-network policy denies it.
 - [x] **P1 · KEEP — Fail closed without a managed-network sandbox.** Do not remove
   Better's guard when enforcement is requested but no sandbox boundary exists.
-- [ ] **P1 · CHANGE — Launch managed-network proxies on remote executors.** Port the
+- [x] **P1 · CHANGE — Launch managed-network proxies on remote executors.** Port the
   upstream executor-side proxy path while retaining the no-sandbox fail-closed guard.
 - [x] **P2 · KEEP — Preserve sandboxed custom `argv[0]`.** Better's macOS and Linux
   wrapper handling fixes a known upstream correctness gap.
