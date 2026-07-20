@@ -142,7 +142,7 @@ improvements that do not redefine Codex behavior.
   current media forms throughout subagent communication.
 - [x] **P1 · CHANGE — Restore cold-resume child identity and roles.** Rehydrate V2
   descendants, persisted roles, routing identity, and paginated child history.
-- [ ] **P1 · CHANGE — Align the final-answer mailbox boundary.** Leave non-triggering
+- [x] **P1 · CHANGE — Align the final-answer mailbox boundary.** Leave non-triggering
   child mail for the next turn instead of forcing another sample after a terminal
   answer.
 - [ ] **P2 · CHANGE — Sync remaining upstream agent dispatch behavior.** Port
