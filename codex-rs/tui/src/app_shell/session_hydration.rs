@@ -1,7 +1,7 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
 use super::workspace;
-use super::workspace::WorkspaceGitStatus;
+use super::workspace::WorkspaceGitStatusProbe;
 use crate::app_server_session::app_server_rate_limit_snapshots;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::ThreadGoal;
@@ -37,7 +37,7 @@ pub(super) struct SessionHydrationState {
     rate_limits_loaded: bool,
     rate_limits_refresh_due: bool,
     goal_task: LookupTask<Option<ThreadGoal>>,
-    workspace_task: LookupTask<Option<WorkspaceGitStatus>>,
+    workspace_task: LookupTask<WorkspaceGitStatusProbe>,
     session_list_params: Option<ThreadListParams>,
     session_list_task: Option<JoinHandle<SessionLookup<SessionListPage>>>,
     rate_limits_task: LookupTask<GetAccountRateLimitsResponse>,
@@ -207,7 +207,7 @@ impl ShellState {
             return;
         }
         let Some(runner) = self.workspace_command_runner.clone() else {
-            self.record_workspace_git_status(None);
+            self.record_workspace_git_probe(WorkspaceGitStatusProbe::Unavailable);
             return;
         };
         let generation = self.session_hydration.generation;
@@ -224,7 +224,7 @@ impl ShellState {
                 Ok(status) => Ok(status),
                 Err(_) => {
                     tracing::warn!(%thread_id, "workspace lookup timed out");
-                    Ok(None)
+                    Ok(WorkspaceGitStatusProbe::Unavailable)
                 }
             };
             SessionLookup {
@@ -302,8 +302,8 @@ impl ShellState {
                 && lookup.revision == self.session_hydration.workspace_revision
             {
                 match lookup.value {
-                    Ok(status) => {
-                        self.record_workspace_git_status(status);
+                    Ok(probe) => {
+                        self.record_workspace_git_probe(probe);
                         changed = true;
                     }
                     Err(err) => tracing::warn!(%err, "failed to refresh workspace status"),
@@ -416,10 +416,33 @@ impl ShellState {
         self.active_goal = goal;
     }
 
-    pub(super) fn record_workspace_git_status(&mut self, status: Option<WorkspaceGitStatus>) {
+    pub(super) fn record_workspace_git_probe(&mut self, probe: WorkspaceGitStatusProbe) {
         self.session_hydration.workspace_revision =
             self.session_hydration.workspace_revision.wrapping_add(1);
-        self.workspace_git_status = status;
+        match probe {
+            WorkspaceGitStatusProbe::Found(status) => {
+                if let Some(git_root) = status.git_root.as_deref() {
+                    self.diff_store.set_git_root(git_root);
+                    self.refresh_open_diff_view();
+                }
+                self.workspace_git_status = Some(status);
+            }
+            WorkspaceGitStatusProbe::NotRepository => {
+                self.diff_store.confirm_no_git_root();
+                self.refresh_open_diff_view();
+                self.workspace_git_status = None;
+            }
+            WorkspaceGitStatusProbe::Unavailable => {
+                self.workspace_git_status = None;
+            }
+        }
+        self.workspace_status_refresh_due = false;
+    }
+
+    pub(super) fn reset_workspace_git_status(&mut self) {
+        self.session_hydration.workspace_revision =
+            self.session_hydration.workspace_revision.wrapping_add(1);
+        self.workspace_git_status = None;
         self.workspace_status_refresh_due = false;
     }
 

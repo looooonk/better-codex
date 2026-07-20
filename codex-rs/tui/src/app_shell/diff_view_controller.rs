@@ -111,27 +111,36 @@ impl ShellState {
         }
     }
 
-    fn refresh_open_diff_view(&mut self) {
-        let update = match self
+    pub(super) fn refresh_open_diff_view(&mut self) {
+        let Some(source_item_id) = self
             .diff_view
             .as_ref()
-            .and_then(DiffViewState::source_item_id)
-        {
-            Some(item_id) => self.diff_store.item_files(item_id).map(|files| {
-                (
-                    files.to_vec(),
-                    retention(self.diff_store.item_is_truncated(item_id)),
-                )
-            }),
-            None if self.diff_view.is_some() => Some((
-                self.diff_store.session_files(),
-                retention(self.diff_store.session_is_truncated()),
-            )),
-            None => None,
+            .map(|view| view.source_item_id().map(str::to_owned))
+        else {
+            return;
         };
-        if let Some((files, retention)) = update
-            && let Some(view) = &mut self.diff_view
-        {
+        let update = match source_item_id {
+            Some(item_id) => self
+                .diff_store
+                .item_files(&item_id)
+                .filter(|files| !files.is_empty())
+                .map(|files| {
+                    (
+                        files.to_vec(),
+                        retention(self.diff_store.item_is_truncated(&item_id)),
+                    )
+                }),
+            None => {
+                let files = self.diff_store.session_files();
+                (!files.is_empty())
+                    .then(|| (files, retention(self.diff_store.session_is_truncated())))
+            }
+        };
+        let Some((files, retention)) = update else {
+            self.close_diff_view();
+            return;
+        };
+        if let Some(view) = &mut self.diff_view {
             view.replace_files(files, retention);
         }
     }
@@ -144,3 +153,7 @@ fn retention(truncated: bool) -> DiffRetention {
         DiffRetention::Complete
     }
 }
+
+#[cfg(test)]
+#[path = "diff_view_controller_tests.rs"]
+mod tests;

@@ -9,6 +9,7 @@ use crossterm::event::KeyModifiers;
 use std::cell::Cell;
 use std::collections::VecDeque;
 
+mod paths;
 mod session_files;
 
 pub(super) use super::diff_model::DiffCell;
@@ -33,6 +34,11 @@ pub(super) struct DiffStore {
     turns: VecDeque<StoredTurn>,
     session_files: Vec<DiffFile>,
     history_truncated: bool,
+    retained_sources_truncated: bool,
+    composition_truncated: bool,
+    display_root: Option<DiffRoot>,
+    item_root: Option<std::path::PathBuf>,
+    cwd_generation: u64,
 }
 
 #[derive(Debug)]
@@ -40,20 +46,41 @@ struct StoredTurn {
     turn_id: String,
     items: VecDeque<StoredItem>,
     aggregate: Option<StoredFiles>,
+    item_revision: u64,
+    aggregate_item_revision: u64,
 }
 
 #[derive(Debug)]
 struct StoredItem {
     item_id: String,
+    revision: u64,
     status: DiffStatus,
     truncated: bool,
+    omitted_files: bool,
+    complete_files: usize,
     files: Vec<DiffFile>,
 }
 
 #[derive(Debug)]
 struct StoredFiles {
     truncated: bool,
+    omitted_files: bool,
+    complete_files: usize,
+    path_root: Option<DiffRoot>,
     files: Vec<DiffFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DiffRoot {
+    path: std::path::PathBuf,
+    provenance: DiffRootProvenance,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DiffRootProvenance {
+    CwdFallback { generation: u64 },
+    ConfirmedCwd,
+    ConfirmedGit,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -76,17 +103,50 @@ impl DiffStore {
         let turn_id = turn_id.into();
         let item_id = item_id.into();
         let status = DiffStatus::from(status);
-        let StoredFiles { truncated, files } = bounded_change_files(changes, status);
+        let StoredFiles {
+            truncated,
+            omitted_files,
+            complete_files,
+            path_root: _,
+            files,
+        } = bounded_change_files(
+            changes,
+            status,
+            self.item_root.as_deref(),
+            self.display_root.as_ref().map(|root| root.path.as_path()),
+        );
         let turn = self.turn_mut(turn_id);
-        if let Some(item) = turn.items.iter_mut().find(|item| item.item_id == item_id) {
+        if let Some(index) = turn.items.iter().position(|item| item.item_id == item_id) {
+            let item = &turn.items[index];
+            if item.status != DiffStatus::InProgress && status == DiffStatus::InProgress {
+                return;
+            }
+            if item.status == status
+                && item.truncated == truncated
+                && item.omitted_files == omitted_files
+                && item.complete_files == complete_files
+                && item.files == files
+            {
+                return;
+            }
+            turn.item_revision = turn.item_revision.saturating_add(1);
+            let revision = turn.item_revision;
+            let item = &mut turn.items[index];
+            item.revision = revision;
             item.status = status;
             item.truncated = truncated;
+            item.omitted_files = omitted_files;
+            item.complete_files = complete_files;
             item.files = files;
         } else {
+            turn.item_revision = turn.item_revision.saturating_add(1);
             turn.items.push_back(StoredItem {
                 item_id,
+                revision: turn.item_revision,
                 status,
                 truncated,
+                omitted_files,
+                complete_files,
                 files,
             });
         }
@@ -95,8 +155,10 @@ impl DiffStore {
     }
 
     pub(super) fn upsert_turn_diff(&mut self, turn_id: impl Into<String>, unified_diff: &str) {
-        let aggregate = bounded_unified_diff(unified_diff);
-        self.turn_mut(turn_id.into()).aggregate = Some(aggregate);
+        let aggregate = bounded_unified_diff(unified_diff, self.display_root.as_ref());
+        let turn = self.turn_mut(turn_id.into());
+        turn.aggregate_item_revision = turn.item_revision;
+        turn.aggregate = Some(aggregate);
         self.enforce_limits();
         self.refresh_session_files();
     }
@@ -130,16 +192,11 @@ impl DiffStore {
     }
 
     pub(super) fn session_is_truncated(&self) -> bool {
-        self.history_truncated
-            || self.turns.iter().any(|turn| {
-                turn.aggregate
-                    .as_ref()
-                    .is_some_and(|aggregate| aggregate.truncated)
-                    || turn
-                        .items
-                        .iter()
-                        .any(|item| item.status.is_session_edit() && item.truncated)
-            })
+        self.history_truncated || self.retained_sources_truncated || self.composition_truncated
+    }
+
+    pub(super) fn mark_history_truncated(&mut self) {
+        self.history_truncated = true;
     }
 
     pub(super) fn remove_turn(&mut self, turn_id: &str) {
@@ -151,6 +208,8 @@ impl DiffStore {
         self.turns.clear();
         self.session_files.clear();
         self.history_truncated = false;
+        self.retained_sources_truncated = false;
+        self.composition_truncated = false;
     }
 
     fn turn_mut(&mut self, turn_id: String) -> &mut StoredTurn {
@@ -162,6 +221,8 @@ impl DiffStore {
             turn_id,
             items: VecDeque::new(),
             aggregate: None,
+            item_revision: 0,
+            aggregate_item_revision: 0,
         });
         &mut self.turns[index]
     }
@@ -225,15 +286,26 @@ impl DiffStoreSize {
     }
 }
 
-fn bounded_change_files(changes: &[FileUpdateChange], status: DiffStatus) -> StoredFiles {
+fn bounded_change_files(
+    changes: &[FileUpdateChange],
+    status: DiffStatus,
+    anchor_root: Option<&std::path::Path>,
+    display_root: Option<&std::path::Path>,
+) -> StoredFiles {
     let mut remaining_bytes = MAX_DIFF_UPDATE_BYTES;
     let mut remaining_line_breaks = MAX_DIFF_UPDATE_LINE_BREAKS;
     let mut files = Vec::new();
+    let mut complete_files = 0usize;
     let mut truncated = false;
     for change in changes.iter().take(MAX_DIFF_UPDATE_FILES) {
         let (diff, line_breaks, diff_truncated) =
             bounded_diff_prefix(&change.diff, remaining_bytes, remaining_line_breaks);
-        files.push(DiffFile::from_change_with_diff(change, diff, status));
+        let mut file = DiffFile::from_change_with_diff(change, diff, status);
+        resolve_file_paths(&mut file, anchor_root, display_root);
+        files.push(file);
+        if !diff_truncated {
+            complete_files += 1;
+        }
         remaining_bytes = remaining_bytes.saturating_sub(diff.len());
         remaining_line_breaks = remaining_line_breaks.saturating_sub(line_breaks);
         if diff_truncated {
@@ -241,22 +313,52 @@ fn bounded_change_files(changes: &[FileUpdateChange], status: DiffStatus) -> Sto
             break;
         }
     }
-    truncated |= files.len() < changes.len();
-    StoredFiles { truncated, files }
+    let omitted_files = files.len() < changes.len();
+    truncated |= omitted_files;
+    StoredFiles {
+        truncated,
+        omitted_files,
+        complete_files,
+        path_root: None,
+        files,
+    }
 }
 
-fn bounded_unified_diff(unified_diff: &str) -> StoredFiles {
-    let (diff, _, mut truncated) = bounded_diff_prefix(
+fn bounded_unified_diff(unified_diff: &str, display_root: Option<&DiffRoot>) -> StoredFiles {
+    let (diff, _, prefix_truncated) = bounded_diff_prefix(
         unified_diff,
         MAX_DIFF_UPDATE_BYTES,
         MAX_DIFF_UPDATE_LINE_BREAKS,
     );
     let mut files = parse_unified_diff(diff);
+    let mut complete_files = files.len().saturating_sub(usize::from(prefix_truncated));
+    let mut truncated = prefix_truncated;
+    let display_path = display_root.map(|root| root.path.as_path());
+    for file in &mut files {
+        resolve_file_paths(file, display_path, display_path);
+    }
     if files.len() > MAX_DIFF_UPDATE_FILES {
         files.truncate(MAX_DIFF_UPDATE_FILES);
+        complete_files = complete_files.min(files.len());
         truncated = true;
     }
-    StoredFiles { truncated, files }
+    StoredFiles {
+        truncated,
+        omitted_files: false,
+        complete_files,
+        path_root: display_root.cloned(),
+        files,
+    }
+}
+
+fn resolve_file_paths(
+    file: &mut DiffFile,
+    anchor_root: Option<&std::path::Path>,
+    display_root: Option<&std::path::Path>,
+) {
+    if let Some(anchor_root) = anchor_root.or(display_root) {
+        file.resolve_paths(anchor_root, display_root.unwrap_or(anchor_root));
+    }
 }
 
 fn bounded_diff_prefix(
@@ -389,22 +491,19 @@ impl DiffViewState {
     }
 
     pub(super) fn replace_files(&mut self, files: Vec<DiffFile>, retention: DiffRetention) {
-        let selected = self.selected_file().map(|file| {
-            (
-                file.old_label().map(str::to_owned),
-                file.new_label().map(str::to_owned),
-            )
-        });
+        let selected = self.selected_file().cloned();
         self.files = files;
         self.retention = retention;
-        self.selected_file = selected
-            .and_then(|selected| {
-                self.files.iter().position(|file| {
-                    file.identity() == (selected.0.as_deref(), selected.1.as_deref())
-                })
-            })
-            .unwrap_or_default();
-        self.reset_scroll();
+        let replacement = selected.as_ref().and_then(|selected| {
+            self.files
+                .iter()
+                .position(|file| file.same_identity(selected))
+                .or_else(|| self.files.iter().position(|file| file.overlaps(selected)))
+        });
+        self.selected_file = replacement.unwrap_or_default();
+        if replacement.is_none() {
+            self.reset_scroll();
+        }
     }
 
     pub(super) fn handle_key(&mut self, key: KeyEvent) -> DiffViewAction {

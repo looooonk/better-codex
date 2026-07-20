@@ -27,6 +27,7 @@ use codex_app_server_protocol::FileUpdateChange;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::McpServerStatusDetail;
+use codex_app_server_protocol::PatchApplyStatus;
 use codex_app_server_protocol::PatchChangeKind;
 use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::PluginListResponse;
@@ -35,7 +36,9 @@ use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnPlanStep;
+use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ModelPreset;
@@ -80,6 +83,7 @@ mod dashboard_view;
 mod dashboard_workspace;
 mod design;
 mod diff_horizontal_scroll;
+mod diff_metadata_view;
 mod diff_model;
 mod diff_path;
 mod diff_session;
@@ -795,6 +799,7 @@ struct ShellState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CompletedItemOrigin {
     Historical,
+    UnconfirmedHistorical,
     Live,
 }
 
@@ -880,7 +885,7 @@ impl ShellState {
             agent_activity: AgentActivityState::default(),
             agent_log: None,
             tool_output: None,
-            diff_store: DiffStore::default(),
+            diff_store: DiffStore::with_display_root(session.cwd.as_path()),
             diff_view: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
@@ -910,13 +915,34 @@ impl ShellState {
 
         self.push_system(format!("loaded {} previous turns", turns.len()));
         for turn in turns {
+            let terminal_turn_has_in_progress_file_change = turn.status != TurnStatus::InProgress
+                && turn.items.iter().any(|item| {
+                    matches!(
+                        item,
+                        ThreadItem::FileChange {
+                            status: PatchApplyStatus::InProgress,
+                            ..
+                        }
+                    )
+                });
+            if turn.items_view != TurnItemsView::Full || terminal_turn_has_in_progress_file_change {
+                self.diff_store.mark_history_truncated();
+            }
             let turn_id = turn.id;
             for item in turn.items {
-                self.ingest_completed_item_for_turn(
-                    &turn_id,
-                    item,
-                    CompletedItemOrigin::Historical,
-                );
+                let origin = if turn.status != TurnStatus::InProgress
+                    && matches!(
+                        &item,
+                        ThreadItem::FileChange {
+                            status: PatchApplyStatus::InProgress,
+                            ..
+                        }
+                    ) {
+                    CompletedItemOrigin::UnconfirmedHistorical
+                } else {
+                    CompletedItemOrigin::Historical
+                };
+                self.ingest_completed_item_for_turn(&turn_id, item, origin);
             }
             if let Some(error) = turn.error {
                 self.push_error(error.message);
@@ -930,7 +956,7 @@ impl ShellState {
         runner: &dyn crate::workspace_command::WorkspaceCommandExecutor,
     ) {
         let status = workspace::load_git_status(runner, std::path::Path::new(&self.cwd)).await;
-        self.record_workspace_git_status(status);
+        self.record_workspace_git_probe(status);
     }
 
     async fn refresh_mcp_inventory<S>(&mut self, app_server: &mut S)
@@ -1929,8 +1955,9 @@ impl ShellState {
                 changes,
                 status,
             } => {
-                self.record_file_changes(turn_id, &id, &changes, status.clone());
-                self.latest_diff = Some(diff_summary_from_changes(&changes));
+                if origin != CompletedItemOrigin::UnconfirmedHistorical {
+                    self.record_file_changes(turn_id, &id, &changes, status.clone());
+                }
                 self.push_diff_with_status_for_item(
                     id,
                     file_change_detail(&changes),
@@ -2002,7 +2029,8 @@ impl ShellState {
                     format!("{status:?}").to_lowercase(),
                 );
                 match origin {
-                    CompletedItemOrigin::Historical => {}
+                    CompletedItemOrigin::Historical
+                    | CompletedItemOrigin::UnconfirmedHistorical => {}
                     CompletedItemOrigin::Live => self.push_tool_with_status_for_item(
                         id,
                         title,
@@ -2400,7 +2428,9 @@ impl ShellState {
             agent_activity: AgentActivityState::default(),
             agent_log: None,
             tool_output: None,
-            diff_store: DiffStore::default(),
+            diff_store: DiffStore::with_display_root(std::path::Path::new(
+                "/workspace/better-codex",
+            )),
             diff_view: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
@@ -2649,7 +2679,9 @@ pub mod bench_support {
             agent_activity: AgentActivityState::default(),
             agent_log: None,
             tool_output: None,
-            diff_store: DiffStore::default(),
+            diff_store: DiffStore::with_display_root(std::path::Path::new(
+                "/workspace/better-codex",
+            )),
             diff_view: None,
             agent_history_task: None,
             active_agent_thread_ids: HashSet::new(),
@@ -2802,13 +2834,18 @@ fn file_change_summary(changes: &[FileUpdateChange]) -> String {
 fn file_change_detail(changes: &[FileUpdateChange]) -> String {
     let mut lines = vec![file_change_summary(changes)];
     for change in changes.iter().take(8) {
+        let path = diff_path::bounded_visible_path(&change.path);
         let line = match &change.kind {
-            PatchChangeKind::Add => format!("  A {}", change.path),
-            PatchChangeKind::Delete => format!("  D {}", change.path),
-            PatchChangeKind::Update { move_path: None } => format!("  M {}", change.path),
+            PatchChangeKind::Add => format!("  A {path}"),
+            PatchChangeKind::Delete => format!("  D {path}"),
+            PatchChangeKind::Update { move_path: None } => format!("  M {path}"),
             PatchChangeKind::Update {
                 move_path: Some(move_path),
-            } => format!("  R {} -> {}", change.path, move_path.display()),
+            } => {
+                let move_path = move_path.to_string_lossy();
+                let move_path = diff_path::bounded_visible_path(&move_path);
+                format!("  R {path} -> {move_path}")
+            }
         };
         lines.push(line);
     }
@@ -2820,52 +2857,31 @@ fn file_change_detail(changes: &[FileUpdateChange]) -> String {
 }
 
 fn diff_summary_from_changes(changes: &[FileUpdateChange]) -> DiffSummary {
-    let mut summary = DiffSummary {
-        files: changes.len(),
-        ..DiffSummary::default()
-    };
-    for change in changes {
-        let (additions, removals) = match &change.kind {
-            PatchChangeKind::Add => (change.diff.lines().count(), 0),
-            PatchChangeKind::Delete => (0, change.diff.lines().count()),
-            PatchChangeKind::Update { .. } => count_diff_lines(&change.diff),
-        };
-        summary.additions += additions;
-        summary.removals += removals;
-        if matches!(&change.kind, PatchChangeKind::Update { move_path: Some(_) }) {
-            summary.files += 1;
-        }
-    }
-    summary
-}
-
-fn diff_summary_from_unified_diff(diff: &str) -> DiffSummary {
-    let files = diff
-        .lines()
-        .filter(|line| line.starts_with("diff --git "))
-        .count();
-    let (additions, removals) = count_diff_lines(diff);
-    DiffSummary {
-        files,
-        additions,
-        removals,
-    }
-}
-
-fn count_diff_lines(diff: &str) -> (usize, usize) {
-    let mut additions = 0;
-    let mut removals = 0;
-    for line in diff.lines() {
-        if line.starts_with("+++") || line.starts_with("---") {
-            continue;
-        }
-        if line.starts_with('+') {
-            additions += 1;
-        } else if line.starts_with('-') {
-            removals += 1;
-        }
-    }
-    (additions, removals)
+    changes.iter().fold(
+        DiffSummary {
+            files: changes.len(),
+            ..DiffSummary::default()
+        },
+        |mut summary, change| {
+            match &change.kind {
+                PatchChangeKind::Add => summary.additions += change.diff.lines().count(),
+                PatchChangeKind::Delete => summary.removals += change.diff.lines().count(),
+                PatchChangeKind::Update { .. } => {
+                    let mut in_hunk = false;
+                    for line in change.diff.lines() {
+                        if diff_model::is_hunk_header(line) {
+                            in_hunk = true;
+                        } else if in_hunk && line.starts_with('+') {
+                            summary.additions += 1;
+                        } else if in_hunk && line.starts_with('-') {
+                            summary.removals += 1;
+                        }
+                    }
+                }
+            }
+            summary
+        },
+    )
 }
 
 fn merge_rate_limit_snapshot(

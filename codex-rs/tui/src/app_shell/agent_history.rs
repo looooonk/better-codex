@@ -17,6 +17,12 @@ impl ShellState {
         mut task: Option<AgentHistoryTask>,
     ) {
         debug_assert!(self.agent_history_task.is_none());
+        // Child hydration is bounded and omits file-change items, so it cannot reconcile the
+        // session edit history even when every child request succeeds.
+        if !threads.is_empty() || task.is_some() {
+            self.diff_store.mark_history_truncated();
+            self.refresh_open_diff_view();
+        }
         self.agent_activity.hydrate_threads(threads);
         if let Some(task) = &mut task {
             task.start();

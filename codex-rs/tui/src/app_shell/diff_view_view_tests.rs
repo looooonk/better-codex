@@ -38,6 +38,21 @@ fn renders_retained_diff_subset() {
 }
 
 #[test]
+fn renders_metadata_only_and_pure_rename_changes() {
+    let mut state = DiffViewState::new(
+        "Metadata changes",
+        /*source_item_id*/ None,
+        vec![
+            DiffFile::modified("assets/logo.bin", "", DiffStatus::Completed),
+            DiffFile::renamed("src/before.rs", "src/after.rs", "", DiffStatus::Completed),
+        ],
+    );
+    insta::assert_snapshot!("metadata_only_diff_popup", render(&state, 90, 16));
+    assert!(state.select_file(/*selected*/ 1));
+    insta::assert_snapshot!("pure_rename_diff_popup", render(&state, 90, 16));
+}
+
+#[test]
 fn horizontally_scrolled_diff_reveals_long_line_suffixes() {
     let prefix = "same-prefix-".repeat(12);
     let mut state = DiffViewState::new(

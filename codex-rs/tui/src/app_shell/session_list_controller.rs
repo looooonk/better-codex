@@ -449,7 +449,9 @@ impl ShellState {
         self.subagent_activity.clear();
         self.latest_diff = None;
         self.diff_store.clear();
-        self.record_workspace_git_status(None);
+        self.diff_store
+            .set_display_root(std::path::Path::new(&self.cwd));
+        self.reset_workspace_git_status();
         self.token_usage = TokenUsage::default();
         self.context_token_usage = TokenUsage::default();
         self.model_context_window = None;

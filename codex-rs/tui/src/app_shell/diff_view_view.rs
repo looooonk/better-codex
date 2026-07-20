@@ -2,6 +2,8 @@ use super::design::fill_rect;
 use super::design::palette;
 use super::design::pane_style;
 use super::diff_horizontal_scroll::HorizontalScroll;
+use super::diff_metadata_view::render_empty_diff;
+use super::diff_path::bounded_visible_path;
 use super::diff_path::visible_path;
 use super::diff_view::DiffCell;
 use super::diff_view::DiffFile;
@@ -159,7 +161,7 @@ fn render_files(state: &DiffViewState, area: Rect, buf: &mut Buffer) {
             path
         } else {
             match (file.old_label(), file.new_label()) {
-                (Some(old), Some(new)) if old != new => {
+                (Some(old), Some(new)) if file.kind() == DiffFileKind::Renamed && old != new => {
                     format!(
                         "{} -> {}",
                         visible_path(file_name(old)),
@@ -208,6 +210,11 @@ fn render_diff_rows(state: &DiffViewState, geometry: DiffViewGeometry, buf: &mut
         column_slice(geometry.labels, geometry.new),
         buf,
     );
+    if render_empty_diff(file, geometry.old, geometry.new, buf) {
+        state.set_scroll_max(0);
+        state.horizontal_scroll.set_max(0);
+        return;
+    }
 
     let visible = usize::from(geometry.body.height);
     state.set_scroll_max(file.rows().len().saturating_sub(visible));
@@ -255,7 +262,7 @@ fn render_diff_rows(state: &DiffViewState, geometry: DiffViewGeometry, buf: &mut
 fn render_file_label(label: Option<&str>, area: Rect, buf: &mut Buffer) {
     let line = label.map_or_else(Line::default, |label| {
         truncate_line_with_ellipsis_if_overflow(
-            Line::from(visible_path(label)).fg(palette::CYAN),
+            Line::from(bounded_visible_path(label)).fg(palette::CYAN),
             usize::from(area.width),
         )
     });

@@ -144,6 +144,8 @@ fn renders_first_stage_shell_snapshot() {
 #[tokio::test]
 async fn renders_aggregated_backend_lag_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
+    shell.workspace_command_runner = Some(Arc::new(NoopWorkspaceRunner));
+    shell.diff_store.clear();
     shell.transcript.clear();
     shell.clear_streaming_transcript();
     shell.dashboard_visible = false;
@@ -153,11 +155,52 @@ async fn renders_aggregated_backend_lag_snapshot() {
         .handle_app_server_event(&mut backend, AppServerEvent::Lagged { skipped: 42 })
         .await
         .expect("lag event should be handled");
+    assert!(shell.diff_store.session_is_truncated());
+    assert!(shell.workspace_status_refresh_due);
+    assert!(shell.has_pending_session_hydration());
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 20,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[tokio::test]
+async fn lag_keeps_post_aggregate_items_and_marks_the_history_incomplete() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.workspace_command_runner = Some(Arc::new(NoopWorkspaceRunner));
+    shell.diff_store.clear();
+    shell.diff_store.upsert_turn_diff(
+        "turn-1",
+        "diff --git a/first.txt b/first.txt\nnew file mode 100644\n--- /dev/null\n+++ b/first.txt\n@@ -0,0 +1 @@\n+first\n",
+    );
+    shell.diff_store.upsert_item(
+        "turn-1",
+        "second-item",
+        &[FileUpdateChange {
+            path: "second.txt".to_string(),
+            kind: PatchChangeKind::Add,
+            diff: "second\n".to_string(),
+        }],
+        codex_app_server_protocol::PatchApplyStatus::Completed,
+    );
+    let mut backend = RecordingBackend::default();
+
+    shell
+        .handle_app_server_event(&mut backend, AppServerEvent::Lagged { skipped: 1 })
+        .await
+        .expect("lag event should be handled");
+
+    assert_eq!(
+        shell
+            .diff_store
+            .session_files()
+            .iter()
+            .map(super::diff_view::DiffFile::display_path)
+            .collect::<Vec<_>>(),
+        vec!["first.txt", "second.txt"]
+    );
+    assert!(shell.diff_store.session_is_truncated());
 }
 
 #[test]
@@ -185,6 +228,48 @@ fn remote_thread_status_updates_the_active_shell() {
     }
 
     assert_eq!(observed, ["ready", "error", "thinking", "waiting"]);
+}
+
+#[tokio::test]
+async fn terminal_thread_status_waits_for_the_authoritative_turn_completion() {
+    for (remote_status, turn_status, expected_status) in [
+        (ThreadStatus::Idle, TurnStatus::Completed, "ready"),
+        (ThreadStatus::SystemError, TurnStatus::Failed, "error"),
+    ] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.workspace_command_runner = Some(Arc::new(NoopWorkspaceRunner));
+        shell.active_turn_id = Some("turn-1".to_string());
+        let thread_id = shell.thread_id.to_string();
+        let mut backend = RecordingBackend::default();
+
+        shell
+            .handle_app_server_event(
+                &mut backend,
+                AppServerEvent::ServerNotification(ServerNotification::ThreadStatusChanged(
+                    ThreadStatusChangedNotification {
+                        thread_id,
+                        status: remote_status,
+                    },
+                )),
+            )
+            .await
+            .expect("terminal status should be handled");
+
+        assert_eq!(shell.active_turn_id.as_deref(), Some("turn-1"));
+        assert_eq!(shell.status, expected_status);
+
+        shell
+            .handle_app_server_event(
+                &mut backend,
+                turn_completed_event(shell.thread_id, "turn-1", turn_status),
+            )
+            .await
+            .expect("turn completion should finish the active turn");
+
+        assert_eq!(shell.active_turn_id, None);
+        assert!(shell.workspace_status_refresh_due);
+        assert!(shell.has_pending_session_hydration());
+    }
 }
 
 #[tokio::test]
@@ -310,27 +395,34 @@ fn remote_close_marks_the_active_session_unavailable() {
 fn permission_profile_update_refreshes_status_dashboard_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Status;
+    let workspace_status = WorkspaceGitStatus {
+        git_root: Some(std::path::PathBuf::from("/workspace/previous")),
+        branch: Some("previous".to_string()),
+        changes: workspace::WorkspaceChangeSummary::default(),
+    };
+    shell.workspace_git_status = Some(workspace_status.clone());
+    let settings = codex_app_server_protocol::ThreadSettings {
+        cwd: test_absolute_path("workspace/locked"),
+        approval_policy: codex_app_server_protocol::AskForApproval::Never,
+        approvals_reviewer: codex_app_server_protocol::ApprovalsReviewer::User,
+        sandbox_policy: codex_app_server_protocol::SandboxPolicy::DangerFullAccess,
+        active_permission_profile: Some(codex_app_server_protocol::ActivePermissionProfile::new(
+            ":full",
+        )),
+        model: "gpt-5.4".to_string(),
+        model_provider: "openai".to_string(),
+        service_tier: None,
+        effort: None,
+        summary: None,
+        collaboration_mode: *collaboration_mode_fixture("gpt-5.4", None),
+        multi_agent_mode: Default::default(),
+        personality: None,
+    };
 
     shell.handle_notification(ServerNotification::ThreadSettingsUpdated(
         ThreadSettingsUpdatedNotification {
             thread_id: shell.thread_id.to_string(),
-            thread_settings: codex_app_server_protocol::ThreadSettings {
-                cwd: test_absolute_path("workspace/locked"),
-                approval_policy: codex_app_server_protocol::AskForApproval::Never,
-                approvals_reviewer: codex_app_server_protocol::ApprovalsReviewer::User,
-                sandbox_policy: codex_app_server_protocol::SandboxPolicy::DangerFullAccess,
-                active_permission_profile: Some(
-                    codex_app_server_protocol::ActivePermissionProfile::new(":full"),
-                ),
-                model: "gpt-5.4".to_string(),
-                model_provider: "openai".to_string(),
-                service_tier: None,
-                effort: None,
-                summary: None,
-                collaboration_mode: *collaboration_mode_fixture("gpt-5.4", None),
-                multi_agent_mode: Default::default(),
-                personality: None,
-            },
+            thread_settings: settings.clone(),
         },
     ));
 
@@ -343,12 +435,22 @@ fn permission_profile_update_refreshes_status_dashboard_snapshot() {
             )),
         )
     );
+    assert_eq!(shell.workspace_git_status, None);
     insta::assert_snapshot!(render_shell(
         &shell,
         Rect::new(
             /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
         ),
     ));
+
+    shell.workspace_git_status = Some(workspace_status.clone());
+    shell.handle_notification(ServerNotification::ThreadSettingsUpdated(
+        ThreadSettingsUpdatedNotification {
+            thread_id: shell.thread_id.to_string(),
+            thread_settings: settings,
+        },
+    ));
+    assert_eq!(shell.workspace_git_status, Some(workspace_status));
 }
 
 #[tokio::test]
@@ -1020,6 +1122,7 @@ fn renders_workspace_git_status_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Status;
     shell.workspace_git_status = Some(WorkspaceGitStatus {
+        git_root: None,
         branch: Some("feature/app-shell-dashboard".to_string()),
         changes: workspace::WorkspaceChangeSummary {
             added: 2,
@@ -1047,6 +1150,7 @@ fn renders_status_route_snapshot() {
         "Complete the dashboard consolidation",
     ));
     shell.workspace_git_status = Some(WorkspaceGitStatus {
+        git_root: None,
         branch: Some("feature/app-shell-dashboard".to_string()),
         changes: workspace::WorkspaceChangeSummary {
             added: 2,
@@ -7581,7 +7685,10 @@ async fn workspace_refresh_waits_until_active_turn_finishes() {
     assert!(!shell.workspace_status_refresh_due);
     assert_eq!(
         shell.workspace_git_status,
-        Some(WorkspaceGitStatus::default())
+        Some(WorkspaceGitStatus {
+            git_root: Some(PathBuf::from("/workspace/better-codex")),
+            ..WorkspaceGitStatus::default()
+        })
     );
 }
 
@@ -7596,19 +7703,268 @@ fn turn_diff_updates_dashboard_without_conversation_diff_box() {
         TurnDiffUpdatedNotification {
             thread_id,
             turn_id: "turn-1".to_string(),
-            diff: "+added\n-removed\n+added again\n".to_string(),
+            diff: "diff --git a/src/lib.rs b/src/lib.rs\n--- a/src/lib.rs\n+++ b/src/lib.rs\n@@ -1 +1,2 @@\n-removed\n+added\n+added again\n".to_string(),
         },
     ));
 
     assert_eq!(
-        shell.latest_diff,
-        Some(DiffSummary {
-            files: 0,
+        shell.diff_store.session_stats(),
+        diff_view::DiffStats {
+            files: 1,
             additions: 2,
             removals: 1,
-        })
+        }
     );
     assert_eq!(shell.transcript, VecDeque::new());
+}
+
+#[test]
+fn active_child_file_change_notifications_invalidate_workspace_status() {
+    let mut shell = ShellState::snapshot_fixture();
+    let child_thread_id = "active-child".to_string();
+    shell
+        .active_agent_thread_ids
+        .insert(child_thread_id.clone());
+    shell.workspace_status_refresh_due = false;
+    let changes = vec![FileUpdateChange {
+        path: "src/child.rs".to_string(),
+        kind: PatchChangeKind::Update { move_path: None },
+        diff: "@@ -1 +1 @@\n-before\n+after\n".to_string(),
+    }];
+
+    shell.handle_notification(ServerNotification::FileChangePatchUpdated(
+        FileChangePatchUpdatedNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "child-file".to_string(),
+            changes: changes.clone(),
+        },
+    ));
+
+    assert!(shell.workspace_status_refresh_due);
+    assert!(!shell.diff_store.has_session_edits());
+    assert!(shell.diff_store.session_is_truncated());
+
+    shell.workspace_status_refresh_due = false;
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::FileChange {
+                id: "child-file".to_string(),
+                changes,
+                status: codex_app_server_protocol::PatchApplyStatus::Completed,
+            },
+        },
+    ));
+
+    assert!(shell.workspace_status_refresh_due);
+    assert!(!shell.diff_store.has_session_edits());
+    assert!(shell.diff_store.session_is_truncated());
+
+    shell.diff_store.clear();
+    shell.workspace_status_refresh_due = false;
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            completed_at_ms: 2,
+            item: command_execution_item(
+                "child-command",
+                CommandExecutionStatus::Completed,
+                Some(0),
+            ),
+        },
+    ));
+
+    assert!(shell.workspace_status_refresh_due);
+    assert!(!shell.diff_store.has_session_edits());
+    assert!(!shell.diff_store.session_is_truncated());
+
+    shell.workspace_status_refresh_due = false;
+    shell.handle_notification(ServerNotification::TurnDiffUpdated(
+        TurnDiffUpdatedNotification {
+            thread_id: child_thread_id,
+            turn_id: "child-turn".to_string(),
+            diff: "diff --git a/src/child.rs b/src/child.rs\n".to_string(),
+        },
+    ));
+
+    assert!(shell.workspace_status_refresh_due);
+    assert!(!shell.diff_store.has_session_edits());
+    assert!(shell.diff_store.session_is_truncated());
+}
+
+#[test]
+fn absolute_item_and_relative_turn_diff_render_as_one_session_edit() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.diff_store.clear();
+    shell
+        .diff_store
+        .set_display_root(std::path::Path::new("/workspace/project/sub"));
+    shell.record_file_changes(
+        "turn-1",
+        "file-1",
+        &[FileUpdateChange {
+            path: "/workspace/project/sub/src/lib.rs".to_string(),
+            kind: PatchChangeKind::Update { move_path: None },
+            diff: "@@ -1 +1 @@\n-before\n+item\n".to_string(),
+        }],
+        codex_app_server_protocol::PatchApplyStatus::Completed,
+    );
+    shell.record_turn_diff(
+        "turn-1",
+        "diff --git a/sub/src/lib.rs b/sub/src/lib.rs\n--- a/sub/src/lib.rs\n+++ b/sub/src/lib.rs\n@@ -1 +1 @@\n-before\n+aggregate\n",
+    );
+    shell.record_workspace_git_probe(workspace::WorkspaceGitStatusProbe::Found(
+        WorkspaceGitStatus {
+            git_root: Some(std::path::PathBuf::from("/workspace/project")),
+            branch: Some("main".to_string()),
+            changes: workspace::WorkspaceChangeSummary::default(),
+        },
+    ));
+
+    assert_eq!(
+        shell
+            .diff_store
+            .session_files()
+            .iter()
+            .map(diff_view::DiffFile::display_path)
+            .collect::<Vec<_>>(),
+        vec!["sub/src/lib.rs"]
+    );
+    assert_eq!(
+        shell.diff_store.session_stats(),
+        diff_view::DiffStats {
+            files: 1,
+            additions: 1,
+            removals: 1,
+        }
+    );
+    assert!(shell.open_session_diff_view());
+    assert_eq!(
+        shell
+            .diff_view
+            .as_ref()
+            .and_then(diff_view::DiffViewState::selected_file)
+            .map(diff_view::DiffFile::display_path),
+        Some("sub/src/lib.rs".to_string())
+    );
+    shell.close_diff_view();
+    shell.dashboard_route = DashboardRoute::Status;
+    let rendered = render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        ),
+    );
+    assert!(rendered.contains("1 files +1 -1"));
+    assert!(!rendered.contains("2 files"));
+}
+
+#[test]
+fn transient_workspace_probe_failure_preserves_the_confirmed_git_root() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.diff_store.clear();
+    shell
+        .diff_store
+        .set_display_root(std::path::Path::new("/workspace/project/sub"));
+    let status = WorkspaceGitStatus {
+        git_root: Some(std::path::PathBuf::from("/workspace/project")),
+        branch: Some("main".to_string()),
+        changes: workspace::WorkspaceChangeSummary::default(),
+    };
+    shell.record_workspace_git_probe(workspace::WorkspaceGitStatusProbe::Found(status));
+    shell.record_workspace_git_probe(workspace::WorkspaceGitStatusProbe::Unavailable);
+    shell.record_file_changes(
+        "turn-1",
+        "file-1",
+        &[FileUpdateChange {
+            path: "/workspace/project/sub/src/lib.rs".to_string(),
+            kind: PatchChangeKind::Update { move_path: None },
+            diff: "@@ -1 +1 @@\n-before\n+middle\n".to_string(),
+        }],
+        codex_app_server_protocol::PatchApplyStatus::Completed,
+    );
+    shell.record_turn_diff(
+        "turn-2",
+        "diff --git a/sub/src/lib.rs b/sub/src/lib.rs\n--- a/sub/src/lib.rs\n+++ b/sub/src/lib.rs\n@@ -1 +1 @@\n-middle\n+after\n",
+    );
+
+    assert_eq!(shell.workspace_git_status, None);
+    assert_eq!(
+        shell
+            .diff_store
+            .session_files()
+            .iter()
+            .map(diff_view::DiffFile::display_path)
+            .collect::<Vec<_>>(),
+        vec!["sub/src/lib.rs"]
+    );
+    assert_eq!(
+        shell.diff_store.session_stats(),
+        diff_view::DiffStats {
+            files: 1,
+            additions: 1,
+            removals: 1,
+        }
+    );
+}
+
+#[test]
+fn truncated_session_edits_are_labeled_as_a_retained_subset_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.diff_store.clear();
+    shell.record_turn_diff(
+        "turn-1",
+        "diff --git a/sparse.txt b/sparse.txt\n--- a/sparse.txt\n+++ b/sparse.txt\n@@ -10000 +10000 @@\n-original\n+middle\n",
+    );
+    shell.record_turn_diff(
+        "turn-2",
+        "diff --git a/sparse.txt b/sparse.txt\n--- a/sparse.txt\n+++ b/sparse.txt\n@@ -1 +1 @@\n-top\n+new top\n",
+    );
+    shell.dashboard_route = DashboardRoute::Status;
+
+    let rendered = render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        ),
+    );
+    assert!(shell.diff_store.session_is_truncated());
+    assert!(rendered.contains("retained subset; totals may be incomplete"));
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
+fn failed_file_change_without_an_aggregate_marks_edits_incomplete() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.dashboard_route = DashboardRoute::Status;
+    shell.record_file_changes(
+        "turn-1",
+        "file-1",
+        &[FileUpdateChange {
+            path: "src/lib.rs".to_string(),
+            kind: PatchChangeKind::Add,
+            diff: "never applied\n".to_string(),
+        }],
+        codex_app_server_protocol::PatchApplyStatus::Failed,
+    );
+
+    let rendered = render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        ),
+    );
+    assert!(rendered.contains("retained edit history is incomplete"));
+    assert!(!rendered.contains("3 files +128 -24"));
+    assert!(!shell.open_session_diff_view());
 }
 
 #[test]
@@ -7619,7 +7975,7 @@ fn file_change_patch_updates_one_diff_box_per_item() {
     shell.tool_activity.clear();
     let thread_id = shell.thread_id.to_string();
 
-    for diff in ["+first\n", "+second\n"] {
+    for diff in ["@@ -0,0 +1 @@\n+first\n", "@@ -0,0 +1 @@\n+second\n"] {
         shell.handle_notification(ServerNotification::FileChangePatchUpdated(
             FileChangePatchUpdatedNotification {
                 thread_id: thread_id.clone(),
@@ -7765,7 +8121,7 @@ async fn clicking_edited_card_opens_and_refreshes_the_diff_popup() {
         .diff_view
         .as_ref()
         .expect("live diff popup should remain open");
-    assert_eq!(open.scroll(), 0);
+    assert_eq!(open.scroll(), 4);
     assert!(open.selected_file().is_some_and(|file| {
         file.rows()
             .iter()
@@ -7983,6 +8339,71 @@ fn historical_edits_hydrate_and_session_switch_clears_them() {
 }
 
 #[test]
+fn partial_historical_turns_mark_session_edits_incomplete() {
+    for items_view in [TurnItemsView::Summary, TurnItemsView::NotLoaded] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.diff_store.clear();
+        let mut turn = test_turn("partial-history", TurnStatus::Completed);
+        turn.items_view = items_view;
+
+        shell.ingest_turn_history(vec![turn]);
+
+        assert!(
+            shell.diff_store.session_is_truncated(),
+            "{items_view:?} history must not be reported as complete"
+        );
+    }
+}
+
+#[test]
+fn terminal_history_with_an_in_progress_file_change_is_incomplete() {
+    let state = [TurnStatus::Completed, TurnStatus::InProgress].map(|turn_status| {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.diff_store.clear();
+        let mut turn = test_turn("persisted-patch", turn_status);
+        turn.items.push(ThreadItem::FileChange {
+            id: "unfinished-file".to_string(),
+            changes: vec![FileUpdateChange {
+                path: "src/history.rs".to_string(),
+                kind: PatchChangeKind::Add,
+                diff: "unfinished\n".to_string(),
+            }],
+            status: codex_app_server_protocol::PatchApplyStatus::InProgress,
+        });
+
+        shell.ingest_turn_history(vec![turn]);
+        (
+            shell.diff_store.session_is_truncated(),
+            shell.diff_store.has_session_edits(),
+        )
+    });
+
+    assert_eq!(state, [(true, false), (false, true)]);
+}
+
+#[test]
+fn metadata_only_child_history_marks_session_edits_incomplete() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.diff_store.clear();
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000423");
+    let child = thread_fixture(child_id, /*name*/ None, "child edit history");
+
+    shell.install_agent_history(vec![child], /*task*/ None);
+
+    assert!(!shell.diff_store.has_session_edits());
+    assert!(shell.diff_store.session_is_truncated());
+    shell.dashboard_route = DashboardRoute::Status;
+    let rendered = render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        ),
+    );
+    assert!(rendered.contains("retained edit history is incomplete"));
+    insta::assert_snapshot!("historical_child_edits_are_labeled_incomplete", rendered);
+}
+
+#[test]
 fn transcript_newlines_render_as_single_row_breaks() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -8026,6 +8447,7 @@ fn dashboard_uses_available_width_for_long_values() {
     shell.model = "gpt-5-codex-dashboard-detail".to_string();
     shell.cwd = "/workspace/better-codex/codex-rs/tui".to_string();
     shell.workspace_git_status = Some(WorkspaceGitStatus {
+        git_root: None,
         branch: Some("feature/dashboard-width-budget".to_string()),
         changes: workspace::WorkspaceChangeSummary::default(),
     });
@@ -8065,6 +8487,7 @@ fn dashboard_compacts_token_counts_and_groups_other_large_numbers() {
         removals: 10_011,
     });
     shell.workspace_git_status = Some(WorkspaceGitStatus {
+        git_root: None,
         branch: Some("numbers".to_string()),
         changes: workspace::WorkspaceChangeSummary {
             added: 1_000,
@@ -10518,30 +10941,28 @@ fn buffer_contents(buf: &Buffer, area: Rect) -> String {
 }
 
 #[test]
-fn summarizes_unified_diff_for_dashboard() {
-    let diff = "\
-diff --git a/src/a.rs b/src/a.rs
---- a/src/a.rs
-+++ b/src/a.rs
-@@ -1,2 +1,3 @@
--old
-+new
-+extra
- unchanged
-diff --git a/src/b.rs b/src/b.rs
---- a/src/b.rs
-+++ b/src/b.rs
-@@ -1 +1 @@
--left
-+right
-";
+fn summarizes_file_changes_without_double_counting_renames_or_literal_markers() {
+    let changes = vec![
+        FileUpdateChange {
+            path: "src/new.rs".to_string(),
+            kind: PatchChangeKind::Add,
+            diff: "+++literal\nsecond\n".to_string(),
+        },
+        FileUpdateChange {
+            path: "src/old.rs".to_string(),
+            kind: PatchChangeKind::Update {
+                move_path: Some(PathBuf::from("src/renamed.rs")),
+            },
+            diff: "@@ -1 +1 @@\n---literal\n+++literal\n".to_string(),
+        },
+    ];
 
     assert_eq!(
-        diff_summary_from_unified_diff(diff),
+        diff_summary_from_changes(&changes),
         DiffSummary {
             files: 2,
             additions: 3,
-            removals: 2,
+            removals: 1,
         }
     );
 }
@@ -11003,7 +11424,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
     let runner = Arc::new(RecordingWorkspaceRunner::new(
         crate::workspace_command::WorkspaceCommandOutput {
             exit_code: 0,
-            stdout: "## hydrated\n M src/lib.rs\n".to_string(),
+            stdout: "@@better-codex-git-root /workspace/better-codex\n## hydrated\n@@better-codex-git-counts 0 1 0 0 0 0\n".to_string(),
             stderr: String::new(),
         },
     ));
@@ -11088,6 +11509,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
     assert_eq!(
         shell.workspace_git_status,
         Some(WorkspaceGitStatus {
+            git_root: Some(PathBuf::from("/workspace/better-codex")),
             branch: Some("hydrated".to_string()),
             changes: workspace::WorkspaceChangeSummary {
                 modified: 1,
@@ -11104,19 +11526,25 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
         vec![
             (
                 vec![
-                    "git".to_string(),
-                    "status".to_string(),
-                    "--porcelain=v1".to_string(),
-                    "--branch".to_string(),
+                    "sh".to_string(),
+                    "-c".to_string(),
+                    workspace::GIT_STATUS_SCRIPT.to_string(),
+                    workspace::GIT_STATUS_ARG0.to_string(),
+                    "/workspace/better-codex".to_string(),
+                    "/workspace".to_string(),
+                    "/".to_string(),
                 ],
                 Some(PathBuf::from("/workspace/better-codex")),
             ),
             (
                 vec![
-                    "git".to_string(),
-                    "status".to_string(),
-                    "--porcelain=v1".to_string(),
-                    "--branch".to_string(),
+                    "sh".to_string(),
+                    "-c".to_string(),
+                    workspace::GIT_STATUS_SCRIPT.to_string(),
+                    workspace::GIT_STATUS_ARG0.to_string(),
+                    "/workspace/better-codex".to_string(),
+                    "/workspace".to_string(),
+                    "/".to_string(),
                 ],
                 Some(PathBuf::from("/workspace/better-codex")),
             ),
@@ -11135,7 +11563,7 @@ async fn session_switch_hydration_is_nonblocking_and_preserves_newer_state() {
     let (runner, gate) =
         RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
             exit_code: 0,
-            stdout: "## stale\n M stale.rs\n".to_string(),
+            stdout: "@@better-codex-git-root /workspace/better-codex\n## stale\n@@better-codex-git-counts 0 1 0 0 0 0\n".to_string(),
             stderr: String::new(),
         });
     shell.workspace_command_runner = Some(Arc::new(runner));
@@ -11190,13 +11618,14 @@ async fn session_switch_hydration_is_nonblocking_and_preserves_newer_state() {
     let fresh_runner =
         RecordingWorkspaceRunner::new(crate::workspace_command::WorkspaceCommandOutput {
             exit_code: 0,
-            stdout: "## fresh\n?? fresh.rs\n".to_string(),
+            stdout: "@@better-codex-git-root /workspace/better-codex\n## fresh\n@@better-codex-git-counts 0 0 0 0 0 1\n".to_string(),
             stderr: String::new(),
         });
     shell.refresh_workspace_status(&fresh_runner).await;
     assert_eq!(
         shell.workspace_git_status,
         Some(WorkspaceGitStatus {
+            git_root: Some(PathBuf::from("/workspace/better-codex")),
             branch: Some("fresh".to_string()),
             changes: workspace::WorkspaceChangeSummary {
                 untracked: 1,
@@ -11214,7 +11643,7 @@ async fn initial_hydration_applies_fast_lookups_while_workspace_is_still_loading
     let (runner, gate) =
         RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
             exit_code: 0,
-            stdout: "## startup\n".to_string(),
+            stdout: "@@better-codex-git-root /workspace/better-codex\n## startup\n@@better-codex-git-counts 0 0 0 0 0 0\n".to_string(),
             stderr: String::new(),
         });
     shell.workspace_command_runner = Some(Arc::new(runner));
@@ -11280,6 +11709,7 @@ async fn initial_hydration_applies_fast_lookups_while_workspace_is_still_loading
     assert_eq!(
         shell.workspace_git_status,
         Some(WorkspaceGitStatus {
+            git_root: Some(PathBuf::from("/workspace/better-codex")),
             branch: Some("startup".to_string()),
             changes: workspace::WorkspaceChangeSummary::default(),
         })
@@ -11604,7 +12034,7 @@ async fn session_hydration_times_out_stalled_workspace_lookup() {
     let (runner, _gate) =
         RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
             exit_code: 0,
-            stdout: "## never\n".to_string(),
+            stdout: "@@better-codex-git-root /workspace/better-codex\n## never\n@@better-codex-git-counts 0 0 0 0 0 0\n".to_string(),
             stderr: String::new(),
         });
     shell.workspace_command_runner = Some(Arc::new(runner));
@@ -11838,6 +12268,7 @@ async fn replacing_session_clears_session_bound_surfaces() {
         status: "running".to_string(),
     });
     shell.workspace_git_status = Some(WorkspaceGitStatus {
+        git_root: None,
         branch: Some("old-branch".to_string()),
         changes: workspace::WorkspaceChangeSummary {
             modified: 1,
@@ -14194,7 +14625,7 @@ impl crate::workspace_command::WorkspaceCommandExecutor for NoopWorkspaceRunner 
         Box::pin(async {
             Ok(crate::workspace_command::WorkspaceCommandOutput {
                 exit_code: 0,
-                stdout: String::new(),
+                stdout: "@@better-codex-git-root /workspace/better-codex\n@@better-codex-git-counts 0 0 0 0 0 0\n".to_string(),
                 stderr: String::new(),
             })
         })

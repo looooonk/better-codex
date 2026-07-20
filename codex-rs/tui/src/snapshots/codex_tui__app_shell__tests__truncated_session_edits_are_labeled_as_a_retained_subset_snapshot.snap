@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
+ ▎ YOU  Create a divergent standalone TUI.        │▎━━━━━━─────────────────────────────────────────
+                                                  │▎› Model: gpt-5-codex
+ ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
+          by app-server turns.                    │▎  Service tier: default
+ ▎ PLAN  1. Build shell                           │
+         2. Wire transcript                       │▎◆ PLAN
+         3. Render dashboard                      │▎Build the standalone shell in slices.
+                                                  │▎x Shell frame
+ ▌ tool exec just test -p codex-tui               │▎> Transcript model
+                                                  │▎- Approvals
+ ▌ edited 3 files +128 -24                        │
+                                                  │▎◆ TOOLS
+ ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
+          surface.                                │
+                                                  │▎◆ EDITS
+                                                  │▎1 files +1 -1
+╭────────────────────────────────────────────────╮│▎retained subset; totals may be incomplete
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││▎◆ WORKSPACE
+│                                                ││▎cwd /workspace/better-codex
+│                                                ││▎profile managed
+╰────────────────────────────────────────────────╯│

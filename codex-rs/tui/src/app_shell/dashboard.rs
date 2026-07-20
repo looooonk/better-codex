@@ -251,16 +251,29 @@ fn dashboard_panel(
         }
         DashboardPanelKind::Edits => {
             let session = shell.diff_store.session_stats();
-            let summary = (session.files > 0)
-                .then_some((session.files, session.additions, session.removals))
-                .or_else(|| {
-                    shell
-                        .latest_diff
-                        .as_ref()
-                        .map(|diff| (diff.files, diff.additions, diff.removals))
-                });
-            let lines = summary.map_or_else(
-                || vec![Line::from("no changes".dim())],
+            let has_recorded_history = shell.diff_store.has_recorded_history();
+            let truncated = shell.diff_store.session_is_truncated();
+            let summary = if has_recorded_history || truncated {
+                (session.files > 0).then_some((session.files, session.additions, session.removals))
+            } else {
+                // Snapshot and benchmark fixtures can provide a summary without retained rows.
+                // Real edit notifications always create DiffStore history first.
+                shell
+                    .latest_diff
+                    .as_ref()
+                    .map(|diff| (diff.files, diff.additions, diff.removals))
+            };
+            let mut lines = summary.map_or_else(
+                || {
+                    vec![Line::from(
+                        if truncated {
+                            "retained edit history is incomplete"
+                        } else {
+                            "no changes"
+                        }
+                        .dim(),
+                    )]
+                },
                 |(files, additions, removals)| {
                     vec![Line::from(diff_stat_spans(format!(
                         "{} files +{} -{}",
@@ -270,6 +283,11 @@ fn dashboard_panel(
                     )))]
                 },
             );
+            if truncated && summary.is_some() {
+                lines.push(Line::from(
+                    "retained subset; totals may be incomplete".dim(),
+                ));
+            }
             Some(DashboardPanel::new("Edits", lines))
         }
         DashboardPanelKind::Goal => shell.active_goal.as_ref().map(|goal| {

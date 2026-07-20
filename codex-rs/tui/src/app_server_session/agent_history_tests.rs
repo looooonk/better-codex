@@ -48,6 +48,18 @@ fn referenced_threads_are_deduplicated_across_agent_items() {
 }
 
 #[test]
+fn agent_free_history_has_no_hydration_candidates() {
+    let turns = vec![turn(vec![ThreadItem::AgentMessage {
+        id: "message".to_string(),
+        text: "no delegated work".to_string(),
+        phase: None,
+        memory_citation: None,
+    }])];
+
+    assert_eq!(referenced_agent_thread_ids(&turns), Vec::<String>::new());
+}
+
+#[test]
 fn pending_thread_queue_prioritizes_recent_agents_under_the_candidate_cap() {
     let root = "agent-149".to_string();
     let turns = vec![turn(
