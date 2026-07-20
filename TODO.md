@@ -193,7 +193,7 @@ improvements that do not redefine Codex behavior.
 
 ## Sessions, app-server, and persistence
 
-- [ ] **P2 · CHANGE — Port upstream raw-response completion events.** Preserve the
+- [x] **P2 · CHANGE — Port upstream raw-response completion events.** Preserve the
   response ID and token usage from every completed model response and expose the
   upstream `RawResponseCompleted` event so malformed generations can be traced.
 - [ ] **P1 · CHANGE — Port paginated rollout and history infrastructure.** Add bounded

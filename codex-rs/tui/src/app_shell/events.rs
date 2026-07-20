@@ -472,6 +472,7 @@ impl ShellState {
             | ServerNotification::ItemGuardianApprovalReviewStarted(_)
             | ServerNotification::ItemGuardianApprovalReviewCompleted(_)
             | ServerNotification::RawResponseItemCompleted(_)
+            | ServerNotification::RawResponseCompleted(_)
             | ServerNotification::TerminalInteraction(_)
             | ServerNotification::McpServerOauthLoginCompleted(_)
             | ServerNotification::McpServerStatusUpdated(_)
