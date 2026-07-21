@@ -7,15 +7,15 @@ expression: rendered
 ──────────────────────────────────────────────────────────────────────────────
                             │
  ◆ CONVERSATION             │   Status   │  Agents   │  Sessions   │  Help
- ▎ YOU  Create a divergent s│⌘←→⌫ line · ⌥/^ word   │ ^N new · Sess ↵ focus
-                            │S/A↵ newline · Fn nav/⌫│ r/f resume/fork
- ▎ CODEX  Started a fullscre│↵ send  ^C/Esc×2 exit  │ a/u/v/d arc/show/del
- ▎ PLAN  1. Build shell     │Alt+↑/^O select/copy   │ n rename  / search
-         2. Wire transcript │Alt+M/E model/effort   │ Agent ↵ focus/log · j/k
-         3. Render dashboard│^1 Status · ^2 Agents  │ Tab/j/k nav · ↵ apply
-                            │^3 Sessions · ^4 Help  │ Esc×2 exit · ^D hide
- ▌ tool exec just test -p co│
-                            │
+ ▎ YOU  Create a divergent s│◆ COMPOSER             │ ◆ DASHBOARD
+                            │ ⌘←→⌫/⌥^  Line · word  │  ^1–4/Tab  Switch/page
+ ▎ CODEX  Started a fullscre│ S/A↵/Fn  Newline/nav  │ ◆ AGENTS
+ ▎ PLAN  1. Build shell     │ ↵        Send         │  ↵/jk     Focus/log
+         2. Wire transcript │ Alt+↑/^O  Select/copy │ ◆ SESSIONS
+         3. Render dashboard│ Alt+M/E  Model/effort │  ^N/↵     New/focus
+                            │◆ APP                  │  r/f      Resume/fork
+ ▌ tool exec just test -p co│ ^C/Esc×2  Exit        │  a/u/v/d  Arc/view/del
+                            │ ^D       Hide dash    │  n · /    Name/search
  ▌ edited 3 files +128 -24  │
                             │
  ▎ CODEX  The new shell owns│

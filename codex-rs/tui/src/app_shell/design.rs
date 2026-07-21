@@ -3,7 +3,6 @@ use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui::style::Style;
 use ratatui::style::Stylize;
-use ratatui::text::Line;
 use ratatui::text::Span;
 
 #[allow(
@@ -110,10 +109,6 @@ pub(super) fn tab_span(label: String, active: bool) -> Span<'static> {
 
 pub(super) fn badge_span(label: impl Into<String>, tone: Tone) -> Span<'static> {
     tone_span(label.into(), tone).bold()
-}
-
-pub(super) fn key_hint_line(text: impl Into<String>) -> Line<'static> {
-    Line::from(tone_span(text.into(), Tone::Dim))
 }
 
 pub(super) fn tone_span(text: String, tone: Tone) -> Span<'static> {

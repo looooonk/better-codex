@@ -5,22 +5,22 @@ expression: "render_shell(&shell, area)"
                                                                       │
   Dashboard  ◆ BC   gpt-5-codex ▾   default ▾   default ▾  ◐ thinking │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────────────────────────│
-                                                                      │⌘←→⌫ line · ⌥/^ word   │ ^N new · Sess ↵ focus
- ◆ CONVERSATION                                                       │S/A↵ newline · Fn nav/⌫│ r/f resume/fork
- ▎ SYSTEM  Better Codex app shell                                     │↵ steer · Tab queue    │ a/u/v/d arc/show/del
- ▎ YOU  Create a divergent standalone TUI.                            │Alt+↑/↓ edit · ^C stop │ n rename  / search
-                                                                      │Alt+M/E model/effort   │ Agent ↵ focus/log · j/k
- ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │^1 Status · ^2 Agents  │ Tab/j/k nav · ↵ apply
- ▎ PLAN  1. Build shell                                               │^3 Sessions · ^4 Help  │ Esc×2 exit · ^D hide
-         2. Wire transcript                                           │
-         3. Render dashboard                                          │▎◆ APPROVALS
+                                                                      │◆ COMPOSER             │ ◆ DASHBOARD
+ ◆ CONVERSATION                                                       │ ⌘←→⌫/⌥^  Line · word  │  ^1–4/Tab  Switch/page
+ ▎ SYSTEM  Better Codex app shell                                     │ S/A↵/Fn  Newline/nav  │ ◆ AGENTS
+ ▎ YOU  Create a divergent standalone TUI.                            │ ↵/Tab    Steer/queue  │  ↵/jk     Focus/log
+                                                                      │ Alt+↑↓/^O  Edit/copy  │ ◆ SESSIONS
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │ Alt+M/E  Model/effort │  ^N/↵     New/focus
+ ▎ PLAN  1. Build shell                                               │◆ APP                  │  r/f      Resume/fork
+         2. Wire transcript                                           │ ^C/Esc×2  Stop/exit   │  a/u/v/d  Arc/view/del
+         3. Render dashboard                                          │ ^D       Hide dash    │  n · /    Name/search
+                                                                      │
+ ▌ tool exec just test -p codex-tui                                   │▎◆ APPROVALS
                                                                       │▎approval Run command: cargo test -p codex-tui
- ▌ tool exec just test -p codex-tui                                   │▎input Tool input: tool-input-1
-                                                                      │
- ▌ edited 3 files +128 -24                                            │▎◆ BACKGROUND
- ▎ PLAN  1. Route activity into dashboard panels                      │▎workspace refresh queued
-                                                                      │
- ▎ CODEX  The new shell owns the fullscreen surface.                  │
+ ▌ edited 3 files +128 -24                                            │▎input Tool input: tool-input-1
+ ▎ PLAN  1. Route activity into dashboard panels                      │
+                                                                      │▎◆ BACKGROUND
+ ▎ CODEX  The new shell owns the fullscreen surface.                  │▎workspace refresh queued
                                                                       │
                                                                       │
                                                                       │

@@ -51,8 +51,20 @@ struct DashboardView {
 
 impl DashboardView {
     fn new(shell: &ShellState, placement: DashboardPlacement) -> Self {
-        let content = pane_content_rect(placement.area());
+        let area = placement.area();
+        let mut content = pane_content_rect(area);
         let panels = dashboard_panels(shell, usize::from(content.width));
+        if shell.dashboard_route == DashboardRoute::Help {
+            let help_height = panels
+                .iter()
+                .take(2)
+                .map(DashboardPanel::height)
+                .fold(0_u16, u16::saturating_add);
+            if content.height < help_height && help_height <= area.height {
+                content.y = area.y;
+                content.height = area.height;
+            }
+        }
         let navigation_height = panels
             .first()
             .map(DashboardPanel::height)

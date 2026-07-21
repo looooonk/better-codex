@@ -5,15 +5,15 @@ expression: "render_shell(&shell, area)"
                                                   │
   Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│
-                                                  │⌘←→⌫ line · ⌥/^ word   │ ^N new · Sess ↵ focus
- ◆ CONVERSATION                                   │S/A↵ newline · Fn nav/⌫│ r/f resume/fork
- ▎ SYSTEM  Better Codex app shell                 │↵ steer · Tab queue    │ a/u/v/d arc/show/del
- ▎ YOU  Create a divergent standalone TUI.        │Alt+↑/↓ edit · ^C stop │ n rename  / search
-                                                  │Alt+M/E model/effort   │ Agent ↵ focus/log · j/k
- ▎ CODEX  Started a fullscreen app shell backed   │^1 Status · ^2 Agents  │ Tab/j/k nav · ↵ apply
-          by app-server turns.                    │^3 Sessions · ^4 Help  │ Esc×2 exit · ^D hide
- ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │
+                                                  │◆ COMPOSER             │ ◆ DASHBOARD
+ ◆ CONVERSATION                                   │ ⌘←→⌫/⌥^  Line · word  │  ^1–4/Tab  Switch/page
+ ▎ SYSTEM  Better Codex app shell                 │ S/A↵/Fn  Newline/nav  │ ◆ AGENTS
+ ▎ YOU  Create a divergent standalone TUI.        │ ↵/Tab    Steer/queue  │  ↵/jk     Focus/log
+                                                  │ Alt+↑↓/^O  Edit/copy  │ ◆ SESSIONS
+ ▎ CODEX  Started a fullscreen app shell backed   │ Alt+M/E  Model/effort │  ^N/↵     New/focus
+          by app-server turns.                    │◆ APP                  │  r/f      Resume/fork
+ ▎ PLAN  1. Build shell                           │ ^C/Esc×2  Stop/exit   │  a/u/v/d  Arc/view/del
+         2. Wire transcript                       │ ^D       Hide dash    │  n · /    Name/search
          3. Render dashboard                      │
                                                   │
  ▌ tool exec just test -p codex-tui               │

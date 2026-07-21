@@ -2,12 +2,15 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered(80)
 ---
-Cmd arrows/⌫ line; Opt/Ctrl word       │ Ctrl+N new, mouse click rows
-Shift/Alt+Enter newline; Fn nav/⌫      │ Sessions: Enter focus, j/k move
-Enter send                             │ r resume, f fork, a/u archive
-Ctrl+C/Esc twice to exit               │ v archived, d delete
-Alt+Up select, Ctrl+O copy             │ n rename, / search
-Ctrl+D hide dashboard                  │ Agents: Enter focus/log, j/k inspect
-Alt+M model, Alt+E effort              │ Status: Tab page, Enter select
-Ctrl+1 Status  Ctrl+2 Agents           │ Selectors: j/k choose, Enter apply
-Ctrl+3 Sessions Ctrl+4 Help            │ Esc twice to exit
+◆ COMPOSER                             │ ◆ DASHBOARD
+ Cmd ←/→/⌫           Line boundary     │  Ctrl+1 / Ctrl+2     Status / Agents
+ Opt/Ctrl + ←/→      Move by word      │  Ctrl+3 / Ctrl+4     Sessions / Help
+ Shift/Alt + Enter   Insert newline    │  Tab/j/k/Enter       Navigate / open
+ Fn + arrows/⌫       Page nav / delete │ ◆ SESSIONS
+ Enter               Send              │  Ctrl+N / Enter      New / focus
+ Alt+Up/Ctrl+O       Select / copy     │  r / f               Resume / fork
+ Alt+M / Alt+E       Model / effort    │  a / u               Archive/unarchive
+◆ APP                                  │  v / d               Archived/delete
+ Ctrl+C/Esc×2/Ctrl+D  Exit / hide      │  n · /               Rename / search
+◆ AGENTS                               │
+ Enter/j/k           Focus log/inspect │

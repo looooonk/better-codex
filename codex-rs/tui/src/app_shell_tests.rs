@@ -1588,16 +1588,17 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         "Tab page",
     ];
     let centralized_guides = [
-        "Ctrl+1 Status  Ctrl+2 Agents",
-        "Ctrl+3 Sessions Ctrl+4 Help",
-        "Ctrl+N new, mouse click rows",
-        "Sessions: Enter focus, j/k move",
-        "r resume, f fork, a/u archive",
-        "v archived, d delete",
-        "n rename, / search",
-        "Status: Tab page, Enter select",
-        "Selectors: j/k choose, Enter apply",
-        "Esc twice to exit",
+        "Cmd ←/→/⌫",
+        "Opt/Ctrl + ←/→",
+        "Ctrl+1 / Ctrl+2",
+        "Ctrl+3 / Ctrl+4",
+        "Ctrl+N / Enter",
+        "r / f",
+        "a / u",
+        "v / d",
+        "n · /",
+        "Ctrl+C/Esc×2/Ctrl+D",
+        "Enter/j/k",
     ];
     let mut leaked_guides = Vec::new();
 
@@ -1611,7 +1612,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             .into_iter()
             .flat_map(|panel| &panel.lines)
             .flat_map(|line| &line.spans)
-            .any(|span| span.content.contains("Cmd arrows/⌫"));
+            .any(|span| span.content.contains("Cmd ←/→/⌫"));
         if route != DashboardRoute::Help {
             let text = panels
                 .iter()
@@ -1647,7 +1648,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         .collect::<String>();
     assert_eq!(
         centralized_guides.map(|guide| help_text.contains(guide)),
-        [true; 10]
+        [true; 11]
     );
     let active_session_lines = shell
         .session_list
@@ -1722,6 +1723,8 @@ fn dashboard_shortcut_label_variants_snapshot() {
         "wide_dashboard_shortcut_labels",
         rendered(/*panel_width*/ 80)
     );
+    let styled = super::dashboard_help::key_hint_lines(&shell, /*panel_width*/ 80);
+    insta::assert_debug_snapshot!("dashboard_shortcut_styling", &styled[..2]);
 }
 
 #[test]
@@ -3199,7 +3202,7 @@ async fn shell_operator_remains_interactive_while_command_is_running() {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(
-            help.contains("cancel"),
+            help.contains("Cancel"),
             "running-command help should explain cancellation at width {panel_width}:\n{help}"
         );
     }
@@ -6943,7 +6946,7 @@ fn help_dashboard_shows_every_shortcut_at_78_by_24_snapshot() {
     let rendered = render_shell(&shell, area);
 
     assert!(
-        rendered.contains("Esc×2 exit"),
+        rendered.contains("Name/search"),
         "shortcut tail should remain visible:\n{rendered}"
     );
     insta::assert_snapshot!(rendered);
@@ -6960,7 +6963,7 @@ fn help_dashboard_shows_every_shortcut_at_48_by_16_snapshot() {
     let rendered = render_shell(&shell, area);
 
     assert!(
-        rendered.contains("Esc×2 exit"),
+        rendered.contains("Name/search"),
         "shortcut tail should remain visible:\n{rendered}"
     );
     assert!(rendered.contains("> Summarize the new shell architecture"));

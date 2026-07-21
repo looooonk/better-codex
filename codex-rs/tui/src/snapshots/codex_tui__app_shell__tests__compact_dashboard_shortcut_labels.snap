@@ -2,12 +2,15 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered(60)
 ---
-⌘←→⌫ line · ⌥/^ word         │ ^N new · Session ↵ focus
-S/A+↵ newline · Fn nav/⌫     │ r resume · f fork
-↵ send                       │ a/u archive · v show
-^C/Esc×2 exit                │ d delete · n rename
-Alt+↑ select  ^O copy        │ / search
-Ctrl+D hide dashboard        │ Agent ↵ focus/log · j/k
-Alt+M/E model/effort         │ Status Tab · ↵ select
-^1 Status · ^2 Agents        │ Pick j/k · ↵ apply
-^3 Sessions · ^4 Help        │ Esc×2 exit
+◆ COMPOSER                   │ ◆ DASHBOARD
+ ⌘←→⌫        Line boundary   │  ^1/^2       Status/agents
+ ⌥/^ + ←→    Move by word    │  ^3/^4       Sessions/help
+ S/A+↵       Newline         │  Tab/j/k/↵   Navigate/apply
+ Fn nav/⌫    Page/delete     │ ◆ SESSIONS
+ ↵           Send            │  ^N/↵        New/focus
+ Alt+↑/^O    Select / copy   │  r / f       Resume / fork
+ Alt+M/E     Model/effort    │  a / u       Arc/unarc
+◆ APP                        │  v / d       View/delete
+ ^C/Esc×2/^D  Exit/hide      │  n · /       Name/search
+◆ AGENTS                     │
+ ↵/j/k       Focus/inspect   │
