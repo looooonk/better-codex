@@ -6,11 +6,13 @@ expression: rendered(60)
  ⌘←→⌫        Line boundary   │  ^1/^2       Status/agents
  ⌥/^ + ←→    Move by word    │  ^3/^4       Sessions/help
  S/A+↵       Newline         │  Tab/j/k/↵   Navigate/apply
- Fn nav/⌫    Page/delete     │ ◆ SESSIONS
- ↵           Send            │  ^N/↵        New/focus
- Alt+↑/^O    Select / copy   │  r / f       Resume / fork
- Alt+M/E     Model/effort    │  a / u       Arc/unarc
+ Fn nav/⌫    Page/delete     │
+ ↵           Send            │ ◆ SESSIONS
+ Alt+↑/^O    Select / copy   │  ^N/↵        New/focus
+ Alt+M/E     Model/effort    │  r / f       Resume / fork
+                             │  a / u       Arc/unarc
 ◆ APP                        │  v / d       View/delete
  ^C/Esc×2/^D  Exit/hide      │  n · /       Name/search
+                             │
 ◆ AGENTS                     │
  ↵/j/k       Focus/inspect   │

@@ -6,11 +6,13 @@ expression: rendered(80)
  Cmd ←/→/⌫           Line boundary     │  Ctrl+1 / Ctrl+2     Status / Agents
  Opt/Ctrl + ←/→      Move by word      │  Ctrl+3 / Ctrl+4     Sessions / Help
  Shift/Alt + Enter   Insert newline    │  Tab/j/k/Enter       Navigate / open
- Fn + arrows/⌫       Page nav / delete │ ◆ SESSIONS
- Enter               Send              │  Ctrl+N / Enter      New / focus
- Alt+Up/Ctrl+O       Select / copy     │  r / f               Resume / fork
- Alt+M / Alt+E       Model / effort    │  a / u               Archive/unarchive
+ Fn + arrows/⌫       Page nav / delete │
+ Enter               Send              │ ◆ SESSIONS
+ Alt+Up/Ctrl+O       Select / copy     │  Ctrl+N / Enter      New / focus
+ Alt+M / Alt+E       Model / effort    │  r / f               Resume / fork
+                                       │  a / u               Archive/unarchive
 ◆ APP                                  │  v / d               Archived/delete
  Ctrl+C/Esc×2/Ctrl+D  Exit / hide      │  n · /               Rename / search
+                                       │
 ◆ AGENTS                               │
  Enter/j/k           Focus log/inspect │

@@ -28,6 +28,7 @@ impl Shortcut {
 enum HelpRow {
     Section(&'static str),
     Shortcut(Shortcut),
+    Spacer,
 }
 
 impl HelpRow {
@@ -107,17 +108,18 @@ fn two_column_lines(
                 " ".repeat(left_width.saturating_sub(rendered_left_width))
                     .into(),
             );
-            if let Some(row) = right.get(index) {
-                spans.push(HELP_COLUMN_GAP.fg(palette::BORDER));
-                spans.extend(
-                    truncate_line_with_ellipsis_if_overflow(
-                        help_row_line(*row, key_width),
-                        right_width,
-                    )
-                    .spans,
-                );
-            } else {
-                spans.push("│".fg(palette::BORDER));
+            match right.get(index) {
+                Some(HelpRow::Spacer) | None => spans.push("│".fg(palette::BORDER)),
+                Some(row) => {
+                    spans.push(HELP_COLUMN_GAP.fg(palette::BORDER));
+                    spans.extend(
+                        truncate_line_with_ellipsis_if_overflow(
+                            help_row_line(*row, key_width),
+                            right_width,
+                        )
+                        .spans,
+                    );
+                }
             }
             Line::from(spans)
         })
@@ -134,11 +136,12 @@ fn help_row_line(row: HelpRow, key_width: usize) -> Line<'static> {
             let padding = key_width.saturating_sub(UnicodeWidthStr::width(shortcut.keys));
             let key_label = format!(" {}{} ", shortcut.keys, " ".repeat(padding));
             Line::from(vec![
-                key_label.fg(palette::CYAN).bg(palette::SURFACE).bold(),
+                key_label.fg(palette::CYAN),
                 " ".into(),
                 shortcut.description.into(),
             ])
         }
+        HelpRow::Spacer => Line::default(),
     }
 }
 
@@ -271,8 +274,10 @@ fn standard_help_columns(shell: &ShellState, detail: LabelDetail) -> (Vec<HelpRo
             detail.select("Alt+M/E", "Alt+M / Alt+E"),
             detail.select("Model/effort", "Model / effort"),
         ),
+        HelpRow::Spacer,
         HelpRow::section("APP"),
         HelpRow::Shortcut(contextual[2]),
+        HelpRow::Spacer,
         HelpRow::section("AGENTS"),
         HelpRow::shortcut(
             detail.select("↵/j/k", "Enter/j/k"),
@@ -293,6 +298,7 @@ fn standard_help_columns(shell: &ShellState, detail: LabelDetail) -> (Vec<HelpRo
             detail.select("Tab/j/k/↵", "Tab/j/k/Enter"),
             detail.select("Navigate/apply", "Navigate / open"),
         ),
+        HelpRow::Spacer,
         HelpRow::section("SESSIONS"),
         HelpRow::shortcut(
             detail.select("^N/↵", "Ctrl+N / Enter"),
