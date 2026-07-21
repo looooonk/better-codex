@@ -323,8 +323,16 @@ impl ShellState {
             self.push_status("no session selected");
             return Ok(());
         };
+        let session_cwd = self.session_list.cwd_for_thread(thread_id).cloned();
+        let Some(session_config) = self.session_switch_config(
+            config,
+            session_cwd.as_deref(),
+            app_server.uses_remote_workspace(),
+        ) else {
+            return Ok(());
+        };
         self.finish_subscription_cleanup().await;
-        let started = app_server.fork_thread(config.clone(), thread_id).await?;
+        let started = app_server.fork_thread(session_config, thread_id).await?;
         self.complete_session_switch(started, app_server).await;
         Ok(())
     }

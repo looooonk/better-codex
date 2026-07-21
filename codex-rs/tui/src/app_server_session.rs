@@ -2119,6 +2119,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn remote_resume_params_keep_local_roots_with_cross_platform_cwd_override() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config = build_config(&temp_dir).await;
+        let expected_workspace_roots = config.workspace_roots.clone();
+        let remote_cwd = if cfg!(windows) {
+            std::path::PathBuf::from("/srv/remote/project")
+        } else {
+            std::path::PathBuf::from(r"C:\remote\project")
+        };
+
+        let resume = thread_resume_params_from_config(
+            config,
+            ThreadId::new(),
+            ThreadParamsMode::Remote,
+            Some(remote_cwd.as_path()),
+        );
+
+        assert_eq!(resume.cwd, Some(remote_cwd.to_string_lossy().to_string()));
+        assert_eq!(
+            resume.runtime_workspace_roots,
+            Some(expected_workspace_roots)
+        );
+    }
+
+    #[tokio::test]
     async fn thread_lifecycle_params_forward_config_overrides_and_service_tier() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let mut config = build_config(&temp_dir).await;

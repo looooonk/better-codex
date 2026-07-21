@@ -213,6 +213,7 @@ pub(crate) async fn run(
     tui: &mut tui::Tui,
     mut app_server: AppServerSession,
     mut config: Config,
+    resume_cwd_runtime: ResumeCwdRuntime,
     initial_prompt: Option<String>,
     session_selection: SessionSelection,
     startup_bootstrap: Option<crate::app_server_session::AppServerBootstrap>,
@@ -277,6 +278,7 @@ pub(crate) async fn run(
         fallback_model,
         bootstrap.available_models,
         config.codex_home.to_path_buf(),
+        resume_cwd_runtime,
         config.tui_theme.clone(),
         config.animations,
         config.show_tooltips,
@@ -285,6 +287,9 @@ pub(crate) async fn run(
     shell.workspace_command_runner = Some(workspace_command_runner.clone());
     shell.ingest_turn_history(turns);
     shell.install_agent_history(agent_threads, agent_history_task);
+    for error in tui.take_startup_errors() {
+        shell.push_error(error);
+    }
     if let Some(message) = availability_nux {
         shell.push_system(message);
     }
@@ -710,6 +715,13 @@ struct DiffSummary {
     removals: usize,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ResumeCwdRuntime {
+    pub(crate) launch_cwd: std::path::PathBuf,
+    pub(crate) explicit_cwd: Option<std::path::PathBuf>,
+    pub(crate) uses_remote_workspace_or_environment: bool,
+}
+
 struct ShellState {
     thread_id: ThreadId,
     session_unavailable_reason: Option<&'static str>,
@@ -744,6 +756,7 @@ struct ShellState {
     command_palette: Option<CommandPaletteState>,
     selector: Option<SelectorState<SelectorValue>>,
     codex_home: std::path::PathBuf,
+    resume_cwd_runtime: ResumeCwdRuntime,
     dashboard_route: DashboardRoute,
     dashboard_visible: bool,
     dashboard_scroll: Cell<usize>,
@@ -809,6 +822,7 @@ impl ShellState {
         fallback_model: String,
         available_models: Vec<ModelPreset>,
         codex_home: std::path::PathBuf,
+        resume_cwd_runtime: ResumeCwdRuntime,
         tui_theme: Option<String>,
         animations: bool,
         show_tooltips: bool,
@@ -853,6 +867,7 @@ impl ShellState {
             command_palette: None,
             selector: None,
             codex_home,
+            resume_cwd_runtime,
             dashboard_route: DashboardRoute::Status,
             dashboard_visible: true,
             dashboard_scroll: Cell::new(0),
@@ -2369,6 +2384,11 @@ impl ShellState {
             command_palette: None,
             selector: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
+            resume_cwd_runtime: ResumeCwdRuntime {
+                launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),
+                explicit_cwd: None,
+                uses_remote_workspace_or_environment: false,
+            },
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
             dashboard_scroll: Cell::new(0),
@@ -2624,6 +2644,11 @@ pub mod bench_support {
             command_palette: None,
             selector: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
+            resume_cwd_runtime: ResumeCwdRuntime {
+                launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),
+                explicit_cwd: None,
+                uses_remote_workspace_or_environment: false,
+            },
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
             dashboard_scroll: Cell::new(0),

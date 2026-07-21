@@ -163,6 +163,13 @@ impl SessionListState {
         self.rows.get(self.selected).map(|row| row.thread_id)
     }
 
+    pub(super) fn cwd_for_thread(&self, thread_id: ThreadId) -> Option<&PathBuf> {
+        self.rows
+            .iter()
+            .find(|row| row.thread_id == thread_id)
+            .map(|row| &row.cwd)
+    }
+
     pub(super) fn hit_at_line(&mut self, line: usize) -> Option<SessionListHit> {
         self.focused = true;
         if !self.show_archived && line == 1 {

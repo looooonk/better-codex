@@ -11,8 +11,10 @@ use std::path::PathBuf;
 use crate::cwd_prompt;
 use crate::cwd_prompt::CwdPromptAction;
 use crate::cwd_prompt::CwdPromptOutcome;
-use crate::cwd_prompt::CwdSelection;
+use crate::legacy_core::config::Config;
+use crate::resume_picker::SessionTarget;
 use crate::tui::Tui;
+use codex_config::types::ResumeCwdMode;
 use codex_protocol::ThreadId;
 use codex_rollout::open_rollout_line_reader;
 use codex_state::StateRuntime;
@@ -44,9 +46,28 @@ struct RawRecord {
     payload: Option<Value>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ResolveCwdOutcome {
     Continue(Option<PathBuf>),
     Exit,
+}
+
+pub(crate) struct ResumeCwdContext<'path> {
+    pub(crate) current_cwd: &'path Path,
+    pub(crate) remembered_current_cwd: &'path Path,
+    pub(crate) allow_remember_current: bool,
+    pub(crate) mode: Option<ResumeCwdMode>,
+}
+
+pub(crate) fn effective_resume_cwd_mode(
+    configured_mode: Option<ResumeCwdMode>,
+    cwd_override: Option<&Path>,
+) -> Option<ResumeCwdMode> {
+    if cwd_override.is_some() {
+        Some(ResumeCwdMode::Current)
+    } else {
+        configured_mode
+    }
 }
 
 pub(crate) async fn resolve_session_thread_id(
@@ -64,26 +85,58 @@ pub(crate) async fn resolve_session_thread_id(
 
 pub(crate) async fn resolve_cwd_for_resume_or_fork(
     tui: &mut Tui,
+    config: &Config,
     state_db_ctx: Option<&StateRuntime>,
-    current_cwd: &Path,
-    thread_id: ThreadId,
-    path: Option<&Path>,
+    target_session: &SessionTarget,
     action: CwdPromptAction,
-    allow_prompt: bool,
+    cwd_context: ResumeCwdContext<'_>,
 ) -> color_eyre::Result<ResolveCwdOutcome> {
-    let Some(history_cwd) = read_session_cwd(state_db_ctx, thread_id, path).await else {
+    if matches!(cwd_context.mode, Some(ResumeCwdMode::Current)) {
+        return Ok(ResolveCwdOutcome::Continue(Some(
+            cwd_context.remembered_current_cwd.to_path_buf(),
+        )));
+    }
+    let Some(history_cwd) = read_session_cwd(
+        state_db_ctx,
+        target_session.thread_id,
+        target_session.path.as_deref(),
+    )
+    .await
+    else {
+        if matches!(cwd_context.mode, Some(ResumeCwdMode::Session)) {
+            color_eyre::eyre::bail!(
+                "failed to determine the working directory recorded for the selected session"
+            );
+        }
         return Ok(ResolveCwdOutcome::Continue(None));
     };
-    if allow_prompt && cwds_differ(current_cwd, &history_cwd) {
-        let selection_outcome =
-            cwd_prompt::run_cwd_selection_prompt(tui, action, current_cwd, &history_cwd).await?;
+    match cwd_context.mode {
+        Some(ResumeCwdMode::Session) => {
+            return Ok(ResolveCwdOutcome::Continue(Some(history_cwd)));
+        }
+        Some(ResumeCwdMode::Current) | None => {}
+    }
+    if cwds_differ(cwd_context.current_cwd, &history_cwd) {
+        let selection_outcome = cwd_prompt::run_cwd_selection_prompt(
+            tui,
+            config,
+            action,
+            cwd_context.current_cwd,
+            &history_cwd,
+            cwd_context.remembered_current_cwd,
+            cwd_context.allow_remember_current,
+        )
+        .await?;
         return Ok(match selection_outcome {
-            CwdPromptOutcome::Selection(CwdSelection::Current) => {
-                ResolveCwdOutcome::Continue(Some(current_cwd.to_path_buf()))
-            }
-            CwdPromptOutcome::Selection(CwdSelection::Session) => {
-                ResolveCwdOutcome::Continue(Some(history_cwd))
-            }
+            CwdPromptOutcome::Selection(selection) => ResolveCwdOutcome::Continue(Some(
+                selection
+                    .selected_cwd(
+                        cwd_context.current_cwd,
+                        &history_cwd,
+                        cwd_context.remembered_current_cwd,
+                    )
+                    .to_path_buf(),
+            )),
             CwdPromptOutcome::Exit => ResolveCwdOutcome::Exit,
         });
     }
@@ -282,6 +335,95 @@ mod tests {
 
         assert_eq!(state.thread_id, Some(thread_id));
         assert_eq!(state.cwd, Some(cwd));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn configured_resume_cwd_skips_prompt() -> color_eyre::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let thread_id = ThreadId::new();
+        let session_cwd = temp_dir.path().join("session");
+        let rollout_path = temp_dir.path().join("rollout.jsonl");
+        let config = crate::legacy_core::config::ConfigBuilder::default()
+            .codex_home(temp_dir.path().to_path_buf())
+            .build()
+            .await?;
+        let current_cwd = config.cwd.to_path_buf();
+        write_rollout_lines(
+            &rollout_path,
+            &[rollout_line(
+                "t0",
+                "session_meta",
+                serde_json::json!({
+                    "id": thread_id,
+                    "cwd": session_cwd.clone(),
+                    "originator": "test",
+                    "cli_version": "test",
+                }),
+            )],
+        )?;
+        let mut tui = crate::tui::test_support::make_test_tui()?;
+
+        for (cwd_mode, expected_cwd) in [
+            (ResumeCwdMode::Current, current_cwd.clone()),
+            (ResumeCwdMode::Session, session_cwd),
+        ] {
+            let outcome = resolve_cwd_for_resume_or_fork(
+                &mut tui,
+                &config,
+                /*state_db_ctx*/ None,
+                &SessionTarget {
+                    path: Some(rollout_path.clone()),
+                    thread_id,
+                },
+                CwdPromptAction::Fork,
+                ResumeCwdContext {
+                    current_cwd: &current_cwd,
+                    remembered_current_cwd: &current_cwd,
+                    allow_remember_current: true,
+                    mode: Some(cwd_mode),
+                },
+            )
+            .await?;
+
+            assert_eq!(outcome, ResolveCwdOutcome::Continue(Some(expected_cwd)));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn configured_session_cwd_rejects_missing_metadata() -> color_eyre::Result<()> {
+        let temp_dir = TempDir::new()?;
+        let config = crate::legacy_core::config::ConfigBuilder::default()
+            .codex_home(temp_dir.path().to_path_buf())
+            .build()
+            .await?;
+        let current_cwd = config.cwd.to_path_buf();
+        let mut tui = crate::tui::test_support::make_test_tui()?;
+
+        let error = resolve_cwd_for_resume_or_fork(
+            &mut tui,
+            &config,
+            /*state_db_ctx*/ None,
+            &SessionTarget {
+                path: None,
+                thread_id: ThreadId::new(),
+            },
+            CwdPromptAction::Resume,
+            ResumeCwdContext {
+                current_cwd: &current_cwd,
+                remembered_current_cwd: &current_cwd,
+                allow_remember_current: true,
+                mode: Some(ResumeCwdMode::Session),
+            },
+        )
+        .await
+        .expect_err("session mode should reject unavailable metadata");
+
+        assert_eq!(
+            error.to_string(),
+            "failed to determine the working directory recorded for the selected session"
+        );
         Ok(())
     }
 }

@@ -596,6 +596,7 @@ pub struct Tui {
     terminal_focused: Arc<AtomicBool>,
     // When false, enter_alt_screen() becomes a no-op.
     alt_screen_enabled: bool,
+    startup_errors: Vec<String>,
     // Keeps unmanaged process stderr writes out of the inline viewport.
     _stderr_guard: terminal_stderr::TerminalStderrGuard,
 }
@@ -635,6 +636,7 @@ impl Tui {
             alt_screen_active: Arc::new(AtomicBool::new(false)),
             terminal_focused: Arc::new(AtomicBool::new(true)),
             alt_screen_enabled: true,
+            startup_errors: Vec::new(),
             _stderr_guard: stderr_guard,
         }
     }
@@ -646,6 +648,14 @@ impl Tui {
 
     pub fn frame_requester(&self) -> FrameRequester {
         self.frame_requester.clone()
+    }
+
+    pub(crate) fn push_startup_error(&mut self, message: impl Into<String>) {
+        self.startup_errors.push(message.into());
+    }
+
+    pub(crate) fn take_startup_errors(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.startup_errors)
     }
 
     pub fn is_alt_screen_active(&self) -> bool {

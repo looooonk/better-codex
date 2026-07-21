@@ -105,6 +105,7 @@ use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput as ApiUserInput;
 use codex_app_server_protocol::WebSearchItem;
 use codex_app_server_protocol::WriteStatus;
+use codex_config::types::ResumeCwdMode;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
@@ -320,6 +321,71 @@ async fn remote_archive_can_be_unarchived_and_resumed() {
             .calls()
             .contains(&RecordedBackendCall::Resume(thread_id))
     );
+}
+
+#[tokio::test]
+async fn remembered_resume_cwd_mode_applies_to_app_shell_session_switches() {
+    let mut config = test_config().await;
+    config.workspace_roots_explicit = false;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.resume_cwd_runtime.launch_cwd = test_absolute_path("workspace/launched").to_path_buf();
+    let session_cwd = test_absolute_path("workspace/saved");
+
+    config.tui_resume_cwd = Some(ResumeCwdMode::Current);
+    let current_config = shell
+        .session_switch_config(
+            &config,
+            Some(session_cwd.as_path()),
+            /*uses_remote_workspace*/ false,
+        )
+        .expect("remembered current cwd should produce session config");
+
+    config.tui_resume_cwd = Some(ResumeCwdMode::Session);
+    let session_config = shell
+        .session_switch_config(
+            &config,
+            Some(session_cwd.as_path()),
+            /*uses_remote_workspace*/ false,
+        )
+        .expect("remembered session cwd should produce session config");
+
+    assert_eq!(
+        (
+            current_config.cwd,
+            current_config.workspace_roots,
+            session_config.cwd,
+            session_config.workspace_roots,
+        ),
+        (
+            test_absolute_path("workspace/launched"),
+            vec![test_absolute_path("workspace/launched")],
+            session_cwd.clone(),
+            vec![session_cwd],
+        )
+    );
+}
+
+#[tokio::test]
+async fn remembered_current_cwd_rejects_remote_switch_without_explicit_override() {
+    let mut config = test_config().await;
+    config.tui_resume_cwd = Some(ResumeCwdMode::Current);
+    let mut shell = ShellState::snapshot_fixture();
+    shell
+        .resume_cwd_runtime
+        .uses_remote_workspace_or_environment = true;
+
+    let session_config = shell.session_switch_config(
+        &config,
+        Some(test_absolute_path("workspace/saved").as_path()),
+        /*uses_remote_workspace*/ true,
+    );
+
+    assert!(session_config.is_none());
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Error
+            && line.text
+                == "`tui.resume_cwd = \"current\"` requires `--cd` when using a remote workspace"
+    }));
 }
 
 #[tokio::test]
@@ -4510,6 +4576,11 @@ fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
         "fallback-model".to_string(),
         Vec::new(),
         codex_home.path().to_path_buf(),
+        ResumeCwdRuntime {
+            launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),
+            explicit_cwd: None,
+            uses_remote_workspace_or_environment: false,
+        },
         /*tui_theme*/ None,
         /*animations*/ true,
         /*show_tooltips*/ true,

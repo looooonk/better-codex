@@ -4,7 +4,9 @@ use super::backend_actions::ActionGroup;
 use super::backend_actions::BackendActionResult;
 use crate::app_server_session::AppServerStartedThread;
 use crate::legacy_core::config::Config;
+use crate::session_resume::effective_resume_cwd_mode;
 use codex_app_server_protocol::ThreadStartSource;
+use codex_config::types::ResumeCwdMode;
 use codex_protocol::ThreadId;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::Result;
@@ -82,11 +84,82 @@ impl ShellState {
             self.push_status("session is already open");
             return;
         }
-        let request = app_server.resume_thread_in_background(config.clone(), thread_id);
+        let session_cwd = self.session_list.cwd_for_thread(thread_id).cloned();
+        let Some(session_config) = self.session_switch_config(
+            config,
+            session_cwd.as_deref(),
+            app_server.uses_remote_workspace(),
+        ) else {
+            return;
+        };
+        let request = app_server.resume_thread_in_background(session_config, thread_id);
         self.start_backend_action(ActionGroup::SessionSwitch, "resuming session", async move {
             BackendActionResult::SessionResume {
                 result: request.await,
             }
         });
+    }
+
+    pub(super) fn session_switch_config(
+        &mut self,
+        config: &Config,
+        session_cwd: Option<&std::path::Path>,
+        uses_remote_workspace: bool,
+    ) -> Option<Config> {
+        let mode = effective_resume_cwd_mode(
+            config.tui_resume_cwd,
+            self.resume_cwd_runtime.explicit_cwd.as_deref(),
+        );
+        if self.resume_cwd_runtime.uses_remote_workspace_or_environment
+            && self.resume_cwd_runtime.explicit_cwd.is_none()
+            && matches!(mode, Some(ResumeCwdMode::Current))
+        {
+            self.push_error(
+                "`tui.resume_cwd = \"current\"` requires `--cd` when using a remote workspace",
+            );
+            return None;
+        }
+        if uses_remote_workspace || mode.is_none() {
+            return Some(config.clone());
+        }
+
+        let cwd = match mode {
+            Some(ResumeCwdMode::Current)
+                if self.resume_cwd_runtime.uses_remote_workspace_or_environment =>
+            {
+                let Some(explicit_cwd) = self.resume_cwd_runtime.explicit_cwd.as_deref() else {
+                    self.push_error(
+                        "`tui.resume_cwd = \"current\"` requires `--cd` when using a remote workspace",
+                    );
+                    return None;
+                };
+                explicit_cwd
+            }
+            Some(ResumeCwdMode::Current) => self.resume_cwd_runtime.launch_cwd.as_path(),
+            Some(ResumeCwdMode::Session) => {
+                let Some(session_cwd) = session_cwd else {
+                    self.push_error(
+                        "failed to determine the working directory recorded for the selected session",
+                    );
+                    return None;
+                };
+                session_cwd
+            }
+            None => unreachable!("unset modes return before choosing a working directory"),
+        };
+        let cwd = match AbsolutePathBuf::from_absolute_path(cwd) {
+            Ok(cwd) => cwd,
+            Err(err) => {
+                self.push_error(format!("selected working directory is not absolute: {err}"));
+                return None;
+            }
+        };
+
+        let mut session_config = config.clone();
+        session_config.cwd = cwd.clone();
+        if !session_config.workspace_roots_explicit {
+            session_config.workspace_roots = vec![cwd];
+        }
+        Some(session_config)
     }
 }

@@ -217,7 +217,7 @@ improvements that do not redefine Codex behavior.
 - [x] **P2 · KEEP — Preserve exact custom interactive thread filtering.** The fork's
   `ThreadSourceKind::Custom` behavior supports its standalone TUI and does not alter
   backend reasoning.
-- [ ] **P2 · CHANGE — Port resume-directory persistence.** Remember and apply the
+- [x] **P2 · CHANGE — Port resume-directory persistence.** Remember and apply the
   user's current resume-directory choice while keeping strict foreign-path checks.
 
 ## Conditional upstream capabilities

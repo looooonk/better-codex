@@ -4,6 +4,7 @@ use anyhow::Context;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::ConfigFileLock;
 use codex_config::types::McpServerConfig;
+use codex_config::types::ResumeCwdMode;
 use codex_config::types::SessionPickerViewMode;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_features::FEATURES;
@@ -981,6 +982,14 @@ impl ConfigEditsBuilder {
         self.edits.push(ConfigEdit::SetPath {
             segments: vec!["tui".to_string(), "session_picker_view".to_string()],
             value: value(mode.to_string()),
+        });
+        self
+    }
+
+    pub fn set_resume_cwd(mut self, mode: ResumeCwdMode) -> Self {
+        self.edits.push(ConfigEdit::SetPath {
+            segments: vec!["tui".to_string(), "resume_cwd".to_string()],
+            value: value(mode.as_str()),
         });
         self
     }
