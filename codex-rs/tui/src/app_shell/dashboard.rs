@@ -2,7 +2,8 @@ use super::ShellState;
 use super::ToolActivity;
 use super::agent_activity_render::agent_activity_inspector_lines;
 use super::agent_activity_render::agent_activity_overview_lines;
-use super::dashboard_rate_limits::rate_limit_lines;
+use super::dashboard_rate_limits::credits_and_resets_line;
+use super::dashboard_rate_limits::rate_limit_line;
 use super::dashboard_workspace::workspace_lines;
 use super::design::Tone;
 use super::design::badge_span;
@@ -233,19 +234,13 @@ fn dashboard_panel(
         DashboardPanelKind::RateLimits => {
             (!shell.rate_limits.is_empty() || shell.rate_limit_reset_credits.is_some()).then(|| {
                 let mut lines = Vec::new();
-                for limit in shell.rate_limits.iter().take(2) {
-                    lines.extend(rate_limit_lines(limit, content_width));
+                for limit in &shell.rate_limits {
+                    lines.push(rate_limit_line(limit, content_width));
                 }
-                if shell.rate_limits.len() > 2 {
-                    lines.push(Line::from(
-                        format!("+{} more", format_usize(shell.rate_limits.len() - 2)).dim(),
-                    ));
-                }
-                if let Some(credits) = shell.rate_limit_reset_credits {
-                    lines.push(Line::from(
-                        format!("reset credits {}", format_i64(credits)).dim(),
-                    ));
-                }
+                lines.push(credits_and_resets_line(
+                    &shell.rate_limits,
+                    shell.rate_limit_reset_credits,
+                ));
                 DashboardPanel::new("Rate Limits", lines)
             })
         }

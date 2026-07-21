@@ -1383,6 +1383,20 @@ fn renders_rate_limits_snapshot() {
                 codex_app_server_protocol::RateLimitReachedType::RateLimitReached,
             ),
         },
+        codex_app_server_protocol::RateLimitSnapshot {
+            limit_id: Some("gpt-5.3-codex-spark".to_string()),
+            limit_name: None,
+            primary: Some(codex_app_server_protocol::RateLimitWindow {
+                used_percent: 41,
+                window_duration_mins: Some(60),
+                resets_at: None,
+            }),
+            secondary: None,
+            credits: None,
+            individual_limit: None,
+            plan_type: None,
+            rate_limit_reached_type: None,
+        },
     ];
     shell.rate_limit_reset_credits = Some(2);
     let area = Rect::new(
