@@ -70,8 +70,6 @@ pub enum DynamicToolCallOutputContentItem {
     InputText { text: String },
     #[serde(rename_all = "camelCase")]
     InputImage { image_url: String },
-    #[serde(rename_all = "camelCase")]
-    InputAudio { audio_url: String },
 }
 
 /// Former flat `SessionMeta` shape, including the old `exposeToContext` flag.

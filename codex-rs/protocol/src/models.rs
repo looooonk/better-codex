@@ -1990,7 +1990,7 @@ pub enum FunctionCallOutputContentItem {
 ///
 /// This conversion is intentionally lossy:
 /// - only `input_text` items are included
-/// - image and audio items are ignored
+/// - image items are ignored
 ///
 /// We use this helper where callers still need a string representation (for
 /// example telemetry previews or legacy string-only output paths) while keeping
@@ -2032,9 +2032,6 @@ impl From<crate::dynamic_tools::DynamicToolCallOutputContentItem>
                     image_url,
                     detail: Some(DEFAULT_IMAGE_DETAIL),
                 }
-            }
-            crate::dynamic_tools::DynamicToolCallOutputContentItem::InputAudio { audio_url } => {
-                Self::InputAudio { audio_url }
             }
         }
     }
@@ -2255,14 +2252,6 @@ fn convert_mcp_content_to_items(
             #[serde(rename = "_meta", default)]
             meta: Option<serde_json::Value>,
         },
-        #[serde(rename = "audio")]
-        Audio {
-            data: String,
-            #[serde(rename = "mimeType", alias = "mime_type")]
-            mime_type: Option<String>,
-            #[serde(rename = "_meta", default)]
-            _meta: Option<serde_json::Value>,
-        },
         #[serde(other)]
         Unknown,
     }
@@ -2315,18 +2304,6 @@ fn convert_mcp_content_to_items(
                         })
                         .or(Some(DEFAULT_IMAGE_DETAIL)),
                 }
-            }
-            Ok(McpContent::Audio {
-                data, mime_type, ..
-            }) => {
-                saw_content_item = true;
-                let audio_url = if data.starts_with("data:") {
-                    data
-                } else {
-                    let mime_type = mime_type.unwrap_or_else(|| "application/octet-stream".into());
-                    format!("data:{mime_type};base64,{data}")
-                };
-                FunctionCallOutputContentItem::InputAudio { audio_url }
             }
             Ok(McpContent::Unknown) | Err(_) => FunctionCallOutputContentItem::InputText {
                 text: serde_json::to_string(content).unwrap_or_else(|_| "<content>".to_string()),
@@ -2883,36 +2860,7 @@ mod tests {
     }
 
     #[test]
-    fn convert_mcp_audio_content_builds_data_urls_and_preserves_existing_data_urls() {
-        let contents = vec![
-            serde_json::json!({
-                "type": "audio",
-                "data": "Zm9v",
-                "mimeType": "audio/wav",
-                "_meta": {"source": "microphone"},
-            }),
-            serde_json::json!({
-                "type": "audio",
-                "data": "data:audio/ogg;base64,YmFy",
-                "mimeType": "audio/ogg",
-            }),
-        ];
-
-        assert_eq!(
-            convert_mcp_content_to_items(&contents),
-            Some(vec![
-                FunctionCallOutputContentItem::InputAudio {
-                    audio_url: "data:audio/wav;base64,Zm9v".to_string(),
-                },
-                FunctionCallOutputContentItem::InputAudio {
-                    audio_url: "data:audio/ogg;base64,YmFy".to_string(),
-                },
-            ])
-        );
-    }
-
-    #[test]
-    fn convert_mcp_content_to_items_returns_none_without_media() {
+    fn convert_mcp_content_to_items_returns_none_without_images() {
         let contents = vec![serde_json::json!({
             "type": "text",
             "text": "hello",
@@ -2941,7 +2889,7 @@ mod tests {
     }
 
     #[test]
-    fn function_call_output_content_items_to_text_ignores_blank_text_and_media() {
+    fn function_call_output_content_items_to_text_ignores_blank_text_and_images() {
         let content_items = vec![
             FunctionCallOutputContentItem::InputText {
                 text: "   ".to_string(),
@@ -2949,9 +2897,6 @@ mod tests {
             FunctionCallOutputContentItem::InputImage {
                 image_url: "data:image/png;base64,AAA".to_string(),
                 detail: Some(DEFAULT_IMAGE_DETAIL),
-            },
-            FunctionCallOutputContentItem::InputAudio {
-                audio_url: "data:audio/wav;base64,AAA".to_string(),
             },
             FunctionCallOutputContentItem::EncryptedContent {
                 encrypted_content: "enc_opaque".to_string(),
@@ -3138,54 +3083,6 @@ mod tests {
 
         let output = v.get("output").expect("output field");
         assert!(output.is_array(), "expected array output");
-
-        Ok(())
-    }
-
-    #[test]
-    fn serializes_audio_outputs_as_array() -> Result<()> {
-        let call_tool_result = CallToolResult {
-            content: vec![
-                serde_json::json!({"type":"text","text":"caption"}),
-                serde_json::json!({"type":"audio","data":"BASE64","mimeType":"audio/wav"}),
-            ],
-            structured_content: None,
-            is_error: Some(false),
-            meta: None,
-        };
-
-        let payload = call_tool_result.into_function_call_output_payload();
-        assert_eq!(
-            payload,
-            FunctionCallOutputPayload {
-                body: FunctionCallOutputBody::ContentItems(vec![
-                    FunctionCallOutputContentItem::InputText {
-                        text: "caption".into(),
-                    },
-                    FunctionCallOutputContentItem::InputAudio {
-                        audio_url: "data:audio/wav;base64,BASE64".into(),
-                    },
-                ]),
-                success: Some(true),
-            }
-        );
-
-        let item = ResponseInputItem::FunctionCallOutput {
-            call_id: "call1".into(),
-            output: payload,
-        };
-
-        assert_eq!(
-            serde_json::to_value(item)?,
-            serde_json::json!({
-                "type": "function_call_output",
-                "call_id": "call1",
-                "output": [
-                    {"type": "input_text", "text": "caption"},
-                    {"type": "input_audio", "audio_url": "data:audio/wav;base64,BASE64"},
-                ],
-            })
-        );
 
         Ok(())
     }

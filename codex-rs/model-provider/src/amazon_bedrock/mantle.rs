@@ -39,13 +39,8 @@ pub(super) fn region_from_config(aws: &ModelProviderAwsAuthInfo) -> Option<Strin
         .map(str::to_string)
 }
 
-/// Returns whether Amazon Bedrock Mantle is available in `region`.
-pub fn is_supported_amazon_bedrock_region(region: &str) -> bool {
-    BEDROCK_MANTLE_SUPPORTED_REGIONS.contains(&region)
-}
-
 pub(super) fn base_url(region: &str) -> Result<String> {
-    if is_supported_amazon_bedrock_region(region) {
+    if BEDROCK_MANTLE_SUPPORTED_REGIONS.contains(&region) {
         Ok(format!("https://bedrock-mantle.{region}.api.aws/openai/v1"))
     } else {
         Err(CodexErr::Fatal(format!(

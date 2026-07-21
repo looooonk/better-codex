@@ -557,7 +557,7 @@ fn map_network_unix_socket_permission_to_api(
     }
 }
 
-pub(super) fn map_error(err: ConfigManagerError) -> JSONRPCErrorError {
+fn map_error(err: ConfigManagerError) -> JSONRPCErrorError {
     if let Some(code) = err.write_error_code() {
         return config_write_error(code, err.to_string());
     }

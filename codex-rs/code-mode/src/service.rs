@@ -391,9 +391,6 @@ fn output_item(item: runtime::OutputItem) -> FunctionCallOutputContentItem {
                 }),
             }
         }
-        runtime::OutputItem::Audio { audio_url } => {
-            FunctionCallOutputContentItem::InputAudio { audio_url }
-        }
     }
 }
 

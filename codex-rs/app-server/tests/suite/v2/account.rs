@@ -11,8 +11,6 @@ use app_test_support::write_models_cache;
 use chrono::Duration as ChronoDuration;
 use chrono::Utc;
 use codex_app_server_protocol::Account;
-use codex_app_server_protocol::AccountLoginCompletedNotification;
-use codex_app_server_protocol::AccountUpdatedNotification;
 use codex_app_server_protocol::AuthMode;
 use codex_app_server_protocol::CancelLoginAccountParams;
 use codex_app_server_protocol::CancelLoginAccountResponse;
@@ -35,17 +33,13 @@ use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::TurnCompletedNotification;
 use codex_app_server_protocol::TurnStatus;
 use codex_config::types::AuthCredentialsStoreMode;
-use codex_login::AuthDotJson;
 use codex_login::AuthKeyringBackendKind;
 use codex_login::CLIENT_ID_OVERRIDE_ENV_VAR;
 use codex_login::REFRESH_TOKEN_URL_OVERRIDE_ENV_VAR;
-use codex_login::auth::BedrockApiKeyAuth;
-use codex_login::load_auth_dot_json;
 use codex_login::login_with_api_key;
 use codex_login::login_with_bedrock_api_key;
 use codex_protocol::account::AmazonBedrockCredentialSource;
 use codex_protocol::account::PlanType as AccountPlanType;
-use codex_protocol::auth::AuthMode as DomainAuthMode;
 use core_test_support::responses;
 use pretty_assertions::assert_eq;
 use serde_json::json;
@@ -146,70 +140,6 @@ shell_snapshot = false
 "#
     );
     std::fs::write(config_toml, contents)
-}
-
-fn read_config_toml(codex_home: &Path) -> Result<toml::Value> {
-    Ok(toml::from_str(&std::fs::read_to_string(
-        codex_home.join("config.toml"),
-    )?)?)
-}
-
-fn load_file_auth(codex_home: &Path) -> Result<Option<AuthDotJson>> {
-    Ok(load_auth_dot_json(
-        codex_home,
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?)
-}
-
-fn aws_managed_bedrock_config() -> CreateConfigTomlParams {
-    CreateConfigTomlParams {
-        model_provider_id: Some("amazon-bedrock".to_string()),
-        extra_provider_config: Some(
-            r#"[model_providers.amazon-bedrock.aws]
-profile = "codex-bedrock"
-region = "us-west-2"
-"#
-            .to_string(),
-        ),
-        ..Default::default()
-    }
-}
-
-async fn read_account(mcp: &mut TestAppServer) -> Result<GetAccountResponse> {
-    let request_id = mcp
-        .send_get_account_request(GetAccountParams {
-            refresh_token: false,
-        })
-        .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    to_response(response)
-}
-
-async fn assert_account_updated(
-    mcp: &mut TestAppServer,
-    auth_mode: Option<AuthMode>,
-) -> Result<()> {
-    let notification = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_notification_message("account/updated"),
-    )
-    .await??;
-    let ServerNotification::AccountUpdated(payload) = notification.try_into()? else {
-        bail!("unexpected notification")
-    };
-    assert_eq!(
-        payload,
-        AccountUpdatedNotification {
-            auth_mode,
-            plan_type: None,
-        }
-    );
-    Ok(())
 }
 
 async fn mock_device_code_usercode(server: &MockServer, interval_seconds: u64) {
@@ -1078,240 +1008,6 @@ async fn login_account_api_key_succeeds_and_notifies() -> Result<()> {
     pretty_assertions::assert_eq!(payload.plan_type, None);
 
     assert!(codex_home.path().join("auth.json").exists());
-    Ok(())
-}
-
-#[tokio::test]
-async fn managed_bedrock_login_and_logout_update_auth_provider_and_account() -> Result<()> {
-    let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), CreateConfigTomlParams::default())?;
-    login_with_api_key(
-        codex_home.path(),
-        "sk-test-key",
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
-    let mut expected_config = read_config_toml(codex_home.path())?;
-    expected_config
-        .as_table_mut()
-        .expect("config should be a table")
-        .insert(
-            "model_provider".to_string(),
-            toml::Value::String("amazon-bedrock".to_string()),
-        );
-
-    let mut mcp = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .with_env_overrides(&[("OPENAI_API_KEY", None)])
-        .build()
-        .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    let request_id = mcp
-        .send_login_account_amazon_bedrock_request(" managed-bedrock-api-key ", " us-west-2 ")
-        .await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    assert_eq!(
-        to_response::<LoginAccountResponse>(response)?,
-        LoginAccountResponse::AmazonBedrock {}
-    );
-    assert_eq!(
-        load_file_auth(codex_home.path())?,
-        Some(AuthDotJson {
-            auth_mode: Some(DomainAuthMode::BedrockApiKey),
-            openai_api_key: None,
-            tokens: None,
-            last_refresh: None,
-            agent_identity: None,
-            personal_access_token: None,
-            bedrock_api_key: Some(BedrockApiKeyAuth {
-                api_key: "managed-bedrock-api-key".to_string(),
-                region: "us-west-2".to_string(),
-            }),
-        })
-    );
-    assert_eq!(read_config_toml(codex_home.path())?, expected_config);
-
-    let notification = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_notification_message("account/login/completed"),
-    )
-    .await??;
-    let ServerNotification::AccountLoginCompleted(payload) = notification.try_into()? else {
-        bail!("unexpected notification")
-    };
-    assert_eq!(
-        payload,
-        AccountLoginCompletedNotification {
-            login_id: None,
-            success: true,
-            error: None,
-        }
-    );
-    assert_account_updated(&mut mcp, Some(AuthMode::BedrockApiKey)).await?;
-    assert_eq!(
-        read_account(&mut mcp).await?,
-        GetAccountResponse {
-            account: Some(Account::AmazonBedrock {
-                credential_source: AmazonBedrockCredentialSource::CodexManaged,
-            }),
-            requires_openai_auth: false,
-        }
-    );
-
-    expected_config
-        .as_table_mut()
-        .expect("config should be a table")
-        .remove("model_provider");
-    let request_id = mcp.send_logout_account_request().await?;
-    let response = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    assert_eq!(
-        to_response::<LogoutAccountResponse>(response)?,
-        LogoutAccountResponse {}
-    );
-    assert_eq!(load_file_auth(codex_home.path())?, None);
-    assert_eq!(read_config_toml(codex_home.path())?, expected_config);
-    assert_account_updated(&mut mcp, /*auth_mode*/ None).await?;
-    assert_eq!(
-        read_account(&mut mcp).await?,
-        GetAccountResponse {
-            account: None,
-            requires_openai_auth: true,
-        }
-    );
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn managed_bedrock_login_rejects_invalid_credentials_without_changes() -> Result<()> {
-    let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), CreateConfigTomlParams::default())?;
-    let expected_config = read_config_toml(codex_home.path())?;
-
-    let mut mcp = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .with_env_overrides(&[("OPENAI_API_KEY", None)])
-        .build()
-        .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    let request_id = mcp
-        .send_login_account_amazon_bedrock_request("  ", "us-west-2")
-        .await?;
-    let error = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    assert_eq!(
-        error.error.message,
-        "Amazon Bedrock API key must not be empty."
-    );
-
-    let request_id = mcp
-        .send_login_account_amazon_bedrock_request("managed-bedrock-api-key", "us-west-1")
-        .await?;
-    let error = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    assert_eq!(
-        error.error.message,
-        "Amazon Bedrock Mantle does not support region `us-west-1`"
-    );
-    assert_eq!(load_file_auth(codex_home.path())?, None);
-    assert_eq!(read_config_toml(codex_home.path())?, expected_config);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn managed_bedrock_login_rejects_overriding_provider_without_changes() -> Result<()> {
-    let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), CreateConfigTomlParams::default())?;
-    login_with_api_key(
-        codex_home.path(),
-        "sk-test-key",
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
-    let expected_auth = load_file_auth(codex_home.path())?;
-    let expected_config = read_config_toml(codex_home.path())?;
-
-    let mut mcp = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .with_env_overrides(&[("OPENAI_API_KEY", None)])
-        .with_args(&["-c", "model_provider=\"mock_provider\""])
-        .build()
-        .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    let request_id = mcp
-        .send_login_account_amazon_bedrock_request("managed-bedrock-api-key", "us-west-2")
-        .await?;
-    let error = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    assert_eq!(
-        error.error.message,
-        "Amazon Bedrock login cannot select `amazon-bedrock` because session-flags sets `model_provider` to \"mock_provider\""
-    );
-    assert_eq!(load_file_auth(codex_home.path())?, expected_auth);
-    assert_eq!(read_config_toml(codex_home.path())?, expected_config);
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn logout_aws_managed_bedrock_preserves_auth_and_config() -> Result<()> {
-    let codex_home = TempDir::new()?;
-    create_config_toml(codex_home.path(), aws_managed_bedrock_config())?;
-    login_with_api_key(
-        codex_home.path(),
-        "sk-test-key",
-        AuthCredentialsStoreMode::File,
-        AuthKeyringBackendKind::default(),
-    )?;
-    let expected_auth = load_file_auth(codex_home.path())?;
-    let expected_config = read_config_toml(codex_home.path())?;
-
-    let mut mcp = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .without_auto_env()
-        .with_env_overrides(&[("OPENAI_API_KEY", None)])
-        .build()
-        .await?;
-    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-
-    let request_id = mcp.send_logout_account_request().await?;
-    let error = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
-    )
-    .await??;
-    assert_eq!(error.error.code, -32600);
-    assert_eq!(
-        error.error.message,
-        "cannot log out while Amazon Bedrock is using AWS-managed credentials; manage those credentials through AWS or switch model providers before logging out Codex authentication"
-    );
-    assert_eq!(load_file_auth(codex_home.path())?, expected_auth);
-    assert_eq!(read_config_toml(codex_home.path())?, expected_config);
-
     Ok(())
 }
 

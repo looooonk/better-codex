@@ -1637,7 +1637,7 @@ The server also emits item lifecycle notifications around the request:
 3. Client response.
 4. `item/completed` with `item.type = "dynamicToolCall"`, final `status`, and the returned `contentItems`/`success`.
 
-The client must respond with content items. Use `inputText` for text, `inputImage` for inline image data URLs, and `inputAudio` for inline audio data URLs. Remote HTTP(S) image URLs and non-data audio URLs make the dynamic tool response invalid.
+The client must respond with content items. Use `inputText` for text and `inputImage` for inline data URLs. Remote HTTP(S) image URLs make the dynamic tool response invalid.
 
 ```json
 {
@@ -1645,8 +1645,7 @@ The client must respond with content items. Use `inputText` for text, `inputImag
   "result": {
     "contentItems": [
       { "type": "inputText", "text": "Ticket ABC-123 is open." },
-      { "type": "inputImage", "imageUrl": "data:image/png;base64,AAA" },
-      { "type": "inputAudio", "audioUrl": "data:audio/wav;base64,YXVkaW8=" }
+      { "type": "inputImage", "imageUrl": "data:image/png;base64,AAA" }
     ],
     "success": true
   }
@@ -1979,7 +1978,7 @@ Codex supports these authentication modes. The current mode is surfaced in `acco
 - `account/login/start` — begin login (`apiKey`, `chatgpt`, `chatgptDeviceCode`, `amazonBedrock`).
 - `account/login/completed` (notify) — emitted when a login attempt finishes (success or error).
 - `account/login/cancel` — cancel a pending managed ChatGPT login by `loginId`.
-- `account/logout` — sign out; triggers `account/updated` on success.
+- `account/logout` — sign out; triggers `account/updated`.
 - `account/updated` (notify) — emitted whenever auth mode changes (`authMode`: `apikey`, `bedrockApiKey`, `chatgpt`, `personalAccessToken`, or `null`) and includes the current ChatGPT `planType` when available.
 - `account/rateLimits/read` — fetch ChatGPT rate limits, an optional effective monthly credit limit, and the earned rate-limit resets currently available, including expiry details when provided by the backend. Rate-limit updates arrive via `account/rateLimits/updated` (notify); reset-credit data is snapshot-only.
 - `account/rateLimitResetCredit/consume` — consume one earned reset using a caller-provided idempotency key, optionally selecting a reset-credit ID returned by `account/rateLimits/read`.
@@ -2079,8 +2078,6 @@ This experimental flow requires the client to initialize with `experimentalApi: 
    ```
 
 Codex stores the key and region as the primary Codex auth, replacing any previously stored login, and writes `model_provider = "amazon-bedrock"` to the active user config. Existing loaded sessions keep their current provider selection, so clients should restart the app-server before sending more model requests. This limitation will be addressed in a follow-up.
-
-When using a Codex-managed Bedrock key, logout removes the key and clears `model_provider` if it is still set to `"amazon-bedrock"`. When using AWS-managed credentials, manage them through AWS or switch providers before logging out.
 
 ### 4) Log in with ChatGPT (device code flow)
 
