@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+                                                                                                         │
+  Dashboard  ◆ BETTER CODEX  better-codex                 gpt-5-codex ▾   default ▾   default ▾  ◐ ready │   Status    │   Agents    │   Sessions   │   Help
+─────────────────────────────────────────────────────────────────────────────────────────────────────────│━━━━━━━━━━━━━────────────────────────────────────────
+                                                                                                         │
+ ◆ CONVERSATION                                                                                          │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                                                                        │▎  Model  │ Permissions  │ Appearance │ Integrations
+ ▎ YOU  Create a divergent standalone TUI.                                                               │▎─────────────────────────━━━━━━━━━━━━───────────────
+                                                                                                         │▎  Syntax theme: default
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.                                     │▎  Animations: on
+ ▎ PLAN  1. Build shell                                                                                  │▎› Tooltips: on
+         2. Wire transcript                                                                              │
+         3. Render dashboard                                                                             │▎◆ PLAN
+                                                                                                         │▎Build the standalone shell in slices.
+ ▌ tool exec just test -p codex-tui                                                                      │▎x Shell frame
+                                                                                                         │▎> Transcript model
+ ▌ edited 3 files +128 -24                                                                               │▎- Approvals
+                                                                                                         │
+ ▎ CODEX  The new shell owns the fullscreen surface.                                                     │▎◆ TOOLS
+                                                                                                         │▎in progress exec just test -p codex-tui
+                                                                                                         │
+                                                                                                         │▎◆ EDITS
+                                                                                                         │▎3 files +128 -24
+╭───────────────────────────────────────────────────────────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                                                                        ││▎◆ WORKSPACE
+│> Summarize the new shell architecture                                                                 ││▎cwd /workspace/better-codex
+│                                                                                                       ││▎profile managed
+│                                                                                                       ││▎files restricted, net restricted
+╰───────────────────────────────────────────────────────────────────────────────────────────────────────╯│

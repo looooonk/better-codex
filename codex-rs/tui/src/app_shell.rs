@@ -1479,7 +1479,7 @@ impl ShellState {
             output_schema: None,
         };
         let request = app_server.turn_start_in_background(params.clone());
-        if self.start_backend_action(ActionGroup::TurnStart, "submitting turn", async move {
+        if self.start_backend_action(ActionGroup::TurnStart, "thinking", async move {
             BackendActionResult::TurnStart {
                 params,
                 prompt,

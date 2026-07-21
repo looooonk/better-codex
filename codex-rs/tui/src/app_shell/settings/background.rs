@@ -53,10 +53,15 @@ impl ShellState {
             selector: self.selector.clone(),
         };
         let persist = app_server.persist_settings_update_in_background(edits, thread_update);
-        self.start_backend_action(ActionGroup::Settings, "saving settings", async move {
-            let result = persist.await;
-            BackendActionResult::Settings { update, result }
-        });
+        if !self
+            .backend_actions
+            .start(Some(ActionGroup::Settings), async move {
+                let result = persist.await;
+                BackendActionResult::Settings { update, result }
+            })
+        {
+            self.push_status("settings update is already in progress");
+        }
     }
 
     pub(in crate::app_shell) fn complete_settings_update(
@@ -118,7 +123,5 @@ impl ShellState {
         if update.selector.is_some() && self.selector == update.selector {
             self.selector = None;
         }
-        self.settings.set_info("settings saved");
-        self.status = "ready".to_string();
     }
 }

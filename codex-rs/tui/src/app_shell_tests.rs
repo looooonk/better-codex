@@ -9244,11 +9244,52 @@ async fn pending_turn_start_keeps_input_responsive() {
         .expect("typing should remain responsive");
 
     assert!(shell.has_pending_backend_actions());
+    assert_eq!(shell.status, "thinking");
     assert_eq!(shell.composer.text(), "n");
+    shell.dashboard_visible = false;
+    insta::assert_snapshot!(
+        "pending_turn_start_status",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            ),
+        )
+    );
     gate.add_permits(1);
     complete_backend_actions(&mut shell, &backend).await;
     assert_eq!(shell.active_turn_id.as_deref(), Some("turn-submit"));
     assert_eq!(shell.composer.text(), "n");
+}
+
+#[tokio::test]
+async fn settings_update_keeps_status_chrome_quiet_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    shell.settings.focused = true;
+    shell.settings.focus_action(SettingsAction::Tooltips);
+    shell.status = "ready".to_string();
+    let mut backend = RecordingBackend::default();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 160, /*height*/ 28,
+    );
+
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("tooltips toggle should persist");
+
+    assert_eq!(shell.status, "ready");
+    insta::assert_snapshot!("pending_settings_update", render_shell(&shell, area));
+
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(!shell.show_tooltips);
+    assert_eq!(shell.status, "ready");
+    insta::assert_snapshot!("completed_settings_update", render_shell(&shell, area));
 }
 
 #[tokio::test]
