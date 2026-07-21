@@ -26,14 +26,14 @@ expression: "render_shell(&shell, area)"
                                                   │▎3 files +128 -24
                                                   │
                                                   │▎◆ WORKSPACE
-                                                  │▎cwd /workspace/better-codex
-                                                  │▎branch feature/app-shell-dashboard
                                                   │▎changes 13 paths
                                                   │▎  staged 4
                                                   │▎  unstaged 5
                                                   │▎  conflicted 1
                                                   │▎  untracked 3
+                                                  │▎branch feature/app-shell-dashboard
                                                   │▎profile managed
+                                                  │▎cwd /workspace/better-codex
                                                   │▎files restricted, net restricted
                                                   │▎roots none selected
                                                   │

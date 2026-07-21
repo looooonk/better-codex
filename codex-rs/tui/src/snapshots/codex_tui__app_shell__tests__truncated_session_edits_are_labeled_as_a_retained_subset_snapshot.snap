@@ -27,6 +27,6 @@ expression: rendered
 ╭────────────────────────────────────────────────╮│▎retained subset; totals may be incomplete
 │◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││▎◆ WORKSPACE
-│                                                ││▎cwd /workspace/better-codex
 │                                                ││▎profile managed
+│                                                ││▎cwd /workspace/better-codex
 ╰────────────────────────────────────────────────╯│

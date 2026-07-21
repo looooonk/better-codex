@@ -28,8 +28,8 @@ expression: "render_shell(&shell, area)"
                                                   │▎3 files +128 -24
                                                   │
                                                   │▎◆ WORKSPACE
-╭────────────────────────────────────────────────╮│▎cwd /workspace/better-codex
-│◆ MESSAGE  1:37                                 ││▎profile managed
+╭────────────────────────────────────────────────╮│▎profile managed
+│◆ MESSAGE  1:37                                 ││▎cwd /workspace/better-codex
 │> Summarize the new shell architecture          ││▎files restricted, net restricted
 │                                                ││▎roots none selected
 │                                                ││

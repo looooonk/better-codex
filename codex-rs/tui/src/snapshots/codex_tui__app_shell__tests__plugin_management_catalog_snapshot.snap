@@ -26,8 +26,8 @@ expression: "render_shell(&shell, Rect::new(0, 0, 110, 36,),)"
                    │                                                                      │
                    ╰──────────────────────────────────────────────────────────────────────╯
                                                             │▎◆ WORKSPACE
-                                                            │▎cwd /workspace/better-codex
                                                             │▎profile managed
+                                                            │▎cwd /workspace/better-codex
                                                             │▎files restricted, net restricted
                                                             │▎roots none selected
                                                             │

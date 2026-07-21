@@ -9,8 +9,8 @@ expression: after
                                                 │ │▎3 files +128 -24
  ▌ edited 3 files +128 -24                      │ │
                                                 │ │▎◆ WORKSPACE
- ▎ CODEX  The new shell owns the fullscreen     ┃ │▎cwd /workspace/better-codex
-          surface.                              ┃ │▎profile managed
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │▎profile managed
+          surface.                              ┃ │▎cwd /workspace/better-codex
                                                   │▎files restricted, net restricted
 ╭────────────────────────────────────────────────╮│▎roots none selected
 │◆ MESSAGE  1:37                                 ││

@@ -7,17 +7,8 @@ use ratatui::style::Stylize;
 use ratatui::text::Line;
 
 pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'static>> {
-    let mut workspace_lines = vec![Line::from(vec![
-        "cwd ".dim(),
-        dashboard_value(&shell.cwd, width, /*prefix_width*/ 4).into(),
-    ])];
+    let mut workspace_lines = Vec::new();
     if let Some(git_status) = &shell.workspace_git_status {
-        if let Some(branch) = &git_status.branch {
-            workspace_lines.push(Line::from(vec![
-                "branch ".dim(),
-                dashboard_value(branch, width, /*prefix_width*/ 7).cyan(),
-            ]));
-        }
         if git_status.is_dirty() {
             workspace_lines.push(Line::from(format!(
                 "changes {} paths",
@@ -27,8 +18,14 @@ pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'sta
         } else {
             workspace_lines.push(Line::from("tree clean".green()));
         }
+        if let Some(branch) = &git_status.branch {
+            workspace_lines.push(Line::from(vec![
+                "branch ".dim(),
+                dashboard_value(branch, width, /*prefix_width*/ 7).cyan(),
+            ]));
+        }
     }
-    match &shell.permission_profile {
+    let permission_details = match &shell.permission_profile {
         PermissionProfile::Managed {
             file_system,
             network,
@@ -38,21 +35,29 @@ pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'sta
                 ManagedFileSystemPermissions::Unrestricted => "unrestricted",
             };
             workspace_lines.push(profile_line(shell, width, "managed"));
-            workspace_lines.push(Line::from(format!(
+            Some(Line::from(format!(
                 "files {file_system_label}, net {network}"
-            )));
+            )))
         }
         PermissionProfile::Disabled => {
             workspace_lines.push(profile_line(shell, width, "full access"));
+            None
         }
         PermissionProfile::External { network } => {
             workspace_lines.push(profile_line(shell, width, "external"));
-            workspace_lines.push(Line::from(format!("net {network}")));
+            Some(Line::from(format!("net {network}")))
         }
+    };
+    workspace_lines.push(Line::from(vec![
+        "cwd ".dim(),
+        dashboard_value(&shell.cwd, width, /*prefix_width*/ 4).into(),
+    ]));
+    if let Some(permission_details) = permission_details {
+        workspace_lines.push(permission_details);
     }
     if shell.runtime_workspace_roots.is_empty() {
         workspace_lines.push(Line::from("roots none selected".dim()));
-    } else {
+    } else if shell.runtime_workspace_roots.len() > 1 {
         const WORKSPACE_ROOT_PREVIEW_LIMIT: usize = 3;
         let root_count = shell.runtime_workspace_roots.len();
         workspace_lines.push(Line::from(format!(

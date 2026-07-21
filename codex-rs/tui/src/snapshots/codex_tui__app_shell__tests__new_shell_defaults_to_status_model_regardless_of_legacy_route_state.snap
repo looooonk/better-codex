@@ -23,10 +23,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
                                                   │▎no changes
                                                   │
                                                   │▎◆ WORKSPACE
-                                                  │▎cwd /workspace/better-codex
-╭────────────────────────────────────────────────╮│▎profile managed
+                                                  │▎profile managed
+╭────────────────────────────────────────────────╮│▎cwd /workspace/better-codex
 │◆ MESSAGE  1:1                                  ││▎files restricted, net restricted
-│> Type a message, Shift+Enter for newline       ││▎roots 1 writable
-│                                                ││▎  /workspace/better-codex
-│                                                ││
+│> Type a message, Shift+Enter for newline       ││
+│                                                ││▎◆ TOKENS
+│                                                ││▎input 0 | output 0
 ╰────────────────────────────────────────────────╯│
