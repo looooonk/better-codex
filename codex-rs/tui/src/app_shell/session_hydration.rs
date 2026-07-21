@@ -1,3 +1,4 @@
+use super::DashboardRoute;
 use super::ShellState;
 use super::backend::AppShellBackend;
 use super::workspace;
@@ -384,6 +385,12 @@ impl ShellState {
 
     pub(super) fn start_workspace_status_refresh(&mut self) {
         self.start_workspace_hydration();
+    }
+
+    pub(super) fn poll_workspace_status_if_visible(&mut self) {
+        if self.dashboard_visible && self.dashboard_route == DashboardRoute::Status {
+            self.start_workspace_hydration();
+        }
     }
 
     pub(super) fn cancel_session_hydration(&mut self) {

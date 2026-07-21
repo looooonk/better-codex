@@ -28,11 +28,9 @@ expression: "render_shell(&shell, area)"
                                                   │▎◆ WORKSPACE
                                                   │▎cwd /workspace/better-codex
                                                   │▎branch feature/app-shell-dashboard
-                                                  │▎changes 13 files
-                                                  │▎  added 2
-                                                  │▎  modified 5
-                                                  │▎  deleted 1
-                                                  │▎  renamed 1
+                                                  │▎changes 13 paths
+                                                  │▎  staged 4
+                                                  │▎  unstaged 5
                                                   │▎  conflicted 1
                                                   │▎  untracked 3
                                                   │▎profile managed
@@ -42,6 +40,8 @@ expression: "render_shell(&shell, area)"
                                                   │▎◆ TOKENS
                                                   │▎input 1k | output 240
                                                   │▎Context 100% left
+                                                  │
+                                                  │
                                                   │
                                                   │
 ╭────────────────────────────────────────────────╮│

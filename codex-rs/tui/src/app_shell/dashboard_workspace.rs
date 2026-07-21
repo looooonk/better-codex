@@ -20,7 +20,7 @@ pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'sta
         }
         if git_status.is_dirty() {
             workspace_lines.push(Line::from(format!(
-                "changes {} files",
+                "changes {} paths",
                 format_usize(git_status.changes.total())
             )));
             workspace_lines.extend(workspace_change_lines(&git_status.changes));
@@ -95,10 +95,8 @@ fn workspace_change_lines(
     changes: &super::workspace::WorkspaceChangeSummary,
 ) -> Vec<Line<'static>> {
     [
-        ("added", changes.added),
-        ("modified", changes.modified),
-        ("deleted", changes.deleted),
-        ("renamed", changes.renamed),
+        ("staged", changes.staged),
+        ("unstaged", changes.unstaged),
         ("conflicted", changes.conflicted),
         ("untracked", changes.untracked),
     ]

@@ -196,6 +196,7 @@ const TRANSCRIPT_SELECTION_STEP: usize = 1;
 const APP_SERVER_FRAME_INTERVAL: Duration = Duration::from_millis(33);
 const BACKEND_ACTION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const AGENT_HISTORY_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const WORKSPACE_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(/*secs*/ 5);
 const STATUS_SPINNER_FRAME_INTERVAL: Duration = Duration::from_millis(120);
 
 fn next_transcript_render_revision() -> u64 {
@@ -310,6 +311,11 @@ pub(crate) async fn run(
         agent_history_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut backend_action_poll = tokio::time::interval(BACKEND_ACTION_POLL_INTERVAL);
         backend_action_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut workspace_status_poll = tokio::time::interval_at(
+            tokio::time::Instant::now() + WORKSPACE_STATUS_POLL_INTERVAL,
+            WORKSPACE_STATUS_POLL_INTERVAL,
+        );
+        workspace_status_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut status_spinner = tokio::time::interval(STATUS_SPINNER_FRAME_INTERVAL);
         status_spinner.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let exit_reason = loop {
@@ -457,6 +463,9 @@ pub(crate) async fn run(
                     if shell.poll_backend_actions(&app_server).await {
                         tui.frame_requester().schedule_frame();
                     }
+                }
+                _ = workspace_status_poll.tick() => {
+                    shell.poll_workspace_status_if_visible();
                 }
                 _ = tokio::time::sleep_until(
                     user_input_auto_resolution_deadline

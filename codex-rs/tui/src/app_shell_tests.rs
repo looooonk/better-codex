@@ -1191,10 +1191,9 @@ fn renders_workspace_git_status_snapshot() {
         git_root: None,
         branch: Some("feature/app-shell-dashboard".to_string()),
         changes: workspace::WorkspaceChangeSummary {
-            added: 2,
-            modified: 5,
-            deleted: 1,
-            renamed: 1,
+            paths: 13,
+            staged: 4,
+            unstaged: 5,
             conflicted: 1,
             untracked: 3,
         },
@@ -1219,10 +1218,9 @@ fn renders_status_route_snapshot() {
         git_root: None,
         branch: Some("feature/app-shell-dashboard".to_string()),
         changes: workspace::WorkspaceChangeSummary {
-            added: 2,
-            modified: 5,
-            deleted: 1,
-            renamed: 1,
+            paths: 13,
+            staged: 4,
+            unstaged: 5,
             conflicted: 1,
             untracked: 3,
         },
@@ -7831,6 +7829,44 @@ async fn workspace_refresh_waits_until_active_turn_finishes() {
     );
 }
 
+#[tokio::test]
+async fn visible_workspace_poll_runs_during_an_active_turn() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.workspace_command_runner = Some(Arc::new(NoopWorkspaceRunner));
+    shell.active_turn_id = Some("turn-1".to_string());
+    shell.dashboard_visible = true;
+    shell.dashboard_route = DashboardRoute::Status;
+
+    shell.poll_workspace_status_if_visible();
+
+    assert!(shell.has_pending_session_hydration());
+    finish_session_hydration(&mut shell, &RecordingBackend::default()).await;
+    assert_eq!(
+        shell.workspace_git_status,
+        Some(WorkspaceGitStatus {
+            git_root: Some(PathBuf::from("/workspace/better-codex")),
+            ..WorkspaceGitStatus::default()
+        })
+    );
+}
+
+#[test]
+fn workspace_poll_skips_hidden_and_non_status_dashboards() {
+    for (dashboard_visible, dashboard_route) in [
+        (false, DashboardRoute::Status),
+        (true, DashboardRoute::Agents),
+    ] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.workspace_command_runner = Some(Arc::new(NoopWorkspaceRunner));
+        shell.dashboard_visible = dashboard_visible;
+        shell.dashboard_route = dashboard_route;
+
+        shell.poll_workspace_status_if_visible();
+
+        assert!(!shell.has_pending_session_hydration());
+    }
+}
+
 #[test]
 fn turn_diff_updates_dashboard_without_conversation_diff_box() {
     let mut shell = ShellState::snapshot_fixture();
@@ -8629,10 +8665,9 @@ fn dashboard_compacts_token_counts_and_groups_other_large_numbers() {
         git_root: None,
         branch: Some("numbers".to_string()),
         changes: workspace::WorkspaceChangeSummary {
-            added: 1_000,
-            modified: 2_000,
-            deleted: 3_000,
-            renamed: 4_000,
+            paths: 21_000,
+            staged: 10_000,
+            unstaged: 2_000,
             conflicted: 5_000,
             untracked: 6_000,
         },
@@ -8647,8 +8682,9 @@ fn dashboard_compacts_token_counts_and_groups_other_large_numbers() {
     assert!(rendered.contains("input 1.2m | output 235k"));
     assert!(rendered.contains("Context 27% left"));
     assert!(rendered.contains("1,234 files +56,789 -10,011"));
-    assert!(rendered.contains("changes 21,000 files"));
-    assert!(rendered.contains("added 1,000"));
+    assert!(rendered.contains("changes 21,000 paths"));
+    assert!(rendered.contains("staged 10,000"));
+    assert!(rendered.contains("unstaged 2,000"));
     assert!(rendered.contains("untracked 6,000"));
 }
 
@@ -11607,7 +11643,7 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
     let runner = Arc::new(RecordingWorkspaceRunner::new(
         crate::workspace_command::WorkspaceCommandOutput {
             exit_code: 0,
-            stdout: "@@better-codex-git-root /workspace/better-codex\n## hydrated\n@@better-codex-git-counts 0 1 0 0 0 0\n".to_string(),
+            stdout: "@@better-codex-git-root /workspace/better-codex\n# branch.head hydrated\n@@better-codex-git-counts 1 0 1 0 0\n".to_string(),
             stderr: String::new(),
         },
     ));
@@ -11695,7 +11731,8 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
             git_root: Some(PathBuf::from("/workspace/better-codex")),
             branch: Some("hydrated".to_string()),
             changes: workspace::WorkspaceChangeSummary {
-                modified: 1,
+                paths: 1,
+                unstaged: 1,
                 ..workspace::WorkspaceChangeSummary::default()
             },
         })
@@ -11746,7 +11783,7 @@ async fn session_switch_hydration_is_nonblocking_and_preserves_newer_state() {
     let (runner, gate) =
         RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
             exit_code: 0,
-            stdout: "@@better-codex-git-root /workspace/better-codex\n## stale\n@@better-codex-git-counts 0 1 0 0 0 0\n".to_string(),
+            stdout: "@@better-codex-git-root /workspace/better-codex\n# branch.head stale\n@@better-codex-git-counts 1 0 1 0 0\n".to_string(),
             stderr: String::new(),
         });
     shell.workspace_command_runner = Some(Arc::new(runner));
@@ -11801,7 +11838,7 @@ async fn session_switch_hydration_is_nonblocking_and_preserves_newer_state() {
     let fresh_runner =
         RecordingWorkspaceRunner::new(crate::workspace_command::WorkspaceCommandOutput {
             exit_code: 0,
-            stdout: "@@better-codex-git-root /workspace/better-codex\n## fresh\n@@better-codex-git-counts 0 0 0 0 0 1\n".to_string(),
+            stdout: "@@better-codex-git-root /workspace/better-codex\n# branch.head fresh\n@@better-codex-git-counts 1 0 0 0 1\n".to_string(),
             stderr: String::new(),
         });
     shell.refresh_workspace_status(&fresh_runner).await;
@@ -11811,6 +11848,7 @@ async fn session_switch_hydration_is_nonblocking_and_preserves_newer_state() {
             git_root: Some(PathBuf::from("/workspace/better-codex")),
             branch: Some("fresh".to_string()),
             changes: workspace::WorkspaceChangeSummary {
+                paths: 1,
                 untracked: 1,
                 ..workspace::WorkspaceChangeSummary::default()
             },
@@ -11826,7 +11864,7 @@ async fn initial_hydration_applies_fast_lookups_while_workspace_is_still_loading
     let (runner, gate) =
         RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
             exit_code: 0,
-            stdout: "@@better-codex-git-root /workspace/better-codex\n## startup\n@@better-codex-git-counts 0 0 0 0 0 0\n".to_string(),
+            stdout: "@@better-codex-git-root /workspace/better-codex\n# branch.head startup\n@@better-codex-git-counts 0 0 0 0 0\n".to_string(),
             stderr: String::new(),
         });
     shell.workspace_command_runner = Some(Arc::new(runner));
@@ -12217,7 +12255,7 @@ async fn session_hydration_times_out_stalled_workspace_lookup() {
     let (runner, _gate) =
         RecordingWorkspaceRunner::blocked(crate::workspace_command::WorkspaceCommandOutput {
             exit_code: 0,
-            stdout: "@@better-codex-git-root /workspace/better-codex\n## never\n@@better-codex-git-counts 0 0 0 0 0 0\n".to_string(),
+            stdout: "@@better-codex-git-root /workspace/better-codex\n# branch.head never\n@@better-codex-git-counts 0 0 0 0 0\n".to_string(),
             stderr: String::new(),
         });
     shell.workspace_command_runner = Some(Arc::new(runner));
@@ -12454,7 +12492,8 @@ async fn replacing_session_clears_session_bound_surfaces() {
         git_root: None,
         branch: Some("old-branch".to_string()),
         changes: workspace::WorkspaceChangeSummary {
-            modified: 1,
+            paths: 1,
+            unstaged: 1,
             ..workspace::WorkspaceChangeSummary::default()
         },
     });
@@ -14820,7 +14859,7 @@ impl crate::workspace_command::WorkspaceCommandExecutor for NoopWorkspaceRunner 
         Box::pin(async {
             Ok(crate::workspace_command::WorkspaceCommandOutput {
                 exit_code: 0,
-                stdout: "@@better-codex-git-root /workspace/better-codex\n@@better-codex-git-counts 0 0 0 0 0 0\n".to_string(),
+                stdout: "@@better-codex-git-root /workspace/better-codex\n@@better-codex-git-counts 0 0 0 0 0\n".to_string(),
                 stderr: String::new(),
             })
         })
