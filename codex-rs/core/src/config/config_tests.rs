@@ -10947,6 +10947,10 @@ async fn multi_agent_v2_rejects_invalid_tool_namespace() -> std::io::Result<()> 
             "functions",
             "features.multi_agent_v2.tool_namespace uses a reserved namespace: functions",
         ),
+        (
+            "collaboration",
+            "features.multi_agent_v2.tool_namespace uses a reserved namespace: collaboration",
+        ),
     ] {
         let codex_home = TempDir::new()?;
         std::fs::write(
@@ -10968,31 +10972,6 @@ tool_namespace = "{namespace}"
         assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
         assert_eq!(err.to_string(), expected_message);
     }
-
-    Ok(())
-}
-
-#[tokio::test]
-async fn multi_agent_v2_accepts_collaboration_tool_namespace() -> std::io::Result<()> {
-    let codex_home = TempDir::new()?;
-    std::fs::write(
-        codex_home.path().join(CONFIG_TOML_FILE),
-        r#"[features.multi_agent_v2]
-enabled = true
-tool_namespace = "collaboration"
-"#,
-    )?;
-
-    let config = ConfigBuilder::without_managed_config_for_tests()
-        .codex_home(codex_home.path().to_path_buf())
-        .fallback_cwd(Some(codex_home.path().to_path_buf()))
-        .build()
-        .await?;
-
-    assert_eq!(
-        config.multi_agent_v2.tool_namespace.as_deref(),
-        Some("collaboration")
-    );
 
     Ok(())
 }
