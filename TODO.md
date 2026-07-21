@@ -199,7 +199,7 @@ improvements that do not redefine Codex behavior.
 - [x] **P1 · CHANGE — Port paginated rollout and history infrastructure.** Add bounded
   context-suffix loading, SQLite history materialization, paginated thread/child
   reads and resumes, and explicit unsupported-operation checks.
-- [ ] **P1 · CHANGE — Port retry/edit/fork-before-turn semantics.** Support
+- [x] **P1 · CHANGE — Port retry/edit/fork-before-turn semantics.** Support
   `beforeTurnId`, canonical truncation, and `deferGoalContinuation` through the v2
   app-server API.
 - [x] **P1 · KEEP — Preserve bounded remote event queues and request timeouts.** Keep

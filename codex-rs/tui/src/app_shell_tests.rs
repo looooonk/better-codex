@@ -2,6 +2,7 @@ use super::render::ShellView;
 use super::transcript_view::TranscriptCardHit;
 use super::transcript_view::TranscriptScrollbarMetrics;
 use super::*;
+use crate::app_server_session::ForkGoalContinuation;
 use base64::Engine;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
@@ -86,7 +87,6 @@ use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
-use codex_app_server_protocol::ThreadRollbackResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
 use codex_app_server_protocol::ThreadStartSource;
@@ -4184,7 +4184,9 @@ async fn modified_keys_do_not_trigger_mcp_safety_or_import_actions() {
     )));
 
     let mut safety = ShellState::snapshot_fixture();
-    let mut safety_backend = RecordingBackend::default();
+    let mut safety_thread = thread_fixture(safety.thread_id, Some("source"), "source preview");
+    safety_thread.turns = vec![test_turn("turn-submit", TurnStatus::Interrupted)];
+    let mut safety_backend = RecordingBackend::with_threads(vec![safety_thread]);
     safety.submit_prompt(&safety_backend, "Explain the request".to_string());
     complete_backend_actions(&mut safety, &safety_backend).await;
     safety.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
@@ -4217,7 +4219,7 @@ async fn modified_keys_do_not_trigger_mcp_safety_or_import_actions() {
         safety_backend
             .calls()
             .iter()
-            .any(|call| matches!(call, RecordedBackendCall::Rollback { .. }))
+            .any(|call| matches!(call, RecordedBackendCall::Interrupt { .. }))
     );
 
     let items = external_agent_items();
@@ -4785,10 +4787,42 @@ fn completed_extension_items_render_as_successful_tools() {
 }
 
 #[tokio::test]
-async fn safety_buffering_retry_rolls_back_and_resubmits_without_duplicate_transcript() {
+async fn safety_buffering_retry_forks_before_turn_and_preserves_steered_input() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
-    let mut backend = RecordingBackend::default();
+    let source_thread_id = shell.thread_id;
+    let retry_thread_id = test_thread_id("01900000-0000-7000-8000-000000000202");
+    let mut source_thread = thread_fixture(source_thread_id, Some("source"), "source preview");
+    let mut prior_turn = test_turn("turn-prior", TurnStatus::Completed);
+    prior_turn.items.push(ThreadItem::UserMessage {
+        id: "prior-user".to_string(),
+        client_id: None,
+        content: vec![UserInput::Text {
+            text: "Earlier context".to_string(),
+            text_elements: Vec::new(),
+        }],
+    });
+    let mut interrupted_turn = test_turn("turn-submit", TurnStatus::Interrupted);
+    interrupted_turn.items.extend([
+        ThreadItem::UserMessage {
+            id: "retry-user".to_string(),
+            client_id: None,
+            content: vec![UserInput::Text {
+                text: "Explain the request".to_string(),
+                text_elements: Vec::new(),
+            }],
+        },
+        ThreadItem::UserMessage {
+            id: "retry-steer".to_string(),
+            client_id: None,
+            content: vec![UserInput::Text {
+                text: "Also keep this clarification".to_string(),
+                text_elements: Vec::new(),
+            }],
+        },
+    ]);
+    source_thread.turns = vec![prior_turn, interrupted_turn];
+    let mut backend = RecordingBackend::with_threads(vec![source_thread]);
     shell.transcript.clear();
 
     shell.submit_prompt(&backend, "Explain the request".to_string());
@@ -4801,17 +4835,32 @@ async fn safety_buffering_retry_rolls_back_and_resubmits_without_duplicate_trans
             Some("faster-model"),
         ),
     ));
+    shell.composer.set_text("Keep this unsent draft");
+    let composer_before_retry = shell.composer.clone();
 
     shell
         .handle_key(key_char('r'), &config, &mut backend)
         .await
         .expect("retry key should be handled");
 
+    let retry_calls = backend
+        .calls()
+        .into_iter()
+        .filter(|call| {
+            matches!(
+                call,
+                RecordedBackendCall::TurnStart { .. }
+                    | RecordedBackendCall::Interrupt { .. }
+                    | RecordedBackendCall::ThreadReadFull(_)
+                    | RecordedBackendCall::ForkBefore { .. }
+            )
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
-        backend.calls(),
+        retry_calls,
         vec![
             RecordedBackendCall::TurnStart {
-                thread_id: shell.thread_id,
+                thread_id: source_thread_id,
                 prompt: "Explain the request".to_string(),
                 cwd: PathBuf::from("/workspace/better-codex"),
                 model: "gpt-5-codex".to_string(),
@@ -4819,16 +4868,18 @@ async fn safety_buffering_retry_rolls_back_and_resubmits_without_duplicate_trans
                 collaboration_mode: None,
             },
             RecordedBackendCall::Interrupt {
-                thread_id: shell.thread_id,
+                thread_id: source_thread_id,
                 turn_id: "turn-submit".to_string(),
             },
-            RecordedBackendCall::Rollback {
-                thread_id: shell.thread_id,
-                num_turns: 1,
+            RecordedBackendCall::ThreadReadFull(source_thread_id),
+            RecordedBackendCall::ForkBefore {
+                thread_id: source_thread_id,
+                before_turn_id: "turn-submit".to_string(),
+                goal_continuation: ForkGoalContinuation::DeferUntilNextTurn,
             },
             RecordedBackendCall::TurnStart {
-                thread_id: shell.thread_id,
-                prompt: "Explain the request".to_string(),
+                thread_id: retry_thread_id,
+                prompt: "Explain the request\n\n\nAlso keep this clarification".to_string(),
                 cwd: PathBuf::from("/workspace/better-codex"),
                 model: "faster-model".to_string(),
                 effort: Some(ReasoningEffort::Low),
@@ -4836,15 +4887,31 @@ async fn safety_buffering_retry_rolls_back_and_resubmits_without_duplicate_trans
             },
         ]
     );
+    assert_eq!(shell.thread_id, retry_thread_id);
     assert_eq!(
-        shell.transcript,
-        VecDeque::from([TranscriptLine::new(
-            TranscriptKind::User,
-            "Explain the request",
-        )])
+        shell
+            .transcript
+            .iter()
+            .filter(|line| line.kind == TranscriptKind::User)
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "Earlier context",
+            "Explain the request\n\n\nAlso keep this clarification",
+        ]
     );
     assert_eq!(shell.active_turn_id.as_deref(), Some("turn-submit"));
+    assert_eq!(shell.composer, composer_before_retry);
     assert!(shell.safety_buffering_modal_lines().is_none());
+    insta::assert_snapshot!(
+        "safety_buffering_retry_fork",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 24,
+            ),
+        )
+    );
 }
 
 #[tokio::test]
@@ -13573,6 +13640,11 @@ enum RecordedBackendCall {
     Start(Option<ThreadStartSource>),
     Resume(codex_protocol::ThreadId),
     Fork(codex_protocol::ThreadId),
+    ForkBefore {
+        thread_id: codex_protocol::ThreadId,
+        before_turn_id: String,
+        goal_continuation: ForkGoalContinuation,
+    },
     ThreadList {
         archived: Option<bool>,
         search_term: Option<String>,
@@ -13656,10 +13728,6 @@ enum RecordedBackendCall {
         thread_id: codex_protocol::ThreadId,
         turn_id: String,
     },
-    Rollback {
-        thread_id: codex_protocol::ThreadId,
-        num_turns: u32,
-    },
     Resolve(RequestId),
     Reject {
         request_id: RequestId,
@@ -13721,6 +13789,41 @@ impl backend::AppShellBackend for RecordingBackend {
             test_thread_id("01900000-0000-7000-8000-000000000202"),
             Some(thread_id),
         ))
+    }
+
+    async fn fork_thread_before_turn(
+        &mut self,
+        _config: Config,
+        thread_id: codex_protocol::ThreadId,
+        before_turn_id: String,
+        goal_continuation: ForkGoalContinuation,
+    ) -> color_eyre::Result<crate::app_server_session::AppServerStartedThread> {
+        self.push(RecordedBackendCall::ForkBefore {
+            thread_id,
+            before_turn_id: before_turn_id.clone(),
+            goal_continuation,
+        });
+        let turns = self
+            .threads
+            .lock()
+            .expect("threads should lock")
+            .iter()
+            .find(|thread| thread.id == thread_id.to_string())
+            .and_then(|thread| {
+                thread
+                    .turns
+                    .iter()
+                    .position(|turn| turn.id == before_turn_id)
+                    .map(|index| thread.turns[..index].to_vec())
+            })
+            .ok_or_else(|| color_eyre::eyre::eyre!("before-turn boundary was not found"))?;
+        let mut started = started_thread(
+            "forked",
+            test_thread_id("01900000-0000-7000-8000-000000000202"),
+            Some(thread_id),
+        );
+        started.turns = turns;
+        Ok(started)
     }
 
     async fn thread_list(
@@ -14311,19 +14414,7 @@ impl backend::AppShellBackend for RecordingBackend {
         &mut self,
         params: backend::AppShellTurnStart,
     ) -> color_eyre::Result<TurnStartResponse> {
-        let prompt = params
-            .items
-            .iter()
-            .find_map(|item| match item {
-                ApiUserInput::Text { text, .. } => Some(text.clone()),
-                ApiUserInput::Image { .. }
-                | ApiUserInput::LocalImage { .. }
-                | ApiUserInput::Audio { .. }
-                | ApiUserInput::LocalAudio { .. }
-                | ApiUserInput::Skill { .. }
-                | ApiUserInput::Mention { .. } => None,
-            })
-            .unwrap_or_default();
+        let prompt = format_user_inputs(&params.items);
         self.push(RecordedBackendCall::TurnStart {
             thread_id: params.thread_id,
             prompt,
@@ -14382,20 +14473,6 @@ impl backend::AppShellBackend for RecordingBackend {
     ) -> std::result::Result<(), TypedRequestError> {
         self.push(RecordedBackendCall::Interrupt { thread_id, turn_id });
         Ok(())
-    }
-
-    async fn thread_rollback(
-        &mut self,
-        thread_id: codex_protocol::ThreadId,
-        num_turns: u32,
-    ) -> color_eyre::Result<ThreadRollbackResponse> {
-        self.push(RecordedBackendCall::Rollback {
-            thread_id,
-            num_turns,
-        });
-        Ok(ThreadRollbackResponse {
-            thread: thread_fixture(thread_id, Some("rolled back"), "rolled back preview"),
-        })
     }
 
     async fn turn_steer(

@@ -136,7 +136,8 @@ impl ShellState {
                     .await?;
             }
             ActiveInputRoute::SafetyBuffering => {
-                self.handle_safety_buffering_key(key, app_server).await;
+                self.handle_safety_buffering_key(key, config, app_server)
+                    .await;
             }
             ActiveInputRoute::SessionDelete => {
                 self.handle_session_delete_key(key, app_server).await?;

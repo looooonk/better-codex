@@ -1,5 +1,19 @@
 use super::*;
+use codex_app_server_protocol::TurnItemsView;
 use pretty_assertions::assert_eq;
+
+fn turn(id: &str, status: TurnStatus) -> Turn {
+    Turn {
+        id: id.to_string(),
+        items: Vec::new(),
+        items_view: TurnItemsView::Full,
+        status,
+        error: None,
+        started_at: None,
+        completed_at: None,
+        duration_ms: None,
+    }
+}
 
 #[test]
 fn safety_buffering_retry_modal_uses_neutral_waiting_copy() {
@@ -74,4 +88,33 @@ fn bio_policy_errors_are_recognized_without_matching_mutable_copy() {
         .to_string()
     ));
     assert!(!is_safety_access_error("ordinary backend failure"));
+}
+
+#[test]
+fn retry_rejects_a_stale_or_in_progress_turn() {
+    let stale = vec![
+        turn("turn-1", TurnStatus::Interrupted),
+        turn("turn-2", TurnStatus::InProgress),
+    ];
+    let in_progress = vec![turn("turn-1", TurnStatus::InProgress)];
+    let previous_in_progress = vec![
+        turn("turn-1", TurnStatus::InProgress),
+        turn("turn-2", TurnStatus::Interrupted),
+    ];
+
+    assert_eq!(
+        [
+            safety_retry_additional_inputs(&stale, "turn-1").unwrap_err(),
+            safety_retry_additional_inputs(&in_progress, "turn-1").unwrap_err(),
+            safety_retry_additional_inputs(&in_progress, "missing").unwrap_err(),
+            safety_retry_additional_inputs(&previous_in_progress, "turn-2").unwrap_err(),
+        ],
+        [
+            "interrupted turn turn-1 is no longer the latest turn",
+            "interrupted turn turn-1 is still in progress",
+            "interrupted turn missing is missing from the source thread",
+            "previous turn turn-1 is still in progress",
+        ]
+        .map(str::to_string)
+    );
 }

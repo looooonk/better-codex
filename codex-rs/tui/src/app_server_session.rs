@@ -90,8 +90,6 @@ use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
-use codex_app_server_protocol::ThreadRollbackParams;
-use codex_app_server_protocol::ThreadRollbackResponse;
 use codex_app_server_protocol::ThreadSetNameParams;
 use codex_app_server_protocol::ThreadSetNameResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
@@ -142,6 +140,17 @@ const JSONRPC_METHOD_NOT_FOUND: i64 = -32601;
 pub(crate) const EXTERNAL_AGENT_CONFIG_IMPORT_IN_PROGRESS_MESSAGE: &str =
     "A previous Claude Code import is still running. Wait for it to finish before importing again.";
 const THREAD_SETTINGS_UPDATE_METHOD: &str = "thread/settings/update";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ForkGoalContinuation {
+    StartIfIdle,
+    DeferUntilNextTurn,
+}
+
+enum ThreadForkBoundary {
+    FullHistory,
+    BeforeTurn(String),
+}
 
 fn bootstrap_request_error(context: &'static str, err: TypedRequestError) -> color_eyre::Report {
     color_eyre::eyre::eyre!("{context}: {err}")
@@ -482,18 +491,60 @@ impl AppServerSession {
         config: Config,
         thread_id: ThreadId,
     ) -> Result<AppServerStartedThread> {
+        self.fork_thread_with_boundary(
+            config,
+            thread_id,
+            ThreadForkBoundary::FullHistory,
+            ForkGoalContinuation::StartIfIdle,
+        )
+        .await
+    }
+
+    pub(crate) async fn fork_thread_before_turn(
+        &mut self,
+        config: Config,
+        thread_id: ThreadId,
+        before_turn_id: String,
+        goal_continuation: ForkGoalContinuation,
+    ) -> Result<AppServerStartedThread> {
+        self.fork_thread_with_boundary(
+            config,
+            thread_id,
+            ThreadForkBoundary::BeforeTurn(before_turn_id),
+            goal_continuation,
+        )
+        .await
+    }
+
+    async fn fork_thread_with_boundary(
+        &mut self,
+        config: Config,
+        thread_id: ThreadId,
+        boundary: ThreadForkBoundary,
+        goal_continuation: ForkGoalContinuation,
+    ) -> Result<AppServerStartedThread> {
+        let before_turn_id = match boundary {
+            ThreadForkBoundary::FullHistory => None,
+            ThreadForkBoundary::BeforeTurn(turn_id) => Some(turn_id),
+        };
         let request_id = self.next_request_id();
         let session_config = self.session_config_with_effective_service_tier(&config);
         let response: ThreadForkResponse = self
             .client
             .request_typed(ClientRequest::ThreadFork {
                 request_id,
-                params: thread_fork_params_from_config(
-                    session_config,
-                    thread_id,
-                    self.thread_params_mode(),
-                    self.remote_cwd_override.as_deref(),
-                ),
+                params: ThreadForkParams {
+                    last_turn_id: None,
+                    before_turn_id,
+                    defer_goal_continuation: goal_continuation
+                        == ForkGoalContinuation::DeferUntilNextTurn,
+                    ..thread_fork_params_from_config(
+                        session_config,
+                        thread_id,
+                        self.thread_params_mode(),
+                        self.remote_cwd_override.as_deref(),
+                    )
+                },
             })
             .await
             .map_err(|err| {
@@ -1006,24 +1057,6 @@ impl AppServerSession {
             .await
             .wrap_err("thread/backgroundTerminals/clean failed in TUI")?;
         Ok(())
-    }
-
-    pub(crate) async fn thread_rollback(
-        &mut self,
-        thread_id: ThreadId,
-        num_turns: u32,
-    ) -> Result<ThreadRollbackResponse> {
-        let request_id = self.next_request_id();
-        self.client
-            .request_typed(ClientRequest::ThreadRollback {
-                request_id,
-                params: ThreadRollbackParams {
-                    thread_id: thread_id.to_string(),
-                    num_turns,
-                },
-            })
-            .await
-            .wrap_err("thread/rollback failed in TUI")
     }
 
     pub(crate) async fn review_start(

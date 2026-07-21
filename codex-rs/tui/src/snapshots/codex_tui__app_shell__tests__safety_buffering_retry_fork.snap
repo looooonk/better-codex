@@ -1,0 +1,28 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,),)"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  switched session                       │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ SYSTEM  loaded 1 previous turns                │▎+ New session  Ctrl+N
+ ▎ YOU  Earlier context                           │▎loading sessions
+ ──────────────────────────────────────────────── │
+ ▎ YOU  Explain the request                       │▎◆ THREAD
+                                                  │▎forked
+                                                  │▎id 01900000-0000-7000-8000-000000000202
+        Also keep this clarification              │▎resume, fork, archive, delete in session list
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  ● RUNNING  1:23                      ││
+│> Keep this unsent draft                        ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

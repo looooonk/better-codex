@@ -24,6 +24,20 @@ impl ShellState {
             return Ok(());
         }
 
+        let session_config = self.current_session_config(config)?;
+
+        self.finish_subscription_cleanup().await;
+        let started = app_server
+            .start_thread_with_session_start_source(&session_config, Some(ThreadStartSource::Clear))
+            .await?;
+        self.complete_session_switch(started, app_server).await;
+        self.session_list.focused = false;
+        self.settings.focused = false;
+        self.agents_focused = false;
+        Ok(())
+    }
+
+    pub(super) fn current_session_config(&self, config: &Config) -> Result<Config> {
         let mut session_config = config.clone();
         session_config.model = Some(self.model.clone());
         session_config.model_reasoning_effort = self.reasoning_effort.clone();
@@ -39,16 +53,7 @@ impl ShellState {
             .approval_policy
             .set(self.approval_policy.to_core())
             .wrap_err("current approval policy is not allowed for a new session")?;
-
-        self.finish_subscription_cleanup().await;
-        let started = app_server
-            .start_thread_with_session_start_source(&session_config, Some(ThreadStartSource::Clear))
-            .await?;
-        self.complete_session_switch(started, app_server).await;
-        self.session_list.focused = false;
-        self.settings.focused = false;
-        self.agents_focused = false;
-        Ok(())
+        Ok(session_config)
     }
 
     pub(super) async fn complete_session_switch<S>(

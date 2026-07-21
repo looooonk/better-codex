@@ -1498,7 +1498,6 @@ impl ShellState {
             }
         };
         self.scroll_transcript_to_bottom();
-        let transcript_len_before_submit = self.transcript.len();
         self.push_user(prompt.clone());
         self.status = "thinking".to_string();
         self.clear_streaming_transcript();
@@ -1511,12 +1510,7 @@ impl ShellState {
             }
         }
         self.active_turn_id = Some(response.turn.id.clone());
-        self.record_safety_buffering_turn(
-            response.turn.id,
-            params,
-            prompt,
-            transcript_len_before_submit,
-        );
+        self.record_safety_buffering_turn(response.turn.id, params);
         if submission == TurnSubmission::Initial {
             self.start_initial_goal_hydration(app_server);
         }

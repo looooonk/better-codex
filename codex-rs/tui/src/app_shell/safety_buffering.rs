@@ -5,8 +5,15 @@ use super::TranscriptKind;
 use super::TranscriptLine;
 use super::backend::AppShellBackend;
 use super::backend::AppShellTurnStart;
+use super::format_user_inputs;
 use super::is_unmodified_action_key;
+use crate::app_server_session::ForkGoalContinuation;
+use crate::legacy_core::config::Config;
 use codex_app_server_protocol::ModelSafetyBufferingUpdatedNotification;
+use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnStatus;
+use codex_app_server_protocol::UserInput;
 use codex_protocol::openai_models::ReasoningEffort;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -29,8 +36,6 @@ const SAFETY_ACCESS_NOTICE: &str = "This content can't be shown\n\nWe take extra
 struct SubmittedTurn {
     turn_id: String,
     params: AppShellTurnStart,
-    transcript_text: String,
-    transcript_len_before_submit: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -61,19 +66,8 @@ impl SafetyBufferingState {
         *self = Self::default();
     }
 
-    fn record_submitted_turn(
-        &mut self,
-        turn_id: String,
-        params: AppShellTurnStart,
-        transcript_text: String,
-        transcript_len_before_submit: usize,
-    ) {
-        self.submitted_turn = Some(SubmittedTurn {
-            turn_id,
-            params,
-            transcript_text,
-            transcript_len_before_submit,
-        });
+    fn record_submitted_turn(&mut self, turn_id: String, params: AppShellTurnStart) {
+        self.submitted_turn = Some(SubmittedTurn { turn_id, params });
         self.active = None;
         self.output_started_turn_id = None;
     }
@@ -270,15 +264,8 @@ impl ShellState {
         &mut self,
         turn_id: String,
         params: AppShellTurnStart,
-        transcript_text: String,
-        transcript_len_before_submit: usize,
     ) {
-        self.safety_buffering.record_submitted_turn(
-            turn_id,
-            params,
-            transcript_text,
-            transcript_len_before_submit,
-        );
+        self.safety_buffering.record_submitted_turn(turn_id, params);
     }
 
     pub(super) fn reset_safety_buffering_for_turn_start(&mut self, turn_id: &str) {
@@ -331,8 +318,12 @@ impl ShellState {
         self.safety_buffering.click_key_at(line)
     }
 
-    pub(super) async fn handle_safety_buffering_key<S>(&mut self, key: KeyEvent, app_server: &mut S)
-    where
+    pub(super) async fn handle_safety_buffering_key<S>(
+        &mut self,
+        key: KeyEvent,
+        config: &Config,
+        app_server: &mut S,
+    ) where
         S: AppShellBackend,
     {
         if !is_unmodified_action_key(key) {
@@ -354,7 +345,7 @@ impl ShellState {
         };
         match action {
             Some(SafetyBufferingAction::Retry) => {
-                self.retry_safety_buffered_turn(app_server).await;
+                self.retry_safety_buffered_turn(config, app_server).await;
             }
             Some(SafetyBufferingAction::Dismiss) => self.safety_buffering.dismiss(),
             Some(SafetyBufferingAction::LearnMore) => {
@@ -366,11 +357,11 @@ impl ShellState {
         }
     }
 
-    async fn retry_safety_buffered_turn<S>(&mut self, app_server: &mut S)
+    async fn retry_safety_buffered_turn<S>(&mut self, config: &Config, app_server: &mut S)
     where
         S: AppShellBackend,
     {
-        let Some((submitted, faster_model)) = self.safety_buffering.retry_payload() else {
+        let Some((mut submitted, faster_model)) = self.safety_buffering.retry_payload() else {
             self.push_error("Failed to retry with a faster model: original turn is unavailable");
             return;
         };
@@ -384,15 +375,56 @@ impl ShellState {
             self.push_error(format!("Failed to retry with a faster model: {err}"));
             return;
         }
-        if let Err(err) = app_server
-            .thread_rollback(self.thread_id, /*num_turns*/ 1)
+        let source_thread = match app_server
+            .thread_read_full_in_background(self.thread_id)
             .await
         {
-            self.push_error(format!("Failed to retry with a faster model: {err}"));
-            return;
-        }
+            Ok(thread) => thread,
+            Err(err) => {
+                self.push_error(format!("Failed to retry with a faster model: {err}"));
+                return;
+            }
+        };
+        let additional_inputs = match safety_retry_additional_inputs(
+            &source_thread.turns,
+            submitted.turn_id.as_str(),
+        ) {
+            Ok(inputs) => inputs,
+            Err(err) => {
+                self.push_error(format!("Failed to retry with a faster model: {err}"));
+                return;
+            }
+        };
+        submitted.params.items.extend(additional_inputs);
+
+        let retry_config = match self.current_session_config(config) {
+            Ok(config) => config,
+            Err(err) => {
+                self.push_error(format!("Failed to retry with a faster model: {err}"));
+                return;
+            }
+        };
+        let started = match app_server
+            .fork_thread_before_turn(
+                retry_config,
+                self.thread_id,
+                submitted.turn_id.clone(),
+                ForkGoalContinuation::DeferUntilNextTurn,
+            )
+            .await
+        {
+            Ok(started) => started,
+            Err(err) => {
+                self.push_error(format!("Failed to retry with a faster model: {err}"));
+                return;
+            }
+        };
+        let composer = self.composer.clone();
+        self.complete_session_switch(started, app_server).await;
+        self.composer = composer;
 
         let mut params = submitted.params;
+        params.thread_id = self.thread_id;
         params.model = faster_model.clone();
         params.effort = Some(ReasoningEffort::Low);
         params.collaboration_mode = params.collaboration_mode.map(|mode| {
@@ -403,34 +435,14 @@ impl ShellState {
             )
         });
 
-        self.transcript
-            .truncate(submitted.transcript_len_before_submit);
-        self.transcript_selection = None;
-        self.scroll_transcript_to_bottom();
-        self.clear_streaming_transcript();
-        self.tool_activity.clear();
-        self.close_agent_log();
-        self.close_tool_output();
-        self.close_diff_view();
-        self.diff_store.remove_turn(&submitted.turn_id);
-        self.agent_activity = super::agent_activity::AgentActivityState::default();
-        self.subagent_activity.clear();
-        self.latest_diff = None;
-        self.clear_interactive_requests();
-        self.active_turn_id = None;
-        self.safety_buffering.clear();
-        self.push_user(submitted.transcript_text.clone());
+        let retry_display = format_user_inputs(&params.items);
+        self.push_user(retry_display);
         self.status = "thinking".to_string();
 
         match app_server.turn_start(params.clone()).await {
             Ok(response) => {
                 self.active_turn_id = Some(response.turn.id.clone());
-                self.record_safety_buffering_turn(
-                    response.turn.id,
-                    params,
-                    submitted.transcript_text,
-                    submitted.transcript_len_before_submit,
-                );
+                self.record_safety_buffering_turn(response.turn.id, params);
             }
             Err(err) => {
                 self.status = "error".to_string();
@@ -453,6 +465,46 @@ impl ShellState {
         ));
         true
     }
+}
+
+fn safety_retry_additional_inputs(turns: &[Turn], turn_id: &str) -> Result<Vec<UserInput>, String> {
+    let Some(turn_index) = turns.iter().position(|turn| turn.id == turn_id) else {
+        return Err(format!(
+            "interrupted turn {turn_id} is missing from the source thread"
+        ));
+    };
+    if turn_index + 1 != turns.len() {
+        return Err(format!(
+            "interrupted turn {turn_id} is no longer the latest turn"
+        ));
+    }
+    let turn = &turns[turn_index];
+    if turn.status == TurnStatus::InProgress {
+        return Err(format!("interrupted turn {turn_id} is still in progress"));
+    }
+    if let Some(previous_turn) = turns[..turn_index].last()
+        && previous_turn.status == TurnStatus::InProgress
+    {
+        return Err(format!(
+            "previous turn {} is still in progress",
+            previous_turn.id
+        ));
+    }
+
+    let mut user_messages = turn.items.iter().filter_map(|item| match item {
+        ThreadItem::UserMessage { content, .. } => Some(content),
+        _ => None,
+    });
+    user_messages.next();
+    Ok(user_messages
+        .flat_map(|content| {
+            std::iter::once(UserInput::Text {
+                text: "\n".to_string(),
+                text_elements: Vec::new(),
+            })
+            .chain(content.iter().cloned())
+        })
+        .collect())
 }
 
 fn is_safety_access_error(message: &str) -> bool {

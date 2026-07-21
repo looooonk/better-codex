@@ -126,6 +126,7 @@ impl ShellState {
             if let Some(key) = key {
                 self.handle_safety_buffering_key(
                     KeyEvent::new(key, KeyModifiers::NONE),
+                    config,
                     app_server,
                 )
                 .await;

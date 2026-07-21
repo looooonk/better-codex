@@ -1,5 +1,6 @@
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
+use crate::app_server_session::ForkGoalContinuation;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::config_update::write_config_batch;
 use crate::legacy_core::config::Config;
@@ -36,7 +37,6 @@ use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
-use codex_app_server_protocol::ThreadRollbackResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::TurnStartResponse;
@@ -81,6 +81,14 @@ pub(super) trait AppShellBackend {
         &mut self,
         config: Config,
         thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send;
+
+    fn fork_thread_before_turn(
+        &mut self,
+        config: Config,
+        thread_id: ThreadId,
+        before_turn_id: String,
+        goal_continuation: ForkGoalContinuation,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send;
 
     fn thread_list(
@@ -258,12 +266,6 @@ pub(super) trait AppShellBackend {
         turn_id: String,
     ) -> impl std::future::Future<Output = std::result::Result<(), TypedRequestError>> + Send;
 
-    fn thread_rollback(
-        &mut self,
-        thread_id: ThreadId,
-        num_turns: u32,
-    ) -> impl std::future::Future<Output = Result<ThreadRollbackResponse>> + Send;
-
     fn turn_steer(
         &mut self,
         thread_id: ThreadId,
@@ -362,6 +364,23 @@ impl AppShellBackend for AppServerSession {
         thread_id: ThreadId,
     ) -> Result<AppServerStartedThread> {
         AppServerSession::fork_thread(self, config, thread_id).await
+    }
+
+    async fn fork_thread_before_turn(
+        &mut self,
+        config: Config,
+        thread_id: ThreadId,
+        before_turn_id: String,
+        goal_continuation: ForkGoalContinuation,
+    ) -> Result<AppServerStartedThread> {
+        AppServerSession::fork_thread_before_turn(
+            self,
+            config,
+            thread_id,
+            before_turn_id,
+            goal_continuation,
+        )
+        .await
     }
 
     async fn thread_list(&mut self, params: ThreadListParams) -> Result<ThreadListResponse> {
@@ -702,14 +721,6 @@ impl AppShellBackend for AppServerSession {
         turn_id: String,
     ) -> std::result::Result<(), TypedRequestError> {
         AppServerSession::turn_interrupt(self, thread_id, turn_id).await
-    }
-
-    async fn thread_rollback(
-        &mut self,
-        thread_id: ThreadId,
-        num_turns: u32,
-    ) -> Result<ThreadRollbackResponse> {
-        AppServerSession::thread_rollback(self, thread_id, num_turns).await
     }
 
     async fn turn_steer(
