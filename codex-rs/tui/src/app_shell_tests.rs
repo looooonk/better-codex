@@ -129,6 +129,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::time::Instant;
 
 const SNAPSHOT_THREAD_ID: &str = "01900000-0000-7000-8000-000000000001";
 
@@ -861,12 +862,63 @@ fn renders_narrow_shell_snapshot() {
 fn renders_running_status_spinner_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.active_turn_id = Some("turn-spinner".to_string());
+    shell.turn_started_at = Some(Instant::now() - Duration::from_secs(/*secs*/ 5_147));
     shell.status_spinner_frame = 2;
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24,
     );
 
-    insta::assert_snapshot!(render_shell(&shell, area));
+    let rendered = render_shell(&shell, area);
+
+    assert!(rendered.contains("turn 1h 25m 47s"));
+    insta::assert_snapshot!(rendered);
+}
+
+#[tokio::test]
+async fn turn_timer_starts_resets_and_stops_with_turn_lifecycle() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    shell.submit_prompt(&backend, "First timed turn".to_string());
+
+    assert_eq!(shell.turn_started_at, None);
+    complete_backend_actions(&mut shell, &backend).await;
+    let first_started_at = shell
+        .turn_started_at
+        .expect("successful turn start should start the timer");
+    let aged_started_at = Instant::now() - Duration::from_secs(/*secs*/ 65);
+    shell.turn_started_at = Some(aged_started_at);
+    shell.handle_notification(ServerNotification::TurnStarted(
+        codex_app_server_protocol::TurnStartedNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn: test_turn("turn-submit", TurnStatus::InProgress),
+        },
+    ));
+
+    assert_eq!(shell.turn_started_at, Some(aged_started_at));
+    shell.handle_notification(ServerNotification::TurnCompleted(
+        codex_app_server_protocol::TurnCompletedNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn: test_turn("turn-submit", TurnStatus::Completed),
+        },
+    ));
+    assert_eq!(
+        (
+            shell.active_turn_id.as_deref(),
+            shell.turn_started_at,
+            shell.active_turn_elapsed_seconds(),
+        ),
+        (None, None, None)
+    );
+
+    shell.submit_prompt(&backend, "Second timed turn".to_string());
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(
+        shell
+            .turn_started_at
+            .expect("next turn should restart the timer")
+            > first_started_at
+    );
 }
 
 #[test]

@@ -101,7 +101,7 @@ impl ShellState {
         let was_available = self.session_unavailable_reason.replace(reason).is_none();
         self.finish_streaming_plan();
         self.finish_streaming_assistant();
-        self.active_turn_id = None;
+        self.clear_active_turn();
         self.clear_interactive_requests();
         self.pending_session_delete = None;
         self.safety_buffering.clear();

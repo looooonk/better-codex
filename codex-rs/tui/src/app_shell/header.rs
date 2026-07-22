@@ -34,6 +34,7 @@ pub(super) struct HeaderView<'a> {
     pub(super) service_tier: &'a str,
     pub(super) status: &'a str,
     pub(super) status_spinner_frame: Option<usize>,
+    pub(super) turn_elapsed_seconds: Option<u64>,
     pub(super) dashboard_visible: bool,
 }
 
@@ -75,7 +76,12 @@ impl HeaderView<'_> {
                     .render(service_tier, buf);
             }
             if let Some(status) = layout.status {
-                Paragraph::new(self.status_line())
+                let line = match layout.status_display {
+                    HeaderStatusDisplay::Full => self.status_line(),
+                    HeaderStatusDisplay::TimerOnly => self.turn_timer_line(),
+                    HeaderStatusDisplay::None => Line::default(),
+                };
+                Paragraph::new(line)
                     .style(pane_style(palette::DARK))
                     .render(status, buf);
             }
@@ -120,18 +126,36 @@ impl HeaderView<'_> {
         let effort_width = text_width(&self.effort_label());
         let service_tier_width = text_width(&self.service_tier_label());
         let status_width = line_width(&self.status_line());
+        let timer_width = line_width(&self.turn_timer_line());
         let model_width = u16::try_from(model_width).ok()?;
         let effort_width = u16::try_from(effort_width).ok()?;
         let service_tier_width = u16::try_from(service_tier_width).ok()?;
         let status_width = u16::try_from(status_width).ok()?;
-        for (compact_brand, controls) in [
-            (false, HeaderControlSet::AllWithStatus),
-            (true, HeaderControlSet::AllWithStatus),
-            (true, HeaderControlSet::AllSelectors),
-            (true, HeaderControlSet::ModelAndEffort),
-            (true, HeaderControlSet::ModelOnly),
-            (true, HeaderControlSet::None),
-        ] {
+        let timer_width = u16::try_from(timer_width).ok()?;
+        let control_sets: &[(bool, HeaderControlSet)] = if self.turn_elapsed_seconds.is_some() {
+            &[
+                (false, HeaderControlSet::AllWithStatus),
+                (true, HeaderControlSet::AllWithStatus),
+                (true, HeaderControlSet::ModelWithStatus),
+                (true, HeaderControlSet::ModelWithTimer),
+                (true, HeaderControlSet::StatusOnly),
+                (true, HeaderControlSet::TimerOnly),
+                (true, HeaderControlSet::AllSelectors),
+                (true, HeaderControlSet::ModelAndEffort),
+                (true, HeaderControlSet::ModelOnly),
+                (true, HeaderControlSet::None),
+            ]
+        } else {
+            &[
+                (false, HeaderControlSet::AllWithStatus),
+                (true, HeaderControlSet::AllWithStatus),
+                (true, HeaderControlSet::AllSelectors),
+                (true, HeaderControlSet::ModelAndEffort),
+                (true, HeaderControlSet::ModelOnly),
+                (true, HeaderControlSet::None),
+            ]
+        };
+        for (compact_brand, controls) in control_sets.iter().copied() {
             let controls_width = match controls {
                 HeaderControlSet::AllWithStatus => model_width
                     .saturating_add(CONTROL_GAP)
@@ -140,6 +164,14 @@ impl HeaderView<'_> {
                     .saturating_add(service_tier_width)
                     .saturating_add(CONTROL_GAP)
                     .saturating_add(status_width),
+                HeaderControlSet::ModelWithStatus => model_width
+                    .saturating_add(CONTROL_GAP)
+                    .saturating_add(status_width),
+                HeaderControlSet::ModelWithTimer => model_width
+                    .saturating_add(CONTROL_GAP)
+                    .saturating_add(timer_width),
+                HeaderControlSet::StatusOnly => status_width,
+                HeaderControlSet::TimerOnly => timer_width,
                 HeaderControlSet::AllSelectors => model_width
                     .saturating_add(CONTROL_GAP)
                     .saturating_add(effort_width)
@@ -165,16 +197,58 @@ impl HeaderView<'_> {
                 continue;
             }
             let controls_x = content.right().saturating_sub(controls_width);
-            let model_x = controls_x;
-            let effort_x = model_x
-                .saturating_add(model_width)
-                .saturating_add(CONTROL_GAP);
-            let service_tier_x = effort_x
-                .saturating_add(effort_width)
-                .saturating_add(CONTROL_GAP);
-            let status_x = service_tier_x
-                .saturating_add(service_tier_width)
-                .saturating_add(CONTROL_GAP);
+            let shows_model = matches!(
+                controls,
+                HeaderControlSet::AllWithStatus
+                    | HeaderControlSet::ModelWithStatus
+                    | HeaderControlSet::ModelWithTimer
+                    | HeaderControlSet::AllSelectors
+                    | HeaderControlSet::ModelAndEffort
+                    | HeaderControlSet::ModelOnly
+            );
+            let shows_effort = matches!(
+                controls,
+                HeaderControlSet::AllWithStatus
+                    | HeaderControlSet::AllSelectors
+                    | HeaderControlSet::ModelAndEffort
+            );
+            let shows_service_tier = matches!(
+                controls,
+                HeaderControlSet::AllWithStatus | HeaderControlSet::AllSelectors
+            );
+            let status_display = match controls {
+                HeaderControlSet::AllWithStatus
+                | HeaderControlSet::ModelWithStatus
+                | HeaderControlSet::StatusOnly => HeaderStatusDisplay::Full,
+                HeaderControlSet::ModelWithTimer | HeaderControlSet::TimerOnly => {
+                    HeaderStatusDisplay::TimerOnly
+                }
+                HeaderControlSet::AllSelectors
+                | HeaderControlSet::ModelAndEffort
+                | HeaderControlSet::ModelOnly
+                | HeaderControlSet::None => HeaderStatusDisplay::None,
+            };
+            let mut next_control_x = controls_x;
+            let mut place_control = |visible: bool, width: u16| {
+                visible.then(|| {
+                    let rect = Rect::new(next_control_x, content.y, width, 1);
+                    next_control_x = next_control_x
+                        .saturating_add(width)
+                        .saturating_add(CONTROL_GAP);
+                    rect
+                })
+            };
+            let model = place_control(shows_model, model_width);
+            let effort = place_control(shows_effort, effort_width);
+            let service_tier = place_control(shows_service_tier, service_tier_width);
+            let status = place_control(
+                status_display != HeaderStatusDisplay::None,
+                if status_display == HeaderStatusDisplay::TimerOnly {
+                    timer_width
+                } else {
+                    status_width
+                },
+            );
             return Some(HeaderControlLayout {
                 dashboard: Rect::new(content.x, content.y, dashboard_width, 1),
                 brand: Rect::new(
@@ -186,35 +260,11 @@ impl HeaderView<'_> {
                     brand_width,
                     1,
                 ),
-                model: (!matches!(controls, HeaderControlSet::None)).then_some(Rect::new(
-                    model_x,
-                    content.y,
-                    model_width,
-                    1,
-                )),
-                effort: matches!(
-                    controls,
-                    HeaderControlSet::AllWithStatus
-                        | HeaderControlSet::AllSelectors
-                        | HeaderControlSet::ModelAndEffort
-                )
-                .then_some(Rect::new(effort_x, content.y, effort_width, 1)),
-                service_tier: matches!(
-                    controls,
-                    HeaderControlSet::AllWithStatus | HeaderControlSet::AllSelectors
-                )
-                .then_some(Rect::new(
-                    service_tier_x,
-                    content.y,
-                    service_tier_width,
-                    1,
-                )),
-                status: matches!(controls, HeaderControlSet::AllWithStatus).then_some(Rect::new(
-                    status_x,
-                    content.y,
-                    status_width,
-                    1,
-                )),
+                model,
+                effort,
+                service_tier,
+                status,
+                status_display,
                 compact_brand,
             });
         }
@@ -297,10 +347,39 @@ impl HeaderView<'_> {
             .status_spinner_frame
             .map(|frame| STATUS_SPINNER_FRAMES[frame % STATUS_SPINNER_FRAMES.len()])
             .unwrap_or("●");
-        Line::from(vec![
+        let mut spans = vec![
             format!("{indicator} ").fg(color),
             self.status.to_string().fg(palette::TEXT).bold(),
+        ];
+        if let Some(seconds) = self.turn_elapsed_seconds {
+            spans.extend([
+                " · turn ".fg(palette::MUTED),
+                format_turn_elapsed(seconds).fg(palette::TEXT).bold(),
+            ]);
+        }
+        Line::from(spans)
+    }
+
+    fn turn_timer_line(&self) -> Line<'static> {
+        Line::from(vec![
+            "turn ".fg(palette::MUTED),
+            format_turn_elapsed(self.turn_elapsed_seconds.unwrap_or_default())
+                .fg(palette::TEXT)
+                .bold(),
         ])
+    }
+}
+
+fn format_turn_elapsed(seconds: u64) -> String {
+    let hours = seconds / 3_600;
+    let minutes = seconds % 3_600 / 60;
+    let seconds = seconds % 60;
+    if hours > 0 {
+        format!("{hours}h {minutes}m {seconds}s")
+    } else if minutes > 0 {
+        format!("{minutes}m {seconds}s")
+    } else {
+        format!("{seconds}s")
     }
 }
 
@@ -320,12 +399,24 @@ struct HeaderControlLayout {
     effort: Option<Rect>,
     service_tier: Option<Rect>,
     status: Option<Rect>,
+    status_display: HeaderStatusDisplay,
     compact_brand: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeaderStatusDisplay {
+    None,
+    Full,
+    TimerOnly,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HeaderControlSet {
     AllWithStatus,
+    ModelWithStatus,
+    ModelWithTimer,
+    StatusOnly,
+    TimerOnly,
     AllSelectors,
     ModelAndEffort,
     ModelOnly,

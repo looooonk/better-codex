@@ -133,7 +133,7 @@ impl ShellState {
             }
             ServerNotification::TurnStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
-                    self.active_turn_id = Some(started.turn.id.clone());
+                    self.record_active_turn_started(started.turn.id.clone());
                     self.reset_safety_buffering_for_turn_start(&started.turn.id);
                     self.status = "thinking".to_string();
                 } else if self.prepare_active_agent_thread(&started.thread_id) {
@@ -154,7 +154,7 @@ impl ShellState {
                     self.finish_streaming_assistant();
                     self.clear_safety_buffering_for_turn_completion(&completed.turn.id);
                     if completed_active_turn {
-                        self.active_turn_id = None;
+                        self.clear_active_turn();
                     }
                     self.mark_workspace_status_refresh_due();
                     self.status = match completed.turn.status {

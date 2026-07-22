@@ -132,6 +132,7 @@ mod tool_output;
 mod tool_output_view;
 mod transcript_render;
 mod transcript_view;
+mod turn_timer;
 mod user_input;
 mod workspace;
 use agent_activity::AgentActivityState;
@@ -201,6 +202,7 @@ const BACKEND_ACTION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const AGENT_HISTORY_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const WORKSPACE_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(/*secs*/ 5);
 const STATUS_SPINNER_FRAME_INTERVAL: Duration = Duration::from_millis(120);
+const TURN_TIMER_REFRESH_INTERVAL: Duration = Duration::from_secs(/*secs*/ 1);
 
 fn next_transcript_render_revision() -> u64 {
     static NEXT_REVISION: AtomicU64 = AtomicU64::new(1);
@@ -321,6 +323,11 @@ pub(crate) async fn run(
         workspace_status_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut status_spinner = tokio::time::interval(STATUS_SPINNER_FRAME_INTERVAL);
         status_spinner.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut turn_timer_refresh = tokio::time::interval_at(
+            tokio::time::Instant::now() + TURN_TIMER_REFRESH_INTERVAL,
+            TURN_TIMER_REFRESH_INTERVAL,
+        );
+        turn_timer_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let exit_reason = loop {
             if terminal_width_supported(tui.terminal.size()?.width)
                 && let Some(prompt) = pending_initial_prompt.take()
@@ -483,6 +490,9 @@ pub(crate) async fn run(
                         shell.status_spinner_frame = shell.status_spinner_frame.wrapping_add(1);
                         tui.frame_requester().schedule_frame();
                     }
+                }
+                _ = turn_timer_refresh.tick(), if shell.active_turn_elapsed_seconds().is_some() => {
+                    tui.frame_requester().schedule_frame();
                 }
             }
         };
@@ -781,6 +791,7 @@ struct ShellState {
     exit_confirmation_pending: bool,
     clipboard_lease: Option<ClipboardLease>,
     active_turn_id: Option<String>,
+    turn_started_at: Option<std::time::Instant>,
     pending_approval: Option<PendingApproval>,
     pending_session_delete: Option<PendingSessionDelete>,
     pending_elicitation: Option<PendingElicitation>,
@@ -892,6 +903,7 @@ impl ShellState {
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: None,
+            turn_started_at: None,
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,
@@ -1536,7 +1548,7 @@ impl ShellState {
                 self.composer.remember_submission(&prompt);
             }
         }
-        self.active_turn_id = Some(response.turn.id.clone());
+        self.record_active_turn_started(response.turn.id.clone());
         self.record_safety_buffering_turn(response.turn.id, params);
         if submission == TurnSubmission::Initial {
             self.start_initial_goal_hydration(app_server);
@@ -2439,6 +2451,7 @@ impl ShellState {
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: None,
+            turn_started_at: None,
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,
@@ -2699,6 +2712,7 @@ pub mod bench_support {
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: Some("turn-bench-1234567890".to_string()),
+            turn_started_at: Some(std::time::Instant::now()),
             pending_approval: None,
             pending_session_delete: None,
             pending_elicitation: None,

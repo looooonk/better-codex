@@ -9,6 +9,7 @@ fn view() -> HeaderView<'static> {
         service_tier: "priority",
         status: "ready",
         status_spinner_frame: None,
+        turn_elapsed_seconds: None,
         dashboard_visible: true,
     }
 }
@@ -231,4 +232,42 @@ fn running_status_spinner_rotates_without_changing_width() {
 #[test]
 fn ready_status_keeps_static_indicator() {
     assert_eq!(view().status_line().to_string(), "● ready");
+}
+
+#[test]
+fn turn_elapsed_time_keeps_seconds_at_every_scale() {
+    assert_eq!(
+        [0, 59, 60, 3_599, 3_600, 5_147].map(format_turn_elapsed),
+        [
+            "0s".to_string(),
+            "59s".to_string(),
+            "1m 0s".to_string(),
+            "59m 59s".to_string(),
+            "1h 0m 0s".to_string(),
+            "1h 25m 47s".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn active_turn_timer_remains_visible_in_compact_headers() {
+    let view = HeaderView {
+        status: "thinking",
+        status_spinner_frame: Some(2),
+        turn_elapsed_seconds: Some(5_147),
+        ..view()
+    };
+
+    for width in [40, 48, 78, 100] {
+        let area = Rect::new(0, 0, width, 3);
+        let layout = view.control_layout(area).expect("timed header");
+        let mut buf = Buffer::empty(area);
+        view.render(area, /*hovered*/ None, &mut buf);
+        let rendered = (area.x..area.right())
+            .map(|x| buf[(x, area.y.saturating_add(1))].symbol())
+            .collect::<String>();
+
+        assert!(layout.status.is_some(), "width {width}: {rendered}");
+        assert!(rendered.contains("1h 25m 47s"), "width {width}: {rendered}");
+    }
 }

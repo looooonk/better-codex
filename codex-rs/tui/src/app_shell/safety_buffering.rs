@@ -441,7 +441,7 @@ impl ShellState {
 
         match app_server.turn_start(params.clone()).await {
             Ok(response) => {
-                self.active_turn_id = Some(response.turn.id.clone());
+                self.record_active_turn_started(response.turn.id.clone());
                 self.record_safety_buffering_turn(response.turn.id, params);
             }
             Err(err) => {
@@ -456,7 +456,7 @@ impl ShellState {
             return false;
         }
         self.safety_buffering.clear();
-        self.active_turn_id = None;
+        self.clear_active_turn();
         self.clear_interactive_requests();
         self.status = "blocked".to_string();
         self.push_line(TranscriptLine::new(

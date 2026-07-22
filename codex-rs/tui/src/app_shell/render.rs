@@ -222,6 +222,7 @@ impl ShellView<'_> {
                 .shell
                 .status_spinner_active()
                 .then_some(self.shell.status_spinner_frame),
+            turn_elapsed_seconds: self.shell.active_turn_elapsed_seconds(),
             dashboard_visible: self.shell.dashboard_visible,
         }
         .control_at(header, position)
@@ -355,6 +356,7 @@ impl ShellView<'_> {
                 .shell
                 .status_spinner_active()
                 .then_some(self.shell.status_spinner_frame),
+            turn_elapsed_seconds: self.shell.active_turn_elapsed_seconds(),
             dashboard_visible: self.shell.dashboard_visible,
         };
         let hovered = self
