@@ -140,8 +140,13 @@ fn visible_approval_segments(
     let preferred_pinned_line = pending.details().len().saturating_add(1);
     let final_line = lines.len().saturating_sub(1);
     let pinned_start = pinned_suffix_start(&segments, preferred_pinned_line, final_line, visible);
-    let (selected, max_start) =
-        visible_scrolled_segments(&segments, visible, pinned_start, pending.scroll_offset());
+    let (selected, max_start) = visible_scrolled_segments(
+        &segments,
+        visible,
+        pinned_start,
+        pending.scroll_offset(),
+        " (j/k)",
+    );
     pending.set_scroll_max(max_start);
     selected
 }
@@ -167,8 +172,13 @@ fn visible_elicitation_segments(
     let final_line = lines.len().saturating_sub(1);
     let pinned_start =
         pinned_suffix_start(&segments, /*preferred_line*/ 2, final_line, visible);
-    let (selected, max_start) =
-        visible_scrolled_segments(&segments, visible, pinned_start, pending.scroll_offset());
+    let (selected, max_start) = visible_scrolled_segments(
+        &segments,
+        visible,
+        pinned_start,
+        pending.scroll_offset(),
+        " (j/k or arrows)",
+    );
     pending.set_scroll_max(max_start);
     selected
 }
@@ -199,6 +209,7 @@ fn visible_scrolled_segments(
     visible: usize,
     pinned_start: usize,
     scroll_offset: usize,
+    scroll_hint: &'static str,
 ) -> (Vec<RequestPanelSegment>, usize) {
     let (scrollable, pinned) = segments.split_at(pinned_start);
     let viewport = visible.saturating_sub(pinned.len()).saturating_sub(1);
@@ -206,7 +217,7 @@ fn visible_scrolled_segments(
     let start = scroll_offset.min(max_start);
     let end = start.saturating_add(viewport).min(scrollable.len());
     let hidden_above = start > 0;
-    let marker = overflow_marker(hidden_above, end < scrollable.len());
+    let marker = overflow_marker(hidden_above, end < scrollable.len(), scroll_hint);
     let mut selected = Vec::with_capacity(visible);
     if hidden_above {
         selected.push(marker.clone());
@@ -220,7 +231,11 @@ fn visible_scrolled_segments(
     (selected, max_start)
 }
 
-fn overflow_marker(hidden_above: bool, hidden_below: bool) -> RequestPanelSegment {
+fn overflow_marker(
+    hidden_above: bool,
+    hidden_below: bool,
+    scroll_hint: &'static str,
+) -> RequestPanelSegment {
     let direction = match (hidden_above, hidden_below) {
         (true, true) => "↕",
         (true, false) => "↑",
@@ -231,7 +246,7 @@ fn overflow_marker(hidden_above: bool, hidden_below: bool) -> RequestPanelSegmen
         content: Line::from(vec![
             "  ".into(),
             format!("{direction} more").fg(palette::WARNING).bold(),
-            " (j/k or arrows)".fg(palette::MUTED),
+            scroll_hint.fg(palette::MUTED),
         ]),
         logical_line: usize::MAX,
         source_column: 0,

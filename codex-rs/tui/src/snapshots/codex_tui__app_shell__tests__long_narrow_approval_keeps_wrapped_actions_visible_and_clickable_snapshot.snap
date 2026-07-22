@@ -15,7 +15,7 @@ expression: rendered
 │prefix'; printf 'validated safe       │
 │prefix'; printf 'validated safe       │
 │prefix'; printf 'validated safe       │
-│  ↓ more (j/k or arrows)              │
+│  ↓ more (j/k)                        │
 │> 1 Run once                          │
 │  2 Deny and interrupt                │
 │   e Edit   ? Explain                 │

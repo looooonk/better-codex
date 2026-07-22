@@ -7,7 +7,7 @@ expression: rendered
 ────────────────────────────────────────
 ╭──────────────────────────────────────╮
 │◆ APPROVAL                            │
-│  ↑ more (j/k or arrows)              │
+│  ↑ more (j/k)                        │
 │prefix'; printf 'validated safe       │
 │prefix'; printf 'validated safe       │
 │prefix'; && rm -rf /workspace/        │

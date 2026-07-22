@@ -6581,8 +6581,112 @@ fn approval_action_keys_cover_full_keyboard_flow() {
         Some(ApprovalAction::ScrollDown)
     );
     assert_eq!(
+        approval_action_from_key(&pending, KeyEvent::new(KeyCode::Up, KeyModifiers::NONE)),
+        Some(ApprovalAction::Select(ApprovalSelectionDirection::Previous))
+    );
+    assert_eq!(
+        approval_action_from_key(&pending, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE)),
+        Some(ApprovalAction::Select(ApprovalSelectionDirection::Next))
+    );
+    assert_eq!(
         approval_action_from_key(&pending, KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE)),
         Some(ApprovalAction::PageUp)
+    );
+}
+
+#[tokio::test]
+async fn permissions_approval_supports_arrow_number_and_mouse_selection() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let mut shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    shell.pending_approval = PendingApproval::from_request(&permissions_approval_request())
+        .expect("permissions approval request should be valid");
+
+    assert!(
+        !shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("down arrow should select the next permission action")
+    );
+    assert_eq!(
+        shell
+            .pending_approval
+            .as_ref()
+            .expect("approval should remain pending")
+            .selected_option(),
+        1
+    );
+    insta::assert_snapshot!(
+        "permissions_approval_second_action_selected",
+        render_shell(&shell, area)
+    );
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("enter should confirm the selected permission action");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    shell.pending_approval = PendingApproval::from_request(&permissions_approval_request())
+        .expect("permissions approval request should be valid");
+    shell
+        .handle_key(key_char('3'), &config, &mut backend)
+        .await
+        .expect("number key should choose the matching permission action");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    shell.pending_approval = PendingApproval::from_request(&permissions_approval_request())
+        .expect("permissions approval request should be valid");
+    let deny_position = rendered_text_position(&render_shell(&shell, area), "4 Deny");
+    shell
+        .handle_mouse_click(area, deny_position, &config, &mut backend)
+        .await
+        .expect("mouse click should choose the permission action");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(
+        *backend
+            .resolved_requests
+            .lock()
+            .expect("resolved requests should lock"),
+        vec![
+            (
+                RequestId::Integer(42),
+                json!({
+                    "permissions": {
+                        "network": { "enabled": true }
+                    },
+                    "scope": "session"
+                }),
+            ),
+            (
+                RequestId::Integer(42),
+                json!({
+                    "permissions": {
+                        "network": { "enabled": true }
+                    },
+                    "scope": "turn",
+                    "strictAutoReview": true
+                }),
+            ),
+            (
+                RequestId::Integer(42),
+                json!({
+                    "permissions": {},
+                    "scope": "turn"
+                }),
+            ),
+        ]
     );
 }
 

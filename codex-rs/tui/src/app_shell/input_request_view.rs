@@ -18,7 +18,11 @@ pub(super) fn approval_lines(pending: &PendingApproval) -> Vec<Line<'static>> {
             .map(|detail| Line::from(vec!["  ".into(), detail.clone().fg(palette::MUTED)])),
     );
     lines.extend(pending.options().map(|(index, label)| {
-        let marker = if index == 0 { "> " } else { "  " };
+        let marker = if index == pending.selected_option() {
+            "> "
+        } else {
+            "  "
+        };
         Line::from(vec![
             marker.fg(palette::FOCUS).bold(),
             format!("{} ", index + 1).fg(palette::SUCCESS).bold(),

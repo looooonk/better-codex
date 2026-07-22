@@ -137,6 +137,7 @@ mod workspace;
 use agent_activity::AgentActivityState;
 use agent_log::AgentLogState;
 use approval::ApprovalAction;
+use approval::ApprovalSelectionDirection;
 use approval::PendingApproval;
 use backend::AppShellBackend;
 use backend::AppShellTurnStart;
@@ -1641,6 +1642,12 @@ impl ShellState {
             ApprovalAction::Edit => self.edit_pending_approval(app_server),
             ApprovalAction::Explain => {
                 self.explain_pending_approval();
+                Ok(())
+            }
+            ApprovalAction::Select(direction) => {
+                if let Some(pending) = &mut self.pending_approval {
+                    pending.move_selection(direction);
+                }
                 Ok(())
             }
             ApprovalAction::ScrollUp => {
@@ -3152,14 +3159,17 @@ fn approval_action_from_key(pending: &PendingApproval, key: KeyEvent) -> Option<
         return None;
     }
     match key.code {
-        KeyCode::Enter | KeyCode::Char('a' | 'A' | 'y' | 'Y') => Some(ApprovalAction::Choose(0)),
+        KeyCode::Enter => Some(ApprovalAction::Choose(pending.selected_option())),
+        KeyCode::Char('a' | 'A' | 'y' | 'Y') => Some(ApprovalAction::Choose(0)),
         KeyCode::Esc | KeyCode::Char('d' | 'D' | 'n' | 'N') => {
             pending.denial_index().map(ApprovalAction::Choose)
         }
         KeyCode::Char('e') | KeyCode::Char('E') => Some(ApprovalAction::Edit),
         KeyCode::Char('?') => Some(ApprovalAction::Explain),
-        KeyCode::Up | KeyCode::Char('k' | 'K') => Some(ApprovalAction::ScrollUp),
-        KeyCode::Down | KeyCode::Char('j' | 'J') => Some(ApprovalAction::ScrollDown),
+        KeyCode::Up => Some(ApprovalAction::Select(ApprovalSelectionDirection::Previous)),
+        KeyCode::Down => Some(ApprovalAction::Select(ApprovalSelectionDirection::Next)),
+        KeyCode::Char('k' | 'K') => Some(ApprovalAction::ScrollUp),
+        KeyCode::Char('j' | 'J') => Some(ApprovalAction::ScrollDown),
         KeyCode::PageUp => Some(ApprovalAction::PageUp),
         KeyCode::PageDown => Some(ApprovalAction::PageDown),
         KeyCode::Char(ch) => ch

@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+         2. Wire transcript                     │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+         3. Render dashboard                    │ │▎+ New session  Ctrl+N
+                                                │ │▎loading sessions
+ ▌ tool exec just test -p codex-tui             ┃ │
+                                                ┃ │▎◆ THREAD
+ ▌ edited 3 files +128 -24                      ┃ │▎stage-one
+                                                ┃ │▎id 01900000-0000-7000-8000-000000000001
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │▎resume, fork, archive, delete in session list
+          surface.                              ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ APPROVAL                                      ││
+│? Grant permissions                             ││
+│  Reason: Need package registry access          ││
+│  Working directory: /workspace/better-codex    ││
+│  Requested permissions: { network: { enabled:  ││
+│  true }, fileSystem: null }                    ││
+│  1 Grant for this turn                         ││
+│> 2 Grant for this session                      ││
+│  3 Grant for this turn; review each command    ││
+│  4 Deny                                        ││
+│   e Edit   ? Explain                           ││
+╰────────────────────────────────────────────────╯│

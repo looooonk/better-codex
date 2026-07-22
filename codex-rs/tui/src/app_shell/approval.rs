@@ -21,10 +21,17 @@ pub(super) enum ApprovalAction {
     Choose(usize),
     Edit,
     Explain,
+    Select(ApprovalSelectionDirection),
     ScrollUp,
     ScrollDown,
     PageUp,
     PageDown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ApprovalSelectionDirection {
+    Previous,
+    Next,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -34,6 +41,7 @@ pub(super) struct PendingApproval {
     details: Vec<String>,
     edit_prompt: String,
     options: Vec<ApprovalOption>,
+    selected_option: usize,
     scroll_offset: Cell<usize>,
     scroll_max: Cell<usize>,
 }
@@ -119,6 +127,7 @@ impl PendingApproval {
                     details,
                     edit_prompt: format!("Revise and retry this command:\n{command}"),
                     options,
+                    selected_option: 0,
                     scroll_offset: Cell::new(0),
                     scroll_max: Cell::new(0),
                 }))
@@ -158,6 +167,7 @@ impl PendingApproval {
                         decision: ApprovalDecision::FileChange(FileChangeApprovalDecision::Cancel),
                     },
                 ],
+                selected_option: 0,
                 scroll_offset: Cell::new(0),
                 scroll_max: Cell::new(0),
             })),
@@ -223,6 +233,7 @@ impl PendingApproval {
                             ),
                         },
                     ],
+                    selected_option: 0,
                     scroll_offset: Cell::new(0),
                     scroll_max: Cell::new(0),
                 }))
@@ -270,6 +281,22 @@ impl PendingApproval {
 
     pub(super) fn option_count(&self) -> usize {
         self.options.len()
+    }
+
+    pub(super) fn selected_option(&self) -> usize {
+        self.selected_option
+    }
+
+    pub(super) fn move_selection(&mut self, direction: ApprovalSelectionDirection) {
+        self.selected_option = match direction {
+            ApprovalSelectionDirection::Previous => self
+                .selected_option
+                .checked_sub(1)
+                .unwrap_or_else(|| self.options.len().saturating_sub(1)),
+            ApprovalSelectionDirection::Next => {
+                self.selected_option.saturating_add(1) % self.options.len()
+            }
+        };
     }
 
     pub(super) fn scroll_offset(&self) -> usize {
