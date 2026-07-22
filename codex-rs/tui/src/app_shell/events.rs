@@ -652,7 +652,7 @@ pub(super) fn item_activity_title(item: &codex_app_server_protocol::ThreadItem) 
         | codex_app_server_protocol::ThreadItem::ExitedReviewMode { .. }
         | codex_app_server_protocol::ThreadItem::ContextCompaction { .. } => None,
         codex_app_server_protocol::ThreadItem::CommandExecution { command, .. } => {
-            Some(format!("exec {command}"))
+            Some(super::command_display::summary(command))
         }
         codex_app_server_protocol::ThreadItem::McpToolCall { server, tool, .. } => {
             Some(format!("mcp {server}/{tool}"))

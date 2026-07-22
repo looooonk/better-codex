@@ -72,6 +72,7 @@ mod backend;
 mod backend_actions;
 mod backend_background;
 mod backend_cleanup;
+mod command_display;
 mod command_palette;
 mod command_palette_view;
 mod composer;
@@ -1961,7 +1962,7 @@ impl ShellState {
                 duration_ms,
                 ..
             } => {
-                let title = command_summary(&command, exit_code, duration_ms);
+                let title = command_display::completed_summary(&command, exit_code, duration_ms);
                 let tool_status = command_tool_status(&status, exit_code);
                 self.upsert_tool_activity(
                     id.clone(),
@@ -2818,17 +2819,6 @@ fn format_user_inputs(content: &[UserInput]) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
-}
-
-fn command_summary(command: &str, exit_code: Option<i32>, duration_ms: Option<i64>) -> String {
-    let mut summary = format!("exec {command}");
-    if let Some(exit_code) = exit_code {
-        summary.push_str(&format!(" exit {exit_code}"));
-    }
-    if let Some(duration_ms) = duration_ms {
-        summary.push_str(&format!(" {duration_ms}ms"));
-    }
-    summary
 }
 
 fn command_tool_status<T: std::fmt::Debug>(status: &T, exit_code: Option<i32>) -> ToolBlockStatus {

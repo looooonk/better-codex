@@ -1,0 +1,24 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 80, 20,),)"
+---
+
+  Dashboard  ◆ BC             gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▌ tool exec printf
+ ▌      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ ▌      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+ ▌      xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...
+ ▌      exit 17 1234ms
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                               │
+│> Summarize the new shell architecture                                        │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

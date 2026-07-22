@@ -7406,6 +7406,97 @@ fn completed_tool_item_updates_existing_transcript_status() {
 }
 
 #[test]
+fn long_command_tool_calls_are_truncated() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.tool_activity.clear();
+    let thread_id = shell.thread_id.to_string();
+    let command = format!("printf {}", "x".repeat(300));
+    let running_title = format!("exec printf {}...", "x".repeat(225));
+    let completed_title = format!("exec printf {}... exit 17 1234ms", "x".repeat(210));
+
+    let mut started = command_execution_item(
+        "exec-long",
+        CommandExecutionStatus::InProgress,
+        /*exit_code*/ None,
+    );
+    let ThreadItem::CommandExecution {
+        command: started_command,
+        ..
+    } = &mut started
+    else {
+        panic!("expected a command execution item");
+    };
+    *started_command = command.clone();
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: thread_id.clone(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: started,
+    }));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::new(TranscriptKind::Tool, running_title)
+            .tool_status(ToolBlockStatus::Running)
+            .item_id("exec-long"),])
+    );
+
+    let mut completed = command_execution_item(
+        "exec-long",
+        CommandExecutionStatus::Completed,
+        /*exit_code*/ Some(17),
+    );
+    let ThreadItem::CommandExecution {
+        command: completed_command,
+        duration_ms,
+        ..
+    } = &mut completed
+    else {
+        panic!("expected a command execution item");
+    };
+    *completed_command = command;
+    *duration_ms = Some(1_234);
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: completed,
+        },
+    ));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, completed_title.clone())
+                .tool_status(ToolBlockStatus::Fail)
+                .item_id("exec-long"),
+        ])
+    );
+    assert_eq!(
+        shell.tool_activity,
+        VecDeque::from([ToolActivity {
+            id: "exec-long".to_string(),
+            title: completed_title.clone(),
+            status: "completed".to_string(),
+        }])
+    );
+    assert_eq!(completed_title.chars().count(), 240);
+    insta::assert_snapshot!(
+        "long_command_tool_call_is_truncated",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 20,
+            ),
+        )
+    );
+}
+
+#[test]
 fn command_output_deltas_update_one_output_block() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
