@@ -16,6 +16,8 @@ use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
+use codex_app_server_protocol::LoginAccountParams;
+use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::McpServerOauthLoginParams;
 use codex_app_server_protocol::McpServerOauthLoginResponse;
 use codex_app_server_protocol::McpServerRefreshResponse;
@@ -112,6 +114,18 @@ pub(super) trait AppShellBackend {
     fn account_rate_limits_in_background(
         &self,
     ) -> impl std::future::Future<Output = Result<GetAccountRateLimitsResponse>> + Send + 'static;
+
+    fn login_account(
+        &mut self,
+        params: LoginAccountParams,
+    ) -> impl std::future::Future<Output = Result<LoginAccountResponse>> + Send;
+
+    fn cancel_login_account(
+        &mut self,
+        login_id: String,
+    ) -> impl std::future::Future<Output = Result<()>> + Send;
+
+    fn logout_account(&mut self) -> impl std::future::Future<Output = Result<()>> + Send;
 
     fn thread_archive(
         &mut self,
@@ -442,6 +456,19 @@ impl AppShellBackend for AppServerSession {
                 .await
                 .map_err(Into::into)
         }
+    }
+
+    async fn login_account(&mut self, params: LoginAccountParams) -> Result<LoginAccountResponse> {
+        AppServerSession::login_account(self, params).await
+    }
+
+    async fn cancel_login_account(&mut self, login_id: String) -> Result<()> {
+        AppServerSession::cancel_login_account(self, login_id).await?;
+        Ok(())
+    }
+
+    async fn logout_account(&mut self) -> Result<()> {
+        AppServerSession::logout_account(self).await
     }
 
     async fn thread_archive(&mut self, thread_id: ThreadId) -> Result<()> {

@@ -1,0 +1,28 @@
+---
+source: tui/src/app_shell/account_auth_tests.rs
+expression: render_state(&state)
+---
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"        ╭──────────────────────────────────────────────────────────────────────╮        "
+"        │◆ ACCOUNT LOGIN                                                       │        "
+"        │Signed in successfully.                                               │        "
+"        │                                                                      │        "
+"        │Better Codex will reload account configuration on the next launch.    │        "
+"        │                                                                      │        "
+"        │Enter exit                                                            │        "
+"        │                                                                      │        "
+"        ╰──────────────────────────────────────────────────────────────────────╯        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "

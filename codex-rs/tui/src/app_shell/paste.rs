@@ -17,6 +17,10 @@ impl ShellState {
         {
             return;
         }
+        if let Some(state) = &mut self.pending_account_auth {
+            state.insert_paste(&text);
+            return;
+        }
         if let Some(pending) = &self.pending_elicitation {
             if pending.editing() {
                 self.insert_pasted_composer_text(&text);

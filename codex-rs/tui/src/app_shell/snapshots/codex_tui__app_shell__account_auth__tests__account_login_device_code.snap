@@ -1,0 +1,28 @@
+---
+source: tui/src/app_shell/account_auth_tests.rs
+expression: render_state(&state)
+---
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"        ╭──────────────────────────────────────────────────────────────────────╮        "
+"        │◆ ACCOUNT LOGIN                                                       │        "
+"        │Finish signing in with a device code.                                 │        "
+"        │                                                                      │        "
+"        │1. Open this link and sign in:                                        │        "
+"        │https://auth.example.test/device                                      │        "
+"        │                                                                      │        "
+"        │2. Enter this one-time code:                                          │        "
+"        │ABCD-EFGH                                                             │        "
+"        │                                                                      │        "
+"        │Only continue if you started this login in Better Codex.              │        "
+"        │Esc cancel                                                            │        "
+"        │                                                                      │        "
+"        ╰──────────────────────────────────────────────────────────────────────╯        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "

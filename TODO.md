@@ -5,7 +5,7 @@ The following is a list of changes that should be applied to better-codex soon.
 - [x] When a model is steered, three sepearate copies of the steer message appear in the conversation log, from `YOU`, `AUDIT`, and `YOU` again. This should change, to only display one message from `YOU`.
 - [x] CLI command tool calls should be truncated when they are too long.
 - [x] Users should be able to use arrow keys, number keys, and the mouse when selecting actions on a permissions pop-up.
-- [ ] Support for `/login` and `/logout` should be implemented, following the flow of the standard Codex CLI repository.
+- [x] Support for `/login` and `/logout` should be implemented, following the flow of the standard Codex CLI repository.
 - [x] There should be a timer measuring the current turn time (e.g. 1h 25m 47s) in the top bar. This should be different from the goal time, as the turn time resets every turn.
 
 The following is a list of items that better-codex should support down the road, but not immediately.

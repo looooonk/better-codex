@@ -453,6 +453,9 @@ impl ShellState {
             ServerNotification::AccountRateLimitsUpdated(updated) => {
                 self.apply_rate_limit_update(updated.rate_limits);
             }
+            ServerNotification::AccountLoginCompleted(notification) => {
+                self.receive_account_login_completed(notification);
+            }
             ServerNotification::ModelSafetyBufferingUpdated(updated) => {
                 self.on_model_safety_buffering_updated(updated);
                 if self.safety_buffering_modal_lines().is_some() {
@@ -497,8 +500,7 @@ impl ShellState {
             | ServerNotification::ThreadRealtimeError(_)
             | ServerNotification::ThreadRealtimeClosed(_)
             | ServerNotification::WindowsWorldWritableWarning(_)
-            | ServerNotification::WindowsSandboxSetupCompleted(_)
-            | ServerNotification::AccountLoginCompleted(_) => {}
+            | ServerNotification::WindowsSandboxSetupCompleted(_) => {}
         }
     }
 

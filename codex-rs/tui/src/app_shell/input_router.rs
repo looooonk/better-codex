@@ -29,6 +29,7 @@ enum ActiveInputRoute {
     AgentLog,
     Selector,
     CommandPalette,
+    AccountAuth,
     SafetyBuffering,
     SessionDelete,
     Approval,
@@ -52,6 +53,8 @@ impl ShellState {
             Some(ActiveInputRoute::Selector)
         } else if self.command_palette.is_some() {
             Some(ActiveInputRoute::CommandPalette)
+        } else if self.pending_account_auth.is_some() {
+            Some(ActiveInputRoute::AccountAuth)
         } else if self.safety_buffering_modal_lines().is_some() {
             Some(ActiveInputRoute::SafetyBuffering)
         } else if self.pending_session_delete.is_some() {
@@ -88,6 +91,10 @@ impl ShellState {
                 .pending_mcp_management
                 .as_ref()
                 .is_some_and(super::mcp_management::McpManagementState::editing),
+            Some(ActiveInputRoute::AccountAuth) => self
+                .pending_account_auth
+                .as_ref()
+                .is_some_and(super::account_auth::AccountAuthState::editing),
             Some(_) => false,
             None if self.dashboard_route == DashboardRoute::Sessions
                 && self.session_list.focused =>
@@ -134,6 +141,12 @@ impl ShellState {
             ActiveInputRoute::CommandPalette => {
                 self.handle_command_palette_key(key, config, app_server)
                     .await?;
+            }
+            ActiveInputRoute::AccountAuth => {
+                return self
+                    .handle_account_auth_key(key, app_server)
+                    .await
+                    .map(Some);
             }
             ActiveInputRoute::SafetyBuffering => {
                 self.handle_safety_buffering_key(key, config, app_server)
@@ -409,7 +422,7 @@ impl ShellState {
                 if !prompt_is_empty {
                     if let Some(command) = LocalSlashCommand::parse(&prompt) {
                         let outcome = self
-                            .run_local_slash_command(command, prompt, app_server)
+                            .run_local_slash_command(command, prompt, config, app_server)
                             .await?;
                         return Ok(outcome == LocalSlashCommandOutcome::Exit);
                     } else if let Some(command) = ShellCommand::parse(&prompt) {

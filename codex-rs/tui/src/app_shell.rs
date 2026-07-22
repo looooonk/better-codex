@@ -60,6 +60,7 @@ use tokio::select;
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 
+mod account_auth;
 mod agent_activity;
 mod agent_activity_controller;
 mod agent_activity_render;
@@ -135,6 +136,7 @@ mod transcript_view;
 mod turn_timer;
 mod user_input;
 mod workspace;
+use account_auth::AccountAuthState;
 use agent_activity::AgentActivityState;
 use agent_log::AgentLogState;
 use approval::ApprovalAction;
@@ -504,6 +506,7 @@ pub(crate) async fn run(
     shell.close_agent_log();
     shell.close_tool_output();
     shell.close_diff_view();
+    shell.close_account_auth(&mut app_server).await;
     shell.cancel_agent_history().await;
     shell.cancel_session_hydration();
     shell.finish_subscription_cleanup().await;
@@ -659,6 +662,8 @@ enum LocalSlashCommand {
     Clear,
     Exit,
     Goal(GoalSlashCommand),
+    Login,
+    Logout,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -687,6 +692,8 @@ impl LocalSlashCommand {
             "/clear" if args.is_empty() => Some(Self::Clear),
             "/exit" if args.is_empty() => Some(Self::Exit),
             "/goal" => Some(Self::Goal(GoalSlashCommand::parse(args))),
+            "/login" if args.is_empty() => Some(Self::Login),
+            "/logout" if args.is_empty() => Some(Self::Logout),
             _ => None,
         }
     }
@@ -777,6 +784,7 @@ struct ShellState {
     show_tooltips: bool,
     command_palette: Option<CommandPaletteState>,
     selector: Option<SelectorState<SelectorValue>>,
+    pending_account_auth: Option<AccountAuthState>,
     codex_home: std::path::PathBuf,
     resume_cwd_runtime: ResumeCwdRuntime,
     dashboard_route: DashboardRoute,
@@ -889,6 +897,7 @@ impl ShellState {
             show_tooltips,
             command_palette: None,
             selector: None,
+            pending_account_auth: None,
             codex_home,
             resume_cwd_runtime,
             dashboard_route: DashboardRoute::Status,
@@ -1264,6 +1273,7 @@ impl ShellState {
         &mut self,
         command: LocalSlashCommand,
         prompt: String,
+        config: &Config,
         app_server: &mut S,
     ) -> Result<LocalSlashCommandOutcome>
     where
@@ -1271,6 +1281,10 @@ impl ShellState {
     {
         self.composer.remember_submission(&prompt);
         self.composer.clear();
+        let account_change_blocked = self.active_turn_id.is_some()
+            || self.has_pending_shell_command()
+            || self.has_pending_backend_actions()
+            || self.composer.has_queued_messages();
         let outcome = match command {
             LocalSlashCommand::Clear => {
                 self.clear_visible_transcript();
@@ -1280,6 +1294,28 @@ impl ShellState {
             LocalSlashCommand::Goal(command) => {
                 self.run_goal_slash_command(command, app_server).await;
                 LocalSlashCommandOutcome::Continue
+            }
+            LocalSlashCommand::Login => {
+                if account_change_blocked {
+                    self.push_status("finish active work before logging in");
+                } else {
+                    self.open_account_auth(config.forced_login_method);
+                }
+                LocalSlashCommandOutcome::Continue
+            }
+            LocalSlashCommand::Logout => {
+                if account_change_blocked {
+                    self.push_status("finish active work before logging out");
+                    LocalSlashCommandOutcome::Continue
+                } else {
+                    match app_server.logout_account().await {
+                        Ok(()) => LocalSlashCommandOutcome::Exit,
+                        Err(err) => {
+                            self.push_error(format!("logout failed: {err}"));
+                            LocalSlashCommandOutcome::Continue
+                        }
+                    }
+                }
             }
         };
         Ok(outcome)
@@ -2429,6 +2465,7 @@ impl ShellState {
             show_tooltips: true,
             command_palette: None,
             selector: None,
+            pending_account_auth: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             resume_cwd_runtime: ResumeCwdRuntime {
                 launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),
@@ -2690,6 +2727,7 @@ pub mod bench_support {
             show_tooltips: true,
             command_palette: None,
             selector: None,
+            pending_account_auth: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
             resume_cwd_runtime: ResumeCwdRuntime {
                 launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),

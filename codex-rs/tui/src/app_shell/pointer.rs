@@ -98,6 +98,26 @@ impl ShellState {
             }
             return Ok(());
         }
+        if self.pending_account_auth.is_some() {
+            let width = usize::from(modal_view::modal_body_width(area));
+            let lines = self
+                .pending_account_auth
+                .as_ref()
+                .map(|state| state.lines(width))
+                .unwrap_or_default();
+            let key = modal_click_key(area, position, &lines, |hit| {
+                self.pending_account_auth
+                    .as_mut()?
+                    .select_line(hit.line)
+                    .then_some(KeyCode::Enter)
+            });
+            if let Some(key) = key {
+                let _exit_requested = self
+                    .handle_account_auth_key(KeyEvent::new(key, KeyModifiers::NONE), app_server)
+                    .await?;
+            }
+            return Ok(());
+        }
         if let Some(lines) = self
             .pending_session_delete
             .as_ref()

@@ -110,6 +110,9 @@ impl ShellView<'_> {
             render_modal(area, "Delete session", pending.lines(), buf);
         }
         super::command_palette_view::render(self.shell, area, buf);
+        if let Some(state) = &self.shell.pending_account_auth {
+            super::account_auth::render(state, area, buf);
+        }
         if let Some(selector) = &self.shell.selector {
             selector.render(area, self.shell.pointer_position, buf);
         }
@@ -127,6 +130,7 @@ impl ShellView<'_> {
     pub(super) fn cursor_position(&self, area: Rect) -> Option<Position> {
         if self.shell.selector.is_some()
             || self.shell.command_palette.is_some()
+            || self.shell.pending_account_auth.is_some()
             || self.shell.agent_log.is_some()
             || self.shell.tool_output.is_some()
             || self.shell.diff_view.is_some()
@@ -477,6 +481,7 @@ impl ShellView<'_> {
     fn base_hover_position(&self) -> Option<Position> {
         let blocked = self.shell.selector.is_some()
             || self.shell.command_palette.is_some()
+            || self.shell.pending_account_auth.is_some()
             || self.shell.agent_log.is_some()
             || self.shell.tool_output.is_some()
             || self.shell.diff_view.is_some()

@@ -40,6 +40,8 @@ use codex_app_server_protocol::ItemStartedNotification;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
+use codex_app_server_protocol::LoginAccountParams;
+use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::McpAuthStatus;
 use codex_app_server_protocol::McpServerElicitationRequest;
 use codex_app_server_protocol::McpServerElicitationRequestParams;
@@ -3413,6 +3415,196 @@ async fn goal_slash_command_sets_and_shows_thread_goal() {
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
     insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[tokio::test]
+async fn login_slash_command_submits_masked_api_key_and_exits_after_success() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    shell.composer.set_text("/login");
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("login command should open account auth");
+    assert!(!should_exit);
+    assert!(shell.pending_account_auth.is_some());
+
+    for key in [KeyCode::Down, KeyCode::Down, KeyCode::Enter] {
+        shell
+            .handle_key(
+                KeyEvent::new(key, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("API key login should be selected");
+    }
+    shell.insert_pasted_text("sk-secret-value\n");
+    let rendered = render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 88, /*height*/ 24,
+        ),
+    );
+    assert!(!rendered.contains("sk-secret-value"));
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("API key should be submitted");
+    assert!(!should_exit);
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::Login(LoginAccountParams::ApiKey {
+            api_key: "sk-secret-value".to_string(),
+        })]
+    );
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("successful login should exit for configuration reload");
+    assert!(should_exit);
+}
+
+#[tokio::test]
+async fn device_code_login_completes_from_the_matching_notification() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    backend.set_login_response(LoginAccountResponse::ChatgptDeviceCode {
+        login_id: "login-1".to_string(),
+        verification_url: "https://auth.example.test/device".to_string(),
+        user_code: "ABCD-EFGH".to_string(),
+    });
+    shell.composer.set_text("/login");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("login command should open account auth");
+    for key in [KeyCode::Down, KeyCode::Enter] {
+        shell
+            .handle_key(
+                KeyEvent::new(key, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("device code login should start");
+    }
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::Login(
+            LoginAccountParams::ChatgptDeviceCode
+        )]
+    );
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerNotification(ServerNotification::AccountLoginCompleted(
+                codex_app_server_protocol::AccountLoginCompletedNotification {
+                    login_id: Some("login-1".to_string()),
+                    success: true,
+                    error: None,
+                },
+            )),
+        )
+        .await
+        .expect("login completion should be handled");
+    assert!(
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 88, /*height*/ 24
+            ),
+        )
+        .contains("Signed in successfully.")
+    );
+}
+
+#[tokio::test]
+async fn logout_slash_command_exits_only_after_success() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.composer.set_text("/logout");
+
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("logout should be handled locally");
+    assert!(should_exit);
+    assert_eq!(backend.calls(), vec![RecordedBackendCall::Logout]);
+
+    let mut failed_shell = ShellState::snapshot_fixture();
+    let mut failed_backend = RecordingBackend::default();
+    failed_backend.fail_next_action("credential store unavailable");
+    failed_shell.composer.set_text("/logout");
+    let should_exit = failed_shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut failed_backend,
+        )
+        .await
+        .expect("failed logout should remain in the shell");
+    assert!(!should_exit);
+    assert_eq!(failed_backend.calls(), vec![RecordedBackendCall::Logout]);
+    assert_eq!(
+        failed_shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Error,
+            "logout failed: credential store unavailable",
+        ))
+    );
+}
+
+#[tokio::test]
+async fn account_slash_commands_wait_for_the_active_turn() {
+    let config = test_config().await;
+    let mut backend = RecordingBackend::default();
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-active".to_string());
+
+    for command in ["/login", "/logout"] {
+        shell.composer.set_text(command);
+        let should_exit = shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("account command should be deferred while the turn is active");
+        assert!(!should_exit);
+    }
+
+    assert!(backend.calls().is_empty());
+    assert!(shell.pending_account_auth.is_none());
 }
 
 #[tokio::test]
@@ -13984,6 +14176,7 @@ struct RecordingBackend {
     thread_list_gate: Option<Arc<tokio::sync::Semaphore>>,
     rate_limits_gate: Option<Arc<tokio::sync::Semaphore>>,
     rate_limits_used_percent: Arc<Mutex<i32>>,
+    login_response: Arc<Mutex<LoginAccountResponse>>,
     turn_start_error: Arc<Mutex<Option<String>>>,
     turn_start_gate: Option<Arc<tokio::sync::Semaphore>>,
     action_error: Arc<Mutex<Option<String>>>,
@@ -14012,6 +14205,7 @@ impl Default for RecordingBackend {
             thread_list_gate: None,
             rate_limits_gate: None,
             rate_limits_used_percent: Arc::new(Mutex::new(73)),
+            login_response: Arc::new(Mutex::new(LoginAccountResponse::ApiKey {})),
             turn_start_error: Arc::new(Mutex::new(None)),
             turn_start_gate: None,
             action_error: Arc::new(Mutex::new(None)),
@@ -14085,6 +14279,13 @@ impl RecordingBackend {
             .expect("rate-limit percentage should lock") = used_percent;
     }
 
+    fn set_login_response(&self, response: LoginAccountResponse) {
+        *self
+            .login_response
+            .lock()
+            .expect("login response should lock") = response;
+    }
+
     fn fail_next_turn_start(&self, message: &str) {
         *self
             .turn_start_error
@@ -14135,6 +14336,9 @@ enum RecordedBackendCall {
     },
     ThreadReadFull(codex_protocol::ThreadId),
     RateLimits,
+    Login(LoginAccountParams),
+    CancelLogin(String),
+    Logout,
     Archive(codex_protocol::ThreadId),
     Unarchive(codex_protocol::ThreadId),
     Delete(codex_protocol::ThreadId),
@@ -14448,6 +14652,37 @@ impl backend::AppShellBackend for RecordingBackend {
                 rate_limit_reset_credits: None,
             })
         }
+    }
+
+    async fn login_account(
+        &mut self,
+        params: LoginAccountParams,
+    ) -> color_eyre::Result<LoginAccountResponse> {
+        self.push(RecordedBackendCall::Login(params));
+        if let Some(error) = self.take_action_error() {
+            return Err(color_eyre::eyre::eyre!(error));
+        }
+        Ok(self
+            .login_response
+            .lock()
+            .expect("login response should lock")
+            .clone())
+    }
+
+    async fn cancel_login_account(&mut self, login_id: String) -> color_eyre::Result<()> {
+        self.push(RecordedBackendCall::CancelLogin(login_id));
+        if let Some(error) = self.take_action_error() {
+            return Err(color_eyre::eyre::eyre!(error));
+        }
+        Ok(())
+    }
+
+    async fn logout_account(&mut self) -> color_eyre::Result<()> {
+        self.push(RecordedBackendCall::Logout);
+        if let Some(error) = self.take_action_error() {
+            return Err(color_eyre::eyre::eyre!(error));
+        }
+        Ok(())
     }
 
     async fn thread_archive(

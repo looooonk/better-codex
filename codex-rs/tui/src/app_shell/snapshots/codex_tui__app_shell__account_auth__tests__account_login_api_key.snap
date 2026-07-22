@@ -1,0 +1,28 @@
+---
+source: tui/src/app_shell/account_auth_tests.rs
+expression: rendered
+---
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"        ╭──────────────────────────────────────────────────────────────────────╮        "
+"        │◆ ACCOUNT LOGIN                                                       │        "
+"        │Enter an OpenAI API key.                                              │        "
+"        │The key is hidden and will not be added to the transcript.            │        "
+"        │                                                                      │        "
+"        │***************▏                                                      │        "
+"        │                                                                      │        "
+"        │Enter save   Esc back                                                 │        "
+"        │                                                                      │        "
+"        ╰──────────────────────────────────────────────────────────────────────╯        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
