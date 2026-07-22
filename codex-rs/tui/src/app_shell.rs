@@ -139,6 +139,7 @@ use approval::ApprovalAction;
 use approval::PendingApproval;
 use backend::AppShellBackend;
 use backend::AppShellTurnStart;
+use backend::AppShellTurnSteer;
 use backend::shutdown_app_shell_backend;
 use backend_actions::ActionGroup;
 use backend_actions::BackendActionResult;
@@ -1568,21 +1569,21 @@ impl ShellState {
             self.submit_prompt(app_server, prompt);
             return Ok(());
         };
+        let client_user_message_id = format!("better-codex-steer-{}", uuid::Uuid::new_v4());
         app_server
-            .turn_steer(
-                self.thread_id,
+            .turn_steer(AppShellTurnSteer {
+                thread_id: self.thread_id,
                 turn_id,
-                vec![UserInput::Text {
+                client_user_message_id: client_user_message_id.clone(),
+                items: vec![UserInput::Text {
                     text: prompt.clone(),
                     text_elements: Vec::new(),
                 }],
-            )
+            })
             .await
             .wrap_err("failed to steer active turn")?;
         self.scroll_transcript_to_bottom();
-        self.push_user(prompt.clone());
-        let audit_title = compact_multiline(prompt.clone()).unwrap_or_else(|| prompt.clone());
-        self.push_decision_audit("turn", "steered", &audit_title);
+        self.push_user_with_client_id(prompt.clone(), client_user_message_id);
         self.composer.remember_submission(&prompt);
         self.composer.clear();
         self.status = "thinking".to_string();
@@ -1900,10 +1901,16 @@ impl ShellState {
     ) {
         self.agent_activity.reduce_completed(&item);
         match item {
-            ThreadItem::UserMessage { content, .. } => {
+            ThreadItem::UserMessage {
+                client_id, content, ..
+            } => {
                 let text = format_user_inputs(&content);
                 if !text.is_empty() {
-                    self.push_user(text);
+                    if let Some(client_id) = client_id {
+                        self.push_user_with_client_id(text, client_id);
+                    } else {
+                        self.push_user(text);
+                    }
                 }
             }
             ThreadItem::HookPrompt { fragments, .. } => {
@@ -2132,6 +2139,16 @@ impl ShellState {
 
     fn push_user(&mut self, text: impl Into<String>) {
         self.push_line(TranscriptLine::new(TranscriptKind::User, text));
+    }
+
+    fn push_user_with_client_id(
+        &mut self,
+        text: impl Into<String>,
+        client_user_message_id: String,
+    ) {
+        self.upsert_line(
+            TranscriptLine::new(TranscriptKind::User, text).item_id(client_user_message_id),
+        );
     }
 
     fn push_assistant(&mut self, text: impl Into<String>) {

@@ -2,7 +2,7 @@
 
 The following is a list of changes that should be applied to better-codex soon.
 
-- [ ] When a model is steered, three sepearate copies of the steer message appear in the conversation log, from `YOU`, `AUDIT`, and `YOU` again. This should change, to only display one message from `YOU`.
+- [x] When a model is steered, three sepearate copies of the steer message appear in the conversation log, from `YOU`, `AUDIT`, and `YOU` again. This should change, to only display one message from `YOU`.
 - [ ] CLI command tool calls should be truncated when they are too long.
 - [ ] Users should be able to use arrow keys, number keys, and the mouse when selecting actions on a permissions pop-up.
 - [ ] Support for `/login` and `/logout` should be implemented, following the flow of the standard Codex CLI repository.
@@ -15,4 +15,3 @@ The following is a list of items that better-codex should support down the road,
 - [ ] Support better-codex unique features, such as customizable system prompts, agentic behavior, etc.
 - [ ] Support TUI adjustments of Codex configurations, such as subagent count, access limitations, etc.
 - [ ] Add support to run multiple Codex instances in the same better-codex TUI pane using tab switching and multiplexing.
-

@@ -9004,6 +9004,74 @@ async fn turn_submission_and_history_preserve_boundary_whitespace() {
 }
 
 #[tokio::test]
+async fn steered_message_is_rendered_once() {
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let prompt = "Keep the implementation focused.";
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.clear_streaming_transcript();
+
+    shell
+        .steer_active_turn(&mut backend, prompt.to_string())
+        .await
+        .expect("steering should succeed");
+
+    let calls = backend.calls();
+    let [
+        RecordedBackendCall::TurnSteer {
+            client_user_message_id,
+            ..
+        },
+    ] = calls.as_slice()
+    else {
+        panic!("expected one turn steer call");
+    };
+    assert!(client_user_message_id.starts_with("better-codex-steer-"));
+    assert_eq!(
+        calls,
+        vec![RecordedBackendCall::TurnSteer {
+            thread_id: shell.thread_id,
+            turn_id: "turn-active".to_string(),
+            client_user_message_id: client_user_message_id.clone(),
+            prompt: prompt.to_string(),
+        }]
+    );
+
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn_id: "turn-active".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::UserMessage {
+                id: "user-steer".to_string(),
+                client_id: Some(client_user_message_id.clone()),
+                content: vec![ApiUserInput::Text {
+                    text: prompt.to_string(),
+                    text_elements: Vec::new(),
+                }],
+            },
+        },
+    ));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([TranscriptLine::new(TranscriptKind::User, prompt)
+            .item_id(client_user_message_id.clone()),])
+    );
+    insta::assert_snapshot!(
+        "steered_message_is_rendered_once",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 16,
+            ),
+        )
+    );
+}
+
+#[tokio::test]
 async fn tab_queues_multiple_messages_only_during_an_active_turn() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
@@ -13896,6 +13964,12 @@ enum RecordedBackendCall {
         thread_id: codex_protocol::ThreadId,
         turn_id: String,
     },
+    TurnSteer {
+        thread_id: codex_protocol::ThreadId,
+        turn_id: String,
+        client_user_message_id: String,
+        prompt: String,
+    },
     Resolve(RequestId),
     Reject {
         request_id: RequestId,
@@ -14645,11 +14719,18 @@ impl backend::AppShellBackend for RecordingBackend {
 
     async fn turn_steer(
         &mut self,
-        _thread_id: codex_protocol::ThreadId,
-        turn_id: String,
-        _items: Vec<ApiUserInput>,
+        params: backend::AppShellTurnSteer,
     ) -> std::result::Result<TurnSteerResponse, TypedRequestError> {
-        Ok(TurnSteerResponse { turn_id })
+        let prompt = format_user_inputs(&params.items);
+        self.push(RecordedBackendCall::TurnSteer {
+            thread_id: params.thread_id,
+            turn_id: params.turn_id.clone(),
+            client_user_message_id: params.client_user_message_id,
+            prompt,
+        });
+        Ok(TurnSteerResponse {
+            turn_id: params.turn_id,
+        })
     }
 
     async fn resolve_server_request(

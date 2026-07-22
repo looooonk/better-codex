@@ -268,9 +268,7 @@ pub(super) trait AppShellBackend {
 
     fn turn_steer(
         &mut self,
-        thread_id: ThreadId,
-        turn_id: String,
-        items: Vec<UserInput>,
+        params: AppShellTurnSteer,
     ) -> impl std::future::Future<Output = std::result::Result<TurnSteerResponse, TypedRequestError>>
     + Send;
 
@@ -330,6 +328,14 @@ pub(super) struct AppShellTurnStart {
     pub(super) collaboration_mode: Option<CollaborationMode>,
     pub(super) personality: Option<Personality>,
     pub(super) output_schema: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct AppShellTurnSteer {
+    pub(super) thread_id: ThreadId,
+    pub(super) turn_id: String,
+    pub(super) client_user_message_id: String,
+    pub(super) items: Vec<UserInput>,
 }
 
 impl AppShellBackend for AppServerSession {
@@ -725,11 +731,16 @@ impl AppShellBackend for AppServerSession {
 
     async fn turn_steer(
         &mut self,
-        thread_id: ThreadId,
-        turn_id: String,
-        items: Vec<UserInput>,
+        params: AppShellTurnSteer,
     ) -> std::result::Result<TurnSteerResponse, TypedRequestError> {
-        AppServerSession::turn_steer(self, thread_id, turn_id, items).await
+        AppServerSession::turn_steer(
+            self,
+            params.thread_id,
+            params.turn_id,
+            params.client_user_message_id,
+            params.items,
+        )
+        .await
     }
 
     async fn resolve_server_request(
