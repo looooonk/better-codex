@@ -3418,7 +3418,7 @@ async fn goal_slash_command_sets_and_shows_thread_goal() {
 }
 
 #[tokio::test]
-async fn login_slash_command_submits_masked_api_key_and_exits_after_success() {
+async fn login_slash_command_submits_masked_api_key_and_returns_to_session() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
@@ -3478,8 +3478,16 @@ async fn login_slash_command_submits_masked_api_key_and_exits_after_success() {
             &mut backend,
         )
         .await
-        .expect("successful login should exit for configuration reload");
-    assert!(should_exit);
+        .expect("successful login should return to the session");
+    assert!(!should_exit);
+    assert!(shell.pending_account_auth.is_none());
+    assert_eq!(
+        shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Status,
+            "signed in successfully",
+        ))
+    );
 }
 
 #[tokio::test]
@@ -3543,7 +3551,7 @@ async fn device_code_login_completes_from_the_matching_notification() {
 }
 
 #[tokio::test]
-async fn logout_slash_command_exits_only_after_success() {
+async fn logout_slash_command_stays_in_session_and_allows_login() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
@@ -3557,8 +3565,27 @@ async fn logout_slash_command_exits_only_after_success() {
         )
         .await
         .expect("logout should be handled locally");
-    assert!(should_exit);
+    assert!(!should_exit);
     assert_eq!(backend.calls(), vec![RecordedBackendCall::Logout]);
+    assert_eq!(
+        shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Status,
+            "logged out; run /login to sign in again",
+        ))
+    );
+
+    shell.composer.set_text("/login");
+    let should_exit = shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("login should open after logout");
+    assert!(!should_exit);
+    assert!(shell.pending_account_auth.is_some());
 
     let mut failed_shell = ShellState::snapshot_fixture();
     let mut failed_backend = RecordingBackend::default();

@@ -1,13 +1,7 @@
-use super::design::MOCHA_BASE;
-use super::design::MOCHA_MANTLE;
-use super::design::MOCHA_SURFACE0;
-use super::design::fill_rect;
-use super::design::pane_content_rect;
-use super::design::pane_style;
-use super::startup_layout::STARTUP_FOOTER_HEIGHT;
-use super::startup_layout::startup_panes;
+use super::modal_view;
 use crate::LoginStatus;
 use crate::app_server_session::AppServerSession;
+use crate::clipboard_copy::ClipboardLease;
 use crate::legacy_core::config::Config;
 use crate::text_input::EditableText;
 use crate::text_input::text_input_action_from_key;
@@ -25,15 +19,8 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
-use ratatui::buffer::Buffer;
-use ratatui::layout::Constraint;
-use ratatui::layout::Direction;
-use ratatui::layout::Layout;
+use ratatui::layout::Position;
 use ratatui::layout::Rect;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::widgets::Paragraph;
-use ratatui::widgets::Widget;
 use tokio::select;
 use tokio_stream::StreamExt;
 
@@ -85,6 +72,7 @@ struct LoginOnboardingState {
     selected: usize,
     mode: LoginMode,
     api_key_draft: EditableText,
+    notice: Option<String>,
     error: Option<String>,
 }
 
@@ -95,6 +83,7 @@ impl LoginOnboardingState {
             selected: 0,
             mode: LoginMode::Select,
             api_key_draft: EditableText::default(),
+            notice: None,
             error: None,
         }
     }
@@ -149,6 +138,38 @@ impl LoginOnboardingState {
         }
     }
 
+    fn active_url(&self) -> Option<&str> {
+        match &self.mode {
+            LoginMode::DeviceCode {
+                verification_url: Some(verification_url),
+                ..
+            } => Some(verification_url),
+            LoginMode::Select | LoginMode::ApiKeyEntry | LoginMode::DeviceCode { .. } => None,
+        }
+    }
+
+    fn active_code(&self) -> Option<&str> {
+        match &self.mode {
+            LoginMode::DeviceCode {
+                user_code: Some(user_code),
+                ..
+            } => Some(user_code),
+            LoginMode::Select | LoginMode::ApiKeyEntry | LoginMode::DeviceCode { .. } => None,
+        }
+    }
+
+    fn select_line(&mut self, line: usize) -> bool {
+        let Some(index) = line.checked_sub(/*choice_start*/ 2).map(|line| line / 2) else {
+            return false;
+        };
+        if matches!(self.mode, LoginMode::Select) && index < self.choices().len() {
+            self.selected = index;
+            true
+        } else {
+            false
+        }
+    }
+
     fn receive_login_completed(
         &mut self,
         notification: AccountLoginCompletedNotification,
@@ -161,6 +182,7 @@ impl LoginOnboardingState {
             Some(LoginOnboardingOutcome::Continue)
         } else {
             self.mode = LoginMode::Select;
+            self.notice = None;
             self.error = Some(
                 notification
                     .error
@@ -186,6 +208,7 @@ pub(crate) async fn run_login_onboarding(
     tui.frame_requester().schedule_frame();
 
     let mut state = LoginOnboardingState::new(config.forced_login_method);
+    let mut clipboard_lease: Option<ClipboardLease> = None;
     let mut tui_events = tui.event_stream();
 
     loop {
@@ -196,34 +219,48 @@ pub(crate) async fn run_login_onboarding(
                     return Ok(LoginOnboardingOutcome::Exit);
                 };
                 match event {
-                    TuiEvent::Key(key) => match handle_login_key(key, &mut state) {
-                        LoginKeyAction::StartDeviceCode => {
-                            start_device_code_login(app_server, &mut state).await;
+                    TuiEvent::Key(key) => {
+                        let action = handle_login_key(key, &mut state);
+                        if let Some(outcome) = apply_login_action(
+                            action,
+                            app_server,
+                            &mut state,
+                            &mut clipboard_lease,
+                        ).await {
+                            return Ok(outcome);
+                        }
+                        if action != LoginKeyAction::Ignored {
                             tui.frame_requester().schedule_frame();
                         }
-                        LoginKeyAction::SubmitApiKey => {
-                            match submit_api_key(app_server, &mut state).await {
-                                Some(outcome) => return Ok(outcome),
-                                None => tui.frame_requester().schedule_frame(),
-                            }
-                        }
-                        LoginKeyAction::Exit => {
-                            cancel_active_login(app_server, &mut state).await;
-                            return Ok(LoginOnboardingOutcome::Exit);
-                        }
-                        LoginKeyAction::Redraw => {
-                            tui.frame_requester().schedule_frame();
-                        }
-                        LoginKeyAction::Ignored => {}
-                    },
+                    }
                     TuiEvent::Paste(text) => {
                         if matches!(state.mode, LoginMode::ApiKeyEntry) {
                             state.api_key_draft.insert_str(text.trim());
                             tui.frame_requester().schedule_frame();
                         }
                     }
-                    TuiEvent::MouseClick(_)
-                    | TuiEvent::MouseMove(_)
+                    TuiEvent::MouseClick(position) => {
+                        let size = tui.terminal.size()?;
+                        let area = Rect::new(
+                            /*x*/ 0,
+                            /*y*/ 0,
+                            size.width,
+                            size.height,
+                        );
+                        let action = handle_login_click(area, position, &mut state);
+                        if let Some(outcome) = apply_login_action(
+                            action,
+                            app_server,
+                            &mut state,
+                            &mut clipboard_lease,
+                        ).await {
+                            return Ok(outcome);
+                        }
+                        if action != LoginKeyAction::Ignored {
+                            tui.frame_requester().schedule_frame();
+                        }
+                    }
+                    TuiEvent::MouseMove(_)
                     | TuiEvent::MouseScroll { .. } => {}
                     TuiEvent::Resize | TuiEvent::Draw => {
                         draw_login_onboarding(tui, &state)?;
@@ -257,6 +294,8 @@ pub(crate) async fn run_login_onboarding(
 enum LoginKeyAction {
     StartDeviceCode,
     SubmitApiKey,
+    OpenUrl,
+    CopyCode,
     Exit,
     Redraw,
     Ignored,
@@ -291,6 +330,7 @@ fn handle_select_key(key: KeyEvent, state: &mut LoginOnboardingState) -> LoginKe
             LoginSelection::ChatGptDeviceCode => LoginKeyAction::StartDeviceCode,
             LoginSelection::ApiKey => {
                 state.mode = LoginMode::ApiKeyEntry;
+                state.notice = None;
                 state.error = None;
                 LoginKeyAction::Redraw
             }
@@ -310,6 +350,8 @@ fn handle_api_key_key(key: KeyEvent, state: &mut LoginOnboardingState) -> LoginK
         KeyCode::Esc => {
             state.mode = LoginMode::Select;
             state.api_key_draft.clear();
+            state.notice = None;
+            state.error = None;
             LoginKeyAction::Redraw
         }
         KeyCode::Enter => LoginKeyAction::SubmitApiKey,
@@ -323,8 +365,88 @@ fn handle_api_key_key(key: KeyEvent, state: &mut LoginOnboardingState) -> LoginK
 
 fn handle_device_code_key(key: KeyEvent) -> LoginKeyAction {
     match key.code {
+        KeyCode::Enter => LoginKeyAction::OpenUrl,
+        KeyCode::Char('c') if key.modifiers == KeyModifiers::NONE => LoginKeyAction::CopyCode,
         KeyCode::Esc => LoginKeyAction::Exit,
         _ => LoginKeyAction::Ignored,
+    }
+}
+
+fn handle_login_click(
+    area: Rect,
+    position: Position,
+    state: &mut LoginOnboardingState,
+) -> LoginKeyAction {
+    let width = usize::from(modal_view::modal_body_width(area));
+    let lines = login_lines(state, width);
+    let Some(hit) = modal_view::modal_hit(area, position, &lines) else {
+        return LoginKeyAction::Ignored;
+    };
+    if matches!(state.mode, LoginMode::Select) && state.select_line(hit.line) {
+        return handle_select_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), state);
+    }
+    match &state.mode {
+        LoginMode::DeviceCode { .. } if hit.line == 3 => LoginKeyAction::OpenUrl,
+        LoginMode::DeviceCode { .. } if hit.line == 6 => LoginKeyAction::CopyCode,
+        LoginMode::Select | LoginMode::ApiKeyEntry | LoginMode::DeviceCode { .. } => {
+            LoginKeyAction::Ignored
+        }
+    }
+}
+
+async fn apply_login_action(
+    action: LoginKeyAction,
+    app_server: &mut AppServerSession,
+    state: &mut LoginOnboardingState,
+    clipboard_lease: &mut Option<ClipboardLease>,
+) -> Option<LoginOnboardingOutcome> {
+    match action {
+        LoginKeyAction::StartDeviceCode => start_device_code_login(app_server, state).await,
+        LoginKeyAction::SubmitApiKey => return submit_api_key(app_server, state).await,
+        LoginKeyAction::OpenUrl => open_login_url(state),
+        LoginKeyAction::CopyCode => copy_login_code(state, clipboard_lease),
+        LoginKeyAction::Exit => {
+            cancel_active_login(app_server, state).await;
+            return Some(LoginOnboardingOutcome::Exit);
+        }
+        LoginKeyAction::Redraw | LoginKeyAction::Ignored => {}
+    }
+    None
+}
+
+fn open_login_url(state: &mut LoginOnboardingState) {
+    let url = state.active_url().map(str::to_string);
+    let Some(url) = url else {
+        return;
+    };
+    match webbrowser::open(&url) {
+        Ok(()) => {
+            state.notice = Some("Opened the sign-in link in your browser.".to_string());
+            state.error = None;
+        }
+        Err(error) => {
+            tracing::warn!("failed to open browser for login URL: {error}");
+            state.notice = None;
+            state.error = Some(format!("Could not open the sign-in link: {error}"));
+        }
+    }
+}
+
+fn copy_login_code(state: &mut LoginOnboardingState, clipboard_lease: &mut Option<ClipboardLease>) {
+    let code = state.active_code().map(str::to_string);
+    let Some(code) = code else {
+        return;
+    };
+    match crate::clipboard_copy::copy_to_clipboard(&code) {
+        Ok(lease) => {
+            *clipboard_lease = lease;
+            state.notice = Some("Copied the one-time code.".to_string());
+            state.error = None;
+        }
+        Err(error) => {
+            state.notice = None;
+            state.error = Some(format!("Copy failed: {error}"));
+        }
     }
 }
 
@@ -337,6 +459,7 @@ async fn start_device_code_login(
         verification_url: None,
         user_code: None,
     };
+    state.notice = None;
     state.error = None;
     match app_server
         .login_account(LoginAccountParams::ChatgptDeviceCode)
@@ -355,12 +478,14 @@ async fn start_device_code_login(
         }
         Ok(other) => {
             state.mode = LoginMode::Select;
+            state.notice = None;
             state.error = Some(format!(
                 "Unexpected account/login/start response: {other:?}"
             ));
         }
         Err(err) => {
             state.mode = LoginMode::Select;
+            state.notice = None;
             state.error = Some(err.to_string());
         }
     }
@@ -372,9 +497,11 @@ async fn submit_api_key(
 ) -> Option<LoginOnboardingOutcome> {
     let api_key = state.api_key_draft.text().trim().to_string();
     if api_key.is_empty() {
+        state.notice = None;
         state.error = Some("Enter an API key before continuing.".to_string());
         return None;
     }
+    state.notice = None;
     state.error = None;
     match app_server
         .login_account(LoginAccountParams::ApiKey { api_key })
@@ -408,211 +535,11 @@ fn draw_login_onboarding(tui: &mut tui::Tui, state: &LoginOnboardingState) -> st
     })
 }
 
-struct LoginOnboardingView<'a> {
-    state: &'a LoginOnboardingState,
-}
+use view::LoginOnboardingView;
+use view::login_lines;
 
-impl LoginOnboardingView<'_> {
-    fn render(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_BASE);
-        let panes = startup_panes(area);
-        self.render_main(panes.main, buf);
-        if let Some(sidebar) = panes.sidebar {
-            self.render_dashboard(sidebar, buf);
-        }
-    }
-
-    fn render_main(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_BASE);
-        let vertical = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(3),
-                Constraint::Min(8),
-                Constraint::Length(STARTUP_FOOTER_HEIGHT),
-            ])
-            .split(area);
-        fill_rect(buf, vertical[0], MOCHA_MANTLE);
-        Paragraph::new(Line::from("Better Codex".magenta().bold()))
-            .style(pane_style(MOCHA_MANTLE))
-            .render(pane_content_rect(vertical[0]), buf);
-
-        let content = pane_content_rect(vertical[1]);
-        let mut lines = vec![
-            Line::from("Sign in".bold()),
-            Line::from(""),
-            Line::from(
-                "Better Codex needs an authenticated OpenAI account for this provider.".dim(),
-            ),
-            Line::from(""),
-        ];
-        match &self.state.mode {
-            LoginMode::Select => self.push_selection_lines(&mut lines, usize::from(content.width)),
-            LoginMode::ApiKeyEntry => {
-                self.push_api_key_lines(&mut lines, usize::from(content.width))
-            }
-            LoginMode::DeviceCode {
-                verification_url,
-                user_code,
-                ..
-            } => self.push_device_code_lines(
-                &mut lines,
-                verification_url,
-                user_code,
-                usize::from(content.width),
-            ),
-        }
-        if let Some(error) = &self.state.error {
-            lines.push(Line::from(""));
-            lines.extend(
-                wrapped_lines(error, usize::from(content.width))
-                    .into_iter()
-                    .map(ratatui::prelude::Stylize::red),
-            );
-        }
-        Paragraph::new(lines)
-            .style(pane_style(MOCHA_BASE))
-            .render(content, buf);
-
-        fill_rect(buf, vertical[2], MOCHA_SURFACE0);
-        Paragraph::new(self.footer_lines())
-            .style(pane_style(MOCHA_SURFACE0))
-            .render(pane_content_rect(vertical[2]), buf);
-    }
-
-    fn push_selection_lines(&self, lines: &mut Vec<Line<'static>>, width: usize) {
-        for (index, selection) in self.state.choices().into_iter().enumerate() {
-            lines.push(selection_line(
-                index,
-                selection,
-                index == self.state.selected,
-            ));
-            lines.extend(
-                wrapped_lines_with_indent(selection.description(), width, "  ")
-                    .into_iter()
-                    .map(ratatui::prelude::Stylize::dim),
-            );
-        }
-    }
-
-    fn push_api_key_lines(&self, lines: &mut Vec<Line<'static>>, width: usize) {
-        lines.push(
-            "Paste your API key below. It is hidden while you type."
-                .dim()
-                .into(),
-        );
-        lines.push(Line::from(""));
-        let mask = self
-            .state
-            .api_key_draft
-            .masked_text_with_cursor_window(width.saturating_sub(2).max(1))
-            .cyan();
-        lines.push(Line::from(vec!["> ".cyan().bold(), mask]));
-    }
-
-    fn push_device_code_lines(
-        &self,
-        lines: &mut Vec<Line<'static>>,
-        verification_url: &Option<String>,
-        user_code: &Option<String>,
-        width: usize,
-    ) {
-        match (verification_url, user_code) {
-            (Some(verification_url), Some(user_code)) => {
-                lines.push("Open this link in your browser and sign in:".into());
-                lines.push(Line::from(""));
-                lines.push(verification_url.clone().cyan().underlined().into());
-                lines.push(Line::from(""));
-                lines.push("Then enter this one-time code:".into());
-                lines.push(Line::from(""));
-                lines.push(user_code.clone().cyan().bold().into());
-                lines.push(Line::from(""));
-                lines.extend(
-                    wrapped_lines(
-                        "Continue only if you started this login in Codex. If a website or another person gave you this code, cancel.",
-                        width,
-                    )
-                    .into_iter()
-                    .map(ratatui::prelude::Stylize::dim),
-                );
-            }
-            _ => {
-                lines.push("Requesting a one-time code from ChatGPT...".dim().into());
-            }
-        }
-    }
-
-    fn footer_lines(&self) -> Vec<Line<'static>> {
-        match self.state.mode {
-            LoginMode::Select => vec![
-                "Enter continue  Up/Down choose  1/2/3 jump  Esc exit"
-                    .dim()
-                    .into(),
-                "Authentication is handled through app-server account APIs."
-                    .dim()
-                    .into(),
-            ],
-            LoginMode::ApiKeyEntry => vec![
-                "Enter save  Esc back  Paste insert key".dim().into(),
-                "The key is stored by the app-server auth layer."
-                    .dim()
-                    .into(),
-            ],
-            LoginMode::DeviceCode { .. } => vec![
-                "Esc cancel and exit".dim().into(),
-                "Waiting for app-server to report login completion."
-                    .dim()
-                    .into(),
-            ],
-        }
-    }
-
-    fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_SURFACE0);
-        let content = pane_content_rect(area);
-        let mut lines = vec![Line::from("Startup".bold())];
-        lines.push(Line::from(""));
-        lines.push(Line::from(vec![
-            "mode ".dim(),
-            match self.state.mode {
-                LoginMode::Select => "select".cyan().bold(),
-                LoginMode::ApiKeyEntry => "api key".cyan().bold(),
-                LoginMode::DeviceCode { .. } => "device code".cyan().bold(),
-            },
-        ]));
-        Paragraph::new(lines)
-            .style(pane_style(MOCHA_SURFACE0))
-            .render(content, buf);
-    }
-}
-
-fn selection_line(index: usize, selection: LoginSelection, selected: bool) -> Line<'static> {
-    let marker = if selected {
-        ">".cyan().bold()
-    } else {
-        " ".dim()
-    };
-    let label = format!("{}. {}", index + 1, selection.label());
-    Line::from(vec![marker, " ".dim(), label.into()])
-}
-
-fn wrapped_lines(text: &str, width: usize) -> Vec<Line<'static>> {
-    let width = width.max(1);
-    textwrap::wrap(text, width)
-        .into_iter()
-        .map(|line| Line::from(line.into_owned()))
-        .collect()
-}
-
-fn wrapped_lines_with_indent(text: &str, width: usize, indent: &'static str) -> Vec<Line<'static>> {
-    let options = textwrap::Options::new(width.max(indent.len() + 1))
-        .initial_indent(indent)
-        .subsequent_indent(indent);
-    textwrap::wrap(text, options)
-        .into_iter()
-        .map(|line| Line::from(line.into_owned()))
-        .collect()
-}
+#[path = "startup_login_view.rs"]
+mod view;
 
 #[cfg(test)]
 #[path = "startup_login_tests.rs"]

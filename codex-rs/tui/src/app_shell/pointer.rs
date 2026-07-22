@@ -106,10 +106,7 @@ impl ShellState {
                 .map(|state| state.lines(width))
                 .unwrap_or_default();
             let key = modal_click_key(area, position, &lines, |hit| {
-                self.pending_account_auth
-                    .as_mut()?
-                    .select_line(hit.line)
-                    .then_some(KeyCode::Enter)
+                self.pending_account_auth.as_mut()?.click_key_at(hit.line)
             });
             if let Some(key) = key {
                 let _exit_requested = self

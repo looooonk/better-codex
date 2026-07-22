@@ -66,6 +66,24 @@ fn completion_only_updates_the_matching_login() {
 }
 
 #[test]
+fn account_login_prompts_map_clicks_to_url_and_copy_actions() {
+    let mut state = AccountAuthState::new(/*forced_login_method*/ None);
+    state.mode = AccountAuthMode::Browser {
+        login_id: "login-browser".to_string(),
+        auth_url: "https://auth.example.test/browser".to_string(),
+    };
+    assert_eq!(state.click_key_at(/*line*/ 2), Some(KeyCode::Enter));
+
+    state.mode = AccountAuthMode::DeviceCode {
+        login_id: "login-device".to_string(),
+        verification_url: "https://auth.example.test/device".to_string(),
+        user_code: "ABCD-EFGH".to_string(),
+    };
+    assert_eq!(state.click_key_at(/*line*/ 3), Some(KeyCode::Enter));
+    assert_eq!(state.click_key_at(/*line*/ 6), Some(KeyCode::Char('c')));
+}
+
+#[test]
 fn account_login_choices_snapshot() {
     let state = AccountAuthState::new(/*forced_login_method*/ None);
     insta::assert_snapshot!("account_login_choices", render_state(&state));
@@ -80,6 +98,16 @@ fn account_login_device_code_snapshot() {
         user_code: "ABCD-EFGH".to_string(),
     };
     insta::assert_snapshot!("account_login_device_code", render_state(&state));
+}
+
+#[test]
+fn account_login_browser_snapshot() {
+    let mut state = AccountAuthState::new(/*forced_login_method*/ None);
+    state.mode = AccountAuthMode::Browser {
+        login_id: "login-1".to_string(),
+        auth_url: "https://auth.example.test/browser".to_string(),
+    };
+    insta::assert_snapshot!("account_login_browser", render_state(&state));
 }
 
 #[test]

@@ -1309,7 +1309,10 @@ impl ShellState {
                     LocalSlashCommandOutcome::Continue
                 } else {
                     match app_server.logout_account().await {
-                        Ok(()) => LocalSlashCommandOutcome::Exit,
+                        Ok(()) => {
+                            self.push_status("logged out; run /login to sign in again");
+                            LocalSlashCommandOutcome::Continue
+                        }
                         Err(err) => {
                             self.push_error(format!("logout failed: {err}"));
                             LocalSlashCommandOutcome::Continue

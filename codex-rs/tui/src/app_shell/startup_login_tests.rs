@@ -69,7 +69,7 @@ fn api_key_entry_uses_shared_cursor_shortcuts() {
     let mut terminal = Terminal::new(backend).expect("create terminal");
     terminal
         .draw(|frame| {
-            LoginOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut())
+            LoginOnboardingView { state: &state }.render_visible(frame.area(), frame.buffer_mut())
         })
         .expect("draw API key entry");
     insta::assert_snapshot!("api_key_entry_with_cursor", terminal.backend().to_string());
@@ -81,7 +81,7 @@ fn api_key_entry_uses_shared_cursor_shortcuts() {
     let mut narrow_terminal = Terminal::new(narrow_backend).expect("create narrow terminal");
     narrow_terminal
         .draw(|frame| {
-            LoginOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut())
+            LoginOnboardingView { state: &state }.render_visible(frame.area(), frame.buffer_mut())
         })
         .expect("draw long API key entry");
     insta::assert_snapshot!(
@@ -92,7 +92,7 @@ fn api_key_entry_uses_shared_cursor_shortcuts() {
     state.api_key_draft.clear();
     terminal
         .draw(|frame| {
-            LoginOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut())
+            LoginOnboardingView { state: &state }.render_visible(frame.area(), frame.buffer_mut())
         })
         .expect("draw empty API key entry");
     insta::assert_snapshot!("api_key_entry_empty_cursor", terminal.backend().to_string());
@@ -126,6 +126,48 @@ fn device_code_completion_matches_active_login() {
 }
 
 #[test]
+fn device_code_prompt_supports_open_and_copy_actions() {
+    assert_eq!(
+        handle_device_code_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE)),
+        LoginKeyAction::OpenUrl
+    );
+    assert_eq!(
+        handle_device_code_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE)),
+        LoginKeyAction::CopyCode
+    );
+
+    let mut state = LoginOnboardingState::new(/*forced_login_method*/ None);
+    state.mode = LoginMode::DeviceCode {
+        login_id: Some("login-1".to_string()),
+        verification_url: Some("https://auth.example.test/device".to_string()),
+        user_code: Some("ABCD-EFGH".to_string()),
+    };
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let lines = login_lines(&state, usize::from(modal_view::modal_body_width(area)));
+    let body = modal_view::modal_panel_area(area, &lines);
+    let body =
+        super::super::design::body_rect_after_title(super::super::design::pane_content_rect(body));
+    assert_eq!(
+        handle_login_click(
+            area,
+            Position::new(body.x, body.y.saturating_add(/*url_line*/ 3)),
+            &mut state,
+        ),
+        LoginKeyAction::OpenUrl
+    );
+    assert_eq!(
+        handle_login_click(
+            area,
+            Position::new(body.x, body.y.saturating_add(/*code_line*/ 6)),
+            &mut state,
+        ),
+        LoginKeyAction::CopyCode
+    );
+}
+
+#[test]
 fn login_onboarding_view_renders_native_auth_choices() {
     let state = LoginOnboardingState::new(/*forced_login_method*/ None);
     let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
@@ -133,7 +175,7 @@ fn login_onboarding_view_renders_native_auth_choices() {
 
     terminal
         .draw(|frame| {
-            LoginOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut());
+            LoginOnboardingView { state: &state }.render_visible(frame.area(), frame.buffer_mut());
         })
         .expect("draw login onboarding");
     insta::assert_snapshot!(terminal.backend().to_string());
@@ -152,7 +194,7 @@ fn login_onboarding_view_renders_device_code_phishing_warning() {
 
     terminal
         .draw(|frame| {
-            LoginOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut());
+            LoginOnboardingView { state: &state }.render_visible(frame.area(), frame.buffer_mut());
         })
         .expect("draw login onboarding");
     insta::assert_snapshot!(terminal.backend().to_string());

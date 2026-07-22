@@ -61,7 +61,7 @@ fn unauthenticated_startup_honors_no_alt_screen_under_pty() {
     let mut reader = dup_file(pty.master.as_raw_fd());
     set_nonblocking(reader.as_raw_fd());
     let mut output = Vec::new();
-    wait_for_pty_text(&mut child, &mut reader, &mut output, "Sign in");
+    wait_for_pty_text(&mut child, &mut reader, &mut output, "ACCOUNT LOGIN");
 
     let mut writer = dup_file(pty.master.as_raw_fd());
     writer.write_all(b"3").expect("select startup exit");
@@ -75,7 +75,7 @@ fn unauthenticated_startup_honors_no_alt_screen_under_pty() {
     read_available_pty_bytes(&mut reader, &mut output);
     let output = String::from_utf8_lossy(&output);
     assert!(
-        output.contains("Better Codex") && output.contains("Sign in"),
+        output.contains("ACCOUNT LOGIN") && output.contains("Sign in with ChatGPT"),
         "startup screen did not render in pty output {output:?}"
     );
     assert_missing_sequence(

@@ -12,39 +12,60 @@ pub(super) fn lines(state: &AccountAuthState, width: usize) -> Vec<Line<'static>
     match &state.mode {
         AccountAuthMode::Choose => choice_lines(state),
         AccountAuthMode::ApiKey => api_key_lines(state, width),
-        AccountAuthMode::Browser { auth_url, .. } => vec![
-            "Finish signing in with ChatGPT in your browser.".into(),
-            "".into(),
-            auth_url.clone().cyan().underlined().into(),
-            "".into(),
-            "Esc cancel".dim().into(),
-        ],
+        AccountAuthMode::Browser { auth_url, .. } => with_feedback(
+            vec![
+                "Finish signing in with ChatGPT in your browser.".into(),
+                "".into(),
+                auth_url.clone().cyan().underlined().into(),
+                "".into(),
+                "Enter open link   Esc cancel".dim().into(),
+            ],
+            state,
+        ),
         AccountAuthMode::DeviceCode {
             verification_url,
             user_code,
             ..
-        } => vec![
-            "Finish signing in with a device code.".into(),
-            "".into(),
-            "1. Open this link and sign in:".into(),
-            verification_url.clone().cyan().underlined().into(),
-            "".into(),
-            "2. Enter this one-time code:".into(),
-            user_code.clone().fg(palette::FOCUS).bold().into(),
-            "".into(),
-            "Only continue if you started this login in Better Codex."
-                .dim()
-                .into(),
-            "Esc cancel".dim().into(),
-        ],
+        } => with_feedback(
+            vec![
+                "Finish signing in with a device code.".into(),
+                "".into(),
+                "1. Open this link and sign in:".into(),
+                verification_url.clone().cyan().underlined().into(),
+                "".into(),
+                "2. Enter this one-time code:".into(),
+                user_code
+                    .clone()
+                    .fg(palette::FOCUS)
+                    .bold()
+                    .underlined()
+                    .into(),
+                "".into(),
+                "Only continue if you started this login in Better Codex."
+                    .dim()
+                    .into(),
+                "Enter open link   C copy code   Esc cancel".dim().into(),
+            ],
+            state,
+        ),
         AccountAuthMode::Success => vec![
             "Signed in successfully.".green().bold().into(),
             "".into(),
-            "Better Codex will reload account configuration on the next launch.".into(),
+            "You can continue using this session with the new account.".into(),
             "".into(),
-            "Enter exit".dim().into(),
+            "Enter return to session".dim().into(),
         ],
     }
+}
+
+fn with_feedback(mut lines: Vec<Line<'static>>, state: &AccountAuthState) -> Vec<Line<'static>> {
+    if let Some(notice) = &state.notice {
+        lines.extend(["".into(), notice.clone().green().into()]);
+    }
+    if let Some(error) = &state.error {
+        lines.extend(["".into(), error.clone().red().into()]);
+    }
+    lines
 }
 
 fn choice_lines(state: &AccountAuthState) -> Vec<Line<'static>> {

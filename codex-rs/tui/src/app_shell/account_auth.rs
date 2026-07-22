@@ -65,6 +65,7 @@ pub(super) struct AccountAuthState {
     selected: usize,
     mode: AccountAuthMode,
     api_key: EditableText,
+    notice: Option<String>,
     error: Option<String>,
 }
 
@@ -75,6 +76,7 @@ impl AccountAuthState {
             selected: 0,
             mode: AccountAuthMode::Choose,
             api_key: EditableText::default(),
+            notice: None,
             error: None,
         }
     }
@@ -136,6 +138,19 @@ impl AccountAuthState {
         }
     }
 
+    pub(super) fn click_key_at(&mut self, line: usize) -> Option<KeyCode> {
+        match &self.mode {
+            AccountAuthMode::Choose => self.select_line(line).then_some(KeyCode::Enter),
+            AccountAuthMode::Browser { .. } if line == 2 => Some(KeyCode::Enter),
+            AccountAuthMode::DeviceCode { .. } if line == 3 => Some(KeyCode::Enter),
+            AccountAuthMode::DeviceCode { .. } if line == 6 => Some(KeyCode::Char('c')),
+            AccountAuthMode::ApiKey
+            | AccountAuthMode::Browser { .. }
+            | AccountAuthMode::DeviceCode { .. }
+            | AccountAuthMode::Success => None,
+        }
+    }
+
     fn active_login_id(&self) -> Option<&str> {
         match &self.mode {
             AccountAuthMode::Browser { login_id, .. }
@@ -167,9 +182,11 @@ impl AccountAuthState {
         }
         if notification.success {
             self.mode = AccountAuthMode::Success;
+            self.notice = None;
             self.error = None;
         } else {
             self.mode = AccountAuthMode::Choose;
+            self.notice = None;
             self.error = Some(
                 notification
                     .error
@@ -251,6 +268,7 @@ impl ShellState {
                 KeyCode::Esc => {
                     if let Some(state) = &mut self.pending_account_auth {
                         state.api_key.clear();
+                        state.notice = None;
                         state.error = None;
                         state.mode = AccountAuthMode::Choose;
                     }
@@ -263,14 +281,21 @@ impl ShellState {
                 }
                 _ => {}
             },
-            AccountAuthMode::Browser { .. } | AccountAuthMode::DeviceCode { .. } => {
-                if matches!(key.code, KeyCode::Esc) {
-                    self.cancel_pending_account_login(app_server).await;
-                }
-            }
+            AccountAuthMode::Browser { .. } => match key.code {
+                KeyCode::Enter => actions::open_url(self),
+                KeyCode::Esc => self.cancel_pending_account_login(app_server).await,
+                _ => {}
+            },
+            AccountAuthMode::DeviceCode { .. } => match key.code {
+                KeyCode::Enter => actions::open_url(self),
+                KeyCode::Char('c') => actions::copy_code(self),
+                KeyCode::Esc => self.cancel_pending_account_login(app_server).await,
+                _ => {}
+            },
             AccountAuthMode::Success => {
                 if matches!(key.code, KeyCode::Enter | KeyCode::Esc) {
-                    return Ok(true);
+                    self.pending_account_auth = None;
+                    self.push_status("signed in successfully");
                 }
             }
         }
@@ -294,6 +319,7 @@ impl ShellState {
             AccountAuthChoice::ApiKey => {
                 if let Some(state) = &mut self.pending_account_auth {
                     state.mode = AccountAuthMode::ApiKey;
+                    state.notice = None;
                     state.error = None;
                 }
             }
@@ -305,6 +331,7 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        let open_browser = app_server.uses_embedded_app_server();
         match app_server
             .login_account(LoginAccountParams::Chatgpt {
                 codex_streamlined_login: false,
@@ -314,14 +341,13 @@ impl ShellState {
             .await
         {
             Ok(LoginAccountResponse::Chatgpt { login_id, auth_url }) => {
-                if app_server.uses_embedded_app_server()
-                    && let Err(err) = webbrowser::open(&auth_url)
-                {
-                    tracing::warn!("failed to open browser for login URL: {err}");
-                }
                 if let Some(state) = &mut self.pending_account_auth {
                     state.mode = AccountAuthMode::Browser { login_id, auth_url };
+                    state.notice = None;
                     state.error = None;
+                }
+                if open_browser {
+                    actions::open_url(self);
                 }
             }
             Ok(other) => self.report_account_login_response(other),
@@ -348,6 +374,7 @@ impl ShellState {
                         verification_url,
                         user_code,
                     };
+                    state.notice = None;
                     state.error = None;
                 }
             }
@@ -379,6 +406,7 @@ impl ShellState {
             Ok(LoginAccountResponse::ApiKey {}) => {
                 if let Some(state) = &mut self.pending_account_auth {
                     state.mode = AccountAuthMode::Success;
+                    state.notice = None;
                     state.error = None;
                 }
             }
@@ -398,6 +426,7 @@ impl ShellState {
     fn report_account_login_error(&mut self, error: String) {
         if let Some(state) = &mut self.pending_account_auth {
             state.mode = AccountAuthMode::Choose;
+            state.notice = None;
             state.error = Some(error);
         }
     }
@@ -405,6 +434,7 @@ impl ShellState {
     fn report_api_key_login_error(&mut self, error: String) {
         if let Some(state) = &mut self.pending_account_auth {
             state.mode = AccountAuthMode::ApiKey;
+            state.notice = None;
             state.error = Some(error);
         }
     }
@@ -435,6 +465,7 @@ impl ShellState {
         }
         if let Some(state) = &mut self.pending_account_auth {
             state.mode = AccountAuthMode::Choose;
+            state.notice = None;
             state.error = None;
         }
     }
@@ -458,6 +489,9 @@ impl ShellState {
 pub(super) fn render(state: &AccountAuthState, area: Rect, buf: &mut Buffer) {
     view::render(state, area, buf);
 }
+
+#[path = "account_auth_actions.rs"]
+mod actions;
 
 #[path = "account_auth_view.rs"]
 mod view;
