@@ -2305,6 +2305,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-build-info"
+version = "0.0.0"
+
+[[package]]
 name = "codex-bwrap"
 version = "0.0.0"
 dependencies = [
@@ -2878,6 +2882,7 @@ dependencies = [
  "codex-app-server-protocol",
  "codex-apply-patch",
  "codex-arg0",
+ "codex-build-info",
  "codex-cloud-config",
  "codex-config",
  "codex-core",
@@ -3338,6 +3343,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "codex-agent-identity",
+ "codex-build-info",
  "codex-config",
  "codex-http-client",
  "codex-keyring-store",
@@ -3595,6 +3601,7 @@ name = "codex-models-manager"
 version = "0.0.0"
 dependencies = [
  "chrono",
+ "codex-build-info",
  "codex-collaboration-mode-templates",
  "codex-http-client",
  "codex-login",
@@ -4137,6 +4144,7 @@ dependencies = [
  "codex-app-server-client",
  "codex-app-server-protocol",
  "codex-arg0",
+ "codex-build-info",
  "codex-cli",
  "codex-cloud-config",
  "codex-config",

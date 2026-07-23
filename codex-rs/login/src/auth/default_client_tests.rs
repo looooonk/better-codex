@@ -42,7 +42,8 @@ impl Write for TestLogSink {
 fn test_get_codex_user_agent() {
     let user_agent = get_codex_user_agent();
     let originator = originator().value;
-    let prefix = format!("{originator}/");
+    let backend_compat_version = codex_build_info::CODEX_BACKEND_COMPAT_VERSION;
+    let prefix = format!("{originator}/{backend_compat_version} ");
     assert!(user_agent.starts_with(&prefix));
 }
 
