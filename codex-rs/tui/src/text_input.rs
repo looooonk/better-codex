@@ -27,13 +27,18 @@ pub(crate) enum TextInputAction {
 pub(crate) struct EditableText {
     text: String,
     cursor: usize,
+    selection_anchor: Option<usize>,
 }
 
 impl EditableText {
     pub(crate) fn new(text: impl Into<String>) -> Self {
         let text = text.into();
         let cursor = text.len();
-        Self { text, cursor }
+        Self {
+            text,
+            cursor,
+            selection_anchor: None,
+        }
     }
 
     pub(crate) fn text(&self) -> &str {
@@ -48,6 +53,31 @@ impl EditableText {
         self.cursor
     }
 
+    pub(crate) fn selection_range(&self) -> Option<Range<usize>> {
+        let anchor = self.selection_anchor?;
+        (anchor != self.cursor).then(|| anchor.min(self.cursor)..anchor.max(self.cursor))
+    }
+
+    pub(crate) fn selected_text(&self) -> Option<&str> {
+        self.selection_range().map(|range| &self.text[range])
+    }
+
+    pub(crate) fn set_cursor(&mut self, cursor: usize) {
+        self.cursor = self.normalized_boundary_forward(cursor);
+        self.clear_selection();
+    }
+
+    pub(crate) fn set_selection(&mut self, anchor: usize, cursor: usize) {
+        let anchor = self.normalized_boundary_forward(anchor);
+        let cursor = self.normalized_boundary_forward(cursor);
+        self.cursor = cursor;
+        self.selection_anchor = (anchor != cursor).then_some(anchor);
+    }
+
+    pub(crate) fn clear_selection(&mut self) {
+        self.selection_anchor = None;
+    }
+
     pub(crate) fn text_with_cursor(&self) -> String {
         let mut text = self.text.clone();
         text.insert(self.cursor, '▏');
@@ -59,6 +89,7 @@ impl EditableText {
         Self {
             text: display.text.into_owned(),
             cursor: display.cursor,
+            selection_anchor: None,
         }
         .raw_text_with_cursor_window(max_width)
     }
@@ -159,6 +190,7 @@ impl EditableText {
         Self {
             cursor: left.len(),
             text: left + &right,
+            selection_anchor: None,
         }
         .text_with_cursor_window(max_width)
     }
@@ -170,20 +202,27 @@ impl EditableText {
     pub(crate) fn set_text(&mut self, text: impl Into<String>) {
         self.text = text.into();
         self.cursor = self.text.len();
+        self.clear_selection();
     }
 
     pub(crate) fn clear(&mut self) {
         self.text.clear();
         self.cursor = 0;
+        self.clear_selection();
     }
 
     pub(crate) fn insert_char(&mut self, ch: char) {
+        self.delete_selection();
         self.text.insert(self.cursor, ch);
         self.cursor += ch.len_utf8();
         self.normalize_cursor_forward();
     }
 
     pub(crate) fn insert_str(&mut self, text: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.delete_selection();
         self.text.insert_str(self.cursor, text);
         self.cursor += text.len();
         self.normalize_cursor_forward();
@@ -206,9 +245,11 @@ impl EditableText {
     }
 
     pub(crate) fn move_up(&mut self) -> bool {
+        let collapsed_selection = self.selection_range().is_some();
+        self.clear_selection();
         let current_start = self.line_start();
         if current_start == 0 {
-            return false;
+            return collapsed_selection;
         }
 
         let previous_end = current_start - 1;
@@ -219,10 +260,12 @@ impl EditableText {
     }
 
     pub(crate) fn move_down(&mut self) -> bool {
+        let collapsed_selection = self.selection_range().is_some();
+        self.clear_selection();
         let current_start = self.line_start();
         let current_end = self.line_end();
         if current_end >= self.text.len() {
-            return false;
+            return collapsed_selection;
         }
 
         let next_start = current_end + 1;
@@ -233,6 +276,9 @@ impl EditableText {
     }
 
     fn backspace(&mut self) -> bool {
+        if self.delete_selection() {
+            return true;
+        }
         let Some(previous) = self.previous_boundary() else {
             return false;
         };
@@ -242,6 +288,9 @@ impl EditableText {
     }
 
     fn delete(&mut self) -> bool {
+        if self.delete_selection() {
+            return true;
+        }
         let Some(next) = self.next_boundary() else {
             return false;
         };
@@ -250,6 +299,9 @@ impl EditableText {
     }
 
     fn delete_word_left(&mut self) -> bool {
+        if self.delete_selection() {
+            return true;
+        }
         let delete_from = self.word_left_boundary();
         if delete_from == self.cursor {
             return false;
@@ -260,6 +312,9 @@ impl EditableText {
     }
 
     fn delete_to_line_start(&mut self) -> bool {
+        if self.delete_selection() {
+            return true;
+        }
         let line_start = self.line_start();
         if line_start == self.cursor {
             return false;
@@ -270,22 +325,34 @@ impl EditableText {
     }
 
     fn move_left(&mut self) {
+        if let Some(range) = self.selection_range() {
+            self.cursor = range.start;
+            self.clear_selection();
+            return;
+        }
         if let Some(previous) = self.previous_boundary() {
             self.cursor = previous;
         }
     }
 
     fn move_right(&mut self) {
+        if let Some(range) = self.selection_range() {
+            self.cursor = range.end;
+            self.clear_selection();
+            return;
+        }
         if let Some(next) = self.next_boundary() {
             self.cursor = next;
         }
     }
 
     fn move_word_left(&mut self) {
+        self.clear_selection();
         self.cursor = self.word_left_boundary();
     }
 
     fn move_word_right(&mut self) {
+        self.clear_selection();
         self.cursor = self
             .word_ranges()
             .into_iter()
@@ -294,11 +361,23 @@ impl EditableText {
     }
 
     fn move_to_line_start(&mut self) {
+        self.clear_selection();
         self.cursor = self.line_start();
     }
 
     fn move_to_line_end(&mut self) {
+        self.clear_selection();
         self.cursor = self.line_end();
+    }
+
+    fn delete_selection(&mut self) -> bool {
+        let Some(range) = self.selection_range() else {
+            return false;
+        };
+        self.cursor = range.start;
+        self.text.drain(range);
+        self.clear_selection();
+        true
     }
 
     fn word_left_boundary(&self) -> usize {
@@ -366,12 +445,15 @@ impl EditableText {
     }
 
     fn normalize_cursor_forward(&mut self) {
-        self.cursor = self
-            .text
+        self.cursor = self.normalized_boundary_forward(self.cursor);
+    }
+
+    fn normalized_boundary_forward(&self, cursor: usize) -> usize {
+        self.text
             .grapheme_indices(true)
             .map(|(index, _)| index)
-            .find(|index| *index >= self.cursor)
-            .unwrap_or(self.text.len());
+            .find(|index| *index >= cursor)
+            .unwrap_or(self.text.len())
     }
 
     fn previous_boundary(&self) -> Option<usize> {

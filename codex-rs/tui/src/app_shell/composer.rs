@@ -3,6 +3,7 @@ use crate::text_input::EditableTextDisplay;
 use crate::text_input::TextInputAction;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use std::collections::VecDeque;
+use std::ops::Range;
 use unicode_width::UnicodeWidthStr;
 
 const MAX_COMPOSER_HISTORY: usize = 50;
@@ -59,6 +60,50 @@ impl ComposerState {
 
     pub(super) fn cursor(&self) -> usize {
         self.input.cursor()
+    }
+
+    pub(super) fn selection_range(&self) -> Option<Range<usize>> {
+        self.input.selection_range()
+    }
+
+    pub(super) fn selected_text(&self) -> Option<&str> {
+        self.input.selected_text()
+    }
+
+    pub(super) fn set_cursor(&mut self, cursor: usize) {
+        self.input.set_cursor(cursor);
+    }
+
+    pub(super) fn set_selection(&mut self, anchor: usize, cursor: usize) {
+        self.input.set_selection(anchor, cursor);
+    }
+
+    pub(super) fn clear_selection(&mut self) {
+        self.input.clear_selection();
+    }
+
+    pub(super) fn set_cursor_from_display_range(&mut self, display_range: Range<usize>) {
+        let source_range = self
+            .input
+            .display()
+            .source_range_for_display_range(display_range);
+        self.input.set_cursor(source_range.start);
+    }
+
+    pub(super) fn set_selection_from_display_ranges(
+        &mut self,
+        anchor: Range<usize>,
+        cursor: Range<usize>,
+    ) {
+        let cursor_precedes_anchor = cursor.start < anchor.start;
+        let display = self.input.display();
+        let anchor = display.source_range_for_display_range(anchor);
+        let cursor = display.source_range_for_display_range(cursor);
+        if cursor_precedes_anchor {
+            self.input.set_selection(anchor.end, cursor.start);
+        } else {
+            self.input.set_selection(anchor.start, cursor.end);
+        }
     }
 
     pub(super) fn display(&self) -> EditableTextDisplay<'_> {
@@ -215,7 +260,7 @@ impl ComposerState {
 
     pub(super) fn insert_char(&mut self, ch: char) -> ComposerInsertResult {
         let result =
-            ComposerInsertResult::for_size(self.input.text().len().saturating_add(ch.len_utf8()));
+            ComposerInsertResult::for_size(self.size_after_replacing_selection(ch.len_utf8()));
         if let ComposerInsertResult::TooLarge { .. } = result {
             return result;
         }
@@ -230,7 +275,7 @@ impl ComposerState {
 
     pub(super) fn insert_str(&mut self, text: &str) -> ComposerInsertResult {
         let result =
-            ComposerInsertResult::for_size(self.input.text().len().saturating_add(text.len()));
+            ComposerInsertResult::for_size(self.size_after_replacing_selection(text.len()));
         if let ComposerInsertResult::TooLarge { .. } = result {
             return result;
         }
@@ -242,6 +287,14 @@ impl ComposerState {
         }
         self.clear_history_recall();
         result
+    }
+
+    fn size_after_replacing_selection(&self, inserted_bytes: usize) -> usize {
+        self.input
+            .text()
+            .len()
+            .saturating_sub(self.input.selection_range().map_or(0, |range| range.len()))
+            .saturating_add(inserted_bytes)
     }
 
     pub(super) fn move_left(&mut self) {
@@ -273,7 +326,9 @@ impl ComposerState {
     }
 
     pub(super) fn move_down_or_recall_history(&mut self) {
-        if self.history_index.is_some() {
+        if self.input.selection_range().is_some() {
+            self.move_down();
+        } else if self.history_index.is_some() {
             self.recall_next_history();
         } else {
             self.move_down();
