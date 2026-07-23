@@ -1,0 +1,18 @@
+---
+source: tui/src/app_shell/transcript_view_tests.rs
+expression: selected_cells
+---
+[
+    (
+        "界",
+        Style::new().fg(Color::Rgb(22, 22, 30)).bg(Color::Rgb(122, 162, 247)).underline_color(Color::Reset),
+    ),
+    (
+        " ",
+        Style::new().fg(Color::Rgb(22, 22, 30)).bg(Color::Rgb(122, 162, 247)).underline_color(Color::Reset),
+    ),
+    (
+        "e\u{301}",
+        Style::new().fg(Color::Rgb(22, 22, 30)).bg(Color::Rgb(122, 162, 247)).underline_color(Color::Reset),
+    ),
+]

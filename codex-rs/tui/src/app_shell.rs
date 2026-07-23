@@ -129,6 +129,7 @@ mod startup_layout;
 mod startup_login;
 mod startup_model_migration;
 mod terminal_output;
+mod text_selection;
 mod tool_output;
 mod tool_output_view;
 mod transcript_render;

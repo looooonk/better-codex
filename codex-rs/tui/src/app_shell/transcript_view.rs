@@ -6,10 +6,17 @@ use super::design::palette;
 use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::design::selection_style;
+use super::design::text_selection_style;
 use super::design::title_rect;
 use super::diff_style::diff_stat_spans;
 use super::terminal_output;
+use super::text_selection::NormalizedVisualRange;
+use super::text_selection::VisualGraphemeHit;
+use super::text_selection::grapheme_hit_at;
+use super::text_selection::graphemes_in_columns;
+use super::text_selection::trim_synthetic_right_padding;
 use super::transcript_render::TranscriptLayout;
+use super::transcript_render::TranscriptLayoutRow;
 use crate::line_truncation::line_width;
 use crate::line_truncation::truncate_line_to_width;
 use crate::markdown;
@@ -117,6 +124,115 @@ pub(super) fn transcript_output_at(
         Some(TranscriptCardHit::ToolOutput { transcript_index }) => Some(transcript_index),
         Some(TranscriptCardHit::Diff { .. }) | None => None,
     }
+}
+
+/// Resolve a terminal position inside the rendered transcript body to its complete grapheme.
+pub(super) fn transcript_text_hit_at(
+    shell: &ShellState,
+    area: Rect,
+    position: Position,
+) -> Option<VisualGraphemeHit> {
+    let viewport = transcript_viewport(shell, area);
+    if !viewport.text_body.contains(position) {
+        return None;
+    }
+
+    let row = viewport
+        .visible_from
+        .saturating_add(usize::from(position.y.saturating_sub(viewport.text_body.y)));
+    let line = viewport.layout.row_at(row)?.line()?;
+    let text = rendered_line_text(line);
+    let text = trim_synthetic_right_padding(&text);
+    let column = usize::from(position.x.saturating_sub(viewport.text_body.x));
+    grapheme_hit_at(text, row, column)
+}
+
+/// Extract the visible rendered characters covered by a transcript selection.
+///
+/// The returned text contains rendered labels and Markdown rather than source markup, excludes
+/// hyperlink control sequences, and removes right-edge card padding before joining logical rows.
+pub(super) fn transcript_selected_text(
+    shell: &ShellState,
+    area: Rect,
+    selection: NormalizedVisualRange,
+) -> Option<String> {
+    let viewport = transcript_viewport(shell, area);
+    if selection.start().row() >= viewport.layout.total_lines
+        || selection.end().row() >= viewport.layout.total_lines
+    {
+        return None;
+    }
+
+    let mut selected_rows = Vec::new();
+    for row in selection.start().row()..=selection.end().row() {
+        let text = match viewport.layout.row_at(row)? {
+            TranscriptLayoutRow::Blank => String::new(),
+            TranscriptLayoutRow::Rendered(line) => rendered_line_text(line),
+        };
+        let text = trim_synthetic_right_padding(&text);
+        let columns = selection.columns_on_row(row, text.width())?;
+        selected_rows.push(graphemes_in_columns(text, columns));
+    }
+    Some(selected_rows.join("\n"))
+}
+
+/// Patch the selected transcript cells without invalidating the cached text layout.
+pub(super) fn render_transcript_text_selection(
+    shell: &ShellState,
+    area: Rect,
+    selection: NormalizedVisualRange,
+    buf: &mut Buffer,
+) {
+    let viewport = transcript_viewport(shell, area);
+    if selection.start().row() >= viewport.layout.total_lines
+        || selection.end().row() >= viewport.layout.total_lines
+        || viewport.visible_count == 0
+    {
+        return;
+    }
+
+    let visible_end = viewport
+        .visible_from
+        .saturating_add(viewport.visible_count)
+        .min(viewport.layout.total_lines);
+    let first_row = selection.start().row().max(viewport.visible_from);
+    let last_row_exclusive = selection.end().row().saturating_add(1).min(visible_end);
+    for row in first_row..last_row_exclusive {
+        let Some(TranscriptLayoutRow::Rendered(line)) = viewport.layout.row_at(row) else {
+            continue;
+        };
+        let text = rendered_line_text(line);
+        let text = trim_synthetic_right_padding(&text);
+        let Some(columns) = selection.columns_on_row(row, text.width()) else {
+            continue;
+        };
+        let start = columns.start.min(usize::from(viewport.text_body.width));
+        let end = columns.end.min(usize::from(viewport.text_body.width));
+        if start >= end {
+            continue;
+        }
+
+        let x_offset = u16::try_from(start).unwrap_or(u16::MAX);
+        let y_offset = u16::try_from(row.saturating_sub(viewport.visible_from)).unwrap_or(u16::MAX);
+        let width = u16::try_from(end.saturating_sub(start)).unwrap_or(u16::MAX);
+        buf.set_style(
+            Rect::new(
+                viewport.text_body.x.saturating_add(x_offset),
+                viewport.text_body.y.saturating_add(y_offset),
+                width,
+                /*height*/ 1,
+            ),
+            text_selection_style(),
+        );
+    }
+}
+
+fn rendered_line_text(line: &crate::terminal_hyperlinks::HyperlinkLine) -> String {
+    line.line
+        .spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect()
 }
 
 fn transcript_card_hit_at(

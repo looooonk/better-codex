@@ -54,6 +54,10 @@ pub(super) fn selection_style() -> Style {
     pane_style(palette::ELEVATED)
 }
 
+pub(super) fn text_selection_style() -> Style {
+    Style::new().fg(palette::DARK).bg(palette::FOCUS)
+}
+
 pub(super) fn fill_rect(buf: &mut Buffer, area: Rect, color: Color) {
     let style = pane_style(color);
     for y in area.y..area.y.saturating_add(area.height) {

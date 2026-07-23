@@ -178,6 +178,19 @@ fn logical_rows_resolve_to_stored_transcript_sources() {
     assert_eq!(layout.transcript_row_range(0), Some(0..1));
     assert_eq!(layout.transcript_row_range(1), Some(2..4));
     assert_eq!(layout.transcript_row_range(2), None);
+
+    let first = layout
+        .row_at(0)
+        .and_then(TranscriptLayoutRow::line)
+        .expect("stored assistant row should be rendered");
+    assert!(first.line.to_string().contains("stored response"));
+    assert!(matches!(layout.row_at(1), Some(TranscriptLayoutRow::Blank)));
+    let streaming = layout
+        .row_at(layout.total_lines.saturating_sub(1))
+        .and_then(TranscriptLayoutRow::line)
+        .expect("streaming assistant row should be rendered");
+    assert!(streaming.line.to_string().contains("streaming response"));
+    assert!(layout.row_at(layout.total_lines).is_none());
 }
 
 #[test]

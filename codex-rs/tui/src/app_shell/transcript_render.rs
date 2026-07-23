@@ -283,6 +283,21 @@ pub(super) struct TranscriptLayout {
     pub(super) total_lines: usize,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(super) enum TranscriptLayoutRow<'a> {
+    Blank,
+    Rendered(&'a HyperlinkLine),
+}
+
+impl<'a> TranscriptLayoutRow<'a> {
+    pub(super) fn line(self) -> Option<&'a HyperlinkLine> {
+        match self {
+            Self::Blank => None,
+            Self::Rendered(line) => Some(line),
+        }
+    }
+}
+
 impl TranscriptLayout {
     fn new(chunks: Vec<TranscriptChunk>) -> Self {
         let total_lines = chunks
@@ -331,6 +346,35 @@ impl TranscriptLayout {
             }
         }
         visible
+    }
+
+    /// Return the rendered line at a logical transcript row.
+    ///
+    /// Deliberate separator rows are represented by [`TranscriptLayoutRow::Blank`]. Completed and
+    /// streaming chunks both return their rendered [`HyperlinkLine`].
+    pub(super) fn row_at(&self, row: usize) -> Option<TranscriptLayoutRow<'_>> {
+        let mut logical_row = 0usize;
+        for chunk in &self.chunks {
+            if chunk.separator_before {
+                if logical_row == row {
+                    return Some(TranscriptLayoutRow::Blank);
+                }
+                logical_row = logical_row.saturating_add(1);
+            }
+
+            let chunk_end = logical_row.saturating_add(chunk.lines.len());
+            if (logical_row..chunk_end).contains(&row) {
+                return chunk
+                    .lines
+                    .get(row.saturating_sub(logical_row))
+                    .map(TranscriptLayoutRow::Rendered);
+            }
+            logical_row = chunk_end;
+            if logical_row > row {
+                break;
+            }
+        }
+        None
     }
 
     /// Return the stored transcript item that owns a rendered logical row.
