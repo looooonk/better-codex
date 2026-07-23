@@ -228,6 +228,10 @@ impl ShellState {
         {
             return Ok(false);
         }
+        if self.handle_text_copy_shortcut_with(key, crate::clipboard_copy::copy_to_clipboard) {
+            self.exit_confirmation_pending = false;
+            return Ok(false);
+        }
         let is_ctrl_c =
             key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c'));
         if is_ctrl_c {
@@ -243,6 +247,12 @@ impl ShellState {
             }
             return Ok(self.confirm_exit());
         }
+        if matches!(key.code, KeyCode::Esc) && self.has_text_selection() {
+            self.exit_confirmation_pending = false;
+            self.clear_text_selections();
+            return Ok(false);
+        }
+        self.clear_transcript_text_selection();
         if !matches!(key.code, KeyCode::Esc) {
             self.exit_confirmation_pending = false;
         }

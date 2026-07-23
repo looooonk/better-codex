@@ -67,6 +67,7 @@ impl ShellState {
         let result = self.composer.insert_str(text);
         if result == ComposerInsertResult::Inserted {
             self.clear_transcript_selection();
+            self.clear_transcript_text_selection();
         }
         self.report_composer_insert(result);
     }

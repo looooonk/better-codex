@@ -112,6 +112,7 @@ mod queued_messages;
 mod render;
 mod safety_buffering;
 mod scrollback_view;
+mod selection_controller;
 mod selector;
 mod selector_controller;
 mod session_delete;
@@ -171,6 +172,7 @@ use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
 use render::draw_shell;
 use safety_buffering::SafetyBufferingState;
+use selection_controller::TextSelectionState;
 use selector::SelectorState;
 use selector::SelectorValue;
 use session_delete::PendingSessionDelete;
@@ -371,7 +373,7 @@ pub(crate) async fn run(
                                 continue;
                             }
                             if let Err(err) = shell
-                                .handle_mouse_click(
+                                .handle_mouse_selection_down(
                                     ratatui::layout::Rect::new(
                                         /*x*/ 0,
                                         /*y*/ 0,
@@ -388,13 +390,42 @@ pub(crate) async fn run(
                             }
                             tui.frame_requester().schedule_frame();
                         }
-                        TuiEvent::MouseDrag(position) | TuiEvent::MouseRelease(position) => {
+                        TuiEvent::MouseDrag(position) => {
                             if !accepts_interaction {
                                 continue;
                             }
-                            if shell.set_pointer_position(position) {
-                                tui.frame_requester().schedule_frame();
+                            shell.handle_mouse_selection_drag(
+                                ratatui::layout::Rect::new(
+                                    /*x*/ 0,
+                                    /*y*/ 0,
+                                    size.width,
+                                    size.height,
+                                ),
+                                position,
+                            );
+                            tui.frame_requester().schedule_frame();
+                        }
+                        TuiEvent::MouseRelease(position) => {
+                            if !accepts_interaction {
+                                continue;
                             }
+                            if let Err(err) = shell
+                                .handle_mouse_selection_release(
+                                    ratatui::layout::Rect::new(
+                                        /*x*/ 0,
+                                        /*y*/ 0,
+                                        size.width,
+                                        size.height,
+                                    ),
+                                    position,
+                                    &config,
+                                    &mut app_server,
+                                )
+                                .await
+                            {
+                                shell.report_action_error("action failed", err);
+                            }
+                            tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::MouseMove(position) => {
                             if !accepts_interaction {
@@ -434,6 +465,7 @@ pub(crate) async fn run(
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::Resize => {
+                            shell.clear_text_selections();
                             shell.clear_pointer_position();
                             draw_shell(tui, &shell)?;
                         }
@@ -781,6 +813,7 @@ struct ShellState {
     transcript_scroll: usize,
     transcript_scroll_max: Cell<usize>,
     transcript_selection: Option<usize>,
+    text_selection: TextSelectionState,
     transcript_render_cache: RefCell<TranscriptRenderCache>,
     session_list: SessionListState,
     settings: SettingsState,
@@ -894,6 +927,7 @@ impl ShellState {
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
+            text_selection: TextSelectionState::default(),
             transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
@@ -1119,6 +1153,7 @@ impl ShellState {
         self.selector = None;
         self.command_palette = Some(CommandPaletteState::default());
         self.clear_transcript_selection();
+        self.clear_text_selections();
     }
 
     fn close_command_palette(&mut self) {
@@ -1246,11 +1281,13 @@ impl ShellState {
     }
 
     fn select_latest_transcript_item(&mut self) {
+        self.clear_text_selections();
         self.transcript_selection = self.transcript.len().checked_sub(1);
         self.scroll_transcript_to_bottom();
     }
 
     fn select_first_transcript_item(&mut self) {
+        self.clear_text_selections();
         self.transcript_selection = (!self.transcript.is_empty()).then_some(0);
         self.scroll_transcript_to_top();
     }
@@ -1260,6 +1297,7 @@ impl ShellState {
     }
 
     fn clear_visible_transcript(&mut self) {
+        self.clear_text_selections();
         self.transcript.clear();
         self.transcript_render_cache.get_mut().clear();
         self.clear_streaming_transcript();
@@ -2397,6 +2435,9 @@ impl ShellState {
             return;
         }
         self.transcript.push_back(line);
+        if self.transcript.len() > MAX_TRANSCRIPT_LINES {
+            self.clear_transcript_text_selection();
+        }
         while self.transcript.len() > MAX_TRANSCRIPT_LINES {
             self.transcript.pop_front();
             if let Some(selected) = self.transcript_selection {
@@ -2465,6 +2506,7 @@ impl ShellState {
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
+            text_selection: TextSelectionState::default(),
             transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
@@ -2727,6 +2769,7 @@ pub mod bench_support {
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
             transcript_selection: None,
+            text_selection: TextSelectionState::default(),
             transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),

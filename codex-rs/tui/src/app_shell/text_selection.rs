@@ -20,10 +20,6 @@ impl VisualPosition {
     pub(super) fn row(self) -> usize {
         self.row
     }
-
-    pub(super) fn column(self) -> usize {
-        self.column
-    }
 }
 
 /// The complete display-cell extent of the grapheme under the pointer.
@@ -39,10 +35,6 @@ impl VisualGraphemeHit {
             position: VisualPosition::new(row, column),
             width: width.max(1),
         }
-    }
-
-    pub(super) fn position(self) -> VisualPosition {
-        self.position
     }
 
     fn end_column(self) -> usize {

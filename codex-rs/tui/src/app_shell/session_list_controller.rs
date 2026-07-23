@@ -429,6 +429,7 @@ impl ShellState {
         self.service_tier = session.service_tier;
         self.collaboration_mode = session.collaboration_mode;
         self.personality = session.personality;
+        self.clear_text_selections();
         self.transcript.clear();
         self.transcript_scroll = 0;
         self.transcript_scroll_max.set(0);

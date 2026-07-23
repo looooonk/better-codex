@@ -1,7 +1,7 @@
 use super::ShellState;
 use super::composer_render::composer_cursor_position;
 use super::composer_render::composer_visual_cursor_line;
-use super::composer_render::wrapped_composer_lines;
+use super::composer_render::wrapped_composer_lines_with_selection;
 use super::dashboard_view;
 use super::dashboard_view::DashboardPanelPosition;
 use super::design::body_rect_after_title;
@@ -27,6 +27,7 @@ use super::shell_layout;
 use super::shell_layout::MIN_TERMINAL_WIDTH;
 use super::shell_layout::ShellLayout;
 use super::transcript_view::render_transcript;
+use super::transcript_view::render_transcript_text_selection;
 use crate::tui;
 use crossterm::cursor::SetCursorStyle;
 use ratatui::buffer::Buffer;
@@ -84,6 +85,9 @@ impl ShellView<'_> {
             self.base_hover_position(),
             buf,
         );
+        if let Some(selection) = self.shell.transcript_text_selection() {
+            render_transcript_text_selection(self.shell, layout.transcript, selection, buf);
+        }
         self.render_input(layout.input, buf);
         if let Some(dashboard) = layout.dashboard {
             dashboard_view::render_dashboard(
@@ -155,6 +159,11 @@ impl ShellView<'_> {
     pub(super) fn input_area(&self, area: Rect) -> Rect {
         self.layout(area)
             .map_or(Rect::default(), |layout| layout.input)
+    }
+
+    pub(super) fn transcript_area(&self, area: Rect) -> Rect {
+        self.layout(area)
+            .map_or(Rect::default(), |layout| layout.transcript)
     }
 
     pub(super) fn transcript_card_at(
@@ -455,11 +464,12 @@ impl ShellView<'_> {
         let body = body_rect_after_title(pane_content_rect(area));
         let visible_height = usize::from(body.height);
         let composer = self.shell.composer.display();
-        let mut lines = wrapped_composer_lines(
+        let mut lines = wrapped_composer_lines_with_selection(
             composer.text(),
             self.shell.composer.is_empty(),
             composer.cursor(),
             usize::from(body.width).max(1),
+            composer.selection_range(),
         );
         if visible_height > 0 && lines.len() > visible_height {
             let max_start = lines.len().saturating_sub(visible_height);

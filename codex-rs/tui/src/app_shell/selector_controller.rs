@@ -100,6 +100,7 @@ impl ShellState {
         self.command_palette = None;
         self.selector = Some(selector);
         self.clear_transcript_selection();
+        self.clear_text_selections();
     }
 
     async fn resolve_selector_outcome<S>(
