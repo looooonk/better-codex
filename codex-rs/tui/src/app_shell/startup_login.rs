@@ -261,6 +261,8 @@ pub(crate) async fn run_login_onboarding(
                         }
                     }
                     TuiEvent::MouseMove(_)
+                    | TuiEvent::MouseDrag(_)
+                    | TuiEvent::MouseRelease(_)
                     | TuiEvent::MouseScroll { .. } => {}
                     TuiEvent::Resize | TuiEvent::Draw => {
                         draw_login_onboarding(tui, &state)?;

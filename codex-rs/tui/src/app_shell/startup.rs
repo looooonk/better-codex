@@ -176,6 +176,8 @@ pub(crate) async fn run_startup_onboarding(
                 StartupKeyAction::Ignored => {}
             },
             TuiEvent::MouseClick(_)
+            | TuiEvent::MouseDrag(_)
+            | TuiEvent::MouseRelease(_)
             | TuiEvent::MouseMove(_)
             | TuiEvent::MouseScroll { .. }
             | TuiEvent::Paste(_) => {}

@@ -58,6 +58,8 @@ pub(crate) async fn run_update_prompt_if_needed(
             match event {
                 TuiEvent::Key(key_event) => screen.handle_key(key_event),
                 TuiEvent::MouseClick(_)
+                | TuiEvent::MouseDrag(_)
+                | TuiEvent::MouseRelease(_)
                 | TuiEvent::MouseMove(_)
                 | TuiEvent::MouseScroll { .. }
                 | TuiEvent::Paste(_) => {}

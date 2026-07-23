@@ -489,7 +489,10 @@ async fn run_session_picker_with_loader(
                             return Ok(sel);
                         }
                     }
-                    TuiEvent::MouseClick(_) | TuiEvent::MouseMove(_) => {}
+                    TuiEvent::MouseClick(_)
+                    | TuiEvent::MouseDrag(_)
+                    | TuiEvent::MouseRelease(_)
+                    | TuiEvent::MouseMove(_) => {}
                     TuiEvent::Draw | TuiEvent::Resize => {
                         if let Ok(size) = alt.tui.terminal.size() {
                             let list_height =

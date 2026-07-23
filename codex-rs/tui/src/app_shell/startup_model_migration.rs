@@ -203,6 +203,8 @@ pub(crate) async fn run_model_migration_onboarding(
                 ModelMigrationKeyAction::Ignored => {}
             },
             TuiEvent::MouseClick(_)
+            | TuiEvent::MouseDrag(_)
+            | TuiEvent::MouseRelease(_)
             | TuiEvent::MouseMove(_)
             | TuiEvent::MouseScroll { .. }
             | TuiEvent::Paste(_) => {}

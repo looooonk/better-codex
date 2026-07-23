@@ -56,7 +56,11 @@ impl SessionTranscriptOverlay {
                 };
                 self.handle_key(tui, KeyEvent::new(code, KeyModifiers::NONE))
             }
-            TuiEvent::MouseClick(_) | TuiEvent::MouseMove(_) | TuiEvent::Paste(_) => Ok(()),
+            TuiEvent::MouseClick(_)
+            | TuiEvent::MouseDrag(_)
+            | TuiEvent::MouseRelease(_)
+            | TuiEvent::MouseMove(_)
+            | TuiEvent::Paste(_) => Ok(()),
         }
     }
 

@@ -564,6 +564,10 @@ pub enum TuiEvent {
     Key(KeyEvent),
     /// A left-button press translated into terminal coordinates.
     MouseClick(Position),
+    /// Left-button movement while pressed, translated into terminal coordinates.
+    MouseDrag(Position),
+    /// A left-button release translated into terminal coordinates.
+    MouseRelease(Position),
     /// Pointer movement translated into terminal coordinates.
     MouseMove(Position),
     /// A vertical wheel event with its pointer location preserved.

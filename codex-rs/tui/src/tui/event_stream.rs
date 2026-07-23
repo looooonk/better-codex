@@ -275,6 +275,12 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
                 MouseEventKind::Down(MouseButton::Left) => Some(TuiEvent::MouseClick(
                     Position::new(mouse_event.column, mouse_event.row),
                 )),
+                MouseEventKind::Drag(MouseButton::Left) => Some(TuiEvent::MouseDrag(
+                    Position::new(mouse_event.column, mouse_event.row),
+                )),
+                MouseEventKind::Up(MouseButton::Left) => Some(TuiEvent::MouseRelease(
+                    Position::new(mouse_event.column, mouse_event.row),
+                )),
                 MouseEventKind::Moved => Some(TuiEvent::MouseMove(Position::new(
                     mouse_event.column,
                     mouse_event.row,
@@ -282,8 +288,8 @@ impl<S: EventSource + Default + Unpin> TuiEventStream<S> {
                 MouseEventKind::ScrollLeft
                 | MouseEventKind::ScrollRight
                 | MouseEventKind::Down(MouseButton::Right | MouseButton::Middle)
-                | MouseEventKind::Up(_)
-                | MouseEventKind::Drag(_) => None,
+                | MouseEventKind::Up(MouseButton::Right | MouseButton::Middle)
+                | MouseEventKind::Drag(MouseButton::Right | MouseButton::Middle) => None,
             },
             Event::FocusGained => {
                 self.terminal_focused.store(true, Ordering::Relaxed);
@@ -622,6 +628,46 @@ mod tests {
         assert!(matches!(
             stream.next().await,
             Some(TuiEvent::MouseClick(Position { x: 17, y: 6 }))
+        ));
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn left_mouse_drag_and_release_preserve_positions_and_other_buttons_are_skipped() {
+        let (broker, handle, _draw_tx, draw_rx, terminal_focused) = setup();
+        let mut stream = make_stream(broker, draw_rx, terminal_focused);
+
+        handle.send(Ok(Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Right),
+            column: 4,
+            row: 2,
+            modifiers: KeyModifiers::NONE,
+        })));
+        handle.send(Ok(Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Middle),
+            column: 6,
+            row: 3,
+            modifiers: KeyModifiers::NONE,
+        })));
+        handle.send(Ok(Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Drag(MouseButton::Left),
+            column: 19,
+            row: 7,
+            modifiers: KeyModifiers::NONE,
+        })));
+        handle.send(Ok(Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Up(MouseButton::Left),
+            column: 21,
+            row: 8,
+            modifiers: KeyModifiers::NONE,
+        })));
+
+        assert!(matches!(
+            stream.next().await,
+            Some(TuiEvent::MouseDrag(Position { x: 19, y: 7 }))
+        ));
+        assert!(matches!(
+            stream.next().await,
+            Some(TuiEvent::MouseRelease(Position { x: 21, y: 8 }))
         ));
     }
 

@@ -387,6 +387,14 @@ pub(crate) async fn run(
                             }
                             tui.frame_requester().schedule_frame();
                         }
+                        TuiEvent::MouseDrag(position) | TuiEvent::MouseRelease(position) => {
+                            if !accepts_interaction {
+                                continue;
+                            }
+                            if shell.set_pointer_position(position) {
+                                tui.frame_requester().schedule_frame();
+                            }
+                        }
                         TuiEvent::MouseMove(position) => {
                             if !accepts_interaction {
                                 continue;
