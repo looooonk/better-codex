@@ -1,0 +1,38 @@
+---
+source: tui/src/app_shell/composer_render_tests.rs
+expression: rendered_styles
+---
+[
+    [
+        (
+            "> ",
+            Style::new().fg(Color::Rgb(122, 162, 247)),
+        ),
+        (
+            "/",
+            Style::new().fg(Color::Rgb(122, 162, 247)).bold(),
+        ),
+        (
+            "goal",
+            Style::new().fg(Color::Rgb(22, 22, 30)).bg(Color::Rgb(122, 162, 247)).bold(),
+        ),
+        (
+            " 界",
+            Style::new().fg(Color::Rgb(22, 22, 30)).bg(Color::Rgb(122, 162, 247)),
+        ),
+    ],
+    [
+        (
+            "  ",
+            Style::new().fg(Color::Rgb(86, 95, 137)),
+        ),
+        (
+            "e\u{301}",
+            Style::new().fg(Color::Rgb(22, 22, 30)).bg(Color::Rgb(122, 162, 247)),
+        ),
+        (
+            " tail",
+            Style::new(),
+        ),
+    ],
+]
