@@ -5838,6 +5838,177 @@ async fn clicking_the_composer_returns_focus_from_dashboard_panels() {
 }
 
 #[tokio::test]
+async fn dragging_in_message_selects_text_for_replacement_and_backspace() {
+    let config = test_config().await;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 24,
+    );
+
+    for (key, expected) in [
+        (
+            KeyEvent::new(KeyCode::Char('X'), KeyModifiers::SHIFT),
+            "alpha X gamma",
+        ),
+        (
+            KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE),
+            "alpha  gamma",
+        ),
+    ] {
+        let mut shell = ShellState::snapshot_fixture();
+        let mut backend = RecordingBackend::default();
+        shell.dashboard_visible = false;
+        shell.composer.set_text("alpha beta gamma");
+        let input = ShellView { shell: &shell }.input_area(area);
+        let buf = render_shell_buffer(&shell, area);
+        let row = row_containing(&buf, input, "alpha beta gamma")
+            .expect("message text should be visible");
+        let beta_x = row_needle_x(&buf, input, row, "beta").expect("beta should have a position");
+        let anchor = Position::new(beta_x, row);
+        let focus = Position::new(beta_x.saturating_add(3), row);
+
+        shell
+            .handle_mouse_selection_down(area, anchor, &config, &mut backend)
+            .await
+            .expect("message selection should start");
+        shell.handle_mouse_selection_drag(area, focus);
+        shell
+            .handle_mouse_selection_release(area, focus, &config, &mut backend)
+            .await
+            .expect("message selection should finish");
+
+        assert_eq!(shell.composer.selected_text(), Some("beta"));
+        shell
+            .handle_key(key, &config, &mut backend)
+            .await
+            .expect("selected message edit should succeed");
+        assert_eq!(shell.composer.text(), expected);
+        assert_eq!(shell.composer.selected_text(), None);
+    }
+}
+
+#[tokio::test]
+async fn dragging_in_conversation_selects_only_the_swept_visible_text() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.clear_streaming_assistant();
+    shell.push_assistant("alpha beta gamma");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 24,
+    );
+    let transcript = ShellView { shell: &shell }.transcript_area(area);
+    let buf = render_shell_buffer(&shell, area);
+    let row = row_containing(&buf, transcript, "alpha beta gamma")
+        .expect("conversation text should be visible");
+    let beta_x = row_needle_x(&buf, transcript, row, "beta").expect("beta should have a position");
+    let anchor = Position::new(beta_x, row);
+    let focus = Position::new(beta_x.saturating_add(3), row);
+
+    shell
+        .handle_mouse_selection_down(area, anchor, &config, &mut backend)
+        .await
+        .expect("conversation selection should start");
+    shell.handle_mouse_selection_drag(area, focus);
+    shell
+        .handle_mouse_selection_release(area, focus, &config, &mut backend)
+        .await
+        .expect("conversation selection should finish");
+    let mut copied = None;
+    assert!(shell.copy_text_selection_with(|text| {
+        copied = Some(text.to_string());
+        Ok(None)
+    }));
+
+    assert_eq!(copied, Some("beta".to_string()));
+    assert!(shell.transcript_text_selection().is_some());
+    assert_eq!(shell.composer.selected_text(), None);
+}
+
+#[tokio::test]
+async fn transcript_card_click_waits_for_release_while_drag_selects_text() {
+    let config = test_config().await;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    let mut clicked = ShellState::snapshot_fixture();
+    clicked.dashboard_visible = false;
+    clicked.transcript.clear();
+    clicked.clear_streaming_transcript();
+    clicked.push_output_with_status("compile output", ToolBlockStatus::Running);
+    let mut backend = RecordingBackend::default();
+    let clicked_position = area
+        .positions()
+        .find(|position| {
+            matches!(
+                (ShellView { shell: &clicked }).transcript_card_at(area, *position),
+                Some(transcript_view::TranscriptCardHit::ToolOutput { .. })
+            ) && transcript_view::transcript_text_hit_at(
+                &clicked,
+                (ShellView { shell: &clicked }).transcript_area(area),
+                *position,
+            )
+            .is_some()
+        })
+        .expect("tool output text should be clickable");
+
+    clicked
+        .handle_mouse_selection_down(area, clicked_position, &config, &mut backend)
+        .await
+        .expect("card press should be deferred");
+    assert!(clicked.tool_output.is_none());
+    clicked
+        .handle_mouse_selection_release(area, clicked_position, &config, &mut backend)
+        .await
+        .expect("card release should activate the click");
+    assert!(clicked.tool_output.is_some());
+
+    let mut dragged = ShellState::snapshot_fixture();
+    dragged.dashboard_visible = false;
+    dragged.transcript.clear();
+    dragged.clear_streaming_transcript();
+    dragged.push_output_with_status("compile output", ToolBlockStatus::Running);
+    dragged
+        .handle_mouse_selection_down(area, clicked_position, &config, &mut backend)
+        .await
+        .expect("card selection should start");
+    let drag_position = Position::new(clicked_position.x.saturating_add(1), clicked_position.y);
+    dragged.handle_mouse_selection_drag(area, drag_position);
+    dragged
+        .handle_mouse_selection_release(area, drag_position, &config, &mut backend)
+        .await
+        .expect("card selection should finish");
+    assert!(dragged.tool_output.is_none());
+    assert!(dragged.transcript_text_selection().is_some());
+
+    let mut released_elsewhere = ShellState::snapshot_fixture();
+    released_elsewhere.dashboard_visible = false;
+    released_elsewhere.transcript.clear();
+    released_elsewhere.clear_streaming_transcript();
+    released_elsewhere.push_output_with_status("compile output", ToolBlockStatus::Running);
+    released_elsewhere
+        .handle_mouse_selection_down(area, clicked_position, &config, &mut backend)
+        .await
+        .expect("card selection should start");
+    let input = ShellView {
+        shell: &released_elsewhere,
+    }
+    .input_area(area);
+    released_elsewhere
+        .handle_mouse_selection_release(
+            area,
+            Position::new(input.x, input.y),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("release outside the card should finish");
+    assert!(released_elsewhere.tool_output.is_none());
+}
+
+#[tokio::test]
 async fn clicking_new_session_starts_a_clear_session_and_focuses_the_composer() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
