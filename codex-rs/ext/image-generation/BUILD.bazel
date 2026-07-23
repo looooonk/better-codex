@@ -4,6 +4,7 @@ codex_rust_crate(
     name = "image-generation",
     compile_data = [
         "imagegen_description.md",
+        "imagegen_description_v0_145.md",
     ],
     crate_name = "codex_image_generation_extension",
 )

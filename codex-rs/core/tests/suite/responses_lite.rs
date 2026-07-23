@@ -55,16 +55,48 @@ fn has_hosted_tool(tools: &[Value], tool_type: &str) -> bool {
         .any(|tool| tool.get("type").and_then(Value::as_str) == Some(tool_type))
 }
 
+fn namespaced_tool<'a>(tools: &'a [Value], namespace: &str, tool_name: &str) -> Option<&'a Value> {
+    tools
+        .iter()
+        .find(|tool| {
+            tool.get("type").and_then(Value::as_str) == Some("namespace")
+                && tool.get("name").and_then(Value::as_str) == Some(namespace)
+        })
+        .and_then(|namespace| namespace["tools"].as_array())
+        .and_then(|tools| {
+            tools
+                .iter()
+                .find(|tool| tool.get("name").and_then(Value::as_str) == Some(tool_name))
+        })
+}
+
 fn has_namespaced_tool(tools: &[Value], namespace: &str, tool_name: &str) -> bool {
-    tools.iter().any(|tool| {
-        tool.get("type").and_then(Value::as_str) == Some("namespace")
-            && tool.get("name").and_then(Value::as_str) == Some(namespace)
-            && tool["tools"].as_array().is_some_and(|tools| {
-                tools
-                    .iter()
-                    .any(|tool| tool.get("name").and_then(Value::as_str) == Some(tool_name))
-            })
-    })
+    namespaced_tool(tools, namespace, tool_name).is_some()
+}
+
+fn assert_canonical_imagegen_parameters(tool: &Value) {
+    assert_eq!(
+        tool["parameters"],
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                },
+                "referenced_image_paths": {
+                    "type": ["array", "null"],
+                    "items": {
+                        "type": "string",
+                    },
+                },
+                "num_last_images_to_include": {
+                    "type": ["integer", "null"],
+                },
+            },
+            "required": ["prompt"],
+            "additionalProperties": false,
+        })
+    );
 }
 
 fn additional_tools(body: &Value) -> Result<&[Value]> {
@@ -239,7 +271,9 @@ async fn responses_lite_uses_standalone_web_search_and_image_generation() -> Res
     assert!(body.get("tools").is_none());
     let tools = additional_tools(&body)?;
     assert!(has_namespaced_tool(tools, "web", "run"));
-    assert!(has_namespaced_tool(tools, "image_gen", "imagegen"));
+    let imagegen_tool = namespaced_tool(tools, "image_gen", "imagegen")
+        .context("additional_tools should contain image_gen.imagegen")?;
+    assert_canonical_imagegen_parameters(imagegen_tool);
     assert!(!has_hosted_tool(tools, "web_search"));
     assert!(!has_hosted_tool(tools, "image_generation"));
 
@@ -407,7 +441,10 @@ async fn non_lite_uses_standalone_image_generation_by_default() -> Result<()> {
     let request = response_mock.single_request();
     assert_eq!(request.header(RESPONSES_LITE_HEADER), None);
     assert!(request.tool_by_name("web", "run").is_none());
-    assert!(request.tool_by_name("image_gen", "imagegen").is_some());
+    let imagegen_tool = request
+        .tool_by_name("image_gen", "imagegen")
+        .context("Responses request should contain image_gen.imagegen")?;
+    assert_canonical_imagegen_parameters(&imagegen_tool);
     let body = request.body_json();
     let tools = body["tools"]
         .as_array()

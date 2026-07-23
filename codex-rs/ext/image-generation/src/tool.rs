@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::io;
 
@@ -22,7 +23,6 @@ use codex_extension_api::ToolName;
 use codex_extension_api::ToolOutput;
 use codex_extension_api::ToolPayload;
 use codex_extension_api::ToolSpec;
-use codex_extension_api::parse_tool_input_schema;
 use codex_extension_items::ExtensionItem;
 use codex_extension_items::image_generation::ImageGenerationItem;
 use codex_protocol::models::ContentItem;
@@ -35,6 +35,9 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ImageGenerationBeginEvent;
 use codex_protocol::protocol::ImageGenerationEndEvent;
+use codex_tools::JsonSchema;
+use codex_tools::JsonSchemaPrimitiveType;
+use codex_tools::JsonSchemaType;
 use codex_tools::ResponsesApiNamespace;
 use codex_tools::ResponsesApiNamespaceTool;
 use codex_tools::ResponsesApiTool;
@@ -44,8 +47,6 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_image::PromptImageMode;
 use codex_utils_image::load_for_prompt_bytes;
 use codex_utils_path_uri::PathUri;
-use schemars::JsonSchema;
-use schemars::r#gen::SchemaSettings;
 use serde::Deserialize;
 use serde_json::Map;
 use serde_json::Value;
@@ -80,13 +81,11 @@ impl ImageGenerationTool {
     }
 }
 
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ImagegenArgs {
     prompt: String,
-    #[schemars(length(max = 5))]
     referenced_image_paths: Option<Vec<AbsolutePathBuf>>,
-    #[schemars(range(min = 1, max = 5))]
     num_last_images_to_include: Option<usize>,
 }
 
@@ -461,22 +460,6 @@ fn parse_args(call: &ToolCall) -> Result<ImagegenArgs, FunctionCallError> {
 
 /// Builds the namespace function schema exposed to the model.
 fn imagegen_tool_spec() -> ToolSpec {
-    let mut schema_value = serde_json::to_value(
-        SchemaSettings::draft2019_09()
-            .with(|settings| settings.inline_subschemas = true)
-            .into_generator()
-            .into_root_schema_for::<ImagegenArgs>(),
-    )
-    .unwrap_or_else(|err| panic!("imagegen schema should serialize: {err}"));
-    let Value::Object(ref mut schema) = schema_value else {
-        unreachable!("imagegen root schema must be an object");
-    };
-    let mut input_schema = Map::new();
-    for key in ["properties", "required", "type", "additionalProperties"] {
-        if let Some(value) = schema.remove(key) {
-            input_schema.insert(key.to_string(), value);
-        }
-    }
     ToolSpec::Namespace(ResponsesApiNamespace {
         name: IMAGE_GEN_NAMESPACE.to_string(),
         description: default_namespace_description(IMAGE_GEN_NAMESPACE),
@@ -484,12 +467,50 @@ fn imagegen_tool_spec() -> ToolSpec {
             name: IMAGEGEN_TOOL_NAME.to_string(),
             description: IMAGEGEN_DESCRIPTION.to_string(),
             strict: false,
-            parameters: parse_tool_input_schema(&Value::Object(input_schema))
-                .unwrap_or_else(|err| panic!("imagegen input schema should parse: {err}")),
+            parameters: imagegen_parameters(),
             output_schema: None,
             defer_loading: None,
         })],
     })
+}
+
+/// Returns the wire contract reserved by the backend for `image_gen.imagegen`.
+///
+/// Keep this independent of `ImagegenArgs` and the generic schema parser: argument validation can
+/// evolve locally, but adding a schema keyword to this reserved tool makes the backend reject the
+/// entire request before inference.
+fn imagegen_parameters() -> JsonSchema {
+    JsonSchema::object(
+        BTreeMap::from([
+            (
+                "prompt".to_string(),
+                JsonSchema::string(/*description*/ None),
+            ),
+            (
+                "referenced_image_paths".to_string(),
+                JsonSchema {
+                    schema_type: Some(JsonSchemaType::Multiple(vec![
+                        JsonSchemaPrimitiveType::Array,
+                        JsonSchemaPrimitiveType::Null,
+                    ])),
+                    items: Some(Box::new(JsonSchema::string(/*description*/ None))),
+                    ..Default::default()
+                },
+            ),
+            (
+                "num_last_images_to_include".to_string(),
+                JsonSchema {
+                    schema_type: Some(JsonSchemaType::Multiple(vec![
+                        JsonSchemaPrimitiveType::Integer,
+                        JsonSchemaPrimitiveType::Null,
+                    ])),
+                    ..Default::default()
+                },
+            ),
+        ]),
+        Some(vec!["prompt".to_string()]),
+        /*additional_properties*/ Some(false.into()),
+    )
 }
 
 struct GeneratedImageOutput {
