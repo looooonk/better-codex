@@ -365,7 +365,7 @@ async fn connect_remote_app_server(
     let app_server = RemoteAppServerClient::connect(RemoteAppServerConnectArgs {
         endpoint,
         client_name: "codex-tui".to_string(),
-        client_version: env!("CARGO_PKG_VERSION").to_string(),
+        client_version: codex_build_info::CODEX_BACKEND_COMPAT_VERSION.to_string(),
         experimental_api: true,
         mcp_server_openai_form_elicitation: true,
         opt_out_notification_methods: Vec::new(),
@@ -530,7 +530,7 @@ where
             .unwrap_or_else(|err| panic!("cli session source should deserialize: {err}")),
         enable_codex_api_key_env: false,
         client_name: "codex-tui".to_string(),
-        client_version: env!("CARGO_PKG_VERSION").to_string(),
+        client_version: codex_build_info::CODEX_BACKEND_COMPAT_VERSION.to_string(),
         experimental_api: true,
         mcp_server_openai_form_elicitation: true,
         opt_out_notification_methods: Vec::new(),
@@ -2951,6 +2951,8 @@ mod tests {
     async fn embedded_app_server_start_failure_is_returned() -> color_eyre::Result<()> {
         let temp_dir = TempDir::new()?;
         let config = build_config(&temp_dir).await?;
+        let observed_client_version = Arc::new(Mutex::new(None));
+        let observed_client_version_for_start = Arc::clone(&observed_client_version);
         let result = start_embedded_app_server_with(
             Arg0DispatchPaths::default(),
             config,
@@ -2962,7 +2964,13 @@ mod tests {
             /*log_db*/ None,
             /*state_db*/ None,
             Arc::new(EnvironmentManager::default_for_tests()),
-            |_args| async { Err(std::io::Error::other("boom")) },
+            move |args| {
+                *observed_client_version_for_start
+                    .lock()
+                    .expect("observed client version lock should not be poisoned") =
+                    Some(args.client_version);
+                async { Err(std::io::Error::other("boom")) }
+            },
         )
         .await;
         let err = match result {
@@ -2974,6 +2982,12 @@ mod tests {
             err.to_string()
                 .contains("failed to start embedded app server"),
             "error should preserve the embedded app server startup context"
+        );
+        assert_eq!(
+            *observed_client_version
+                .lock()
+                .expect("observed client version lock should not be poisoned"),
+            Some(codex_build_info::CODEX_BACKEND_COMPAT_VERSION.to_string())
         );
         Ok(())
     }

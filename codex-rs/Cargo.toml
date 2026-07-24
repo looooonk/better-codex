@@ -5,6 +5,7 @@ members = [
     "agent-graph-store",
     "agent-identity",
     "backend-client",
+    "build-info",
     "bwrap",
     "ansi-escape",
     "async-utils",
@@ -147,6 +148,7 @@ codex-agent-identity = { path = "agent-identity" }
 codex-ansi-escape = { path = "ansi-escape" }
 codex-api = { path = "codex-api" }
 codex-aws-auth = { path = "aws-auth" }
+codex-build-info = { path = "build-info" }
 codex-app-server = { path = "app-server" }
 codex-app-server-transport = { path = "app-server-transport" }
 codex-app-server-daemon = { path = "app-server-daemon" }

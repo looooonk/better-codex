@@ -6,7 +6,6 @@ use codex_api::ImageUrl;
 use codex_core::context::extension_image_generation_output_hint;
 use codex_extension_api::ToolOutput;
 use codex_extension_api::ToolPayload;
-use codex_extension_api::ToolSpec;
 use codex_protocol::ResponseItemId;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::DEFAULT_IMAGE_DETAIL;
@@ -15,27 +14,55 @@ use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
-use codex_tools::ResponsesApiNamespaceTool;
 use pretty_assertions::assert_eq;
+use serde_json::json;
 
 use super::GeneratedImageOutput;
 use super::ImageRequest;
 use super::ImagegenArgs;
 use super::imagegen_tool_spec;
 use super::request_for_call_args;
-use crate::IMAGE_GEN_NAMESPACE;
-use crate::IMAGEGEN_TOOL_NAME;
 
 const RESULT: &str = "cG5n";
+// Keep the expected description independent from the production include so contract drift fails.
+const EXPECTED_IMAGEGEN_DESCRIPTION_V0_145: &str =
+    include_str!("../imagegen_description_v0_145.md");
 
 #[test]
-fn uses_reserved_image_gen_namespace() {
-    let ToolSpec::Namespace(spec) = imagegen_tool_spec() else {
-        panic!("imagegen should advertise a namespace tool");
-    };
-    assert_eq!(spec.name, IMAGE_GEN_NAMESPACE);
-    let ResponsesApiNamespaceTool::Function(function) = &spec.tools[0];
-    assert_eq!(function.name, IMAGEGEN_TOOL_NAME);
+fn reserved_imagegen_tool_matches_v0_145_backend_contract() {
+    assert_eq!(
+        serde_json::to_value(imagegen_tool_spec()).expect("imagegen tool should serialize"),
+        json!({
+            "type": "namespace",
+            "name": "image_gen",
+            "description": "Tools in the image_gen namespace.",
+            "tools": [{
+                "type": "function",
+                "name": "imagegen",
+                "description": EXPECTED_IMAGEGEN_DESCRIPTION_V0_145,
+                "strict": false,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "prompt": {
+                            "type": "string"
+                        },
+                        "referenced_image_paths": {
+                            "type": ["array", "null"],
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "num_last_images_to_include": {
+                            "type": ["integer", "null"]
+                        }
+                    },
+                    "required": ["prompt"],
+                    "additionalProperties": false
+                }
+            }]
+        })
+    );
 }
 
 #[tokio::test]
