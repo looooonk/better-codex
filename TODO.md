@@ -2,11 +2,11 @@
 
 The following is a list of changes that should be applied to better-codex soon.
 
-- [x] When a model is steered, three sepearate copies of the steer message appear in the conversation log, from `YOU`, `AUDIT`, and `YOU` again. This should change, to only display one message from `YOU`.
-- [x] CLI command tool calls should be truncated when they are too long.
-- [x] Users should be able to use arrow keys, number keys, and the mouse when selecting actions on a permissions pop-up.
-- [x] Support for `/login` and `/logout` should be implemented, following the flow of the standard Codex CLI repository.
-- [x] There should be a timer measuring the current turn time (e.g. 1h 25m 47s) in the top bar. This should be different from the goal time, as the turn time resets every turn.
+- [ ] Remove "root" from the list of subagents, as it is just the main agent in the "CONVERSATION" pane.
+- [ ] Display agents with their human-readable nickname, not the file-path--like name. However, maintain nesting behavior.
+- [ ] Make subagent conversation panes more accesible by allowing the user to click subagent rows in the "Agents" tab to bring up their conversation logs.
+- [ ] De-clutter subagent conversation panes to show less of raw tool and edit output, and make them more formatted to be digestible to the end user.
+- [ ] Stop displaying the original prompt the user gave to the root Codex in the subagent panes.
 
 The following is a list of items that better-codex should support down the road, but not immediately.
 
