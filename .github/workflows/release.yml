@@ -1,0 +1,245 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build without publishing; defaults to Cargo.toml
+        required: false
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - id: version
+        name: Validate version
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          cargo_version="$(python3 -c 'import tomllib; print(tomllib.load(open("codex-rs/Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+              || { echo "Invalid release tag: ${GITHUB_REF_NAME}" >&2; exit 1; }
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="${REQUESTED_VERSION:-$cargo_version}"
+          fi
+          [[ "${version}" == "${cargo_version}" ]] \
+            || { echo "Tag/input version ${version} does not match Cargo version ${cargo_version}" >&2; exit 1; }
+          echo "version=${version}" >>"$GITHUB_OUTPUT"
+
+  build:
+    needs: validate
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: codex-rs
+    env:
+      CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e081816240890017053eacbb1bdf337761dc5582 # 1.95.0
+        with:
+          toolchain: 1.95.0
+          targets: ${{ matrix.target }}
+
+      - if: ${{ runner.os == 'Linux' }}
+        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2
+        with:
+          version: 0.14.0
+          use-cache: false
+
+      - if: ${{ runner.os == 'Linux' }}
+        name: Install musl build tools
+        env:
+          TARGET: ${{ matrix.target }}
+        run: bash "${GITHUB_WORKSPACE}/.github/scripts/install-musl-build-tools.sh"
+
+      - if: ${{ runner.os == 'Linux' }}
+        name: Configure musl build
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "AWS_LC_SYS_NO_JITTER_ENTROPY=1" >>"$GITHUB_ENV"
+          target_no_jitter="AWS_LC_SYS_NO_JITTER_ENTROPY_${{ matrix.target }}"
+          echo "${target_no_jitter//-/_}=1" >>"$GITHUB_ENV"
+
+      - name: Configure rusty_v8
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          version="$(python3 "${GITHUB_WORKSPACE}/.github/scripts/rusty_v8_bazel.py" resolved-v8-crate-version)"
+          base_url="https://github.com/openai/codex/releases/download/rusty-v8-v${version}"
+          binding_dir="${RUNNER_TEMP}/rusty_v8"
+          archive_path="${binding_dir}/librusty_v8_release_${TARGET}.a.gz"
+          binding_path="${binding_dir}/src_binding_release_${TARGET}.rs"
+          checksums_path="${binding_dir}/rusty_v8_release_${TARGET}.sha256"
+          mkdir -p "$binding_dir"
+          curl -fsSL "${base_url}/librusty_v8_release_${TARGET}.a.gz" -o "$archive_path"
+          curl -fsSL "${base_url}/src_binding_release_${TARGET}.rs" -o "$binding_path"
+          curl -fsSL "${base_url}/rusty_v8_release_${TARGET}.sha256" -o "$checksums_path"
+          [[ "$(wc -l <"$checksums_path")" -eq 2 ]] \
+            || { echo "Unexpected rusty_v8 checksum manifest" >&2; exit 1; }
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd "$binding_dir" && sha256sum -c "$checksums_path")
+          else
+            (cd "$binding_dir" && shasum -a 256 -c "$checksums_path")
+          fi
+          echo "RUSTY_V8_ARCHIVE=${archive_path}" >>"$GITHUB_ENV"
+          echo "RUSTY_V8_SRC_BINDING_PATH=${binding_path}" >>"$GITHUB_ENV"
+
+      - if: ${{ runner.os == 'Linux' }}
+        name: Build bubblewrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          target="${{ matrix.target }}"
+          cargo build --locked --target "$target" --release --bin bwrap
+          bwrap="target/${target}/release/bwrap"
+          strip --strip-debug --strip-unneeded "$bwrap"
+          echo "CODEX_BWRAP_SHA256=$(sha256sum "$bwrap" | awk '{print $1}')" >>"$GITHUB_ENV"
+
+      - name: Build binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --locked --target "${{ matrix.target }}" --release \
+            --bin codex \
+            --bin codex-code-mode-host
+
+      - name: Strip binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_dir="target/${{ matrix.target }}/release"
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            strip -S -x "$release_dir/codex" "$release_dir/codex-code-mode-host"
+          else
+            strip --strip-debug --strip-unneeded \
+              "$release_dir/codex" \
+              "$release_dir/codex-code-mode-host"
+          fi
+
+      - name: Build release archive
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          asset="better-codex-package-${TARGET}.tar.gz"
+          args=(
+            --target "$TARGET"
+            --version "$VERSION"
+            --codex-bin "target/${TARGET}/release/codex"
+            --code-mode-host-bin "target/${TARGET}/release/codex-code-mode-host"
+            --output "dist/${asset}"
+          )
+          if [[ "$TARGET" == *linux* ]]; then
+            args+=(--bwrap-bin "target/${TARGET}/release/bwrap")
+          fi
+          python3 "${GITHUB_WORKSPACE}/scripts/build_release_package.py" "${args[@]}" \
+            >"dist/${asset}.sha256"
+
+      - name: Smoke test release archive
+        shell: bash
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          smoke_dir="${RUNNER_TEMP}/better-codex-smoke"
+          mkdir -p "$smoke_dir"
+          tar -xzf "dist/better-codex-package-${TARGET}.tar.gz" \
+            -C "$smoke_dir" --strip-components 1
+          "$smoke_dir/bin/codex" --version | grep -F "$VERSION"
+          test -x "$smoke_dir/bin/codex-code-mode-host"
+          test -x "$smoke_dir/codex-path/rg"
+          if [[ "$TARGET" == *linux* ]]; then
+            test -x "$smoke_dir/codex-resources/bwrap"
+          fi
+
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: release-${{ matrix.target }}
+          path: |
+            codex-rs/dist/*.tar.gz
+            codex-rs/dist/*.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    needs:
+      - validate
+      - build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4
+        with:
+          subject-path: dist/*.tar.gz
+      - name: Publish GitHub release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          options=()
+          if [[ "$VERSION" == *-* ]]; then
+            options+=(--prerelease)
+          fi
+          gh release create "v${VERSION}" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "Better Codex ${VERSION}" \
+            --generate-notes \
+            --notes "Unsigned macOS preview: Gatekeeper may require approval in System Settings." \
+            "${options[@]}"
