@@ -228,6 +228,9 @@ impl ShellState {
         {
             return Ok(false);
         }
+        if matches!(key.code, KeyCode::Modifier(_)) {
+            return Ok(false);
+        }
         if self.handle_text_copy_shortcut_with(key, crate::clipboard_copy::copy_to_clipboard) {
             self.exit_confirmation_pending = false;
             return Ok(false);

@@ -119,6 +119,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::ReasoningEffortPreset;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::LegacyAppPathString;
+use crossterm::event::ModifierKeyCode;
 use itertools::Itertools;
 use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;
@@ -5964,7 +5965,7 @@ async fn dragging_in_message_selects_text_for_replacement_and_backspace() {
 }
 
 #[tokio::test]
-async fn dragging_in_conversation_selects_only_the_swept_visible_text() {
+async fn conversation_selection_survives_modifier_keys_and_copies_swept_text() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
@@ -5992,6 +5993,21 @@ async fn dragging_in_conversation_selects_only_the_swept_visible_text() {
         .handle_mouse_selection_release(area, focus, &config, &mut backend)
         .await
         .expect("conversation selection should finish");
+    let selection = shell.transcript_text_selection();
+    for (code, modifiers) in [
+        (ModifierKeyCode::LeftControl, KeyModifiers::CONTROL),
+        (ModifierKeyCode::LeftSuper, KeyModifiers::SUPER),
+    ] {
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Modifier(code), modifiers),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("modifier key should be ignored");
+        assert_eq!(shell.transcript_text_selection(), selection);
+    }
     let mut copied = None;
     assert!(shell.copy_text_selection_with(|text| {
         copied = Some(text.to_string());
