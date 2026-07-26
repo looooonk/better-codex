@@ -6,6 +6,7 @@ use std::sync::OnceLock;
 use codex_utils_absolute_path::AbsolutePathBuf;
 
 const BIN_DIRNAME: &str = "bin";
+const BETTER_CODEX_MANAGED_ENV_VAR: &str = "BETTER_CODEX_MANAGED";
 const PACKAGE_METADATA_FILENAME: &str = "codex-package.json";
 const PATH_DIRNAME: &str = "codex-path";
 const RELEASES_DIRNAME: &str = "releases";
@@ -112,6 +113,10 @@ impl InstallContext {
                 Some(InstallMethod::Npm)
             } else if std::env::var_os("CODEX_MANAGED_BY_BUN").is_some() {
                 Some(InstallMethod::Bun)
+            } else if std::env::var_os(BETTER_CODEX_MANAGED_ENV_VAR).is_some() {
+                current_exe
+                    .as_deref()
+                    .and_then(standalone_install_method_from_package)
             } else {
                 None
             };
@@ -246,10 +251,23 @@ fn standalone_install_method(
         return None;
     }
 
-    let resources_dir = release_dir.join(RESOURCES_DIRNAME);
     Some(InstallMethod::Standalone {
+        resources_dir: package_layout
+            .and_then(|layout| layout.resources_dir.clone())
+            .or_else(|| {
+                let resources_dir = release_dir.join(RESOURCES_DIRNAME);
+                resources_dir.is_dir().then_some(resources_dir)
+            }),
         release_dir,
-        resources_dir: resources_dir.is_dir().then_some(resources_dir),
+        platform: standalone_platform(),
+    })
+}
+
+fn standalone_install_method_from_package(exe_path: &Path) -> Option<InstallMethod> {
+    let package_layout = CodexPackageLayout::from_exe(exe_path)?;
+    Some(InstallMethod::Standalone {
+        release_dir: package_layout.package_dir,
+        resources_dir: package_layout.resources_dir,
         platform: standalone_platform(),
     })
 }
@@ -478,6 +496,32 @@ mod tests {
         assert_eq!(
             context.bundled_resource(TEST_RESOURCE_NAME),
             Some(canonical_resources_dir.join(TEST_RESOURCE_NAME))
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn managed_package_layout_is_standalone_outside_codex_home() -> std::io::Result<()> {
+        let package_dir = tempfile::tempdir()?;
+        let bin_dir = package_dir.path().join(BIN_DIRNAME);
+        let resources_dir = package_dir.path().join(RESOURCES_DIRNAME);
+        fs::create_dir_all(&bin_dir)?;
+        fs::create_dir_all(&resources_dir)?;
+        fs::write(package_dir.path().join(PACKAGE_METADATA_FILENAME), "{}")?;
+        let exe_path = bin_dir.join(if cfg!(windows) { "codex.exe" } else { "codex" });
+        fs::write(&exe_path, "")?;
+        let canonical_package_dir =
+            AbsolutePathBuf::from_absolute_path(package_dir.path().canonicalize()?)?;
+        let canonical_resources_dir =
+            AbsolutePathBuf::from_absolute_path(resources_dir.canonicalize()?)?;
+
+        assert_eq!(
+            standalone_install_method_from_package(&exe_path),
+            Some(InstallMethod::Standalone {
+                release_dir: canonical_package_dir,
+                resources_dir: Some(canonical_resources_dir),
+                platform: standalone_platform(),
+            })
         );
         Ok(())
     }

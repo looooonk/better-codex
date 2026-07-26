@@ -55,7 +55,8 @@ pub fn get_upgrade_version(config: &Config) -> Option<String> {
 
 // We use the latest version from the cask if installation is via homebrew - homebrew does not immediately pick up the latest release and can lag behind.
 const HOMEBREW_CASK_API_URL: &str = "https://formulae.brew.sh/api/cask/codex.json";
-const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
+const LATEST_RELEASE_URL: &str =
+    "https://api.github.com/repos/looooonk/better-codex/releases?per_page=1";
 
 #[derive(Deserialize, Debug, Clone)]
 struct ReleaseInfo {
@@ -93,9 +94,7 @@ async fn check_for_update(version_file: &Path, action: Option<UpdateAction>) -> 
             npm_registry::ensure_version_ready(&package_info, &latest_version)?;
             latest_version
         }
-        Some(UpdateAction::StandaloneUnix) | Some(UpdateAction::StandaloneWindows) | None => {
-            fetch_latest_github_release_version().await?
-        }
+        Some(UpdateAction::StandaloneUnix) | None => fetch_latest_github_release_version().await?,
     };
 
     // Preserve any previously dismissed version if present.
@@ -115,15 +114,18 @@ async fn check_for_update(version_file: &Path, action: Option<UpdateAction>) -> 
 }
 
 async fn fetch_latest_github_release_version() -> anyhow::Result<String> {
-    let ReleaseInfo {
-        tag_name: latest_tag_name,
-    } = create_client()
+    let releases = create_client()
         .get(LATEST_RELEASE_URL)
         .send()
         .await?
         .error_for_status()?
-        .json::<ReleaseInfo>()
+        .json::<Vec<ReleaseInfo>>()
         .await?;
+    let latest_tag_name = releases
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("Better Codex has no published releases"))?
+        .tag_name;
     extract_version_from_latest_tag(&latest_tag_name)
 }
 

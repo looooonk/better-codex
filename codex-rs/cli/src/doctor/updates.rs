@@ -11,6 +11,7 @@ use std::path::Path;
 use codex_core::config::Config;
 use codex_install_context::InstallContext;
 use codex_install_context::InstallMethod;
+use semver::Version;
 use serde::Deserialize;
 
 use super::CheckStatus;
@@ -22,7 +23,8 @@ use super::npm_global_root_check;
 use super::run_command;
 
 const VERSION_FILE_NAME: &str = "version.json";
-const GITHUB_LATEST_RELEASE_URL: &str = "https://api.github.com/repos/openai/codex/releases/latest";
+const GITHUB_LATEST_RELEASE_URL: &str =
+    "https://api.github.com/repos/looooonk/better-codex/releases?per_page=1";
 const HOMEBREW_CASK_API_URL: &str = "https://formulae.brew.sh/api/cask/codex.json";
 
 /// Builds the update-health row for the current installation.
@@ -157,11 +159,17 @@ fn fetch_latest_github_release_version() -> Result<String, String> {
         tag_name: String,
     }
 
-    let info = http_get_json::<ReleaseInfo>(GITHUB_LATEST_RELEASE_URL)?;
-    info.tag_name
-        .strip_prefix("rust-v")
-        .map(str::to_string)
-        .ok_or_else(|| format!("failed to parse latest tag {}", info.tag_name))
+    let info = http_get_json::<Vec<ReleaseInfo>>(GITHUB_LATEST_RELEASE_URL)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| "Better Codex has no published releases".to_string())?;
+    let version = info
+        .tag_name
+        .strip_prefix('v')
+        .ok_or_else(|| format!("failed to parse latest tag {}", info.tag_name))?;
+    Version::parse(version)
+        .map(|_| version.to_string())
+        .map_err(|err| format!("failed to parse latest tag {}: {err}", info.tag_name))
 }
 
 fn fetch_homebrew_cask_version() -> Result<String, String> {
@@ -182,18 +190,7 @@ where
 }
 
 fn is_newer(latest: &str, current: &str) -> Option<bool> {
-    match (parse_version(latest), parse_version(current)) {
-        (Some(latest), Some(current)) => Some(latest > current),
-        (Some(_), None) | (None, Some(_)) | (None, None) => None,
-    }
-}
-
-fn parse_version(value: &str) -> Option<(u64, u64, u64)> {
-    let mut parts = value.trim().split('.');
-    let major = parts.next()?.parse::<u64>().ok()?;
-    let minor = parts.next()?.parse::<u64>().ok()?;
-    let patch = parts.next()?.parse::<u64>().ok()?;
-    Some((major, minor, patch))
+    Some(Version::parse(latest.trim()).ok()? > Version::parse(current.trim()).ok()?)
 }
 
 #[derive(Deserialize)]
@@ -213,7 +210,7 @@ mod tests {
     fn is_newer_compares_plain_semver() {
         assert_eq!(is_newer("1.2.4", "1.2.3"), Some(true));
         assert_eq!(is_newer("1.2.3", "1.2.4"), Some(false));
-        assert_eq!(is_newer("1.2.3-beta.1", "1.2.2"), None);
+        assert_eq!(is_newer("1.2.3-beta.1", "1.2.2"), Some(true));
     }
 
     #[test]
