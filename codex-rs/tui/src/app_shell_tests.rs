@@ -92,6 +92,7 @@ use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
 use codex_app_server_protocol::ThreadStartSource;
+use codex_app_server_protocol::ThreadStartedNotification;
 use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ThreadStatusChangedNotification;
 use codex_app_server_protocol::ThreadUnarchivedNotification;
@@ -1960,12 +1961,34 @@ fn renders_agents_dashboard_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Agents;
     shell.agents_focused = true;
-    for (thread_id, path) in [
-        ("research", "/root/research"),
-        ("visual", "/root/research/visual"),
-        ("testing", "/root/testing"),
-        ("failure", "/root/testing/failure"),
+    let root_id = shell.thread_id;
+    for (thread_id, parent_id, path, nickname) in [
+        (
+            "01900000-0000-7000-8000-000000000011",
+            root_id,
+            "/root/research",
+            "Hypatia",
+        ),
+        (
+            "01900000-0000-7000-8000-000000000012",
+            test_thread_id("01900000-0000-7000-8000-000000000011"),
+            "/root/research/visual",
+            "Picasso",
+        ),
+        (
+            "01900000-0000-7000-8000-000000000013",
+            root_id,
+            "/root/testing",
+            "Turing",
+        ),
+        (
+            "01900000-0000-7000-8000-000000000014",
+            test_thread_id("01900000-0000-7000-8000-000000000013"),
+            "/root/testing/failure",
+            "Socrates",
+        ),
     ] {
+        let thread_id = test_thread_id(thread_id);
         shell
             .agent_activity
             .reduce_completed(&ThreadItem::SubAgentActivity {
@@ -1974,7 +1997,19 @@ fn renders_agents_dashboard_snapshot() {
                 agent_thread_id: thread_id.to_string(),
                 agent_path: path.to_string(),
             });
+        shell
+            .agent_activity
+            .hydrate_threads(vec![subagent_thread_fixture(
+                thread_id, root_id, parent_id, path, nickname,
+            )]);
     }
+    let agent_ids = [
+        "01900000-0000-7000-8000-000000000011",
+        "01900000-0000-7000-8000-000000000012",
+        "01900000-0000-7000-8000-000000000013",
+        "01900000-0000-7000-8000-000000000014",
+    ]
+    .map(str::to_string);
     shell
         .agent_activity
         .reduce_completed(&ThreadItem::CollabAgentToolCall {
@@ -1982,28 +2017,31 @@ fn renders_agents_dashboard_snapshot() {
             tool: CollabAgentTool::SpawnAgent,
             status: CollabAgentToolCallStatus::Completed,
             sender_thread_id: "root-thread".to_string(),
-            receiver_thread_ids: vec![
-                "research".to_string(),
-                "visual".to_string(),
-                "testing".to_string(),
-                "failure".to_string(),
-            ],
+            receiver_thread_ids: agent_ids.to_vec(),
             prompt: Some("Review the new TUI flow and visual hierarchy.".to_string()),
             model: Some("gpt-5-codex".to_string()),
             reasoning_effort: Some(ReasoningEffort::High),
             agents_states: [
-                ("research", CollabAgentStatus::Running, "Reviewing layout"),
                 (
-                    "visual",
+                    agent_ids[0].as_str(),
+                    CollabAgentStatus::Running,
+                    "Reviewing layout",
+                ),
+                (
+                    agent_ids[1].as_str(),
                     CollabAgentStatus::Completed,
                     "Visual audit complete",
                 ),
                 (
-                    "testing",
+                    agent_ids[2].as_str(),
                     CollabAgentStatus::Interrupted,
                     "Stopped after review",
                 ),
-                ("failure", CollabAgentStatus::Errored, "Compact flow failed"),
+                (
+                    agent_ids[3].as_str(),
+                    CollabAgentStatus::Errored,
+                    "Compact flow failed",
+                ),
             ]
             .into_iter()
             .map(|(thread_id, status, message)| {
@@ -2017,7 +2055,7 @@ fn renders_agents_dashboard_snapshot() {
             })
             .collect(),
         });
-    shell.agent_activity.select_thread("failure");
+    shell.agent_activity.select_thread(&agent_ids[3]);
 
     insta::assert_snapshot!(render_shell(
         &shell,
@@ -2033,6 +2071,43 @@ fn renders_agents_dashboard_snapshot() {
                 /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 24
             )
         )
+    );
+}
+
+#[test]
+fn thread_started_tracks_subagent_nickname_but_not_root() {
+    let mut shell = ShellState::snapshot_fixture();
+    let root_id = shell.thread_id;
+    shell.handle_notification(ServerNotification::ThreadStarted(
+        ThreadStartedNotification {
+            thread: thread_fixture(root_id, /*name*/ None, "root"),
+        },
+    ));
+
+    let child_id = test_thread_id("01900000-0000-7000-8000-000000000021");
+    shell.handle_notification(ServerNotification::ThreadStarted(
+        ThreadStartedNotification {
+            thread: subagent_thread_fixture(
+                child_id,
+                root_id,
+                root_id,
+                "/root/researcher",
+                "Aristotle",
+            ),
+        },
+    ));
+
+    let agent = shell
+        .agent_activity
+        .agent(&child_id.to_string())
+        .expect("subagent should be tracked");
+    assert_eq!(agent.display_name(), "Aristotle");
+    assert_eq!(agent.depth, Some(1));
+    assert_eq!(shell.agent_activity.counts().total, 1);
+    assert!(
+        shell
+            .active_agent_thread_ids
+            .contains(&child_id.to_string())
     );
 }
 
@@ -13272,7 +13347,7 @@ async fn replacing_session_clears_session_bound_surfaces() {
             None,
             None,
             VecDeque::new(),
-            AgentActivityState::default(),
+            AgentActivityState::for_root(next_id.to_string()),
             HashSet::new(),
             VecDeque::new(),
         )
@@ -15722,6 +15797,34 @@ fn thread_fixture(
         name: name.map(ToString::to_string),
         turns: Vec::new(),
     }
+}
+
+fn subagent_thread_fixture(
+    thread_id: codex_protocol::ThreadId,
+    root_id: codex_protocol::ThreadId,
+    parent_id: codex_protocol::ThreadId,
+    agent_path: &str,
+    nickname: &str,
+) -> Thread {
+    let mut thread = thread_fixture(thread_id, /*name*/ None, nickname);
+    thread.session_id = root_id.to_string();
+    thread.parent_thread_id = Some(parent_id.to_string());
+    thread.status = ThreadStatus::Active {
+        active_flags: Vec::new(),
+    };
+    thread.source =
+        SessionSource::SubAgent(codex_protocol::protocol::SubAgentSource::ThreadSpawn {
+            parent_thread_id: parent_id,
+            depth: 1,
+            agent_path: Some(
+                codex_protocol::AgentPath::try_from(agent_path).expect("valid agent path"),
+            ),
+            agent_nickname: Some(nickname.to_string()),
+            agent_role: None,
+        });
+    thread.thread_source = Some(codex_app_server_protocol::ThreadSource::Subagent);
+    thread.agent_nickname = Some(nickname.to_string());
+    thread
 }
 
 fn turn_completed_event(

@@ -127,11 +127,12 @@ impl ShellState {
     }
 
     pub(super) fn is_active_agent_thread(&self, thread_id: &str) -> bool {
-        self.active_agent_thread_ids.contains(thread_id)
-            || self
-                .agent_history_task
-                .as_ref()
-                .is_some_and(|task| task.is_subscribed(thread_id))
+        !self.agent_activity.is_root_thread(thread_id)
+            && (self.active_agent_thread_ids.contains(thread_id)
+                || self
+                    .agent_history_task
+                    .as_ref()
+                    .is_some_and(|task| task.is_subscribed(thread_id)))
     }
 
     pub(super) fn prepare_active_agent_thread(&mut self, thread_id: &str) -> bool {
@@ -191,7 +192,10 @@ impl ShellState {
         }
     }
 
-    fn mark_active_agent_thread(&mut self, thread_id: &str) {
+    pub(super) fn mark_active_agent_thread(&mut self, thread_id: &str) {
+        if self.agent_activity.is_root_thread(thread_id) {
+            return;
+        }
         if self.active_agent_thread_ids.len() < MAX_ACTIVE_AGENT_THREADS
             || self.active_agent_thread_ids.contains(thread_id)
         {

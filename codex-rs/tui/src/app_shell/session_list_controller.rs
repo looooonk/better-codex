@@ -452,7 +452,7 @@ impl ShellState {
         self.plugin_inventory = PluginInventorySummary::default();
         self.plugin_catalog = None;
         self.tool_activity.clear();
-        self.agent_activity = AgentActivityState::default();
+        self.agent_activity = AgentActivityState::for_root(self.thread_id.to_string());
         self.active_agent_thread_ids.clear();
         self.deferred_unsubscribe_thread_ids.clear();
         self.subagent_activity.clear();

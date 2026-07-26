@@ -16,6 +16,7 @@ const MAX_TURNS: usize = 12;
 const MAX_ITEM_TEXT_CHARS: usize = 512;
 const MAX_ITEM_ID_CHARS: usize = 128;
 const MAX_AGENT_PATH_CHARS: usize = 512;
+const MAX_AGENT_NICKNAME_CHARS: usize = 128;
 const MAX_COLLAB_AGENTS_PER_ITEM: usize = 64;
 const MAX_REFERENCED_AGENT_THREADS: usize = MAX_RESUMED_AGENT_THREAD_CANDIDATES + 1;
 
@@ -23,6 +24,7 @@ const MAX_REFERENCED_AGENT_THREADS: usize = MAX_RESUMED_AGENT_THREAD_CANDIDATES 
 pub(crate) struct AgentHistorySnapshot {
     pub(crate) thread_id: String,
     pub(crate) agent_path: Option<String>,
+    pub(crate) agent_nickname: Option<String>,
     pub(crate) status: ThreadStatus,
     pub(crate) turns: Vec<Turn>,
 }
@@ -32,6 +34,7 @@ impl AgentHistorySnapshot {
         Self {
             thread_id: thread.id.clone(),
             agent_path: agent_path(thread),
+            agent_nickname: agent_nickname(thread),
             status: thread.status.clone(),
             turns: Vec::new(),
         }
@@ -41,6 +44,7 @@ impl AgentHistorySnapshot {
         Self {
             thread_id: thread.id.clone(),
             agent_path: agent_path(&thread),
+            agent_nickname: agent_nickname(&thread),
             status: thread.status.clone(),
             turns: bounded_turns(mem::take(&mut thread.turns)),
         }
@@ -98,6 +102,35 @@ fn agent_path(thread: &Thread) -> Option<String> {
         truncate(&mut path, MAX_AGENT_PATH_CHARS);
         path
     })
+}
+
+fn agent_nickname(thread: &Thread) -> Option<String> {
+    let source_nickname = match &thread.source {
+        SessionSource::SubAgent(SubAgentSource::ThreadSpawn { agent_nickname, .. }) => {
+            agent_nickname.as_ref()
+        }
+        SessionSource::Cli
+        | SessionSource::VsCode
+        | SessionSource::Exec
+        | SessionSource::AppServer
+        | SessionSource::Custom(_)
+        | SessionSource::SubAgent(
+            SubAgentSource::Review
+            | SubAgentSource::Compact
+            | SubAgentSource::MemoryConsolidation
+            | SubAgentSource::Other(_),
+        )
+        | SessionSource::Unknown => None,
+    };
+    thread
+        .agent_nickname
+        .as_ref()
+        .or(source_nickname)
+        .map(|nickname| {
+            let mut nickname = nickname.clone();
+            truncate(&mut nickname, MAX_AGENT_NICKNAME_CHARS);
+            nickname
+        })
 }
 
 fn bounded_turns(mut turns: Vec<Turn>) -> Vec<Turn> {

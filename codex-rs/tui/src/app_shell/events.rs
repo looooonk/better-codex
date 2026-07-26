@@ -10,10 +10,12 @@ use codex_app_server_protocol::CurrentTimeReadResponse;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ServerRequest;
+use codex_app_server_protocol::SessionSource;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_app_server_protocol::TokenUsageBreakdown;
 use codex_app_server_protocol::TurnStatus;
+use codex_protocol::protocol::SubAgentSource;
 use color_eyre::Result;
 use color_eyre::eyre::WrapErr;
 
@@ -182,6 +184,18 @@ impl ShellState {
             }
             ServerNotification::ThreadStatusChanged(changed) => {
                 self.handle_remote_thread_status(&changed.thread_id, changed.status);
+            }
+            ServerNotification::ThreadStarted(started) => {
+                let thread = started.thread;
+                if thread.session_id == self.thread_id.to_string()
+                    && matches!(
+                        &thread.source,
+                        SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })
+                    )
+                {
+                    self.mark_active_agent_thread(&thread.id);
+                    self.agent_activity.hydrate_threads(vec![thread]);
+                }
             }
             ServerNotification::ThreadArchived(archived) => self.handle_remote_thread_lifecycle(
                 &archived.thread_id,
@@ -470,7 +484,6 @@ impl ShellState {
             | ServerNotification::FileChangeOutputDelta(_)
             | ServerNotification::HookStarted(_)
             | ServerNotification::HookCompleted(_)
-            | ServerNotification::ThreadStarted(_)
             | ServerNotification::SkillsChanged(_)
             | ServerNotification::ItemGuardianApprovalReviewStarted(_)
             | ServerNotification::ItemGuardianApprovalReviewCompleted(_)

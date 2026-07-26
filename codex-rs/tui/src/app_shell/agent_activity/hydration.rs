@@ -19,6 +19,7 @@ impl AgentActivityState {
             self.hydrate_agent(
                 snapshot.thread_id,
                 snapshot.agent_path,
+                snapshot.agent_nickname,
                 snapshot.status,
                 snapshot.turns,
             );
@@ -31,12 +32,15 @@ impl AgentActivityState {
             source,
             status,
             turns,
+            agent_nickname,
             ..
         } = thread;
-        let path = match source {
-            SessionSource::SubAgent(SubAgentSource::ThreadSpawn { agent_path, .. }) => {
-                agent_path.map(String::from)
-            }
+        let (path, source_nickname) = match source {
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                agent_path,
+                agent_nickname,
+                ..
+            }) => (agent_path.map(String::from), agent_nickname),
             SessionSource::Cli
             | SessionSource::VsCode
             | SessionSource::Exec
@@ -48,18 +52,22 @@ impl AgentActivityState {
                 | SubAgentSource::MemoryConsolidation
                 | SubAgentSource::Other(_),
             )
-            | SessionSource::Unknown => None,
+            | SessionSource::Unknown => (None, None),
         };
-        self.hydrate_agent(id, path, status, turns);
+        self.hydrate_agent(id, path, agent_nickname.or(source_nickname), status, turns);
     }
 
     fn hydrate_agent(
         &mut self,
         id: String,
         path: Option<String>,
+        nickname: Option<String>,
         thread_status: ThreadStatus,
         turns: Vec<codex_app_server_protocol::Turn>,
     ) {
+        if self.is_root_thread(&id) {
+            return;
+        }
         let original_order = self.insertion_order.clone();
         let preserved_agents = self
             .insertion_order
@@ -73,6 +81,9 @@ impl AgentActivityState {
         let agent = self.ensure_agent(&id);
         if let Some(path) = path {
             agent.set_path(&path);
+        }
+        if let Some(nickname) = nickname {
+            agent.set_nickname(&nickname);
         }
         let preserve_live_state = agent.live_state;
         let live_state = preserve_live_state

@@ -2,8 +2,8 @@
 
 The following is a list of changes that should be applied to better-codex soon.
 
-- [ ] Remove "root" from the list of subagents, as it is just the main agent in the "CONVERSATION" pane.
-- [ ] Display agents with their human-readable nickname, not the file-path--like name. However, maintain nesting behavior.
+- [x] Remove "root" from the list of subagents, as it is just the main agent in the "CONVERSATION" pane.
+- [x] Display agents with their human-readable nickname, not the file-path--like name. However, maintain nesting behavior.
 - [ ] De-clutter subagent conversation panes to show less of raw tool and edit output, and make them more formatted to be digestible to the end user. For instance, the "Source" field or the "Persisted Details" are usually not needed to be displayed in their raw form.
 - [ ] Stop displaying the original prompt the user gave to the root Codex in the subagent panes. The user already knows that it gave the prompt. The subagent logs should simply show subagent activity that do not show up in the main "CONVERSATION" pane.
 

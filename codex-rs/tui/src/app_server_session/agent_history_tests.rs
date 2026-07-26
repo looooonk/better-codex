@@ -213,6 +213,7 @@ fn activity_snapshots_bound_turn_items_and_text() {
     let root = thread_id("01900000-0000-7000-8000-000000000101");
     let child = thread_id("01900000-0000-7000-8000-000000000102");
     let mut thread = metadata_thread(child, &root.to_string(), Some(root), Some(root));
+    thread.agent_nickname = Some("n".repeat(256));
     thread.turns = (0..20)
         .map(|turn_index| {
             let mut turn = turn(
@@ -232,6 +233,7 @@ fn activity_snapshots_bound_turn_items_and_text() {
 
     let snapshot = AgentHistorySnapshot::loaded(thread);
 
+    assert_eq!(snapshot.agent_nickname, Some("n".repeat(128)));
     assert_eq!(snapshot.turns.len(), 12);
     assert!(snapshot.turns.capacity() <= 12);
     assert!(snapshot.turns.iter().all(|turn| turn.items.len() == 64));

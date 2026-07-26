@@ -29,38 +29,39 @@ fn nested_thread_histories_restore_hierarchy_timeline_and_lifecycle() {
     let alpha_id = thread_id("01900000-0000-7000-8000-000000000002");
     let child_id = thread_id("01900000-0000-7000-8000-000000000003");
     let session_id = root_id.to_string();
-    let mut state = AgentActivityState::default();
+    let mut state = AgentActivityState::for_root(&session_id);
     state.reduce_completed(&activity("root-spawn", alpha_id, "/root/alpha"));
 
-    state.hydrate_threads(vec![
-        thread(
-            alpha_id,
-            root_id,
-            &session_id,
-            "/root/alpha",
-            turn(
-                "alpha-turn",
-                vec![
-                    message("alpha-message", "delegating nested work"),
-                    activity("alpha-spawn", child_id, "/root/alpha/child"),
-                ],
-                TurnStatus::Completed,
-                /*error*/ None,
-            ),
+    let mut alpha = thread(
+        alpha_id,
+        root_id,
+        &session_id,
+        "/root/alpha",
+        turn(
+            "alpha-turn",
+            vec![
+                message("alpha-message", "delegating nested work"),
+                activity("alpha-spawn", child_id, "/root/alpha/child"),
+            ],
+            TurnStatus::Completed,
+            /*error*/ None,
         ),
-        thread(
-            child_id,
-            alpha_id,
-            &session_id,
-            "/root/alpha/child",
-            turn(
-                "child-turn",
-                vec![message("child-message", "nested work complete")],
-                TurnStatus::Completed,
-                /*error*/ None,
-            ),
+    );
+    alpha.agent_nickname = Some("Hypatia".to_string());
+    let mut child = thread(
+        child_id,
+        alpha_id,
+        &session_id,
+        "/root/alpha/child",
+        turn(
+            "child-turn",
+            vec![message("child-message", "nested work complete")],
+            TurnStatus::Completed,
+            /*error*/ None,
         ),
-    ]);
+    );
+    child.agent_nickname = Some("Turing".to_string());
+    state.hydrate_threads(vec![alpha, child]);
 
     let agents = state.ordered_agents();
     assert_eq!(
@@ -69,6 +70,7 @@ fn nested_thread_histories_restore_hierarchy_timeline_and_lifecycle() {
             .map(|agent| (
                 agent.thread_id.clone(),
                 agent.path.as_ref().map(|path| String::from(path.clone())),
+                agent.display_name().to_string(),
                 agent.status,
                 agent.latest_message.clone(),
             ))
@@ -77,12 +79,14 @@ fn nested_thread_histories_restore_hierarchy_timeline_and_lifecycle() {
             (
                 alpha_id.to_string(),
                 Some("/root/alpha".to_string()),
+                "Hypatia".to_string(),
                 AgentLifecycleStatus::Shutdown,
                 Some("delegating nested work".to_string()),
             ),
             (
                 child_id.to_string(),
                 Some("/root/alpha/child".to_string()),
+                "Turing".to_string(),
                 AgentLifecycleStatus::Shutdown,
                 Some("nested work complete".to_string()),
             ),

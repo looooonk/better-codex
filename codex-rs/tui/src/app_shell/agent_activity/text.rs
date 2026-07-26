@@ -1,6 +1,7 @@
 pub(super) const MAX_TASK_SUMMARY_CHARS: usize = 240;
 pub(super) const MAX_LATEST_MESSAGE_CHARS: usize = 512;
 pub(super) const MAX_MODEL_CHARS: usize = 128;
+pub(super) const MAX_NICKNAME_CHARS: usize = 128;
 
 pub(super) fn concise_summary(text: &str) -> Option<String> {
     let summary = text.split_whitespace().collect::<Vec<_>>().join(" ");

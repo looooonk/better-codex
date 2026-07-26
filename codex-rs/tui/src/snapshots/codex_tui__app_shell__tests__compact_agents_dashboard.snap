@@ -11,11 +11,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
                             │▎◆ AGENTS
  ▎ CODEX  Started a fullscre│▎Agents 4  ● 1 active  ✓ 1 done  ! 1 interrupted
  ▎ PLAN  1. Build shell     │▎  × 1 failed
-         2. Wire transcript │▎  ● running  research
-         3. Render dashboard│▎    └ ✓ completed  visual
-                            │▎  ! interrupted  testing
- ▌ tool exec just test -p co│▎›   └ × errored  failure
-                            │▎Inspector  failure  × errored
+         2. Wire transcript │▎  ● running  Hypatia
+         3. Render dashboard│▎    └ ✓ completed  Picasso
+                            │▎  ! interrupted  Turing
+ ▌ tool exec just test -p co│▎›   └ × errored  Socrates
+                            │▎Inspector  Socrates  × errored
  ▌ edited 3 files +128 -24  │▎Path  /root/testing/failure
                             │▎Task  Review the new TUI flow and visual
  ▎ CODEX  The new shell owns│▎      hierarchy.

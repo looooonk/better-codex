@@ -22,6 +22,7 @@ use metadata::agent_path_depth;
 use metadata::fallback_status;
 use text::MAX_LATEST_MESSAGE_CHARS;
 use text::MAX_MODEL_CHARS;
+use text::MAX_NICKNAME_CHARS;
 use text::append_bounded;
 use text::bounded_text;
 use text::concise_summary;
@@ -41,6 +42,7 @@ pub(super) struct AgentActivity {
     pub(super) path: Option<AgentPath>,
     pub(super) parent_path: Option<AgentPath>,
     pub(super) depth: Option<usize>,
+    pub(super) nickname: Option<String>,
     pub(super) task_summary: Option<String>,
     pub(super) model: Option<String>,
     pub(super) reasoning_effort: Option<ReasoningEffort>,
@@ -58,6 +60,7 @@ impl AgentActivity {
             path: None,
             parent_path: None,
             depth: None,
+            nickname: None,
             task_summary: None,
             model: None,
             reasoning_effort: None,
@@ -70,10 +73,14 @@ impl AgentActivity {
     }
 
     pub(super) fn display_name(&self) -> &str {
-        self.path
-            .as_ref()
-            .map(AgentPath::name)
+        self.nickname
+            .as_deref()
+            .or_else(|| self.path.as_ref().map(AgentPath::name))
             .unwrap_or(&self.thread_id)
+    }
+
+    fn set_nickname(&mut self, nickname: &str) {
+        self.nickname = bounded_text(nickname, MAX_NICKNAME_CHARS);
     }
 
     fn set_path(&mut self, path: &str) {
@@ -164,9 +171,17 @@ pub(super) struct AgentActivityState {
     insertion_order: VecDeque<String>,
     selected_thread_id: Option<String>,
     hydration_protected_thread_id: Option<String>,
+    root_thread_id: Option<String>,
 }
 
 impl AgentActivityState {
+    pub(super) fn for_root(root_thread_id: impl Into<String>) -> Self {
+        Self {
+            root_thread_id: Some(root_thread_id.into()),
+            ..Default::default()
+        }
+    }
+
     pub(super) fn reduce_started(&mut self, item: &ThreadItem) -> bool {
         self.reduce(item, AgentItemPhase::Started)
     }
@@ -180,7 +195,9 @@ impl AgentActivityState {
     }
 
     pub(super) fn ensure_thread(&mut self, thread_id: &str) {
-        self.ensure_agent(thread_id);
+        if !self.is_root_thread(thread_id) {
+            self.ensure_agent(thread_id);
+        }
     }
 
     pub(super) fn mark_live_thread(&mut self, thread_id: &str) {
@@ -391,6 +408,9 @@ impl AgentActivityState {
                 agent_thread_id,
                 agent_path,
             } => {
+                if self.is_root_thread(agent_thread_id) {
+                    return true;
+                }
                 let agent = self.ensure_agent(agent_thread_id);
                 agent.set_path(agent_path);
                 agent.status = match kind {
@@ -423,6 +443,7 @@ impl AgentActivityState {
         target_ids.extend(agents_states.keys().cloned());
         target_ids.sort_unstable();
         target_ids.dedup();
+        target_ids.retain(|thread_id| !self.is_root_thread(thread_id));
 
         for thread_id in target_ids {
             let agent = self.ensure_agent(&thread_id);
@@ -446,6 +467,7 @@ impl AgentActivityState {
     }
 
     fn ensure_agent(&mut self, thread_id: &str) -> &mut AgentActivity {
+        debug_assert!(!self.is_root_thread(thread_id));
         let thread_id = thread_id.to_string();
         if !self.agents.contains_key(&thread_id) {
             self.insertion_order.push_back(thread_id.clone());
@@ -502,6 +524,10 @@ impl AgentActivityState {
         let index = index.saturating_add_signed(offset).min(ordered.len() - 1);
         let thread_id = ordered[index].thread_id.clone();
         self.selected_thread_id = Some(thread_id);
+    }
+
+    pub(super) fn is_root_thread(&self, thread_id: &str) -> bool {
+        self.root_thread_id.as_deref() == Some(thread_id)
     }
 }
 

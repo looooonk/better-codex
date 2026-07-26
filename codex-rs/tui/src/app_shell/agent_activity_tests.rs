@@ -216,6 +216,37 @@ fn path_order_and_selection_are_deterministic() {
 }
 
 #[test]
+fn root_thread_is_excluded_from_agent_activity() {
+    let mut state = AgentActivityState::for_root("root-thread");
+    assert!(state.reduce_completed(&collab_item(
+        "wait-1",
+        CollabAgentTool::Wait,
+        CollabAgentToolCallStatus::Completed,
+        &["root-thread", "child-thread"],
+        /*prompt*/ None,
+        /*model*/ None,
+        /*effort*/ None,
+        HashMap::new(),
+    )));
+    assert!(state.reduce_completed(&subagent_item(
+        "root-activity",
+        SubAgentActivityKind::Interacted,
+        "root-thread",
+        "/root",
+    )));
+
+    assert_eq!(
+        state
+            .ordered_agents()
+            .into_iter()
+            .map(|agent| agent.thread_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["child-thread"]
+    );
+    assert_eq!(state.counts().total, 1);
+}
+
+#[test]
 fn timelines_and_agent_collection_are_bounded() {
     let mut timeline_state = AgentActivityState::default();
     for index in 0..MAX_AGENT_TIMELINE_ENTRIES + 3 {

@@ -973,7 +973,7 @@ impl ShellState {
             plan_steps: Vec::new(),
             active_goal: None,
             tool_activity: VecDeque::new(),
-            agent_activity: AgentActivityState::default(),
+            agent_activity: AgentActivityState::for_root(session.thread_id.to_string()),
             agent_log: None,
             tool_output: None,
             diff_store: DiffStore::with_display_root(session.cwd.as_path()),
@@ -2484,9 +2484,10 @@ impl ShellState {
 
     #[cfg(test)]
     fn snapshot_fixture() -> Self {
+        let thread_id = ThreadId::from_string("01900000-0000-7000-8000-000000000001")
+            .expect("valid snapshot thread id");
         let mut shell = Self {
-            thread_id: ThreadId::from_string("01900000-0000-7000-8000-000000000001")
-                .expect("valid snapshot thread id"),
+            thread_id,
             session_unavailable_reason: None,
             thread_name: Some("stage-one".to_string()),
             model: "gpt-5-codex".to_string(),
@@ -2577,7 +2578,7 @@ impl ShellState {
                 title: "exec just test -p codex-tui".to_string(),
                 status: "in progress".to_string(),
             }]),
-            agent_activity: AgentActivityState::default(),
+            agent_activity: AgentActivityState::for_root(thread_id.to_string()),
             agent_log: None,
             tool_output: None,
             diff_store: DiffStore::with_display_root(std::path::Path::new(
@@ -2748,8 +2749,9 @@ pub mod bench_support {
     }
 
     fn bench_fixture() -> ShellState {
+        let thread_id = ThreadId::new();
         let mut shell = ShellState {
-            thread_id: ThreadId::new(),
+            thread_id,
             session_unavailable_reason: None,
             thread_name: Some("bench".to_string()),
             model: "gpt-5-codex".to_string(),
@@ -2836,7 +2838,7 @@ pub mod bench_support {
                 title: "render benchmark".to_string(),
                 status: "running".to_string(),
             }]),
-            agent_activity: AgentActivityState::default(),
+            agent_activity: AgentActivityState::for_root(thread_id.to_string()),
             agent_log: None,
             tool_output: None,
             diff_store: DiffStore::with_display_root(std::path::Path::new(
