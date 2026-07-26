@@ -155,14 +155,16 @@ pub(crate) fn reexec_managed_updater(managed_codex_bin: &std::path::Path) -> Res
 
 #[cfg(unix)]
 async fn install_latest_standalone() -> Result<()> {
-    let script = reqwest::get("https://chatgpt.com/codex/install.sh")
-        .await
-        .context("failed to fetch standalone Codex updater")?
-        .error_for_status()
-        .context("standalone Codex updater request failed")?
-        .bytes()
-        .await
-        .context("failed to read standalone Codex updater")?;
+    let script = reqwest::get(
+        "https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh",
+    )
+    .await
+    .context("failed to fetch Better Codex standalone updater")?
+    .error_for_status()
+    .context("Better Codex standalone updater request failed")?
+    .bytes()
+    .await
+    .context("failed to read Better Codex standalone updater")?;
 
     let mut child = Command::new("/bin/sh")
         .arg("-s")
@@ -170,25 +172,25 @@ async fn install_latest_standalone() -> Result<()> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .context("failed to invoke standalone Codex updater")?;
+        .context("failed to invoke Better Codex standalone updater")?;
     let mut stdin = child
         .stdin
         .take()
-        .context("standalone Codex updater stdin was unavailable")?;
+        .context("Better Codex standalone updater stdin was unavailable")?;
     stdin
         .write_all(&script)
         .await
-        .context("failed to pass standalone Codex updater to shell")?;
+        .context("failed to pass Better Codex standalone updater to shell")?;
     drop(stdin);
     let status = child
         .wait()
         .await
-        .context("failed to wait for standalone Codex updater")?;
+        .context("failed to wait for Better Codex standalone updater")?;
 
     if status.success() {
         Ok(())
     } else {
-        anyhow::bail!("standalone Codex updater exited with status {status}")
+        anyhow::bail!("Better Codex standalone updater exited with status {status}")
     }
 }
 

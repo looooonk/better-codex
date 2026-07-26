@@ -16,7 +16,24 @@ use tokio::fs;
 #[cfg(unix)]
 use tokio::process::Command;
 
+const BETTER_CODEX_INSTALL_ROOT_ENV_VAR: &str = "BETTER_CODEX_INSTALL_ROOT";
+
 pub(crate) fn managed_codex_bin(codex_home: &Path) -> PathBuf {
+    let better_codex_install_root = std::env::var_os(BETTER_CODEX_INSTALL_ROOT_ENV_VAR);
+    managed_codex_bin_with_install_root(
+        codex_home,
+        better_codex_install_root.as_deref().map(Path::new),
+    )
+}
+
+fn managed_codex_bin_with_install_root(
+    codex_home: &Path,
+    better_codex_install_root: Option<&Path>,
+) -> PathBuf {
+    if let Some(install_root) = better_codex_install_root {
+        return install_root.join("current").join("bin").join("codex");
+    }
+
     codex_home
         .join("packages")
         .join("standalone")

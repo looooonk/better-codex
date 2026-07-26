@@ -34,48 +34,37 @@ interface.
 - A desktop, web, or IDE interface; Better Codex is terminal-only.
 - Guaranteed compatibility with upstream CLI behavior, configuration changes,
   or release tooling.
-- Fork-specific Homebrew, Apt, or prebuilt binary releases. Install from source
-  for now.
+- Fork-specific Homebrew or Apt packages.
 
 ## Installation
 
-The Rust workspace pins its toolchain, so `rustup` selects the required Rust
-version automatically. The build output is named `codex`; the commands below
-install it as `better-codex` to avoid replacing an upstream installation.
-
 Make sure `$HOME/.local/bin` is on your `PATH` before starting the app.
 
-### macOS
-
-Install Apple's command-line build tools and Rust:
+Install the latest GitHub release on macOS or Linux:
 
 ```sh
-xcode-select --install
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh | sh
 ```
 
-Build and install Better Codex:
+The installer downloads the archive for the current CPU, verifies its SHA-256
+checksum, and installs a `better-codex` launcher in `$HOME/.local/bin`. Releases
+include binaries for Apple Silicon and Intel macOS, plus ARM64 and x86_64 Linux.
+
+The macOS binaries are not code-signed yet. On first launch, macOS may require
+you to allow the binary in System Settings under Privacy & Security.
+
+To install a specific version:
 
 ```sh
-git clone https://github.com/looooonk/better-codex.git
-cd better-codex/codex-rs
-cargo build --release -p codex-cli --bin codex
-mkdir -p "$HOME/.local/bin"
-install -m 755 target/release/codex "$HOME/.local/bin/better-codex"
+curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh \
+  | sh -s -- --version 0.1.0-alpha.1
 ```
 
-### Linux
+### Build from source
 
-Install Rust plus the native build and sandbox dependencies. On Ubuntu or
-Debian:
-
-```sh
-sudo apt-get update
-sudo apt-get install -y build-essential bubblewrap clang cmake curl git pkg-config
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-Build and install Better Codex:
+The Rust workspace pins its toolchain, so `rustup` selects the required Rust
+version automatically. Install Rust, Git, CMake, a C/C++ compiler, and
+`pkg-config`. Linux builds also require `bubblewrap`.
 
 ```sh
 git clone https://github.com/looooonk/better-codex.git
@@ -84,9 +73,6 @@ cargo build --release -p codex-cli --bin codex
 mkdir -p "$HOME/.local/bin"
 install -m 755 target/release/codex "$HOME/.local/bin/better-codex"
 ```
-
-For other distributions, install the equivalent C/C++ build toolchain,
-`bubblewrap`, CMake, Git, cURL, and `pkg-config` packages.
 
 ## First run
 
@@ -107,14 +93,11 @@ Useful controls:
 
 ## Updating
 
-Pull the latest source, rebuild, and replace the installed binary:
+Managed installs prompt when a new release is available. You can also rerun the
+installer at any time:
 
 ```sh
-cd better-codex
-git pull --ff-only
-cd codex-rs
-cargo build --release -p codex-cli --bin codex
-install -m 755 target/release/codex "$HOME/.local/bin/better-codex"
+curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh | sh
 ```
 
 ## License
