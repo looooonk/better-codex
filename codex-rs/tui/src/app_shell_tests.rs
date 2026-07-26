@@ -2215,12 +2215,14 @@ async fn agent_log_loads_complete_history_beyond_inspector_caps() {
     assert!(rendered.contains("earliest history sentinel"));
     assert!(rendered.contains("final suffix sentinel"));
     assert!(rendered.contains(&"x".repeat(700)));
-    assert!(rendered.contains("full diff sentinel"));
-    assert!(rendered.contains("full argument sentinel"));
-    assert!(rendered.contains("full result sentinel"));
-    assert!(rendered.contains("::git-stage"));
+    assert!(rendered.contains("src/full_log.rs"));
+    assert!(rendered.contains("review-tools/inspect"));
+    assert!(!rendered.contains("full diff sentinel"));
+    assert!(!rendered.contains("full argument sentinel"));
+    assert!(!rendered.contains("full result sentinel"));
+    assert!(!rendered.contains("::git-stage"));
     assert!(rendered.contains("agent failure sentinel"));
-    assert!(rendered.contains("detailed failure sentinel"));
+    assert!(!rendered.contains("detailed failure sentinel"));
     assert!(
         backend
             .calls()

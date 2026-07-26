@@ -1,15 +1,28 @@
-use crate::git_action_directives::parse_assistant_markdown;
+use super::design::palette;
 use crate::session_transcript::RawReasoningVisibility;
 use crate::session_transcript::TranscriptLines;
 use crate::session_transcript::thread_item_to_transcript_lines;
+use crate::text_formatting::truncate_text;
+use codex_app_server_protocol::CollabAgentTool;
+use codex_app_server_protocol::CollabAgentToolCallStatus;
+use codex_app_server_protocol::CommandExecutionStatus;
+use codex_app_server_protocol::DynamicToolCallStatus;
+use codex_app_server_protocol::McpToolCallStatus;
+use codex_app_server_protocol::PatchApplyStatus;
+use codex_app_server_protocol::PatchChangeKind;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadItem;
-use codex_app_server_protocol::TurnError;
+use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnItemsView;
+use codex_app_server_protocol::TurnStatus;
+use ratatui::style::Color;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
-use serde_json::Map;
-use serde_json::Value;
+
+const MAX_COMMAND_OUTPUT_LINES: usize = 8;
+const MAX_OUTPUT_LINE_GRAPHEMES: usize = 240;
+const MAX_FILE_ROWS: usize = 12;
+const MAX_ERROR_GRAPHEMES: usize = 400;
 
 pub(super) fn thread_to_agent_log_lines(
     thread: &Thread,
@@ -33,195 +46,406 @@ pub(super) fn thread_to_agent_log_lines(
         }
     }
 
-    let mut lines = vec![
-        vec!["Thread  ".dim(), thread.id.clone().into()].into(),
-        vec![
-            "Working directory  ".dim(),
-            thread.cwd.as_path().display().to_string().into(),
-        ]
-        .into(),
-        vec![
-            "Persisted state  ".dim(),
-            format!("{:?}", thread.status).into(),
-            "  Source  ".dim(),
-            format!("{:?}", thread.source).into(),
-        ]
-        .into(),
-    ];
-
-    for (index, turn) in thread.turns.iter().enumerate() {
-        lines.push(Line::default());
-        lines.push(
-            vec![
-                format!("Turn {}", index + 1).magenta().bold(),
-                "  ".into(),
-                format!("{:?}", turn.status).bold(),
-                "  ".into(),
-                turn.id.clone().dim(),
-            ]
-            .into(),
-        );
-        if let Some(timing) = turn_timing(turn) {
-            lines.push(timing.dim().into());
-        }
-
-        for item in &turn.items {
-            lines.push(Line::default());
-            let mut readable =
-                thread_item_to_transcript_lines(item, thread, raw_reasoning_visibility);
-            if readable.is_empty()
-                && matches!(
-                    (item, raw_reasoning_visibility),
-                    (
-                        ThreadItem::Reasoning { content, .. },
-                        RawReasoningVisibility::Hidden
-                    ) if !content.is_empty()
-                )
-            {
-                readable.push(
-                    "Reasoning content hidden by configuration"
-                        .italic()
-                        .dim()
-                        .into(),
-                );
-            }
-            lines.append(&mut readable);
-            lines.extend(item_detail_lines(item, thread, raw_reasoning_visibility));
-        }
-
-        if let Some(error) = &turn.error {
-            lines.push(Line::default());
-            lines.extend(turn_error_lines(error));
-        }
+    let rendered_turns = local_activity_turns(thread)
+        .iter()
+        .filter_map(|turn| render_turn(turn, thread, raw_reasoning_visibility))
+        .collect::<Vec<_>>();
+    if rendered_turns.is_empty() {
+        return Ok(vec![
+            "No subagent activity available"
+                .italic()
+                .fg(palette::MUTED)
+                .into(),
+        ]);
     }
 
-    if thread.turns.is_empty() {
-        lines.push(Line::default());
-        lines.push("No persisted agent turns available".italic().dim().into());
+    let mut lines = Vec::new();
+    for (index, (turn, mut activity)) in rendered_turns.into_iter().enumerate() {
+        if !lines.is_empty() {
+            lines.push(Line::default());
+        }
+        lines.push(turn_header(index + 1, turn));
+        lines.append(&mut activity);
     }
     Ok(lines)
 }
 
-fn turn_timing(turn: &codex_app_server_protocol::Turn) -> Option<String> {
-    let mut parts = Vec::new();
-    if let Some(started_at) = turn.started_at {
-        parts.push(format!("started {started_at}"));
+fn local_activity_turns(thread: &Thread) -> &[Turn] {
+    if thread.forked_from_id.is_some()
+        && let Some(local_start) = thread
+            .turns
+            .iter()
+            .rposition(turn_contains_user_message)
+            .map(|index| index + 1)
+        && local_start < thread.turns.len()
+    {
+        return &thread.turns[local_start..];
     }
-    if let Some(completed_at) = turn.completed_at {
-        parts.push(format!("completed {completed_at}"));
-    }
-    if let Some(duration_ms) = turn.duration_ms {
-        parts.push(format!("{duration_ms}ms"));
-    }
-    (!parts.is_empty()).then(|| parts.join("  ·  "))
+    &thread.turns
 }
 
-fn item_detail_lines(
+fn turn_contains_user_message(turn: &Turn) -> bool {
+    turn.items
+        .iter()
+        .any(|item| matches!(item, ThreadItem::UserMessage { .. }))
+}
+
+fn render_turn<'a>(
+    turn: &'a Turn,
+    thread: &Thread,
+    raw_reasoning_visibility: RawReasoningVisibility,
+) -> Option<(&'a Turn, TranscriptLines)> {
+    let mut lines = Vec::new();
+    for item in &turn.items {
+        let mut item_lines = agent_item_lines(item, thread, raw_reasoning_visibility);
+        if item_lines.is_empty() {
+            continue;
+        }
+        if !lines.is_empty() {
+            lines.push(Line::default());
+        }
+        lines.append(&mut item_lines);
+    }
+    if let Some(error) = &turn.error {
+        if !lines.is_empty() {
+            lines.push(Line::default());
+        }
+        lines.push("Turn failed".bold().fg(palette::ERROR).into());
+        lines.push(
+            truncate_text(&error.message, MAX_ERROR_GRAPHEMES)
+                .fg(palette::ERROR)
+                .into(),
+        );
+    }
+    (!lines.is_empty()).then_some((turn, lines))
+}
+
+fn turn_header(index: usize, turn: &Turn) -> Line<'static> {
+    let (status, color) = turn_status(&turn.status);
+    let mut spans = vec![
+        format!("Turn {index}").bold().fg(palette::PURPLE),
+        "  ".into(),
+        status.fg(color),
+    ];
+    if let Some(duration_ms) = turn.duration_ms {
+        spans.push("  ".into());
+        spans.push(format_duration(duration_ms).fg(palette::MUTED));
+    }
+    spans.into()
+}
+
+fn agent_item_lines(
     item: &ThreadItem,
     thread: &Thread,
     raw_reasoning_visibility: RawReasoningVisibility,
 ) -> TranscriptLines {
-    let Ok(Value::Object(mut fields)) = serde_json::to_value(item) else {
-        return vec!["Persisted item details could not be rendered".red().into()];
-    };
-    fields.remove("type");
-    fields.remove("id");
     match item {
-        ThreadItem::UserMessage { .. } | ThreadItem::HookPrompt { .. } => {}
-        ThreadItem::AgentMessage { text, .. } => {
-            let parsed = parse_assistant_markdown(text, &thread.cwd);
-            if parsed.visible_markdown == text.trim_end() {
-                fields.remove("text");
-            }
+        ThreadItem::UserMessage { .. } | ThreadItem::HookPrompt { .. } => Vec::new(),
+        ThreadItem::CommandExecution {
+            command,
+            status,
+            aggregated_output,
+            exit_code,
+            duration_ms,
+            ..
+        } => command_lines(
+            command,
+            status,
+            aggregated_output.as_deref(),
+            *exit_code,
+            *duration_ms,
+        ),
+        ThreadItem::FileChange {
+            changes, status, ..
+        } => file_change_lines(changes, status),
+        ThreadItem::McpToolCall {
+            server,
+            tool,
+            status,
+            error,
+            duration_ms,
+            ..
+        } => tool_lines(
+            &format!("{server}/{tool}"),
+            mcp_status(status),
+            error.as_ref().map(|error| error.message.as_str()),
+            *duration_ms,
+        ),
+        ThreadItem::DynamicToolCall {
+            namespace,
+            tool,
+            status,
+            duration_ms,
+            ..
+        } => {
+            let name = namespace
+                .as_ref()
+                .map(|namespace| format!("{namespace}/{tool}"))
+                .unwrap_or_else(|| tool.clone());
+            tool_lines(
+                &name,
+                dynamic_tool_status(status),
+                /*error*/ None,
+                *duration_ms,
+            )
         }
-        ThreadItem::Plan { .. } => {
-            fields.remove("text");
+        ThreadItem::CollabAgentToolCall {
+            tool,
+            status,
+            receiver_thread_ids,
+            ..
+        } => collaboration_lines(tool, status, receiver_thread_ids.len()),
+        ThreadItem::SubAgentActivity {
+            kind, agent_path, ..
+        } => vec![
+            vec![
+                "Agent".bold().fg(palette::PURPLE),
+                "  ".into(),
+                format!("{kind:?}").fg(palette::MUTED),
+                "  ".into(),
+                agent_path.clone().into(),
+            ]
+            .into(),
+        ],
+        ThreadItem::AgentMessage { .. }
+        | ThreadItem::Plan { .. }
+        | ThreadItem::Reasoning { .. }
+        | ThreadItem::WebSearch(_)
+        | ThreadItem::ImageView { .. }
+        | ThreadItem::Sleep { .. }
+        | ThreadItem::ImageGeneration(_)
+        | ThreadItem::EnteredReviewMode { .. }
+        | ThreadItem::ExitedReviewMode { .. }
+        | ThreadItem::ContextCompaction { .. } => {
+            thread_item_to_transcript_lines(item, thread, raw_reasoning_visibility)
         }
-        ThreadItem::Reasoning { .. } => {
-            if matches!(raw_reasoning_visibility, RawReasoningVisibility::Hidden) {
-                fields.remove("summary");
-            }
-            fields.remove("content");
-        }
-        ThreadItem::CommandExecution { .. } => {
-            remove_fields(
-                &mut fields,
-                &["command", "status", "aggregatedOutput", "exitCode"],
-            );
-        }
-        ThreadItem::FileChange { .. } => {
-            fields.remove("status");
-        }
-        ThreadItem::McpToolCall { .. } => {
-            remove_fields(&mut fields, &["server", "tool", "status"]);
-        }
-        ThreadItem::DynamicToolCall { .. } => {
-            remove_fields(&mut fields, &["namespace", "tool", "status"]);
-        }
-        ThreadItem::CollabAgentToolCall { .. } => {
-            remove_fields(&mut fields, &["tool", "status"]);
-        }
-        ThreadItem::SubAgentActivity { .. } => {
-            remove_fields(&mut fields, &["kind", "agentPath"]);
-        }
-        ThreadItem::WebSearch(_) => {
-            fields.remove("query");
-        }
-        ThreadItem::ImageView { .. } => {
-            fields.remove("path");
-        }
-        ThreadItem::Sleep { .. } => {
-            fields.remove("durationMs");
-        }
-        ThreadItem::ImageGeneration(_) => {
-            remove_fields(&mut fields, &["status", "savedPath"]);
-        }
-        ThreadItem::EnteredReviewMode { .. } | ThreadItem::ExitedReviewMode { .. } => {
-            fields.remove("review");
-        }
-        ThreadItem::ContextCompaction { .. } => {}
     }
-    render_detail_fields("Persisted details", fields)
 }
 
-fn turn_error_lines(error: &TurnError) -> TranscriptLines {
-    let mut lines = vec![
-        "Turn failed".red().bold().into(),
-        error.message.clone().red().into(),
+fn command_lines(
+    command: &str,
+    status: &CommandExecutionStatus,
+    output: Option<&str>,
+    exit_code: Option<i32>,
+    duration_ms: Option<i64>,
+) -> TranscriptLines {
+    let (status, color) = command_status(status);
+    let mut header = vec![
+        "Command".bold().fg(palette::PURPLE),
+        "  ".into(),
+        status.fg(color),
     ];
-    let Ok(Value::Object(mut fields)) = serde_json::to_value(error) else {
+    if let Some(exit_code) = exit_code {
+        header.push("  ".into());
+        header.push(format!("exit {exit_code}").fg(palette::MUTED));
+    }
+    if let Some(duration_ms) = duration_ms {
+        header.push("  ".into());
+        header.push(format_duration(duration_ms).fg(palette::MUTED));
+    }
+    let mut lines = vec![
+        header.into(),
+        vec!["$ ".fg(palette::MUTED), command.to_string().into()].into(),
+    ];
+    let Some(output) = output
+        .map(str::trim_end)
+        .filter(|output| !output.is_empty())
+    else {
         return lines;
     };
-    fields.remove("message");
-    lines.extend(render_detail_fields("Failure details", fields));
+    let output_lines = output.lines().collect::<Vec<_>>();
+    let visible_start = output_lines.len().saturating_sub(MAX_COMMAND_OUTPUT_LINES);
+    lines.push(Line::default());
+    lines.push(
+        if visible_start == 0 {
+            "Output".bold().fg(palette::MUTED)
+        } else {
+            format!(
+                "Output  last {} of {} lines",
+                output_lines.len() - visible_start,
+                output_lines.len()
+            )
+            .bold()
+            .fg(palette::MUTED)
+        }
+        .into(),
+    );
+    lines.extend(output_lines[visible_start..].iter().map(|line| {
+        truncate_text(line.trim_end(), MAX_OUTPUT_LINE_GRAPHEMES)
+            .fg(palette::MUTED)
+            .into()
+    }));
     lines
 }
 
-fn remove_fields(fields: &mut Map<String, Value>, keys: &[&str]) {
-    for key in keys {
-        fields.remove(*key);
-    }
-}
-
-fn render_detail_fields(label: &str, mut fields: Map<String, Value>) -> TranscriptLines {
-    fields.retain(|_, value| detail_value_is_present(value));
-    if fields.is_empty() {
-        return Vec::new();
-    }
-    let mut lines = vec![label.to_string().dim().bold().into()];
-    match serde_json::to_string_pretty(&Value::Object(fields)) {
-        Ok(details) => lines.extend(details.lines().map(|line| format!("  {line}").dim().into())),
-        Err(err) => lines.push(format!("  could not render details: {err}").red().into()),
+fn file_change_lines(
+    changes: &[codex_app_server_protocol::FileUpdateChange],
+    status: &PatchApplyStatus,
+) -> TranscriptLines {
+    let (status, color) = patch_status(status);
+    let mut lines = vec![
+        vec![
+            "Edits".bold().fg(palette::PURPLE),
+            "  ".into(),
+            status.fg(color),
+            "  ".into(),
+            format!(
+                "{} {}",
+                changes.len(),
+                if changes.len() == 1 { "file" } else { "files" }
+            )
+            .fg(palette::MUTED),
+        ]
+        .into(),
+    ];
+    lines.extend(changes.iter().take(MAX_FILE_ROWS).map(|change| {
+        let (marker, color, destination) = match &change.kind {
+            PatchChangeKind::Add => ("A", palette::SUCCESS, None),
+            PatchChangeKind::Delete => ("D", palette::ERROR, None),
+            PatchChangeKind::Update {
+                move_path: Some(move_path),
+            } => ("R", palette::WARNING, Some(move_path.display().to_string())),
+            PatchChangeKind::Update { move_path: None } => ("M", palette::WARNING, None),
+        };
+        let mut spans = vec![
+            "  ".into(),
+            marker.bold().fg(color),
+            "  ".into(),
+            change.path.clone().into(),
+        ];
+        if let Some(destination) = destination {
+            spans.push(" -> ".fg(palette::MUTED));
+            spans.push(destination.into());
+        }
+        spans.into()
+    }));
+    if changes.len() > MAX_FILE_ROWS {
+        lines.push(
+            format!("  ... {} more files", changes.len() - MAX_FILE_ROWS)
+                .fg(palette::MUTED)
+                .into(),
+        );
     }
     lines
 }
 
-fn detail_value_is_present(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::String(value) => !value.is_empty(),
-        Value::Array(values) => !values.is_empty(),
-        Value::Object(values) => !values.is_empty(),
-        Value::Bool(_) | Value::Number(_) => true,
+fn tool_lines(
+    name: &str,
+    (status, color): (&'static str, Color),
+    error: Option<&str>,
+    duration_ms: Option<i64>,
+) -> TranscriptLines {
+    let mut spans = vec![
+        "Tool".bold().fg(palette::PURPLE),
+        "  ".into(),
+        name.to_string().into(),
+        "  ".into(),
+        status.fg(color),
+    ];
+    if let Some(duration_ms) = duration_ms {
+        spans.push("  ".into());
+        spans.push(format_duration(duration_ms).fg(palette::MUTED));
+    }
+    let mut lines = vec![spans.into()];
+    if let Some(error) = error {
+        lines.push(
+            truncate_text(error, MAX_ERROR_GRAPHEMES)
+                .fg(palette::ERROR)
+                .into(),
+        );
+    }
+    lines
+}
+
+fn collaboration_lines(
+    tool: &CollabAgentTool,
+    status: &CollabAgentToolCallStatus,
+    receiver_count: usize,
+) -> TranscriptLines {
+    let action = match tool {
+        CollabAgentTool::SpawnAgent => "Spawn agent",
+        CollabAgentTool::SendInput => "Send input",
+        CollabAgentTool::ResumeAgent => "Resume agent",
+        CollabAgentTool::Wait => "Wait for agent",
+        CollabAgentTool::CloseAgent => "Close agent",
+    };
+    let (status, color) = collaboration_status(status);
+    let mut spans = vec![
+        "Agent".bold().fg(palette::PURPLE),
+        "  ".into(),
+        action.into(),
+        "  ".into(),
+        status.fg(color),
+    ];
+    if receiver_count > 1 {
+        spans.push("  ".into());
+        spans.push(format!("{receiver_count} agents").fg(palette::MUTED));
+    }
+    vec![spans.into()]
+}
+
+fn turn_status(status: &TurnStatus) -> (&'static str, Color) {
+    match status {
+        TurnStatus::Completed => ("Completed", palette::SUCCESS),
+        TurnStatus::Interrupted => ("Interrupted", palette::WARNING),
+        TurnStatus::Failed => ("Failed", palette::ERROR),
+        TurnStatus::InProgress => ("Running", palette::WARNING),
     }
 }
+
+fn command_status(status: &CommandExecutionStatus) -> (&'static str, Color) {
+    match status {
+        CommandExecutionStatus::InProgress => ("Running", palette::WARNING),
+        CommandExecutionStatus::Completed => ("Completed", palette::SUCCESS),
+        CommandExecutionStatus::Failed => ("Failed", palette::ERROR),
+        CommandExecutionStatus::Declined => ("Declined", palette::WARNING),
+    }
+}
+
+fn patch_status(status: &PatchApplyStatus) -> (&'static str, Color) {
+    match status {
+        PatchApplyStatus::InProgress => ("Applying", palette::WARNING),
+        PatchApplyStatus::Completed => ("Completed", palette::SUCCESS),
+        PatchApplyStatus::Failed => ("Failed", palette::ERROR),
+        PatchApplyStatus::Declined => ("Declined", palette::WARNING),
+    }
+}
+
+fn mcp_status(status: &McpToolCallStatus) -> (&'static str, Color) {
+    match status {
+        McpToolCallStatus::InProgress => ("Running", palette::WARNING),
+        McpToolCallStatus::Completed => ("Completed", palette::SUCCESS),
+        McpToolCallStatus::Failed => ("Failed", palette::ERROR),
+    }
+}
+
+fn dynamic_tool_status(status: &DynamicToolCallStatus) -> (&'static str, Color) {
+    match status {
+        DynamicToolCallStatus::InProgress => ("Running", palette::WARNING),
+        DynamicToolCallStatus::Completed => ("Completed", palette::SUCCESS),
+        DynamicToolCallStatus::Failed => ("Failed", palette::ERROR),
+    }
+}
+
+fn collaboration_status(status: &CollabAgentToolCallStatus) -> (&'static str, Color) {
+    match status {
+        CollabAgentToolCallStatus::InProgress => ("Running", palette::WARNING),
+        CollabAgentToolCallStatus::Completed => ("Completed", palette::SUCCESS),
+        CollabAgentToolCallStatus::Failed => ("Failed", palette::ERROR),
+    }
+}
+
+fn format_duration(duration_ms: i64) -> String {
+    if duration_ms < 1_000 {
+        format!("{duration_ms}ms")
+    } else {
+        let tenths = duration_ms.saturating_add(50) / 100;
+        let seconds = tenths / 10;
+        let tenths_digit = tenths % 10;
+        format!("{seconds}.{tenths_digit}s")
+    }
+}
+
+#[cfg(test)]
+#[path = "agent_log_format_tests.rs"]
+mod tests;

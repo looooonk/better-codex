@@ -1,0 +1,29 @@
+---
+source: tui/src/app_shell/agent_log_format_tests.rs
+expression: rendered
+---
+Turn 1  Completed  1.5s
+Reasoning
+Inspecting the relevant rendering path.
+
+Command  Completed  exit 0  1.3s
+$ just test -p codex-tui
+
+Output  last 8 of 11 lines
+running tests
+test agent_log_format ... ok
+test agent_log_view ... ok
+test hydration ... ok
+test navigation ... ok
+test snapshots ... ok
+test transcript ... ok
+1316 passed; 0 failed
+
+Edits  Completed  2 files
+  M  tui/src/agent_log.rs
+  R  tui/src/old.rs -> tui/src/new.rs
+
+Tool  github/get_pull_request  Completed  240ms
+
+Assistant
+The agent log now emphasizes outcomes and concise activity.
