@@ -3585,6 +3585,7 @@ name = "codex-model-provider-info"
 version = "0.1.0-alpha.1"
 dependencies = [
  "codex-api",
+ "codex-build-info",
  "codex-protocol",
  "codex-utils-absolute-path",
  "http 1.4.0",

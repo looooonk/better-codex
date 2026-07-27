@@ -140,6 +140,21 @@ fn test_supports_remote_compaction_for_openai() {
 }
 
 #[test]
+fn test_openai_provider_uses_backend_compatibility_version_header() {
+    let api_provider = ModelProviderInfo::create_openai_provider(/*base_url*/ None)
+        .to_api_provider(/*auth_mode*/ None)
+        .expect("OpenAI provider should build API provider");
+
+    assert_eq!(
+        api_provider
+            .headers
+            .get("version")
+            .and_then(|value| value.to_str().ok()),
+        Some(codex_build_info::CODEX_BACKEND_COMPAT_VERSION)
+    );
+}
+
+#[test]
 fn test_personal_access_token_uses_chatgpt_codex_base_url() {
     let api_provider = ModelProviderInfo::create_openai_provider(/*base_url*/ None)
         .to_api_provider(Some(AuthMode::PersonalAccessToken))
