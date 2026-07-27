@@ -48,7 +48,7 @@ jobs:
     needs: validate
     name: ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 150
+    timeout-minutes: 240
     permissions:
       contents: read
     defaults:
@@ -56,6 +56,7 @@ jobs:
         working-directory: codex-rs
     env:
       CARGO_NET_GIT_FETCH_WITH_CLI: "true"
+      CARGO_PROFILE_RELEASE_DEBUG: "none"
       CARGO_PROFILE_RELEASE_SPLIT_DEBUGINFO: "off"
     strategy:
       fail-fast: false
