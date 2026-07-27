@@ -2,7 +2,8 @@
 source: tui/src/update_prompt.rs
 expression: terminal.backend()
 ---
-  ✨ Update available! 0.1.0-alpha.1 -> 9.9.9
+
+  ✨ Update available! 0.1.0-alpha.3 -> 9.9.9
 
   Release notes: https://github.com/looooonk/better-codex/releases
 

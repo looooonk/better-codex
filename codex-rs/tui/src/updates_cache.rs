@@ -6,7 +6,7 @@ use serde::Serialize;
 use std::path::Path;
 use std::path::PathBuf;
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub(crate) struct VersionInfo {
     pub(crate) latest_version: String,
     // ISO-8601 timestamp (RFC3339)
@@ -15,7 +15,7 @@ pub(crate) struct VersionInfo {
     pub(crate) dismissed_version: Option<String>,
 }
 
-const VERSION_FILENAME: &str = "version.json";
+const VERSION_FILENAME: &str = "better-codex-version.json";
 
 pub(crate) fn version_filepath(config: &Config) -> PathBuf {
     config.codex_home.join(VERSION_FILENAME).into_path_buf()
