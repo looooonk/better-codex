@@ -77,7 +77,7 @@ async fn init_backend(user_agent_suffix: &str) -> anyhow::Result<BackendContext>
         Some(auth) => auth,
         None => {
             eprintln!(
-                "Not signed in. Please run 'codex login' to sign in with ChatGPT, then re-run 'codex cloud'."
+                "Not signed in. Please run 'better-codex login' to sign in with ChatGPT, then re-run 'better-codex cloud'."
             );
             std::process::exit(1);
         }
@@ -89,7 +89,7 @@ async fn init_backend(user_agent_suffix: &str) -> anyhow::Result<BackendContext>
 
     if !auth.uses_codex_backend() {
         eprintln!(
-            "Not signed in. Please run 'codex login' to sign in with ChatGPT, then re-run 'codex cloud'."
+            "Not signed in. Please run 'better-codex login' to sign in with ChatGPT, then re-run 'better-codex cloud'."
         );
         std::process::exit(1);
     }
@@ -212,7 +212,7 @@ async fn resolve_environment_id(ctx: &BackendContext, requested: &str) -> anyhow
         .collect::<Vec<_>>();
     match label_matches.as_slice() {
         [] => Err(anyhow!(
-            "environment '{trimmed}' not found; run `codex cloud` to list available environments"
+            "environment '{trimmed}' not found; run `better-codex cloud` to list available environments"
         )),
         [single] => Ok(single.id.clone()),
         [first, rest @ ..] => {
@@ -221,7 +221,7 @@ async fn resolve_environment_id(ctx: &BackendContext, requested: &str) -> anyhow
                 Ok(first_id.clone())
             } else {
                 Err(anyhow!(
-                    "environment label '{trimmed}' is ambiguous; run `codex cloud` to pick the desired environment id"
+                    "environment label '{trimmed}' is ambiguous; run `better-codex cloud` to pick the desired environment id"
                 ))
             }
         }
@@ -564,7 +564,7 @@ async fn run_list_command(args: crate::cli::ListCommand) -> anyhow::Result<()> {
         println!("{line}");
     }
     if let Some(cursor) = page.cursor {
-        let command = format!("codex cloud list --cursor='{cursor}'");
+        let command = format!("better-codex cloud list --cursor='{cursor}'");
         if colorize {
             println!(
                 "\nTo fetch the next page, run {}",

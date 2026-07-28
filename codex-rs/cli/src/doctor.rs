@@ -452,7 +452,9 @@ async fn build_report(
                             "config could not be loaded",
                         )
                         .detail(err.to_string())
-                        .remediation("Fix the reported config error, then rerun codex doctor.")
+                        .remediation(
+                            "Fix the reported config error, then rerun better-codex doctor.",
+                        )
                     })
                 },
                 async { run_sync_check("network", progress.clone(), network_check) },
@@ -813,14 +815,14 @@ fn installation_check(show_details: bool) -> DoctorCheck {
     let mut remediation = None;
 
     if path_entries.len() > 1 {
-        details.push(format!("PATH codex entries: {}", path_entries.len()));
+        details.push(format!("PATH better-codex entries: {}", path_entries.len()));
     }
     if show_details || path_entries.len() > 1 {
         details.extend(
             path_entries
                 .iter()
                 .enumerate()
-                .map(|(index, path)| format!("PATH codex #{}: {path}", index + 1)),
+                .map(|(index, path)| format!("PATH better-codex #{}: {path}", index + 1)),
         );
     }
 
@@ -1047,9 +1049,9 @@ fn display_list<T: AsRef<str>>(items: &[T]) -> String {
 
 fn codex_path_entries() -> Vec<String> {
     #[cfg(windows)]
-    let result = run_command("where", ["codex"]);
+    let result = run_command("where", ["better-codex"]);
     #[cfg(not(windows))]
-    let result = run_command("which", ["-a", "codex"]);
+    let result = run_command("which", ["-a", "better-codex"]);
 
     result
         .unwrap_or_default()
@@ -1244,8 +1246,9 @@ fn auth_check(config: &Config) -> DoctorCheck {
             let mut check =
                 DoctorCheck::new("auth.credentials", "auth", status, summary).details(details);
             if status == CheckStatus::Fail {
-                check =
-                    check.remediation("Run codex login again or provide a supported auth env var.");
+                check = check.remediation(
+                    "Run better-codex login again or provide a supported auth env var.",
+                );
             }
             check
         }
@@ -1263,7 +1266,9 @@ fn auth_check(config: &Config) -> DoctorCheck {
             "no Codex credentials were found",
         )
         .details(details)
-        .remediation("Run codex login or provide an API key through a supported auth env var."),
+        .remediation(
+            "Run better-codex login or provide an API key through a supported auth env var.",
+        ),
         Err(err) => DoctorCheck::new(
             "auth.credentials",
             "auth",
@@ -1271,7 +1276,7 @@ fn auth_check(config: &Config) -> DoctorCheck {
             "stored credentials could not be read",
         )
         .detail(err.to_string())
-        .remediation("Fix auth storage access or run codex login again."),
+        .remediation("Fix auth storage access or run better-codex login again."),
     }
 }
 
