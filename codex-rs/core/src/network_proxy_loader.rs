@@ -61,7 +61,7 @@ async fn build_config_state_with_mtimes() -> Result<(ConfigState, Vec<LayerMtime
         &codex_config::NoopThreadConfigLoader,
     )
     .await
-    .context("failed to load Codex config")?;
+    .context("failed to load Better Codex config")?;
 
     let layer_mtimes = collect_layer_mtimes(&config_layer_stack);
     let state = build_config_state_from_layers(&config_layer_stack).await?;

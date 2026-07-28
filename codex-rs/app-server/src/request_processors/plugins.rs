@@ -1436,7 +1436,7 @@ impl PluginRequestProcessor {
             .await
         {
             return Err(invalid_request(
-                "Codex plugins are disabled for this workspace",
+                "Better Codex plugins are disabled for this workspace",
             ));
         }
 
