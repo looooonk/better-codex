@@ -978,7 +978,8 @@ fn mcp_initialize_request_params(
     }
     InitializeRequestParams::new(
         capabilities,
-        Implementation::new("codex-mcp-client", env!("CARGO_PKG_VERSION")).with_title("Codex"),
+        Implementation::new("codex-mcp-client", env!("CARGO_PKG_VERSION"))
+            .with_title("Better Codex"),
     )
     .with_protocol_version(ProtocolVersion::V_2025_06_18)
 }
