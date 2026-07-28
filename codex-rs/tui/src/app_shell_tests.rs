@@ -2686,6 +2686,47 @@ async fn command_palette_opens_external_agent_import_review() {
 }
 
 #[tokio::test]
+async fn external_agent_import_unavailable_messages_name_better_codex() {
+    let mut remote_shell = ShellState::snapshot_fixture();
+    let mut remote_backend = RecordingBackend {
+        remote_workspace: true,
+        ..RecordingBackend::default()
+    };
+    remote_shell
+        .start_external_agent_import_review(&mut remote_backend)
+        .await
+        .expect("remote import rejection should render");
+    insta::assert_snapshot!(
+        "external_agent_import_remote_unavailable",
+        render_shell(
+            &remote_shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
+    );
+
+    let mut daemon_shell = ShellState::snapshot_fixture();
+    let mut daemon_backend = RecordingBackend {
+        embedded_app_server: false,
+        ..RecordingBackend::default()
+    };
+    daemon_shell
+        .start_external_agent_import_review(&mut daemon_backend)
+        .await
+        .expect("daemon import rejection should render");
+    insta::assert_snapshot!(
+        "external_agent_import_daemon_unavailable",
+        render_shell(
+            &daemon_shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
+    );
+}
+
+#[tokio::test]
 async fn short_management_modal_keeps_keyboard_selection_visible() {
     let mut shell = ShellState::snapshot_fixture();
     let mut response = plugin_list_response_fixture();
@@ -4961,6 +5002,22 @@ fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
             /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28
         )
     ));
+}
+
+#[test]
+fn resume_hint_uses_public_better_codex_command() {
+    let mut shell = ShellState::snapshot_fixture();
+
+    assert_eq!(
+        shell.resume_hint(),
+        Some("better-codex resume stage-one".to_string())
+    );
+
+    shell.thread_name = None;
+    assert_eq!(
+        shell.resume_hint(),
+        Some(format!("better-codex resume {}", shell.thread_id))
+    );
 }
 
 #[test]

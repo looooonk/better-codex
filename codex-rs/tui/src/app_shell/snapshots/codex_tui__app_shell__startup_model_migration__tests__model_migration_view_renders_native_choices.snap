@@ -8,7 +8,7 @@ expression: terminal.backend().to_string()
 "                                                                       current model                "
 " Model migration                                                       gpt-5.1-codex-max            "
 "                                                                                                    "
-" Codex just got an upgrade.                                            recommended model            "
+" Better Codex just got an upgrade.                                     recommended model            "
 "                                                                       gpt-5.2-codex-max            "
 " We recommend switching to the newer Codex model.                                                   "
 "                                                                       display name                 "

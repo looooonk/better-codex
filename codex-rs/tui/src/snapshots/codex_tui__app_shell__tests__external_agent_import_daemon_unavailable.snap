@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&daemon_shell, Rect::new(0, 0, 100, 28,))"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+          by app-server turns.                  │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ PLAN  1. Build shell                         │ │▎+ New session  Ctrl+N
+         2. Wire transcript                     │ │▎loading sessions
+         3. Render dashboard                    ┃ │
+                                                ┃ │▎◆ THREAD
+ ▌ tool exec just test -p codex-tui             ┃ │▎stage-one
+                                                ┃ │▎id 01900000-0000-7000-8000-000000000001
+ ▌ edited 3 files +128 -24                      ┃ │▎resume, fork, archive, delete in session list
+ ▎ ERROR  Import from Claude Code is            ┃ │
+          unavailable while Better Codex is     ┃ │
+          connected to the local app-server     ┃ │
+          daemon. Stop the daemon, restart      ┃ │
+          Better Codex, and run /import.        ┃ │
+                                                ┃ │
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │
+          surface.                              ┃ │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

@@ -95,7 +95,7 @@ fn model_migration_prompt_data_fixture(can_opt_out: bool) -> ModelMigrationPromp
         target_default_effort: ReasoningEffort::High,
         target_display_name: "GPT-5.2 Codex Max".to_string(),
         copy: ModelMigrationCopy {
-            heading: vec!["Codex just got an upgrade.".bold()],
+            heading: vec!["Better Codex just got an upgrade.".bold()],
             content: vec![
                 Line::from("We recommend switching to the newer Codex model."),
                 Line::from(""),

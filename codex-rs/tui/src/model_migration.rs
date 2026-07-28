@@ -34,8 +34,9 @@ pub(crate) fn migration_copy_for_models(
         };
     }
 
-    let heading =
-        vec![format!("Codex just got an upgrade. Introducing {target_display_name}.").bold()];
+    let heading = vec![
+        format!("Better Codex just got an upgrade. Introducing {target_display_name}.").bold(),
+    ];
     let description = migration_copy.clone().map(Line::from).unwrap_or_else(|| {
         target_description
             .filter(|description| !description.is_empty())
