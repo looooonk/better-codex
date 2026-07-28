@@ -2464,7 +2464,7 @@ impl ShellState {
             .thread_name
             .clone()
             .unwrap_or_else(|| self.thread_id.to_string());
-        Some(format!("codex resume {thread}"))
+        Some(format!("better-codex resume {thread}"))
     }
 
     fn dashboard_focused(&self) -> bool {
