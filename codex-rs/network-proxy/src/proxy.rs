@@ -29,7 +29,10 @@ use tracing::warn;
 use self::execution_scope::ExecutionScope;
 
 #[derive(Debug, Clone, Parser)]
-#[command(name = "codex-network-proxy", about = "Codex network sandbox proxy")]
+#[command(
+    name = "codex-network-proxy",
+    about = "Better Codex network sandbox proxy"
+)]
 pub struct Args {}
 
 #[derive(Debug)]

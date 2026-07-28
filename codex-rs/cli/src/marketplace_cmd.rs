@@ -43,7 +43,7 @@ enum MarketplaceSubcommand {
     /// Add a local or Git marketplace to the configured marketplace sources.
     Add(AddMarketplaceArgs),
 
-    /// List plugin marketplaces Codex is currently considering and their roots.
+    /// List plugin marketplaces Better Codex is currently considering and their roots.
     List(ListMarketplaceArgs),
 
     /// Refresh configured Git marketplace snapshots.

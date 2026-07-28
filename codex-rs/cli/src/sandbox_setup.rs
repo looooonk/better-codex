@@ -17,7 +17,7 @@ pub(crate) struct SandboxSetupCommand {
     #[arg(long = "elevated", action = ArgAction::SetTrue)]
     elevated_sandbox_level: bool,
 
-    /// Windows user that will run Codex after managed deployment.
+    /// Windows user that will run Better Codex after managed deployment.
     #[arg(
         long = "user",
         value_name = "USER",
@@ -26,7 +26,7 @@ pub(crate) struct SandboxSetupCommand {
     )]
     user: Option<String>,
 
-    /// Use the current Windows user as the Codex user.
+    /// Use the current Windows user as the Better Codex user.
     #[arg(
         long = "current-user",
         default_value_t = false,
@@ -34,7 +34,7 @@ pub(crate) struct SandboxSetupCommand {
     )]
     current_user: bool,
 
-    /// CODEX_HOME for the Codex user. Required with --user.
+    /// CODEX_HOME for the Better Codex user. Required with --user.
     #[arg(long = "codex-home", value_name = "DIR")]
     codex_home: Option<PathBuf>,
 }
