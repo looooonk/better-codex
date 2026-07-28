@@ -116,10 +116,6 @@ const COLOR_ENV_VARS: &[&str] = &[
 const TERMINAL_DIMENSION_ENV_VARS: &[&str] = &["COLUMNS", "LINES"];
 const TERMINFO_ENV_VARS: &[&str] = &["TERMINFO", "TERMINFO_DIRS"];
 const LOCALE_ENV_VARS: &[&str] = &["LC_ALL", "LC_CTYPE", "LANG"];
-#[cfg(windows)]
-const NPM_COMMAND: &str = "npm.cmd";
-#[cfg(not(windows))]
-const NPM_COMMAND: &str = "npm";
 const REMOTE_TERMINAL_ENV_VARS: &[&str] = &[
     "SSH_TTY",
     "SSH_CONNECTION",
@@ -793,7 +789,7 @@ fn installation_check(show_details: bool) -> DoctorCheck {
     }
     details.push(format!(
         "managed by npm: {}",
-        doctor_managed_by_npm(current_exe.as_deref())
+        matches!(&install_context.method, InstallMethod::Npm)
     ));
     details.push(format!(
         "managed by bun: {}",
@@ -810,9 +806,6 @@ fn installation_check(show_details: bool) -> DoctorCheck {
     );
 
     let path_entries = codex_path_entries();
-    let mut status = CheckStatus::Ok;
-    let mut summary = "installation looks consistent".to_string();
-    let mut remediation = None;
 
     if path_entries.len() > 1 {
         details.push(format!("PATH better-codex entries: {}", path_entries.len()));
@@ -826,50 +819,13 @@ fn installation_check(show_details: bool) -> DoctorCheck {
         );
     }
 
-    if doctor_managed_by_npm(current_exe.as_deref()) {
-        match npm_global_root_check() {
-            NpmRootCheck::Match { package_root } => {
-                details.push(format!("npm update target: {}", package_root.display()));
-            }
-            NpmRootCheck::Mismatch {
-                running_package_root,
-                npm_package_root,
-            } => {
-                status = CheckStatus::Fail;
-                summary =
-                    "npm install -g @openai/codex would update a different install".to_string();
-                remediation = Some(format!(
-                    "Fix PATH or npm prefix so the running package root ({}) matches the npm global package root ({}).",
-                    running_package_root.display(),
-                    npm_package_root.display()
-                ));
-                details.push(format!(
-                    "running package root: {}",
-                    running_package_root.display()
-                ));
-                details.push(format!("npm package root: {}", npm_package_root.display()));
-            }
-            NpmRootCheck::MissingPackageRoot => {
-                status = status.max(CheckStatus::Warning);
-                summary = "npm-managed launch is missing package-root provenance".to_string();
-                remediation = Some(
-                    "Reinstall or update Better Codex so the JS shim provides CODEX_MANAGED_PACKAGE_ROOT."
-                        .to_string(),
-                );
-            }
-            NpmRootCheck::NpmUnavailable(error) => {
-                status = status.max(CheckStatus::Warning);
-                summary = "npm-managed launch could not inspect npm global root".to_string();
-                details.push(format!("npm root -g failed: {error}"));
-            }
-        }
-    }
-
-    let mut check = DoctorCheck::new("installation", "install", status, summary).details(details);
-    if let Some(remediation) = remediation {
-        check = check.remediation(remediation);
-    }
-    check
+    DoctorCheck::new(
+        "installation",
+        "install",
+        CheckStatus::Ok,
+        "installation looks consistent",
+    )
+    .details(details)
 }
 
 fn doctor_install_context(current_exe: Option<&Path>) -> InstallContext {
@@ -881,11 +837,6 @@ fn doctor_install_context(current_exe: Option<&Path>) -> InstallContext {
     } else {
         InstallContext::current().clone()
     }
-}
-
-fn doctor_managed_by_npm(current_exe: Option<&Path>) -> bool {
-    env::var_os("CODEX_MANAGED_BY_NPM").is_some()
-        && !inherited_managed_env_for_cargo_binary(current_exe)
 }
 
 fn inherited_managed_env_for_cargo_binary(current_exe: Option<&Path>) -> bool {
@@ -977,62 +928,6 @@ fn describe_method_with_package_layout(
 fn display_optional_path(path: Option<&Path>) -> String {
     path.map(|path| path.display().to_string())
         .unwrap_or_else(|| "none".to_string())
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum NpmRootCheck {
-    Match {
-        package_root: PathBuf,
-    },
-    Mismatch {
-        running_package_root: PathBuf,
-        npm_package_root: PathBuf,
-    },
-    MissingPackageRoot,
-    NpmUnavailable(String),
-}
-
-fn npm_global_root_check() -> NpmRootCheck {
-    let Some(running_package_root) = env::var_os("CODEX_MANAGED_PACKAGE_ROOT").map(PathBuf::from)
-    else {
-        return NpmRootCheck::MissingPackageRoot;
-    };
-
-    let output = match run_command(NPM_COMMAND, ["root", "-g"]) {
-        Ok(output) => output,
-        Err(err) => return NpmRootCheck::NpmUnavailable(err),
-    };
-    let Some(npm_root) = output.lines().map(str::trim).find(|line| !line.is_empty()) else {
-        return NpmRootCheck::NpmUnavailable("empty output from npm root -g".to_string());
-    };
-
-    compare_npm_package_roots(&running_package_root, &PathBuf::from(npm_root))
-}
-
-fn compare_npm_package_roots(running_package_root: &Path, npm_root: &Path) -> NpmRootCheck {
-    let npm_package_root = npm_root.join("@openai").join("codex");
-    let running = normalize_path_for_compare(running_package_root);
-    let target = normalize_path_for_compare(&npm_package_root);
-    if running == target {
-        NpmRootCheck::Match {
-            package_root: npm_package_root,
-        }
-    } else {
-        NpmRootCheck::Mismatch {
-            running_package_root: running_package_root.to_path_buf(),
-            npm_package_root,
-        }
-    }
-}
-
-fn normalize_path_for_compare(path: &Path) -> String {
-    let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-    let raw = canonical.to_string_lossy().replace('\\', "/");
-    if cfg!(windows) {
-        raw.to_ascii_lowercase()
-    } else {
-        raw
-    }
 }
 
 fn display_list<T: AsRef<str>>(items: &[T]) -> String {
@@ -1263,7 +1158,7 @@ fn auth_check(config: &Config) -> DoctorCheck {
             "auth.credentials",
             "auth",
             CheckStatus::Fail,
-            "no Codex credentials were found",
+            "no supported credentials were found",
         )
         .details(details)
         .remediation(
@@ -3190,31 +3085,6 @@ mod tests {
         assert_eq!(
             progress_impl.events(),
             vec!["begin test".to_string(), "finish test Warning".to_string()]
-        );
-    }
-
-    #[test]
-    fn compare_npm_package_roots_detects_match() {
-        let running = PathBuf::from("/prefix/lib/node_modules/@openai/codex");
-        let npm_root = PathBuf::from("/prefix/lib/node_modules");
-        assert_eq!(
-            compare_npm_package_roots(&running, &npm_root),
-            NpmRootCheck::Match {
-                package_root: npm_root.join("@openai").join("codex")
-            }
-        );
-    }
-
-    #[test]
-    fn compare_npm_package_roots_detects_mismatch() {
-        let running = PathBuf::from("/old/lib/node_modules/@openai/codex");
-        let npm_root = PathBuf::from("/new/lib/node_modules");
-        assert_eq!(
-            compare_npm_package_roots(&running, &npm_root),
-            NpmRootCheck::Mismatch {
-                running_package_root: running,
-                npm_package_root: npm_root.join("@openai").join("codex"),
-            }
         );
     }
 

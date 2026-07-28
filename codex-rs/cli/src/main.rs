@@ -800,7 +800,7 @@ fn run_update_command() -> anyhow::Result<()> {
     {
         let Some(action) = codex_tui::get_update_action() else {
             anyhow::bail!(
-                "Could not detect the Codex installation method. Please update manually: https://developers.openai.com/codex/cli/"
+                "Could not detect a managed Better Codex installation. Update by rerunning the installer:\n  curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh | sh\n\nReleases are also available at https://github.com/looooonk/better-codex/releases."
             );
         };
         run_update_action(action)

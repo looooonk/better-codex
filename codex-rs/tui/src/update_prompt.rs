@@ -192,7 +192,9 @@ impl WidgetRef for &UpdatePromptScreen {
         Clear.render(area, buf);
         let mut column = ColumnRenderable::new();
 
-        let update_command = self.update_action.command_str();
+        let update_description = match self.update_action {
+            UpdateAction::StandaloneUnix => "Update now (runs the Better Codex installer)",
+        };
 
         column.push("");
         column.push(Line::from(vec![
@@ -217,7 +219,7 @@ impl WidgetRef for &UpdatePromptScreen {
         column.push("");
         column.push(selection_option_row(
             0,
-            format!("Update now (runs `{update_command}`)"),
+            update_description.to_string(),
             self.highlighted == UpdateSelection::UpdateNow,
         ));
         column.push(selection_option_row(
@@ -257,7 +259,7 @@ mod tests {
         UpdatePromptScreen::new(
             FrameRequester::test_dummy(),
             "9.9.9".into(),
-            UpdateAction::NpmGlobalLatest,
+            UpdateAction::StandaloneUnix,
         )
     }
 

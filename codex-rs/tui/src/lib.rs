@@ -129,8 +129,6 @@ mod markdown_stream;
 mod markdown_text_merge;
 mod mention_codec;
 mod model_migration;
-#[cfg(any(not(debug_assertions), test))]
-mod npm_registry;
 mod oss_selection;
 mod permission_compat;
 pub(crate) mod public_widgets;
@@ -919,7 +917,7 @@ pub async fn run_main(
     let codex_home = match find_codex_home() {
         Ok(codex_home) => codex_home.to_path_buf(),
         Err(err) => {
-            eprintln!("Error finding codex home: {err}");
+            eprintln!("Error finding CODEX_HOME: {err}");
             std::process::exit(1);
         }
     };

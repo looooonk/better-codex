@@ -1,31 +1,25 @@
-//! Diagnoses whether Codex update paths target the running installation.
+//! Diagnoses Better Codex update availability.
 //!
 //! Update diagnostics combine cached version metadata, install-channel hints,
-//! and bounded latest-version probes. For npm-managed launches, this module also
-//! verifies that npm install -g would update the package root that launched the
-//! current process, which catches PATH and prefix mismatches before the user runs
-//! an update command.
+//! and bounded latest-version probes.
 
 use std::path::Path;
 
 use codex_core::config::Config;
 use codex_install_context::InstallContext;
 use codex_install_context::InstallMethod;
+use codex_install_context::StandalonePlatform;
 use semver::Version;
 use serde::Deserialize;
 
 use super::CheckStatus;
 use super::DoctorCheck;
-use super::NpmRootCheck;
 use super::doctor_install_context;
-use super::doctor_managed_by_npm;
-use super::npm_global_root_check;
 use super::run_command;
 
 const VERSION_FILE_NAME: &str = "better-codex-version.json";
 const GITHUB_LATEST_RELEASE_URL: &str =
     "https://api.github.com/repos/looooonk/better-codex/releases?per_page=1";
-const HOMEBREW_CASK_API_URL: &str = "https://formulae.brew.sh/api/cask/codex.json";
 
 /// Builds the update-health row for the current installation.
 ///
@@ -45,49 +39,38 @@ pub(super) fn updates_check(config: &Config) -> DoctorCheck {
     let version_file = config.codex_home.join(VERSION_FILE_NAME);
     push_cached_version_details(&mut details, &version_file);
 
-    let mut status = CheckStatus::Ok;
-    let mut summary = "update configuration is locally consistent".to_string();
-    let mut remediation = None;
-
-    if doctor_managed_by_npm(current_exe.as_deref()) {
-        match npm_global_root_check() {
-            NpmRootCheck::Match { package_root } => {
-                details.push(format!("npm update target: {}", package_root.display()));
-            }
-            NpmRootCheck::Mismatch {
-                running_package_root,
-                npm_package_root,
-            } => {
-                status = CheckStatus::Fail;
-                summary = "update would target a different npm install".to_string();
-                details.push(format!(
-                    "running package root: {}",
-                    running_package_root.display()
-                ));
-                details.push(format!("npm package root: {}", npm_package_root.display()));
-                remediation = Some(format!(
-                    "Fix PATH or npm prefix so the running package root ({}) matches the npm global package root ({}).",
-                    running_package_root.display(),
-                    npm_package_root.display()
-                ));
-            }
-            NpmRootCheck::MissingPackageRoot => {
-                status = status.max(CheckStatus::Warning);
-                summary = "npm update target could not be proven".to_string();
-                remediation = Some(
-                    "Reinstall or update Better Codex so the JS shim provides CODEX_MANAGED_PACKAGE_ROOT."
-                        .to_string(),
-                );
-            }
-            NpmRootCheck::NpmUnavailable(error) => {
-                status = status.max(CheckStatus::Warning);
-                summary = "npm update target could not be inspected".to_string();
-                details.push(format!("npm root -g failed: {error}"));
-            }
+    let (mut status, summary, remediation) = match &install_context.method {
+        InstallMethod::Npm | InstallMethod::Bun | InstallMethod::Pnpm | InstallMethod::Brew => (
+            CheckStatus::Warning,
+            "this package-manager install is not a Better Codex update channel".to_string(),
+            Some(
+                "Install the Better Codex standalone release with `curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh | sh`."
+                    .to_string(),
+            ),
+        ),
+        InstallMethod::Standalone {
+            platform: StandalonePlatform::Windows,
+            ..
+        } => (
+            CheckStatus::Warning,
+            "automatic updates are unavailable for this standalone platform".to_string(),
+            Some(
+                "Download the latest Better Codex release from https://github.com/looooonk/better-codex/releases."
+                    .to_string(),
+            ),
+        ),
+        InstallMethod::Standalone {
+            platform: StandalonePlatform::Unix,
+            ..
         }
-    }
+        | InstallMethod::Other => (
+            CheckStatus::Ok,
+            "update configuration is locally consistent".to_string(),
+            None,
+        ),
+    };
 
-    match fetch_latest_version(&install_context) {
+    match fetch_latest_version() {
         Ok(latest_version) => {
             details.push(format!("latest version: {latest_version}"));
             if is_newer(&latest_version, env!("CARGO_PKG_VERSION")) == Some(true) {
@@ -133,24 +116,24 @@ fn push_cached_version_details(details: &mut Vec<String>, version_file: &Path) {
 
 fn update_action_label(context: &InstallContext) -> &'static str {
     match &context.method {
-        InstallMethod::Npm => "npm install -g @openai/codex",
-        InstallMethod::Bun => "bun install -g @openai/codex",
-        InstallMethod::Pnpm => "pnpm add -g @openai/codex",
-        InstallMethod::Brew => "brew upgrade --cask codex",
-        InstallMethod::Standalone { .. } => "standalone installer",
+        InstallMethod::Standalone {
+            platform: StandalonePlatform::Unix,
+            ..
+        } => "standalone installer",
+        InstallMethod::Standalone {
+            platform: StandalonePlatform::Windows,
+            ..
+        } => "manual (automatic update unavailable)",
+        InstallMethod::Npm => "unsupported npm install (use standalone installer)",
+        InstallMethod::Bun => "unsupported bun install (use standalone installer)",
+        InstallMethod::Pnpm => "unsupported pnpm install (use standalone installer)",
+        InstallMethod::Brew => "unsupported Homebrew install (use standalone installer)",
         InstallMethod::Other => "manual or unknown",
     }
 }
 
-fn fetch_latest_version(context: &InstallContext) -> Result<String, String> {
-    match &context.method {
-        InstallMethod::Brew => fetch_homebrew_cask_version(),
-        InstallMethod::Npm
-        | InstallMethod::Bun
-        | InstallMethod::Pnpm
-        | InstallMethod::Standalone { .. }
-        | InstallMethod::Other => fetch_latest_github_release_version(),
-    }
+fn fetch_latest_version() -> Result<String, String> {
+    fetch_latest_github_release_version()
 }
 
 fn fetch_latest_github_release_version() -> Result<String, String> {
@@ -170,15 +153,6 @@ fn fetch_latest_github_release_version() -> Result<String, String> {
     Version::parse(version)
         .map(|_| version.to_string())
         .map_err(|err| format!("failed to parse latest tag {}: {err}", info.tag_name))
-}
-
-fn fetch_homebrew_cask_version() -> Result<String, String> {
-    #[derive(Deserialize)]
-    struct HomebrewCaskInfo {
-        version: String,
-    }
-
-    http_get_json::<HomebrewCaskInfo>(HOMEBREW_CASK_API_URL).map(|info| info.version)
 }
 
 fn http_get_json<T>(url: &str) -> Result<T, String>
@@ -220,14 +194,14 @@ mod tests {
                 method: InstallMethod::Npm,
                 package_layout: None,
             }),
-            "npm install -g @openai/codex"
+            "unsupported npm install (use standalone installer)"
         );
         assert_eq!(
             update_action_label(&InstallContext {
                 method: InstallMethod::Pnpm,
                 package_layout: None,
             }),
-            "pnpm add -g @openai/codex"
+            "unsupported pnpm install (use standalone installer)"
         );
         assert_eq!(
             update_action_label(&InstallContext {

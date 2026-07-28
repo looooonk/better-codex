@@ -8,14 +8,6 @@ use codex_install_context::StandalonePlatform;
 /// Update action the CLI should perform after the TUI exits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateAction {
-    /// Update via `npm install -g @openai/codex@latest`.
-    NpmGlobalLatest,
-    /// Update via `bun install -g @openai/codex@latest`.
-    BunGlobalLatest,
-    /// Update via `pnpm add -g @openai/codex@latest`.
-    PnpmGlobalLatest,
-    /// Update via `brew upgrade codex`.
-    BrewUpgrade,
     /// Update via the Better Codex standalone installer.
     StandaloneUnix,
 }
@@ -24,25 +16,21 @@ impl UpdateAction {
     #[cfg(any(not(debug_assertions), test))]
     pub(crate) fn from_install_context(context: &InstallContext) -> Option<Self> {
         match &context.method {
-            InstallMethod::Npm => Some(UpdateAction::NpmGlobalLatest),
-            InstallMethod::Bun => Some(UpdateAction::BunGlobalLatest),
-            InstallMethod::Pnpm => Some(UpdateAction::PnpmGlobalLatest),
-            InstallMethod::Brew => Some(UpdateAction::BrewUpgrade),
             InstallMethod::Standalone { platform, .. } => match platform {
                 StandalonePlatform::Unix => Some(UpdateAction::StandaloneUnix),
                 StandalonePlatform::Windows => None,
             },
-            InstallMethod::Other => None,
+            InstallMethod::Npm
+            | InstallMethod::Bun
+            | InstallMethod::Pnpm
+            | InstallMethod::Brew
+            | InstallMethod::Other => None,
         }
     }
 
     /// Returns the list of command-line arguments for invoking the update.
     pub fn command_args(self) -> (&'static str, &'static [&'static str]) {
         match self {
-            UpdateAction::NpmGlobalLatest => ("npm", &["install", "-g", "@openai/codex@latest"]),
-            UpdateAction::BunGlobalLatest => ("bun", &["install", "-g", "@openai/codex@latest"]),
-            UpdateAction::PnpmGlobalLatest => ("pnpm", &["add", "-g", "@openai/codex@latest"]),
-            UpdateAction::BrewUpgrade => ("brew", &["upgrade", "--cask", "codex"]),
             UpdateAction::StandaloneUnix => (
                 "sh",
                 &[
@@ -90,28 +78,28 @@ mod tests {
                 method: InstallMethod::Npm,
                 package_layout: None,
             }),
-            Some(UpdateAction::NpmGlobalLatest)
+            None
         );
         assert_eq!(
             UpdateAction::from_install_context(&InstallContext {
                 method: InstallMethod::Bun,
                 package_layout: None,
             }),
-            Some(UpdateAction::BunGlobalLatest)
+            None
         );
         assert_eq!(
             UpdateAction::from_install_context(&InstallContext {
                 method: InstallMethod::Pnpm,
                 package_layout: None,
             }),
-            Some(UpdateAction::PnpmGlobalLatest)
+            None
         );
         assert_eq!(
             UpdateAction::from_install_context(&InstallContext {
                 method: InstallMethod::Brew,
                 package_layout: None,
             }),
-            Some(UpdateAction::BrewUpgrade)
+            None
         );
         assert_eq!(
             UpdateAction::from_install_context(&InstallContext {
