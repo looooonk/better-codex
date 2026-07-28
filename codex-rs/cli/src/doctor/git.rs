@@ -119,7 +119,9 @@ fn git_check_from_inputs(inputs: GitCheckInputs) -> DoctorCheck {
                 "Git executable was found on PATH but did not return a version",
             )
             .expected("git --version succeeds")
-            .remedy("Fix the selected Git executable or PATH so Codex can inspect Git metadata.")
+            .remedy(
+                "Fix the selected Git executable or PATH so Better Codex can inspect Git metadata.",
+            )
             .field("git version")
             .field("selected git"),
         );
@@ -132,7 +134,7 @@ fn git_check_from_inputs(inputs: GitCheckInputs) -> DoctorCheck {
                 "Git repository detected but git executable was not found",
             )
             .expected("git available on PATH")
-            .remedy("Install Git or fix PATH so Codex can inspect repository metadata.")
+            .remedy("Install Git or fix PATH so Better Codex can inspect repository metadata.")
             .field("selected git"),
         );
     } else if let Some(cause) =
@@ -145,7 +147,7 @@ fn git_check_from_inputs(inputs: GitCheckInputs) -> DoctorCheck {
                 .measured(inputs.git_version.unwrap_or_else(|| "unknown".to_string()))
                 .expected("current Git for Windows")
                 .remedy(
-                    "Update Git for Windows or the bundled Git executable Codex resolves first.",
+                    "Update Git for Windows or the bundled Git executable Better Codex resolves first.",
                 )
                 .field("git version")
                 .field("selected git"),

@@ -82,7 +82,7 @@ async fn initialize_probe_does_not_override_originator() -> Result<()> {
         DEFAULT_READ_TIMEOUT,
         mcp.initialize_with_client_info(ClientInfo {
             name: "codex_app_server_daemon".to_string(),
-            title: Some("Codex App Server Daemon".to_string()),
+            title: Some("Better Codex App Server Daemon".to_string()),
             version: "0.1.0".to_string(),
         }),
     )
