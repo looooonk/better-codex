@@ -35,7 +35,7 @@ class ReleasePackageTest(unittest.TestCase):
             inputs.mkdir()
             codex = self.write_executable(
                 inputs / "codex",
-                "#!/bin/sh\nprintf 'codex 0.1.0-alpha.1\\n'\n",
+                "#!/bin/sh\nprintf 'better-codex 0.1.0-alpha.1\\n'\n",
             )
             host = self.write_executable(
                 inputs / "codex-code-mode-host",
@@ -123,7 +123,7 @@ class ReleasePackageTest(unittest.TestCase):
                 env=environment,
                 text=True,
             )
-            self.assertEqual(output, "codex 0.1.0-alpha.1\n")
+            self.assertEqual(output, "better-codex 0.1.0-alpha.1\n")
             self.assertEqual(
                 (install_root / "current").resolve(),
                 (install_root / "releases" / f"0.1.0-alpha.1-{target}").resolve(),
