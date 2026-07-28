@@ -1,6 +1,6 @@
 use super::*;
 use crate::legacy_core::config::Config;
-use crate::model_migration::ModelMigrationCopy;
+use crate::model_migration::migration_copy_for_models;
 use codex_protocol::openai_models::ModelUpgrade;
 use codex_protocol::openai_models::ReasoningEffort;
 use crossterm::event::KeyCode;
@@ -9,8 +9,6 @@ use crossterm::event::KeyModifiers;
 use pretty_assertions::assert_eq;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
 
 #[test]
 fn model_migration_selection_keys_move_between_choices() {
@@ -94,15 +92,15 @@ fn model_migration_prompt_data_fixture(can_opt_out: bool) -> ModelMigrationPromp
         target_model: "gpt-5.2-codex-max".to_string(),
         target_default_effort: ReasoningEffort::High,
         target_display_name: "GPT-5.2 Codex Max".to_string(),
-        copy: ModelMigrationCopy {
-            heading: vec!["Better Codex just got an upgrade.".bold()],
-            content: vec![
-                Line::from("We recommend switching to the newer Codex model."),
-                Line::from(""),
-                Line::from("You can continue using the current model if you prefer."),
-            ],
+        copy: migration_copy_for_models(
+            "gpt-5.1-codex-max",
+            "gpt-5.2-codex-max",
+            /*model_link*/ None,
+            /*migration_copy*/ None,
+            /*migration_markdown*/ None,
+            "GPT-5.2 Codex Max".to_string(),
+            Some("The newer Codex model is recommended.".to_string()),
             can_opt_out,
-            markdown: None,
-        },
+        ),
     }
 }
