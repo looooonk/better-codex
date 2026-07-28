@@ -193,7 +193,7 @@ struct DoctorReport {
 ///
 /// Summaries are safe for compact human output. Details may include local paths
 /// or command output and are redacted before rendering or JSON serialization.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DoctorCheck {
     id: String,
@@ -211,7 +211,7 @@ struct DoctorCheck {
 /// Human output uses issues to make warnings and failures self-explanatory:
 /// the row headline says what is wrong, matching detail rows show measured vs.
 /// expected values, and remedies are printed as explicit next actions.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct DoctorIssue {
     severity: CheckStatus,

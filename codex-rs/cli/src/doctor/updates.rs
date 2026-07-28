@@ -20,6 +20,22 @@ use super::run_command;
 const VERSION_FILE_NAME: &str = "better-codex-version.json";
 const GITHUB_LATEST_RELEASE_URL: &str =
     "https://api.github.com/repos/looooonk/better-codex/releases?per_page=1";
+const STANDALONE_INSTALL_REMEDIATION: &str = "Install the Better Codex standalone release with `curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh | sh`.";
+const WINDOWS_UPDATE_REMEDIATION: &str = "Download the latest Better Codex release from https://github.com/looooonk/better-codex/releases.";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct InstallClassification {
+    action_label: &'static str,
+    status: CheckStatus,
+    summary: &'static str,
+    remediation: Option<&'static str>,
+}
+
+struct UpdateCheckInput<'a> {
+    check_for_update_on_startup: bool,
+    version_file: &'a Path,
+    install_context: &'a InstallContext,
+}
 
 /// Builds the update-health row for the current installation.
 ///
@@ -29,48 +45,33 @@ const GITHUB_LATEST_RELEASE_URL: &str =
 pub(super) fn updates_check(config: &Config) -> DoctorCheck {
     let current_exe = std::env::current_exe().ok();
     let install_context = doctor_install_context(current_exe.as_deref());
+    let version_file = config.codex_home.join(VERSION_FILE_NAME);
+    build_updates_check(
+        UpdateCheckInput {
+            check_for_update_on_startup: config.check_for_update_on_startup,
+            version_file: &version_file,
+            install_context: &install_context,
+        },
+        fetch_latest_github_release_version,
+    )
+}
+
+fn build_updates_check(
+    input: UpdateCheckInput<'_>,
+    latest_version_probe: impl FnOnce() -> Result<String, String>,
+) -> DoctorCheck {
+    let classification = classify_install_method(&input.install_context.method);
     let mut details = vec![
         format!(
             "check for update on startup: {}",
-            config.check_for_update_on_startup
+            input.check_for_update_on_startup
         ),
-        format!("update action: {}", update_action_label(&install_context)),
+        format!("update action: {}", classification.action_label),
     ];
-    let version_file = config.codex_home.join(VERSION_FILE_NAME);
-    push_cached_version_details(&mut details, &version_file);
+    push_cached_version_details(&mut details, input.version_file);
 
-    let (mut status, summary, remediation) = match &install_context.method {
-        InstallMethod::Npm | InstallMethod::Bun | InstallMethod::Pnpm | InstallMethod::Brew => (
-            CheckStatus::Warning,
-            "this package-manager install is not a Better Codex update channel".to_string(),
-            Some(
-                "Install the Better Codex standalone release with `curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh | sh`."
-                    .to_string(),
-            ),
-        ),
-        InstallMethod::Standalone {
-            platform: StandalonePlatform::Windows,
-            ..
-        } => (
-            CheckStatus::Warning,
-            "automatic updates are unavailable for this standalone platform".to_string(),
-            Some(
-                "Download the latest Better Codex release from https://github.com/looooonk/better-codex/releases."
-                    .to_string(),
-            ),
-        ),
-        InstallMethod::Standalone {
-            platform: StandalonePlatform::Unix,
-            ..
-        }
-        | InstallMethod::Other => (
-            CheckStatus::Ok,
-            "update configuration is locally consistent".to_string(),
-            None,
-        ),
-    };
-
-    match fetch_latest_version() {
+    let mut status = classification.status;
+    match latest_version_probe() {
         Ok(latest_version) => {
             details.push(format!("latest version: {latest_version}"));
             if is_newer(&latest_version, env!("CARGO_PKG_VERSION")) == Some(true) {
@@ -85,11 +86,62 @@ pub(super) fn updates_check(config: &Config) -> DoctorCheck {
         }
     }
 
-    let mut check = DoctorCheck::new("updates.status", "updates", status, summary).details(details);
-    if let Some(remediation) = remediation {
+    let mut check = DoctorCheck::new("updates.status", "updates", status, classification.summary)
+        .details(details);
+    if let Some(remediation) = classification.remediation {
         check = check.remediation(remediation);
     }
     check
+}
+
+fn classify_install_method(method: &InstallMethod) -> InstallClassification {
+    match method {
+        InstallMethod::Npm => package_manager_install_classification(
+            "unsupported npm install (use standalone installer)",
+        ),
+        InstallMethod::Bun => package_manager_install_classification(
+            "unsupported bun install (use standalone installer)",
+        ),
+        InstallMethod::Pnpm => package_manager_install_classification(
+            "unsupported pnpm install (use standalone installer)",
+        ),
+        InstallMethod::Brew => package_manager_install_classification(
+            "unsupported Homebrew install (use standalone installer)",
+        ),
+        InstallMethod::Standalone {
+            platform: StandalonePlatform::Windows,
+            ..
+        } => InstallClassification {
+            action_label: "manual (automatic update unavailable)",
+            status: CheckStatus::Warning,
+            summary: "automatic updates are unavailable for this standalone platform",
+            remediation: Some(WINDOWS_UPDATE_REMEDIATION),
+        },
+        InstallMethod::Standalone {
+            platform: StandalonePlatform::Unix,
+            ..
+        } => InstallClassification {
+            action_label: "standalone installer",
+            status: CheckStatus::Ok,
+            summary: "update configuration is locally consistent",
+            remediation: None,
+        },
+        InstallMethod::Other => InstallClassification {
+            action_label: "manual or unknown",
+            status: CheckStatus::Ok,
+            summary: "update configuration is locally consistent",
+            remediation: None,
+        },
+    }
+}
+
+fn package_manager_install_classification(action_label: &'static str) -> InstallClassification {
+    InstallClassification {
+        action_label,
+        status: CheckStatus::Warning,
+        summary: "this package-manager install is not a Better Codex update channel",
+        remediation: Some(STANDALONE_INSTALL_REMEDIATION),
+    }
 }
 
 fn push_cached_version_details(details: &mut Vec<String>, version_file: &Path) {
@@ -112,28 +164,6 @@ fn push_cached_version_details(details: &mut Vec<String>, version_file: &Path) {
         }
         Err(err) => details.push(format!("version cache read: {err}")),
     }
-}
-
-fn update_action_label(context: &InstallContext) -> &'static str {
-    match &context.method {
-        InstallMethod::Standalone {
-            platform: StandalonePlatform::Unix,
-            ..
-        } => "standalone installer",
-        InstallMethod::Standalone {
-            platform: StandalonePlatform::Windows,
-            ..
-        } => "manual (automatic update unavailable)",
-        InstallMethod::Npm => "unsupported npm install (use standalone installer)",
-        InstallMethod::Bun => "unsupported bun install (use standalone installer)",
-        InstallMethod::Pnpm => "unsupported pnpm install (use standalone installer)",
-        InstallMethod::Brew => "unsupported Homebrew install (use standalone installer)",
-        InstallMethod::Other => "manual or unknown",
-    }
-}
-
-fn fetch_latest_version() -> Result<String, String> {
-    fetch_latest_github_release_version()
 }
 
 fn fetch_latest_github_release_version() -> Result<String, String> {
@@ -177,38 +207,5 @@ struct VersionInfo {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn is_newer_compares_plain_semver() {
-        assert_eq!(is_newer("1.2.4", "1.2.3"), Some(true));
-        assert_eq!(is_newer("1.2.3", "1.2.4"), Some(false));
-        assert_eq!(is_newer("1.2.3-beta.1", "1.2.2"), Some(true));
-    }
-
-    #[test]
-    fn update_action_labels_install_contexts() {
-        assert_eq!(
-            update_action_label(&InstallContext {
-                method: InstallMethod::Npm,
-                package_layout: None,
-            }),
-            "unsupported npm install (use standalone installer)"
-        );
-        assert_eq!(
-            update_action_label(&InstallContext {
-                method: InstallMethod::Pnpm,
-                package_layout: None,
-            }),
-            "unsupported pnpm install (use standalone installer)"
-        );
-        assert_eq!(
-            update_action_label(&InstallContext {
-                method: InstallMethod::Other,
-                package_layout: None,
-            }),
-            "manual or unknown"
-        );
-    }
-}
+#[path = "updates_tests.rs"]
+mod tests;
