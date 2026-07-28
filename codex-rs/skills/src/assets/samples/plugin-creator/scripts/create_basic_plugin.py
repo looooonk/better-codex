@@ -65,8 +65,8 @@ def build_plugin_json(plugin_name: str, *, with_mcp: bool, with_apps: bool) -> d
         "skills": "./skills/",
         "interface": {
             "displayName": display_name,
-            "shortDescription": f"Use {display_name} in Codex.",
-            "longDescription": f"{display_name} adds a local Codex plugin scaffold.",
+            "shortDescription": f"Use {display_name} in Better Codex.",
+            "longDescription": f"{display_name} adds a local Better Codex plugin scaffold.",
             "developerName": "Local developer",
             "category": DEFAULT_CATEGORY,
             "capabilities": [],
