@@ -11,7 +11,7 @@ Use /fork to branch the current chat into a new thread.
 Use /side to start a side conversation in a temporary fork without polluting the main thread.
 Use /init to create an AGENTS.md with project-specific guidance.
 Use /mcp to list configured MCP tools.
-Run `better-codex app` to open Codex Desktop (it installs on macOS if needed).
+Run `codex app` to open Codex Desktop (it installs on macOS if needed).
 Use /personality to customize how Better Codex communicates.
 Use /rename to rename your threads for easier thread resuming.
 Use the OpenAI docs MCP for API questions; enable it with `better-codex mcp add openaiDeveloperDocs --url https://developers.openai.com/mcp`.
@@ -22,7 +22,7 @@ Type / to open the command popup; Tab autocompletes slash commands.
 When the composer is empty, press Esc to step back and edit your last message; Enter confirms.
 Press Tab to queue a message when a task is running; otherwise it sends immediately (except `!`).
 [tui.keymap] in ~/.codex/config.toml lets you rebind supported shortcuts.
-See the Better Codex keymap documentation for supported actions and examples.
+See the Codex keymap documentation for supported actions and examples.
 Paste an image with Ctrl+V to attach it to your next message.
 You can resume a previous conversation by running `better-codex resume`
 Use /copy or press Ctrl+O to copy the latest agent response as Markdown.
