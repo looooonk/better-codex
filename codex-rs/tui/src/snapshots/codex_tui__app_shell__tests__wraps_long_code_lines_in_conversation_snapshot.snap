@@ -1,0 +1,22 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+
+  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ CODEX  Run this command:
+
+          codex exec --sandbox workspace-write --config
+          model_reasoning_effort="high" --config
+          shell_environment_policy.inherit=all "Inspect the workspace and fix
+          every failing test."
+
+╭────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:1                                                              │
+│> Type a message, Shift+Enter for newline                                   │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯

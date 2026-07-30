@@ -1817,6 +1817,26 @@ fn renders_markdown_transcript_snapshot() {
 }
 
 #[test]
+fn wraps_long_code_lines_in_conversation_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.composer.clear();
+    shell.clear_streaming_transcript();
+    shell.push_assistant(
+        "Run this command:\n\n\
+        ```sh\n\
+        codex exec --sandbox workspace-write --config model_reasoning_effort=\"high\" --config shell_environment_policy.inherit=all \"Inspect the workspace and fix every failing test.\"\n\
+        ```",
+    );
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 18,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
 fn renders_transcript_selection_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript_selection = Some(2);

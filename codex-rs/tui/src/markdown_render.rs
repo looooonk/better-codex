@@ -1808,17 +1808,21 @@ where
     fn flush_current_line(&mut self) {
         if let Some(mut line) = self.current_line_content.take() {
             let style = self.current_line_style;
-            // NB we don't wrap code in code blocks, in order to preserve whitespace for copy/paste.
-            if !self.current_line_in_code_block
-                && let Some(width) = self.wrap_width
-            {
+            if let Some(width) = self.wrap_width {
                 let opts = RtOptions::new(width)
                     .initial_indent(self.current_initial_indent.clone().into())
                     .subsequent_indent(self.current_subsequent_indent.clone().into());
-                let wrapped = adaptive_wrap_line(&line.line, opts)
-                    .into_iter()
-                    .map(|wrapped| line_to_static(&wrapped))
-                    .collect();
+                // Code blocks use the standard wrapper so every visual row remains within the
+                // viewport, including commands or paths with a single overlong token. Prose keeps
+                // URL-like tokens intact so terminal emulators can still recognize them.
+                let wrapped = if self.current_line_in_code_block {
+                    word_wrap_line(&line.line, opts)
+                } else {
+                    adaptive_wrap_line(&line.line, opts)
+                }
+                .into_iter()
+                .map(|wrapped| line_to_static(&wrapped))
+                .collect();
                 for wrapped in remap_wrapped_line(&line, wrapped) {
                     self.push_output_line(wrapped.style(style));
                 }
@@ -2338,13 +2342,19 @@ mod tests {
     }
 
     #[test]
-    fn does_not_wrap_code_blocks() {
+    fn wraps_code_blocks() {
         let markdown = "````\nfn main() { println!(\"hi from a long line\"); }\n````";
         let rendered = render_markdown_text_with_width(markdown, Some(10));
         let lines = lines_to_strings(&rendered);
         assert_eq!(
             lines,
-            vec!["fn main() { println!(\"hi from a long line\"); }".to_string(),]
+            vec![
+                "fn main()".to_string(),
+                "{ println!".to_string(),
+                "(\"hi from".to_string(),
+                "a long".to_string(),
+                "line\"); }".to_string(),
+            ]
         );
     }
 
