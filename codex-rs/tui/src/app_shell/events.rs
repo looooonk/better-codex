@@ -95,7 +95,7 @@ impl ShellState {
                 if delta.thread_id == self.thread_id.to_string() {
                     self.mark_retry_recovered(&delta.turn_id);
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
-                    self.push_streaming_assistant_delta(&delta.delta);
+                    self.push_streaming_assistant_delta(&delta.item_id, &delta.delta);
                 } else if self.prepare_active_agent_thread(&delta.thread_id) {
                     self.agent_activity.record_child_progress(
                         &delta.thread_id,
@@ -110,7 +110,7 @@ impl ShellState {
                 if delta.thread_id == self.thread_id.to_string() {
                     self.mark_retry_recovered(&delta.turn_id);
                     self.clear_safety_buffering_for_streaming(&delta.turn_id);
-                    self.push_streaming_plan_delta(&delta.delta);
+                    self.push_streaming_plan_delta(&delta.item_id, &delta.delta);
                 }
             }
             ServerNotification::ReasoningSummaryTextDelta(delta) => {

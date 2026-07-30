@@ -5187,10 +5187,123 @@ fn completed_agent_message_replaces_matching_stream() {
     assert_eq!(shell.streaming_assistant, "");
     assert_eq!(
         shell.transcript.iter().cloned().collect::<Vec<_>>(),
-        vec![TranscriptLine::new(
-            TranscriptKind::Assistant,
-            "hello from codex"
-        )]
+        vec![TranscriptLine::new(TranscriptKind::Assistant, "hello from codex").item_id("agent-1")]
+    );
+}
+
+#[test]
+fn completed_agent_message_reconciles_a_mismatched_stream_by_item_id() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.clear_streaming_transcript();
+    let thread_id = shell.thread_id.to_string();
+
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            item_id: "agent-1".to_string(),
+            delta: "A partial first answer that must not survive.".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::AgentMessage {
+                id: "agent-1".to_string(),
+                text: "The authoritative first answer.".to_string(),
+                phase: None,
+                memory_citation: None,
+            },
+        },
+    ));
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            item_id: "agent-1".to_string(),
+            delta: " A replayed late delta must also be ignored.".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::AgentMessageDelta(
+        codex_app_server_protocol::AgentMessageDeltaNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            item_id: "agent-2".to_string(),
+            delta: "The second answer streams independently.".to_string(),
+        },
+    ));
+
+    assert_eq!(
+        (
+            shell.transcript.iter().cloned().collect::<Vec<_>>(),
+            shell.streaming_assistant.as_str(),
+            shell.streaming_assistant_item_id.as_deref(),
+        ),
+        (
+            vec![
+                TranscriptLine::new(TranscriptKind::Assistant, "The authoritative first answer.",)
+                    .item_id("agent-1")
+            ],
+            "The second answer streams independently.",
+            Some("agent-2"),
+        )
+    );
+    insta::assert_snapshot!(
+        "mismatched_assistant_stream_does_not_pile_up",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 14,
+            ),
+        )
+    );
+}
+
+#[test]
+fn completed_plan_reconciles_a_mismatched_stream_by_item_id() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_transcript();
+    let thread_id = shell.thread_id.to_string();
+
+    shell.handle_notification(ServerNotification::PlanDelta(
+        codex_app_server_protocol::PlanDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            item_id: "plan-1".to_string(),
+            delta: "A provisional plan".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: ThreadItem::Plan {
+                id: "plan-1".to_string(),
+                text: "The authoritative plan".to_string(),
+            },
+        },
+    ));
+
+    assert_eq!(
+        (
+            shell.transcript.iter().cloned().collect::<Vec<_>>(),
+            shell.streaming_plan.as_str(),
+            shell.streaming_plan_item_id.as_deref(),
+        ),
+        (
+            vec![
+                TranscriptLine::new(TranscriptKind::Plan, "The authoritative plan")
+                    .item_id("plan-1")
+            ],
+            "",
+            None,
+        )
     );
 }
 

@@ -852,8 +852,10 @@ struct ShellState {
     pending_user_input: Option<PendingUserInput>,
     safety_buffering: SafetyBufferingState,
     streaming_assistant: String,
+    streaming_assistant_item_id: Option<String>,
     streaming_assistant_revision: u64,
     streaming_plan: String,
+    streaming_plan_item_id: Option<String>,
     streaming_plan_revision: u64,
     plan_explanation: Option<String>,
     plan_steps: Vec<TurnPlanStep>,
@@ -966,8 +968,10 @@ impl ShellState {
             pending_user_input: None,
             safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: String::new(),
+            streaming_assistant_item_id: None,
             streaming_assistant_revision: next_transcript_render_revision(),
             streaming_plan: String::new(),
+            streaming_plan_item_id: None,
             streaming_plan_revision: next_transcript_render_revision(),
             plan_explanation: None,
             plan_steps: Vec::new(),
@@ -1938,51 +1942,93 @@ impl ShellState {
 
     fn finish_streaming_assistant(&mut self) {
         if self.streaming_assistant.trim().is_empty() {
+            self.clear_streaming_assistant();
             return;
         }
         let message = std::mem::take(&mut self.streaming_assistant);
+        let item_id = self.streaming_assistant_item_id.take();
         self.streaming_assistant_revision = next_transcript_render_revision();
-        self.push_assistant(message);
+        if let Some(item_id) = item_id {
+            self.push_assistant_for_item(item_id, message);
+        } else {
+            self.push_assistant(message);
+        }
     }
 
     fn finish_streaming_plan(&mut self) {
         if self.streaming_plan.trim().is_empty() {
+            self.clear_streaming_plan();
             return;
         }
         let plan = std::mem::take(&mut self.streaming_plan);
+        let item_id = self.streaming_plan_item_id.take();
         self.streaming_plan_revision = next_transcript_render_revision();
-        self.push_plan(plan);
+        if let Some(item_id) = item_id {
+            self.push_plan_for_item(item_id, plan);
+        } else {
+            self.push_plan(plan);
+        }
     }
 
-    fn push_streaming_assistant_delta(&mut self, delta: &str) {
+    fn push_streaming_assistant_delta(&mut self, item_id: &str, delta: &str) {
         if delta.is_empty() {
             return;
         }
+        if self.transcript.iter().rev().any(|item| {
+            item.kind == TranscriptKind::Assistant && item.item_id.as_deref() == Some(item_id)
+        }) {
+            return;
+        }
+        if self
+            .streaming_assistant_item_id
+            .as_deref()
+            .is_some_and(|streaming_item_id| streaming_item_id != item_id)
+        {
+            self.clear_streaming_assistant();
+        }
+        self.streaming_assistant_item_id
+            .get_or_insert_with(|| item_id.to_string());
         self.streaming_assistant.push_str(delta);
         self.streaming_assistant_revision = next_transcript_render_revision();
     }
 
-    fn push_streaming_plan_delta(&mut self, delta: &str) {
+    fn push_streaming_plan_delta(&mut self, item_id: &str, delta: &str) {
         if delta.is_empty() {
             return;
         }
+        if self.transcript.iter().rev().any(|item| {
+            item.kind == TranscriptKind::Plan && item.item_id.as_deref() == Some(item_id)
+        }) {
+            return;
+        }
+        if self
+            .streaming_plan_item_id
+            .as_deref()
+            .is_some_and(|streaming_item_id| streaming_item_id != item_id)
+        {
+            self.clear_streaming_plan();
+        }
+        self.streaming_plan_item_id
+            .get_or_insert_with(|| item_id.to_string());
         self.streaming_plan.push_str(delta);
         self.streaming_plan_revision = next_transcript_render_revision();
     }
 
     fn clear_streaming_assistant(&mut self) {
-        if self.streaming_assistant.is_empty() {
+        if self.streaming_assistant.is_empty() && self.streaming_assistant_item_id.is_none() {
             return;
         }
         self.streaming_assistant.clear();
+        self.streaming_assistant_item_id = None;
         self.streaming_assistant_revision = next_transcript_render_revision();
     }
 
     fn clear_streaming_plan(&mut self) {
-        if self.streaming_plan.is_empty() {
+        if self.streaming_plan.is_empty() && self.streaming_plan_item_id.is_none() {
             return;
         }
         self.streaming_plan.clear();
+        self.streaming_plan_item_id = None;
         self.streaming_plan_revision = next_transcript_render_revision();
     }
 
@@ -2029,20 +2075,25 @@ impl ShellState {
                     self.push_status(format!("hook prompt: {text}"));
                 }
             }
-            ThreadItem::AgentMessage { text, .. } => {
+            ThreadItem::AgentMessage { id, text, .. } => {
+                if self.streaming_assistant_item_id.as_deref() == Some(id.as_str())
+                    || (self.streaming_assistant_item_id.is_none()
+                        && self.streaming_assistant == text)
+                {
+                    self.clear_streaming_assistant();
+                }
                 if !text.is_empty() {
-                    if self.streaming_assistant == text {
-                        self.clear_streaming_assistant();
-                    }
-                    self.push_assistant(text);
+                    self.push_assistant_for_item(id, text);
                 }
             }
-            ThreadItem::Plan { text, .. } => {
+            ThreadItem::Plan { id, text, .. } => {
+                if self.streaming_plan_item_id.as_deref() == Some(id.as_str())
+                    || (self.streaming_plan_item_id.is_none() && self.streaming_plan == text)
+                {
+                    self.clear_streaming_plan();
+                }
                 if !text.is_empty() {
-                    if self.streaming_plan == text {
-                        self.clear_streaming_plan();
-                    }
-                    self.push_plan(text);
+                    self.push_plan_for_item(id, text);
                 }
             }
             ThreadItem::Reasoning {
@@ -2261,8 +2312,16 @@ impl ShellState {
         self.push_line(TranscriptLine::new(TranscriptKind::Assistant, text));
     }
 
+    fn push_assistant_for_item(&mut self, item_id: String, text: impl Into<String>) {
+        self.upsert_line(TranscriptLine::new(TranscriptKind::Assistant, text).item_id(item_id));
+    }
+
     fn push_plan(&mut self, text: impl Into<String>) {
         self.push_line(TranscriptLine::new(TranscriptKind::Plan, text));
+    }
+
+    fn push_plan_for_item(&mut self, item_id: String, text: impl Into<String>) {
+        self.upsert_line(TranscriptLine::new(TranscriptKind::Plan, text).item_id(item_id));
     }
 
     fn push_tool(&mut self, text: impl Into<String>) {
@@ -2554,8 +2613,10 @@ impl ShellState {
             pending_user_input: None,
             safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
+            streaming_assistant_item_id: None,
             streaming_assistant_revision: next_transcript_render_revision(),
             streaming_plan: String::new(),
+            streaming_plan_item_id: None,
             streaming_plan_revision: next_transcript_render_revision(),
             plan_explanation: Some("Build the standalone shell in slices.".to_string()),
             plan_steps: vec![
@@ -2818,8 +2879,10 @@ pub mod bench_support {
             pending_user_input: None,
             safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: String::new(),
+            streaming_assistant_item_id: None,
             streaming_assistant_revision: next_transcript_render_revision(),
             streaming_plan: String::new(),
+            streaming_plan_item_id: None,
             streaming_plan_revision: next_transcript_render_revision(),
             plan_explanation: Some("Keep render performance bounded.".to_string()),
             plan_steps: vec![

@@ -1,0 +1,19 @@
+---
+source: tui/src/app_shell_tests.rs
+assertion_line: 5253
+expression: "render_shell(&shell, Rect::new(0, 0, 78, 14,),)"
+---
+  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ CODEX  The authoritative first answer.
+
+ ▎ CODEX  The second answer streams independently.
+
+╭────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                             │
+│> Summarize the new shell architecture                                      │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯

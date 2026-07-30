@@ -41,7 +41,7 @@ fn unchanged_streaming_item_reuses_rendered_lines_until_the_next_delta() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.clear_streaming_assistant();
-    shell.push_streaming_assistant_delta("A long in-progress response");
+    shell.push_streaming_assistant_delta("assistant-1", "A long in-progress response");
     let first_revision = shell.streaming_assistant_revision;
     let cwd = PathBuf::from(&shell.cwd);
     let mut cache = TranscriptRenderCache::default();
@@ -54,7 +54,7 @@ fn unchanged_streaming_item_reuses_rendered_lines_until_the_next_delta() {
         chunk_lines(&second, first_revision)
     ));
 
-    shell.push_streaming_assistant_delta(" with another delta");
+    shell.push_streaming_assistant_delta("assistant-1", " with another delta");
     let third = cache.layout(&shell, WIDTH, &cwd);
     assert!(!Arc::ptr_eq(&second, &third));
     assert!(
@@ -152,7 +152,7 @@ fn logical_rows_resolve_to_stored_transcript_sources() {
         "first output line\nsecond output line",
         ToolBlockStatus::Running,
     );
-    shell.push_streaming_assistant_delta("streaming response");
+    shell.push_streaming_assistant_delta("assistant-1", "streaming response");
     let cwd = Path::new(&shell.cwd);
     let layout = TranscriptRenderCache::default().layout(&shell, WIDTH, cwd);
 
