@@ -3,7 +3,7 @@ use super::ToolActivity;
 use super::agent_activity_render::agent_activity_inspector_lines;
 use super::agent_activity_render::agent_activity_overview_lines;
 use super::dashboard_rate_limits::credits_and_resets_line;
-use super::dashboard_rate_limits::rate_limit_line;
+use super::dashboard_rate_limits::rate_limit_lines;
 use super::dashboard_workspace::workspace_lines;
 use super::design::Tone;
 use super::design::badge_span;
@@ -235,7 +235,7 @@ fn dashboard_panel(
             (!shell.rate_limits.is_empty() || shell.rate_limit_reset_credits.is_some()).then(|| {
                 let mut lines = Vec::new();
                 for limit in &shell.rate_limits {
-                    lines.push(rate_limit_line(limit, content_width));
+                    lines.extend(rate_limit_lines(limit, content_width));
                 }
                 lines.push(credits_and_resets_line(
                     &shell.rate_limits,
