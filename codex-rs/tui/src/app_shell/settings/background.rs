@@ -9,8 +9,10 @@ use super::ultra_reasoning_concurrency_warning;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ConfigEdit;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
+use codex_config::types::TuiAppTheme;
 use codex_protocol::openai_models::ReasoningEffort;
 use color_eyre::Result;
+use std::future::Future;
 
 #[derive(Debug)]
 pub(in crate::app_shell) struct SettingsUpdate {
@@ -32,6 +34,7 @@ pub(super) enum SettingsChange {
         thread_effort: Option<ReasoningEffort>,
     },
     ApprovalPolicy(AskForApproval),
+    AppTheme(TuiAppTheme),
     Theme(Option<String>),
     Animations(bool),
     Tooltips(bool),
@@ -47,12 +50,19 @@ impl ShellState {
     ) where
         S: AppShellBackend,
     {
+        let persist = app_server.persist_settings_update_in_background(edits, thread_update);
+        self.start_settings_update(change, persist);
+    }
+
+    pub(super) fn start_settings_update<F>(&mut self, change: SettingsChange, persist: F)
+    where
+        F: Future<Output = Result<()>> + Send + 'static,
+    {
         let update = SettingsUpdate {
             change,
             edit: self.settings.edit_value(),
             selector: self.selector.clone(),
         };
-        let persist = app_server.persist_settings_update_in_background(edits, thread_update);
         if !self
             .backend_actions
             .start(Some(ActionGroup::Settings), async move {
@@ -113,6 +123,7 @@ impl ShellState {
                 }
             }
             SettingsChange::ApprovalPolicy(policy) => self.approval_policy = policy,
+            SettingsChange::AppTheme(app_theme) => self.app_theme = app_theme,
             SettingsChange::Theme(theme) => self.tui_theme = theme,
             SettingsChange::Animations(animations) => self.animations = animations,
             SettingsChange::Tooltips(show_tooltips) => self.show_tooltips = show_tooltips,

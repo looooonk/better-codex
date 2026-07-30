@@ -1,8 +1,6 @@
 use super::backend::AppShellBackend;
-use super::design::MOCHA_BASE;
-use super::design::MOCHA_MANTLE;
-use super::design::MOCHA_SURFACE0;
 use super::design::fill_rect;
+use super::design::palette;
 use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::startup_layout::STARTUP_FOOTER_HEIGHT;
@@ -12,6 +10,7 @@ use crate::config_update::build_project_trust_level_edit;
 use crate::legacy_core::config::Config;
 use crate::tui;
 use crate::tui::TuiEvent;
+use codex_config::types::TuiAppTheme;
 use codex_exec_server::LOCAL_FS;
 use codex_git_utils::resolve_root_git_project_for_trust;
 use codex_protocol::config_types::TrustLevel;
@@ -79,15 +78,17 @@ impl StartupSelection {
 struct StartupOnboardingState {
     cwd: PathBuf,
     trust_target: PathBuf,
+    app_theme: TuiAppTheme,
     selected: usize,
     error: Option<String>,
 }
 
 impl StartupOnboardingState {
-    fn new(cwd: PathBuf, trust_target: PathBuf) -> Self {
+    fn new(cwd: PathBuf, trust_target: PathBuf, app_theme: TuiAppTheme) -> Self {
         Self {
             cwd,
             trust_target,
+            app_theme,
             selected: 0,
             error: None,
         }
@@ -138,7 +139,7 @@ pub(crate) async fn run_startup_onboarding(
         .await
         .map(Into::into)
         .unwrap_or_else(|| cwd.clone());
-    let mut state = StartupOnboardingState::new(cwd, trust_target);
+    let mut state = StartupOnboardingState::new(cwd, trust_target, config.tui_app_theme);
     let mut tui_events = tui.event_stream();
 
     loop {
@@ -257,7 +258,8 @@ struct StartupOnboardingView<'a> {
 
 impl StartupOnboardingView<'_> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_BASE);
+        let _active_theme = crate::app_theme::activate(self.state.app_theme);
+        fill_rect(buf, area, palette::base());
         let panes = startup_panes(area);
         self.render_main(panes.main, buf);
         if let Some(sidebar) = panes.sidebar {
@@ -266,7 +268,7 @@ impl StartupOnboardingView<'_> {
     }
 
     fn render_main(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_BASE);
+        fill_rect(buf, area, palette::base());
         let vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -275,9 +277,9 @@ impl StartupOnboardingView<'_> {
                 Constraint::Length(STARTUP_FOOTER_HEIGHT),
             ])
             .split(area);
-        fill_rect(buf, vertical[0], MOCHA_MANTLE);
-        Paragraph::new(Line::from("Better Codex".magenta().bold()))
-            .style(pane_style(MOCHA_MANTLE))
+        fill_rect(buf, vertical[0], palette::dark());
+        Paragraph::new(Line::from("Better Codex".fg(palette::purple()).bold()))
+            .style(pane_style(palette::dark()))
             .render(pane_content_rect(vertical[0]), buf);
 
         let content = pane_content_rect(vertical[1]);
@@ -323,24 +325,24 @@ impl StartupOnboardingView<'_> {
             lines.extend(
                 wrapped_lines(error, usize::from(content.width))
                     .into_iter()
-                    .map(ratatui::prelude::Stylize::red),
+                    .map(|line| line.fg(palette::error())),
             );
         }
         Paragraph::new(lines)
-            .style(pane_style(MOCHA_BASE))
+            .style(pane_style(palette::base()))
             .render(content, buf);
 
-        fill_rect(buf, vertical[2], MOCHA_SURFACE0);
+        fill_rect(buf, vertical[2], palette::surface());
         Paragraph::new(vec![
             Line::from("Enter continue  Up/Down choose  1/2/3 jump  Esc exit".dim()),
             Line::from("You can change this later from config.toml.".dim()),
         ])
-        .style(pane_style(MOCHA_SURFACE0))
+        .style(pane_style(palette::surface()))
         .render(pane_content_rect(vertical[2]), buf);
     }
 
     fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_SURFACE0);
+        fill_rect(buf, area, palette::surface());
         let content = pane_content_rect(area);
         let mut lines = vec![
             Line::from("Startup".bold()),
@@ -360,17 +362,17 @@ impl StartupOnboardingView<'_> {
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             "selected ".dim(),
-            self.state.selected().label().cyan().bold(),
+            self.state.selected().label().fg(palette::cyan()).bold(),
         ]));
         Paragraph::new(lines)
-            .style(pane_style(MOCHA_SURFACE0))
+            .style(pane_style(palette::surface()))
             .render(content, buf);
     }
 }
 
 fn selection_line(index: usize, selection: StartupSelection, selected: bool) -> Line<'static> {
     let marker = if selected {
-        ">".cyan().bold()
+        ">".fg(palette::cyan()).bold()
     } else {
         " ".dim()
     };
@@ -399,6 +401,7 @@ fn wrapped_lines_with_indent(text: &str, width: usize, indent: &'static str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::unique_buffer_styles;
     use crossterm::event::KeyModifiers;
     use pretty_assertions::assert_eq;
     use ratatui::Terminal;
@@ -409,6 +412,7 @@ mod tests {
         let mut state = StartupOnboardingState::new(
             PathBuf::from("/workspace/project"),
             PathBuf::from("/workspace/project"),
+            TuiAppTheme::TokyoNight,
         );
 
         assert_eq!(
@@ -432,6 +436,7 @@ mod tests {
         let state = StartupOnboardingState::new(
             PathBuf::from("/workspace/project/crate"),
             PathBuf::from("/workspace/project"),
+            TuiAppTheme::TokyoNight,
         );
         let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
         let mut terminal = Terminal::new(backend).expect("create terminal");
@@ -445,10 +450,29 @@ mod tests {
     }
 
     #[test]
+    fn startup_onboarding_view_uses_gruvbox_dark_styles() {
+        let state = StartupOnboardingState::new(
+            PathBuf::from("/workspace/project/crate"),
+            PathBuf::from("/workspace/project"),
+            TuiAppTheme::GruvboxDark,
+        );
+        let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+
+        terminal
+            .draw(|frame| {
+                StartupOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut());
+            })
+            .expect("draw startup onboarding");
+        insta::assert_debug_snapshot!(unique_buffer_styles(terminal.backend().buffer()));
+    }
+
+    #[test]
     fn narrow_startup_onboarding_gives_choices_the_full_width() {
         let state = StartupOnboardingState::new(
             PathBuf::from("/workspace/project/crate"),
             PathBuf::from("/workspace/project"),
+            TuiAppTheme::GruvboxDark,
         );
         let backend = TestBackend::new(/*width*/ 60, /*height*/ 28);
         let mut terminal = Terminal::new(backend).expect("create terminal");

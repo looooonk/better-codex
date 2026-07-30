@@ -125,26 +125,26 @@ impl DashboardTabs {
                 };
                 labels.push(tab_span(label, cell.route == active_route));
                 if has_separator {
-                    labels.push("│".fg(palette::BORDER).bg(palette::DARK));
+                    labels.push("│".fg(palette::border()).bg(palette::dark()));
                 }
                 let rule = if cell.route == active_route {
                     "━"
                         .repeat(usize::from(label_width))
-                        .set_style(Style::new().fg(palette::FOCUS).bg(palette::DARK).bold())
+                        .set_style(Style::new().fg(palette::focus()).bg(palette::dark()).bold())
                 } else {
                     "─"
                         .repeat(usize::from(label_width))
-                        .set_style(Style::new().fg(palette::BORDER).bg(palette::DARK))
+                        .set_style(Style::new().fg(palette::border()).bg(palette::dark()))
                 };
                 underline.push(rule);
                 if has_separator {
-                    underline.push("─".fg(palette::BORDER).bg(palette::DARK));
+                    underline.push("─".fg(palette::border()).bg(palette::dark()));
                 }
             }
         }
         [
-            Line::from(labels).bg(palette::DARK),
-            Line::from(underline).bg(palette::DARK),
+            Line::from(labels).bg(palette::dark()),
+            Line::from(underline).bg(palette::dark()),
         ]
     }
 

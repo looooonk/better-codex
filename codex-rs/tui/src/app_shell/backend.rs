@@ -4,6 +4,8 @@ use crate::app_server_session::ForkGoalContinuation;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::config_update::write_config_batch;
 use crate::legacy_core::config::Config;
+use crate::legacy_core::config::edit::ConfigEditsBuilder;
+use crate::legacy_core::config::edit::app_theme_edit;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ClientRequest;
@@ -44,6 +46,7 @@ use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput;
+use codex_config::types::TuiAppTheme;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
@@ -52,6 +55,7 @@ use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::Result;
+use color_eyre::eyre::eyre;
 use std::path::PathBuf;
 use tokio::task::JoinHandle;
 use uuid::Uuid;
@@ -197,6 +201,16 @@ pub(super) trait AppShellBackend {
         &self,
         edits: Vec<ConfigEdit>,
         thread_update: Option<ThreadSettingsUpdateParams>,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static;
+
+    /// Persists the terminal client's theme in its local user config.
+    ///
+    /// Implementations must not route this write through a connected remote
+    /// app server because the theme belongs to the client rendering the TUI.
+    fn persist_app_theme_in_background(
+        &self,
+        config_path: AbsolutePathBuf,
+        app_theme: TuiAppTheme,
     ) -> impl std::future::Future<Output = Result<()>> + Send + 'static;
 
     fn mcp_server_status_list(
@@ -568,6 +582,23 @@ impl AppShellBackend for AppServerSession {
             edits,
             thread_update,
         )
+    }
+
+    // An `async fn` would capture `&self`, but callers must be able to spawn
+    // this self-independent write as a `'static` background task.
+    #[allow(clippy::manual_async_fn)]
+    fn persist_app_theme_in_background(
+        &self,
+        config_path: AbsolutePathBuf,
+        app_theme: TuiAppTheme,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static {
+        async move {
+            ConfigEditsBuilder::for_config_path(&config_path)
+                .with_edits([app_theme_edit(app_theme)])
+                .apply()
+                .await
+                .map_err(|err| eyre!("failed to persist local app theme: {err:#}"))
+        }
     }
 
     async fn mcp_server_status_list(

@@ -1,5 +1,6 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::design::palette;
 use super::is_unmodified_action_key;
 use super::is_unmodified_key_event;
 use super::is_unmodified_key_press;
@@ -278,7 +279,7 @@ impl McpManagementState {
         let mut lines = vec![
             vec![
                 format!("{}/{}", self.selected + 1, self.servers.len())
-                    .cyan()
+                    .fg(palette::cyan())
                     .bold(),
                 " mcp servers".into(),
                 "  ↑↓ / j k navigate".dim(),
@@ -297,7 +298,7 @@ impl McpManagementState {
             .take(VISIBLE_MCP_ROWS)
         {
             let marker = if index == self.selected {
-                ">".cyan().bold()
+                ">".fg(palette::cyan()).bold()
             } else {
                 " ".into()
             };

@@ -1,4 +1,8 @@
+use super::design::markdown_styles;
 use super::design::palette;
+use crate::git_action_directives::parse_assistant_markdown;
+use crate::markdown_render::render_markdown_text_with_width_cwd_and_styles;
+use crate::reasoning_summary::split_reasoning_summary_parts;
 use crate::session_transcript::RawReasoningVisibility;
 use crate::session_transcript::TranscriptLines;
 use crate::session_transcript::thread_item_to_transcript_lines;
@@ -54,7 +58,7 @@ pub(super) fn thread_to_agent_log_lines(
         return Ok(vec![
             "No subagent activity available"
                 .italic()
-                .fg(palette::MUTED)
+                .fg(palette::muted())
                 .into(),
         ]);
     }
@@ -110,10 +114,10 @@ fn render_turn<'a>(
         if !lines.is_empty() {
             lines.push(Line::default());
         }
-        lines.push("Turn failed".bold().fg(palette::ERROR).into());
+        lines.push("Turn failed".bold().fg(palette::error()).into());
         lines.push(
             truncate_text(&error.message, MAX_ERROR_GRAPHEMES)
-                .fg(palette::ERROR)
+                .fg(palette::error())
                 .into(),
         );
     }
@@ -123,13 +127,13 @@ fn render_turn<'a>(
 fn turn_header(index: usize, turn: &Turn) -> Line<'static> {
     let (status, color) = turn_status(&turn.status);
     let mut spans = vec![
-        format!("Turn {index}").bold().fg(palette::PURPLE),
+        format!("Turn {index}").bold().fg(palette::purple()),
         "  ".into(),
         status.fg(color),
     ];
     if let Some(duration_ms) = turn.duration_ms {
         spans.push("  ".into());
-        spans.push(format_duration(duration_ms).fg(palette::MUTED));
+        spans.push(format_duration(duration_ms).fg(palette::muted()));
     }
     spans.into()
 }
@@ -199,18 +203,57 @@ fn agent_item_lines(
             kind, agent_path, ..
         } => vec![
             vec![
-                "Agent".bold().fg(palette::PURPLE),
+                "Agent".bold().fg(palette::purple()),
                 "  ".into(),
-                format!("{kind:?}").fg(palette::MUTED),
+                format!("{kind:?}").fg(palette::muted()),
                 "  ".into(),
                 agent_path.clone().into(),
             ]
             .into(),
         ],
-        ThreadItem::AgentMessage { .. }
-        | ThreadItem::Plan { .. }
-        | ThreadItem::Reasoning { .. }
-        | ThreadItem::WebSearch(_)
+        ThreadItem::AgentMessage { text, .. } => {
+            let parsed = parse_assistant_markdown(text, &thread.cwd);
+            if parsed.visible_markdown.trim().is_empty() {
+                Vec::new()
+            } else {
+                let mut lines = vec!["Assistant".bold().fg(palette::purple()).into()];
+                lines.extend(
+                    render_markdown_text_with_width_cwd_and_styles(
+                        &parsed.visible_markdown,
+                        /*width*/ None,
+                        Some(&thread.cwd),
+                        markdown_styles(),
+                    )
+                    .lines,
+                );
+                lines
+            }
+        }
+        ThreadItem::Plan { text, .. } => {
+            themed_prefixed_text("Plan", text.clone(), palette::success())
+        }
+        ThreadItem::Reasoning {
+            summary, content, ..
+        } => {
+            let (header, text) =
+                if matches!(raw_reasoning_visibility, RawReasoningVisibility::Visible)
+                    && !content.is_empty()
+                {
+                    ("Reasoning".to_string(), content.join("\n\n"))
+                } else {
+                    split_reasoning_summary_parts(summary)
+                };
+            themed_prefixed_text(
+                if header.is_empty() {
+                    "Reasoning"
+                } else {
+                    &header
+                },
+                text,
+                palette::muted(),
+            )
+        }
+        ThreadItem::WebSearch(_)
         | ThreadItem::ImageView { .. }
         | ThreadItem::Sleep { .. }
         | ThreadItem::ImageGeneration(_)
@@ -222,6 +265,15 @@ fn agent_item_lines(
     }
 }
 
+fn themed_prefixed_text(label: &str, text: String, color: Color) -> TranscriptLines {
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![label.to_string().fg(color).bold().into()];
+    lines.extend(text.lines().map(|line| line.to_string().into()));
+    lines
+}
+
 fn command_lines(
     command: &str,
     status: &CommandExecutionStatus,
@@ -231,21 +283,21 @@ fn command_lines(
 ) -> TranscriptLines {
     let (status, color) = command_status(status);
     let mut header = vec![
-        "Command".bold().fg(palette::PURPLE),
+        "Command".bold().fg(palette::purple()),
         "  ".into(),
         status.fg(color),
     ];
     if let Some(exit_code) = exit_code {
         header.push("  ".into());
-        header.push(format!("exit {exit_code}").fg(palette::MUTED));
+        header.push(format!("exit {exit_code}").fg(palette::muted()));
     }
     if let Some(duration_ms) = duration_ms {
         header.push("  ".into());
-        header.push(format_duration(duration_ms).fg(palette::MUTED));
+        header.push(format_duration(duration_ms).fg(palette::muted()));
     }
     let mut lines = vec![
         header.into(),
-        vec!["$ ".fg(palette::MUTED), command.to_string().into()].into(),
+        vec!["$ ".fg(palette::muted()), command.to_string().into()].into(),
     ];
     let Some(output) = output
         .map(str::trim_end)
@@ -258,7 +310,7 @@ fn command_lines(
     lines.push(Line::default());
     lines.push(
         if visible_start == 0 {
-            "Output".bold().fg(palette::MUTED)
+            "Output".bold().fg(palette::muted())
         } else {
             format!(
                 "Output  last {} of {} lines",
@@ -266,13 +318,13 @@ fn command_lines(
                 output_lines.len()
             )
             .bold()
-            .fg(palette::MUTED)
+            .fg(palette::muted())
         }
         .into(),
     );
     lines.extend(output_lines[visible_start..].iter().map(|line| {
         truncate_text(line.trim_end(), MAX_OUTPUT_LINE_GRAPHEMES)
-            .fg(palette::MUTED)
+            .fg(palette::muted())
             .into()
     }));
     lines
@@ -285,7 +337,7 @@ fn file_change_lines(
     let (status, color) = patch_status(status);
     let mut lines = vec![
         vec![
-            "Edits".bold().fg(palette::PURPLE),
+            "Edits".bold().fg(palette::purple()),
             "  ".into(),
             status.fg(color),
             "  ".into(),
@@ -294,18 +346,22 @@ fn file_change_lines(
                 changes.len(),
                 if changes.len() == 1 { "file" } else { "files" }
             )
-            .fg(palette::MUTED),
+            .fg(palette::muted()),
         ]
         .into(),
     ];
     lines.extend(changes.iter().take(MAX_FILE_ROWS).map(|change| {
         let (marker, color, destination) = match &change.kind {
-            PatchChangeKind::Add => ("A", palette::SUCCESS, None),
-            PatchChangeKind::Delete => ("D", palette::ERROR, None),
+            PatchChangeKind::Add => ("A", palette::success(), None),
+            PatchChangeKind::Delete => ("D", palette::error(), None),
             PatchChangeKind::Update {
                 move_path: Some(move_path),
-            } => ("R", palette::WARNING, Some(move_path.display().to_string())),
-            PatchChangeKind::Update { move_path: None } => ("M", palette::WARNING, None),
+            } => (
+                "R",
+                palette::warning(),
+                Some(move_path.display().to_string()),
+            ),
+            PatchChangeKind::Update { move_path: None } => ("M", palette::warning(), None),
         };
         let mut spans = vec![
             "  ".into(),
@@ -314,7 +370,7 @@ fn file_change_lines(
             change.path.clone().into(),
         ];
         if let Some(destination) = destination {
-            spans.push(" -> ".fg(palette::MUTED));
+            spans.push(" -> ".fg(palette::muted()));
             spans.push(destination.into());
         }
         spans.into()
@@ -322,7 +378,7 @@ fn file_change_lines(
     if changes.len() > MAX_FILE_ROWS {
         lines.push(
             format!("  ... {} more files", changes.len() - MAX_FILE_ROWS)
-                .fg(palette::MUTED)
+                .fg(palette::muted())
                 .into(),
         );
     }
@@ -336,7 +392,7 @@ fn tool_lines(
     duration_ms: Option<i64>,
 ) -> TranscriptLines {
     let mut spans = vec![
-        "Tool".bold().fg(palette::PURPLE),
+        "Tool".bold().fg(palette::purple()),
         "  ".into(),
         name.to_string().into(),
         "  ".into(),
@@ -344,13 +400,13 @@ fn tool_lines(
     ];
     if let Some(duration_ms) = duration_ms {
         spans.push("  ".into());
-        spans.push(format_duration(duration_ms).fg(palette::MUTED));
+        spans.push(format_duration(duration_ms).fg(palette::muted()));
     }
     let mut lines = vec![spans.into()];
     if let Some(error) = error {
         lines.push(
             truncate_text(error, MAX_ERROR_GRAPHEMES)
-                .fg(palette::ERROR)
+                .fg(palette::error())
                 .into(),
         );
     }
@@ -371,7 +427,7 @@ fn collaboration_lines(
     };
     let (status, color) = collaboration_status(status);
     let mut spans = vec![
-        "Agent".bold().fg(palette::PURPLE),
+        "Agent".bold().fg(palette::purple()),
         "  ".into(),
         action.into(),
         "  ".into(),
@@ -379,59 +435,59 @@ fn collaboration_lines(
     ];
     if receiver_count > 1 {
         spans.push("  ".into());
-        spans.push(format!("{receiver_count} agents").fg(palette::MUTED));
+        spans.push(format!("{receiver_count} agents").fg(palette::muted()));
     }
     vec![spans.into()]
 }
 
 fn turn_status(status: &TurnStatus) -> (&'static str, Color) {
     match status {
-        TurnStatus::Completed => ("Completed", palette::SUCCESS),
-        TurnStatus::Interrupted => ("Interrupted", palette::WARNING),
-        TurnStatus::Failed => ("Failed", palette::ERROR),
-        TurnStatus::InProgress => ("Running", palette::WARNING),
+        TurnStatus::Completed => ("Completed", palette::success()),
+        TurnStatus::Interrupted => ("Interrupted", palette::warning()),
+        TurnStatus::Failed => ("Failed", palette::error()),
+        TurnStatus::InProgress => ("Running", palette::warning()),
     }
 }
 
 fn command_status(status: &CommandExecutionStatus) -> (&'static str, Color) {
     match status {
-        CommandExecutionStatus::InProgress => ("Running", palette::WARNING),
-        CommandExecutionStatus::Completed => ("Completed", palette::SUCCESS),
-        CommandExecutionStatus::Failed => ("Failed", palette::ERROR),
-        CommandExecutionStatus::Declined => ("Declined", palette::WARNING),
+        CommandExecutionStatus::InProgress => ("Running", palette::warning()),
+        CommandExecutionStatus::Completed => ("Completed", palette::success()),
+        CommandExecutionStatus::Failed => ("Failed", palette::error()),
+        CommandExecutionStatus::Declined => ("Declined", palette::warning()),
     }
 }
 
 fn patch_status(status: &PatchApplyStatus) -> (&'static str, Color) {
     match status {
-        PatchApplyStatus::InProgress => ("Applying", palette::WARNING),
-        PatchApplyStatus::Completed => ("Completed", palette::SUCCESS),
-        PatchApplyStatus::Failed => ("Failed", palette::ERROR),
-        PatchApplyStatus::Declined => ("Declined", palette::WARNING),
+        PatchApplyStatus::InProgress => ("Applying", palette::warning()),
+        PatchApplyStatus::Completed => ("Completed", palette::success()),
+        PatchApplyStatus::Failed => ("Failed", palette::error()),
+        PatchApplyStatus::Declined => ("Declined", palette::warning()),
     }
 }
 
 fn mcp_status(status: &McpToolCallStatus) -> (&'static str, Color) {
     match status {
-        McpToolCallStatus::InProgress => ("Running", palette::WARNING),
-        McpToolCallStatus::Completed => ("Completed", palette::SUCCESS),
-        McpToolCallStatus::Failed => ("Failed", palette::ERROR),
+        McpToolCallStatus::InProgress => ("Running", palette::warning()),
+        McpToolCallStatus::Completed => ("Completed", palette::success()),
+        McpToolCallStatus::Failed => ("Failed", palette::error()),
     }
 }
 
 fn dynamic_tool_status(status: &DynamicToolCallStatus) -> (&'static str, Color) {
     match status {
-        DynamicToolCallStatus::InProgress => ("Running", palette::WARNING),
-        DynamicToolCallStatus::Completed => ("Completed", palette::SUCCESS),
-        DynamicToolCallStatus::Failed => ("Failed", palette::ERROR),
+        DynamicToolCallStatus::InProgress => ("Running", palette::warning()),
+        DynamicToolCallStatus::Completed => ("Completed", palette::success()),
+        DynamicToolCallStatus::Failed => ("Failed", palette::error()),
     }
 }
 
 fn collaboration_status(status: &CollabAgentToolCallStatus) -> (&'static str, Color) {
     match status {
-        CollabAgentToolCallStatus::InProgress => ("Running", palette::WARNING),
-        CollabAgentToolCallStatus::Completed => ("Completed", palette::SUCCESS),
-        CollabAgentToolCallStatus::Failed => ("Failed", palette::ERROR),
+        CollabAgentToolCallStatus::InProgress => ("Running", palette::warning()),
+        CollabAgentToolCallStatus::Completed => ("Completed", palette::success()),
+        CollabAgentToolCallStatus::Failed => ("Failed", palette::error()),
     }
 }
 

@@ -9,6 +9,7 @@ Model
   Reasoning: default
   Service tier: default
 
+
 Permissions
  Model │ Permissions │ Appearance │ Integrations
 ────────━━━━━━━━━━━━━────────────────────────────
@@ -16,10 +17,12 @@ Permissions
 
 
 
+
 Appearance
  Model │ Permissions │ Appearance │ Integrations
 ──────────────────────━━━━━━━━━━━━───────────────
-› Syntax theme: default
+› App theme: Tokyo Night
+  Syntax theme: default
   Animations: on
   Tooltips: on
 

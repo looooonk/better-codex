@@ -1,8 +1,6 @@
 use super::backend::AppShellBackend;
-use super::design::MOCHA_BASE;
-use super::design::MOCHA_MANTLE;
-use super::design::MOCHA_SURFACE0;
 use super::design::fill_rect;
+use super::design::palette;
 use super::design::pane_content_rect;
 use super::design::pane_style;
 use super::startup_layout::STARTUP_FOOTER_HEIGHT;
@@ -15,6 +13,7 @@ use crate::model_migration::ModelMigrationCopy;
 use crate::model_migration::migration_copy_for_models;
 use crate::tui;
 use crate::tui::TuiEvent;
+use codex_config::types::TuiAppTheme;
 use codex_models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG;
 use codex_models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
 use codex_protocol::openai_models::ModelPreset;
@@ -96,14 +95,16 @@ struct ModelMigrationPromptData {
 #[derive(Clone)]
 struct ModelMigrationOnboardingState {
     prompt: ModelMigrationPromptData,
+    app_theme: TuiAppTheme,
     selected: usize,
     error: Option<String>,
 }
 
 impl ModelMigrationOnboardingState {
-    fn new(prompt: ModelMigrationPromptData) -> Self {
+    fn new(prompt: ModelMigrationPromptData, app_theme: TuiAppTheme) -> Self {
         Self {
             prompt,
+            app_theme,
             selected: 0,
             error: None,
         }
@@ -164,7 +165,7 @@ pub(crate) async fn run_model_migration_onboarding(
         return Ok(ModelMigrationOnboardingOutcome::Continue);
     };
 
-    let mut state = ModelMigrationOnboardingState::new(prompt);
+    let mut state = ModelMigrationOnboardingState::new(prompt, config.tui_app_theme);
     let mut tui_events = tui.event_stream();
     tui.frame_requester().schedule_frame();
 
@@ -428,7 +429,8 @@ struct ModelMigrationOnboardingView<'a> {
 
 impl ModelMigrationOnboardingView<'_> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_BASE);
+        let _active_theme = crate::app_theme::activate(self.state.app_theme);
+        fill_rect(buf, area, palette::base());
         let panes = startup_panes(area);
         self.render_main(panes.main, buf);
         if let Some(sidebar) = panes.sidebar {
@@ -437,7 +439,7 @@ impl ModelMigrationOnboardingView<'_> {
     }
 
     fn render_main(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_BASE);
+        fill_rect(buf, area, palette::base());
         let vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -446,9 +448,9 @@ impl ModelMigrationOnboardingView<'_> {
                 Constraint::Length(STARTUP_FOOTER_HEIGHT),
             ])
             .split(area);
-        fill_rect(buf, vertical[0], MOCHA_MANTLE);
-        Paragraph::new(Line::from("Better Codex".magenta().bold()))
-            .style(pane_style(MOCHA_MANTLE))
+        fill_rect(buf, vertical[0], palette::dark());
+        Paragraph::new(Line::from("Better Codex".fg(palette::purple()).bold()))
+            .style(pane_style(palette::dark()))
             .render(pane_content_rect(vertical[0]), buf);
 
         let content = pane_content_rect(vertical[1]);
@@ -480,24 +482,24 @@ impl ModelMigrationOnboardingView<'_> {
             lines.extend(
                 wrapped_lines(error, usize::from(content.width))
                     .into_iter()
-                    .map(ratatui::prelude::Stylize::red),
+                    .map(|line| line.fg(palette::error())),
             );
         }
         Paragraph::new(lines)
-            .style(pane_style(MOCHA_BASE))
+            .style(pane_style(palette::base()))
             .render(content, buf);
 
-        fill_rect(buf, vertical[2], MOCHA_SURFACE0);
+        fill_rect(buf, vertical[2], palette::surface());
         Paragraph::new(vec![
             Line::from("Enter continue  Up/Down choose  1/2/3 jump  Esc exit".dim()),
             Line::from("The decision is saved through app-server config.".dim()),
         ])
-        .style(pane_style(MOCHA_SURFACE0))
+        .style(pane_style(palette::surface()))
         .render(pane_content_rect(vertical[2]), buf);
     }
 
     fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_SURFACE0);
+        fill_rect(buf, area, palette::surface());
         let content = pane_content_rect(area);
         let mut lines = vec![
             Line::from("Startup".bold()),
@@ -528,11 +530,11 @@ impl ModelMigrationOnboardingView<'_> {
             self.state
                 .selected()
                 .label(self.state.prompt.copy.can_opt_out)
-                .cyan()
+                .fg(palette::cyan())
                 .bold(),
         ]));
         Paragraph::new(lines)
-            .style(pane_style(MOCHA_SURFACE0))
+            .style(pane_style(palette::surface()))
             .render(content, buf);
     }
 }
@@ -544,7 +546,7 @@ fn model_migration_selection_line(
     selected: bool,
 ) -> Line<'static> {
     let marker = if selected {
-        ">".cyan().bold()
+        ">".fg(palette::cyan()).bold()
     } else {
         " ".dim()
     };

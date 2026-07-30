@@ -109,9 +109,9 @@ fn two_column_lines(
                     .into(),
             );
             match right.get(index) {
-                Some(HelpRow::Spacer) | None => spans.push("│".fg(palette::BORDER)),
+                Some(HelpRow::Spacer) | None => spans.push("│".fg(palette::border())),
                 Some(row) => {
-                    spans.push(HELP_COLUMN_GAP.fg(palette::BORDER));
+                    spans.push(HELP_COLUMN_GAP.fg(palette::border()));
                     spans.extend(
                         truncate_line_with_ellipsis_if_overflow(
                             help_row_line(*row, key_width),
@@ -129,14 +129,14 @@ fn two_column_lines(
 fn help_row_line(row: HelpRow, key_width: usize) -> Line<'static> {
     match row {
         HelpRow::Section(title) => Line::from(vec![
-            "◆ ".fg(palette::PURPLE),
-            title.to_string().fg(palette::PURPLE).bold(),
+            "◆ ".fg(palette::purple()),
+            title.to_string().fg(palette::purple()).bold(),
         ]),
         HelpRow::Shortcut(shortcut) => {
             let padding = key_width.saturating_sub(UnicodeWidthStr::width(shortcut.keys));
             let key_label = format!(" {}{} ", shortcut.keys, " ".repeat(padding));
             Line::from(vec![
-                key_label.fg(palette::CYAN),
+                key_label.fg(palette::cyan()),
                 " ".into(),
                 shortcut.description.into(),
             ])

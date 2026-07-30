@@ -1,0 +1,16 @@
+---
+source: tui/src/app_shell/startup.rs
+expression: unique_buffer_styles(terminal.backend().buffer())
+---
+[
+    "Style::new().fg(Color::Rgb(142, 192, 124)).bg(Color::Rgb(40, 40, 40)).underline_color(Color::Reset).bold()",
+    "Style::new().fg(Color::Rgb(142, 192, 124)).bg(Color::Rgb(60, 56, 54)).underline_color(Color::Reset).bold()",
+    "Style::new().fg(Color::Rgb(211, 134, 155)).bg(Color::Rgb(29, 32, 33)).underline_color(Color::Reset).bold()",
+    "Style::new().fg(Color::Rgb(235, 219, 178)).bg(Color::Rgb(29, 32, 33)).underline_color(Color::Reset)",
+    "Style::new().fg(Color::Rgb(235, 219, 178)).bg(Color::Rgb(40, 40, 40)).underline_color(Color::Reset)",
+    "Style::new().fg(Color::Rgb(235, 219, 178)).bg(Color::Rgb(40, 40, 40)).underline_color(Color::Reset).bold()",
+    "Style::new().fg(Color::Rgb(235, 219, 178)).bg(Color::Rgb(40, 40, 40)).underline_color(Color::Reset).dim()",
+    "Style::new().fg(Color::Rgb(235, 219, 178)).bg(Color::Rgb(60, 56, 54)).underline_color(Color::Reset)",
+    "Style::new().fg(Color::Rgb(235, 219, 178)).bg(Color::Rgb(60, 56, 54)).underline_color(Color::Reset).bold()",
+    "Style::new().fg(Color::Rgb(235, 219, 178)).bg(Color::Rgb(60, 56, 54)).underline_color(Color::Reset).dim()",
+]

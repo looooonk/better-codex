@@ -175,14 +175,14 @@ fn diff_cells_and_file_statuses_use_semantic_colors() {
     let removed = position_of(&buf, geometry.old, "stale value").expect("removal should render");
     let added = position_of(&buf, geometry.new, "fresh value").expect("addition should render");
 
-    assert_eq!(buf[hunk].style().fg, Some(palette::CYAN));
-    assert_eq!(buf[removed].style().fg, Some(palette::ERROR));
-    assert_eq!(buf[added].style().fg, Some(palette::SUCCESS));
+    assert_eq!(buf[hunk].style().fg, Some(palette::cyan()));
+    assert_eq!(buf[removed].style().fg, Some(palette::error()));
+    assert_eq!(buf[added].style().fg, Some(palette::success()));
     for (offset, color) in [
-        palette::WARNING,
-        palette::SUCCESS,
-        palette::ERROR,
-        palette::CYAN,
+        palette::warning(),
+        palette::success(),
+        palette::error(),
+        palette::cyan(),
     ]
     .into_iter()
     .enumerate()
@@ -198,7 +198,7 @@ fn diff_cells_and_file_statuses_use_semantic_colors() {
     }
     assert_eq!(
         buf[(geometry.files.x, geometry.files.y)].style().bg,
-        Some(palette::ELEVATED)
+        Some(palette::elevated())
     );
 }
 
@@ -229,16 +229,16 @@ fn diff_lines_use_full_pane_semantic_backgrounds() {
     let solid = |area: Rect, background| vec![Some(background); usize::from(area.width)];
     let surface_pair = || {
         (
-            solid(geometry.old, palette::SURFACE),
-            solid(geometry.new, palette::SURFACE),
+            solid(geometry.old, palette::surface()),
+            solid(geometry.new, palette::surface()),
         )
     };
 
     assert_eq!(
         pair(removed.y),
         (
-            solid(geometry.old, palette::DIFF_REMOVED_BACKGROUND),
-            solid(geometry.new, palette::DIFF_ADDED_BACKGROUND),
+            solid(geometry.old, palette::diff_removed_background()),
+            solid(geometry.new, palette::diff_added_background()),
         )
     );
     for y in [hunk.y, context.y] {
@@ -247,8 +247,8 @@ fn diff_lines_use_full_pane_semantic_backgrounds() {
     assert_eq!(
         pair(unmatched.y),
         (
-            solid(geometry.old, palette::SURFACE),
-            solid(geometry.new, palette::DIFF_ADDED_BACKGROUND),
+            solid(geometry.old, palette::surface()),
+            solid(geometry.new, palette::diff_added_background()),
         )
     );
     let separator_styles = geometry
@@ -263,7 +263,7 @@ fn diff_lines_use_full_pane_semantic_backgrounds() {
     assert_eq!(
         separator_styles,
         vec![
-            (Some(palette::BORDER), Some(palette::SURFACE));
+            (Some(palette::border()), Some(palette::surface()));
             geometry.separators.into_iter().flatten().count()
         ]
     );
@@ -275,11 +275,11 @@ fn diff_lines_use_full_pane_semantic_backgrounds() {
                 let background = row.first().copied().flatten();
                 if row.iter().any(|cell| *cell != background) {
                     "mixed"
-                } else if background == Some(palette::DIFF_ADDED_BACKGROUND) {
+                } else if background == Some(palette::diff_added_background()) {
                     "added"
-                } else if background == Some(palette::DIFF_REMOVED_BACKGROUND) {
+                } else if background == Some(palette::diff_removed_background()) {
                     "removed"
-                } else if background == Some(palette::SURFACE) {
+                } else if background == Some(palette::surface()) {
                     "surface"
                 } else {
                     "other"
@@ -479,7 +479,7 @@ fn assert_diff_pane_surface(
     let pane = pane(geometry);
     for y in geometry.labels.y..geometry.body.bottom() {
         for x in pane.x..pane.right() {
-            assert_eq!(buf[(x, y)].style().bg, Some(palette::SURFACE));
+            assert_eq!(buf[(x, y)].style().bg, Some(palette::surface()));
         }
     }
 }

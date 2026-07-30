@@ -8,14 +8,14 @@ use ratatui::text::Line;
 
 pub(super) fn approval_lines(pending: &PendingApproval) -> Vec<Line<'static>> {
     let mut lines = vec![Line::from(vec![
-        "? ".fg(palette::WARNING).bold(),
-        pending.title().to_string().fg(palette::TEXT).bold(),
+        "? ".fg(palette::warning()).bold(),
+        pending.title().to_string().fg(palette::text()).bold(),
     ])];
     lines.extend(
         pending
             .details()
             .iter()
-            .map(|detail| Line::from(vec!["  ".into(), detail.clone().fg(palette::MUTED)])),
+            .map(|detail| Line::from(vec!["  ".into(), detail.clone().fg(palette::muted())])),
     );
     lines.extend(pending.options().map(|(index, label)| {
         let marker = if index == pending.selected_option() {
@@ -24,16 +24,22 @@ pub(super) fn approval_lines(pending: &PendingApproval) -> Vec<Line<'static>> {
             "  "
         };
         Line::from(vec![
-            marker.fg(palette::FOCUS).bold(),
-            format!("{} ", index + 1).fg(palette::SUCCESS).bold(),
-            label.to_string().fg(palette::TEXT),
+            marker.fg(palette::focus()).bold(),
+            format!("{} ", index + 1).fg(palette::success()).bold(),
+            label.to_string().fg(palette::text()),
         ])
     }));
     lines.push(Line::from(vec![
         "  ".into(),
-        " e Edit ".fg(palette::TEXT).bg(palette::ELEVATED).bold(),
+        " e Edit "
+            .fg(palette::text())
+            .bg(palette::elevated())
+            .bold(),
         " ".into(),
-        " ? Explain ".fg(palette::TEXT).bg(palette::ELEVATED).bold(),
+        " ? Explain "
+            .fg(palette::text())
+            .bg(palette::elevated())
+            .bold(),
     ]));
     lines
 }
@@ -46,7 +52,7 @@ pub(super) fn user_input_lines(
     let mut lines = Vec::new();
     let (current, total) = pending.question_position();
     lines.push(Line::from(vec![
-        "? ".cyan().bold(),
+        "? ".fg(palette::cyan()).bold(),
         format!("{} ({current}/{total})", pending.title()).bold(),
     ]));
 
@@ -65,7 +71,7 @@ pub(super) fn user_input_lines(
             lines.extend(options.iter().enumerate().map(|(index, option)| {
                 Line::from(vec![
                     "  ".into(),
-                    format!("{} ", index + 1).green().bold(),
+                    format!("{} ", index + 1).fg(palette::success()).bold(),
                     option.label.clone().into(),
                     " - ".dim(),
                     option.description.clone().dim(),
@@ -104,7 +110,7 @@ pub(super) fn user_input_lines(
     } else {
         composer.text_with_cursor_window(answer_width).into()
     };
-    lines.push(Line::from(vec!["> ".cyan().bold(), answer]));
+    lines.push(Line::from(vec!["> ".fg(palette::cyan()).bold(), answer]));
     lines
 }
 
@@ -118,8 +124,8 @@ pub(super) fn elicitation_lines(
     let mut action_line = vec![
         "  ".into(),
         format!(" {primary} ↵ ")
-            .fg(palette::DARK)
-            .bg(palette::SUCCESS)
+            .fg(palette::dark())
+            .bg(palette::success())
             .bold(),
         " ".into(),
     ];
@@ -129,20 +135,23 @@ pub(super) fn elicitation_lines(
         (" Decline d ", " Cancel c ")
     };
     action_line.extend([
-        decline.fg(palette::TEXT).bg(palette::ERROR).bold(),
+        decline.fg(palette::text()).bg(palette::error()).bold(),
         " ".into(),
-        cancel.fg(palette::TEXT).bg(palette::ELEVATED).bold(),
+        cancel.fg(palette::text()).bg(palette::elevated()).bold(),
     ]);
 
     let mut lines = vec![
-        Line::from(vec!["? ".cyan().bold(), pending.title().to_string().bold()]),
+        Line::from(vec![
+            "? ".fg(palette::cyan()).bold(),
+            pending.title().to_string().bold(),
+        ]),
         Line::from(vec!["  ".into(), pending.message().to_string().dim()]),
     ];
     if let Some(url) = pending.url() {
         lines.push(Line::from(vec![
             "  ".into(),
             "URL: ".bold(),
-            url.to_string().cyan().underlined(),
+            url.to_string().fg(palette::cyan()).underlined(),
         ]));
     }
     if let Some(field) = pending.field_view() {
@@ -163,7 +172,7 @@ pub(super) fn elicitation_lines(
         } else {
             composer.text_with_cursor_window(answer_width).into()
         };
-        lines.push(Line::from(vec!["> ".cyan().bold(), answer]));
+        lines.push(Line::from(vec!["> ".fg(palette::cyan()).bold(), answer]));
     }
     lines.push(Line::from(action_line));
     lines

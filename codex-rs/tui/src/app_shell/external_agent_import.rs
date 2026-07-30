@@ -1,5 +1,6 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::design::palette;
 use super::is_unmodified_action_key;
 use crate::app_server_session::EXTERNAL_AGENT_CONFIG_IMPORT_IN_PROGRESS_MESSAGE;
 use crate::external_agent_config_migration_flow::EXTERNAL_AGENT_CONFIG_MIGRATION_DAEMON_UNAVAILABLE_MESSAGE;
@@ -84,12 +85,12 @@ impl ExternalAgentImportState {
             Line::from(vec![
                 "Review Claude Code setup".bold(),
                 "  ".dim(),
-                summary.cyan(),
+                summary.fg(palette::cyan()),
             ]),
             Line::from(""),
         ];
         if let Some(error) = &self.error {
-            lines.push(error.clone().red().into());
+            lines.push(error.clone().fg(palette::error()).into());
             lines.push(Line::from(""));
         }
         for (index, item) in self.items.iter().enumerate() {
@@ -104,9 +105,9 @@ impl ExternalAgentImportState {
                 .as_ref()
                 .map_or_else(|| "home".to_string(), |cwd| display_path(cwd));
             let row = Line::from(vec![
-                cursor.cyan().bold(),
+                cursor.fg(palette::cyan()).bold(),
                 " ".dim(),
-                checkbox.cyan(),
+                checkbox.fg(palette::cyan()),
                 " ".dim(),
                 label.to_string().into(),
                 " - ".dim(),

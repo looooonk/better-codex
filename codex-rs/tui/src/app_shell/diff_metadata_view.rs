@@ -25,7 +25,7 @@ pub(super) fn render_empty_diff(file: &DiffFile, old: Rect, new: Rect, buf: &mut
     for (message, area) in [(old_message, old), (new_message, new)] {
         if let Some(message) = message {
             Paragraph::new(Line::from(message).dim().italic())
-                .style(pane_style(palette::SURFACE))
+                .style(pane_style(palette::surface()))
                 .render(area, buf);
         }
     }

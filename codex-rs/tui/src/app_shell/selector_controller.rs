@@ -60,6 +60,10 @@ impl ShellState {
         self.open_selector(SelectorState::approval_policies(self.approval_policy));
     }
 
+    pub(super) fn open_app_theme_selector(&mut self) {
+        self.open_selector(SelectorState::app_themes(self.app_theme));
+    }
+
     pub(super) async fn handle_selector_key<S>(
         &mut self,
         key: KeyEvent,
@@ -138,6 +142,9 @@ impl ShellState {
             }
             SelectorValue::ApprovalPolicy(policy) => {
                 self.apply_approval_policy(policy, app_server)?;
+            }
+            SelectorValue::AppTheme(app_theme) => {
+                self.apply_app_theme(app_theme, app_server);
             }
         }
         Ok(())

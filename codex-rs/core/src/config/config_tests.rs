@@ -62,6 +62,7 @@ use codex_config::types::SkillsConfig;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_config::types::ToolSuggestDiscoverableType;
 use codex_config::types::Tui;
+use codex_config::types::TuiAppTheme;
 use codex_config::types::TuiKeymap;
 use codex_config::types::TuiNotificationSettings;
 use codex_config::types::TuiPetAnchor;
@@ -900,6 +901,7 @@ fn config_toml_deserializes_model_availability_nux() {
             status_line: None,
             status_line_use_colors: true,
             terminal_title: None,
+            app_theme: TuiAppTheme::TokyoNight,
             theme: None,
             pet: None,
             pet_anchor: TuiPetAnchor::Composer,
@@ -3631,6 +3633,31 @@ fn tui_theme_defaults_to_none() {
 }
 
 #[test]
+fn tui_app_theme_deserializes_from_toml() {
+    let cfg = r#"
+[tui]
+app_theme = "catppuccin-mocha"
+"#;
+    let parsed = toml::from_str::<ConfigToml>(cfg).expect("TOML deserialization should succeed");
+    assert_eq!(
+        parsed.tui.map(|tui| tui.app_theme),
+        Some(TuiAppTheme::CatppuccinMocha),
+    );
+}
+
+#[test]
+fn tui_app_theme_defaults_to_tokyo_night() {
+    let cfg = r#"
+[tui]
+"#;
+    let parsed = toml::from_str::<ConfigToml>(cfg).expect("TOML deserialization should succeed");
+    assert_eq!(
+        parsed.tui.map(|tui| tui.app_theme),
+        Some(TuiAppTheme::TokyoNight),
+    );
+}
+
+#[test]
 fn tui_session_picker_view_deserializes_from_toml() {
     let cfg = r#"
 [tui]
@@ -3753,6 +3780,7 @@ fn tui_config_missing_notifications_field_defaults_to_enabled() {
             status_line: None,
             status_line_use_colors: true,
             terminal_title: None,
+            app_theme: TuiAppTheme::TokyoNight,
             theme: None,
             pet: None,
             pet_anchor: TuiPetAnchor::Composer,
@@ -3938,6 +3966,35 @@ async fn runtime_config_resolves_session_picker_view_default_and_override() {
         cfg.tui_session_picker_view,
         SessionPickerViewMode::Comfortable
     );
+}
+
+#[tokio::test]
+async fn runtime_config_resolves_app_theme_default_and_override() {
+    let cfg = Config::load_from_base_config_with_overrides(
+        ConfigToml::default(),
+        ConfigOverrides::default(),
+        tempdir().expect("tempdir").abs(),
+    )
+    .await
+    .expect("load default config");
+
+    assert_eq!(cfg.tui_app_theme, TuiAppTheme::TokyoNight);
+
+    let cfg = Config::load_from_base_config_with_overrides(
+        ConfigToml {
+            tui: Some(Tui {
+                app_theme: TuiAppTheme::GruvboxDark,
+                ..Default::default()
+            }),
+            ..Default::default()
+        },
+        ConfigOverrides::default(),
+        tempdir().expect("tempdir").abs(),
+    )
+    .await
+    .expect("load root override config");
+
+    assert_eq!(cfg.tui_app_theme, TuiAppTheme::GruvboxDark);
 }
 
 #[tokio::test]

@@ -1,6 +1,8 @@
 use super::*;
 use crate::legacy_core::config::Config;
 use crate::model_migration::migration_copy_for_models;
+use crate::test_support::unique_buffer_styles;
+use codex_config::types::TuiAppTheme;
 use codex_protocol::openai_models::ModelUpgrade;
 use codex_protocol::openai_models::ReasoningEffort;
 use crossterm::event::KeyCode;
@@ -12,9 +14,10 @@ use ratatui::backend::TestBackend;
 
 #[test]
 fn model_migration_selection_keys_move_between_choices() {
-    let mut state = ModelMigrationOnboardingState::new(model_migration_prompt_data_fixture(
-        /*can_opt_out*/ true,
-    ));
+    let mut state = ModelMigrationOnboardingState::new(
+        model_migration_prompt_data_fixture(/*can_opt_out*/ true),
+        TuiAppTheme::TokyoNight,
+    );
 
     assert_eq!(
         handle_model_migration_key(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE), &mut state),
@@ -34,9 +37,10 @@ fn model_migration_selection_keys_move_between_choices() {
 
 #[test]
 fn model_migration_view_renders_native_choices() {
-    let state = ModelMigrationOnboardingState::new(model_migration_prompt_data_fixture(
-        /*can_opt_out*/ true,
-    ));
+    let state = ModelMigrationOnboardingState::new(
+        model_migration_prompt_data_fixture(/*can_opt_out*/ true),
+        TuiAppTheme::TokyoNight,
+    );
     let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
     let mut terminal = Terminal::new(backend).expect("create terminal");
 
@@ -46,6 +50,23 @@ fn model_migration_view_renders_native_choices() {
         })
         .expect("draw model migration onboarding");
     insta::assert_snapshot!(terminal.backend().to_string());
+}
+
+#[test]
+fn model_migration_view_uses_gruvbox_dark_styles() {
+    let state = ModelMigrationOnboardingState::new(
+        model_migration_prompt_data_fixture(/*can_opt_out*/ true),
+        TuiAppTheme::GruvboxDark,
+    );
+    let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+
+    terminal
+        .draw(|frame| {
+            ModelMigrationOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut());
+        })
+        .expect("draw model migration onboarding");
+    insta::assert_debug_snapshot!(unique_buffer_styles(terminal.backend().buffer()));
 }
 
 #[tokio::test]

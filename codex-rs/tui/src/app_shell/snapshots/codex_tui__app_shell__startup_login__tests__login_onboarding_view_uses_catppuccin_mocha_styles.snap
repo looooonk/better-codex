@@ -1,0 +1,12 @@
+---
+source: tui/src/app_shell/startup_login_tests.rs
+expression: unique_buffer_styles(terminal.backend().buffer())
+---
+[
+    "Style::new().fg(Color::Rgb(127, 132, 156)).bg(Color::Rgb(24, 24, 37)).underline_color(Color::Reset)",
+    "Style::new().fg(Color::Rgb(137, 180, 250)).bg(Color::Rgb(69, 71, 90)).underline_color(Color::Reset)",
+    "Style::new().fg(Color::Rgb(203, 166, 247)).bg(Color::Rgb(69, 71, 90)).underline_color(Color::Reset)",
+    "Style::new().fg(Color::Rgb(205, 214, 244)).bg(Color::Rgb(69, 71, 90)).underline_color(Color::Reset)",
+    "Style::new().fg(Color::Rgb(205, 214, 244)).bg(Color::Rgb(69, 71, 90)).underline_color(Color::Reset).bold()",
+    "Style::new().fg(Color::Rgb(205, 214, 244)).bg(Color::Rgb(69, 71, 90)).underline_color(Color::Reset).dim()",
+]

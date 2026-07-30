@@ -84,7 +84,7 @@ const TABLE_CELL_PADDING: usize = 1;
 const TABLE_HEADER_SEPARATOR_CHAR: char = '━';
 const TABLE_BODY_SEPARATOR_CHAR: char = '─';
 
-struct MarkdownStyles {
+pub(crate) struct MarkdownStyles {
     h1: Style,
     h2: Style,
     h3: Style,
@@ -119,6 +119,28 @@ impl Default for MarkdownStyles {
             link: Style::new().cyan().underlined(),
             blockquote: Style::new().green(),
         }
+    }
+}
+
+impl MarkdownStyles {
+    pub(crate) fn inline_code_color(mut self, color: ratatui::style::Color) -> Self {
+        self.code = self.code.fg(color);
+        self
+    }
+
+    pub(crate) fn ordered_list_marker_color(mut self, color: ratatui::style::Color) -> Self {
+        self.ordered_list_marker = self.ordered_list_marker.fg(color);
+        self
+    }
+
+    pub(crate) fn link_color(mut self, color: ratatui::style::Color) -> Self {
+        self.link = self.link.fg(color);
+        self
+    }
+
+    pub(crate) fn blockquote_color(mut self, color: ratatui::style::Color) -> Self {
+        self.blockquote = self.blockquote.fg(color);
+        self
     }
 }
 
@@ -310,9 +332,18 @@ pub(crate) fn render_markdown_text_with_width_and_cwd(
     width: Option<usize>,
     cwd: Option<&Path>,
 ) -> Text<'static> {
-    Text::from(visible_lines(render_markdown_lines_with_width_and_cwd(
-        input, width, cwd,
-    )))
+    render_markdown_text_with_width_cwd_and_styles(input, width, cwd, MarkdownStyles::default())
+}
+
+pub(crate) fn render_markdown_text_with_width_cwd_and_styles(
+    input: &str,
+    width: Option<usize>,
+    cwd: Option<&Path>,
+    styles: MarkdownStyles,
+) -> Text<'static> {
+    Text::from(visible_lines(
+        render_markdown_lines_with_width_cwd_and_styles(input, width, cwd, styles),
+    ))
 }
 
 pub(crate) fn render_markdown_lines_with_width_and_cwd(
@@ -320,11 +351,20 @@ pub(crate) fn render_markdown_lines_with_width_and_cwd(
     width: Option<usize>,
     cwd: Option<&Path>,
 ) -> Vec<HyperlinkLine> {
+    render_markdown_lines_with_width_cwd_and_styles(input, width, cwd, MarkdownStyles::default())
+}
+
+pub(crate) fn render_markdown_lines_with_width_cwd_and_styles(
+    input: &str,
+    width: Option<usize>,
+    cwd: Option<&Path>,
+    styles: MarkdownStyles,
+) -> Vec<HyperlinkLine> {
     let mut options = Options::empty();
     options.insert(Options::ENABLE_STRIKETHROUGH);
     options.insert(Options::ENABLE_TABLES);
     let parser = DecodedTextMerge::new(Parser::new_ext(input, options).into_offset_iter());
-    let mut w = Writer::new(input, parser, width, cwd);
+    let mut w = Writer::new(input, parser, width, cwd, styles);
     w.run();
     w.text
 }
@@ -401,12 +441,18 @@ impl<'a, I> Writer<'a, I>
 where
     I: Iterator<Item = (Event<'a>, Range<usize>)>,
 {
-    fn new(input: &'a str, iter: I, wrap_width: Option<usize>, cwd: Option<&Path>) -> Self {
+    fn new(
+        input: &'a str,
+        iter: I,
+        wrap_width: Option<usize>,
+        cwd: Option<&Path>,
+        styles: MarkdownStyles,
+    ) -> Self {
         Self {
             input,
             iter,
             text: Vec::new(),
-            styles: MarkdownStyles::default(),
+            styles,
             inline_styles: Vec::new(),
             indent_stack: Vec::new(),
             list_indices: Vec::new(),
@@ -2414,7 +2460,13 @@ mod tests {
         cell.hard_break();
         cell.push_span("second line".into());
 
-        let writer = W::new("", std::iter::empty(), Some(80), /*cwd*/ None);
+        let writer = W::new(
+            "",
+            std::iter::empty(),
+            Some(80),
+            /*cwd*/ None,
+            MarkdownStyles::default(),
+        );
         let wrapped = writer.wrap_cell(&cell, /*width*/ 40);
         let rendered = wrapped
             .iter()

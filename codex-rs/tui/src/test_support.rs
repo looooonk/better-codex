@@ -6,6 +6,7 @@ use codex_models_manager::bundled_models_response;
 use codex_protocol::openai_models::ModelPreset;
 pub(crate) use codex_utils_absolute_path::test_support::PathBufExt;
 pub(crate) use codex_utils_absolute_path::test_support::test_path_buf;
+use ratatui::buffer::Buffer;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -20,6 +21,17 @@ pub(crate) static TEST_MODEL_PRESETS: LazyLock<Vec<ModelPreset>> = LazyLock::new
 
 pub(crate) fn test_path_display(path: &str) -> String {
     test_path_buf(path).display().to_string()
+}
+
+pub(crate) fn unique_buffer_styles(buffer: &Buffer) -> Vec<String> {
+    let mut styles = buffer
+        .content()
+        .iter()
+        .map(|cell| format!("{:?}", cell.style()))
+        .collect::<Vec<_>>();
+    styles.sort();
+    styles.dedup();
+    styles
 }
 
 pub(crate) fn session_source_cli<T>() -> T

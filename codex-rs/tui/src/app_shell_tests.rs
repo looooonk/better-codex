@@ -109,6 +109,7 @@ use codex_app_server_protocol::UserInput as ApiUserInput;
 use codex_app_server_protocol::WebSearchItem;
 use codex_app_server_protocol::WriteStatus;
 use codex_config::types::ResumeCwdMode;
+use codex_config::types::TuiAppTheme;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
@@ -1129,26 +1130,26 @@ fn renders_output_blocks_as_inset_status_rectangles() {
     assert!(rendered.contains("line 7"));
     assert_eq!(output_accent_x, tool_accent_x + 2);
     assert_eq!(
-        rightmost_bg_x_for_row(&buf, area, tool_row, design::palette::SURFACE),
-        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::DARK),
+        rightmost_bg_x_for_row(&buf, area, tool_row, design::palette::surface()),
+        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::dark()),
     );
     assert_eq!(
-        rightmost_bg_x_for_row(&buf, area, output_tail_row, design::palette::DARK),
-        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::DARK),
+        rightmost_bg_x_for_row(&buf, area, output_tail_row, design::palette::dark()),
+        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::dark()),
     );
     assert_eq!(
         buf.cell((output_accent_x, output_row))
             .expect("output accent cell should exist")
             .style()
             .fg,
-        Some(design::palette::SUCCESS)
+        Some(design::palette::success())
     );
     assert_eq!(
         buf.cell((tool_accent_x, tool_row))
             .expect("tool accent cell should exist")
             .style()
             .fg,
-        Some(design::palette::SUCCESS)
+        Some(design::palette::success())
     );
     let output_label_x =
         row_needle_x(&buf, area, output_row, "output").expect("output label should render");
@@ -1157,18 +1158,18 @@ fn renders_output_blocks_as_inset_status_rectangles() {
             .expect("output label cell should exist")
             .style()
             .fg,
-        Some(design::palette::TEXT)
+        Some(design::palette::text())
     );
 
     shell.pointer_position = Some(Position::new(output_accent_x, output_row));
     let hovered = render_shell_buffer(&shell, area);
     assert_eq!(
-        rightmost_bg_x_for_row(&hovered, area, output_row, design::palette::BORDER),
-        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::DARK)
+        rightmost_bg_x_for_row(&hovered, area, output_row, design::palette::border()),
+        rightmost_bg_x_for_row(&buf, area, output_row, design::palette::dark())
     );
     assert_eq!(
-        rightmost_bg_x_for_row(&hovered, area, output_tail_row, design::palette::BORDER),
-        rightmost_bg_x_for_row(&buf, area, output_tail_row, design::palette::DARK)
+        rightmost_bg_x_for_row(&hovered, area, output_tail_row, design::palette::border()),
+        rightmost_bg_x_for_row(&buf, area, output_tail_row, design::palette::dark())
     );
     insta::assert_snapshot!(rendered);
 }
@@ -1189,15 +1190,15 @@ fn output_transcript_blocks_use_status_accent_colors() {
 
     assert_eq!(
         accent_color_for_row(&buf, area, "running output"),
-        Some(design::palette::CYAN)
+        Some(design::palette::cyan())
     );
     assert_eq!(
         accent_color_for_row(&buf, area, "successful output"),
-        Some(design::palette::SUCCESS)
+        Some(design::palette::success())
     );
     assert_eq!(
         accent_color_for_row(&buf, area, "failed output"),
-        Some(design::palette::ERROR)
+        Some(design::palette::error())
     );
 }
 
@@ -5000,15 +5001,22 @@ fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
         started.session,
         "fallback-model".to_string(),
         Vec::new(),
-        codex_home.path().to_path_buf(),
+        ShellClientConfig {
+            codex_home: codex_home.path().to_path_buf(),
+            config_path: AbsolutePathBuf::try_from(
+                codex_home.path().join(codex_config::CONFIG_TOML_FILE),
+            )
+            .expect("temporary config path should be absolute"),
+            app_theme: TuiAppTheme::TokyoNight,
+            tui_theme: None,
+            animations: true,
+            show_tooltips: true,
+        },
         ResumeCwdRuntime {
             launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),
             explicit_cwd: None,
             uses_remote_workspace_or_environment: false,
         },
-        /*tui_theme*/ None,
-        /*animations*/ true,
-        /*show_tooltips*/ true,
         /*max_concurrent_threads_per_session*/ 4,
     );
 
@@ -5022,6 +5030,31 @@ fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
             /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28
         )
     ));
+}
+
+#[test]
+fn shell_render_uses_the_selected_app_theme() {
+    let mut shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+    let rendered_styles = [TuiAppTheme::GruvboxDark, TuiAppTheme::CatppuccinMocha]
+        .into_iter()
+        .map(|app_theme| {
+            shell.app_theme = app_theme;
+            let buffer = render_shell_buffer(&shell, area);
+            let mut styles = buffer
+                .content()
+                .iter()
+                .map(|cell| format!("{:?}", cell.style()))
+                .collect::<Vec<_>>();
+            styles.sort();
+            styles.dedup();
+            (app_theme, styles)
+        })
+        .collect::<Vec<_>>();
+
+    insta::assert_debug_snapshot!(rendered_styles);
 }
 
 #[test]
@@ -6337,7 +6370,7 @@ fn pointer_hover_uses_existing_header_hit_geometry() {
 
     let buf = render_shell_buffer(&shell, area);
 
-    assert_eq!(buf[position].style().bg, Some(design::palette::BORDER));
+    assert_eq!(buf[position].style().bg, Some(design::palette::border()));
 }
 
 #[test]
@@ -6359,7 +6392,7 @@ fn dashboard_button_hover_uses_its_hit_geometry_in_both_states() {
 
         assert_eq!(
             render_shell_buffer(&shell, area)[position].style().bg,
-            Some(design::palette::BORDER),
+            Some(design::palette::border()),
             "dashboard_visible {dashboard_visible}"
         );
     }
@@ -6412,7 +6445,7 @@ fn settings_tab_hover_uses_content_only_geometry() {
                 .bg
         })
         .collect::<Vec<_>>();
-    expected_backgrounds[columns.clone()].fill(Some(design::palette::BORDER));
+    expected_backgrounds[columns.clone()].fill(Some(design::palette::border()));
     assert_eq!(actual_backgrounds, expected_backgrounds);
 
     let underline_y = label_y.saturating_add(1);
@@ -6436,7 +6469,7 @@ fn settings_tab_hover_uses_content_only_geometry() {
                 .fg
         })
         .collect::<Vec<_>>();
-    expected_foregrounds[columns].fill(Some(design::palette::FOCUS));
+    expected_foregrounds[columns].fill(Some(design::palette::focus()));
     assert_eq!(actual_foregrounds, expected_foregrounds);
 }
 
@@ -7634,19 +7667,19 @@ fn diff_summaries_use_addition_and_removal_colors() {
 
     assert_eq!(
         text_color_for_row(&buf, area, "+8"),
-        Some(design::palette::SUCCESS)
+        Some(design::palette::success())
     );
     assert_eq!(
         text_color_for_row(&buf, area, "-7"),
-        Some(design::palette::ERROR)
+        Some(design::palette::error())
     );
     assert_eq!(
         text_color_for_row(&buf, area, "+128"),
-        Some(design::palette::SUCCESS)
+        Some(design::palette::success())
     );
     assert_eq!(
         text_color_for_row(&buf, area, "-24"),
-        Some(design::palette::ERROR)
+        Some(design::palette::error())
     );
 }
 
@@ -7677,15 +7710,15 @@ fn tool_transcript_blocks_use_status_accent_colors() {
 
     assert_eq!(
         accent_color_for_row(&buf, area, "exec just test"),
-        Some(design::palette::CYAN)
+        Some(design::palette::cyan())
     );
     assert_eq!(
         accent_color_for_row(&buf, area, "exec true"),
-        Some(design::palette::SUCCESS)
+        Some(design::palette::success())
     );
     assert_eq!(
         accent_color_for_row(&buf, area, "exec false"),
-        Some(design::palette::ERROR)
+        Some(design::palette::error())
     );
 }
 
@@ -7709,7 +7742,7 @@ fn tool_transcript_block_background_spans_conversation_width() {
             .expect("right edge cell should exist")
             .style()
             .bg,
-        Some(design::MOCHA_SURFACE0)
+        Some(design::palette::surface())
     );
 }
 
@@ -8207,7 +8240,7 @@ fn completed_tool_item_updates_existing_transcript_status() {
     let running_buf = render_shell_buffer(&shell, area);
     assert_eq!(
         accent_color_for_row(&running_buf, area, "exec cargo test"),
-        Some(design::palette::CYAN)
+        Some(design::palette::cyan())
     );
 
     shell.handle_notification(ServerNotification::ItemCompleted(
@@ -8230,7 +8263,7 @@ fn completed_tool_item_updates_existing_transcript_status() {
     let completed_buf = render_shell_buffer(&shell, area);
     assert_eq!(
         accent_color_for_row(&completed_buf, area, "exec cargo test"),
-        Some(design::palette::SUCCESS)
+        Some(design::palette::success())
     );
 }
 
@@ -10413,6 +10446,36 @@ async fn failed_settings_write_keeps_selector_and_previous_value() {
 }
 
 #[tokio::test]
+async fn failed_app_theme_write_keeps_selector_and_previous_theme() {
+    let mut shell = ShellState::snapshot_fixture();
+    let previous_theme = shell.app_theme;
+    let client_config_path = shell.client_config_path.clone();
+    let backend = RecordingBackend::default();
+    shell.open_app_theme_selector();
+    backend.fail_next_action("config write rejected");
+
+    for key in [KeyCode::Down, KeyCode::Enter] {
+        shell
+            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
+            .await
+            .expect("app theme update should start");
+    }
+    assert_eq!(shell.app_theme, previous_theme);
+
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(shell.selector.is_some());
+    assert_eq!(shell.app_theme, previous_theme);
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::AppThemeWrite {
+            config_path: client_config_path,
+            app_theme: TuiAppTheme::GruvboxDark,
+        }]
+    );
+}
+
+#[tokio::test]
 async fn failed_thread_settings_update_restores_config_and_previous_value() {
     let mut shell = ShellState::snapshot_fixture();
     let previous_policy = shell.approval_policy;
@@ -11016,7 +11079,7 @@ fn dashboard_focus_keeps_context_readable_and_hides_composer_cursor() {
     assert_eq!(buf[(background_x, conversation_row)].symbol(), " ");
     assert_eq!(
         buf[(background_x, conversation_row)].style().bg,
-        Some(design::palette::BASE)
+        Some(design::palette::base())
     );
     assert!(
         !buf[(dashboard_x, dashboard_row)]
@@ -11043,7 +11106,10 @@ fn composer_highlights_recognized_slash_commands_snapshot() {
     let slash_x = row_needle_x(&buf, input_area, row, "/goal")
         .expect("slash command should have an x position");
 
-    assert_eq!(buf[(slash_x, row)].style().fg, Some(design::palette::FOCUS));
+    assert_eq!(
+        buf[(slash_x, row)].style().fg,
+        Some(design::palette::focus())
+    );
 
     shell.composer.set_text("/clear");
     let clear_buf = render_shell_buffer(&shell, area);
@@ -11053,7 +11119,7 @@ fn composer_highlights_recognized_slash_commands_snapshot() {
         .expect("clear command should have an x position");
     assert_eq!(
         clear_buf[(clear_x, clear_row)].style().fg,
-        Some(design::palette::FOCUS)
+        Some(design::palette::focus())
     );
 
     shell.composer.set_text("/exit");
@@ -11064,7 +11130,7 @@ fn composer_highlights_recognized_slash_commands_snapshot() {
         .expect("exit command should have an x position");
     assert_eq!(
         exit_buf[(exit_x, exit_row)].style().fg,
-        Some(design::palette::FOCUS)
+        Some(design::palette::focus())
     );
 
     shell.composer.set_text("/goal Keep the dashboard compact");
@@ -11086,7 +11152,10 @@ fn composer_does_not_highlight_unknown_slash_commands() {
     let slash_x = row_needle_x(&buf, input_area, row, "/unknown")
         .expect("slash-prefixed text should have an x position");
 
-    assert_eq!(buf[(slash_x, row)].style().fg, Some(design::palette::TEXT));
+    assert_eq!(
+        buf[(slash_x, row)].style().fg,
+        Some(design::palette::text())
+    );
 }
 
 #[test]
@@ -11106,11 +11175,11 @@ fn composer_highlights_shell_operator_snapshot() {
 
     assert_eq!(
         buf[(operator_x, row)].style().fg,
-        Some(design::palette::FOCUS)
+        Some(design::palette::focus())
     );
     assert_eq!(
         buf[(operator_x + 1, row)].style().fg,
-        Some(design::palette::TEXT)
+        Some(design::palette::text())
     );
     insta::assert_snapshot!(render_shell(&shell, area));
 }
@@ -13951,6 +14020,7 @@ async fn plugin_management_actions_update_enable_install_auth_and_uninstall() {
 #[tokio::test]
 async fn native_settings_pages_write_config_and_validate_edits() {
     let mut shell = ShellState::snapshot_fixture();
+    let client_config_path = shell.client_config_path.clone();
     shell.dashboard_route = DashboardRoute::Status;
     shell.settings.focused = true;
     shell.available_models = vec![model_preset_fixture(
@@ -14028,11 +14098,37 @@ async fn native_settings_pages_write_config_and_validate_edits() {
         .expect("appearance page should open");
     shell
         .handle_settings_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("app theme selector should open");
+    shell
+        .handle_selector_key(
             KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
             &mut backend,
         )
         .await
-        .expect("animations row should be selected");
+        .expect("gruvbox theme should be selected");
+    shell
+        .handle_selector_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
+        .expect("gruvbox theme should persist");
+    assert_eq!(shell.app_theme, TuiAppTheme::TokyoNight);
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(shell.app_theme, TuiAppTheme::GruvboxDark);
+    for _ in 0..2 {
+        shell
+            .handle_settings_key(
+                KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+                &mut backend,
+            )
+            .await
+            .expect("animations row should be selected");
+    }
     shell
         .handle_settings_key(
             KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
@@ -14060,6 +14156,10 @@ async fn native_settings_pages_write_config_and_validate_edits() {
         "approval_policy".to_string(),
         serde_json::json!("never"),
     )])));
+    assert!(calls.contains(&RecordedBackendCall::AppThemeWrite {
+        config_path: client_config_path,
+        app_theme: TuiAppTheme::GruvboxDark,
+    }));
     assert!(calls.contains(&RecordedBackendCall::ThreadSettingsUpdate {
         model: None,
         effort: None,
@@ -14840,6 +14940,10 @@ enum RecordedBackendCall {
         thread_id: codex_protocol::ThreadId,
     },
     ConfigWrite(Vec<(String, serde_json::Value)>),
+    AppThemeWrite {
+        config_path: AbsolutePathBuf,
+        app_theme: TuiAppTheme,
+    },
     ThreadSettingsUpdate {
         model: Option<String>,
         effort: Option<ReasoningEffort>,
@@ -15405,6 +15509,24 @@ impl backend::AppShellBackend for RecordingBackend {
                     "thread settings update failed: {error}; global config rollback also failed: {rollback_error:#}"
                 )),
             }
+        }
+    }
+
+    fn persist_app_theme_in_background(
+        &self,
+        config_path: AbsolutePathBuf,
+        app_theme: TuiAppTheme,
+    ) -> impl std::future::Future<Output = color_eyre::Result<()>> + Send + 'static {
+        let backend = self.clone();
+        async move {
+            backend.push(RecordedBackendCall::AppThemeWrite {
+                config_path,
+                app_theme,
+            });
+            if let Some(error) = backend.take_action_error() {
+                return Err(color_eyre::eyre::eyre!(error));
+            }
+            Ok(())
         }
     }
 

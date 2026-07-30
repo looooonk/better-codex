@@ -12,16 +12,17 @@ expression: "render_shell(&shell, area)"
                                                   │▎› Model: gpt-5-codex
  ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
           by app-server turns.                    │▎  Service tier: default
- ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ PLAN
-         3. Render dashboard                      │▎Build the standalone shell in slices.
-                                                  │▎x Shell frame
- ▌ tool exec just test -p codex-tui               │▎> Transcript model
-                                                  │▎- Approvals
- ▌ edited 3 files +128 -24                        │
-                                                  │▎◆ TOOLS
- ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
-          surface.                                │
+ ▎ PLAN  1. Build shell                           │▎
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ PLAN
+                                                  │▎Build the standalone shell in slices.
+ ▌ tool exec just test -p codex-tui               │▎x Shell frame
+                                                  │▎> Transcript model
+ ▌ edited 3 files +128 -24                        │▎- Approvals
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ TOOLS
+          surface.                                │▎in progress exec just test -p codex-tui
+                                                  │
                                                   │▎◆ EDITS
                                                   │▎3 files +128 -24
                                                   │
@@ -37,10 +38,9 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │▎◆ RATE LIMITS
                                                   │▎Codex 82% 5h | 18% 7d | spend 75% left
-                                                  │▎Background 95% 1h | limited RateLimitReached
-╭────────────────────────────────────────────────╮│▎gpt-5.3-codex-spark 41% 1h
-│◆ MESSAGE  1:37                                 ││▎credits $12.34 | resets 2
-│> Summarize the new shell architecture          ││
+╭────────────────────────────────────────────────╮│▎Background 95% 1h | limited RateLimitReached
+│◆ MESSAGE  1:37                                 ││▎gpt-5.3-codex-spark 41% 1h
+│> Summarize the new shell architecture          ││▎credits $12.34 | resets 2
 │                                                ││
 │                                                ││
 ╰────────────────────────────────────────────────╯│

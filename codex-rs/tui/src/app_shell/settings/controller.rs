@@ -30,6 +30,7 @@ impl ShellState {
             reasoning_effort: self.reasoning_effort.clone(),
             service_tier: self.service_tier.clone(),
             approval_policy: self.approval_policy,
+            app_theme: self.app_theme,
             theme: self.tui_theme.clone(),
             animations: self.animations,
             show_tooltips: self.show_tooltips,
@@ -192,6 +193,7 @@ impl ShellState {
         match action {
             SettingsAction::Model => self.open_model_selector(),
             SettingsAction::ServiceTier => self.open_service_tier_selector(),
+            SettingsAction::AppTheme => self.open_app_theme_selector(),
             SettingsAction::Theme => {
                 self.settings
                     .start_edit(action, self.tui_theme.clone().unwrap_or_default());
@@ -291,6 +293,7 @@ impl ShellState {
             }
             SettingsAction::ReasoningEffort
             | SettingsAction::ApprovalPolicy
+            | SettingsAction::AppTheme
             | SettingsAction::Animations
             | SettingsAction::Tooltips
             | SettingsAction::McpServers
@@ -344,6 +347,18 @@ impl ShellState {
                 service_tier_update,
             )),
         );
+    }
+
+    pub(in crate::app_shell) fn apply_app_theme<S>(
+        &mut self,
+        app_theme: codex_config::types::TuiAppTheme,
+        app_server: &mut S,
+    ) where
+        S: AppShellBackend,
+    {
+        let persist =
+            app_server.persist_app_theme_in_background(self.client_config_path.clone(), app_theme);
+        self.start_settings_update(SettingsChange::AppTheme(app_theme), persist);
     }
 
     pub(in crate::app_shell) fn apply_service_tier<S>(

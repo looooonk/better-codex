@@ -3100,6 +3100,15 @@
           "description": "Enable animations (welcome screen, shimmer effects, spinners). Defaults to `true`.",
           "type": "boolean"
         },
+        "app_theme": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TuiAppTheme"
+            }
+          ],
+          "default": "tokyo-night",
+          "description": "Color theme used by the Better Codex app shell and its onboarding screens. Defaults to `tokyo-night`."
+        },
         "keymap": {
           "allOf": [
             {
@@ -3360,6 +3369,32 @@
         }
       },
       "type": "object"
+    },
+    "TuiAppTheme": {
+      "description": "Color theme used by the Better Codex app shell and its onboarding screens.",
+      "oneOf": [
+        {
+          "description": "Better Codex's default Tokyo Night palette.",
+          "enum": [
+            "tokyo-night"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Gruvbox's dark palette.",
+          "enum": [
+            "gruvbox-dark"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Catppuccin's Mocha palette.",
+          "enum": [
+            "catppuccin-mocha"
+          ],
+          "type": "string"
+        }
+      ]
     },
     "TuiApprovalKeymap": {
       "additionalProperties": false,

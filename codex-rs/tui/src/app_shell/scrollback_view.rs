@@ -44,13 +44,13 @@ pub(super) fn render_scrollback_frame(
     let geometry = scrollback_geometry(screen);
     buf.set_style(screen, Style::new().add_modifier(Modifier::DIM));
     Clear.render(geometry.modal, buf);
-    fill_rect(buf, geometry.modal, palette::SURFACE);
+    fill_rect(buf, geometry.modal, palette::surface());
 
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(palette::FOCUS))
-        .style(pane_style(palette::SURFACE))
+        .border_style(Style::new().fg(palette::focus()))
+        .style(pane_style(palette::surface()))
         .title(Line::from(title.into()).bold())
         .render(geometry.modal, buf);
     geometry
@@ -71,7 +71,7 @@ pub(super) fn render_scrollback_footer(
         geometry.footer.width,
         mode,
     ))
-    .style(pane_style(palette::SURFACE))
+    .style(pane_style(palette::surface()))
     .render(geometry.footer, buf);
 }
 
@@ -155,22 +155,22 @@ fn scrollback_footer(
     let range = format!("{first}-{last}/{visual_lines}");
     let (suffix, suffix_color, hints) = match mode {
         ScrollbackFooterMode::AgentLogLoading => {
-            ("loading".to_string(), palette::PURPLE, agent_log_hints())
+            ("loading".to_string(), palette::purple(), agent_log_hints())
         }
-        ScrollbackFooterMode::AgentLogReady => (range, palette::PURPLE, agent_log_hints()),
+        ScrollbackFooterMode::AgentLogReady => (range, palette::purple(), agent_log_hints()),
         ScrollbackFooterMode::ToolOutputRunning => (
             format!("running · {range}"),
-            palette::CYAN,
+            palette::cyan(),
             tool_output_hints(),
         ),
         ScrollbackFooterMode::ToolOutputCompleted => (
             format!("completed · {range}"),
-            palette::SUCCESS,
+            palette::success(),
             tool_output_hints(),
         ),
         ScrollbackFooterMode::ToolOutputFailed => (
             format!("failed · {range}"),
-            palette::ERROR,
+            palette::error(),
             tool_output_hints(),
         ),
     };
@@ -186,7 +186,7 @@ fn scrollback_footer(
         if hint.is_empty() {
             "".into()
         } else {
-            format!(" {hint}  ").fg(palette::MUTED)
+            format!(" {hint}  ").fg(palette::muted())
         },
         suffix.fg(suffix_color).bold(),
     ])

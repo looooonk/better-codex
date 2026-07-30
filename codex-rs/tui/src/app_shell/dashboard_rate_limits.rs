@@ -1,5 +1,6 @@
 use super::dashboard::dashboard_value;
 use super::dashboard::format_i64;
+use super::design::palette;
 use codex_app_server_protocol::RateLimitSnapshot;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
@@ -16,13 +17,13 @@ pub(super) fn rate_limit_line(limit: &RateLimitSnapshot, width: usize) -> Line<'
         spans.push(if index == 0 { " ".dim() } else { " | ".dim() });
         let percent = format!("{}%", window.used_percent);
         spans.push(if window.used_percent >= 90 {
-            percent.red()
+            percent.fg(palette::error())
         } else if window.used_percent >= 75 {
-            percent.magenta()
+            percent.fg(palette::purple())
         } else if window.used_percent >= 50 {
-            percent.cyan()
+            percent.fg(palette::cyan())
         } else {
-            percent.green()
+            percent.fg(palette::success())
         });
         if let Some(duration) = window.window_duration_mins {
             let duration = duration.max(0);
@@ -39,7 +40,10 @@ pub(super) fn rate_limit_line(limit: &RateLimitSnapshot, width: usize) -> Line<'
         }
     }
     if let Some(reached) = limit.rate_limit_reached_type {
-        spans.extend([" | ".dim(), format!("limited {reached:?}").red()]);
+        spans.extend([
+            " | ".dim(),
+            format!("limited {reached:?}").fg(palette::error()),
+        ]);
     }
     if let Some(individual_limit) = &limit.individual_limit {
         spans.extend([
@@ -59,13 +63,13 @@ pub(super) fn credits_and_resets_line(
     match credits {
         Some(credits) => {
             if credits.unlimited {
-                spans.push("unlimited".green());
+                spans.push("unlimited".fg(palette::success()));
             } else if let Some(balance) = &credits.balance {
                 spans.push(balance.clone().into());
             } else if !credits.has_credits {
-                spans.push("depleted".red());
+                spans.push("depleted".fg(palette::error()));
             } else {
-                spans.push("available".green());
+                spans.push("available".fg(palette::success()));
             }
         }
         None => spans.push("unavailable".dim()),

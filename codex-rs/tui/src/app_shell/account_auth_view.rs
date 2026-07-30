@@ -16,7 +16,7 @@ pub(super) fn lines(state: &AccountAuthState, width: usize) -> Vec<Line<'static>
             vec![
                 "Finish signing in with ChatGPT in your browser.".into(),
                 "".into(),
-                auth_url.clone().cyan().underlined().into(),
+                auth_url.clone().fg(palette::cyan()).underlined().into(),
                 "".into(),
                 "Enter open link   Esc cancel".dim().into(),
             ],
@@ -31,12 +31,16 @@ pub(super) fn lines(state: &AccountAuthState, width: usize) -> Vec<Line<'static>
                 "Finish signing in with a device code.".into(),
                 "".into(),
                 "1. Open this link and sign in:".into(),
-                verification_url.clone().cyan().underlined().into(),
+                verification_url
+                    .clone()
+                    .fg(palette::cyan())
+                    .underlined()
+                    .into(),
                 "".into(),
                 "2. Enter this one-time code:".into(),
                 user_code
                     .clone()
-                    .fg(palette::FOCUS)
+                    .fg(palette::focus())
                     .bold()
                     .underlined()
                     .into(),
@@ -49,7 +53,10 @@ pub(super) fn lines(state: &AccountAuthState, width: usize) -> Vec<Line<'static>
             state,
         ),
         AccountAuthMode::Success => vec![
-            "Signed in successfully.".green().bold().into(),
+            "Signed in successfully."
+                .fg(palette::success())
+                .bold()
+                .into(),
             "".into(),
             "You can continue using this session with the new account.".into(),
             "".into(),
@@ -60,10 +67,10 @@ pub(super) fn lines(state: &AccountAuthState, width: usize) -> Vec<Line<'static>
 
 fn with_feedback(mut lines: Vec<Line<'static>>, state: &AccountAuthState) -> Vec<Line<'static>> {
     if let Some(notice) = &state.notice {
-        lines.extend(["".into(), notice.clone().green().into()]);
+        lines.extend(["".into(), notice.clone().fg(palette::success()).into()]);
     }
     if let Some(error) = &state.error {
-        lines.extend(["".into(), error.clone().red().into()]);
+        lines.extend(["".into(), error.clone().fg(palette::error()).into()]);
     }
     lines
 }
@@ -74,7 +81,7 @@ fn choice_lines(state: &AccountAuthState) -> Vec<Line<'static>> {
         let marker = if index == state.selected { ">" } else { " " };
         lines.push(
             vec![
-                format!("{marker} {}. ", index + 1).fg(palette::FOCUS),
+                format!("{marker} {}. ", index + 1).fg(palette::focus()),
                 choice.label().to_string().bold(),
             ]
             .into(),
@@ -82,7 +89,7 @@ fn choice_lines(state: &AccountAuthState) -> Vec<Line<'static>> {
         lines.push(format!("    {}", choice.description()).dim().into());
     }
     if let Some(error) = &state.error {
-        lines.extend(["".into(), error.clone().red().into()]);
+        lines.extend(["".into(), error.clone().fg(palette::error()).into()]);
     }
     lines.extend([
         "".into(),
@@ -104,7 +111,7 @@ fn api_key_lines(state: &AccountAuthState, width: usize) -> Vec<Line<'static>> {
         value.into(),
     ];
     if let Some(error) = &state.error {
-        lines.extend(["".into(), error.clone().red().into()]);
+        lines.extend(["".into(), error.clone().fg(palette::error()).into()]);
     }
     lines.extend(["".into(), "Enter save   Esc back".dim().into()]);
     lines

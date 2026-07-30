@@ -1,5 +1,7 @@
+use super::settings::app_theme_label;
 use super::settings::reasoning_effort_label;
 use codex_app_server_protocol::AskForApproval;
+use codex_config::types::TuiAppTheme;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelServiceTier;
 use codex_protocol::openai_models::ReasoningEffort;
@@ -44,6 +46,7 @@ pub(super) enum SelectorValue {
     ReasoningEffort(ReasoningEffortValue),
     ServiceTier(ServiceTierValue),
     ApprovalPolicy(AskForApproval),
+    AppTheme(TuiAppTheme),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -318,6 +321,35 @@ impl SelectorState<SelectorValue> {
             })
             .collect();
         Self::new("Select approval policy", options)
+    }
+
+    pub(super) fn app_themes(current: TuiAppTheme) -> Self {
+        let themes = [
+            (
+                TuiAppTheme::TokyoNight,
+                "Better Codex's default cool blue and purple palette.",
+            ),
+            (
+                TuiAppTheme::GruvboxDark,
+                "A warm, retro palette with earthy contrast.",
+            ),
+            (
+                TuiAppTheme::CatppuccinMocha,
+                "A soft pastel palette on a dark base.",
+            ),
+        ];
+        let options = themes
+            .into_iter()
+            .map(|(theme, detail)| {
+                SelectorOption::new(
+                    SelectorValue::AppTheme(theme),
+                    app_theme_label(theme),
+                    detail,
+                )
+                .current(theme == current)
+            })
+            .collect();
+        Self::new("Select app theme", options)
     }
 }
 

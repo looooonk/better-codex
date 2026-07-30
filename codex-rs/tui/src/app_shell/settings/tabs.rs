@@ -85,23 +85,23 @@ impl SettingsTabs {
             );
             let active = cell.page == active_page;
             labels.push(if active {
-                label.fg(palette::FOCUS).bold()
+                label.fg(palette::focus()).bold()
             } else {
-                label.fg(palette::MUTED)
+                label.fg(palette::muted())
             });
             if has_separator {
-                labels.push("│".fg(palette::BORDER));
+                labels.push("│".fg(palette::border()));
             }
 
             let rule = if active { "━" } else { "─" };
             let color = if active {
-                palette::FOCUS
+                palette::focus()
             } else {
-                palette::BORDER
+                palette::border()
             };
             underline.push(rule.repeat(label_width).fg(color));
             if has_separator {
-                underline.push("─".fg(palette::BORDER));
+                underline.push("─".fg(palette::border()));
             }
         }
 

@@ -1,6 +1,7 @@
 use super::ShellState;
 use super::dashboard::dashboard_value;
 use super::dashboard::format_usize;
+use super::design::palette;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
 use ratatui::style::Stylize;
@@ -16,12 +17,12 @@ pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'sta
             )));
             workspace_lines.extend(workspace_change_lines(&git_status.changes));
         } else {
-            workspace_lines.push(Line::from("tree clean".green()));
+            workspace_lines.push(Line::from("tree clean".fg(palette::success())));
         }
         if let Some(branch) = &git_status.branch {
             workspace_lines.push(Line::from(vec![
                 "branch ".dim(),
-                dashboard_value(branch, width, /*prefix_width*/ 7).cyan(),
+                dashboard_value(branch, width, /*prefix_width*/ 7).fg(palette::cyan()),
             ]));
         }
     }

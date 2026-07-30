@@ -5,6 +5,7 @@ use super::TranscriptKind;
 use super::TranscriptLine;
 use super::backend::AppShellBackend;
 use super::backend::AppShellTurnStart;
+use super::design::palette;
 use super::format_user_inputs;
 use super::is_unmodified_action_key;
 use crate::app_server_session::ForkGoalContinuation;
@@ -192,7 +193,7 @@ impl SafetyBufferingState {
                 SafetyBufferingAction::LearnMore => "Learn more",
             };
             let marker = if index == active.selected {
-                ">".cyan().bold()
+                ">".fg(palette::cyan()).bold()
             } else {
                 " ".into()
             };

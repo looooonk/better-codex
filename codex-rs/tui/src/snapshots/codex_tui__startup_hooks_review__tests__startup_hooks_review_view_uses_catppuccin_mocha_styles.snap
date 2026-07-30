@@ -1,0 +1,17 @@
+---
+source: tui/src/startup_hooks_review_tests.rs
+expression: unique_buffer_styles(terminal.backend().buffer())
+---
+[
+    "Style::new().fg(Color::Rgb(137, 220, 235)).bg(Color::Rgb(30, 30, 46)).underline_color(Color::Reset).bold()",
+    "Style::new().fg(Color::Rgb(137, 220, 235)).bg(Color::Rgb(49, 50, 68)).underline_color(Color::Reset).bold()",
+    "Style::new().fg(Color::Rgb(203, 166, 247)).bg(Color::Rgb(24, 24, 37)).underline_color(Color::Reset).bold()",
+    "Style::new().fg(Color::Rgb(203, 166, 247)).bg(Color::Rgb(30, 30, 46)).underline_color(Color::Reset)",
+    "Style::new().fg(Color::Rgb(205, 214, 244)).bg(Color::Rgb(24, 24, 37)).underline_color(Color::Reset)",
+    "Style::new().fg(Color::Rgb(205, 214, 244)).bg(Color::Rgb(30, 30, 46)).underline_color(Color::Reset)",
+    "Style::new().fg(Color::Rgb(205, 214, 244)).bg(Color::Rgb(30, 30, 46)).underline_color(Color::Reset).bold()",
+    "Style::new().fg(Color::Rgb(205, 214, 244)).bg(Color::Rgb(30, 30, 46)).underline_color(Color::Reset).dim()",
+    "Style::new().fg(Color::Rgb(205, 214, 244)).bg(Color::Rgb(49, 50, 68)).underline_color(Color::Reset)",
+    "Style::new().fg(Color::Rgb(205, 214, 244)).bg(Color::Rgb(49, 50, 68)).underline_color(Color::Reset).bold()",
+    "Style::new().fg(Color::Rgb(205, 214, 244)).bg(Color::Rgb(49, 50, 68)).underline_color(Color::Reset).dim()",
+]
