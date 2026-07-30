@@ -112,6 +112,7 @@ mod paste;
 mod plugin_management;
 mod pointer;
 mod queued_messages;
+mod reasoning_aura;
 mod render;
 mod safety_buffering;
 mod scrollback_view;
@@ -173,6 +174,7 @@ use interactive_requests::PendingInteractiveRequest;
 use mcp_management::McpManagementState;
 use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
+use reasoning_aura::ReasoningAura;
 use render::draw_shell;
 use safety_buffering::SafetyBufferingState;
 use selection_controller::TextSelectionState;
@@ -354,6 +356,8 @@ pub(crate) async fn run(
             }
             let user_input_auto_resolution_deadline =
                 shell.pending_user_input_auto_resolution_deadline();
+            let reasoning_aura_deadline =
+                shell.reasoning_aura.as_ref().map(ReasoningAura::expires_at);
             select! {
                 event = tui_events.next() => {
                     let Some(event) = event else {
@@ -539,6 +543,14 @@ pub(crate) async fn run(
                     if shell.start_expired_user_input_resolution(&app_server) {
                         tui.frame_requester().schedule_frame();
                     }
+                }
+                _ = tokio::time::sleep_until(
+                    reasoning_aura_deadline
+                        .map(tokio::time::Instant::from_std)
+                        .unwrap_or_else(tokio::time::Instant::now)
+                ), if reasoning_aura_deadline.is_some() => {
+                    shell.reasoning_aura = None;
+                    tui.frame_requester().schedule_frame();
                 }
                 _ = status_spinner.tick() => {
                     if shell.status_spinner_active() {
@@ -817,6 +829,7 @@ struct ShellState {
     active_permission_profile: Option<codex_protocol::models::ActivePermissionProfile>,
     runtime_workspace_roots: Vec<codex_utils_absolute_path::AbsolutePathBuf>,
     reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
+    reasoning_aura: Option<ReasoningAura>,
     service_tier: Option<String>,
     collaboration_mode: Option<Box<codex_protocol::config_types::CollaborationMode>>,
     max_concurrent_threads_per_session: usize,
@@ -949,6 +962,7 @@ impl ShellState {
             active_permission_profile: session.active_permission_profile,
             runtime_workspace_roots: session.runtime_workspace_roots,
             reasoning_effort: session.reasoning_effort,
+            reasoning_aura: None,
             service_tier: session.service_tier,
             collaboration_mode: session.collaboration_mode,
             max_concurrent_threads_per_session,
@@ -2588,6 +2602,7 @@ impl ShellState {
             active_permission_profile: None,
             runtime_workspace_roots: Vec::new(),
             reasoning_effort: None,
+            reasoning_aura: None,
             service_tier: None,
             collaboration_mode: None,
             max_concurrent_threads_per_session: 4,
@@ -2859,6 +2874,7 @@ pub mod bench_support {
             active_permission_profile: None,
             runtime_workspace_roots: Vec::new(),
             reasoning_effort: None,
+            reasoning_aura: None,
             service_tier: None,
             collaboration_mode: None,
             max_concurrent_threads_per_session: 4,

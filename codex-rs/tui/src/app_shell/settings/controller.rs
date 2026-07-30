@@ -3,6 +3,7 @@ use super::super::backend::AppShellBackend;
 use super::super::is_unmodified_action_key;
 use super::super::is_unmodified_key_event;
 use super::super::is_unmodified_key_press;
+use super::super::reasoning_aura::ReasoningAuraTone;
 use super::SettingsAction;
 use super::SettingsView;
 use super::background::SettingsChange;
@@ -306,6 +307,12 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        let current_thread_effort = self.reasoning_effort.clone().or_else(|| {
+            self.available_models
+                .iter()
+                .find(|preset| preset.model == self.model)
+                .map(|preset| preset.default_reasoning_effort.clone())
+        });
         let preset = self
             .available_models
             .iter()
@@ -338,6 +345,10 @@ impl ShellState {
             SettingsChange::Model {
                 model: model.clone(),
                 effort: effort.clone(),
+                aura_tone: ReasoningAuraTone::for_transition(
+                    current_thread_effort.as_ref(),
+                    effort.as_ref(),
+                ),
                 service_tier,
             },
             edits,
@@ -387,6 +398,12 @@ impl ShellState {
     ) where
         S: AppShellBackend,
     {
+        let current_thread_effort = self.reasoning_effort.clone().or_else(|| {
+            self.available_models
+                .iter()
+                .find(|preset| preset.model == self.model)
+                .map(|preset| preset.default_reasoning_effort.clone())
+        });
         let thread_effort = effort.clone().or_else(|| {
             self.available_models
                 .iter()
@@ -397,6 +414,10 @@ impl ShellState {
             app_server,
             SettingsChange::ReasoningEffort {
                 effort: effort.clone(),
+                aura_tone: ReasoningAuraTone::for_transition(
+                    current_thread_effort.as_ref(),
+                    thread_effort.as_ref(),
+                ),
                 thread_effort: thread_effort.clone(),
             },
             build_model_selection_edits(&self.model, effort.as_ref()),
