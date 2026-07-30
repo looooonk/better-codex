@@ -46,9 +46,7 @@ class ReleasePackageTest(unittest.TestCase):
             for name in ("COPYING", "LICENSE-MIT", "UNLICENSE"):
                 (inputs / name).write_text(f"{name}\n")
 
-            first = root / "first.tar.gz"
-            second = root / "second.tar.gz"
-            for output in (first, second):
+            def build_archive(output: Path, version: str) -> None:
                 subprocess.run(
                     [
                         "python3",
@@ -56,7 +54,7 @@ class ReleasePackageTest(unittest.TestCase):
                         "--target",
                         target,
                         "--version",
-                        "0.1.0-alpha.1",
+                        version,
                         "--codex-bin",
                         str(codex),
                         "--code-mode-host-bin",
@@ -71,6 +69,11 @@ class ReleasePackageTest(unittest.TestCase):
                     ],
                     check=True,
                 )
+
+            first = root / "first.tar.gz"
+            second = root / "second.tar.gz"
+            for output in (first, second):
+                build_archive(output, "0.1.0-alpha.1")
 
             self.assertEqual(self.digest(first), self.digest(second))
             with tarfile.open(first, "r:gz") as archive:
@@ -112,21 +115,44 @@ class ReleasePackageTest(unittest.TestCase):
                 "BETTER_CODEX_INSTALL_ROOT": str(install_root),
                 "BETTER_CODEX_BIN_DIR": str(bin_dir),
             }
-            for _ in range(2):
-                subprocess.run(
-                    ["sh", str(INSTALLER), "--version", "0.1.0-alpha.1"],
-                    check=True,
-                    env=environment,
-                )
+            subprocess.run(
+                ["sh", str(INSTALLER), "--version", "0.1.0-alpha.1"],
+                check=True,
+                env=environment,
+            )
+
+            self.write_executable(
+                codex,
+                "#!/bin/sh\nprintf 'better-codex 0.1.0-alpha.2\\n'\n",
+            )
+            upgrade = root / "upgrade.tar.gz"
+            build_archive(upgrade, "0.1.0-alpha.2")
+            upgrade_environment = environment | {
+                "BETTER_CODEX_ARCHIVE_PATH": str(upgrade)
+            }
+            subprocess.run(
+                ["sh", str(INSTALLER), "--version", "0.1.0-alpha.2"],
+                check=True,
+                env=upgrade_environment,
+            )
+
             output = subprocess.check_output(
                 [bin_dir / "better-codex", "--version"],
-                env=environment,
+                env=upgrade_environment,
                 text=True,
             )
-            self.assertEqual(output, "better-codex 0.1.0-alpha.1\n")
+            self.assertEqual(output, "better-codex 0.1.0-alpha.2\n")
             self.assertEqual(
                 (install_root / "current").resolve(),
-                (install_root / "releases" / f"0.1.0-alpha.1-{target}").resolve(),
+                (install_root / "releases" / f"0.1.0-alpha.2-{target}").resolve(),
+            )
+            self.assertEqual(
+                list(
+                    (install_root / "releases" / f"0.1.0-alpha.1-{target}").glob(
+                        ".current.*"
+                    )
+                ),
+                [],
             )
 
     @staticmethod

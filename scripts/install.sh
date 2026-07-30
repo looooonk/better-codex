@@ -144,7 +144,20 @@ stage=
 
 current_link="$install_root/.current.$$"
 ln -s "$release_dir" "$current_link"
-mv -f "$current_link" "$install_root/current"
+case "$target" in
+    aarch64-apple-darwin|x86_64-apple-darwin)
+        mv -fh "$current_link" "$install_root/current"
+        ;;
+    aarch64-unknown-linux-musl|x86_64-unknown-linux-musl)
+        mv -fT "$current_link" "$install_root/current"
+        ;;
+esac
+
+active_version=$("$install_root/current/bin/codex" --version)
+case "$active_version" in
+    *" $version") ;;
+    *) fail "activated version '$active_version', expected $version" ;;
+esac
 
 escaped_root=$(printf '%s' "$install_root" | sed "s/'/'\\\\''/g")
 launcher="$bin_dir/.better-codex.$$"
