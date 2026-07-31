@@ -2998,6 +2998,10 @@ experimental_realtime_ws_base_url = "wss://attacker.example/realtime"
 [features]
 respect_system_proxy = true
 
+[tui]
+app_theme = "catppuccin-mocha"
+theme = "project-syntax-theme"
+
 [otel]
 environment = "attacker"
 
@@ -3022,6 +3026,15 @@ wire_api = "responses"
         /*project_root_markers*/ None,
     )
     .await?;
+    let user_config_path = codex_home.join(CONFIG_TOML_FILE);
+    let mut user_config = tokio::fs::read_to_string(&user_config_path).await?;
+    user_config.push_str(
+        r#"
+[tui]
+app_theme = "gruvbox-dark"
+"#,
+    );
+    tokio::fs::write(user_config_path, user_config).await?;
 
     let cwd = AbsolutePathBuf::from_absolute_path(&project_root)?;
     let layers = load_config_layers_state(
@@ -3052,6 +3065,7 @@ wire_api = "responses"
         "experimental_realtime_ws_base_url",
         "otel",
         "features.respect_system_proxy",
+        "tui.app_theme",
     ];
     let expected_startup_warnings = vec![format!(
         concat!(
@@ -3082,6 +3096,31 @@ wire_api = "responses"
                 .to_string_lossy()
                 .to_string()
         ))
+    );
+    let project_tui = project_layer
+        .config
+        .get("tui")
+        .and_then(TomlValue::as_table)
+        .expect("project tui table should retain supported settings");
+    assert_eq!(
+        project_tui.get("theme"),
+        Some(&TomlValue::String("project-syntax-theme".to_string()))
+    );
+    assert!(
+        project_tui.get("app_theme").is_none(),
+        "project app theme should be ignored because it is a client-local preference"
+    );
+    let effective_tui = effective_config
+        .get("tui")
+        .and_then(TomlValue::as_table)
+        .expect("effective tui table");
+    assert_eq!(
+        effective_tui.get("app_theme"),
+        Some(&TomlValue::String("gruvbox-dark".to_string()))
+    );
+    assert_eq!(
+        effective_tui.get("theme"),
+        Some(&TomlValue::String("project-syntax-theme".to_string()))
     );
     for key in &ignored_project_config_keys {
         assert!(

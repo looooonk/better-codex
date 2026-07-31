@@ -48,6 +48,7 @@ use codex_core_api::TerminalResizeReflowConfig;
 use codex_core_api::ThreadManager;
 use codex_core_api::ThreadStoreConfig;
 use codex_core_api::ToolSuggestConfig;
+use codex_core_api::TuiAppTheme;
 use codex_core_api::TuiKeymap;
 use codex_core_api::TuiNotificationSettings;
 use codex_core_api::TuiPetAnchor;
@@ -216,6 +217,7 @@ fn new_config(model: Option<String>, arg0_paths: Arg0DispatchPaths) -> anyhow::R
         tui_status_line: None,
         tui_status_line_use_colors: true,
         tui_terminal_title: None,
+        tui_app_theme: TuiAppTheme::TokyoNight,
         tui_theme: None,
         tui_raw_output_mode: false,
         tui_pet: None,
