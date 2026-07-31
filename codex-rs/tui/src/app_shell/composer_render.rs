@@ -38,12 +38,12 @@ pub(super) fn wrapped_composer_lines_with_selection(
     selection: Option<Range<usize>>,
 ) -> Vec<Line<'static>> {
     let width = width.max(/*other*/ 1);
-    let initial_indent = Line::from("> ".fg(palette::FOCUS));
-    let subsequent_indent = Line::from("  ".fg(palette::MUTED));
+    let initial_indent = Line::from("> ".fg(palette::focus()));
+    let subsequent_indent = Line::from("  ".fg(palette::muted()));
     let mut wrapped_lines = Vec::new();
     if is_empty {
         let placeholder = "Type a message, Shift+Enter for newline"
-            .fg(palette::MUTED)
+            .fg(palette::muted())
             .into();
         let options = RtOptions::new(width)
             .initial_indent(initial_indent)
@@ -242,7 +242,7 @@ fn composer_grapheme_style(
 ) -> Style {
     let mut style = Style::new();
     if command_range.is_some_and(|command| ranges_overlap(local_range, command)) {
-        style = style.fg(palette::FOCUS).bold();
+        style = style.fg(palette::focus()).bold();
     }
     if selection.is_some_and(|selection| ranges_overlap(display_range, selection)) {
         style = style.patch(text_selection_style());

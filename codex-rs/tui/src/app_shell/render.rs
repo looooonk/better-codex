@@ -73,7 +73,7 @@ pub(super) enum PointerPane {
 
 impl ShellView<'_> {
     pub(super) fn render(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, palette::BASE);
+        fill_rect(buf, area, palette::base());
         let Some(layout) = self.layout(area) else {
             self.render_terminal_too_narrow(area, buf);
             return;
@@ -379,22 +379,22 @@ impl ShellView<'_> {
     }
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, palette::SURFACE);
+        fill_rect(buf, area, palette::surface());
         let border_color = if self.shell.dashboard_focused() {
-            palette::BORDER
+            palette::border()
         } else {
-            palette::FOCUS
+            palette::focus()
         };
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::new().fg(border_color))
-            .style(pane_style(palette::SURFACE))
+            .style(pane_style(palette::surface()))
             .render(area, buf);
         if let Some(pending) = &self.shell.pending_approval {
             let body = body_rect_after_title(pane_content_rect(area));
             let lines = visible_approval_panel_lines(pending, body.width, body.height);
-            self.render_titled_panel(area, "APPROVAL", lines, palette::SURFACE, buf);
+            self.render_titled_panel(area, "APPROVAL", lines, palette::surface(), buf);
             return;
         }
         if let Some(pending) = &self.shell.pending_elicitation {
@@ -405,7 +405,7 @@ impl ShellView<'_> {
                 body.width,
                 body.height,
             );
-            self.render_titled_panel(area, "MCP ELICITATION", lines, palette::SURFACE, buf);
+            self.render_titled_panel(area, "MCP ELICITATION", lines, palette::surface(), buf);
             return;
         }
         if let Some(pending) = &self.shell.pending_user_input {
@@ -414,7 +414,7 @@ impl ShellView<'_> {
                 area,
                 "TOOL INPUT",
                 user_input_lines(pending, &self.shell.composer, width),
-                palette::SURFACE,
+                palette::surface(),
                 buf,
             );
             return;
@@ -485,7 +485,7 @@ impl ShellView<'_> {
                 .min(max_start);
             lines = lines.into_iter().skip(start).take(visible_height).collect();
         }
-        self.render_titled_panel(area, &title, lines, palette::SURFACE, buf);
+        self.render_titled_panel(area, &title, lines, palette::surface(), buf);
     }
 
     fn base_hover_position(&self) -> Option<Position> {
@@ -528,10 +528,10 @@ impl ShellView<'_> {
     ) {
         let content = pane_content_rect(area);
         Paragraph::new(Line::from(vec![
-            "◆ ".set_style(Style::new().fg(palette::FOCUS)),
+            "◆ ".set_style(Style::new().fg(palette::focus())),
             title
                 .to_string()
-                .set_style(Style::new().fg(palette::TEXT).bold()),
+                .set_style(Style::new().fg(palette::text()).bold()),
         ]))
         .style(pane_style(background))
         .render(title_rect(content), buf);

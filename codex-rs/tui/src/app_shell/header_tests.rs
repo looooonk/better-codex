@@ -88,7 +88,7 @@ fn effort_and_service_tier_chips_share_the_same_accent() {
             .style()
             .fg,
         ),
-        (Some(palette::PURPLE), Some(palette::PURPLE))
+        (Some(palette::purple()), Some(palette::purple()))
     );
 }
 

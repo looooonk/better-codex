@@ -40,23 +40,26 @@ pub(super) fn render_modal(screen: Rect, title: &str, lines: Vec<Line<'static>>,
         .map(|segment| segment.content.clone())
         .collect::<Vec<_>>();
 
-    buf.set_style(screen, Style::new().fg(palette::MUTED).bg(palette::DARK));
+    buf.set_style(
+        screen,
+        Style::new().fg(palette::muted()).bg(palette::dark()),
+    );
     Clear.render(panel, buf);
-    fill_rect(buf, panel, palette::ELEVATED);
+    fill_rect(buf, panel, palette::elevated());
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(palette::FOCUS))
-        .style(pane_style(palette::ELEVATED))
+        .border_style(Style::new().fg(palette::focus()))
+        .style(pane_style(palette::elevated()))
         .render(panel, buf);
     Paragraph::new(Line::from(vec![
-        "◆ ".fg(palette::PURPLE),
-        title.to_uppercase().fg(palette::TEXT).bold(),
+        "◆ ".fg(palette::purple()),
+        title.to_uppercase().fg(palette::text()).bold(),
     ]))
-    .style(pane_style(palette::ELEVATED))
+    .style(pane_style(palette::elevated()))
     .render(title_rect(content), buf);
     Paragraph::new(lines)
-        .style(pane_style(palette::ELEVATED))
+        .style(pane_style(palette::elevated()))
         .render(body, buf);
 }
 
