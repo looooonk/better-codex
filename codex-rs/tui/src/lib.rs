@@ -105,6 +105,7 @@ mod app_exit;
 mod app_server_approval_conversions;
 mod app_server_session;
 mod app_shell;
+mod app_theme;
 #[doc(hidden)]
 pub use app_shell::bench_support as app_shell_bench_support;
 mod cli;

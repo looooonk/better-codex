@@ -10,6 +10,7 @@ use ratatui::text::Span;
     reason = "semantic roles are adopted by app-shell views incrementally"
 )]
 pub(super) mod palette {
+    use crate::app_theme;
     use ratatui::style::Color;
 
     pub const BASE: Color = Color::Rgb(26, 27, 38);
@@ -27,6 +28,66 @@ pub(super) mod palette {
     pub const SUCCESS: Color = Color::Rgb(158, 206, 106);
     pub const WARNING: Color = Color::Rgb(224, 175, 104);
     pub const ERROR: Color = Color::Rgb(247, 118, 142);
+
+    pub fn base() -> Color {
+        app_theme::palette().base
+    }
+
+    pub fn dark() -> Color {
+        app_theme::palette().dark
+    }
+
+    pub fn surface() -> Color {
+        app_theme::palette().surface
+    }
+
+    pub fn elevated() -> Color {
+        app_theme::palette().elevated
+    }
+
+    pub fn diff_added_background() -> Color {
+        app_theme::palette().diff_added_background
+    }
+
+    pub fn diff_removed_background() -> Color {
+        app_theme::palette().diff_removed_background
+    }
+
+    pub fn border() -> Color {
+        app_theme::palette().border
+    }
+
+    pub fn text() -> Color {
+        app_theme::palette().text
+    }
+
+    pub fn muted() -> Color {
+        app_theme::palette().muted
+    }
+
+    pub fn focus() -> Color {
+        app_theme::palette().focus
+    }
+
+    pub fn cyan() -> Color {
+        app_theme::palette().cyan
+    }
+
+    pub fn purple() -> Color {
+        app_theme::palette().purple
+    }
+
+    pub fn success() -> Color {
+        app_theme::palette().success
+    }
+
+    pub fn warning() -> Color {
+        app_theme::palette().warning
+    }
+
+    pub fn error() -> Color {
+        app_theme::palette().error
+    }
 }
 
 // Compatibility aliases for app-shell views that have not moved to semantic roles yet.
@@ -47,15 +108,15 @@ pub(super) enum Tone {
 }
 
 pub(super) fn pane_style(color: Color) -> Style {
-    Style::new().fg(palette::TEXT).bg(color)
+    Style::new().fg(palette::text()).bg(color)
 }
 
 pub(super) fn selection_style() -> Style {
-    pane_style(palette::ELEVATED)
+    pane_style(palette::elevated())
 }
 
 pub(super) fn text_selection_style() -> Style {
-    Style::new().fg(palette::DARK).bg(palette::FOCUS)
+    Style::new().fg(palette::dark()).bg(palette::focus())
 }
 
 pub(super) fn fill_rect(buf: &mut Buffer, area: Rect, color: Color) {
@@ -117,11 +178,11 @@ pub(super) fn badge_span(label: impl Into<String>, tone: Tone) -> Span<'static> 
 
 pub(super) fn tone_span(text: String, tone: Tone) -> Span<'static> {
     let color = match tone {
-        Tone::Dim => palette::MUTED,
-        Tone::Focus => palette::FOCUS,
-        Tone::Success => palette::SUCCESS,
-        Tone::Danger => palette::ERROR,
-        Tone::Codex => palette::PURPLE,
+        Tone::Dim => palette::muted(),
+        Tone::Focus => palette::focus(),
+        Tone::Success => palette::success(),
+        Tone::Danger => palette::error(),
+        Tone::Codex => palette::purple(),
     };
     Span::styled(text, Style::new().fg(color))
 }
