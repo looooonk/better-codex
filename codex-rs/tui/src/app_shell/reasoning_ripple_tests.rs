@@ -75,7 +75,7 @@ fn ripple_frames_advance_at_the_refresh_cadence_and_stop_at_the_deadline() {
 }
 
 #[test]
-fn themed_max_and_ultra_ripple_gradients_snapshot() {
+fn themed_max_and_ultra_curved_ripple_gradients_snapshot() {
     let snapshots = [
         (
             "tokyo-night",
@@ -126,7 +126,7 @@ fn themed_max_and_ultra_ripple_gradients_snapshot() {
     })
     .join("\n\n");
 
-    insta::assert_snapshot!("themed_max_and_ultra_ripple_gradients", snapshots);
+    insta::assert_snapshot!("themed_max_and_ultra_curved_ripple_gradients", snapshots);
 }
 
 #[test]
@@ -154,6 +154,32 @@ fn shell_render_limits_ripple_to_top_bar_snapshot() {
         "shell_render_limits_ripple_to_top_bar",
         changed_rows(&changed, area)
     );
+}
+
+#[test]
+fn ripple_fades_before_reaching_the_far_edge() {
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 3,
+    );
+    let origin = Rect::new(
+        /*x*/ 52, /*y*/ 1, /*width*/ 7, /*height*/ 1,
+    );
+    let _active_theme = app_theme::activate(TuiAppTheme::GruvboxDark);
+    let baseline = labeled_header_buffer(area, active_palette());
+    let mut rippled = baseline.clone();
+    ReasoningRippleFrame {
+        tone: ReasoningRippleTone::Max,
+        progress: 0.75,
+    }
+    .render(area, origin, &mut rippled);
+
+    let changed = changed_backgrounds(&baseline, &rippled, area);
+    assert!(
+        changed
+            .iter()
+            .all(|position| position.x > area.x + area.width / 8)
+    );
+    assert!(changed.iter().any(|position| position.x < origin.x));
 }
 
 fn labeled_header_buffer(area: Rect, theme: ThemePalette) -> Buffer {

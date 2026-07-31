@@ -9,8 +9,10 @@ use std::time::Instant;
 
 const RIPPLE_DURATION: Duration = Duration::from_millis(/*millis*/ 850);
 pub(super) const FRAME_INTERVAL: Duration = Duration::from_millis(/*millis*/ 33);
-const LEADING_GRADIENT_WIDTH: f32 = 3.0;
-const TRAILING_GRADIENT_WIDTH: f32 = 12.0;
+const RING_GRADIENT_WIDTH: f32 = 5.0;
+const VERTICAL_DISTANCE_SCALE: f32 = 8.0;
+const MAX_TRAVEL_FRACTION: f32 = 0.7;
+const MAX_TRAVEL_DISTANCE: f32 = 42.0;
 const PEAK_ALPHA: f32 = 0.48;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,28 +107,31 @@ impl ReasoningRippleFrame {
         };
         let ripple_rgb = (ripple_red, ripple_green, ripple_blue);
         let base_rgb = (base_red, base_green, base_blue);
-        let left_distance = origin.x.saturating_sub(area.x);
-        let right_distance = area.right().saturating_sub(origin.right());
-        let max_distance = f32::from(left_distance.max(right_distance));
-        let radius = self.progress * (max_distance + TRAILING_GRADIENT_WIDTH);
-        let lifetime_alpha = 1.0 - self.progress * 0.25;
+        let center_x = f32::from(origin.x) + (f32::from(origin.width) - 1.0) / 2.0;
+        let center_y = f32::from(origin.y) + (f32::from(origin.height) - 1.0) / 2.0;
+        let left_distance = center_x - f32::from(area.x);
+        let right_distance = f32::from(area.right().saturating_sub(1)) - center_x;
+        let far_edge_distance = left_distance.max(right_distance).max(1.0);
+        let fade_radius = (far_edge_distance * MAX_TRAVEL_FRACTION).clamp(1.0, MAX_TRAVEL_DISTANCE);
+        let radius = self.progress * (fade_radius + RING_GRADIENT_WIDTH);
 
         for y in area.y..area.bottom() {
             for x in area.x..area.right() {
-                let distance = f32::from(horizontal_distance_from(origin, x));
-                let wave_offset = distance - radius;
-                let gradient = if wave_offset >= 0.0 {
-                    1.0 - wave_offset / LEADING_GRADIENT_WIDTH
-                } else {
-                    1.0 + wave_offset / TRAILING_GRADIENT_WIDTH
-                }
-                .clamp(0.0, 1.0);
+                let horizontal_distance = f32::from(x) - center_x;
+                let vertical_distance = (f32::from(y) - center_y) * VERTICAL_DISTANCE_SCALE;
+                let distance = horizontal_distance.hypot(vertical_distance);
+                let gradient =
+                    (1.0 - (distance - radius).abs() / RING_GRADIENT_WIDTH).clamp(0.0, 1.0);
                 if gradient == 0.0 {
                     continue;
                 }
-                let vertical_distance = f32::from(y.abs_diff(origin.y));
-                let vertical_alpha = 1.0 / (1.0 + vertical_distance * 0.7);
-                let alpha = PEAK_ALPHA * gradient * gradient * vertical_alpha * lifetime_alpha;
+                let distance_ratio = (distance / fade_radius).clamp(0.0, 1.0);
+                let distance_alpha =
+                    1.0 - distance_ratio * distance_ratio * (3.0 - 2.0 * distance_ratio);
+                let alpha = PEAK_ALPHA * gradient * gradient * distance_alpha;
+                if alpha == 0.0 {
+                    continue;
+                }
                 let Some(cell) = buf.cell_mut((x, y)) else {
                     continue;
                 };
@@ -158,16 +163,6 @@ impl ReasoningRippleFrame {
                 cell.set_bg(Color::Rgb(red, green, blue));
             }
         }
-    }
-}
-
-fn horizontal_distance_from(origin: Rect, x: u16) -> u16 {
-    if x < origin.x {
-        origin.x - x
-    } else if x >= origin.right() {
-        x.saturating_sub(origin.right()).saturating_add(1)
-    } else {
-        0
     }
 }
 

@@ -14275,12 +14275,16 @@ async fn successful_settings_render_max_and_ultra_ripples_from_effort_picker() {
         complete_backend_actions(&mut shell, &backend).await;
 
         let buffer = render_shell_buffer(&shell, area);
-        let effort_picker = (area.y..area.bottom())
+        let effort_picker_cells = (area.y..area.bottom())
             .flat_map(|y| (area.x..area.right()).map(move |x| Position::new(x, y)))
-            .find(|position| {
+            .filter(|position| {
                 ShellView { shell: &shell }.header_control_at(area, *position)
                     == Some(super::header::HeaderControl::ReasoningEffort)
             })
+            .collect::<Vec<_>>();
+        let effort_picker = effort_picker_cells
+            .get(effort_picker_cells.len() / 2)
+            .copied()
             .expect("effort picker should be visible");
         observations.push((
             path,
@@ -14305,14 +14309,14 @@ async fn successful_settings_render_max_and_ultra_ripples_from_effort_picker() {
             (
                 SettingsPath::Model,
                 Some(ReasoningEffort::Max),
-                Position::new(/*x*/ 49, /*y*/ 1),
+                Position::new(/*x*/ 52, /*y*/ 1),
                 Some(Color::Rgb(0xa1, 0x80, 0x3a)),
                 Some(Color::Rgb(0x28, 0x28, 0x28)),
             ),
             (
                 SettingsPath::ReasoningEffort,
                 Some(ReasoningEffort::Ultra),
-                Position::new(/*x*/ 47, /*y*/ 1),
+                Position::new(/*x*/ 51, /*y*/ 1),
                 Some(Color::Rgb(0x8e, 0x66, 0x6e)),
                 Some(Color::Rgb(0x28, 0x28, 0x28)),
             ),
