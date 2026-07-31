@@ -12,16 +12,17 @@ expression: "render_shell(&shell, area)"
                                                   │▎› Model: gpt-5-codex
  ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
           by app-server turns.                    │▎  Service tier: default
- ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ GOAL
-         3. Render dashboard                      │▎status active
-                                                  │▎Complete the unchecked dashboard progress item
- ▌ tool exec just test -p codex-tui               │▎1m | 12,345/50,000 tokens
-                                                  │
- ▌ edited 3 files +128 -24                        │▎◆ PLAN
-                                                  │▎Build the standalone shell in slices.
- ▎ CODEX  The new shell owns the fullscreen       │▎x Shell frame
-          surface.                                │▎> Transcript model
+ ▎ PLAN  1. Build shell                           │▎
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ GOAL
+                                                  │▎status active
+ ▌ tool exec just test -p codex-tui               │▎Complete the unchecked dashboard progress item
+                                                  │▎1m | 12,345/50,000 tokens
+ ▌ edited 3 files +128 -24                        │
+                                                  │▎◆ PLAN
+ ▎ CODEX  The new shell owns the fullscreen       │▎Build the standalone shell in slices.
+          surface.                                │▎x Shell frame
+                                                  │▎> Transcript model
                                                   │▎- Approvals
                                                   │
                                                   │▎◆ TOOLS
@@ -29,10 +30,9 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │▎◆ EDITS
                                                   │▎3 files +128 -24
-                                                  │
-╭────────────────────────────────────────────────╮│▎◆ WORKSPACE
-│◆ MESSAGE  1:37                                 ││▎profile managed
-│> Summarize the new shell architecture          ││▎cwd /workspace/better-codex
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││▎◆ WORKSPACE
+│> Summarize the new shell architecture          ││▎profile managed
+│                                                ││▎cwd /workspace/better-codex
 │                                                ││▎files restricted, net restricted
-│                                                ││▎roots none selected
 ╰────────────────────────────────────────────────╯│

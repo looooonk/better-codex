@@ -6,6 +6,7 @@ use super::integrations::PluginInventorySummary;
 use crate::text_input::EditableText;
 use crate::text_input::TextInputAction;
 use codex_app_server_protocol::AskForApproval;
+use codex_config::types::TuiAppTheme;
 use codex_protocol::openai_models::ReasoningEffort;
 use ratatui::style::Styled;
 use ratatui::style::Stylize;
@@ -21,7 +22,7 @@ pub(super) use persistence::persist_settings_update;
 pub(super) use tabs::SettingsTabs;
 
 const ULTRA_REASONING_CONCURRENCY_WARNING_THRESHOLD: usize = 8;
-const SETTINGS_PAGE_LINE_COUNT: usize = 5;
+const SETTINGS_PAGE_LINE_COUNT: usize = 6;
 
 #[derive(Debug, Clone, Default)]
 pub(super) struct SettingsState {
@@ -47,6 +48,7 @@ pub(super) enum SettingsAction {
     ReasoningEffort,
     ServiceTier,
     ApprovalPolicy,
+    AppTheme,
     Theme,
     Animations,
     Tooltips,
@@ -60,6 +62,7 @@ pub(super) struct SettingsView {
     pub(super) reasoning_effort: Option<ReasoningEffort>,
     pub(super) service_tier: Option<String>,
     pub(super) approval_policy: AskForApproval,
+    pub(super) app_theme: TuiAppTheme,
     pub(super) theme: Option<String>,
     pub(super) animations: bool,
     pub(super) show_tooltips: bool,
@@ -197,9 +200,10 @@ impl SettingsState {
             | SettingsAction::ReasoningEffort
             | SettingsAction::ServiceTier => SettingsPage::Model,
             SettingsAction::ApprovalPolicy => SettingsPage::Permissions,
-            SettingsAction::Theme | SettingsAction::Animations | SettingsAction::Tooltips => {
-                SettingsPage::Appearance
-            }
+            SettingsAction::AppTheme
+            | SettingsAction::Theme
+            | SettingsAction::Animations
+            | SettingsAction::Tooltips => SettingsPage::Appearance,
             SettingsAction::McpServers | SettingsAction::Plugins => SettingsPage::Integrations,
         };
         self.selected = self
@@ -278,6 +282,7 @@ impl SettingsState {
             ],
             SettingsPage::Permissions => &[SettingsAction::ApprovalPolicy],
             SettingsPage::Appearance => &[
+                SettingsAction::AppTheme,
                 SettingsAction::Theme,
                 SettingsAction::Animations,
                 SettingsAction::Tooltips,
@@ -327,6 +332,7 @@ impl SettingsAction {
             Self::ReasoningEffort => "Reasoning",
             Self::ServiceTier => "Service tier",
             Self::ApprovalPolicy => "Approval",
+            Self::AppTheme => "App theme",
             Self::Theme => "Syntax theme",
             Self::Animations => "Animations",
             Self::Tooltips => "Tooltips",
@@ -361,6 +367,7 @@ fn setting_row(
             .filter(|tier| !tier.trim().is_empty())
             .unwrap_or_else(|| "default".to_string()),
         SettingsAction::ApprovalPolicy => approval_policy_label(view.approval_policy).to_string(),
+        SettingsAction::AppTheme => app_theme_label(view.app_theme).to_string(),
         SettingsAction::Theme => view.theme.clone().unwrap_or_else(|| "default".to_string()),
         SettingsAction::Animations => on_off(view.animations).to_string(),
         SettingsAction::Tooltips => on_off(view.show_tooltips).to_string(),
@@ -390,6 +397,14 @@ pub(super) fn approval_policy_label(policy: AskForApproval) -> &'static str {
         AskForApproval::OnRequest => "on-request",
         AskForApproval::Never => "never",
         AskForApproval::Granular { .. } => "granular",
+    }
+}
+
+pub(super) fn app_theme_label(theme: TuiAppTheme) -> &'static str {
+    match theme {
+        TuiAppTheme::TokyoNight => "Tokyo Night",
+        TuiAppTheme::GruvboxDark => "Gruvbox Dark",
+        TuiAppTheme::CatppuccinMocha => "Catppuccin Mocha",
     }
 }
 

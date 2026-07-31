@@ -1,0 +1,13 @@
+---
+source: tui/src/app_shell/selector_tests.rs
+expression: "buffer_text(&buffer, geometry.modal)"
+---
+╭ Select app theme ────────────────────────────────────────────────╮
+│   1 ○ Tokyo Night                                                │
+│       Better Codex's default cool blue and purple palette.       │
+│   2 ○ Gruvbox Dark                                               │
+│       A warm, retro palette with earthy contrast.                │
+│ › 3 ● Catppuccin Mocha  current                                  │
+│       A soft pastel palette on a dark base.                      │
+│  wheel / j k  Enter select  Esc cancel  3/3                      │
+╰──────────────────────────────────────────────────────────────────╯

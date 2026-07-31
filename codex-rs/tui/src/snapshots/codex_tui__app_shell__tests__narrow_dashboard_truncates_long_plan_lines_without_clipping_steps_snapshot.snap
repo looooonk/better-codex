@@ -12,16 +12,17 @@ expression: rendered
                                                   │▎› Model: gpt-5-codex
  ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
           by app-server turns.                    │▎  Service tier: default
- ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ PLAN
-         3. Render dashboard                      │▎This deliberately long plan explanation must s…
-                                                  │▎x Inspect measurement
- ▌ tool exec just test -p codex-tui               │▎x Truncate styled lines
-                                                  │▎> Preserve hit targets
- ▌ edited 3 files +128 -24                        │▎- Verify narrow rendering
-                                                  │▎- Final plan row remains visible
- ▎ CODEX  The new shell owns the fullscreen       │
-          surface.                                │▎◆ TOOLS
+ ▎ PLAN  1. Build shell                           │▎
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ PLAN
+                                                  │▎This deliberately long plan explanation must s…
+ ▌ tool exec just test -p codex-tui               │▎x Inspect measurement
+                                                  │▎x Truncate styled lines
+ ▌ edited 3 files +128 -24                        │▎> Preserve hit targets
+                                                  │▎- Verify narrow rendering
+ ▎ CODEX  The new shell owns the fullscreen       │▎- Final plan row remains visible
+          surface.                                │
+                                                  │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
                                                   │
                                                   │▎◆ EDITS
@@ -31,10 +32,9 @@ expression: rendered
                                                   │▎profile managed
                                                   │▎cwd /workspace/better-codex
                                                   │▎files restricted, net restricted
-                                                  │▎roots none selected
-╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││▎◆ TOKENS
-│> Summarize the new shell architecture          ││▎input 1k | output 240
+╭────────────────────────────────────────────────╮│▎roots none selected
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││▎◆ TOKENS
+│                                                ││▎input 1k | output 240
 │                                                ││▎Context 100% left
-│                                                ││
 ╰────────────────────────────────────────────────╯│

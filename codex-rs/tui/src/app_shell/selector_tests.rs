@@ -1,4 +1,5 @@
 use super::*;
+use codex_config::types::TuiAppTheme;
 use pretty_assertions::assert_eq;
 
 fn option(index: usize) -> SelectorOption<usize> {
@@ -44,6 +45,21 @@ fn reasoning_default_is_an_explicit_typed_choice() {
         &state.options[1].value,
         &SelectorValue::ReasoningEffort(ReasoningEffortValue::Explicit(ReasoningEffort::High))
     );
+}
+
+#[test]
+fn app_theme_selector_renders_all_themes_and_marks_the_current_one() {
+    let state = SelectorState::app_themes(TuiAppTheme::CatppuccinMocha);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 20,
+    );
+    let geometry = selector_geometry(area, state.options.len());
+    let mut buffer = Buffer::empty(area);
+
+    state.render(area, /*pointer*/ None, &mut buffer);
+
+    assert_eq!(state.selected, 2);
+    insta::assert_snapshot!(buffer_text(&buffer, geometry.modal));
 }
 
 #[test]

@@ -12,21 +12,21 @@ expression: "render_shell(&shell, area)"
           by app-server turns.                  ┃ │▎› Model: gpt-5-codex
  ▎ PLAN  1. Build shell                         ┃ │▎  Reasoning: default
          2. Wire transcript                     ┃ │▎  Service tier: default
-         3. Render dashboard                    ┃ │
-                                                ┃ │▎◆ GOAL
- ▌ tool exec just test -p codex-tui             ┃ │▎status active
-                                                ┃ │▎Ship the standalone shell
- ▌ edited 3 files +128 -24                      ┃ │▎1m | 12,345 tokens
- ▎ STATUS  goal set: Ship the standalone shell  ┃ │
- ▎ STATUS  goal active. Objective: Ship the     ┃ │▎◆ PLAN
-           standalone shell Time: 1m.           ┃ │▎Build the standalone shell in slices.
-                                                ┃ │▎x Shell frame
- ▎ CODEX  The new shell owns the fullscreen     ┃ │▎> Transcript model
-          surface.                              ┃ │▎- Approvals
-                                                  │
-╭────────────────────────────────────────────────╮│▎◆ TOOLS
-│◆ MESSAGE  1:1                                  ││▎in progress exec just test -p codex-tui
-│> Type a message, Shift+Enter for newline       ││
-│                                                ││▎◆ EDITS
-│                                                ││▎3 files +128 -24
+         3. Render dashboard                    ┃ │▎
+                                                ┃ │
+ ▌ tool exec just test -p codex-tui             ┃ │▎◆ GOAL
+                                                ┃ │▎status active
+ ▌ edited 3 files +128 -24                      ┃ │▎Ship the standalone shell
+ ▎ STATUS  goal set: Ship the standalone shell  ┃ │▎1m | 12,345 tokens
+ ▎ STATUS  goal active. Objective: Ship the     ┃ │
+           standalone shell Time: 1m.           ┃ │▎◆ PLAN
+                                                ┃ │▎Build the standalone shell in slices.
+ ▎ CODEX  The new shell owns the fullscreen     ┃ │▎x Shell frame
+          surface.                              ┃ │▎> Transcript model
+                                                  │▎- Approvals
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:1                                  ││▎◆ TOOLS
+│> Type a message, Shift+Enter for newline       ││▎in progress exec just test -p codex-tui
+│                                                ││
+│                                                ││
 ╰────────────────────────────────────────────────╯│

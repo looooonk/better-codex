@@ -43,6 +43,7 @@ use codex_app_server_protocol::UserInput;
 use codex_config::types::TuiAppTheme;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ModelPreset;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::Result;
 use color_eyre::eyre::WrapErr;
 use crossterm::event::KeyCode;
@@ -103,6 +104,7 @@ mod input_request_view;
 mod input_router;
 mod integrations;
 mod interactive_requests;
+mod local_app_theme;
 mod mcp_management;
 mod modal_view;
 mod navigation;
@@ -285,15 +287,20 @@ pub(crate) async fn run(
         agent_threads,
         agent_history_task,
     } = started;
+    let client_config_path = local_app_theme::selected_config_path(&config);
     let mut shell = ShellState::new(
         session,
         fallback_model,
         bootstrap.available_models,
-        config.codex_home.to_path_buf(),
+        ShellClientConfig {
+            codex_home: config.codex_home.to_path_buf(),
+            config_path: client_config_path,
+            app_theme: config.tui_app_theme,
+            tui_theme: config.tui_theme.clone(),
+            animations: config.animations,
+            show_tooltips: config.show_tooltips,
+        },
         resume_cwd_runtime,
-        config.tui_theme.clone(),
-        config.animations,
-        config.show_tooltips,
         config.multi_agent_v2.max_concurrent_threads_per_session,
     );
     shell.workspace_command_runner = Some(workspace_command_runner.clone());
@@ -830,6 +837,7 @@ struct ShellState {
     selector: Option<SelectorState<SelectorValue>>,
     pending_account_auth: Option<AccountAuthState>,
     codex_home: std::path::PathBuf,
+    client_config_path: AbsolutePathBuf,
     resume_cwd_runtime: ResumeCwdRuntime,
     dashboard_route: DashboardRoute,
     dashboard_visible: bool,
@@ -893,18 +901,32 @@ enum CompletedItemOrigin {
     Live,
 }
 
+struct ShellClientConfig {
+    codex_home: std::path::PathBuf,
+    config_path: AbsolutePathBuf,
+    app_theme: TuiAppTheme,
+    tui_theme: Option<String>,
+    animations: bool,
+    show_tooltips: bool,
+}
+
 impl ShellState {
     fn new(
         session: ThreadSessionState,
         fallback_model: String,
         available_models: Vec<ModelPreset>,
-        codex_home: std::path::PathBuf,
+        client_config: ShellClientConfig,
         resume_cwd_runtime: ResumeCwdRuntime,
-        tui_theme: Option<String>,
-        animations: bool,
-        show_tooltips: bool,
         max_concurrent_threads_per_session: usize,
     ) -> Self {
+        let ShellClientConfig {
+            codex_home,
+            config_path: client_config_path,
+            app_theme,
+            tui_theme,
+            animations,
+            show_tooltips,
+        } = client_config;
         let model = if session.model.is_empty() {
             fallback_model
         } else {
@@ -940,13 +962,14 @@ impl ShellState {
             plugin_inventory: PluginInventorySummary::default(),
             plugin_catalog: None,
             tui_theme,
-            app_theme: TuiAppTheme::TokyoNight,
+            app_theme,
             animations,
             show_tooltips,
             command_palette: None,
             selector: None,
             pending_account_auth: None,
             codex_home,
+            client_config_path,
             resume_cwd_runtime,
             dashboard_route: DashboardRoute::Status,
             dashboard_visible: true,
@@ -2585,6 +2608,10 @@ impl ShellState {
             selector: None,
             pending_account_auth: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
+            client_config_path: AbsolutePathBuf::resolve_path_against_base(
+                "codex-home/config.toml",
+                std::env::temp_dir(),
+            ),
             resume_cwd_runtime: ResumeCwdRuntime {
                 launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),
                 explicit_cwd: None,
@@ -2852,6 +2879,10 @@ pub mod bench_support {
             selector: None,
             pending_account_auth: None,
             codex_home: std::path::PathBuf::from("/tmp/codex-home"),
+            client_config_path: AbsolutePathBuf::resolve_path_against_base(
+                "codex-home/config.toml",
+                std::env::temp_dir(),
+            ),
             resume_cwd_runtime: ResumeCwdRuntime {
                 launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),
                 explicit_cwd: None,

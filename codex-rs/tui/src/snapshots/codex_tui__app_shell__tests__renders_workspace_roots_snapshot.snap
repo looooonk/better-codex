@@ -12,16 +12,17 @@ expression: "render_shell(&shell, area)"
                                                   │▎› Model: gpt-5-codex
  ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
           by app-server turns.                    │▎  Service tier: default
- ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ PLAN
-         3. Render dashboard                      │▎Build the standalone shell in slices.
-                                                  │▎x Shell frame
- ▌ tool exec just test -p codex-tui               │▎> Transcript model
-                                                  │▎- Approvals
- ▌ edited 3 files +128 -24                        │
-                                                  │▎◆ TOOLS
- ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
-          surface.                                │
+ ▎ PLAN  1. Build shell                           │▎
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ PLAN
+                                                  │▎Build the standalone shell in slices.
+ ▌ tool exec just test -p codex-tui               │▎x Shell frame
+                                                  │▎> Transcript model
+ ▌ edited 3 files +128 -24                        │▎- Approvals
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ TOOLS
+          surface.                                │▎in progress exec just test -p codex-tui
+                                                  │
                                                   │▎◆ EDITS
                                                   │▎3 files +128 -24
                                                   │
@@ -37,8 +38,7 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │▎◆ TOKENS
                                                   │▎input 1k | output 240
-                                                  │▎Context 100% left
-╭────────────────────────────────────────────────╮│
+╭────────────────────────────────────────────────╮│▎Context 100% left
 │◆ MESSAGE  1:37                                 ││
 │> Summarize the new shell architecture          ││
 │                                                ││

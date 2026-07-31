@@ -44,6 +44,7 @@ use codex_app_server_protocol::ThreadStartSource;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput;
+use codex_config::types::TuiAppTheme;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::ApprovalsReviewer;
 use codex_protocol::config_types::CollaborationMode;
@@ -197,6 +198,16 @@ pub(super) trait AppShellBackend {
         &self,
         edits: Vec<ConfigEdit>,
         thread_update: Option<ThreadSettingsUpdateParams>,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static;
+
+    /// Persists the terminal client's theme in its local user config.
+    ///
+    /// Implementations must not route this write through a connected remote
+    /// app server because the theme belongs to the client rendering the TUI.
+    fn persist_app_theme_in_background(
+        &self,
+        config_path: AbsolutePathBuf,
+        app_theme: TuiAppTheme,
     ) -> impl std::future::Future<Output = Result<()>> + Send + 'static;
 
     fn mcp_server_status_list(
@@ -568,6 +579,17 @@ impl AppShellBackend for AppServerSession {
             edits,
             thread_update,
         )
+    }
+
+    // An `async fn` would capture `&self`, but callers must be able to spawn
+    // this self-independent write as a `'static` background task.
+    #[allow(clippy::manual_async_fn)]
+    fn persist_app_theme_in_background(
+        &self,
+        config_path: AbsolutePathBuf,
+        app_theme: TuiAppTheme,
+    ) -> impl std::future::Future<Output = Result<()>> + Send + 'static {
+        super::local_app_theme::persist(config_path, app_theme)
     }
 
     async fn mcp_server_status_list(

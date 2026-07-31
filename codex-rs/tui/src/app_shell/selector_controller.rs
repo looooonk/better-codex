@@ -1,5 +1,6 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::backend_actions::ActionGroup;
 use super::selector::ReasoningEffortValue;
 use super::selector::SelectorOutcome;
 use super::selector::SelectorState;
@@ -60,6 +61,10 @@ impl ShellState {
         self.open_selector(SelectorState::approval_policies(self.approval_policy));
     }
 
+    pub(super) fn open_app_theme_selector(&mut self) {
+        self.open_selector(SelectorState::app_themes(self.app_theme));
+    }
+
     pub(super) async fn handle_selector_key<S>(
         &mut self,
         key: KeyEvent,
@@ -68,6 +73,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.has_pending_backend_action(ActionGroup::Settings) {
+            return Ok(());
+        }
         let outcome = self
             .selector
             .as_mut()
@@ -85,6 +93,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.has_pending_backend_action(ActionGroup::Settings) {
+            return Ok(self.selector.is_some());
+        }
         let Some(selector) = &mut self.selector else {
             return Ok(false);
         };
@@ -138,6 +149,9 @@ impl ShellState {
             }
             SelectorValue::ApprovalPolicy(policy) => {
                 self.apply_approval_policy(policy, app_server)?;
+            }
+            SelectorValue::AppTheme(app_theme) => {
+                self.apply_app_theme(app_theme, app_server);
             }
         }
         Ok(())

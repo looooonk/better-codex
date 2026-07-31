@@ -73,6 +73,7 @@ pub(super) enum PointerPane {
 
 impl ShellView<'_> {
     pub(super) fn render(&self, area: Rect, buf: &mut Buffer) {
+        let _active_theme = crate::app_theme::activate(self.shell.app_theme);
         fill_rect(buf, area, palette::base());
         let Some(layout) = self.layout(area) else {
             self.render_terminal_too_narrow(area, buf);
