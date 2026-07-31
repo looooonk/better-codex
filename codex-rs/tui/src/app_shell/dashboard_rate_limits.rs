@@ -20,13 +20,13 @@ pub(super) fn rate_limit_lines(limit: &RateLimitSnapshot, width: usize) -> Vec<L
         .flatten()
         .map(|window| {
             let usage_color = if window.used_percent >= 90 {
-                palette::ERROR
+                palette::error()
             } else if window.used_percent >= 75 {
-                palette::PURPLE
+                palette::purple()
             } else if window.used_percent >= 50 {
-                palette::CYAN
+                palette::cyan()
             } else {
-                palette::SUCCESS
+                palette::success()
             };
             let mut suffix = vec![format!("{}%", window.used_percent).fg(usage_color)];
             if let Some(duration) = window.window_duration_mins {
@@ -115,7 +115,7 @@ pub(super) fn rate_limit_lines(limit: &RateLimitSnapshot, width: usize) -> Vec<L
     }
     let mut details = Vec::new();
     if let Some(reached) = limit.rate_limit_reached_type {
-        details.push(format!("limited {reached:?}").fg(palette::ERROR));
+        details.push(format!("limited {reached:?}").fg(palette::error()));
     }
     if let Some(individual_limit) = &limit.individual_limit {
         if !details.is_empty() {
@@ -152,13 +152,13 @@ pub(super) fn credits_and_resets_line(
     match credits {
         Some(credits) => {
             if credits.unlimited {
-                spans.push("unlimited".fg(palette::SUCCESS));
+                spans.push("unlimited".fg(palette::success()));
             } else if let Some(balance) = &credits.balance {
                 spans.push(balance.clone().into());
             } else if !credits.has_credits {
-                spans.push("depleted".fg(palette::ERROR));
+                spans.push("depleted".fg(palette::error()));
             } else {
-                spans.push("available".fg(palette::SUCCESS));
+                spans.push("available".fg(palette::success()));
             }
         }
         None => spans.push("unavailable".dim()),
@@ -184,7 +184,7 @@ fn usage_bar_spans(used_percent: i32, usage_color: Color) -> [Span<'static>; 3] 
     [
         "█".repeat(filled_segments).fg(usage_color),
         FRACTIONAL_BLOCKS[fractional_block].fg(usage_color),
-        "░".repeat(empty_segments).fg(palette::BORDER),
+        "░".repeat(empty_segments).fg(palette::border()),
     ]
 }
 

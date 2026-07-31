@@ -185,14 +185,14 @@ pub(super) fn render_dashboard(
     buf: &mut Buffer,
 ) {
     let area = placement.area();
-    fill_rect(buf, area, palette::DARK);
+    fill_rect(buf, area, palette::dark());
     for y in area.y..area.bottom() {
         if let Some(cell) = buf.cell_mut((area.x, y)) {
             cell.set_symbol("│")
                 .set_style(Style::new().fg(if shell.dashboard_focused() {
-                    palette::FOCUS
+                    palette::focus()
                 } else {
-                    palette::BORDER
+                    palette::border()
                 }));
         }
     }
@@ -245,7 +245,7 @@ fn render_panel(
         for y in slice.area.y..slice.area.bottom() {
             if let Some(cell) = buf.cell_mut((slice.area.x, y)) {
                 cell.set_symbol("▎")
-                    .set_style(Style::new().fg(palette::BORDER));
+                    .set_style(Style::new().fg(palette::border()));
             }
         }
         Rect::new(
@@ -258,7 +258,7 @@ fn render_panel(
         slice.area
     };
     Paragraph::new(panel.render_lines(usize::from(text_area.width)))
-        .style(Style::new().fg(palette::TEXT))
+        .style(Style::new().fg(palette::text()))
         .scroll((u16::try_from(slice.source_row).unwrap_or(u16::MAX), 0))
         .render(text_area, buf);
     render_hover(shell, panel, slice, text_area, pointer, buf);
@@ -289,10 +289,13 @@ fn render_hover(
         let x = slice.area.x.saturating_add(columns.start);
         let width = columns.end.saturating_sub(columns.start);
         if let Some(y) = visible_row(slice, /*row*/ 0) {
-            buf.set_style(Rect::new(x, y, width, 1), Style::new().bg(palette::BORDER));
+            buf.set_style(
+                Rect::new(x, y, width, 1),
+                Style::new().bg(palette::border()),
+            );
         }
         if let Some(y) = visible_row(slice, /*row*/ 1) {
-            buf.set_style(Rect::new(x, y, width, 1), Style::new().fg(palette::FOCUS));
+            buf.set_style(Rect::new(x, y, width, 1), Style::new().fg(palette::focus()));
         }
         return;
     }
@@ -313,10 +316,13 @@ fn render_hover(
             .saturating_add(u16::try_from(columns.start).unwrap_or(u16::MAX));
         let width = u16::try_from(columns.end.saturating_sub(columns.start)).unwrap_or(u16::MAX);
         if let Some(y) = visible_row(slice, /*row*/ 1) {
-            buf.set_style(Rect::new(x, y, width, 1), Style::new().bg(palette::BORDER));
+            buf.set_style(
+                Rect::new(x, y, width, 1),
+                Style::new().bg(palette::border()),
+            );
         }
         if let Some(y) = visible_row(slice, /*row*/ 2) {
-            buf.set_style(Rect::new(x, y, width, 1), Style::new().fg(palette::FOCUS));
+            buf.set_style(Rect::new(x, y, width, 1), Style::new().fg(palette::focus()));
         }
         return;
     }
@@ -347,7 +353,7 @@ fn render_hover(
     if interactive && panel_row > 0 {
         buf.set_style(
             Rect::new(text_area.x, pointer.y, text_area.width, 1),
-            Style::new().bg(palette::BORDER),
+            Style::new().bg(palette::border()),
         );
     }
 }
