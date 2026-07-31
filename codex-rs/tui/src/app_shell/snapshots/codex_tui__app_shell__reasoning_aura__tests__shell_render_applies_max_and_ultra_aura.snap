@@ -1,0 +1,19 @@
+---
+source: tui/src/app_shell/reasoning_aura_tests.rs
+expression: snapshots
+---
+Max
+outer header: " " #796126
+inner header: "x" #6e5d41
+outer left: " " #80662a
+inner left: "▌" #5e4f34
+center: "0" #1d2021
+outer composer: "─" #8b6f33
+
+Ultra
+outer header: " " #694a54
+inner header: "x" #675354
+outer left: " " #6f4f58
+inner left: "▌" #574648
+center: "0" #1d2021
+outer composer: "─" #7b5860

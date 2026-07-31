@@ -130,6 +130,9 @@ impl ShellView<'_> {
         if let Some(diff) = &self.shell.diff_view {
             super::diff_view_view::render_diff_view(diff, area, buf);
         }
+        if let Some(aura) = &self.shell.reasoning_aura {
+            aura.render(area, buf, std::time::Instant::now());
+        }
     }
 
     pub(super) fn cursor_position(&self, area: Rect) -> Option<Position> {
