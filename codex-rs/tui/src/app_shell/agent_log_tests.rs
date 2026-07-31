@@ -19,6 +19,7 @@ use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
+use ratatui::style::Style;
 use ratatui::text::Line;
 
 #[test]
@@ -75,55 +76,152 @@ async fn async_load_formats_positioned_styles_with_the_selected_app_theme() {
     })
     .await
     .expect("agent log load task should finish");
-    let mut log = AgentLogState::loading(target(), load_task, RawReasoningVisibility::Hidden);
+    let mut log = AgentLogState::loading(target(), load_task, RawReasoningVisibility::Visible);
     let initial_palette = crate::app_theme::palette();
 
     assert!(log.poll(TuiAppTheme::CatppuccinMocha).await);
 
     assert_eq!(
-        positioned_foregrounds(log.lines()),
+        positioned_styles(log.lines()),
         vec![
-            PositionedForeground::new(
+            PositionedLine::new(
                 /*line*/ 0,
-                /*span*/ 0,
-                "Turn 1",
-                Color::Rgb(203, 166, 247),
+                vec![
+                    StyledSpan::new(
+                        /*span*/ 0,
+                        "Turn 1",
+                        Style::new()
+                            .fg(Color::Rgb(203, 166, 247))
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    ),
+                    StyledSpan::new(/*span*/ 1, "  ", Style::new()),
+                    StyledSpan::new(
+                        /*span*/ 2,
+                        "Completed",
+                        Style::new().fg(Color::Rgb(166, 227, 161)),
+                    ),
+                    StyledSpan::new(/*span*/ 3, "  ", Style::new()),
+                    StyledSpan::new(
+                        /*span*/ 4,
+                        "1.0s",
+                        Style::new().fg(Color::Rgb(127, 132, 156)),
+                    ),
+                ],
             ),
-            PositionedForeground::new(
-                /*line*/ 0,
-                /*span*/ 2,
-                "Completed",
-                Color::Rgb(166, 227, 161),
-            ),
-            PositionedForeground::new(
-                /*line*/ 0,
-                /*span*/ 4,
-                "1.0s",
-                Color::Rgb(127, 132, 156),
-            ),
-            PositionedForeground::new(
+            PositionedLine::new(
                 /*line*/ 1,
-                /*span*/ 0,
-                "Edits",
-                Color::Rgb(203, 166, 247),
+                vec![StyledSpan::new(
+                    /*span*/ 0,
+                    "Reasoning",
+                    Style::new()
+                        .fg(Color::Rgb(127, 132, 156))
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                )],
             ),
-            PositionedForeground::new(
-                /*line*/ 1,
-                /*span*/ 2,
-                "Completed",
-                Color::Rgb(166, 227, 161),
-            ),
-            PositionedForeground::new(
-                /*line*/ 1,
-                /*span*/ 4,
-                "1 file",
-                Color::Rgb(127, 132, 156),
-            ),
-            PositionedForeground::new(
+            PositionedLine::new(
                 /*line*/ 2,
-                /*span*/ 1,
-                "M",
-                Color::Rgb(249, 226, 175),
+                vec![StyledSpan::new(
+                    /*span*/ 0,
+                    "Reasoning follows the active palette.",
+                    Style::new(),
+                )],
+            ),
+            PositionedLine::new(/*line*/ 3, Vec::new()),
+            PositionedLine::new(
+                /*line*/ 4,
+                vec![StyledSpan::new(
+                    /*span*/ 0,
+                    "Assistant",
+                    Style::new()
+                        .fg(Color::Rgb(203, 166, 247))
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                )],
+            ),
+            PositionedLine::new(
+                /*line*/ 5,
+                vec![
+                    StyledSpan::new(/*span*/ 0, "Use ", Style::new()),
+                    StyledSpan::new(
+                        /*span*/ 1,
+                        "themed code",
+                        Style::new().fg(Color::Rgb(137, 220, 235)),
+                    ),
+                    StyledSpan::new(/*span*/ 2, " and ", Style::new()),
+                    StyledSpan::new(/*span*/ 3, "themed links", Style::new(),),
+                    StyledSpan::new(/*span*/ 4, " (", Style::new()),
+                    StyledSpan::new(
+                        /*span*/ 5,
+                        "https://example.com",
+                        Style::new()
+                            .fg(Color::Rgb(137, 220, 235))
+                            .add_modifier(ratatui::style::Modifier::UNDERLINED),
+                    ),
+                    StyledSpan::new(/*span*/ 6, ")", Style::new()),
+                    StyledSpan::new(/*span*/ 7, ".", Style::new()),
+                ],
+            ),
+            PositionedLine::new(/*line*/ 6, Vec::new()),
+            PositionedLine::new(
+                /*line*/ 7,
+                vec![StyledSpan::new(
+                    /*span*/ 0,
+                    "Plan",
+                    Style::new()
+                        .fg(Color::Rgb(166, 227, 161))
+                        .add_modifier(ratatui::style::Modifier::BOLD),
+                )],
+            ),
+            PositionedLine::new(
+                /*line*/ 8,
+                vec![StyledSpan::new(
+                    /*span*/ 0,
+                    "Ship the themed agent log.",
+                    Style::new(),
+                )],
+            ),
+            PositionedLine::new(/*line*/ 9, Vec::new()),
+            PositionedLine::new(
+                /*line*/ 10,
+                vec![
+                    StyledSpan::new(
+                        /*span*/ 0,
+                        "Edits",
+                        Style::new()
+                            .fg(Color::Rgb(203, 166, 247))
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    ),
+                    StyledSpan::new(/*span*/ 1, "  ", Style::new()),
+                    StyledSpan::new(
+                        /*span*/ 2,
+                        "Completed",
+                        Style::new().fg(Color::Rgb(166, 227, 161)),
+                    ),
+                    StyledSpan::new(/*span*/ 3, "  ", Style::new()),
+                    StyledSpan::new(
+                        /*span*/ 4,
+                        "1 file",
+                        Style::new().fg(Color::Rgb(127, 132, 156)),
+                    ),
+                ],
+            ),
+            PositionedLine::new(
+                /*line*/ 11,
+                vec![
+                    StyledSpan::new(/*span*/ 0, "  ", Style::new()),
+                    StyledSpan::new(
+                        /*span*/ 1,
+                        "M",
+                        Style::new()
+                            .fg(Color::Rgb(249, 226, 175))
+                            .add_modifier(ratatui::style::Modifier::BOLD),
+                    ),
+                    StyledSpan::new(/*span*/ 2, "  ", Style::new()),
+                    StyledSpan::new(
+                        /*span*/ 3,
+                        "tui/src/app_shell/agent_log.rs",
+                        Style::new(),
+                    ),
+                ],
             ),
         ]
     );
@@ -190,15 +288,34 @@ fn themed_thread() -> Thread {
         name: None,
         turns: vec![Turn {
             id: "turn-1".to_string(),
-            items: vec![ThreadItem::FileChange {
-                id: "edit-1".to_string(),
-                changes: vec![FileUpdateChange {
-                    path: "tui/src/app_shell/agent_log.rs".to_string(),
-                    kind: codex_app_server_protocol::PatchChangeKind::Update { move_path: None },
-                    diff: String::new(),
-                }],
-                status: codex_app_server_protocol::PatchApplyStatus::Completed,
-            }],
+            items: vec![
+                ThreadItem::Reasoning {
+                    id: "reasoning-1".to_string(),
+                    summary: vec!["Hidden summary".to_string()],
+                    content: vec!["Reasoning follows the active palette.".to_string()],
+                },
+                ThreadItem::AgentMessage {
+                    id: "message-1".to_string(),
+                    text: "Use `themed code` and [themed links](https://example.com).".to_string(),
+                    phase: None,
+                    memory_citation: None,
+                },
+                ThreadItem::Plan {
+                    id: "plan-1".to_string(),
+                    text: "Ship the themed agent log.".to_string(),
+                },
+                ThreadItem::FileChange {
+                    id: "edit-1".to_string(),
+                    changes: vec![FileUpdateChange {
+                        path: "tui/src/app_shell/agent_log.rs".to_string(),
+                        kind: codex_app_server_protocol::PatchChangeKind::Update {
+                            move_path: None,
+                        },
+                        diff: String::new(),
+                    }],
+                    status: codex_app_server_protocol::PatchApplyStatus::Completed,
+                },
+            ],
             items_view: TurnItemsView::Full,
             status: TurnStatus::Completed,
             error: None,
@@ -210,39 +327,56 @@ fn themed_thread() -> Thread {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-struct PositionedForeground {
+struct PositionedLine {
     line: usize,
-    span: usize,
-    text: String,
-    color: Color,
+    style: Style,
+    spans: Vec<StyledSpan>,
 }
 
-impl PositionedForeground {
-    fn new(line: usize, span: usize, text: &str, color: Color) -> Self {
+impl PositionedLine {
+    fn new(line: usize, spans: Vec<StyledSpan>) -> Self {
         Self {
             line,
-            span,
-            text: text.to_string(),
-            color,
+            style: Style::new(),
+            spans,
         }
     }
 }
 
-fn positioned_foregrounds(lines: &[Line<'static>]) -> Vec<PositionedForeground> {
+#[derive(Debug, PartialEq, Eq)]
+struct StyledSpan {
+    span: usize,
+    text: String,
+    style: Style,
+}
+
+impl StyledSpan {
+    fn new(span: usize, text: &str, style: Style) -> Self {
+        Self {
+            span,
+            text: text.to_string(),
+            style,
+        }
+    }
+}
+
+fn positioned_styles(lines: &[Line<'static>]) -> Vec<PositionedLine> {
     lines
         .iter()
         .enumerate()
-        .flat_map(|(line, value)| {
-            value
+        .map(|(line, value)| PositionedLine {
+            line,
+            style: value.style,
+            spans: value
                 .spans
                 .iter()
                 .enumerate()
-                .filter_map(move |(span, value)| {
-                    value
-                        .style
-                        .fg
-                        .map(|color| PositionedForeground::new(line, span, &value.content, color))
+                .map(|(span, value)| StyledSpan {
+                    span,
+                    text: value.content.to_string(),
+                    style: value.style,
                 })
+                .collect(),
         })
         .collect()
 }
