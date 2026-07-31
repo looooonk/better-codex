@@ -28,7 +28,7 @@ pub(super) fn render_agent_log(log: &AgentLogState, screen: Rect, buf: &mut Buff
             " ".into(),
             log.target.status.label().fg(status_color),
             "  ".into(),
-            log.target.path.clone().fg(palette::MUTED),
+            log.target.path.clone().fg(palette::muted()),
         ]),
         header_width,
     )];
@@ -40,12 +40,12 @@ pub(super) fn render_agent_log(log: &AgentLogState, screen: Rect, buf: &mut Buff
             .unwrap_or("No task summary");
         header.push(truncate_line_with_ellipsis_if_overflow(
             Line::from(vec![
-                "Task  ".fg(palette::CYAN).bold(),
+                "Task  ".fg(palette::cyan()).bold(),
                 first_wrapped_line(task, header_width.saturating_sub(/*rhs*/ 6)).fg(
                     if log.target.task_summary.is_some() {
-                        palette::TEXT
+                        palette::text()
                     } else {
-                        palette::MUTED
+                        palette::muted()
                     },
                 ),
             ]),
@@ -53,7 +53,7 @@ pub(super) fn render_agent_log(log: &AgentLogState, screen: Rect, buf: &mut Buff
         ));
     }
     Paragraph::new(header)
-        .style(pane_style(palette::SURFACE))
+        .style(pane_style(palette::surface()))
         .render(geometry.header, buf);
 
     let body_width = usize::from(geometry.body.width.max(/*other*/ 1));
@@ -61,13 +61,13 @@ pub(super) fn render_agent_log(log: &AgentLogState, screen: Rect, buf: &mut Buff
     let transient_lines = if log.is_loading() {
         Some(vec![
             "Loading the complete agent history…"
-                .fg(palette::MUTED)
+                .fg(palette::muted())
                 .into(),
         ])
     } else {
         log.error().map(|error| {
             word_wrap_lines(
-                vec![Line::from(error.to_string().fg(palette::ERROR))],
+                vec![Line::from(error.to_string().fg(palette::error()))],
                 RtOptions::new(body_width),
             )
         })
@@ -87,7 +87,7 @@ pub(super) fn render_agent_log(log: &AgentLogState, screen: Rect, buf: &mut Buff
         (viewport.lines, viewport.visual_lines, viewport.scroll)
     };
     Paragraph::new(visible)
-        .style(pane_style(palette::SURFACE))
+        .style(pane_style(palette::surface()))
         .render(geometry.body, buf);
 
     render_scrollback_footer(

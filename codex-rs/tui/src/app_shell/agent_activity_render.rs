@@ -22,11 +22,11 @@ pub(super) fn agent_activity_overview_lines(
 ) -> Vec<Line<'static>> {
     let counts = state.counts();
     let mut spans = vec![
-        "Agents ".fg(palette::TEXT).bold(),
-        counts.total.to_string().fg(palette::PURPLE).bold(),
+        "Agents ".fg(palette::text()).bold(),
+        counts.total.to_string().fg(palette::purple()).bold(),
     ];
     if counts.total == 0 {
-        spans.extend(["  ".into(), "no agents yet".fg(palette::MUTED)]);
+        spans.extend(["  ".into(), "no agents yet".fg(palette::muted())]);
     } else {
         let categorized = counts
             .active
@@ -34,15 +34,15 @@ pub(super) fn agent_activity_overview_lines(
             .saturating_add(counts.interrupted)
             .saturating_add(counts.failed);
         for (glyph, count, label, color) in [
-            ("●", counts.active, "active", palette::CYAN),
-            ("✓", counts.completed, "done", palette::SUCCESS),
-            ("!", counts.interrupted, "interrupted", palette::WARNING),
-            ("×", counts.failed, "failed", palette::ERROR),
+            ("●", counts.active, "active", palette::cyan()),
+            ("✓", counts.completed, "done", palette::success()),
+            ("!", counts.interrupted, "interrupted", palette::warning()),
+            ("×", counts.failed, "failed", palette::error()),
             (
                 "?",
                 counts.total.saturating_sub(categorized),
                 "unknown",
-                palette::MUTED,
+                palette::muted(),
             ),
         ] {
             push_count(&mut spans, glyph, count, label, color);
@@ -65,7 +65,7 @@ pub(super) fn agent_activity_inspector_lines(
     let agents = state.ordered_agents();
     if agents.is_empty() {
         return vec![truncate_line_with_ellipsis_if_overflow(
-            Line::from("No agent activity yet".fg(palette::MUTED)),
+            Line::from("No agent activity yet".fg(palette::muted())),
             width,
         )];
     }
@@ -92,7 +92,7 @@ pub(super) fn agent_activity_inspector_lines(
             .map_or(selected.thread_id.as_str(), |path| path.as_str()),
         width,
         /*max_lines*/ 1,
-        palette::MUTED,
+        palette::muted(),
         line_budget,
     );
     append_field(
@@ -107,7 +107,7 @@ pub(super) fn agent_activity_inspector_lines(
         selected
             .task_summary
             .as_ref()
-            .map_or(palette::MUTED, |_| palette::TEXT),
+            .map_or(palette::muted(), |_| palette::text()),
         line_budget,
     );
     let runtime = match (&selected.model, &selected.reasoning_effort) {
@@ -122,7 +122,7 @@ pub(super) fn agent_activity_inspector_lines(
         &runtime,
         width,
         MAX_FIELD_LINES,
-        palette::PURPLE,
+        palette::purple(),
         line_budget,
     );
     append_field(
@@ -137,20 +137,20 @@ pub(super) fn agent_activity_inspector_lines(
         selected
             .latest_message
             .as_ref()
-            .map_or(palette::MUTED, |_| palette::TEXT),
+            .map_or(palette::muted(), |_| palette::text()),
         line_budget,
     );
 
     if !selected.timeline.is_empty() && lines.len() < line_budget {
-        lines.push(Line::from("Recent".fg(palette::CYAN).bold()));
+        lines.push(Line::from("Recent".fg(palette::cyan()).bold()));
         for entry in selected.timeline.iter().rev().take(MAX_TIMELINE_LINES) {
             if lines.len() >= line_budget {
                 break;
             }
             lines.push(truncate_line_with_ellipsis_if_overflow(
                 Line::from(vec![
-                    "  • ".fg(palette::BORDER),
-                    entry.label().to_string().fg(palette::MUTED),
+                    "  • ".fg(palette::border()),
+                    entry.label().to_string().fg(palette::muted()),
                 ]),
                 width,
             ));
@@ -200,13 +200,13 @@ fn agent_tree_line(agent: &AgentActivity, selected: bool, width: usize) -> Line<
     let (glyph, color) = status_visual(agent.status);
     let mut line = Line::from(vec![
         if selected {
-            "› ".fg(palette::FOCUS).bold()
+            "› ".fg(palette::focus()).bold()
         } else {
             "  ".into()
         },
         "  ".repeat(depth).into(),
         if depth > 0 {
-            "└ ".fg(palette::BORDER)
+            "└ ".fg(palette::border())
         } else {
             "".into()
         },
@@ -215,13 +215,13 @@ fn agent_tree_line(agent: &AgentActivity, selected: bool, width: usize) -> Line<
         agent.status.label().to_string().fg(color),
         "  ".into(),
         agent.display_name().to_string().fg(if selected {
-            palette::TEXT
+            palette::text()
         } else {
-            palette::MUTED
+            palette::muted()
         }),
     ]);
     if selected {
-        line = line.style(Style::new().bg(palette::ELEVATED));
+        line = line.style(Style::new().bg(palette::elevated()));
     }
     truncate_line_with_ellipsis_if_overflow(line, width)
 }
@@ -229,8 +229,8 @@ fn agent_tree_line(agent: &AgentActivity, selected: bool, width: usize) -> Line<
 fn inspector_header(agent: &AgentActivity, width: usize) -> Line<'static> {
     let (glyph, color) = status_visual(agent.status);
     let mut spans = vec![
-        "Inspector  ".fg(palette::CYAN).bold(),
-        agent.display_name().to_string().fg(palette::TEXT).bold(),
+        "Inspector  ".fg(palette::cyan()).bold(),
+        agent.display_name().to_string().fg(palette::text()).bold(),
         "  ".into(),
         glyph.fg(color).bold(),
         " ".into(),
@@ -240,8 +240,8 @@ fn inspector_header(agent: &AgentActivity, width: usize) -> Line<'static> {
         && let Some(latest_message) = &agent.latest_message
     {
         spans.extend([
-            "  · ".fg(palette::BORDER),
-            latest_message.clone().fg(palette::TEXT),
+            "  · ".fg(palette::border()),
+            latest_message.clone().fg(palette::text()),
         ]);
     }
     truncate_line_with_ellipsis_if_overflow(Line::from(spans), width)
@@ -272,7 +272,7 @@ fn append_field(
         lines.push(truncate_line_with_ellipsis_if_overflow(
             Line::from(vec![
                 if index == 0 {
-                    prefix.clone().fg(palette::CYAN).bold()
+                    prefix.clone().fg(palette::cyan()).bold()
                 } else {
                     " ".repeat(prefix.chars().count()).into()
                 },
@@ -302,14 +302,14 @@ fn push_count(
 
 pub(super) fn status_visual(status: AgentLifecycleStatus) -> (&'static str, Color) {
     match status {
-        AgentLifecycleStatus::Unknown => ("?", palette::MUTED),
-        AgentLifecycleStatus::PendingInit => ("○", palette::WARNING),
-        AgentLifecycleStatus::Running => ("●", palette::CYAN),
-        AgentLifecycleStatus::Interrupted => ("!", palette::WARNING),
-        AgentLifecycleStatus::Completed => ("✓", palette::SUCCESS),
-        AgentLifecycleStatus::Errored => ("×", palette::ERROR),
-        AgentLifecycleStatus::Shutdown => ("■", palette::MUTED),
-        AgentLifecycleStatus::NotFound => ("?", palette::ERROR),
+        AgentLifecycleStatus::Unknown => ("?", palette::muted()),
+        AgentLifecycleStatus::PendingInit => ("○", palette::warning()),
+        AgentLifecycleStatus::Running => ("●", palette::cyan()),
+        AgentLifecycleStatus::Interrupted => ("!", palette::warning()),
+        AgentLifecycleStatus::Completed => ("✓", palette::success()),
+        AgentLifecycleStatus::Errored => ("×", palette::error()),
+        AgentLifecycleStatus::Shutdown => ("■", palette::muted()),
+        AgentLifecycleStatus::NotFound => ("?", palette::error()),
     }
 }
 

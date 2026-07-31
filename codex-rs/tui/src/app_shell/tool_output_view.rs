@@ -27,28 +27,28 @@ pub(super) fn render_tool_output(output: &ToolOutputState, screen: Rect, buf: &m
             " ".into(),
             label.fg(color),
             "  ".into(),
-            detail.fg(palette::MUTED),
+            detail.fg(palette::muted()),
         ]),
         header_width,
     )];
     if geometry.header.height > 1 {
         header.push(truncate_line_with_ellipsis_if_overflow(
             Line::from(vec![
-                "Item  ".fg(palette::CYAN).bold(),
-                output.target.item_id.clone().fg(palette::MUTED),
+                "Item  ".fg(palette::cyan()).bold(),
+                output.target.item_id.clone().fg(palette::muted()),
             ]),
             header_width,
         ));
     }
     Paragraph::new(header)
-        .style(pane_style(palette::SURFACE))
+        .style(pane_style(palette::surface()))
         .render(geometry.header, buf);
 
     let body_width = usize::from(geometry.body.width.max(/*other*/ 1));
     let body_height = usize::from(geometry.body.height);
     let viewport = output.ready_viewport(body_width, body_height);
     Paragraph::new(viewport.lines)
-        .style(pane_style(palette::SURFACE))
+        .style(pane_style(palette::surface()))
         .render(geometry.body, buf);
     render_scrollback_footer(
         geometry,
@@ -79,42 +79,42 @@ fn status_visual(
             "●",
             "Running",
             "Live output updates automatically",
-            palette::CYAN,
+            palette::cyan(),
             ScrollbackFooterMode::ToolOutputRunning,
         ),
         (ToolBlockStatus::Success, false) => (
             "✓",
             "Completed",
             "Full captured output",
-            palette::SUCCESS,
+            palette::success(),
             ScrollbackFooterMode::ToolOutputCompleted,
         ),
         (ToolBlockStatus::Fail, false) => (
             "✕",
             "Failed",
             "Full captured output",
-            palette::ERROR,
+            palette::error(),
             ScrollbackFooterMode::ToolOutputFailed,
         ),
         (ToolBlockStatus::Running, true) => (
             "●",
             "Running",
             "Live tail; earlier output omitted",
-            palette::CYAN,
+            palette::cyan(),
             ScrollbackFooterMode::ToolOutputRunning,
         ),
         (ToolBlockStatus::Success, true) => (
             "✓",
             "Completed",
             "Retained tail; earlier output omitted",
-            palette::SUCCESS,
+            palette::success(),
             ScrollbackFooterMode::ToolOutputCompleted,
         ),
         (ToolBlockStatus::Fail, true) => (
             "✕",
             "Failed",
             "Retained tail; earlier output omitted",
-            palette::ERROR,
+            palette::error(),
             ScrollbackFooterMode::ToolOutputFailed,
         ),
     }
