@@ -352,6 +352,8 @@ pub(crate) async fn run(
             }
             let user_input_auto_resolution_deadline =
                 shell.pending_user_input_auto_resolution_deadline();
+            let reasoning_aura_deadline =
+                shell.reasoning_aura.as_ref().map(ReasoningAura::expires_at);
             select! {
                 event = tui_events.next() => {
                     let Some(event) = event else {
@@ -537,6 +539,13 @@ pub(crate) async fn run(
                     if shell.start_expired_user_input_resolution(&app_server) {
                         tui.frame_requester().schedule_frame();
                     }
+                }
+                expired_at = reasoning_aura::wait_for_expiration(reasoning_aura_deadline) => {
+                    reasoning_aura::clear_expired_aura(
+                        &mut shell.reasoning_aura,
+                        expired_at,
+                        &tui.frame_requester(),
+                    );
                 }
                 _ = status_spinner.tick() => {
                     if shell.status_spinner_active() {

@@ -4,6 +4,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::Color;
+use std::future::pending;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -119,6 +120,32 @@ impl ReasoningAura {
             }
         }
     }
+}
+
+pub(super) async fn wait_for_expiration(deadline: Option<Instant>) -> Instant {
+    match deadline {
+        Some(deadline) => {
+            tokio::time::sleep_until(deadline.into()).await;
+            deadline
+        }
+        None => pending().await,
+    }
+}
+
+pub(super) fn clear_expired_aura(
+    aura: &mut Option<ReasoningAura>,
+    expired_at: Instant,
+    frame_requester: &crate::tui::FrameRequester,
+) -> bool {
+    if aura
+        .as_ref()
+        .is_none_or(|aura| aura.expires_at() > expired_at)
+    {
+        return false;
+    }
+    *aura = None;
+    frame_requester.schedule_frame();
+    true
 }
 
 fn distance_from_edge(area: Rect, x: u16, y: u16) -> u16 {

@@ -2,6 +2,8 @@ use super::super::ShellState;
 use super::super::backend::AppShellBackend;
 use super::super::backend_actions::ActionGroup;
 use super::super::backend_actions::BackendActionResult;
+use super::super::reasoning_aura::ReasoningAura;
+use super::super::reasoning_aura::ReasoningAuraTone;
 use super::super::selector::SelectorState;
 use super::super::selector::SelectorValue;
 use super::SettingsAction;
@@ -26,11 +28,13 @@ pub(super) enum SettingsChange {
     Model {
         model: String,
         effort: Option<ReasoningEffort>,
+        aura_tone: Option<ReasoningAuraTone>,
         service_tier: Option<String>,
     },
     ServiceTier(Option<String>),
     ReasoningEffort {
         effort: Option<ReasoningEffort>,
+        aura_tone: Option<ReasoningAuraTone>,
         thread_effort: Option<ReasoningEffort>,
     },
     ApprovalPolicy(AskForApproval),
@@ -89,6 +93,7 @@ impl ShellState {
             SettingsChange::Model {
                 model,
                 effort,
+                aura_tone,
                 service_tier,
             } => {
                 if let Some(collaboration_mode) = self.collaboration_mode.as_mut() {
@@ -100,14 +105,25 @@ impl ShellState {
                 }
                 self.model = model;
                 self.reasoning_effort = effort;
+                self.reasoning_aura = if self.animations {
+                    aura_tone.map(|tone| ReasoningAura::new(tone, std::time::Instant::now()))
+                } else {
+                    None
+                };
                 self.service_tier = service_tier;
             }
             SettingsChange::ServiceTier(service_tier) => self.service_tier = service_tier,
             SettingsChange::ReasoningEffort {
                 effort,
+                aura_tone,
                 thread_effort,
             } => {
                 self.reasoning_effort = effort.clone();
+                self.reasoning_aura = if self.animations {
+                    aura_tone.map(|tone| ReasoningAura::new(tone, std::time::Instant::now()))
+                } else {
+                    None
+                };
                 if let Some(collaboration_mode) = self.collaboration_mode.as_mut() {
                     **collaboration_mode = collaboration_mode.with_updates(
                         /*model*/ None,
@@ -125,7 +141,12 @@ impl ShellState {
             SettingsChange::ApprovalPolicy(policy) => self.approval_policy = policy,
             SettingsChange::AppTheme(app_theme) => self.app_theme = app_theme,
             SettingsChange::Theme(theme) => self.tui_theme = theme,
-            SettingsChange::Animations(animations) => self.animations = animations,
+            SettingsChange::Animations(animations) => {
+                self.animations = animations;
+                if !animations {
+                    self.reasoning_aura = None;
+                }
+            }
             SettingsChange::Tooltips(show_tooltips) => self.show_tooltips = show_tooltips,
         }
         if let Some((action, draft)) = update.edit {
@@ -136,3 +157,7 @@ impl ShellState {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "background_tests.rs"]
+mod tests;
