@@ -1,4 +1,8 @@
+use super::design::markdown_styles;
 use super::design::palette;
+use crate::git_action_directives::parse_assistant_markdown;
+use crate::markdown_render::render_markdown_text_with_width_cwd_and_styles;
+use crate::reasoning_summary::split_reasoning_summary_parts;
 use crate::session_transcript::RawReasoningVisibility;
 use crate::session_transcript::TranscriptLines;
 use crate::session_transcript::thread_item_to_transcript_lines;
@@ -207,10 +211,49 @@ fn agent_item_lines(
             ]
             .into(),
         ],
-        ThreadItem::AgentMessage { .. }
-        | ThreadItem::Plan { .. }
-        | ThreadItem::Reasoning { .. }
-        | ThreadItem::WebSearch(_)
+        ThreadItem::AgentMessage { text, .. } => {
+            let parsed = parse_assistant_markdown(text, &thread.cwd);
+            if parsed.visible_markdown.trim().is_empty() {
+                Vec::new()
+            } else {
+                let mut lines = vec!["Assistant".bold().fg(palette::purple()).into()];
+                lines.extend(
+                    render_markdown_text_with_width_cwd_and_styles(
+                        &parsed.visible_markdown,
+                        /*width*/ None,
+                        Some(&thread.cwd),
+                        markdown_styles(),
+                    )
+                    .lines,
+                );
+                lines
+            }
+        }
+        ThreadItem::Plan { text, .. } => {
+            themed_prefixed_text("Plan", text.clone(), palette::success())
+        }
+        ThreadItem::Reasoning {
+            summary, content, ..
+        } => {
+            let (header, text) =
+                if matches!(raw_reasoning_visibility, RawReasoningVisibility::Visible)
+                    && !content.is_empty()
+                {
+                    ("Reasoning".to_string(), content.join("\n\n"))
+                } else {
+                    split_reasoning_summary_parts(summary)
+                };
+            themed_prefixed_text(
+                if header.is_empty() {
+                    "Reasoning"
+                } else {
+                    &header
+                },
+                text,
+                palette::muted(),
+            )
+        }
+        ThreadItem::WebSearch(_)
         | ThreadItem::ImageView { .. }
         | ThreadItem::Sleep { .. }
         | ThreadItem::ImageGeneration(_)
@@ -220,6 +263,15 @@ fn agent_item_lines(
             thread_item_to_transcript_lines(item, thread, raw_reasoning_visibility)
         }
     }
+}
+
+fn themed_prefixed_text(label: &str, text: String, color: Color) -> TranscriptLines {
+    if text.trim().is_empty() {
+        return Vec::new();
+    }
+    let mut lines = vec![label.to_string().fg(color).bold().into()];
+    lines.extend(text.lines().map(|line| line.to_string().into()));
+    lines
 }
 
 fn command_lines(
