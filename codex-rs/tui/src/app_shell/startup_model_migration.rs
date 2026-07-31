@@ -13,6 +13,7 @@ use crate::model_migration::ModelMigrationCopy;
 use crate::model_migration::migration_copy_for_models;
 use crate::tui;
 use crate::tui::TuiEvent;
+use codex_config::types::TuiAppTheme;
 use codex_models_manager::model_presets::HIDE_GPT_5_1_CODEX_MAX_MIGRATION_PROMPT_CONFIG;
 use codex_models_manager::model_presets::HIDE_GPT5_1_MIGRATION_PROMPT_CONFIG;
 use codex_protocol::openai_models::ModelPreset;
@@ -94,14 +95,16 @@ struct ModelMigrationPromptData {
 #[derive(Clone)]
 struct ModelMigrationOnboardingState {
     prompt: ModelMigrationPromptData,
+    app_theme: TuiAppTheme,
     selected: usize,
     error: Option<String>,
 }
 
 impl ModelMigrationOnboardingState {
-    fn new(prompt: ModelMigrationPromptData) -> Self {
+    fn new(prompt: ModelMigrationPromptData, app_theme: TuiAppTheme) -> Self {
         Self {
             prompt,
+            app_theme,
             selected: 0,
             error: None,
         }
@@ -162,7 +165,7 @@ pub(crate) async fn run_model_migration_onboarding(
         return Ok(ModelMigrationOnboardingOutcome::Continue);
     };
 
-    let mut state = ModelMigrationOnboardingState::new(prompt);
+    let mut state = ModelMigrationOnboardingState::new(prompt, config.tui_app_theme);
     let mut tui_events = tui.event_stream();
     tui.frame_requester().schedule_frame();
 
@@ -426,6 +429,7 @@ struct ModelMigrationOnboardingView<'a> {
 
 impl ModelMigrationOnboardingView<'_> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
+        let _active_theme = crate::app_theme::activate(self.state.app_theme);
         fill_rect(buf, area, palette::base());
         let panes = startup_panes(area);
         self.render_main(panes.main, buf);

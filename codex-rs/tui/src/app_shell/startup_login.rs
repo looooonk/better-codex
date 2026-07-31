@@ -12,6 +12,7 @@ use codex_app_server_protocol::AccountLoginCompletedNotification;
 use codex_app_server_protocol::LoginAccountParams;
 use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::ServerNotification;
+use codex_config::types::TuiAppTheme;
 use codex_protocol::config_types::ForcedLoginMethod;
 use color_eyre::Result;
 use color_eyre::eyre::WrapErr;
@@ -69,6 +70,7 @@ enum LoginMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LoginOnboardingState {
     forced_login_method: Option<ForcedLoginMethod>,
+    app_theme: TuiAppTheme,
     selected: usize,
     mode: LoginMode,
     api_key_draft: EditableText,
@@ -77,9 +79,10 @@ struct LoginOnboardingState {
 }
 
 impl LoginOnboardingState {
-    fn new(forced_login_method: Option<ForcedLoginMethod>) -> Self {
+    fn new(forced_login_method: Option<ForcedLoginMethod>, app_theme: TuiAppTheme) -> Self {
         Self {
             forced_login_method,
+            app_theme,
             selected: 0,
             mode: LoginMode::Select,
             api_key_draft: EditableText::default(),
@@ -207,7 +210,7 @@ pub(crate) async fn run_login_onboarding(
         .wrap_err("failed to enter login setup screen")?;
     tui.frame_requester().schedule_frame();
 
-    let mut state = LoginOnboardingState::new(config.forced_login_method);
+    let mut state = LoginOnboardingState::new(config.forced_login_method, config.tui_app_theme);
     let mut clipboard_lease: Option<ClipboardLease> = None;
     let mut tui_events = tui.event_stream();
 
