@@ -15,22 +15,6 @@ pub(super) mod palette {
     use crate::app_theme;
     use ratatui::style::Color;
 
-    pub const BASE: Color = Color::Rgb(26, 27, 38);
-    pub const DARK: Color = Color::Rgb(22, 22, 30);
-    pub const SURFACE: Color = Color::Rgb(36, 40, 59);
-    pub const ELEVATED: Color = Color::Rgb(41, 46, 66);
-    pub const DIFF_ADDED_BACKGROUND: Color = Color::Rgb(33, 41, 34);
-    pub const DIFF_REMOVED_BACKGROUND: Color = Color::Rgb(60, 23, 15);
-    pub const BORDER: Color = Color::Rgb(65, 72, 104);
-    pub const TEXT: Color = Color::Rgb(192, 202, 245);
-    pub const MUTED: Color = Color::Rgb(86, 95, 137);
-    pub const FOCUS: Color = Color::Rgb(122, 162, 247);
-    pub const CYAN: Color = Color::Rgb(125, 207, 255);
-    pub const PURPLE: Color = Color::Rgb(187, 154, 247);
-    pub const SUCCESS: Color = Color::Rgb(158, 206, 106);
-    pub const WARNING: Color = Color::Rgb(224, 175, 104);
-    pub const ERROR: Color = Color::Rgb(247, 118, 142);
-
     pub fn base() -> Color {
         app_theme::palette().base
     }
@@ -91,11 +75,6 @@ pub(super) mod palette {
         app_theme::palette().error
     }
 }
-
-// Compatibility aliases for app-shell views that have not moved to semantic roles yet.
-pub(super) const MOCHA_BASE: Color = palette::BASE;
-pub(super) const MOCHA_MANTLE: Color = palette::DARK;
-pub(super) const MOCHA_SURFACE0: Color = palette::SURFACE;
 
 const PANE_PADDING: u16 = 1;
 const MODAL_MAX_WIDTH: u16 = 72;

@@ -249,13 +249,13 @@ fn rendering_uses_two_rows_and_marks_current_and_selected_choices() {
         buf[(geometry.options.x, geometry.options.y.saturating_add(2))]
             .style()
             .fg,
-        Some(palette::FOCUS)
+        Some(palette::focus())
     );
     assert_eq!(
         buf[(geometry.options.x, geometry.options.y.saturating_add(2))]
             .style()
             .bg,
-        Some(palette::ELEVATED)
+        Some(palette::elevated())
     );
 }
 
