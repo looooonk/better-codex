@@ -22,7 +22,7 @@ impl LoginOnboardingView<'_> {
     }
 
     pub(super) fn render_visible(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, palette::BASE);
+        fill_rect(buf, area, palette::base());
         let width = usize::from(modal_view::modal_body_width(area));
         modal_view::render_modal(area, "Account login", login_lines(self.state, width), buf);
     }
@@ -36,7 +36,7 @@ pub(super) fn login_lines(state: &LoginOnboardingState, width: usize) -> Vec<Lin
                 let marker = if index == state.selected { ">" } else { " " };
                 lines.push(
                     vec![
-                        format!("{marker} {}. ", index + 1).fg(palette::FOCUS),
+                        format!("{marker} {}. ", index + 1).fg(palette::focus()),
                         selection.label().to_string().bold(),
                     ]
                     .into(),
@@ -72,12 +72,16 @@ pub(super) fn login_lines(state: &LoginOnboardingState, width: usize) -> Vec<Lin
             "Finish signing in with a device code.".into(),
             "".into(),
             "1. Open this link and sign in:".into(),
-            verification_url.clone().cyan().underlined().into(),
+            verification_url
+                .clone()
+                .fg(palette::cyan())
+                .underlined()
+                .into(),
             "".into(),
             "2. Enter this one-time code:".into(),
             user_code
                 .clone()
-                .fg(palette::FOCUS)
+                .fg(palette::focus())
                 .bold()
                 .underlined()
                 .into(),
@@ -96,10 +100,10 @@ pub(super) fn login_lines(state: &LoginOnboardingState, width: usize) -> Vec<Lin
         ],
     };
     if let Some(notice) = &state.notice {
-        lines.extend(["".into(), notice.clone().green().into()]);
+        lines.extend(["".into(), notice.clone().fg(palette::success()).into()]);
     }
     if let Some(error) = &state.error {
-        lines.extend(["".into(), error.clone().red().into()]);
+        lines.extend(["".into(), error.clone().fg(palette::error()).into()]);
     }
     lines
 }

@@ -1,5 +1,6 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::design::palette;
 use super::is_unmodified_action_key;
 use codex_app_server_protocol::PluginAvailability;
 use codex_app_server_protocol::PluginInstallParams;
@@ -268,7 +269,7 @@ impl PluginManagementState {
         let mut lines = vec![
             vec![
                 format!("{}/{}", self.selected + 1, self.entries.len())
-                    .cyan()
+                    .fg(palette::cyan())
                     .bold(),
                 " plugin catalog".into(),
                 "  ↑↓ / j k navigate".dim(),
@@ -287,7 +288,7 @@ impl PluginManagementState {
             .take(VISIBLE_PLUGIN_ROWS)
         {
             let marker = if index == self.selected {
-                ">".cyan().bold()
+                ">".fg(palette::cyan()).bold()
             } else {
                 " ".into()
             };
