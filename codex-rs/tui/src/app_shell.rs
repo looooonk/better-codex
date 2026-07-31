@@ -40,6 +40,7 @@ use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnPlanStep;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::UserInput;
+use codex_config::types::TuiAppTheme;
 use codex_protocol::ThreadId;
 use codex_protocol::openai_models::ModelPreset;
 use color_eyre::Result;
@@ -822,6 +823,7 @@ struct ShellState {
     plugin_inventory: PluginInventorySummary,
     plugin_catalog: Option<PluginListResponse>,
     tui_theme: Option<String>,
+    app_theme: TuiAppTheme,
     animations: bool,
     show_tooltips: bool,
     command_palette: Option<CommandPaletteState>,
@@ -938,6 +940,7 @@ impl ShellState {
             plugin_inventory: PluginInventorySummary::default(),
             plugin_catalog: None,
             tui_theme,
+            app_theme: TuiAppTheme::TokyoNight,
             animations,
             show_tooltips,
             command_palette: None,
@@ -2575,6 +2578,7 @@ impl ShellState {
             plugin_inventory: PluginInventorySummary::default(),
             plugin_catalog: None,
             tui_theme: None,
+            app_theme: TuiAppTheme::TokyoNight,
             animations: true,
             show_tooltips: true,
             command_palette: None,
@@ -2841,6 +2845,7 @@ pub mod bench_support {
             plugin_inventory: PluginInventorySummary::default(),
             plugin_catalog: None,
             tui_theme: None,
+            app_theme: TuiAppTheme::TokyoNight,
             animations: true,
             show_tooltips: true,
             command_palette: None,

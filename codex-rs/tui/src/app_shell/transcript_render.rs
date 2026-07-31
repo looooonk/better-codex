@@ -5,6 +5,7 @@ use super::ToolBlockStatus;
 use super::TranscriptKind;
 use super::transcript_view::render_transcript_line;
 use crate::terminal_hyperlinks::HyperlinkLine;
+use codex_config::types::TuiAppTheme;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::path::Path;
@@ -19,9 +20,9 @@ const MAX_LAYOUT_VARIANTS: usize = 4;
 /// Completed items are keyed by their stable render revision. Each item keeps a
 /// small set of variants so the normal content and scrollbar widths can coexist.
 /// Complete layouts are also retained by their ordered revisions, width,
-/// working directory, and selection so unchanged frames avoid rebuilding every
-/// chunk. Both caches are bounded to prevent resize or directory changes from
-/// growing them without limit.
+/// working directory, selection, and app theme so unchanged frames avoid
+/// rebuilding every chunk. Both caches are bounded to prevent resize,
+/// directory, or theme changes from growing them without limit.
 #[derive(Default)]
 pub(super) struct TranscriptRenderCache {
     items: HashMap<u64, CachedTranscriptItem>,
@@ -68,10 +69,13 @@ impl TranscriptRenderCache {
                     kind: item.kind,
                     text: &item.text,
                     tool_status: item.tool_status,
+                    selected,
                 },
-                width,
-                cwd,
-                selected,
+                CachedRenderContext {
+                    width,
+                    cwd,
+                    app_theme: shell.app_theme,
+                },
             );
         }
 
@@ -87,10 +91,13 @@ impl TranscriptRenderCache {
                     kind: TranscriptKind::Plan,
                     text: &shell.streaming_plan,
                     tool_status: None,
+                    selected: false,
                 },
-                width,
-                cwd,
-                /*selected*/ false,
+                CachedRenderContext {
+                    width,
+                    cwd,
+                    app_theme: shell.app_theme,
+                },
             );
         }
         if !shell.streaming_assistant.is_empty() {
@@ -105,10 +112,13 @@ impl TranscriptRenderCache {
                     kind: TranscriptKind::Assistant,
                     text: &shell.streaming_assistant,
                     tool_status: None,
+                    selected: false,
                 },
-                width,
-                cwd,
-                /*selected*/ false,
+                CachedRenderContext {
+                    width,
+                    cwd,
+                    app_theme: shell.app_theme,
+                },
             );
         }
 
@@ -118,6 +128,7 @@ impl TranscriptRenderCache {
             width,
             cwd: cwd.to_path_buf(),
             selected: shell.transcript_selection,
+            app_theme: shell.app_theme,
             revisions: render_revisions(shell).collect(),
             layout: Arc::clone(&layout),
         });
@@ -137,6 +148,7 @@ struct CachedTranscriptLayout {
     width: u16,
     cwd: PathBuf,
     selected: Option<usize>,
+    app_theme: TuiAppTheme,
     revisions: Vec<u64>,
     layout: Arc<TranscriptLayout>,
 }
@@ -146,6 +158,7 @@ impl CachedTranscriptLayout {
         self.width == width
             && self.cwd == cwd
             && self.selected == shell.transcript_selection
+            && self.app_theme == shell.app_theme
             && self.revisions.iter().copied().eq(render_revisions(shell))
     }
 }
@@ -167,6 +180,14 @@ struct CachedSource<'a> {
     kind: TranscriptKind,
     text: &'a str,
     tool_status: Option<ToolBlockStatus>,
+    selected: bool,
+}
+
+#[derive(Clone, Copy)]
+struct CachedRenderContext<'a> {
+    width: u16,
+    cwd: &'a Path,
+    app_theme: TuiAppTheme,
 }
 
 fn push_cached_chunk(
@@ -175,13 +196,17 @@ fn push_cached_chunk(
     previous_items: &mut HashMap<u64, CachedTranscriptItem>,
     current_items: &mut HashMap<u64, CachedTranscriptItem>,
     source: CachedSource<'_>,
-    width: u16,
-    cwd: &Path,
-    selected: bool,
+    context: CachedRenderContext<'_>,
 ) {
     let separator_before = should_separate_transcript_item(*previous_kind, source.kind);
     let mut cached = previous_items.remove(&source.revision).unwrap_or_default();
-    let lines = cached.lines(&source, width, cwd, selected);
+    let lines = cached.lines(
+        &source,
+        context.width,
+        context.cwd,
+        source.selected,
+        context.app_theme,
+    );
     chunks.push(TranscriptChunk {
         transcript_index: source.transcript_index,
         revision: source.revision,
@@ -231,9 +256,13 @@ impl CachedTranscriptItem {
         width: u16,
         cwd: &Path,
         selected: bool,
+        app_theme: TuiAppTheme,
     ) -> Arc<[HyperlinkLine]> {
         if let Some(index) = self.variants.iter().position(|variant| {
-            variant.width == width && variant.cwd.as_path() == cwd && variant.selected == selected
+            variant.width == width
+                && variant.cwd.as_path() == cwd
+                && variant.selected == selected
+                && variant.app_theme == app_theme
         }) && let Some(variant) = self.variants.remove(index)
         {
             let lines = Arc::clone(&variant.lines);
@@ -241,6 +270,7 @@ impl CachedTranscriptItem {
             return lines;
         }
 
+        let _active_theme = crate::app_theme::activate(app_theme);
         let lines: Arc<[HyperlinkLine]> = render_transcript_line(
             source.kind,
             source.text,
@@ -254,6 +284,7 @@ impl CachedTranscriptItem {
             width,
             cwd: cwd.to_path_buf(),
             selected,
+            app_theme,
             lines: Arc::clone(&lines),
         });
         while self.variants.len() > MAX_RENDER_VARIANTS_PER_ITEM {
@@ -267,6 +298,7 @@ struct CachedRenderVariant {
     width: u16,
     cwd: PathBuf,
     selected: bool,
+    app_theme: TuiAppTheme,
     lines: Arc<[HyperlinkLine]>,
 }
 

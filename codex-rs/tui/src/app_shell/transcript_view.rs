@@ -2,6 +2,7 @@ use super::ShellState;
 use super::ToolBlockStatus;
 use super::TranscriptKind;
 use super::design::body_rect_after_title;
+use super::design::markdown_styles;
 use super::design::palette;
 use super::design::pane_content_rect;
 use super::design::pane_style;
@@ -63,13 +64,13 @@ pub(super) fn render_transcript(
         .visible_hyperlink_lines(viewport.visible_from, viewport.visible_count);
     let visible_lines = visible_lines(visible_hyperlink_lines.clone());
     Paragraph::new(Line::from(vec![
-        "◆ ".set_style(Style::new().fg(palette::FOCUS)),
-        title.set_style(Style::new().fg(palette::MUTED).bold()),
+        "◆ ".set_style(Style::new().fg(palette::focus())),
+        title.set_style(Style::new().fg(palette::muted()).bold()),
     ]))
-    .style(pane_style(palette::BASE))
+    .style(pane_style(palette::base()))
     .render(title_rect(viewport.content), buf);
     Paragraph::new(visible_lines)
-        .style(pane_style(palette::BASE))
+        .style(pane_style(palette::base()))
         .render(viewport.text_body, buf);
     mark_buffer_hyperlinks(
         buf,
@@ -299,7 +300,7 @@ fn render_card_hover(
         viewport.text_body.width.saturating_sub(block_indent),
         height,
     );
-    buf.set_style(hover_area, Style::new().bg(palette::BORDER));
+    buf.set_style(hover_area, Style::new().bg(palette::border()));
 }
 
 struct TranscriptViewport {
@@ -411,10 +412,10 @@ fn render_transcript_scrollbar(
         };
         if (thumb_start..thumb_end).contains(&y) {
             cell.set_symbol("┃")
-                .set_style(Style::new().fg(palette::FOCUS));
+                .set_style(Style::new().fg(palette::focus()));
         } else {
             cell.set_symbol("│")
-                .set_style(Style::new().fg(palette::BORDER));
+                .set_style(Style::new().fg(palette::border()));
         }
     }
 }
@@ -429,7 +430,7 @@ pub(super) fn render_transcript_line(
 ) -> Vec<HyperlinkLine> {
     if kind == TranscriptKind::Separator {
         return vec![HyperlinkLine::new(
-            Line::from("─".repeat(usize::from(width))).style(Style::new().fg(palette::BORDER)),
+            Line::from("─".repeat(usize::from(width))).style(Style::new().fg(palette::border())),
         )];
     }
     if let Some(status) = tool_status
@@ -463,11 +464,15 @@ pub(super) fn render_transcript_line(
     let subsequent_prefix = " ".repeat(prefix_width).into();
 
     let mut rendered_lines = if matches!(kind, TranscriptKind::Assistant | TranscriptKind::Plan) {
-        let rendered =
-            markdown::render_markdown_agent_with_links_and_cwd(text, Some(body_width), Some(cwd))
-                .into_iter()
-                .map(|line| line.style(style.line_style()))
-                .collect();
+        let rendered = markdown::render_markdown_agent_with_links_and_cwd(
+            text,
+            Some(body_width),
+            Some(cwd),
+            markdown_styles(),
+        )
+        .into_iter()
+        .map(|line| line.style(style.line_style()))
+        .collect();
         prefix_hyperlink_lines(rendered, initial_prefix, subsequent_prefix)
     } else {
         let options = textwrap::Options::new(body_width);
@@ -506,8 +511,8 @@ fn tool_block_lines(
     };
     let block_width = width.saturating_sub(block_indent).max(1);
     let block_background = match kind {
-        TranscriptKind::Output => palette::DARK,
-        TranscriptKind::Tool | TranscriptKind::Diff => palette::SURFACE,
+        TranscriptKind::Output => palette::dark(),
+        TranscriptKind::Tool | TranscriptKind::Diff => palette::surface(),
         TranscriptKind::System
         | TranscriptKind::User
         | TranscriptKind::Assistant
@@ -515,7 +520,7 @@ fn tool_block_lines(
         | TranscriptKind::Separator
         | TranscriptKind::Status
         | TranscriptKind::Audit
-        | TranscriptKind::Error => palette::SURFACE,
+        | TranscriptKind::Error => palette::surface(),
     };
     let label = kind.label();
     let label_width = label.width();
@@ -614,9 +619,9 @@ fn tool_block_lines(
 impl ToolBlockStatus {
     fn accent_style(self) -> Style {
         match self {
-            Self::Running => Style::new().fg(palette::CYAN).bg(palette::SURFACE),
-            Self::Success => Style::new().fg(palette::SUCCESS).bg(palette::SURFACE),
-            Self::Fail => Style::new().fg(palette::ERROR).bg(palette::SURFACE),
+            Self::Running => Style::new().fg(palette::cyan()).bg(palette::surface()),
+            Self::Success => Style::new().fg(palette::success()).bg(palette::surface()),
+            Self::Fail => Style::new().fg(palette::error()).bg(palette::surface()),
         }
     }
 }
@@ -653,20 +658,20 @@ impl LineStyle {
 
     fn color(self) -> Color {
         match self {
-            Self::Cyan => palette::CYAN,
-            Self::Dim => palette::MUTED,
-            Self::Green => palette::SUCCESS,
-            Self::Magenta => palette::PURPLE,
-            Self::Red => palette::ERROR,
+            Self::Cyan => palette::cyan(),
+            Self::Dim => palette::muted(),
+            Self::Green => palette::success(),
+            Self::Magenta => palette::purple(),
+            Self::Red => palette::error(),
         }
     }
 
     fn text_color(self) -> Color {
         match self {
-            Self::Dim => palette::MUTED,
-            Self::Green => palette::SUCCESS,
-            Self::Red => palette::ERROR,
-            Self::Cyan | Self::Magenta => palette::TEXT,
+            Self::Dim => palette::muted(),
+            Self::Green => palette::success(),
+            Self::Red => palette::error(),
+            Self::Cyan | Self::Magenta => palette::text(),
         }
     }
 }

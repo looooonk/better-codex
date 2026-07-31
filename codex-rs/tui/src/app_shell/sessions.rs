@@ -366,19 +366,19 @@ impl SessionListState {
         };
         lines.push(Line::from(vec![
             focus.fg(if self.focused {
-                palette::FOCUS
+                palette::focus()
             } else {
-                palette::MUTED
+                palette::muted()
             }),
             "  ".into(),
-            mode.fg(palette::TEXT).bold(),
+            mode.fg(palette::text()).bold(),
             "  ".into(),
-            count.fg(palette::MUTED),
+            count.fg(palette::muted()),
         ]));
         if !self.show_archived {
             lines.push(Line::from(vec![
-                "+ New session".fg(palette::CYAN).bold(),
-                "  Ctrl+N".fg(palette::MUTED),
+                "+ New session".fg(palette::cyan()).bold(),
+                "  Ctrl+N".fg(palette::muted()),
             ]));
         }
         if self.search_active || !self.search_query.is_empty() {
@@ -397,33 +397,33 @@ impl SessionListState {
                 self.search_query.text().to_string()
             };
             lines.push(Line::from(vec![
-                label.fg(palette::CYAN),
+                label.fg(palette::cyan()),
                 " ".into(),
                 dashboard_value(
                     &query,
                     width,
                     label.len() + 1 + UnicodeWidthStr::width(hint),
                 )
-                .fg(palette::TEXT),
-                hint.fg(palette::MUTED),
+                .fg(palette::text()),
+                hint.fg(palette::muted()),
             ]));
         }
         if let Some(draft) = &self.rename_draft {
             let draft = draft.text_with_cursor_window(width.saturating_sub(8).max(1));
             lines.push(Line::from(vec![
-                "rename*".fg(palette::CYAN),
+                "rename*".fg(palette::cyan()),
                 " ".into(),
-                dashboard_value(&draft, width, /*prefix_width*/ 8).fg(palette::TEXT),
+                dashboard_value(&draft, width, /*prefix_width*/ 8).fg(palette::text()),
             ]));
         }
         if let Some(error) = &self.last_error {
             lines.push(Line::from(
-                dashboard_value(error, width, /*prefix_width*/ 0).fg(palette::ERROR),
+                dashboard_value(error, width, /*prefix_width*/ 0).fg(palette::error()),
             ));
         } else if !self.loaded {
-            lines.push(Line::from("loading sessions".fg(palette::MUTED)));
+            lines.push(Line::from("loading sessions".fg(palette::muted())));
         } else if self.rows.is_empty() {
-            lines.push(Line::from("no matching sessions".fg(palette::MUTED)));
+            lines.push(Line::from("no matching sessions".fg(palette::muted())));
         }
 
         let remaining = SESSION_LIST_LINE_BUDGET.saturating_sub(lines.len());
@@ -543,7 +543,7 @@ fn row_line(
     width: usize,
 ) -> Line<'static> {
     let marker = if selected {
-        "›".fg(palette::FOCUS).bold()
+        "›".fg(palette::focus()).bold()
     } else {
         " ".into()
     };
@@ -552,9 +552,9 @@ fn row_line(
     let position = format!("{:>position_width$}/{total}", index.saturating_add(1));
     let position_width = position.chars().count();
     let position = if selected {
-        position.fg(palette::FOCUS)
+        position.fg(palette::focus())
     } else {
-        position.fg(palette::MUTED)
+        position.fg(palette::muted())
     };
     let mut detail = row
         .branch
@@ -576,7 +576,7 @@ fn row_line(
             "  {}",
             dashboard_value(&row.preview, preview_width, /*prefix_width*/ 0)
         )
-        .fg(palette::MUTED)
+        .fg(palette::muted())
     } else {
         "".into()
     };
@@ -586,9 +586,9 @@ fn row_line(
         position,
         " ".into(),
         visible.fg(if selected {
-            palette::TEXT
+            palette::text()
         } else {
-            palette::MUTED
+            palette::muted()
         }),
         preview,
     ]);

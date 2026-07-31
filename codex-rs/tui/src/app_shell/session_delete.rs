@@ -27,22 +27,22 @@ impl PendingSessionDelete {
         };
         vec![
             Line::from(vec![
-                "Delete session: ".fg(palette::TEXT).bold(),
-                self.title.clone().fg(palette::WARNING).bold(),
+                "Delete session: ".fg(palette::text()).bold(),
+                self.title.clone().fg(palette::warning()).bold(),
             ]),
-            Line::from(format!("Session ID: {}", self.thread_id).fg(palette::MUTED)),
-            Line::from(descendant_label.fg(palette::ERROR)),
+            Line::from(format!("Session ID: {}", self.thread_id).fg(palette::muted())),
+            Line::from(descendant_label.fg(palette::error())),
             Line::from("This permanently deletes all persisted history in that subtree.".bold()),
             "".into(),
             Line::from(vec![
-                "> ".fg(palette::FOCUS).bold(),
-                "Delete permanently ".fg(palette::ERROR).bold(),
-                "Enter/y".fg(palette::MUTED),
+                "> ".fg(palette::focus()).bold(),
+                "Delete permanently ".fg(palette::error()).bold(),
+                "Enter/y".fg(palette::muted()),
             ]),
             Line::from(vec![
                 "  ".into(),
-                "Cancel ".fg(palette::TEXT),
-                "Esc/n".fg(palette::MUTED),
+                "Cancel ".fg(palette::text()),
+                "Esc/n".fg(palette::muted()),
             ]),
         ]
     }

@@ -2,6 +2,7 @@ use super::*;
 use crate::app_shell::ShellState;
 use crate::app_shell::ToolBlockStatus;
 use crate::app_shell::TranscriptKind;
+use codex_config::types::TuiAppTheme;
 use pretty_assertions::assert_eq;
 use std::path::Path;
 
@@ -81,6 +82,43 @@ fn complete_layout_cache_tracks_selection() {
 
     assert!(!Arc::ptr_eq(&unselected, &selected));
     assert!(Arc::ptr_eq(&selected, &selected_again));
+}
+
+#[test]
+fn rendered_line_cache_tracks_app_theme() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    shell.push_assistant("A response whose cached styling follows the app theme.");
+    shell.app_theme = TuiAppTheme::GruvboxDark;
+    let revision = shell.transcript[0].render_revision;
+    let cwd = PathBuf::from(&shell.cwd);
+    let mut cache = TranscriptRenderCache::default();
+    let gruvbox_purple = {
+        let _theme = crate::app_theme::activate(TuiAppTheme::GruvboxDark);
+        crate::app_theme::palette().purple
+    };
+    let catppuccin_purple = {
+        let _theme = crate::app_theme::activate(TuiAppTheme::CatppuccinMocha);
+        crate::app_theme::palette().purple
+    };
+
+    let gruvbox = cache.layout(&shell, WIDTH, &cwd);
+    shell.app_theme = TuiAppTheme::CatppuccinMocha;
+    let catppuccin = cache.layout(&shell, WIDTH, &cwd);
+
+    assert!(!Arc::ptr_eq(&gruvbox, &catppuccin));
+    assert!(!Arc::ptr_eq(
+        chunk_lines(&gruvbox, revision),
+        chunk_lines(&catppuccin, revision)
+    ));
+    assert_eq!(
+        [
+            chunk_lines(&gruvbox, revision)[0].line.spans[0].style.fg,
+            chunk_lines(&catppuccin, revision)[0].line.spans[0].style.fg,
+        ],
+        [Some(gruvbox_purple), Some(catppuccin_purple),]
+    );
 }
 
 #[test]

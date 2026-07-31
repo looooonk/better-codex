@@ -174,16 +174,16 @@ fn card_hover_uses_each_card_indent() {
             buf[(viewport.text_body.x.saturating_add(indent), y)]
                 .style()
                 .bg,
-            Some(palette::BORDER)
+            Some(palette::border())
         );
         assert_eq!(
             buf[(viewport.text_body.right() - 1, y)].style().bg,
-            Some(palette::BORDER)
+            Some(palette::border())
         );
         if indent > 0 {
             assert_ne!(
                 buf[(viewport.text_body.x, y)].style().bg,
-                Some(palette::BORDER)
+                Some(palette::border())
             );
         }
     }
@@ -455,15 +455,13 @@ fn text_selection_patches_only_selected_grapheme_cells() {
             (cell.symbol().to_string(), cell.style())
         })
         .collect::<Vec<_>>();
-    assert!(
-        selected_cells.iter().all(|(_, style)| {
-            style.fg == Some(palette::DARK) && style.bg == Some(palette::FOCUS)
-        })
-    );
+    assert!(selected_cells.iter().all(|(_, style)| {
+        style.fg == Some(palette::dark()) && style.bg == Some(palette::focus())
+    }));
     let before = viewport
         .text_body
         .x
         .saturating_add(u16::try_from(start.saturating_sub(1)).expect("column should fit"));
-    assert_ne!(buf[(before, y)].style().bg, Some(palette::FOCUS));
+    assert_ne!(buf[(before, y)].style().bg, Some(palette::focus()));
     insta::assert_debug_snapshot!("transcript_text_selection_cells", selected_cells);
 }

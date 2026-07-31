@@ -59,13 +59,13 @@ pub(super) fn render_diff_view(state: &DiffViewState, screen: Rect, buf: &mut Bu
     };
     buf.set_style(screen, Style::new().add_modifier(Modifier::DIM));
     Clear.render(geometry.modal, buf);
-    fill_rect(buf, geometry.modal, palette::SURFACE);
+    fill_rect(buf, geometry.modal, palette::surface());
 
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(palette::FOCUS))
-        .style(pane_style(palette::SURFACE))
+        .border_style(Style::new().fg(palette::focus()))
+        .style(pane_style(palette::surface()))
         .title(Line::from(format!(" {title} ")).bold())
         .render(geometry.modal, buf);
 
@@ -120,10 +120,10 @@ fn render_headers(geometry: DiffViewGeometry, buf: &mut Buffer) {
         (column_slice(geometry.header, geometry.new), "NEW FILE"),
     ] {
         Paragraph::new(truncate_line_with_ellipsis_if_overflow(
-            Line::from(title).fg(palette::MUTED).bold(),
+            Line::from(title).fg(palette::muted()).bold(),
             usize::from(area.width),
         ))
-        .style(pane_style(palette::SURFACE))
+        .style(pane_style(palette::surface()))
         .render(area, buf);
     }
 }
@@ -148,9 +148,9 @@ fn render_files(state: &DiffViewState, area: Rect, buf: &mut Buffer) {
         );
         let selected = index == state.selected_file_index();
         let background = if selected {
-            palette::ELEVATED
+            palette::elevated()
         } else {
-            palette::SURFACE
+            palette::surface()
         };
         fill_rect(buf, row, background);
         let (glyph, color) = file_glyph(file);
@@ -175,9 +175,9 @@ fn render_files(state: &DiffViewState, area: Rect, buf: &mut Buffer) {
         let line = Line::from(vec![
             marker
                 .fg(if selected {
-                    palette::FOCUS
+                    palette::focus()
                 } else {
-                    palette::MUTED
+                    palette::muted()
                 })
                 .bold(),
             " ".into(),
@@ -262,12 +262,12 @@ fn render_diff_rows(state: &DiffViewState, geometry: DiffViewGeometry, buf: &mut
 fn render_file_label(label: Option<&str>, area: Rect, buf: &mut Buffer) {
     let line = label.map_or_else(Line::default, |label| {
         truncate_line_with_ellipsis_if_overflow(
-            Line::from(bounded_visible_path(label)).fg(palette::CYAN),
+            Line::from(bounded_visible_path(label)).fg(palette::cyan()),
             usize::from(area.width),
         )
     });
     Paragraph::new(line)
-        .style(pane_style(palette::SURFACE))
+        .style(pane_style(palette::surface()))
         .render(area, buf);
 }
 
@@ -286,10 +286,20 @@ fn render_cell(
         .map(|number| format!("{number:>number_width$}"))
         .unwrap_or_else(|| " ".repeat(number_width));
     let (marker, color, background, bold) = match cell.kind {
-        DiffLineKind::Context => (" ", palette::TEXT, palette::SURFACE, false),
-        DiffLineKind::Added => ("+", palette::SUCCESS, palette::DIFF_ADDED_BACKGROUND, false),
-        DiffLineKind::Removed => ("-", palette::ERROR, palette::DIFF_REMOVED_BACKGROUND, false),
-        DiffLineKind::Hunk => (" ", palette::CYAN, palette::SURFACE, true),
+        DiffLineKind::Context => (" ", palette::text(), palette::surface(), false),
+        DiffLineKind::Added => (
+            "+",
+            palette::success(),
+            palette::diff_added_background(),
+            false,
+        ),
+        DiffLineKind::Removed => (
+            "-",
+            palette::error(),
+            palette::diff_removed_background(),
+            false,
+        ),
+        DiffLineKind::Hunk => (" ", palette::cyan(), palette::surface(), true),
     };
     fill_rect(buf, area, background);
     let prefix_width = number_width.saturating_add(3);
@@ -302,7 +312,7 @@ fn render_cell(
         area.height,
     );
     Paragraph::new(Line::from(vec![
-        number.fg(palette::MUTED),
+        number.fg(palette::muted()),
         " ".into(),
         marker.fg(color).bold(),
         " ".into(),
@@ -333,7 +343,7 @@ fn render_separators(geometry: DiffViewGeometry, buf: &mut Buffer) {
         for y in geometry.header.y..geometry.footer.y {
             if let Some(cell) = buf.cell_mut((x, y)) {
                 cell.set_symbol("│")
-                    .set_style(Style::new().fg(palette::BORDER).bg(palette::SURFACE));
+                    .set_style(Style::new().fg(palette::border()).bg(palette::surface()));
             }
         }
     }
@@ -379,26 +389,26 @@ fn render_footer(state: &DiffViewState, area: Rect, visible: usize, buf: &mut Bu
         if hint.is_empty() {
             "".into()
         } else {
-            format!(" {hint}  ").fg(palette::MUTED)
+            format!(" {hint}  ").fg(palette::muted())
         },
-        range.fg(palette::PURPLE).bold(),
+        range.fg(palette::purple()).bold(),
     ]))
-    .style(pane_style(palette::SURFACE))
+    .style(pane_style(palette::surface()))
     .render(area, buf);
 }
 
 fn file_glyph(file: &DiffFile) -> (&'static str, ratatui::style::Color) {
     if matches!(file.status(), DiffStatus::Failed | DiffStatus::Declined) {
-        return ("!", palette::ERROR);
+        return ("!", palette::error());
     }
     if file.status() == DiffStatus::InProgress {
-        return ("~", palette::CYAN);
+        return ("~", palette::cyan());
     }
     match file.kind() {
-        DiffFileKind::Added => ("A", palette::SUCCESS),
-        DiffFileKind::Deleted => ("D", palette::ERROR),
-        DiffFileKind::Modified => ("M", palette::WARNING),
-        DiffFileKind::Renamed => ("R", palette::CYAN),
+        DiffFileKind::Added => ("A", palette::success()),
+        DiffFileKind::Deleted => ("D", palette::error()),
+        DiffFileKind::Modified => ("M", palette::warning()),
+        DiffFileKind::Renamed => ("R", palette::cyan()),
     }
 }
 
