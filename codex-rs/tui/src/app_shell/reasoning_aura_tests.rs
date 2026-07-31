@@ -4,10 +4,12 @@ use super::*;
 use crate::app_theme;
 use crate::app_theme::ThemePalette;
 use crate::app_theme::palette as active_palette;
+use crate::tui::FrameRequester;
 use codex_config::types::TuiAppTheme;
 use pretty_assertions::assert_eq;
 use ratatui::layout::Position;
 use ratatui::style::Style;
+use tokio::sync::broadcast::error::TryRecvError;
 
 #[test]
 fn only_transitions_to_max_and_ultra_have_an_aura_tone() {
@@ -60,6 +62,59 @@ fn aura_expires_at_the_deadline_without_changing_cell_content() {
 
     aura.render(area, &mut buf, now);
     assert_eq!(buffer_symbols(&buf, area), buffer_symbols(&unchanged, area));
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn expiration_deadline_clears_aura_and_requests_a_real_frame() {
+    let now = tokio::time::Instant::now().into_std();
+    let mut aura = Some(ReasoningAura::new(ReasoningAuraTone::Max, now));
+    let deadline = aura
+        .as_ref()
+        .map(ReasoningAura::expires_at)
+        .expect("aura should have a deadline");
+    let (draw_tx, mut draw_rx) = tokio::sync::broadcast::channel(1);
+    let frame_requester = FrameRequester::new(draw_tx);
+    let expiration = wait_for_expiration(Some(deadline));
+    tokio::pin!(expiration);
+
+    let initially_expired = tokio::select! {
+        biased;
+        expired_at = expiration.as_mut() => Some(expired_at),
+        _ = tokio::task::yield_now() => None,
+    };
+    assert_eq!(initially_expired, None);
+
+    tokio::time::advance(Duration::from_millis(/*millis*/ 799)).await;
+    let expired_early = tokio::select! {
+        biased;
+        expired_at = expiration.as_mut() => Some(expired_at),
+        _ = tokio::task::yield_now() => None,
+    };
+    let cleared_early = clear_expired_aura(
+        &mut aura,
+        tokio::time::Instant::now().into_std(),
+        &frame_requester,
+    );
+    assert_eq!(
+        (
+            expired_early,
+            cleared_early,
+            aura.is_some(),
+            draw_rx.try_recv(),
+        ),
+        (None, false, true, Err(TryRecvError::Empty)),
+    );
+
+    tokio::time::advance(Duration::from_millis(/*millis*/ 1)).await;
+    let expired_at = expiration.as_mut().await;
+    let cleared = clear_expired_aura(&mut aura, expired_at, &frame_requester);
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_millis(/*millis*/ 1)).await;
+
+    assert_eq!(
+        (expired_at, cleared, aura.is_none(), draw_rx.try_recv()),
+        (deadline, true, true, Ok(())),
+    );
 }
 
 #[test]

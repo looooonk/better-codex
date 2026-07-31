@@ -14228,6 +14228,85 @@ async fn native_settings_pages_write_config_and_validate_edits() {
 }
 
 #[tokio::test]
+async fn successful_settings_preserve_max_and_ultra_aura_tones_through_render() {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum SettingsPath {
+        Model,
+        ReasoningEffort,
+    }
+
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 24,
+    );
+    let outer_header = Position::new(area.x + area.width / 2, area.y);
+    let mut observations = Vec::new();
+    for (path, target_effort) in [
+        (SettingsPath::Model, ReasoningEffort::Max),
+        (SettingsPath::ReasoningEffort, ReasoningEffort::Ultra),
+    ] {
+        let mut shell = ShellState::snapshot_fixture();
+        shell.app_theme = TuiAppTheme::GruvboxDark;
+        shell.model = "current-model".to_string();
+        shell.reasoning_effort = Some(ReasoningEffort::High);
+        shell.available_models = vec![
+            model_preset_fixture(
+                "current-model",
+                /*show_in_picker*/ true,
+                ReasoningEffort::High,
+                &[ReasoningEffort::High, ReasoningEffort::Ultra],
+                &[],
+            ),
+            model_preset_fixture(
+                "max-model",
+                /*show_in_picker*/ true,
+                ReasoningEffort::Max,
+                &[ReasoningEffort::Max],
+                &[],
+            ),
+        ];
+        let mut backend = RecordingBackend::default();
+
+        match path {
+            SettingsPath::Model => shell.apply_model("max-model".to_string(), &mut backend),
+            SettingsPath::ReasoningEffort => {
+                shell.apply_reasoning_effort(Some(target_effort.clone()), &mut backend);
+            }
+        }
+        complete_backend_actions(&mut shell, &backend).await;
+
+        let buffer = render_shell_buffer(&shell, area);
+        observations.push((
+            path,
+            shell.reasoning_effort,
+            outer_header,
+            buffer
+                .cell(outer_header)
+                .expect("outer header should be inside the shell")
+                .style()
+                .bg,
+        ));
+    }
+
+    assert_eq!(
+        observations,
+        vec![
+            (
+                SettingsPath::Model,
+                Some(ReasoningEffort::Max),
+                Position::new(/*x*/ 40, /*y*/ 0),
+                Some(Color::Rgb(0x79, 0x61, 0x26)),
+            ),
+            (
+                SettingsPath::ReasoningEffort,
+                Some(ReasoningEffort::Ultra),
+                Position::new(/*x*/ 40, /*y*/ 0),
+                Some(Color::Rgb(0x69, 0x4a, 0x54)),
+            ),
+        ],
+    );
+}
+
+#[tokio::test]
 async fn ultra_reasoning_warns_about_configured_agent_concurrency() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
