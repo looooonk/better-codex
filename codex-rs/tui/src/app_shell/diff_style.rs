@@ -8,9 +8,9 @@ pub(super) fn diff_stat_spans(text: String) -> Vec<Span<'static>> {
         .map(|segment| {
             let token = segment.trim_end_matches(char::is_whitespace);
             let color = if let Some(count) = token.strip_prefix('+') {
-                is_diff_count(count).then_some(palette::SUCCESS)
+                is_diff_count(count).then_some(palette::success())
             } else if let Some(count) = token.strip_prefix('-') {
-                is_diff_count(count).then_some(palette::ERROR)
+                is_diff_count(count).then_some(palette::error())
             } else {
                 None
             };

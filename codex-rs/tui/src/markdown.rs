@@ -70,9 +70,15 @@ pub(crate) fn render_markdown_agent_with_links_and_cwd(
     markdown_source: &str,
     width: Option<usize>,
     cwd: Option<&Path>,
+    styles: crate::markdown_render::MarkdownStyles,
 ) -> Vec<HyperlinkLine> {
     let normalized = unwrap_markdown_fences(markdown_source);
-    crate::markdown_render::render_markdown_lines_with_width_and_cwd(&normalized, width, cwd)
+    crate::markdown_render::render_markdown_lines_with_width_cwd_and_styles(
+        &normalized,
+        width,
+        cwd,
+        styles,
+    )
 }
 
 /// Strip `` ```md ``/`` ```markdown `` fences that contain tables, emitting their content as bare

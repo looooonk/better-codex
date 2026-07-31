@@ -245,8 +245,8 @@ fn overflow_marker(
     RequestPanelSegment {
         content: Line::from(vec![
             "  ".into(),
-            format!("{direction} more").fg(palette::WARNING).bold(),
-            scroll_hint.fg(palette::MUTED),
+            format!("{direction} more").fg(palette::warning()).bold(),
+            scroll_hint.fg(palette::muted()),
         ]),
         logical_line: usize::MAX,
         source_column: 0,

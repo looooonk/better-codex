@@ -5,6 +5,8 @@ use ratatui::style::Style;
 use ratatui::style::Stylize;
 use ratatui::text::Span;
 
+use crate::markdown_render::MarkdownStyles;
+
 #[allow(
     dead_code,
     reason = "semantic roles are adopted by app-shell views incrementally"
@@ -117,6 +119,14 @@ pub(super) fn selection_style() -> Style {
 
 pub(super) fn text_selection_style() -> Style {
     Style::new().fg(palette::dark()).bg(palette::focus())
+}
+
+pub(super) fn markdown_styles() -> MarkdownStyles {
+    MarkdownStyles::default()
+        .inline_code_color(palette::cyan())
+        .ordered_list_marker_color(palette::focus())
+        .link_color(palette::cyan())
+        .blockquote_color(palette::success())
 }
 
 pub(super) fn fill_rect(buf: &mut Buffer, area: Rect, color: Color) {
