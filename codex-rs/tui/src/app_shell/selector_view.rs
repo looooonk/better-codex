@@ -37,13 +37,13 @@ impl<T> SelectorState<T> {
         let hovered = pointer.and_then(|position| self.option_at(area, position));
         buf.set_style(area, Style::new().add_modifier(Modifier::DIM));
         Clear.render(geometry.modal, buf);
-        fill_rect(buf, geometry.modal, palette::SURFACE);
+        fill_rect(buf, geometry.modal, palette::surface());
 
         Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::new().fg(palette::FOCUS))
-            .style(pane_style(palette::SURFACE))
+            .border_style(Style::new().fg(palette::focus()))
+            .style(pane_style(palette::surface()))
             .title(Line::from(format!(" {} ", self.title)).bold())
             .render(geometry.modal, buf);
 
@@ -73,7 +73,7 @@ impl<T> SelectorState<T> {
             geometry.visible_options,
             geometry.footer.width,
         ))
-        .style(pane_style(palette::SURFACE))
+        .style(pane_style(palette::surface()))
         .render(geometry.footer, buf);
     }
 
@@ -87,11 +87,11 @@ impl<T> SelectorState<T> {
     ) {
         let selected = index == self.selected;
         let background = if hovered {
-            palette::BORDER
+            palette::border()
         } else if selected {
-            palette::ELEVATED
+            palette::elevated()
         } else {
-            palette::SURFACE
+            palette::surface()
         };
         fill_rect(buf, area, background);
         let current_label = if option.current { "  current" } else { "" };
@@ -104,27 +104,27 @@ impl<T> SelectorState<T> {
             .max(1);
         let detail = first_wrapped_line(&option.detail, detail_width);
         let pointer = if selected {
-            "›".fg(palette::FOCUS).bold()
+            "›".fg(palette::focus()).bold()
         } else {
             " ".into()
         };
         let shortcut = if index < 9 {
-            (index + 1).to_string().fg(palette::MUTED)
+            (index + 1).to_string().fg(palette::muted())
         } else {
-            "·".fg(palette::MUTED)
+            "·".fg(palette::muted())
         };
         let current = if option.current {
-            "●".fg(palette::SUCCESS)
+            "●".fg(palette::success())
         } else {
-            "○".fg(palette::MUTED)
+            "○".fg(palette::muted())
         };
         let label = if selected {
-            label.fg(palette::TEXT).bold()
+            label.fg(palette::text()).bold()
         } else {
-            label.fg(palette::TEXT)
+            label.fg(palette::text())
         };
         let current_label = if option.current {
-            current_label.fg(palette::SUCCESS)
+            current_label.fg(palette::success())
         } else {
             "".into()
         };
@@ -141,7 +141,7 @@ impl<T> SelectorState<T> {
             ]),
             Line::from(vec![
                 " ".repeat(OPTION_PREFIX_WIDTH).into(),
-                detail.fg(palette::MUTED),
+                detail.fg(palette::muted()),
             ]),
         ];
         Paragraph::new(lines)
@@ -188,8 +188,8 @@ fn selector_footer(
         format!(" {hint}  ")
     };
     Line::from(vec![
-        hint.fg(palette::MUTED),
-        position.fg(palette::PURPLE).bold(),
+        hint.fg(palette::muted()),
+        position.fg(palette::purple()).bold(),
     ])
 }
 

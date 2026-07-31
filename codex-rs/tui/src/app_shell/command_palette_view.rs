@@ -43,7 +43,7 @@ pub(super) fn render(shell: &ShellState, area: Rect, buf: &mut Buffer) {
     let palette_area = palette_area(area, entries.len());
     let content = pane_content_rect(palette_area);
     let visible_range = visible_entry_range(state.selected(), entries.len(), content.height);
-    buf.set_style(area, Style::new().fg(palette::MUTED).bg(palette::DARK));
+    buf.set_style(area, Style::new().fg(palette::muted()).bg(palette::dark()));
     Clear.render(palette_area, buf);
 
     let hovered = shell
@@ -57,7 +57,7 @@ pub(super) fn render(shell: &ShellState, area: Rect, buf: &mut Buffer) {
         .map(|(index, entry)| {
             let selected = index == state.selected();
             let marker = if selected {
-                "▌".set_style(Style::new().fg(palette::FOCUS))
+                "▌".set_style(Style::new().fg(palette::focus()))
             } else {
                 " ".into()
             };
@@ -65,19 +65,19 @@ pub(super) fn render(shell: &ShellState, area: Rect, buf: &mut Buffer) {
                 .title
                 .to_string()
                 .set_style(Style::new().fg(if entry.enabled {
-                    palette::TEXT
+                    palette::text()
                 } else {
-                    palette::MUTED
+                    palette::muted()
                 }));
             let detail = if selected {
                 format!("  {}", truncate_text(entry.detail, /*max_graphemes*/ 34))
-                    .set_style(Style::new().fg(palette::MUTED))
+                    .set_style(Style::new().fg(palette::muted()))
             } else {
                 String::new().into()
             };
             let line = Line::from(vec![marker, " ".dim(), title, detail]);
             if hovered == Some(index) {
-                line.style(Style::new().bg(palette::BORDER))
+                line.style(Style::new().bg(palette::border()))
             } else if selected {
                 line.style(selection_style())
             } else {
@@ -86,18 +86,18 @@ pub(super) fn render(shell: &ShellState, area: Rect, buf: &mut Buffer) {
         })
         .collect::<Vec<_>>();
 
-    fill_rect(buf, palette_area, palette::ELEVATED);
+    fill_rect(buf, palette_area, palette::elevated());
     Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::new().fg(palette::FOCUS))
-        .style(pane_style(palette::ELEVATED))
+        .border_style(Style::new().fg(palette::focus()))
+        .style(pane_style(palette::elevated()))
         .render(palette_area, buf);
     let mut palette_lines = vec![
         Line::from(vec![
-            "◆ ".set_style(Style::new().fg(palette::PURPLE)),
-            "ACTIONS".set_style(Style::new().fg(palette::TEXT).bold()),
-            "  Ctrl+P".set_style(Style::new().fg(palette::MUTED)),
+            "◆ ".set_style(Style::new().fg(palette::purple())),
+            "ACTIONS".set_style(Style::new().fg(palette::text()).bold()),
+            "  Ctrl+P".set_style(Style::new().fg(palette::muted())),
         ]),
         Line::from(""),
     ];
@@ -109,7 +109,7 @@ pub(super) fn render(shell: &ShellState, area: Rect, buf: &mut Buffer) {
         content.width,
     ));
     Paragraph::new(palette_lines)
-        .style(pane_style(palette::ELEVATED))
+        .style(pane_style(palette::elevated()))
         .render(content, buf);
 }
 
@@ -164,8 +164,8 @@ fn palette_footer(
         .unwrap_or_default();
     let gap = if hint.is_empty() { "" } else { "  " };
     Line::from(vec![
-        hint.to_string().fg(palette::MUTED),
+        hint.to_string().fg(palette::muted()),
         gap.into(),
-        position.fg(palette::PURPLE).bold(),
+        position.fg(palette::purple()).bold(),
     ])
 }

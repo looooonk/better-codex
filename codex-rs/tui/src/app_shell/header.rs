@@ -40,19 +40,19 @@ pub(super) struct HeaderView<'a> {
 
 impl HeaderView<'_> {
     pub(super) fn render(&self, area: Rect, hovered: Option<HeaderControl>, buf: &mut Buffer) {
-        fill_rect(buf, area, palette::DARK);
+        fill_rect(buf, area, palette::dark());
         let content = pane_content_rect(area);
         let layout = self.control_layout(area);
         if let Some(layout) = layout {
             Paragraph::new(self.dashboard_button(hovered)).render(layout.dashboard, buf);
             Paragraph::new(self.brand_line(layout.compact_brand))
-                .style(pane_style(palette::DARK))
+                .style(pane_style(palette::dark()))
                 .render(layout.brand, buf);
             if let Some(model) = layout.model {
                 Paragraph::new(self.model_label())
                     .style(
                         Style::new()
-                            .fg(palette::TEXT)
+                            .fg(palette::text())
                             .bg(control_background(hovered, HeaderControl::Model)),
                     )
                     .render(model, buf);
@@ -61,7 +61,7 @@ impl HeaderView<'_> {
                 Paragraph::new(self.effort_label())
                     .style(
                         Style::new()
-                            .fg(palette::PURPLE)
+                            .fg(palette::purple())
                             .bg(control_background(hovered, HeaderControl::ReasoningEffort)),
                     )
                     .render(effort, buf);
@@ -70,7 +70,7 @@ impl HeaderView<'_> {
                 Paragraph::new(self.service_tier_label())
                     .style(
                         Style::new()
-                            .fg(palette::PURPLE)
+                            .fg(palette::purple())
                             .bg(control_background(hovered, HeaderControl::ServiceTier)),
                     )
                     .render(service_tier, buf);
@@ -82,18 +82,18 @@ impl HeaderView<'_> {
                     HeaderStatusDisplay::None => Line::default(),
                 };
                 Paragraph::new(line)
-                    .style(pane_style(palette::DARK))
+                    .style(pane_style(palette::dark()))
                     .render(status, buf);
             }
         } else {
             Paragraph::new(self.brand_line(/*compact*/ true))
-                .style(pane_style(palette::DARK))
+                .style(pane_style(palette::dark()))
                 .render(Rect::new(content.x, content.y, content.width, 1), buf);
         }
 
         Paragraph::new(
             Line::from("─".repeat(usize::from(area.width)))
-                .style(Style::new().fg(palette::BORDER).bg(palette::DARK)),
+                .style(Style::new().fg(palette::border()).bg(palette::dark())),
         )
         .render(
             Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1),
@@ -274,23 +274,23 @@ impl HeaderView<'_> {
     fn dashboard_button(&self, hovered: Option<HeaderControl>) -> Line<'static> {
         let hovered = hovered == Some(HeaderControl::Dashboard);
         let background = if hovered {
-            palette::BORDER
+            palette::border()
         } else if self.dashboard_visible {
-            palette::FOCUS
+            palette::focus()
         } else {
-            palette::ELEVATED
+            palette::elevated()
         };
         let label = self.dashboard_label();
         let label = if self.dashboard_visible {
             label
                 .fg(if hovered {
-                    palette::TEXT
+                    palette::text()
                 } else {
-                    palette::DARK
+                    palette::dark()
                 })
                 .bold()
         } else {
-            label.fg(palette::CYAN)
+            label.fg(palette::cyan())
         };
         Line::from(label).style(Style::new().bg(background))
     }
@@ -298,8 +298,8 @@ impl HeaderView<'_> {
     fn brand_line(&self, compact: bool) -> Line<'static> {
         if compact {
             return Line::from(vec![
-                "◆".fg(palette::PURPLE).bold(),
-                " BC".fg(palette::TEXT).bold(),
+                "◆".fg(palette::purple()).bold(),
+                " BC".fg(palette::text()).bold(),
             ]);
         }
         let workspace = std::path::Path::new(self.cwd)
@@ -307,10 +307,10 @@ impl HeaderView<'_> {
             .and_then(|name| name.to_str())
             .unwrap_or(self.cwd);
         Line::from(vec![
-            "◆".fg(palette::PURPLE).bold(),
-            " BETTER CODEX".fg(palette::TEXT).bold(),
+            "◆".fg(palette::purple()).bold(),
+            " BETTER CODEX".fg(palette::text()).bold(),
             "  ".into(),
-            truncate_text(workspace, /*max_graphemes*/ 18).fg(palette::MUTED),
+            truncate_text(workspace, /*max_graphemes*/ 18).fg(palette::muted()),
         ])
     }
 
@@ -338,10 +338,10 @@ impl HeaderView<'_> {
 
     fn status_line(&self) -> Line<'static> {
         let color = match self.status {
-            "ready" => palette::SUCCESS,
-            "failed" | "error" | "disconnected" => palette::ERROR,
-            "interrupted" => palette::WARNING,
-            _ => palette::CYAN,
+            "ready" => palette::success(),
+            "failed" | "error" | "disconnected" => palette::error(),
+            "interrupted" => palette::warning(),
+            _ => palette::cyan(),
         };
         let indicator = self
             .status_spinner_frame
@@ -349,12 +349,12 @@ impl HeaderView<'_> {
             .unwrap_or("●");
         let mut spans = vec![
             format!("{indicator} ").fg(color),
-            self.status.to_string().fg(palette::TEXT).bold(),
+            self.status.to_string().fg(palette::text()).bold(),
         ];
         if let Some(seconds) = self.turn_elapsed_seconds {
             spans.extend([
-                " · turn ".fg(palette::MUTED),
-                format_turn_elapsed(seconds).fg(palette::TEXT).bold(),
+                " · turn ".fg(palette::muted()),
+                format_turn_elapsed(seconds).fg(palette::text()).bold(),
             ]);
         }
         Line::from(spans)
@@ -362,9 +362,9 @@ impl HeaderView<'_> {
 
     fn turn_timer_line(&self) -> Line<'static> {
         Line::from(vec![
-            "turn ".fg(palette::MUTED),
+            "turn ".fg(palette::muted()),
             format_turn_elapsed(self.turn_elapsed_seconds.unwrap_or_default())
-                .fg(palette::TEXT)
+                .fg(palette::text())
                 .bold(),
         ])
     }
@@ -385,9 +385,9 @@ fn format_turn_elapsed(seconds: u64) -> String {
 
 fn control_background(hovered: Option<HeaderControl>, control: HeaderControl) -> Color {
     if hovered == Some(control) {
-        palette::BORDER
+        palette::border()
     } else {
-        palette::ELEVATED
+        palette::elevated()
     }
 }
 
