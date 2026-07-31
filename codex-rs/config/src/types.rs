@@ -670,6 +670,29 @@ pub enum TuiPetAnchor {
     ScreenBottom,
 }
 
+/// Color theme used by the Better Codex app shell and its onboarding screens.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum TuiAppTheme {
+    /// Better Codex's default Tokyo Night palette.
+    #[default]
+    TokyoNight,
+    /// Gruvbox's dark palette.
+    GruvboxDark,
+    /// Catppuccin's Mocha palette.
+    CatppuccinMocha,
+}
+
+impl TuiAppTheme {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TokyoNight => "tokyo-night",
+            Self::GruvboxDark => "gruvbox-dark",
+            Self::CatppuccinMocha => "catppuccin-mocha",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct TuiNotificationSettings {

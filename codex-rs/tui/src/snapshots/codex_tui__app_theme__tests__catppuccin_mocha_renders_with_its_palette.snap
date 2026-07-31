@@ -1,0 +1,104 @@
+---
+source: tui/src/app_theme_tests.rs
+expression: "render_theme_sample(TuiAppTheme::CatppuccinMocha)"
+---
+[
+    RenderedCell {
+        symbol: "B",
+        foreground: Rgb(
+            205,
+            214,
+            244,
+        ),
+        background: Rgb(
+            30,
+            30,
+            46,
+        ),
+        modifiers: BOLD,
+    },
+    RenderedCell {
+        symbol: "D",
+        foreground: Rgb(
+            127,
+            132,
+            156,
+        ),
+        background: Rgb(
+            24,
+            24,
+            37,
+        ),
+        modifiers: BOLD,
+    },
+    RenderedCell {
+        symbol: "S",
+        foreground: Rgb(
+            137,
+            220,
+            235,
+        ),
+        background: Rgb(
+            49,
+            50,
+            68,
+        ),
+        modifiers: BOLD,
+    },
+    RenderedCell {
+        symbol: "E",
+        foreground: Rgb(
+            203,
+            166,
+            247,
+        ),
+        background: Rgb(
+            69,
+            71,
+            90,
+        ),
+        modifiers: BOLD,
+    },
+    RenderedCell {
+        symbol: "+",
+        foreground: Rgb(
+            166,
+            227,
+            161,
+        ),
+        background: Rgb(
+            38,
+            53,
+            47,
+        ),
+        modifiers: BOLD,
+    },
+    RenderedCell {
+        symbol: "!",
+        foreground: Rgb(
+            249,
+            226,
+            175,
+        ),
+        background: Rgb(
+            88,
+            91,
+            112,
+        ),
+        modifiers: BOLD,
+    },
+    RenderedCell {
+        symbol: "-",
+        foreground: Rgb(
+            243,
+            139,
+            168,
+        ),
+        background: Rgb(
+            61,
+            37,
+            47,
+        ),
+        modifiers: BOLD,
+    },
+]
