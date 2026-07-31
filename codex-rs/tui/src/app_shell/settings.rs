@@ -96,7 +96,7 @@ impl SettingsState {
                 .draft
                 .text_with_cursor_window(width.saturating_sub(prefix_width).max(1));
             lines.push(Line::from(vec![
-                label.cyan(),
+                label.fg(palette::cyan()),
                 " ".dim(),
                 dashboard_value(&draft, width, prefix_width).into(),
             ]));
@@ -104,8 +104,8 @@ impl SettingsState {
         if let Some(feedback) = &self.feedback {
             let line = dashboard_value(&feedback.message, width, /*prefix_width*/ 0);
             let span = match feedback.tone {
-                SettingsFeedbackTone::Info => line.green(),
-                SettingsFeedbackTone::Error => line.red(),
+                SettingsFeedbackTone::Info => line.fg(palette::success()),
+                SettingsFeedbackTone::Error => line.fg(palette::error()),
             };
             lines.push(Line::from(span));
         }
@@ -343,7 +343,7 @@ fn setting_row(
     width: usize,
 ) -> Line<'static> {
     let marker = if selected {
-        "›".fg(palette::FOCUS).bold()
+        "›".fg(palette::focus()).bold()
     } else {
         " ".into()
     };
@@ -372,9 +372,9 @@ fn setting_row(
         marker,
         " ".into(),
         dashboard_value(&text, width, /*prefix_width*/ 2).fg(if selected {
-            palette::TEXT
+            palette::text()
         } else {
-            palette::MUTED
+            palette::muted()
         }),
     ]);
     if selected {

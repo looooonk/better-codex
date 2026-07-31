@@ -59,10 +59,10 @@ impl DashboardPanel {
 
     pub(super) fn title_line(&self) -> Line<'static> {
         let mut spans = vec![
-            "◆ ".set_style(ratatui::style::Style::new().fg(palette::FOCUS)),
+            "◆ ".set_style(ratatui::style::Style::new().fg(palette::focus())),
             self.title
                 .to_uppercase()
-                .set_style(ratatui::style::Style::new().fg(palette::MUTED).bold()),
+                .set_style(ratatui::style::Style::new().fg(palette::muted()).bold()),
         ];
         if let Some(hint) = &self.title_hint {
             spans.extend(["  ".into(), hint.clone().dim()]);
@@ -193,7 +193,7 @@ fn dashboard_panel(
                             content_width,
                             /*prefix_width*/ 3,
                         )
-                        .cyan(),
+                        .fg(palette::cyan()),
                     ]),
                     Line::from(
                         dashboard_value(
@@ -344,9 +344,9 @@ fn dashboard_panel(
                     "Enter focus · then Enter opens full log"
                 }
                 .fg(if shell.agents_focused {
-                    palette::CYAN
+                    palette::cyan()
                 } else {
-                    palette::MUTED
+                    palette::muted()
                 }),
             ));
             Some(DashboardPanel::new("Agents", lines))
@@ -394,17 +394,17 @@ fn goal_status_span(status: codex_app_server_protocol::ThreadGoalStatus) -> Span
 fn plan_step_line(status: TurnPlanStepStatus, step: &str) -> Line<'static> {
     let marker = match status {
         TurnPlanStepStatus::Pending => "-".dim(),
-        TurnPlanStepStatus::InProgress => ">".cyan().bold(),
-        TurnPlanStepStatus::Completed => "x".green(),
+        TurnPlanStepStatus::InProgress => ">".fg(palette::cyan()).bold(),
+        TurnPlanStepStatus::Completed => "x".fg(palette::success()),
     };
     Line::from(vec![marker, " ".dim(), step.to_string().into()])
 }
 
 fn tool_activity_line(activity: &ToolActivity, width: usize) -> Line<'static> {
     let status = match activity.status.as_str() {
-        "completed" => activity.status.clone().green(),
-        "failed" | "declined" => activity.status.clone().red(),
-        "in progress" | "inprogress" => activity.status.clone().cyan(),
+        "completed" => activity.status.clone().fg(palette::success()),
+        "failed" | "declined" => activity.status.clone().fg(palette::error()),
+        "in progress" | "inprogress" => activity.status.clone().fg(palette::cyan()),
         _ => activity.status.clone().dim(),
     };
     let prefix_width = activity.status.chars().count() + 1;
@@ -461,7 +461,7 @@ fn background_activity_lines(shell: &ShellState) -> Option<Vec<Line<'static>>> {
 fn activity_status_line(label: &'static str, title: &str, width: usize) -> Line<'static> {
     let prefix_width = label.chars().count() + 1;
     Line::from(vec![
-        label.cyan(),
+        label.fg(palette::cyan()),
         " ".dim(),
         dashboard_value(title, width, prefix_width).into(),
     ])
