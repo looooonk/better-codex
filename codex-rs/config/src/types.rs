@@ -779,6 +779,11 @@ pub struct Tui {
     #[serde(default)]
     pub terminal_title: Option<Vec<String>>,
 
+    /// Color theme used by the Better Codex app shell and its onboarding screens.
+    /// Defaults to `tokyo-night`.
+    #[serde(default)]
+    pub app_theme: TuiAppTheme,
+
     /// Syntax highlighting theme name (kebab-case).
     ///
     /// When set, overrides automatic light/dark theme detection.

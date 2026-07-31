@@ -7,6 +7,7 @@ use codex_config::types::McpServerConfig;
 use codex_config::types::ResumeCwdMode;
 use codex_config::types::SessionPickerViewMode;
 use codex_config::types::ToolSuggestDisabledTool;
+use codex_config::types::TuiAppTheme;
 use codex_features::FEATURES;
 use codex_protocol::config_types::Personality;
 use codex_protocol::config_types::ServiceTier;
@@ -89,6 +90,14 @@ pub fn syntax_theme_edit(name: &str) -> ConfigEdit {
     ConfigEdit::SetPath {
         segments: vec!["tui".to_string(), "theme".to_string()],
         value: value(name.to_string()),
+    }
+}
+
+/// Produces a config edit that sets `[tui].app_theme = "<theme>"`.
+pub fn app_theme_edit(theme: TuiAppTheme) -> ConfigEdit {
+    ConfigEdit::SetPath {
+        segments: vec!["tui".to_string(), "app_theme".to_string()],
+        value: value(theme.as_str()),
     }
 }
 

@@ -48,6 +48,7 @@ use codex_config::types::SessionPickerViewMode;
 use codex_config::types::ToolSuggestConfig;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_config::types::ToolSuggestDiscoverable;
+use codex_config::types::TuiAppTheme;
 use codex_config::types::TuiKeymap;
 use codex_config::types::TuiNotificationSettings;
 use codex_config::types::TuiPetAnchor;
@@ -779,6 +780,9 @@ pub struct Config {
     /// The `activity` item spins while working and shows an action-required
     /// message when blocked on the user.
     pub tui_terminal_title: Option<Vec<String>>,
+
+    /// Color theme used by the Better Codex app shell and its onboarding screens.
+    pub tui_app_theme: TuiAppTheme,
 
     /// Syntax highlighting theme override (kebab-case name).
     pub tui_theme: Option<String>,
@@ -4114,6 +4118,11 @@ impl Config {
                 .map(|t| t.status_line_use_colors)
                 .unwrap_or(true),
             tui_terminal_title: cfg.tui.as_ref().and_then(|t| t.terminal_title.clone()),
+            tui_app_theme: cfg
+                .tui
+                .as_ref()
+                .map(|t| t.app_theme)
+                .unwrap_or_default(),
             tui_theme: cfg.tui.as_ref().and_then(|t| t.theme.clone()),
             tui_pet: cfg.tui.as_ref().and_then(|t| t.pet.clone()),
             tui_pet_anchor: cfg
