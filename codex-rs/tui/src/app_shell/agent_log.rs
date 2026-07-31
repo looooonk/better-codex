@@ -9,6 +9,7 @@ use crate::session_transcript::TranscriptLines;
 use crate::wrapping::RtOptions;
 use crate::wrapping::word_wrap_lines;
 use codex_app_server_protocol::Thread;
+use codex_config::types::TuiAppTheme;
 use codex_protocol::ThreadId;
 use color_eyre::Result;
 use crossterm::event::KeyCode;
@@ -170,7 +171,7 @@ impl AgentLogState {
         }
     }
 
-    async fn poll(&mut self) -> bool {
+    async fn poll(&mut self, app_theme: TuiAppTheme) -> bool {
         let ready = self
             .load_task
             .as_ref()
@@ -183,6 +184,7 @@ impl AgentLogState {
         };
         match task.await {
             Ok(Ok(thread)) => {
+                let _active_theme = crate::app_theme::activate(app_theme);
                 match thread_to_agent_log_lines(&thread, self.raw_reasoning_visibility) {
                     Ok(lines) => {
                         self.lines = lines;
@@ -276,10 +278,11 @@ impl ShellState {
     }
 
     pub(super) async fn poll_agent_log(&mut self) -> bool {
+        let app_theme = self.app_theme;
         let Some(log) = &mut self.agent_log else {
             return false;
         };
-        log.poll().await
+        log.poll(app_theme).await
     }
 
     pub(super) fn handle_agent_log_key(&mut self, key: KeyEvent) -> bool {

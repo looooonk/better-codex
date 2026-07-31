@@ -1,11 +1,24 @@
 use super::*;
 use crate::app_shell::ShellState;
 use crate::app_shell::agent_log_view::render_agent_log;
+use codex_app_server_protocol::FileUpdateChange;
+use codex_app_server_protocol::SessionSource;
+use codex_app_server_protocol::ThreadHistoryMode;
+use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadSource;
+use codex_app_server_protocol::ThreadStatus;
+use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnItemsView;
+use codex_app_server_protocol::TurnStatus;
+use codex_config::types::TuiAppTheme;
+use codex_utils_absolute_path::AbsolutePathBuf;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
+use pretty_assertions::assert_eq;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
+use ratatui::style::Color;
 use ratatui::text::Line;
 
 #[test]
@@ -52,15 +65,74 @@ fn navigation_scrolls_to_edges_and_escape_closes() {
     assert!(shell.agent_log.is_none());
 }
 
+#[tokio::test]
+async fn async_load_formats_positioned_styles_with_the_selected_app_theme() {
+    let load_task = tokio::spawn(async { Ok(themed_thread()) });
+    tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        while !load_task.is_finished() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("agent log load task should finish");
+    let mut log = AgentLogState::loading(target(), load_task, RawReasoningVisibility::Hidden);
+    let initial_palette = crate::app_theme::palette();
+
+    assert!(log.poll(TuiAppTheme::CatppuccinMocha).await);
+
+    assert_eq!(
+        positioned_foregrounds(log.lines()),
+        vec![
+            PositionedForeground::new(
+                /*line*/ 0,
+                /*span*/ 0,
+                "Turn 1",
+                Color::Rgb(203, 166, 247),
+            ),
+            PositionedForeground::new(
+                /*line*/ 0,
+                /*span*/ 2,
+                "Completed",
+                Color::Rgb(166, 227, 161),
+            ),
+            PositionedForeground::new(
+                /*line*/ 0,
+                /*span*/ 4,
+                "1.0s",
+                Color::Rgb(127, 132, 156),
+            ),
+            PositionedForeground::new(
+                /*line*/ 1,
+                /*span*/ 0,
+                "Edits",
+                Color::Rgb(203, 166, 247),
+            ),
+            PositionedForeground::new(
+                /*line*/ 1,
+                /*span*/ 2,
+                "Completed",
+                Color::Rgb(166, 227, 161),
+            ),
+            PositionedForeground::new(
+                /*line*/ 1,
+                /*span*/ 4,
+                "1 file",
+                Color::Rgb(127, 132, 156),
+            ),
+            PositionedForeground::new(
+                /*line*/ 2,
+                /*span*/ 1,
+                "M",
+                Color::Rgb(249, 226, 175),
+            ),
+        ]
+    );
+    assert_eq!(crate::app_theme::palette(), initial_palette);
+}
+
 fn ready_log() -> AgentLogState {
     AgentLogState {
-        target: AgentLogTarget {
-            thread_id: "01900000-0000-7000-8000-000000000099".to_string(),
-            display_name: "reviewer".to_string(),
-            path: "/root/reviewer".to_string(),
-            task_summary: Some("Review the restored session and verify the TUI state.".to_string()),
-            status: AgentLifecycleStatus::Shutdown,
-        },
+        target: target(),
         load_task: None,
         lines: (0..30)
             .map(|index| {
@@ -79,6 +151,100 @@ fn ready_log() -> AgentLogState {
         scroll: Cell::new(0),
         scroll_max: Cell::new(0),
     }
+}
+
+fn target() -> AgentLogTarget {
+    AgentLogTarget {
+        thread_id: "01900000-0000-7000-8000-000000000099".to_string(),
+        display_name: "reviewer".to_string(),
+        path: "/root/reviewer".to_string(),
+        task_summary: Some("Review the restored session and verify the TUI state.".to_string()),
+        status: AgentLifecycleStatus::Shutdown,
+    }
+}
+
+fn themed_thread() -> Thread {
+    Thread {
+        id: "01900000-0000-7000-8000-000000000099".to_string(),
+        extra: None,
+        session_id: "01900000-0000-7000-8000-000000000099".to_string(),
+        forked_from_id: None,
+        parent_thread_id: None,
+        preview: String::new(),
+        ephemeral: false,
+        history_mode: ThreadHistoryMode::Legacy,
+        model_provider: "openai".to_string(),
+        created_at: 1,
+        updated_at: 1,
+        recency_at: Some(1),
+        status: ThreadStatus::NotLoaded,
+        path: None,
+        cwd: AbsolutePathBuf::from_absolute_path_checked("/workspace")
+            .expect("absolute workspace path"),
+        cli_version: "test".to_string(),
+        source: SessionSource::Exec,
+        thread_source: Some(ThreadSource::Subagent),
+        agent_nickname: None,
+        agent_role: None,
+        git_info: None,
+        name: None,
+        turns: vec![Turn {
+            id: "turn-1".to_string(),
+            items: vec![ThreadItem::FileChange {
+                id: "edit-1".to_string(),
+                changes: vec![FileUpdateChange {
+                    path: "tui/src/app_shell/agent_log.rs".to_string(),
+                    kind: codex_app_server_protocol::PatchChangeKind::Update { move_path: None },
+                    diff: String::new(),
+                }],
+                status: codex_app_server_protocol::PatchApplyStatus::Completed,
+            }],
+            items_view: TurnItemsView::Full,
+            status: TurnStatus::Completed,
+            error: None,
+            started_at: Some(1),
+            completed_at: Some(2),
+            duration_ms: Some(1_000),
+        }],
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct PositionedForeground {
+    line: usize,
+    span: usize,
+    text: String,
+    color: Color,
+}
+
+impl PositionedForeground {
+    fn new(line: usize, span: usize, text: &str, color: Color) -> Self {
+        Self {
+            line,
+            span,
+            text: text.to_string(),
+            color,
+        }
+    }
+}
+
+fn positioned_foregrounds(lines: &[Line<'static>]) -> Vec<PositionedForeground> {
+    lines
+        .iter()
+        .enumerate()
+        .flat_map(|(line, value)| {
+            value
+                .spans
+                .iter()
+                .enumerate()
+                .filter_map(move |(span, value)| {
+                    value
+                        .style
+                        .fg
+                        .map(|color| PositionedForeground::new(line, span, &value.content, color))
+                })
+        })
+        .collect()
 }
 
 fn render_log(log: &AgentLogState, width: u16, height: u16) -> String {
