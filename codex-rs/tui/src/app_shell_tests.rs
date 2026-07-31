@@ -14228,7 +14228,7 @@ async fn native_settings_pages_write_config_and_validate_edits() {
 }
 
 #[tokio::test]
-async fn successful_settings_preserve_max_and_ultra_aura_tones_through_render() {
+async fn successful_settings_render_max_and_ultra_ripples_from_effort_picker() {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
     enum SettingsPath {
         Model,
@@ -14238,7 +14238,7 @@ async fn successful_settings_preserve_max_and_ultra_aura_tones_through_render() 
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 24,
     );
-    let outer_header = Position::new(area.x + area.width / 2, area.y);
+    let outer_frame = Position::new(area.x, area.y + area.height / 2);
     let mut observations = Vec::new();
     for (path, target_effort) in [
         (SettingsPath::Model, ReasoningEffort::Max),
@@ -14275,13 +14275,25 @@ async fn successful_settings_preserve_max_and_ultra_aura_tones_through_render() 
         complete_backend_actions(&mut shell, &backend).await;
 
         let buffer = render_shell_buffer(&shell, area);
+        let effort_picker = (area.y..area.bottom())
+            .flat_map(|y| (area.x..area.right()).map(move |x| Position::new(x, y)))
+            .find(|position| {
+                ShellView { shell: &shell }.header_control_at(area, *position)
+                    == Some(super::header::HeaderControl::ReasoningEffort)
+            })
+            .expect("effort picker should be visible");
         observations.push((
             path,
             shell.reasoning_effort,
-            outer_header,
+            effort_picker,
             buffer
-                .cell(outer_header)
-                .expect("outer header should be inside the shell")
+                .cell(effort_picker)
+                .expect("effort picker should be inside the shell")
+                .style()
+                .bg,
+            buffer
+                .cell(outer_frame)
+                .expect("outer frame sample should be inside the shell")
                 .style()
                 .bg,
         ));
@@ -14293,14 +14305,16 @@ async fn successful_settings_preserve_max_and_ultra_aura_tones_through_render() 
             (
                 SettingsPath::Model,
                 Some(ReasoningEffort::Max),
-                Position::new(/*x*/ 40, /*y*/ 0),
-                Some(Color::Rgb(0x79, 0x61, 0x26)),
+                Position::new(/*x*/ 49, /*y*/ 1),
+                Some(Color::Rgb(0xa1, 0x80, 0x3a)),
+                Some(Color::Rgb(0x28, 0x28, 0x28)),
             ),
             (
                 SettingsPath::ReasoningEffort,
                 Some(ReasoningEffort::Ultra),
-                Position::new(/*x*/ 40, /*y*/ 0),
-                Some(Color::Rgb(0x69, 0x4a, 0x54)),
+                Position::new(/*x*/ 47, /*y*/ 1),
+                Some(Color::Rgb(0x8e, 0x66, 0x6e)),
+                Some(Color::Rgb(0x28, 0x28, 0x28)),
             ),
         ],
     );

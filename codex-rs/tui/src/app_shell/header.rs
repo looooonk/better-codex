@@ -2,6 +2,7 @@ use super::design::fill_rect;
 use super::design::palette;
 use super::design::pane_content_rect;
 use super::design::pane_style;
+use super::reasoning_ripple::ReasoningRippleFrame;
 use crate::line_truncation::line_width;
 use crate::text_formatting::truncate_text;
 use ratatui::buffer::Buffer;
@@ -36,6 +37,7 @@ pub(super) struct HeaderView<'a> {
     pub(super) status_spinner_frame: Option<usize>,
     pub(super) turn_elapsed_seconds: Option<u64>,
     pub(super) dashboard_visible: bool,
+    pub(super) reasoning_ripple: Option<ReasoningRippleFrame>,
 }
 
 impl HeaderView<'_> {
@@ -99,6 +101,12 @@ impl HeaderView<'_> {
             Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1),
             buf,
         );
+        if let (Some(ripple), Some(origin)) = (
+            self.reasoning_ripple,
+            layout.and_then(|layout| layout.effort),
+        ) {
+            ripple.render(area, origin, buf);
+        }
     }
 
     pub(super) fn control_at(&self, area: Rect, position: Position) -> Option<HeaderControl> {

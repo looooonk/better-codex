@@ -130,9 +130,6 @@ impl ShellView<'_> {
         if let Some(diff) = &self.shell.diff_view {
             super::diff_view_view::render_diff_view(diff, area, buf);
         }
-        if let Some(aura) = &self.shell.reasoning_aura {
-            aura.render(area, buf, std::time::Instant::now());
-        }
     }
 
     pub(super) fn cursor_position(&self, area: Rect) -> Option<Position> {
@@ -241,6 +238,7 @@ impl ShellView<'_> {
                 .then_some(self.shell.status_spinner_frame),
             turn_elapsed_seconds: self.shell.active_turn_elapsed_seconds(),
             dashboard_visible: self.shell.dashboard_visible,
+            reasoning_ripple: None,
         }
         .control_at(header, position)
     }
@@ -375,6 +373,11 @@ impl ShellView<'_> {
                 .then_some(self.shell.status_spinner_frame),
             turn_elapsed_seconds: self.shell.active_turn_elapsed_seconds(),
             dashboard_visible: self.shell.dashboard_visible,
+            reasoning_ripple: self
+                .shell
+                .reasoning_ripple
+                .as_ref()
+                .and_then(|ripple| ripple.frame(std::time::Instant::now())),
         };
         let hovered = self
             .base_hover_position()

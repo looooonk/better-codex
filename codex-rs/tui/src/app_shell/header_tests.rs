@@ -11,6 +11,7 @@ fn view() -> HeaderView<'static> {
         status_spinner_frame: None,
         turn_elapsed_seconds: None,
         dashboard_visible: true,
+        reasoning_ripple: None,
     }
 }
 

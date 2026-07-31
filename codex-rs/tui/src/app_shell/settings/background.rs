@@ -2,8 +2,8 @@ use super::super::ShellState;
 use super::super::backend::AppShellBackend;
 use super::super::backend_actions::ActionGroup;
 use super::super::backend_actions::BackendActionResult;
-use super::super::reasoning_aura::ReasoningAura;
-use super::super::reasoning_aura::ReasoningAuraTone;
+use super::super::reasoning_ripple::ReasoningRipple;
+use super::super::reasoning_ripple::ReasoningRippleTone;
 use super::super::selector::SelectorState;
 use super::super::selector::SelectorValue;
 use super::SettingsAction;
@@ -28,13 +28,13 @@ pub(super) enum SettingsChange {
     Model {
         model: String,
         effort: Option<ReasoningEffort>,
-        aura_tone: Option<ReasoningAuraTone>,
+        ripple_tone: Option<ReasoningRippleTone>,
         service_tier: Option<String>,
     },
     ServiceTier(Option<String>),
     ReasoningEffort {
         effort: Option<ReasoningEffort>,
-        aura_tone: Option<ReasoningAuraTone>,
+        ripple_tone: Option<ReasoningRippleTone>,
         thread_effort: Option<ReasoningEffort>,
     },
     ApprovalPolicy(AskForApproval),
@@ -93,7 +93,7 @@ impl ShellState {
             SettingsChange::Model {
                 model,
                 effort,
-                aura_tone,
+                ripple_tone,
                 service_tier,
             } => {
                 if let Some(collaboration_mode) = self.collaboration_mode.as_mut() {
@@ -105,8 +105,8 @@ impl ShellState {
                 }
                 self.model = model;
                 self.reasoning_effort = effort;
-                self.reasoning_aura = if self.animations {
-                    aura_tone.map(|tone| ReasoningAura::new(tone, std::time::Instant::now()))
+                self.reasoning_ripple = if self.animations {
+                    ripple_tone.map(|tone| ReasoningRipple::new(tone, std::time::Instant::now()))
                 } else {
                     None
                 };
@@ -115,12 +115,12 @@ impl ShellState {
             SettingsChange::ServiceTier(service_tier) => self.service_tier = service_tier,
             SettingsChange::ReasoningEffort {
                 effort,
-                aura_tone,
+                ripple_tone,
                 thread_effort,
             } => {
                 self.reasoning_effort = effort.clone();
-                self.reasoning_aura = if self.animations {
-                    aura_tone.map(|tone| ReasoningAura::new(tone, std::time::Instant::now()))
+                self.reasoning_ripple = if self.animations {
+                    ripple_tone.map(|tone| ReasoningRipple::new(tone, std::time::Instant::now()))
                 } else {
                     None
                 };
@@ -144,7 +144,7 @@ impl ShellState {
             SettingsChange::Animations(animations) => {
                 self.animations = animations;
                 if !animations {
-                    self.reasoning_aura = None;
+                    self.reasoning_ripple = None;
                 }
             }
             SettingsChange::Tooltips(show_tooltips) => self.show_tooltips = show_tooltips,

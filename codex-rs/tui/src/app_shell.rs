@@ -112,7 +112,7 @@ mod paste;
 mod plugin_management;
 mod pointer;
 mod queued_messages;
-mod reasoning_aura;
+mod reasoning_ripple;
 mod render;
 mod safety_buffering;
 mod scrollback_view;
@@ -174,7 +174,7 @@ use interactive_requests::PendingInteractiveRequest;
 use mcp_management::McpManagementState;
 use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
-use reasoning_aura::ReasoningAura;
+use reasoning_ripple::ReasoningRipple;
 use render::draw_shell;
 use safety_buffering::SafetyBufferingState;
 use selection_controller::TextSelectionState;
@@ -338,6 +338,8 @@ pub(crate) async fn run(
         workspace_status_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut status_spinner = tokio::time::interval(STATUS_SPINNER_FRAME_INTERVAL);
         status_spinner.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut reasoning_ripple_refresh = tokio::time::interval(reasoning_ripple::FRAME_INTERVAL);
+        reasoning_ripple_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut turn_timer_refresh = tokio::time::interval_at(
             tokio::time::Instant::now() + TURN_TIMER_REFRESH_INTERVAL,
             TURN_TIMER_REFRESH_INTERVAL,
@@ -352,8 +354,6 @@ pub(crate) async fn run(
             }
             let user_input_auto_resolution_deadline =
                 shell.pending_user_input_auto_resolution_deadline();
-            let reasoning_aura_deadline =
-                shell.reasoning_aura.as_ref().map(ReasoningAura::expires_at);
             select! {
                 event = tui_events.next() => {
                     let Some(event) = event else {
@@ -540,12 +540,16 @@ pub(crate) async fn run(
                         tui.frame_requester().schedule_frame();
                     }
                 }
-                expired_at = reasoning_aura::wait_for_expiration(reasoning_aura_deadline) => {
-                    reasoning_aura::clear_expired_aura(
-                        &mut shell.reasoning_aura,
-                        expired_at,
-                        &tui.frame_requester(),
-                    );
+                _ = reasoning_ripple_refresh.tick(), if shell.reasoning_ripple.is_some() => {
+                    let now = std::time::Instant::now();
+                    if shell
+                        .reasoning_ripple
+                        .as_ref()
+                        .is_some_and(|ripple| ripple.is_expired(now))
+                    {
+                        shell.reasoning_ripple = None;
+                    }
+                    tui.frame_requester().schedule_frame();
                 }
                 _ = status_spinner.tick() => {
                     if shell.status_spinner_active() {
@@ -824,7 +828,7 @@ struct ShellState {
     active_permission_profile: Option<codex_protocol::models::ActivePermissionProfile>,
     runtime_workspace_roots: Vec<codex_utils_absolute_path::AbsolutePathBuf>,
     reasoning_effort: Option<codex_protocol::openai_models::ReasoningEffort>,
-    reasoning_aura: Option<ReasoningAura>,
+    reasoning_ripple: Option<ReasoningRipple>,
     service_tier: Option<String>,
     collaboration_mode: Option<Box<codex_protocol::config_types::CollaborationMode>>,
     max_concurrent_threads_per_session: usize,
@@ -957,7 +961,7 @@ impl ShellState {
             active_permission_profile: session.active_permission_profile,
             runtime_workspace_roots: session.runtime_workspace_roots,
             reasoning_effort: session.reasoning_effort,
-            reasoning_aura: None,
+            reasoning_ripple: None,
             service_tier: session.service_tier,
             collaboration_mode: session.collaboration_mode,
             max_concurrent_threads_per_session,
@@ -2597,7 +2601,7 @@ impl ShellState {
             active_permission_profile: None,
             runtime_workspace_roots: Vec::new(),
             reasoning_effort: None,
-            reasoning_aura: None,
+            reasoning_ripple: None,
             service_tier: None,
             collaboration_mode: None,
             max_concurrent_threads_per_session: 4,
@@ -2869,7 +2873,7 @@ pub mod bench_support {
             active_permission_profile: None,
             runtime_workspace_roots: Vec::new(),
             reasoning_effort: None,
-            reasoning_aura: None,
+            reasoning_ripple: None,
             service_tier: None,
             collaboration_mode: None,
             max_concurrent_threads_per_session: 4,

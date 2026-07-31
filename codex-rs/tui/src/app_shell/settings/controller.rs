@@ -3,7 +3,7 @@ use super::super::backend::AppShellBackend;
 use super::super::is_unmodified_action_key;
 use super::super::is_unmodified_key_event;
 use super::super::is_unmodified_key_press;
-use super::super::reasoning_aura::ReasoningAuraTone;
+use super::super::reasoning_ripple::ReasoningRippleTone;
 use super::SettingsAction;
 use super::SettingsView;
 use super::background::SettingsChange;
@@ -343,7 +343,7 @@ impl ShellState {
             SettingsChange::Model {
                 model: model.clone(),
                 effort: effort.clone(),
-                aura_tone: ReasoningAuraTone::for_transition(
+                ripple_tone: ReasoningRippleTone::for_transition(
                     current_thread_effort.as_ref(),
                     effort.as_ref(),
                 ),
@@ -407,7 +407,7 @@ impl ShellState {
             app_server,
             SettingsChange::ReasoningEffort {
                 effort: effort.clone(),
-                aura_tone: ReasoningAuraTone::for_transition(
+                ripple_tone: ReasoningRippleTone::for_transition(
                     current_thread_effort.as_ref(),
                     thread_effort.as_ref(),
                 ),
