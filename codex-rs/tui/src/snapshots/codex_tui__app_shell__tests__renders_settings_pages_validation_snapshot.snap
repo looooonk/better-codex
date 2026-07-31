@@ -11,26 +11,26 @@ expression: "render_shell(&shell, area)"
  ▎ YOU  Create a divergent standalone TUI.        │▎─────────────────────━━━━━━━━━━━━──────────────
                                                   │▎edit Syntax theme missing-theme▏
  ▎ CODEX  Started a fullscreen app shell backed   │▎unknown syntax theme `missing-theme`
-          by app-server turns.                    │▎› Syntax theme: default
- ▎ PLAN  1. Build shell                           │▎  Animations: on
-         2. Wire transcript                       │▎  Tooltips: on
-         3. Render dashboard                      │
-                                                  │▎◆ PLAN
- ▌ tool exec just test -p codex-tui               │▎Build the standalone shell in slices.
-                                                  │▎x Shell frame
- ▌ edited 3 files +128 -24                        │▎> Transcript model
-                                                  │▎- Approvals
- ▎ CODEX  The new shell owns the fullscreen       │
-          surface.                                │▎◆ TOOLS
+          by app-server turns.                    │▎  App theme: Tokyo Night
+ ▎ PLAN  1. Build shell                           │▎› Syntax theme: default
+         2. Wire transcript                       │▎  Animations: on
+         3. Render dashboard                      │▎  Tooltips: on
+                                                  │
+ ▌ tool exec just test -p codex-tui               │▎◆ PLAN
+                                                  │▎Build the standalone shell in slices.
+ ▌ edited 3 files +128 -24                        │▎x Shell frame
+                                                  │▎> Transcript model
+ ▎ CODEX  The new shell owns the fullscreen       │▎- Approvals
+          surface.                                │
+                                                  │▎◆ TOOLS
                                                   │▎in progress exec just test -p codex-tui
                                                   │
                                                   │▎◆ EDITS
                                                   │▎3 files +128 -24
                                                   │
-                                                  │▎◆ WORKSPACE
-╭────────────────────────────────────────────────╮│▎profile managed
-│◆ MESSAGE  1:37                                 ││▎cwd /workspace/better-codex
-│> Summarize the new shell architecture          ││▎files restricted, net restricted
+╭────────────────────────────────────────────────╮│▎◆ WORKSPACE
+│◆ MESSAGE  1:37                                 ││▎profile managed
+│> Summarize the new shell architecture          ││▎cwd /workspace/better-codex
+│                                                ││▎files restricted, net restricted
 │                                                ││▎roots none selected
-│                                                ││
 ╰────────────────────────────────────────────────╯│

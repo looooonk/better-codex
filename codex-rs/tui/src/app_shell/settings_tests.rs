@@ -1,4 +1,5 @@
 use super::*;
+use codex_config::types::TuiAppTheme;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -78,6 +79,7 @@ fn settings_pages_have_a_consistent_height() {
         reasoning_effort: None,
         service_tier: None,
         approval_policy: AskForApproval::OnRequest,
+        app_theme: TuiAppTheme::TokyoNight,
         theme: None,
         animations: true,
         show_tooltips: true,

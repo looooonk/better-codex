@@ -12,21 +12,21 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,),)"
                                                   │▎› Model: gpt-5.4
  ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
           by app-server turns.                    │▎  Service tier: default
- ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ PLAN
-         3. Render dashboard                      │▎Build the standalone shell in slices.
-                                                  │▎x Shell frame
- ▌ tool exec just test -p codex-tui               │▎> Transcript model
-                                                  │▎- Approvals
- ▌ edited 3 files +128 -24                        │
-                                                  │▎◆ TOOLS
- ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
-          surface.                                │
+ ▎ PLAN  1. Build shell                           │▎
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ PLAN
+                                                  │▎Build the standalone shell in slices.
+ ▌ tool exec just test -p codex-tui               │▎x Shell frame
+                                                  │▎> Transcript model
+ ▌ edited 3 files +128 -24                        │▎- Approvals
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ TOOLS
+          surface.                                │▎in progress exec just test -p codex-tui
+                                                  │
                                                   │▎◆ EDITS
-                                                  │▎3 files +128 -24
-╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││▎◆ WORKSPACE
-│> Summarize the new shell architecture          ││▎profile :full (full access)
+╭────────────────────────────────────────────────╮│▎3 files +128 -24
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││▎◆ WORKSPACE
+│                                                ││▎profile :full (full access)
 │                                                ││▎cwd /workspace/locked
-│                                                ││▎roots none selected
 ╰────────────────────────────────────────────────╯│

@@ -109,6 +109,7 @@ use codex_app_server_protocol::UserInput as ApiUserInput;
 use codex_app_server_protocol::WebSearchItem;
 use codex_app_server_protocol::WriteStatus;
 use codex_config::types::ResumeCwdMode;
+use codex_config::types::TuiAppTheme;
 use codex_protocol::config_types::CollaborationMode;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
@@ -5000,15 +5001,22 @@ fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
         started.session,
         "fallback-model".to_string(),
         Vec::new(),
-        codex_home.path().to_path_buf(),
+        ShellClientConfig {
+            codex_home: codex_home.path().to_path_buf(),
+            config_path: AbsolutePathBuf::try_from(
+                codex_home.path().join(codex_config::CONFIG_TOML_FILE),
+            )
+            .expect("temporary config path should be absolute"),
+            app_theme: TuiAppTheme::TokyoNight,
+            tui_theme: None,
+            animations: true,
+            show_tooltips: true,
+        },
         ResumeCwdRuntime {
             launch_cwd: std::path::PathBuf::from("/workspace/better-codex"),
             explicit_cwd: None,
             uses_remote_workspace_or_environment: false,
         },
-        /*tui_theme*/ None,
-        /*animations*/ true,
-        /*show_tooltips*/ true,
         /*max_concurrent_threads_per_session*/ 4,
     );
 
@@ -10413,6 +10421,72 @@ async fn failed_settings_write_keeps_selector_and_previous_value() {
 }
 
 #[tokio::test]
+async fn app_theme_selection_applies_only_after_local_persistence_succeeds() {
+    let mut shell = ShellState::snapshot_fixture();
+    let client_config_path = shell.client_config_path.clone();
+    let backend = RecordingBackend::default();
+    shell.open_app_theme_selector();
+
+    for key in [KeyCode::Down, KeyCode::Enter] {
+        shell
+            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
+            .await
+            .expect("app theme update should start");
+    }
+    assert_eq!(shell.app_theme, TuiAppTheme::TokyoNight);
+    let pending_selector = shell.selector.clone();
+    for key in [KeyCode::Down, KeyCode::Esc] {
+        shell
+            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
+            .await
+            .expect("pending app theme selector should ignore navigation");
+        assert_eq!(shell.selector, pending_selector);
+    }
+
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(shell.app_theme, TuiAppTheme::GruvboxDark);
+    assert!(shell.selector.is_none());
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::AppThemeWrite {
+            config_path: client_config_path,
+            app_theme: TuiAppTheme::GruvboxDark,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn failed_app_theme_write_keeps_selector_and_previous_theme() {
+    let mut shell = ShellState::snapshot_fixture();
+    let previous_theme = shell.app_theme;
+    let client_config_path = shell.client_config_path.clone();
+    let backend = RecordingBackend::default();
+    shell.open_app_theme_selector();
+    backend.fail_next_action("config write rejected");
+
+    for key in [KeyCode::Down, KeyCode::Enter] {
+        shell
+            .handle_selector_key(KeyEvent::new(key, KeyModifiers::NONE), &mut backend.clone())
+            .await
+            .expect("app theme update should start");
+    }
+    assert_eq!(shell.app_theme, previous_theme);
+
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(shell.selector.is_some());
+    assert_eq!(shell.app_theme, previous_theme);
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::AppThemeWrite {
+            config_path: client_config_path,
+            app_theme: TuiAppTheme::GruvboxDark,
+        }]
+    );
+}
+
+#[tokio::test]
 async fn failed_thread_settings_update_restores_config_and_previous_value() {
     let mut shell = ShellState::snapshot_fixture();
     let previous_policy = shell.approval_policy;
@@ -14032,6 +14106,13 @@ async fn native_settings_pages_write_config_and_validate_edits() {
             &mut backend,
         )
         .await
+        .expect("theme row should be selected");
+    shell
+        .handle_settings_key(
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &mut backend,
+        )
+        .await
         .expect("animations row should be selected");
     shell
         .handle_settings_key(
@@ -14840,6 +14921,10 @@ enum RecordedBackendCall {
         thread_id: codex_protocol::ThreadId,
     },
     ConfigWrite(Vec<(String, serde_json::Value)>),
+    AppThemeWrite {
+        config_path: AbsolutePathBuf,
+        app_theme: TuiAppTheme,
+    },
     ThreadSettingsUpdate {
         model: Option<String>,
         effort: Option<ReasoningEffort>,
@@ -15405,6 +15490,24 @@ impl backend::AppShellBackend for RecordingBackend {
                     "thread settings update failed: {error}; global config rollback also failed: {rollback_error:#}"
                 )),
             }
+        }
+    }
+
+    fn persist_app_theme_in_background(
+        &self,
+        config_path: AbsolutePathBuf,
+        app_theme: TuiAppTheme,
+    ) -> impl std::future::Future<Output = color_eyre::Result<()>> + Send + 'static {
+        let backend = self.clone();
+        async move {
+            backend.push(RecordedBackendCall::AppThemeWrite {
+                config_path,
+                app_theme,
+            });
+            if let Some(error) = backend.take_action_error() {
+                return Err(color_eyre::eyre::eyre!(error));
+            }
+            Ok(())
         }
     }
 

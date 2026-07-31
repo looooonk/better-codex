@@ -14,11 +14,11 @@ expression: "render_shell(&shell, Rect::new(0, 0, 78, 24))"
          2. Wire transcript │▎› Model: gpt-5-codex
          3. Render dashboard│▎  Reasoning: default
                             │▎  Service tier: default
- ▌ tool exec just test -p co│▎◆ PLAN
-                            │▎Build the standalone shell in slices.
- ▌ edited 3 files +128 -24  │▎x Shell frame
-                            │▎> Transcript model
- ▎ CODEX  The new shell owns│▎- Approvals
+ ▌ tool exec just test -p co│▎
+                            │▎◆ PLAN
+ ▌ edited 3 files +128 -24  │▎Build the standalone shell in slices.
+                            │▎x Shell frame
+ ▎ CODEX  The new shell owns│▎> Transcript model
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                                                             │

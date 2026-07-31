@@ -12,16 +12,17 @@ expression: "render_shell(&shell, area)"
                                                   │▎› Model: gpt-5-codex
  ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
           by app-server turns.                    │▎  Service tier: default
- ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ GOAL
-         3. Render dashboard                      │▎status active
-                                                  │▎Complete the dashboard consolidation
- ▌ tool exec just test -p codex-tui               │▎1m | 12,345/50,000 tokens
-                                                  │
- ▌ edited 3 files +128 -24                        │▎◆ PLAN
-                                                  │▎Build the standalone shell in slices.
- ▎ CODEX  The new shell owns the fullscreen       │▎x Shell frame
-          surface.                                │▎> Transcript model
+ ▎ PLAN  1. Build shell                           │▎
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ GOAL
+                                                  │▎status active
+ ▌ tool exec just test -p codex-tui               │▎Complete the dashboard consolidation
+                                                  │▎1m | 12,345/50,000 tokens
+ ▌ edited 3 files +128 -24                        │
+                                                  │▎◆ PLAN
+ ▎ CODEX  The new shell owns the fullscreen       │▎Build the standalone shell in slices.
+          surface.                                │▎x Shell frame
+                                                  │▎> Transcript model
                                                   │▎- Approvals
                                                   │
                                                   │▎◆ TOOLS
@@ -45,7 +46,6 @@ expression: "render_shell(&shell, area)"
                                                   │▎◆ TOKENS
                                                   │▎input 1k | output 240
                                                   │▎Context 100% left
-                                                  │
                                                   │
                                                   │
                                                   │

@@ -12,21 +12,21 @@ expression: rendered
                                                   │▎› Model: gpt-5-codex
  ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
           by app-server turns.                    │▎  Service tier: default
- ▎ PLAN  1. Build shell                           │
-         2. Wire transcript                       │▎◆ PLAN
-         3. Render dashboard                      │▎Build the standalone shell in slices.
-                                                  │▎x Shell frame
- ▌ tool exec just test -p codex-tui               │▎> Transcript model
-                                                  │▎- Approvals
- ▌ edited 3 files +128 -24                        │
-                                                  │▎◆ TOOLS
- ▎ CODEX  The new shell owns the fullscreen       │▎in progress exec just test -p codex-tui
-          surface.                                │
+ ▎ PLAN  1. Build shell                           │▎
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ PLAN
+                                                  │▎Build the standalone shell in slices.
+ ▌ tool exec just test -p codex-tui               │▎x Shell frame
+                                                  │▎> Transcript model
+ ▌ edited 3 files +128 -24                        │▎- Approvals
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ TOOLS
+          surface.                                │▎in progress exec just test -p codex-tui
+                                                  │
                                                   │▎◆ EDITS
-                                                  │▎retained edit history is incomplete
-╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  1:37                                 ││▎◆ WORKSPACE
-│> Summarize the new shell architecture          ││▎profile managed
+╭────────────────────────────────────────────────╮│▎retained edit history is incomplete
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││▎◆ WORKSPACE
+│                                                ││▎profile managed
 │                                                ││▎cwd /workspace/better-codex
-│                                                ││▎files restricted, net restricted
 ╰────────────────────────────────────────────────╯│
