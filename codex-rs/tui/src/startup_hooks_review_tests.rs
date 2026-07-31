@@ -1,14 +1,29 @@
 use super::*;
 use crate::test_support::PathBufExt;
+use crate::test_support::buffer_style_grid;
 use crate::test_support::test_path_buf;
 use codex_app_server_protocol::HookEventName;
 use codex_app_server_protocol::HookHandlerType;
 use codex_app_server_protocol::HookMetadata;
 use codex_app_server_protocol::HookSource;
 use codex_app_server_protocol::HookTrustStatus;
+use codex_config::types::TuiAppTheme;
 use pretty_assertions::assert_eq;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
+
+fn startup_hooks_review_style_grid(app_theme: TuiAppTheme) -> String {
+    let state = StartupHooksReviewState::new(entry(), app_theme);
+    let backend = TestBackend::new(/*width*/ 100, /*height*/ 30);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+
+    terminal
+        .draw(|frame| {
+            StartupHooksReviewView { state: &state }.render(frame.area(), frame.buffer_mut());
+        })
+        .expect("draw startup hooks review");
+    buffer_style_grid(terminal.backend().buffer())
+}
 
 fn hook(key: &str, trust_status: HookTrustStatus) -> HookMetadata {
     HookMetadata {
@@ -61,7 +76,7 @@ fn untrusted_hooks_need_review_without_bypass() {
 
 #[test]
 fn startup_hook_review_keys_move_between_choices() {
-    let mut state = StartupHooksReviewState::new(entry());
+    let mut state = StartupHooksReviewState::new(entry(), TuiAppTheme::TokyoNight);
 
     assert_eq!(
         press(KeyCode::Down, &mut state),
@@ -87,7 +102,7 @@ fn startup_hook_review_keys_move_between_choices() {
 
 #[test]
 fn startup_hooks_review_view_renders_native_choices() {
-    let state = StartupHooksReviewState::new(entry());
+    let state = StartupHooksReviewState::new(entry(), TuiAppTheme::TokyoNight);
     let backend = TestBackend::new(/*width*/ 100, /*height*/ 30);
     let mut terminal = Terminal::new(backend).expect("create terminal");
 
@@ -97,4 +112,16 @@ fn startup_hooks_review_view_renders_native_choices() {
         })
         .expect("draw startup hooks review");
     insta::assert_snapshot!(terminal.backend().to_string());
+}
+
+#[test]
+fn startup_hooks_review_view_uses_selected_theme_styles() {
+    insta::assert_snapshot!(
+        "startup_hooks_review_view_uses_tokyo_night_styles",
+        startup_hooks_review_style_grid(TuiAppTheme::TokyoNight)
+    );
+    insta::assert_snapshot!(
+        "startup_hooks_review_view_uses_catppuccin_mocha_styles",
+        startup_hooks_review_style_grid(TuiAppTheme::CatppuccinMocha)
+    );
 }

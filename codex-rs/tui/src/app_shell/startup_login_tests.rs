@@ -1,9 +1,24 @@
 use super::*;
+use crate::test_support::buffer_style_grid;
 use codex_app_server_protocol::AccountLoginCompletedNotification;
+use codex_config::types::TuiAppTheme;
 use crossterm::event::KeyModifiers;
 use pretty_assertions::assert_eq;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
+
+fn login_onboarding_style_grid(app_theme: TuiAppTheme) -> String {
+    let state = LoginOnboardingState::new(/*forced_login_method*/ None, app_theme);
+    let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
+    let mut terminal = Terminal::new(backend).expect("create terminal");
+
+    terminal
+        .draw(|frame| {
+            LoginOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut());
+        })
+        .expect("draw login onboarding");
+    buffer_style_grid(terminal.backend().buffer())
+}
 
 fn press(code: KeyCode, state: &mut LoginOnboardingState) -> LoginKeyAction {
     handle_login_key(KeyEvent::new(code, KeyModifiers::NONE), state)
@@ -11,13 +26,15 @@ fn press(code: KeyCode, state: &mut LoginOnboardingState) -> LoginKeyAction {
 
 #[test]
 fn login_selection_respects_forced_login_method() {
-    let chatgpt_state = LoginOnboardingState::new(Some(ForcedLoginMethod::Chatgpt));
+    let chatgpt_state =
+        LoginOnboardingState::new(Some(ForcedLoginMethod::Chatgpt), TuiAppTheme::TokyoNight);
     assert_eq!(
         chatgpt_state.choices(),
         vec![LoginSelection::ChatGptDeviceCode, LoginSelection::Exit]
     );
 
-    let api_state = LoginOnboardingState::new(Some(ForcedLoginMethod::Api));
+    let api_state =
+        LoginOnboardingState::new(Some(ForcedLoginMethod::Api), TuiAppTheme::TokyoNight);
     assert_eq!(
         api_state.choices(),
         vec![LoginSelection::ApiKey, LoginSelection::Exit]
@@ -26,7 +43,8 @@ fn login_selection_respects_forced_login_method() {
 
 #[test]
 fn login_keys_open_api_entry_and_capture_secret_text() {
-    let mut state = LoginOnboardingState::new(/*forced_login_method*/ None);
+    let mut state =
+        LoginOnboardingState::new(/*forced_login_method*/ None, TuiAppTheme::TokyoNight);
 
     assert_eq!(press(KeyCode::Down, &mut state), LoginKeyAction::Redraw);
     assert_eq!(state.selected(), LoginSelection::ApiKey);
@@ -50,7 +68,8 @@ fn login_keys_open_api_entry_and_capture_secret_text() {
 
 #[test]
 fn api_key_entry_uses_shared_cursor_shortcuts() {
-    let mut state = LoginOnboardingState::new(/*forced_login_method*/ None);
+    let mut state =
+        LoginOnboardingState::new(/*forced_login_method*/ None, TuiAppTheme::TokyoNight);
     state.mode = LoginMode::ApiKeyEntry;
     state.api_key_draft.set_text("sk-alpha-beta");
 
@@ -100,7 +119,8 @@ fn api_key_entry_uses_shared_cursor_shortcuts() {
 
 #[test]
 fn device_code_completion_matches_active_login() {
-    let mut state = LoginOnboardingState::new(/*forced_login_method*/ None);
+    let mut state =
+        LoginOnboardingState::new(/*forced_login_method*/ None, TuiAppTheme::TokyoNight);
     state.mode = LoginMode::DeviceCode {
         login_id: Some("login-1".to_string()),
         verification_url: Some("https://auth.example.test/device".to_string()),
@@ -136,7 +156,8 @@ fn device_code_prompt_supports_open_and_copy_actions() {
         LoginKeyAction::CopyCode
     );
 
-    let mut state = LoginOnboardingState::new(/*forced_login_method*/ None);
+    let mut state =
+        LoginOnboardingState::new(/*forced_login_method*/ None, TuiAppTheme::TokyoNight);
     state.mode = LoginMode::DeviceCode {
         login_id: Some("login-1".to_string()),
         verification_url: Some("https://auth.example.test/device".to_string()),
@@ -169,7 +190,8 @@ fn device_code_prompt_supports_open_and_copy_actions() {
 
 #[test]
 fn login_onboarding_view_renders_native_auth_choices() {
-    let state = LoginOnboardingState::new(/*forced_login_method*/ None);
+    let state =
+        LoginOnboardingState::new(/*forced_login_method*/ None, TuiAppTheme::TokyoNight);
     let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
     let mut terminal = Terminal::new(backend).expect("create terminal");
 
@@ -182,8 +204,21 @@ fn login_onboarding_view_renders_native_auth_choices() {
 }
 
 #[test]
+fn login_onboarding_view_uses_selected_theme_styles() {
+    insta::assert_snapshot!(
+        "login_onboarding_view_uses_tokyo_night_styles",
+        login_onboarding_style_grid(TuiAppTheme::TokyoNight)
+    );
+    insta::assert_snapshot!(
+        "login_onboarding_view_uses_catppuccin_mocha_styles",
+        login_onboarding_style_grid(TuiAppTheme::CatppuccinMocha)
+    );
+}
+
+#[test]
 fn login_onboarding_view_renders_device_code_phishing_warning() {
-    let mut state = LoginOnboardingState::new(/*forced_login_method*/ None);
+    let mut state =
+        LoginOnboardingState::new(/*forced_login_method*/ None, TuiAppTheme::TokyoNight);
     state.mode = LoginMode::DeviceCode {
         login_id: Some("login-1".to_string()),
         verification_url: Some("https://auth.example.test/device".to_string()),

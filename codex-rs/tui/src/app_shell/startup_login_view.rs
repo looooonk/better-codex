@@ -15,6 +15,7 @@ pub(super) struct LoginOnboardingView<'a> {
 
 impl LoginOnboardingView<'_> {
     pub(super) fn render(&self, area: Rect, buf: &mut Buffer) {
+        let _active_theme = crate::app_theme::activate(self.state.app_theme);
         self.render_visible(area, buf);
         if let Some(url) = self.state.active_url() {
             mark_url_hyperlink(buf, area, url);

@@ -10,6 +10,7 @@ use crate::config_update::build_project_trust_level_edit;
 use crate::legacy_core::config::Config;
 use crate::tui;
 use crate::tui::TuiEvent;
+use codex_config::types::TuiAppTheme;
 use codex_exec_server::LOCAL_FS;
 use codex_git_utils::resolve_root_git_project_for_trust;
 use codex_protocol::config_types::TrustLevel;
@@ -77,15 +78,17 @@ impl StartupSelection {
 struct StartupOnboardingState {
     cwd: PathBuf,
     trust_target: PathBuf,
+    app_theme: TuiAppTheme,
     selected: usize,
     error: Option<String>,
 }
 
 impl StartupOnboardingState {
-    fn new(cwd: PathBuf, trust_target: PathBuf) -> Self {
+    fn new(cwd: PathBuf, trust_target: PathBuf, app_theme: TuiAppTheme) -> Self {
         Self {
             cwd,
             trust_target,
+            app_theme,
             selected: 0,
             error: None,
         }
@@ -136,7 +139,7 @@ pub(crate) async fn run_startup_onboarding(
         .await
         .map(Into::into)
         .unwrap_or_else(|| cwd.clone());
-    let mut state = StartupOnboardingState::new(cwd, trust_target);
+    let mut state = StartupOnboardingState::new(cwd, trust_target, config.tui_app_theme);
     let mut tui_events = tui.event_stream();
 
     loop {
@@ -255,6 +258,7 @@ struct StartupOnboardingView<'a> {
 
 impl StartupOnboardingView<'_> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
+        let _active_theme = crate::app_theme::activate(self.state.app_theme);
         fill_rect(buf, area, palette::base());
         let panes = startup_panes(area);
         self.render_main(panes.main, buf);
@@ -397,16 +401,35 @@ fn wrapped_lines_with_indent(text: &str, width: usize, indent: &'static str) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::buffer_style_grid;
     use crossterm::event::KeyModifiers;
     use pretty_assertions::assert_eq;
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
+
+    fn startup_onboarding_style_grid(app_theme: TuiAppTheme) -> String {
+        let state = StartupOnboardingState::new(
+            PathBuf::from("/workspace/project/crate"),
+            PathBuf::from("/workspace/project"),
+            app_theme,
+        );
+        let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
+        let mut terminal = Terminal::new(backend).expect("create terminal");
+
+        terminal
+            .draw(|frame| {
+                StartupOnboardingView { state: &state }.render(frame.area(), frame.buffer_mut());
+            })
+            .expect("draw startup onboarding");
+        buffer_style_grid(terminal.backend().buffer())
+    }
 
     #[test]
     fn startup_selection_keys_move_between_choices() {
         let mut state = StartupOnboardingState::new(
             PathBuf::from("/workspace/project"),
             PathBuf::from("/workspace/project"),
+            TuiAppTheme::TokyoNight,
         );
 
         assert_eq!(
@@ -430,6 +453,7 @@ mod tests {
         let state = StartupOnboardingState::new(
             PathBuf::from("/workspace/project/crate"),
             PathBuf::from("/workspace/project"),
+            TuiAppTheme::TokyoNight,
         );
         let backend = TestBackend::new(/*width*/ 100, /*height*/ 28);
         let mut terminal = Terminal::new(backend).expect("create terminal");
@@ -443,10 +467,23 @@ mod tests {
     }
 
     #[test]
+    fn startup_onboarding_view_uses_selected_theme_styles() {
+        insta::assert_snapshot!(
+            "startup_onboarding_view_uses_tokyo_night_styles",
+            startup_onboarding_style_grid(TuiAppTheme::TokyoNight)
+        );
+        insta::assert_snapshot!(
+            "startup_onboarding_view_uses_gruvbox_dark_styles",
+            startup_onboarding_style_grid(TuiAppTheme::GruvboxDark)
+        );
+    }
+
+    #[test]
     fn narrow_startup_onboarding_gives_choices_the_full_width() {
         let state = StartupOnboardingState::new(
             PathBuf::from("/workspace/project/crate"),
             PathBuf::from("/workspace/project"),
+            TuiAppTheme::TokyoNight,
         );
         let backend = TestBackend::new(/*width*/ 60, /*height*/ 28);
         let mut terminal = Terminal::new(backend).expect("create terminal");

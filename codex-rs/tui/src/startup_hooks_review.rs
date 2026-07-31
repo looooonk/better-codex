@@ -29,6 +29,7 @@ use crate::tui::Tui;
 use crate::tui::TuiEvent;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::HooksListEntry;
+use codex_config::types::TuiAppTheme;
 use std::path::PathBuf;
 
 pub(crate) enum StartupHooksReviewOutcome {
@@ -70,15 +71,17 @@ impl StartupHooksReviewSelection {
 #[derive(Clone, Debug)]
 struct StartupHooksReviewState {
     entry: HooksListEntry,
+    app_theme: TuiAppTheme,
     selected: usize,
     trust_all_error: Option<String>,
     trusting_all: bool,
 }
 
 impl StartupHooksReviewState {
-    fn new(entry: HooksListEntry) -> Self {
+    fn new(entry: HooksListEntry, app_theme: TuiAppTheme) -> Self {
         Self {
             entry,
+            app_theme,
             selected: 0,
             trust_all_error: None,
             trusting_all: false,
@@ -134,7 +137,7 @@ pub(crate) async fn load_startup_hooks_review_entry(
 pub(crate) async fn maybe_run_startup_hooks_review(
     app_server: &mut AppServerSession,
     tui: &mut Tui,
-    _config: &Config,
+    config: &Config,
     bypass_hook_trust: bool,
     entry: HooksListEntry,
 ) -> Result<StartupHooksReviewOutcome> {
@@ -142,19 +145,20 @@ pub(crate) async fn maybe_run_startup_hooks_review(
         return Ok(StartupHooksReviewOutcome::Continue);
     }
 
-    run_startup_hooks_review_app(app_server, tui, entry).await
+    run_startup_hooks_review_app(app_server, tui, entry, config.tui_app_theme).await
 }
 
 async fn run_startup_hooks_review_app(
     app_server: &mut AppServerSession,
     tui: &mut Tui,
     entry: HooksListEntry,
+    app_theme: TuiAppTheme,
 ) -> Result<StartupHooksReviewOutcome> {
     tui.enter_alt_screen()
         .wrap_err("failed to enter startup hooks review screen")?;
     tui.frame_requester().schedule_frame();
 
-    let mut state = StartupHooksReviewState::new(entry);
+    let mut state = StartupHooksReviewState::new(entry, app_theme);
     let mut tui_events = tui.event_stream();
 
     loop {
@@ -285,6 +289,7 @@ struct StartupHooksReviewView<'a> {
 
 impl StartupHooksReviewView<'_> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
+        let _active_theme = app_theme::activate(self.state.app_theme);
         fill_rect(buf, area, app_theme::palette().base);
         let horizontal = Layout::default()
             .direction(Direction::Horizontal)
