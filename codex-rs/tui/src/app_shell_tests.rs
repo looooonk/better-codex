@@ -3,6 +3,7 @@ use super::transcript_view::TranscriptCardHit;
 use super::transcript_view::TranscriptScrollbarMetrics;
 use super::*;
 use crate::app_server_session::ForkGoalContinuation;
+use crate::test_support::buffer_style_grid;
 use base64::Engine;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
@@ -5030,6 +5031,30 @@ fn new_shell_defaults_to_status_model_regardless_of_legacy_route_state() {
             /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28
         )
     ));
+}
+
+#[test]
+fn shell_render_uses_the_selected_app_theme() {
+    let mut shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    shell.app_theme = TuiAppTheme::TokyoNight;
+    insta::assert_snapshot!(
+        "shell_render_uses_tokyo_night_styles",
+        buffer_style_grid(&render_shell_buffer(&shell, area))
+    );
+    shell.app_theme = TuiAppTheme::GruvboxDark;
+    insta::assert_snapshot!(
+        "shell_render_uses_gruvbox_dark_styles",
+        buffer_style_grid(&render_shell_buffer(&shell, area))
+    );
+    shell.app_theme = TuiAppTheme::CatppuccinMocha;
+    insta::assert_snapshot!(
+        "shell_render_uses_catppuccin_mocha_styles",
+        buffer_style_grid(&render_shell_buffer(&shell, area))
+    );
 }
 
 #[test]
