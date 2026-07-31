@@ -17,6 +17,7 @@ use ratatui::widgets::Widget;
 use tokio_stream::StreamExt;
 
 use crate::app_server_session::AppServerSession;
+use crate::app_theme;
 use crate::config_update::format_config_error;
 use crate::hooks_rpc::HookTrustUpdate;
 use crate::hooks_rpc::fetch_hooks_list;
@@ -29,10 +30,6 @@ use crate::tui::TuiEvent;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::HooksListEntry;
 use std::path::PathBuf;
-
-const MOCHA_BASE: Color = Color::Rgb(30, 30, 46);
-const MOCHA_MANTLE: Color = Color::Rgb(24, 24, 37);
-const MOCHA_SURFACE0: Color = Color::Rgb(49, 50, 68);
 
 pub(crate) enum StartupHooksReviewOutcome {
     Continue,
@@ -288,7 +285,7 @@ struct StartupHooksReviewView<'a> {
 
 impl StartupHooksReviewView<'_> {
     fn render(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_BASE);
+        fill_rect(buf, area, app_theme::palette().base);
         let horizontal = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(70), Constraint::Percentage(30)])
@@ -298,7 +295,7 @@ impl StartupHooksReviewView<'_> {
     }
 
     fn render_main(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_BASE);
+        fill_rect(buf, area, app_theme::palette().base);
         let vertical = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
@@ -307,10 +304,12 @@ impl StartupHooksReviewView<'_> {
                 Constraint::Length(5),
             ])
             .split(area);
-        fill_rect(buf, vertical[0], MOCHA_MANTLE);
-        Paragraph::new(Line::from("Better Codex".magenta().bold()))
-            .style(pane_style(MOCHA_MANTLE))
-            .render(pane_content_rect(vertical[0]), buf);
+        fill_rect(buf, vertical[0], app_theme::palette().dark);
+        Paragraph::new(Line::from(
+            "Better Codex".fg(app_theme::palette().purple).bold(),
+        ))
+        .style(pane_style(app_theme::palette().dark))
+        .render(pane_content_rect(vertical[0]), buf);
 
         let content = pane_content_rect(vertical[1]);
         let count = review_needed_count(&self.state.entry);
@@ -342,27 +341,27 @@ impl StartupHooksReviewView<'_> {
             lines.extend(
                 wrapped_lines(error, usize::from(content.width))
                     .into_iter()
-                    .map(ratatui::prelude::Stylize::red),
+                    .map(|line| line.fg(app_theme::palette().error)),
             );
         } else if self.state.trusting_all {
             lines.push(Line::from(""));
             lines.push("Trusting hooks...".dim().into());
         }
         Paragraph::new(lines)
-            .style(pane_style(MOCHA_BASE))
+            .style(pane_style(app_theme::palette().base))
             .render(content, buf);
 
-        fill_rect(buf, vertical[2], MOCHA_SURFACE0);
+        fill_rect(buf, vertical[2], app_theme::palette().surface);
         Paragraph::new(vec![
             Line::from("Enter continue  Up/Down choose  1/2/3 jump  Esc continue".dim()),
             Line::from("Hook trust decisions are written through app-server config.".dim()),
         ])
-        .style(pane_style(MOCHA_SURFACE0))
+        .style(pane_style(app_theme::palette().surface))
         .render(pane_content_rect(vertical[2]), buf);
     }
 
     fn render_dashboard(&self, area: Rect, buf: &mut Buffer) {
-        fill_rect(buf, area, MOCHA_SURFACE0);
+        fill_rect(buf, area, app_theme::palette().surface);
         let content = pane_content_rect(area);
         let mut lines = vec![
             Line::from("Startup".bold()),
@@ -378,7 +377,7 @@ impl StartupHooksReviewView<'_> {
             "needs review ".dim(),
             review_needed_count(&self.state.entry)
                 .to_string()
-                .cyan()
+                .fg(app_theme::palette().cyan)
                 .bold(),
         ]));
         lines.push(Line::from(vec![
@@ -392,19 +391,25 @@ impl StartupHooksReviewView<'_> {
         lines.push(Line::from(""));
         lines.push(Line::from(vec![
             "selected ".dim(),
-            self.state.selected().label().cyan().bold(),
+            self.state
+                .selected()
+                .label()
+                .fg(app_theme::palette().cyan)
+                .bold(),
         ]));
         Paragraph::new(lines)
-            .style(pane_style(MOCHA_SURFACE0))
+            .style(pane_style(app_theme::palette().surface))
             .render(content, buf);
     }
 }
 
 fn hook_count_line(count: usize) -> Line<'static> {
     match count {
-        1 => "1 hook is new or changed.".magenta().into(),
+        1 => "1 hook is new or changed."
+            .fg(app_theme::palette().purple)
+            .into(),
         count => format!("{count} hooks are new or changed.")
-            .magenta()
+            .fg(app_theme::palette().purple)
             .into(),
     }
 }
@@ -415,7 +420,7 @@ fn selection_line(
     selected: bool,
 ) -> Line<'static> {
     let marker = if selected {
-        ">".cyan().bold()
+        ">".fg(app_theme::palette().cyan).bold()
     } else {
         " ".dim()
     };
@@ -433,7 +438,7 @@ fn fill_rect(buf: &mut Buffer, area: Rect, color: Color) {
 }
 
 fn pane_style(color: Color) -> Style {
-    Style::new().bg(color)
+    Style::new().fg(app_theme::palette().text).bg(color)
 }
 
 fn pane_content_rect(area: Rect) -> Rect {
