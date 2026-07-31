@@ -19,7 +19,7 @@ fn usage_bar_uses_fractional_block_elements_and_clamps_to_ten_segments() {
 
     assert_eq!(
         cases.map(|(used_percent, _)| {
-            Line::from(Vec::from(usage_bar_spans(used_percent, palette::PURPLE))).to_string()
+            Line::from(Vec::from(usage_bar_spans(used_percent, palette::purple()))).to_string()
         }),
         cases.map(|(_, expected_bar)| expected_bar.to_string()),
     );
@@ -28,7 +28,7 @@ fn usage_bar_uses_fractional_block_elements_and_clamps_to_ten_segments() {
 #[test]
 fn usage_bar_renders_exactly_ten_visible_chunks() {
     assert!((-10..=110).all(|used_percent| {
-        Line::from(Vec::from(usage_bar_spans(used_percent, palette::PURPLE))).width()
+        Line::from(Vec::from(usage_bar_spans(used_percent, palette::purple()))).width()
             == USAGE_BAR_SEGMENTS
     }));
 }
@@ -36,11 +36,11 @@ fn usage_bar_renders_exactly_ten_visible_chunks() {
 #[test]
 fn usage_bar_styles_filled_fractional_and_empty_blocks() {
     assert_eq!(
-        usage_bar_spans(/*used_percent*/ 82, palette::PURPLE),
+        usage_bar_spans(/*used_percent*/ 82, palette::purple()),
         [
-            "████████".fg(palette::PURPLE),
-            "▎".fg(palette::PURPLE),
-            "░".fg(palette::BORDER),
+            "████████".fg(palette::purple()),
+            "▎".fg(palette::purple()),
+            "░".fg(palette::border()),
         ],
     );
 }
@@ -48,12 +48,12 @@ fn usage_bar_styles_filled_fractional_and_empty_blocks() {
 #[test]
 fn quota_bar_and_percentage_follow_usage_severity_thresholds() {
     let cases = [
-        (49, palette::SUCCESS),
-        (50, palette::CYAN),
-        (74, palette::CYAN),
-        (75, palette::PURPLE),
-        (89, palette::PURPLE),
-        (90, palette::ERROR),
+        (49, palette::success()),
+        (50, palette::cyan()),
+        (74, palette::cyan()),
+        (75, palette::purple()),
+        (89, palette::purple()),
+        (90, palette::error()),
     ];
 
     assert_eq!(
