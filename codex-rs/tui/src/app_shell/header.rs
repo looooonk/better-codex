@@ -46,35 +46,42 @@ impl HeaderView<'_> {
         let content = pane_content_rect(area);
         let layout = self.control_layout(area);
         if let Some(layout) = layout {
+            for (control_area, control) in [
+                (layout.model, HeaderControl::Model),
+                (layout.effort, HeaderControl::ReasoningEffort),
+                (layout.service_tier, HeaderControl::ServiceTier),
+            ] {
+                if let Some(control_area) = control_area {
+                    fill_rect(buf, control_area, control_background(hovered, control));
+                }
+            }
+            if let (Some(ripple), Some(origin)) = (self.reasoning_ripple, layout.effort) {
+                ripple.render(
+                    area,
+                    origin,
+                    [layout.model, layout.effort, layout.service_tier]
+                        .into_iter()
+                        .flatten(),
+                    buf,
+                );
+            }
             Paragraph::new(self.dashboard_button(hovered)).render(layout.dashboard, buf);
             Paragraph::new(self.brand_line(layout.compact_brand))
                 .style(pane_style(palette::dark()))
                 .render(layout.brand, buf);
             if let Some(model) = layout.model {
                 Paragraph::new(self.model_label())
-                    .style(
-                        Style::new()
-                            .fg(palette::text())
-                            .bg(control_background(hovered, HeaderControl::Model)),
-                    )
+                    .style(Style::new().fg(palette::text()))
                     .render(model, buf);
             }
             if let Some(effort) = layout.effort {
                 Paragraph::new(self.effort_label())
-                    .style(
-                        Style::new()
-                            .fg(palette::purple())
-                            .bg(control_background(hovered, HeaderControl::ReasoningEffort)),
-                    )
+                    .style(Style::new().fg(palette::purple()))
                     .render(effort, buf);
             }
             if let Some(service_tier) = layout.service_tier {
                 Paragraph::new(self.service_tier_label())
-                    .style(
-                        Style::new()
-                            .fg(palette::purple())
-                            .bg(control_background(hovered, HeaderControl::ServiceTier)),
-                    )
+                    .style(Style::new().fg(palette::purple()))
                     .render(service_tier, buf);
             }
             if let Some(status) = layout.status {
@@ -101,12 +108,6 @@ impl HeaderView<'_> {
             Rect::new(area.x, area.bottom().saturating_sub(1), area.width, 1),
             buf,
         );
-        if let (Some(ripple), Some(origin)) = (
-            self.reasoning_ripple,
-            layout.and_then(|layout| layout.effort),
-        ) {
-            ripple.render(area, origin, buf);
-        }
     }
 
     pub(super) fn control_at(&self, area: Rect, position: Position) -> Option<HeaderControl> {

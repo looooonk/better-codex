@@ -7,9 +7,11 @@ use ratatui::style::Color;
 use std::time::Duration;
 use std::time::Instant;
 
-const RIPPLE_DURATION: Duration = Duration::from_millis(/*millis*/ 850);
+const RIPPLE_WAVE_DURATION: Duration = Duration::from_millis(/*millis*/ 750);
+const FOLLOWING_WAVE_DELAY: Duration = Duration::from_millis(/*millis*/ 150);
+const RIPPLE_DURATION: Duration = RIPPLE_WAVE_DURATION.saturating_add(FOLLOWING_WAVE_DELAY);
 pub(super) const FRAME_INTERVAL: Duration = Duration::from_millis(/*millis*/ 33);
-const RING_GRADIENT_WIDTH: f32 = 5.0;
+const RING_GRADIENT_WIDTH: f32 = 7.0;
 const VERTICAL_DISTANCE_SCALE: f32 = 8.0;
 const MAX_TRAVEL_FRACTION: f32 = 0.7;
 const MAX_TRAVEL_DISTANCE: f32 = 42.0;
@@ -78,12 +80,18 @@ impl ReasoningRipple {
             return None;
         }
         let elapsed = now.saturating_duration_since(self.started_at);
-        let sampled_elapsed = (elapsed.as_secs_f32() / FRAME_INTERVAL.as_secs_f32()).floor()
-            * FRAME_INTERVAL.as_secs_f32();
-        let progress = sampled_elapsed / RIPPLE_DURATION.as_secs_f32();
+        let wave_progress = |delay| {
+            let elapsed = elapsed.checked_sub(delay)?;
+            if elapsed >= RIPPLE_WAVE_DURATION {
+                return None;
+            }
+            let sampled_elapsed = (elapsed.as_secs_f32() / FRAME_INTERVAL.as_secs_f32()).floor()
+                * FRAME_INTERVAL.as_secs_f32();
+            Some((sampled_elapsed / RIPPLE_WAVE_DURATION.as_secs_f32()).clamp(0.0, 1.0))
+        };
         Some(ReasoningRippleFrame {
             tone: self.tone,
-            progress: progress.clamp(0.0, 1.0),
+            wave_progresses: [Duration::ZERO, FOLLOWING_WAVE_DELAY].map(wave_progress),
         })
     }
 }
@@ -91,11 +99,17 @@ impl ReasoningRipple {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(super) struct ReasoningRippleFrame {
     tone: ReasoningRippleTone,
-    progress: f32,
+    wave_progresses: [Option<f32>; 2],
 }
 
 impl ReasoningRippleFrame {
-    pub(super) fn render(self, area: Rect, origin: Rect, buf: &mut Buffer) {
+    pub(super) fn render(
+        self,
+        area: Rect,
+        origin: Rect,
+        paint_areas: impl IntoIterator<Item = Rect>,
+        buf: &mut Buffer,
+    ) {
         if area.is_empty() || origin.is_empty() {
             return;
         }
@@ -113,22 +127,30 @@ impl ReasoningRippleFrame {
         let right_distance = f32::from(area.right().saturating_sub(1)) - center_x;
         let far_edge_distance = left_distance.max(right_distance).max(1.0);
         let fade_radius = (far_edge_distance * MAX_TRAVEL_FRACTION).clamp(1.0, MAX_TRAVEL_DISTANCE);
-        let radius = self.progress * (fade_radius + RING_GRADIENT_WIDTH);
 
-        for y in area.y..area.bottom() {
-            for x in area.x..area.right() {
+        for paint_area in paint_areas {
+            let paint_area = paint_area.intersection(area);
+            for (x, y) in paint_area
+                .positions()
+                .map(|position| (position.x, position.y))
+            {
                 let horizontal_distance = f32::from(x) - center_x;
                 let vertical_distance = (f32::from(y) - center_y) * VERTICAL_DISTANCE_SCALE;
                 let distance = horizontal_distance.hypot(vertical_distance);
-                let gradient =
-                    (1.0 - (distance - radius).abs() / RING_GRADIENT_WIDTH).clamp(0.0, 1.0);
-                if gradient == 0.0 {
-                    continue;
-                }
                 let distance_ratio = (distance / fade_radius).clamp(0.0, 1.0);
                 let distance_alpha =
                     1.0 - distance_ratio * distance_ratio * (3.0 - 2.0 * distance_ratio);
-                let alpha = PEAK_ALPHA * gradient * gradient * distance_alpha;
+                let alpha = self
+                    .wave_progresses
+                    .into_iter()
+                    .flatten()
+                    .map(|progress| {
+                        let radius = progress * (fade_radius + RING_GRADIENT_WIDTH);
+                        let gradient =
+                            (1.0 - (distance - radius).abs() / RING_GRADIENT_WIDTH).clamp(0.0, 1.0);
+                        PEAK_ALPHA * gradient * gradient * distance_alpha
+                    })
+                    .fold(0.0_f32, f32::max);
                 if alpha == 0.0 {
                     continue;
                 }

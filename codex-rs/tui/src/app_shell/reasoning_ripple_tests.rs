@@ -45,28 +45,53 @@ fn only_transitions_to_max_and_ultra_have_a_ripple_tone() {
 }
 
 #[test]
-fn ripple_frames_advance_at_the_refresh_cadence_and_stop_at_the_deadline() {
+fn ripple_frames_launch_two_waves_and_stop_after_the_follower() {
     let now = Instant::now();
     let ripple = ReasoningRipple::new(ReasoningRippleTone::Max, now);
-    let initial_frame = Some(ReasoningRippleFrame {
-        tone: ReasoningRippleTone::Max,
-        progress: 0.0,
-    });
+    let sampled_progress = |elapsed: Duration| {
+        (elapsed.as_secs_f32() / FRAME_INTERVAL.as_secs_f32()).floor()
+            * FRAME_INTERVAL.as_secs_f32()
+            / RIPPLE_WAVE_DURATION.as_secs_f32()
+    };
 
     assert_eq!(
         (
             ripple.frame(now),
             ripple.frame(now + FRAME_INTERVAL - Duration::from_millis(/*millis*/ 1)),
             ripple.frame(now + FRAME_INTERVAL),
+            ripple.frame(now + FOLLOWING_WAVE_DELAY),
+            ripple.frame(now + RIPPLE_WAVE_DURATION),
             ripple.frame(now + RIPPLE_DURATION),
             ripple.is_expired(now + RIPPLE_DURATION),
         ),
         (
-            initial_frame,
-            initial_frame,
             Some(ReasoningRippleFrame {
                 tone: ReasoningRippleTone::Max,
-                progress: FRAME_INTERVAL.as_secs_f32() / RIPPLE_DURATION.as_secs_f32(),
+                wave_progresses: [Some(0.0), None],
+            }),
+            Some(ReasoningRippleFrame {
+                tone: ReasoningRippleTone::Max,
+                wave_progresses: [Some(0.0), None],
+            }),
+            Some(ReasoningRippleFrame {
+                tone: ReasoningRippleTone::Max,
+                wave_progresses: [
+                    Some(FRAME_INTERVAL.as_secs_f32() / RIPPLE_WAVE_DURATION.as_secs_f32()),
+                    None,
+                ],
+            }),
+            Some(ReasoningRippleFrame {
+                tone: ReasoningRippleTone::Max,
+                wave_progresses: [Some(sampled_progress(FOLLOWING_WAVE_DELAY)), Some(0.0)],
+            }),
+            Some(ReasoningRippleFrame {
+                tone: ReasoningRippleTone::Max,
+                wave_progresses: [
+                    None,
+                    Some(sampled_progress(
+                        RIPPLE_WAVE_DURATION - FOLLOWING_WAVE_DELAY,
+                    )),
+                ],
             }),
             None,
             true,
@@ -75,7 +100,7 @@ fn ripple_frames_advance_at_the_refresh_cadence_and_stop_at_the_deadline() {
 }
 
 #[test]
-fn themed_max_and_ultra_curved_ripple_gradients_snapshot() {
+fn themed_max_and_ultra_following_ripple_gradients_snapshot() {
     let snapshots = [
         (
             "tokyo-night",
@@ -111,26 +136,26 @@ fn themed_max_and_ultra_curved_ripple_gradients_snapshot() {
     .map(|(theme_name, theme, tone)| {
         let _active_theme = app_theme::activate(theme);
         let area = Rect::new(
-            /*x*/ 0, /*y*/ 0, /*width*/ 31, /*height*/ 3,
+            /*x*/ 0, /*y*/ 0, /*width*/ 61, /*height*/ 3,
         );
         let origin = Rect::new(
-            /*x*/ 13, /*y*/ 1, /*width*/ 5, /*height*/ 1,
+            /*x*/ 28, /*y*/ 1, /*width*/ 5, /*height*/ 1,
         );
         let mut buf = labeled_header_buffer(area, active_palette());
-        ReasoningRippleFrame {
-            tone,
-            progress: 0.45,
-        }
-        .render(area, origin, &mut buf);
+        let now = Instant::now();
+        ReasoningRipple::new(tone, now)
+            .frame(now + Duration::from_millis(/*millis*/ 660))
+            .expect("ripple should contain both waves")
+            .render(area, origin, [area], &mut buf);
         format!("{theme_name} {tone:?}\n{}", buffer_backgrounds(&buf, area))
     })
     .join("\n\n");
 
-    insta::assert_snapshot!("themed_max_and_ultra_curved_ripple_gradients", snapshots);
+    insta::assert_snapshot!("themed_max_and_ultra_following_ripple_gradients", snapshots);
 }
 
 #[test]
-fn shell_render_limits_ripple_to_top_bar_snapshot() {
+fn shell_render_limits_ripple_to_picker_backgrounds_snapshot() {
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 24,
     );
@@ -149,9 +174,24 @@ fn shell_render_limits_ripple_to_top_bar_snapshot() {
     ShellView { shell: &shell }.render(area, &mut rippled);
 
     let changed = changed_backgrounds(&baseline, &rippled, area);
-    assert!(changed.iter().all(|position| position.y < 3));
+    assert!(changed.iter().all(|position| {
+        matches!(
+            ShellView { shell: &shell }.header_control_at(area, *position),
+            Some(
+                super::super::header::HeaderControl::Model
+                    | super::super::header::HeaderControl::ReasoningEffort
+                    | super::super::header::HeaderControl::ServiceTier
+            )
+        )
+    }));
+    for position in area.positions() {
+        assert_eq!(
+            (baseline[position].symbol(), baseline[position].style().fg,),
+            (rippled[position].symbol(), rippled[position].style().fg,),
+        );
+    }
     insta::assert_snapshot!(
-        "shell_render_limits_ripple_to_top_bar",
+        "shell_render_limits_ripple_to_picker_backgrounds",
         changed_rows(&changed, area)
     );
 }
@@ -169,9 +209,9 @@ fn ripple_fades_before_reaching_the_far_edge() {
     let mut rippled = baseline.clone();
     ReasoningRippleFrame {
         tone: ReasoningRippleTone::Max,
-        progress: 0.75,
+        wave_progresses: [Some(0.75), None],
     }
-    .render(area, origin, &mut rippled);
+    .render(area, origin, [area], &mut rippled);
 
     let changed = changed_backgrounds(&baseline, &rippled, area);
     assert!(

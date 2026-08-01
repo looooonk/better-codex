@@ -1,0 +1,5 @@
+---
+source: tui/src/app_shell/reasoning_ripple_tests.rs
+expression: "changed_rows(&changed, area)"
+---
+01: ·············································▓▓▓▓▓▓▓▓▓▓▓························
