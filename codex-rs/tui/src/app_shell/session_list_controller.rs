@@ -447,6 +447,8 @@ impl ShellState {
         self.pending_external_agent_import = None;
         self.pending_mcp_management = None;
         self.pending_plugin_management = None;
+        self.pending_prompt_submission = None;
+        self.pending_vim_input = None;
         self.mcp_inventory = McpInventorySummary::default();
         self.mcp_catalog = None;
         self.plugin_inventory = PluginInventorySummary::default();

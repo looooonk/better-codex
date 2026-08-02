@@ -141,6 +141,7 @@ mod transcript_render;
 mod transcript_view;
 mod turn_timer;
 mod user_input;
+mod vim_input;
 mod workspace;
 use account_auth::AccountAuthState;
 use agent_activity::AgentActivityState;
@@ -378,6 +379,39 @@ pub(crate) async fn run(
                                 Ok(false) => {}
                                 Err(err) => shell.report_action_error("action failed", err),
                             }
+                            if let Some(request) = shell.take_vim_input_request() {
+                                let originating_thread_id = request.thread_id();
+                                draw_shell(tui, &shell)?;
+                                let wait_outcome = tui
+                                    .with_restored_terminal(|| {
+                                        vim_input::wait_while_processing_events(
+                                            &mut shell,
+                                            &mut app_server,
+                                            vim_input::run(request),
+                                        )
+                                    })
+                                    .await
+                                    .wrap_err("failed to restore terminal around Vim input")?;
+                                let result = match wait_outcome {
+                                    vim_input::VimInputWaitOutcome::Completed(result) => result,
+                                    vim_input::VimInputWaitOutcome::AppServerDisconnected => {
+                                        shell.push_system("app-server disconnected");
+                                        break ExitReason::Fatal(
+                                            "app-server disconnected".to_string(),
+                                        );
+                                    }
+                                };
+                                if let Err(err) = shell
+                                    .complete_vim_input(
+                                        originating_thread_id,
+                                        result,
+                                        &mut app_server,
+                                    )
+                                    .await
+                                {
+                                    shell.report_action_error("failed to submit Vim input", err);
+                                }
+                            }
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::MouseClick(position) => {
@@ -526,6 +560,12 @@ pub(crate) async fn run(
                 }
                 _ = backend_action_poll.tick(), if shell.has_pending_backend_actions() => {
                     if shell.poll_backend_actions(&app_server).await {
+                        if let Err(err) = shell
+                            .dispatch_pending_prompt_submission(&mut app_server)
+                            .await
+                        {
+                            shell.report_action_error("failed to submit deferred input", err);
+                        }
                         tui.frame_requester().schedule_frame();
                     }
                 }
@@ -728,6 +768,7 @@ enum LocalSlashCommand {
     Goal(GoalSlashCommand),
     Login,
     Logout,
+    Vim,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -758,6 +799,7 @@ impl LocalSlashCommand {
             "/goal" => Some(Self::Goal(GoalSlashCommand::parse(args))),
             "/login" if args.is_empty() => Some(Self::Login),
             "/logout" if args.is_empty() => Some(Self::Logout),
+            "/vim" if args.is_empty() => Some(Self::Vim),
             _ => None,
         }
     }
@@ -875,7 +917,9 @@ struct ShellState {
     pending_external_agent_import: Option<ExternalAgentImportState>,
     pending_mcp_management: Option<McpManagementState>,
     pending_plugin_management: Option<PluginManagementState>,
+    pending_prompt_submission: Option<String>,
     pending_user_input: Option<PendingUserInput>,
+    pending_vim_input: Option<vim_input::VimInputRequest>,
     safety_buffering: SafetyBufferingState,
     streaming_assistant: String,
     streaming_assistant_item_id: Option<String>,
@@ -1008,7 +1052,9 @@ impl ShellState {
             pending_external_agent_import: None,
             pending_mcp_management: None,
             pending_plugin_management: None,
+            pending_prompt_submission: None,
             pending_user_input: None,
+            pending_vim_input: None,
             safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: String::new(),
             streaming_assistant_item_id: None,
@@ -1413,6 +1459,10 @@ impl ShellState {
                         }
                     }
                 }
+            }
+            LocalSlashCommand::Vim => {
+                self.request_vim_input();
+                LocalSlashCommandOutcome::Continue
             }
         };
         Ok(outcome)
@@ -2659,7 +2709,9 @@ impl ShellState {
             pending_external_agent_import: None,
             pending_mcp_management: None,
             pending_plugin_management: None,
+            pending_prompt_submission: None,
             pending_user_input: None,
+            pending_vim_input: None,
             safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: "The new shell owns the fullscreen surface.".to_string(),
             streaming_assistant_item_id: None,
@@ -2931,7 +2983,9 @@ pub mod bench_support {
             pending_external_agent_import: None,
             pending_mcp_management: None,
             pending_plugin_management: None,
+            pending_prompt_submission: None,
             pending_user_input: None,
+            pending_vim_input: None,
             safety_buffering: SafetyBufferingState::default(),
             streaming_assistant: String::new(),
             streaming_assistant_item_id: None,
