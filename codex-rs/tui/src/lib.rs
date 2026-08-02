@@ -100,6 +100,12 @@ pub fn run_terminal_restore_fatal_disconnect_helper_for_tests() -> ! {
     tui::run_terminal_restore_fatal_disconnect_helper_for_tests()
 }
 
+#[cfg(unix)]
+#[doc(hidden)]
+pub fn run_interactive_child_handoff_helper_for_tests() -> ! {
+    tui::run_interactive_child_handoff_helper_for_tests()
+}
+
 mod additional_dirs;
 mod app_exit;
 mod app_server_approval_conversions;

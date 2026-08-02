@@ -13,6 +13,7 @@ use supports_color::Stream;
 const TERMINAL_RESTORE_PANIC_HELPER_ENV: &str = "CODEX_TUI_TERMINAL_RESTORE_PANIC_HELPER";
 const TERMINAL_RESTORE_FATAL_DISCONNECT_HELPER_ENV: &str =
     "CODEX_TUI_TERMINAL_RESTORE_FATAL_DISCONNECT_HELPER";
+const INTERACTIVE_CHILD_HANDOFF_HELPER_ENV: &str = "CODEX_TUI_INTERACTIVE_CHILD_HANDOFF_HELPER";
 
 fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<String> {
     let is_fatal = matches!(&exit_info.exit_reason, ExitReason::Fatal(_));
@@ -65,6 +66,13 @@ fn main() -> anyhow::Result<()> {
 
         #[cfg(not(unix))]
         anyhow::bail!("terminal restore fatal-disconnect helper is only supported on Unix");
+    }
+    if std::env::var_os(INTERACTIVE_CHILD_HANDOFF_HELPER_ENV).is_some() {
+        #[cfg(unix)]
+        codex_tui::run_interactive_child_handoff_helper_for_tests();
+
+        #[cfg(not(unix))]
+        anyhow::bail!("interactive child handoff helper is only supported on Unix");
     }
 
     arg0_dispatch_or_else(|arg0_paths: Arg0DispatchPaths| async move {

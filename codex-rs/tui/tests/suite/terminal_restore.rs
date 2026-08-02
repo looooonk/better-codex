@@ -16,11 +16,13 @@ use crossterm::cursor::Show;
 use crossterm::event::DisableBracketedPaste;
 use crossterm::event::DisableFocusChange;
 use crossterm::event::DisableMouseCapture;
+use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
 
 const TERMINAL_RESTORE_PANIC_HELPER_ENV: &str = "CODEX_TUI_TERMINAL_RESTORE_PANIC_HELPER";
 const TERMINAL_RESTORE_FATAL_DISCONNECT_HELPER_ENV: &str =
     "CODEX_TUI_TERMINAL_RESTORE_FATAL_DISCONNECT_HELPER";
+const INTERACTIVE_CHILD_HANDOFF_HELPER_ENV: &str = "CODEX_TUI_INTERACTIVE_CHILD_HANDOFF_HELPER";
 
 #[test]
 fn panic_hook_restores_terminal_modes_under_pty() {
@@ -35,6 +37,117 @@ fn fatal_disconnect_restores_terminal_modes_under_pty() {
     assert!(
         output.contains("ERROR: app-server disconnected"),
         "missing fatal disconnect message in pty output {output:?}"
+    );
+}
+
+#[test]
+fn interactive_child_handoff_releases_and_reacquires_the_pty() {
+    let pty = open_pty();
+    let original_termios = termios(pty.slave.as_raw_fd());
+    let codex_tui = codex_utils_cargo_bin::cargo_bin("codex-tui").expect("codex-tui binary");
+    let mut command = ProcessCommand::new(codex_tui);
+    command
+        .env(INTERACTIVE_CHILD_HANDOFF_HELPER_ENV, "1")
+        .stdin(Stdio::from(dup_file(pty.slave.as_raw_fd())))
+        .stdout(Stdio::from(dup_file(pty.slave.as_raw_fd())))
+        .stderr(Stdio::from(dup_file(pty.slave.as_raw_fd())));
+
+    let mut child = command.spawn().expect("spawn interactive child helper");
+    let mut reader = dup_file(pty.master.as_raw_fd());
+    set_nonblocking(reader.as_raw_fd());
+    let mut writer = dup_file(pty.master.as_raw_fd());
+    let mut output = Vec::new();
+    wait_for_pty_text(&mut child, &mut reader, &mut output, "CHILD_READY");
+    writer
+        .write_all(b"child-input\n")
+        .expect("write child input");
+    writer.flush().expect("flush child input");
+    wait_for_pty_text(&mut child, &mut reader, &mut output, "TUI_RESUMED");
+    writer.write_all(b"r").expect("write resumed TUI input");
+    writer.flush().expect("flush resumed TUI input");
+    wait_for_pty_text(&mut child, &mut reader, &mut output, "TUI_GOT:r");
+    let status = wait_for_child_with_pty_output(&mut child, &mut reader, &mut output);
+    assert!(status.success(), "interactive child helper should succeed");
+    assert_termios_restored(&original_termios, &termios(pty.slave.as_raw_fd()));
+
+    let output = String::from_utf8_lossy(&output);
+    let enter = command_sequence(EnterAlternateScreen, "enter alternate screen");
+    let leave = command_sequence(LeaveAlternateScreen, "leave alternate screen");
+    let first_enter = output.find(&enter).expect("initial alternate screen");
+    let handoff_leave = output
+        .find(&leave)
+        .expect("handoff leaves alternate screen");
+    let child_ready = output.find("CHILD_READY").expect("child ready marker");
+    let child_got = output
+        .find("CHILD_GOT:child-input")
+        .expect("child input marker");
+    let resumed_enter = output[handoff_leave + leave.len()..]
+        .find(&enter)
+        .map(|index| index + handoff_leave + leave.len())
+        .expect("handoff restores alternate screen");
+    let resumed = output.find("TUI_RESUMED").expect("TUI resume marker");
+    assert!(
+        first_enter < handoff_leave
+            && handoff_leave < child_ready
+            && child_ready < child_got
+            && child_got < resumed_enter
+            && resumed_enter < resumed,
+        "unexpected handoff ordering in PTY output {output:?}"
+    );
+}
+
+#[test]
+fn cancelled_interactive_child_handoff_restores_the_pty() {
+    let pty = open_pty();
+    let original_termios = termios(pty.slave.as_raw_fd());
+    let codex_tui = codex_utils_cargo_bin::cargo_bin("codex-tui").expect("codex-tui binary");
+    let mut command = ProcessCommand::new(codex_tui);
+    command
+        .env(INTERACTIVE_CHILD_HANDOFF_HELPER_ENV, "cancel")
+        .stdin(Stdio::from(dup_file(pty.slave.as_raw_fd())))
+        .stdout(Stdio::from(dup_file(pty.slave.as_raw_fd())))
+        .stderr(Stdio::from(dup_file(pty.slave.as_raw_fd())));
+
+    let mut child = command.spawn().expect("spawn cancellation handoff helper");
+    let mut reader = dup_file(pty.master.as_raw_fd());
+    set_nonblocking(reader.as_raw_fd());
+    let mut writer = dup_file(pty.master.as_raw_fd());
+    let mut output = Vec::new();
+    wait_for_pty_text(&mut child, &mut reader, &mut output, "CANCEL_CHILD_READY");
+    wait_for_pty_text(&mut child, &mut reader, &mut output, "TUI_CANCEL_RESUMED");
+    writer.write_all(b"c").expect("write resumed TUI input");
+    writer.flush().expect("flush resumed TUI input");
+    wait_for_pty_text(&mut child, &mut reader, &mut output, "TUI_GOT:c");
+    let status = wait_for_child_with_pty_output(&mut child, &mut reader, &mut output);
+    assert!(
+        status.success(),
+        "cancellation handoff helper should succeed"
+    );
+    assert_termios_restored(&original_termios, &termios(pty.slave.as_raw_fd()));
+
+    let output = String::from_utf8_lossy(&output);
+    let enter = command_sequence(EnterAlternateScreen, "enter alternate screen");
+    let leave = command_sequence(LeaveAlternateScreen, "leave alternate screen");
+    let first_enter = output.find(&enter).expect("initial alternate screen");
+    let handoff_leave = output
+        .find(&leave)
+        .expect("handoff leaves alternate screen");
+    let child_ready = output
+        .find("CANCEL_CHILD_READY")
+        .expect("cancellation child ready marker");
+    let resumed_enter = output[handoff_leave + leave.len()..]
+        .find(&enter)
+        .map(|index| index + handoff_leave + leave.len())
+        .expect("cancelled handoff restores alternate screen");
+    let resumed = output
+        .find("TUI_CANCEL_RESUMED")
+        .expect("TUI cancellation resume marker");
+    assert!(
+        first_enter < handoff_leave
+            && handoff_leave < child_ready
+            && child_ready < resumed_enter
+            && resumed_enter < resumed,
+        "unexpected cancellation handoff ordering in PTY output {output:?}"
     );
 }
 
@@ -139,7 +252,7 @@ struct Pty {
 fn open_pty() -> Pty {
     let mut master = 0;
     let mut slave = 0;
-    let mut window_size = libc::winsize {
+    let window_size = libc::winsize {
         ws_row: 24,
         ws_col: 80,
         ws_xpixel: 0,
@@ -152,7 +265,7 @@ fn open_pty() -> Pty {
             &mut slave,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-            &mut window_size,
+            &window_size,
         )
     };
     assert_eq!(
@@ -335,10 +448,7 @@ where
 }
 
 fn assert_contains_sequence(output: &str, command: impl Command, label: &str) {
-    let mut expected = String::new();
-    command
-        .write_ansi(&mut expected)
-        .unwrap_or_else(|err| panic!("format {label} sequence: {err}"));
+    let expected = command_sequence(command, label);
     assert!(
         output.contains(&expected),
         "missing {label} sequence {expected:?} in pty output {output:?}"
@@ -346,12 +456,17 @@ fn assert_contains_sequence(output: &str, command: impl Command, label: &str) {
 }
 
 fn assert_missing_sequence(output: &str, command: impl Command, label: &str) {
-    let mut unexpected = String::new();
-    command
-        .write_ansi(&mut unexpected)
-        .unwrap_or_else(|err| panic!("format {label} sequence: {err}"));
+    let unexpected = command_sequence(command, label);
     assert!(
         !output.contains(&unexpected),
         "unexpected {label} sequence {unexpected:?} in pty output {output:?}"
     );
+}
+
+fn command_sequence(command: impl Command, label: &str) -> String {
+    let mut sequence = String::new();
+    command
+        .write_ansi(&mut sequence)
+        .unwrap_or_else(|err| panic!("format {label} sequence: {err}"));
+    sequence
 }

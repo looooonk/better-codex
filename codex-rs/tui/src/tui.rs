@@ -48,6 +48,7 @@ use crate::tui::job_control::SuspendContext;
 mod event_stream;
 mod frame_rate_limiter;
 mod frame_requester;
+mod interactive_child;
 #[cfg(unix)]
 mod job_control;
 mod keyboard_modes;
@@ -224,6 +225,12 @@ impl Command for DisableAlternateScroll {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RawModeRestore {
+    Disable,
+    Keep,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum KeyboardRestore {
     PopStack,
     ResetAfterExit,
@@ -251,7 +258,10 @@ impl Drop for TerminalModeCleanupGuard {
     }
 }
 
-fn restore_common(keyboard_restore: KeyboardRestore) -> Result<()> {
+fn restore_common(
+    raw_mode_restore: RawModeRestore,
+    keyboard_restore: KeyboardRestore,
+) -> Result<()> {
     let mut first_error = ensure_virtual_terminal_processing().err();
 
     match keyboard_restore {
@@ -264,7 +274,9 @@ fn restore_common(keyboard_restore: KeyboardRestore) -> Result<()> {
     }
     let _ = execute!(stdout(), DisableFocusChange);
     let _ = execute!(stdout(), DisableMouseCapture);
-    if let Err(err) = disable_raw_mode() {
+    if raw_mode_restore == RawModeRestore::Disable
+        && let Err(err) = disable_raw_mode()
+    {
         first_error.get_or_insert(err);
     }
     if let Err(err) = execute!(
@@ -281,7 +293,8 @@ fn restore_common(keyboard_restore: KeyboardRestore) -> Result<()> {
 }
 
 fn restore_terminal_modes_after_exit() -> Result<()> {
-    let mut first_error = restore_common(KeyboardRestore::ResetAfterExit).err();
+    let mut first_error =
+        restore_common(RawModeRestore::Disable, KeyboardRestore::ResetAfterExit).err();
     if let Err(err) = write_exit_alt_screen_restore(&mut stdout()) {
         first_error.get_or_insert(err);
     }
@@ -300,7 +313,12 @@ fn write_exit_alt_screen_restore(writer: &mut impl Write) -> Result<()> {
 /// Restore the terminal to its original state.
 /// Inverse of `set_modes`.
 pub fn restore() -> Result<()> {
-    restore_common(KeyboardRestore::PopStack)
+    restore_common(RawModeRestore::Disable, KeyboardRestore::PopStack)
+}
+
+/// Restore terminal ownership for an interactive child while retaining raw mode.
+fn restore_for_interactive_child() -> Result<()> {
+    restore_common(RawModeRestore::Keep, KeyboardRestore::PopStack)
 }
 
 /// Force crossterm's cached raw-mode state back in sync with the terminal after `fg`.
@@ -354,6 +372,12 @@ pub fn run_terminal_restore_fatal_disconnect_helper_for_tests() -> ! {
     }
     eprintln!("ERROR: app-server disconnected");
     std::process::exit(1);
+}
+
+#[cfg(unix)]
+#[doc(hidden)]
+pub fn run_interactive_child_handoff_helper_for_tests() -> ! {
+    interactive_child::run_handoff_helper_for_tests()
 }
 
 #[cfg(unix)]
