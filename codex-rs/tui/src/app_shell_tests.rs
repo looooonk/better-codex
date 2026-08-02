@@ -14854,6 +14854,8 @@ async fn turn_streaming_approval_interrupt_disconnect_and_shutdown_are_covered()
 #[derive(Clone)]
 struct RecordingBackend {
     calls: Arc<Mutex<Vec<RecordedBackendCall>>>,
+    disconnect_when_events_empty: bool,
+    events: Arc<Mutex<VecDeque<AppServerEvent>>>,
     resolved_requests: Arc<Mutex<Vec<(RequestId, serde_json::Value)>>>,
     start_configs: Arc<Mutex<Vec<Config>>>,
     threads: Arc<Mutex<Vec<Thread>>>,
@@ -14880,6 +14882,8 @@ impl Default for RecordingBackend {
     fn default() -> Self {
         Self {
             calls: Arc::new(Mutex::new(Vec::new())),
+            disconnect_when_events_empty: false,
+            events: Arc::new(Mutex::new(VecDeque::new())),
             resolved_requests: Arc::new(Mutex::new(Vec::new())),
             start_configs: Arc::new(Mutex::new(Vec::new())),
             threads: Arc::new(Mutex::new(Vec::new())),
@@ -14908,6 +14912,13 @@ impl Default for RecordingBackend {
 }
 
 impl RecordingBackend {
+    fn push_event(&self, event: AppServerEvent) {
+        self.events
+            .lock()
+            .expect("event queue should lock")
+            .push_back(event);
+    }
+
     fn with_threads(threads: Vec<Thread>) -> Self {
         Self {
             threads: Arc::new(Mutex::new(threads)),
@@ -15125,6 +15136,21 @@ enum RecordedBackendCall {
 }
 
 impl backend::AppShellBackend for RecordingBackend {
+    async fn next_event(&mut self) -> Option<AppServerEvent> {
+        if let Some(event) = self
+            .events
+            .lock()
+            .expect("event queue should lock")
+            .pop_front()
+        {
+            return Some(event);
+        }
+        if self.disconnect_when_events_empty {
+            return None;
+        }
+        std::future::pending().await
+    }
+
     async fn start_thread_with_session_start_source(
         &mut self,
         config: &Config,

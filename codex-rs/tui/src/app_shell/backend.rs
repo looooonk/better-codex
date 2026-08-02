@@ -4,6 +4,7 @@ use crate::app_server_session::ForkGoalContinuation;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::config_update::write_config_batch;
 use crate::legacy_core::config::Config;
+use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AskForApproval;
 use codex_app_server_protocol::ClientRequest;
@@ -62,6 +63,9 @@ use uuid::Uuid;
 /// Implementations should preserve app-server request semantics while allowing
 /// the shell to be tested without a live server.
 pub(super) trait AppShellBackend {
+    /// Waits for the next server event while preserving its original ordering.
+    fn next_event(&mut self) -> impl std::future::Future<Output = Option<AppServerEvent>> + Send;
+
     fn start_thread_with_session_start_source(
         &mut self,
         config: &Config,
@@ -364,6 +368,10 @@ pub(super) struct AppShellTurnSteer {
 }
 
 impl AppShellBackend for AppServerSession {
+    async fn next_event(&mut self) -> Option<AppServerEvent> {
+        AppServerSession::next_event(self).await
+    }
+
     async fn start_thread_with_session_start_source(
         &mut self,
         config: &Config,
