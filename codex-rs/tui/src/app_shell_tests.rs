@@ -139,6 +139,9 @@ use std::time::Instant;
 
 const SNAPSHOT_THREAD_ID: &str = "01900000-0000-7000-8000-000000000001";
 
+#[path = "app_shell/vim_flow_tests.rs"]
+mod vim_flow_tests;
+
 #[test]
 fn renders_first_stage_shell_snapshot() {
     let shell = ShellState::snapshot_fixture();
@@ -11169,7 +11172,7 @@ fn composer_highlights_recognized_slash_commands_snapshot() {
         Some(design::palette::focus())
     );
 
-    shell.composer.set_text("/goal Keep the dashboard compact");
+    shell.composer.set_text("/vim");
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
