@@ -301,11 +301,39 @@ impl ShellState {
                 if completed.thread_id == self.thread_id.to_string() {
                     self.mark_retry_recovered(&completed.turn_id);
                     self.mark_active_agent_threads(&completed.item);
+                    let rewind_anchor = match &completed.item {
+                        ThreadItem::UserMessage {
+                            client_id: None, ..
+                        } => super::rewind::RewindAnchor::for_opening_item(
+                            &completed.turn_id,
+                            &completed.item,
+                        ),
+                        ThreadItem::UserMessage {
+                            client_id: Some(_), ..
+                        }
+                        | ThreadItem::HookPrompt { .. }
+                        | ThreadItem::AgentMessage { .. }
+                        | ThreadItem::Plan { .. }
+                        | ThreadItem::Reasoning { .. }
+                        | ThreadItem::CommandExecution { .. }
+                        | ThreadItem::FileChange { .. }
+                        | ThreadItem::McpToolCall { .. }
+                        | ThreadItem::DynamicToolCall { .. }
+                        | ThreadItem::CollabAgentToolCall { .. }
+                        | ThreadItem::WebSearch { .. }
+                        | ThreadItem::ImageView { .. }
+                        | ThreadItem::Sleep { .. }
+                        | ThreadItem::ImageGeneration(_)
+                        | ThreadItem::SubAgentActivity { .. }
+                        | ThreadItem::EnteredReviewMode { .. }
+                        | ThreadItem::ExitedReviewMode { .. }
+                        | ThreadItem::ContextCompaction { .. } => None,
+                    };
                     self.ingest_completed_item_for_turn(
                         &completed.turn_id,
                         completed.item.clone(),
                         super::CompletedItemOrigin::Live,
-                        /*rewind_anchor*/ None,
+                        rewind_anchor,
                     );
                     self.mark_agent_item_live(&completed.item);
                 } else if self.prepare_active_agent_thread(&completed.thread_id) {

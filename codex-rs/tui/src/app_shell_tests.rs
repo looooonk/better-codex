@@ -10219,6 +10219,57 @@ async fn turn_submission_and_history_preserve_boundary_whitespace() {
 }
 
 #[tokio::test]
+async fn live_opening_user_message_is_rendered_once_with_rewind_anchor() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let prompt = "Keep this opening prompt.";
+    shell.active_turn_id = None;
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.composer.set_text(prompt);
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("opening turn should submit");
+    let opening_item = ThreadItem::UserMessage {
+        id: "opening-user".to_string(),
+        client_id: None,
+        content: vec![ApiUserInput::Text {
+            text: prompt.to_string(),
+            text_elements: Vec::new(),
+        }],
+    };
+    let thread_id = shell.thread_id.to_string();
+    let opening_notification = |item| {
+        ServerNotification::ItemCompleted(ItemCompletedNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-submit".to_string(),
+            completed_at_ms: 1,
+            item,
+        })
+    };
+
+    shell.handle_notification(opening_notification(opening_item.clone()));
+    complete_backend_actions(&mut shell, &backend).await;
+    shell.handle_notification(opening_notification(opening_item));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::User, prompt).rewind_anchor(rewind::RewindAnchor {
+                before_turn_id: "turn-submit".to_string(),
+            }),
+        ])
+    );
+}
+
+#[tokio::test]
 async fn steered_message_is_rendered_once() {
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
