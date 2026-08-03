@@ -8529,6 +8529,59 @@ fn rapid_command_outputs_stay_grouped_with_their_tool_calls() {
 }
 
 #[test]
+fn late_command_start_is_inserted_before_early_output() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+        CommandExecutionOutputDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            item_id: "exec-late".to_string(),
+            delta: "early output\n".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: thread_id.clone(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: command_execution_item(
+            "exec-late",
+            CommandExecutionStatus::InProgress,
+            /*exit_code*/ None,
+        ),
+    }));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: command_execution_item(
+                "exec-late",
+                CommandExecutionStatus::Completed,
+                /*exit_code*/ Some(0),
+            ),
+        },
+    ));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, "exec cargo test exit 0 42ms")
+                .tool_status(ToolBlockStatus::Success)
+                .item_id("exec-late"),
+            TranscriptLine::output(
+                "early output\n",
+                ToolBlockStatus::Success,
+                "exec-late".to_string(),
+            ),
+        ])
+    );
+}
+
+#[test]
 fn command_output_deltas_preserve_newline_chunks() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
