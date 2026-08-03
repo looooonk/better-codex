@@ -1850,6 +1850,69 @@ fn renders_transcript_selection_snapshot() {
 }
 
 #[test]
+fn rewind_anchors_only_opening_text_only_prompts() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    let mut turn = prompt_turn("turn-one", "Opening prompt");
+    turn.items.push(ThreadItem::UserMessage {
+        id: "steer".to_string(),
+        client_id: Some("steer-client".to_string()),
+        content: vec![ApiUserInput::Text {
+            text: "Steered follow-up".to_string(),
+            text_elements: Vec::new(),
+        }],
+    });
+    let mut rich_turn = test_turn("turn-two", TurnStatus::Completed);
+    rich_turn.items.push(ThreadItem::UserMessage {
+        id: "rich".to_string(),
+        client_id: None,
+        content: vec![
+            ApiUserInput::Text {
+                text: "Inspect this image".to_string(),
+                text_elements: Vec::new(),
+            },
+            ApiUserInput::Image {
+                detail: None,
+                url: "https://example.test/image.png".to_string(),
+            },
+        ],
+    });
+    let mut automatic_turn = test_turn("turn-three", TurnStatus::Completed);
+    automatic_turn.items.extend([
+        ThreadItem::AgentMessage {
+            id: "automatic-response".to_string(),
+            text: "Continue the active goal.".to_string(),
+            phase: None,
+            memory_citation: None,
+        },
+        ThreadItem::UserMessage {
+            id: "late-steer".to_string(),
+            client_id: Some("late-steer-client".to_string()),
+            content: vec![ApiUserInput::Text {
+                text: "Steer the automatic turn".to_string(),
+                text_elements: Vec::new(),
+            }],
+        },
+    ]);
+
+    shell.ingest_turn_history(vec![turn, rich_turn, automatic_turn]);
+
+    assert_eq!(
+        shell
+            .transcript
+            .iter()
+            .filter(|line| line.kind == TranscriptKind::User)
+            .map(|line| {
+                line.rewind_anchor
+                    .as_ref()
+                    .map(|anchor| anchor.before_turn_id.as_str())
+            })
+            .collect::<Vec<_>>(),
+        vec![Some("turn-one"), None, None, None,]
+    );
+}
+
+#[test]
 fn renders_command_palette_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.open_command_palette();
@@ -10139,7 +10202,11 @@ async fn turn_submission_and_history_preserve_boundary_whitespace() {
     );
     assert_eq!(
         shell.transcript,
-        VecDeque::from([TranscriptLine::new(TranscriptKind::User, prompt)])
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::User, prompt).rewind_anchor(rewind::RewindAnchor {
+                before_turn_id: "turn-submit".to_string(),
+            },),
+        ])
     );
     shell.composer.move_up_or_recall_history();
     assert_eq!(shell.composer.text(), prompt);
@@ -16493,6 +16560,19 @@ fn test_turn(id: &str, status: TurnStatus) -> Turn {
         completed_at: is_complete.then_some(2),
         duration_ms: is_complete.then_some(1_000),
     }
+}
+
+fn prompt_turn(id: &str, prompt: &str) -> Turn {
+    let mut turn = test_turn(id, TurnStatus::Completed);
+    turn.items.push(ThreadItem::UserMessage {
+        id: format!("item-{id}"),
+        client_id: None,
+        content: vec![ApiUserInput::Text {
+            text: prompt.to_string(),
+            text_elements: Vec::new(),
+        }],
+    });
+    turn
 }
 
 fn test_thread_id(value: &str) -> codex_protocol::ThreadId {
