@@ -1,5 +1,39 @@
 use super::*;
 
+/// Typed request operations used by detached app-server thread workflows.
+///
+/// Implementations must dispatch the supplied protocol request unchanged and
+/// preserve app-server transport, server, and response-decoding errors.
+trait BackgroundRequestHandle: Send + Sync {
+    fn send_thread_fork_request(
+        &self,
+        request: ClientRequest,
+    ) -> impl std::future::Future<Output = Result<ThreadForkResponse, TypedRequestError>> + Send;
+
+    fn send_thread_read_request(
+        &self,
+        request: ClientRequest,
+    ) -> impl std::future::Future<Output = Result<ThreadReadResponse, TypedRequestError>> + Send;
+}
+
+impl BackgroundRequestHandle for AppServerRequestHandle {
+    fn send_thread_fork_request(
+        &self,
+        request: ClientRequest,
+    ) -> impl std::future::Future<Output = Result<ThreadForkResponse, TypedRequestError>> + Send
+    {
+        self.request_typed(request)
+    }
+
+    fn send_thread_read_request(
+        &self,
+        request: ClientRequest,
+    ) -> impl std::future::Future<Output = Result<ThreadReadResponse, TypedRequestError>> + Send
+    {
+        self.request_typed(request)
+    }
+}
+
 impl AppServerSession {
     pub(crate) fn resume_thread_in_background(
         &self,
@@ -21,6 +55,30 @@ impl AppServerSession {
         )
     }
 
+    pub(crate) fn fork_thread_before_turn_in_background(
+        &self,
+        config: Config,
+        thread_id: ThreadId,
+        before_turn_id: String,
+        goal_continuation: ForkGoalContinuation,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
+        let request_handle = self.request_handle();
+        let thread_params_mode = self.thread_params_mode();
+        let remote_cwd_override = self.remote_cwd_override.clone();
+        let session_config = self.session_config_with_effective_service_tier(&config);
+        fork_thread_before_turn(BackgroundThreadFork {
+            request_handle,
+            config,
+            session_config,
+            thread_id,
+            before_turn_id,
+            goal_continuation,
+            thread_params_mode,
+            remote_cwd_override,
+            request_id: RequestId::String(format!("app-shell-thread-fork-{}", Uuid::new_v4())),
+        })
+    }
+
     pub(crate) fn thread_settings_update_in_background(
         &self,
         params: ThreadSettingsUpdateParams,
@@ -32,6 +90,61 @@ impl AppServerSession {
             params,
         )
     }
+}
+
+struct BackgroundThreadFork<H = AppServerRequestHandle> {
+    request_handle: H,
+    config: Config,
+    session_config: Config,
+    thread_id: ThreadId,
+    before_turn_id: String,
+    goal_continuation: ForkGoalContinuation,
+    thread_params_mode: ThreadParamsMode,
+    remote_cwd_override: Option<PathBuf>,
+    request_id: RequestId,
+}
+
+async fn fork_thread_before_turn<H>(
+    request: BackgroundThreadFork<H>,
+) -> Result<AppServerStartedThread>
+where
+    H: BackgroundRequestHandle,
+{
+    let BackgroundThreadFork {
+        request_handle,
+        config,
+        session_config,
+        thread_id,
+        before_turn_id,
+        goal_continuation,
+        thread_params_mode,
+        remote_cwd_override,
+        request_id,
+    } = request;
+    let response = request_handle
+        .send_thread_fork_request(ClientRequest::ThreadFork {
+            request_id,
+            params: ThreadForkParams {
+                last_turn_id: None,
+                before_turn_id: Some(before_turn_id),
+                defer_goal_continuation: goal_continuation
+                    == ForkGoalContinuation::DeferUntilNextTurn,
+                ..thread_fork_params_from_config(
+                    session_config,
+                    thread_id,
+                    thread_params_mode,
+                    remote_cwd_override.as_deref(),
+                )
+            },
+        })
+        .await
+        .map_err(|err| bootstrap_request_error("thread/fork failed in TUI", err))?;
+    let fork_parent_title =
+        fork_parent_title(&request_handle, response.thread.forked_from_id.as_deref()).await;
+    let mut started =
+        started_thread_from_fork_response(response, &config, thread_params_mode).await?;
+    started.session.fork_parent_title = fork_parent_title;
+    Ok(started)
 }
 
 pub(super) async fn resume_thread(
@@ -55,11 +168,8 @@ pub(super) async fn resume_thread(
         })
         .await
         .map_err(|err| bootstrap_request_error("thread/resume failed in TUI", err))?;
-    let fork_parent_title = fork_parent_title(
-        request_handle.clone(),
-        response.thread.forked_from_id.as_deref(),
-    )
-    .await;
+    let fork_parent_title =
+        fork_parent_title(&request_handle, response.thread.forked_from_id.as_deref()).await;
     let session_id = response.thread.session_id.clone();
     let mut started =
         started_thread_from_resume_response(response, &config, thread_params_mode).await?;
@@ -100,10 +210,10 @@ pub(super) async fn thread_settings_update(
     }
 }
 
-async fn fork_parent_title(
-    request_handle: AppServerRequestHandle,
-    forked_from_id: Option<&str>,
-) -> Option<String> {
+async fn fork_parent_title<H>(request_handle: &H, forked_from_id: Option<&str>) -> Option<String>
+where
+    H: BackgroundRequestHandle,
+{
     let forked_from_id = forked_from_id?;
     let thread_id = match ThreadId::from_string(forked_from_id) {
         Ok(thread_id) => thread_id,
@@ -113,7 +223,7 @@ async fn fork_parent_title(
         }
     };
     match request_handle
-        .request_typed::<ThreadReadResponse>(ClientRequest::ThreadRead {
+        .send_thread_read_request(ClientRequest::ThreadRead {
             request_id: RequestId::String(format!("app-shell-fork-parent-{}", Uuid::new_v4())),
             params: ThreadReadParams {
                 thread_id: thread_id.to_string(),
@@ -129,3 +239,7 @@ async fn fork_parent_title(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "background_tests.rs"]
+mod tests;
