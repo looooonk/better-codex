@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell/slash_command_popup_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ SYSTEM  Better Codex app shell
+ ▎ YOU  Create a divergent standalone TUI.
+
+ ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
+ ▎ PLAN  1. Build shell
+         2. Wire transcript
+         3. Render dashboard
+
+╭──────────────────────────────────────────────────────────────────────╮
+│◆ COMMANDS                                                            │
+│▌ /clear  Clear the visible transcript                                │
+│  /goal   Show or update the active goal                              │
+│  /login  Sign in to your OpenAI account                              │
+│  /logout Sign out of your OpenAI account                             │
+│  /exit   Exit Better Codex                                           │
+│↑↓ navigate   Tab complete   Enter run   Esc close                    │
+╰──────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:2                                                                                    │
+│> /                                                                                               │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

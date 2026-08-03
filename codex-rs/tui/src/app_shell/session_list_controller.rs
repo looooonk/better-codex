@@ -441,6 +441,7 @@ impl ShellState {
         self.plan_steps.clear();
         self.record_active_goal(None);
         self.composer.reset_for_session();
+        self.slash_command_popup.reset();
         self.pending_shell_command = None;
         self.command_palette = None;
         self.exit_confirmation_pending = false;

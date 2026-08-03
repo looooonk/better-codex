@@ -128,6 +128,9 @@ mod sessions;
 mod settings;
 mod shell_command;
 mod shell_layout;
+mod slash_command_popup;
+mod slash_command_popup_view;
+mod slash_commands;
 mod startup;
 mod startup_availability_nux;
 mod startup_layout;
@@ -188,6 +191,10 @@ use settings::SettingsState;
 use shell_command::PendingShellCommand;
 use shell_command::ShellCommand;
 use shell_layout::terminal_width_supported;
+use slash_command_popup::SlashCommandPopupKeyResult;
+use slash_command_popup::SlashCommandPopupState;
+use slash_commands::GoalSlashCommand;
+use slash_commands::LocalSlashCommand;
 pub(crate) use startup::StartupOnboardingOutcome;
 pub(crate) use startup::run_startup_onboarding;
 pub(crate) use startup_login::LoginOnboardingOutcome;
@@ -721,59 +728,10 @@ enum ToolBlockStatus {
     Fail,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum LocalSlashCommand {
-    Clear,
-    Exit,
-    Goal(GoalSlashCommand),
-    Login,
-    Logout,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LocalSlashCommandOutcome {
     Continue,
     Exit,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum GoalSlashCommand {
-    Show,
-    Set(String),
-    Clear,
-    Pause,
-    Resume,
-    Edit,
-}
-
-impl LocalSlashCommand {
-    fn parse(text: &str) -> Option<Self> {
-        let trimmed = text.trim();
-        let mut parts = trimmed.splitn(2, char::is_whitespace);
-        let command = parts.next()?;
-        let args = parts.next().unwrap_or("").trim();
-        match command {
-            "/clear" if args.is_empty() => Some(Self::Clear),
-            "/exit" if args.is_empty() => Some(Self::Exit),
-            "/goal" => Some(Self::Goal(GoalSlashCommand::parse(args))),
-            "/login" if args.is_empty() => Some(Self::Login),
-            "/logout" if args.is_empty() => Some(Self::Logout),
-            _ => None,
-        }
-    }
-}
-
-impl GoalSlashCommand {
-    fn parse(args: &str) -> Self {
-        match args {
-            "" => Self::Show,
-            "clear" => Self::Clear,
-            "pause" => Self::Pause,
-            "resume" => Self::Resume,
-            "edit" => Self::Edit,
-            objective => Self::Set(objective.to_string()),
-        }
-    }
 }
 
 impl TranscriptKind {
@@ -861,6 +819,7 @@ struct ShellState {
     pointer_position: Option<ratatui::layout::Position>,
     agents_focused: bool,
     composer: ComposerState,
+    slash_command_popup: SlashCommandPopupState,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
     pending_shell_command: Option<PendingShellCommand>,
     session_hydration: SessionHydrationState,
@@ -994,6 +953,7 @@ impl ShellState {
             pointer_position: None,
             agents_focused: false,
             composer: ComposerState::default(),
+            slash_command_popup: SlashCommandPopupState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
@@ -1845,6 +1805,7 @@ impl ShellState {
     }
 
     fn seed_composer_with_edit_prompt(&mut self, edit_prompt: String) {
+        self.slash_command_popup.reset();
         let composer_text = self.composer.text().trim();
         if composer_text.is_empty() {
             self.composer.set_text(edit_prompt);
@@ -2683,6 +2644,7 @@ impl ShellState {
                 composer.set_text("Summarize the new shell architecture");
                 composer
             },
+            slash_command_popup: SlashCommandPopupState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
@@ -2955,6 +2917,7 @@ pub mod bench_support {
                 composer.set_text("Benchmark the app shell render path");
                 composer
             },
+            slash_command_popup: SlashCommandPopupState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),

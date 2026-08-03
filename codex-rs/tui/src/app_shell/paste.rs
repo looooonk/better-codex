@@ -64,6 +64,7 @@ impl ShellState {
     }
 
     fn insert_pasted_composer_text(&mut self, text: &str) {
+        self.slash_command_popup.reset();
         let result = self.composer.insert_str(text);
         if result == ComposerInsertResult::Inserted {
             self.clear_transcript_selection();
