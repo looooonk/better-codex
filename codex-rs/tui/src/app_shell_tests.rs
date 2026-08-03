@@ -2159,6 +2159,7 @@ async fn rewind_blocks_pointer_actions_while_editing_and_forking() {
         .expect("forking pointer action should be consumed");
     assert!(shell.selector.is_none());
     assert!(matches!(shell.rewind, rewind::RewindState::Forking(_)));
+    insta::assert_snapshot!("rewind_branch_forking", render_shell(&shell, area));
 }
 
 #[test]
