@@ -346,11 +346,11 @@ impl ComposerState {
         }
     }
 
-    fn move_up(&mut self) -> bool {
+    pub(super) fn move_up(&mut self) -> bool {
         self.input.move_up()
     }
 
-    fn move_down(&mut self) -> bool {
+    pub(super) fn move_down(&mut self) -> bool {
         self.input.move_down()
     }
 

@@ -388,7 +388,9 @@ impl ShellView<'_> {
 
     fn render_input(&self, area: Rect, buf: &mut Buffer) {
         fill_rect(buf, area, palette::surface());
-        let border_color = if self.shell.dashboard_focused() {
+        let border_color = if self.shell.rewind.is_active() {
+            palette::warning()
+        } else if self.shell.dashboard_focused() {
             palette::border()
         } else {
             palette::focus()
@@ -440,7 +442,9 @@ impl ShellView<'_> {
                 let count = self.shell.composer.queued_count();
                 (count > 0).then(|| format!("QUEUED {count}"))
             });
-        let titles = if let Some(queue_label) = queue_label {
+        let titles = if let Some(titles) = self.shell.rewind_input_titles(&position) {
+            titles
+        } else if let Some(queue_label) = queue_label {
             if self.shell.active_turn_id.is_some() {
                 vec![
                     format!("MESSAGE  ● RUNNING  {queue_label}  {position}"),

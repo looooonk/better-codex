@@ -15,6 +15,7 @@ use tokio::task::JoinSet;
 pub(super) enum ActionGroup {
     Approval,
     Compaction,
+    ConversationBranch,
     SessionDelete,
     SessionRename,
     SessionSwitch,
@@ -44,6 +45,11 @@ pub(super) enum BackendActionResult {
     },
     Compaction {
         result: Result<()>,
+    },
+    ConversationFork {
+        point: super::rewind::RewindPoint,
+        prompt: String,
+        result: Result<AppServerStartedThread>,
     },
     UserInputAutoResolution {
         request_id: RequestId,
@@ -168,7 +174,10 @@ impl ShellState {
             changed = true;
             match completion {
                 Ok(result) => self.complete_backend_action(app_server, result).await,
-                Err(err) => self.report_action_error("background action failed", err),
+                Err(err) => {
+                    self.recover_rewind_after_background_failure();
+                    self.report_action_error("background action failed", err);
+                }
             }
         }
         changed
@@ -240,6 +249,14 @@ impl ShellState {
                 }
                 Err(err) => self.report_action_error("failed to start context compaction", err),
             },
+            BackendActionResult::ConversationFork {
+                point,
+                prompt,
+                result,
+            } => {
+                self.complete_rewind_fork(app_server, point, prompt, result)
+                    .await
+            }
             BackendActionResult::UserInputAutoResolution {
                 request_id,
                 title,

@@ -340,6 +340,8 @@ impl ShellState {
     pub(super) fn block_session_switch_if_busy(&mut self) -> bool {
         let message = if self.has_pending_backend_action(ActionGroup::SessionSwitch) {
             "wait for the pending session switch to finish"
+        } else if self.has_pending_backend_action(ActionGroup::ConversationBranch) {
+            "wait for the conversation branch to finish"
         } else if self.has_pending_backend_action(ActionGroup::TurnStart) {
             "wait for the turn submission to finish"
         } else if self.has_pending_backend_action(ActionGroup::Settings) {
@@ -442,6 +444,7 @@ impl ShellState {
         self.record_active_goal(None);
         self.composer.reset_for_session();
         self.slash_command_popup.reset();
+        self.rewind = super::rewind::RewindState::default();
         self.pending_shell_command = None;
         self.command_palette = None;
         self.exit_confirmation_pending = false;

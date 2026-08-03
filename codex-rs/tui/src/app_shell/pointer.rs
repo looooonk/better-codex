@@ -219,6 +219,9 @@ impl ShellState {
             }
             return Ok(());
         }
+        if self.rewind.is_active() {
+            return Ok(());
+        }
         if let Some(control) = (ShellView { shell: self }).header_control_at(area, position) {
             match control {
                 HeaderControl::Dashboard => self.toggle_dashboard(),

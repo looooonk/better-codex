@@ -14,6 +14,7 @@ impl ShellState {
             || self.safety_buffering_modal_lines().is_some()
             || self.pending_session_delete.is_some()
             || self.pending_approval.is_some()
+            || self.rewind.is_forking()
         {
             return;
         }
