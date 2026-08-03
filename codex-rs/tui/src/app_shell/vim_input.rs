@@ -1,9 +1,12 @@
 use super::BACKEND_ACTION_POLL_INTERVAL;
+use super::LocalSlashCommand;
+use super::LocalSlashCommandOutcome;
 use super::ShellState;
 use super::backend::AppShellBackend;
 use super::backend_actions::ActionGroup;
 use super::composer::MAX_COMPOSER_BYTES;
 use super::composer::input_too_large_message;
+use crate::legacy_core::config::Config;
 use codex_protocol::ThreadId;
 use color_eyre::Result;
 use color_eyre::eyre::WrapErr;
@@ -13,31 +16,20 @@ use std::future::Future;
 use std::io::ErrorKind;
 use std::io::Read;
 use std::path::Path;
-use std::path::PathBuf;
-use std::process::Stdio;
 use tempfile::Builder;
-use tokio::process::Command;
 
-const VIM_ACTION_ENV: &str = "BETTER_CODEX_VIM_ACTION";
-const VIM_INPUT_ENV: &str = "BETTER_CODEX_VIM_INPUT";
+mod bridge;
+mod editor;
+
+use editor::VIM_ACTION_ENV;
+use editor::VIM_INPUT_ENV;
+use editor::VimEditorCommand;
+use editor::VimEditorEnvironment;
+use editor::build_editor_command;
+use editor::resolve_program;
+use editor::resolve_vim_editor;
+
 pub(super) const MAX_CONSECUTIVE_APP_SERVER_EVENTS: usize = 32;
-const VIM_BRIDGE: &str = r#"set nomodeline
-silent execute 'edit ' . fnameescape($BETTER_CODEX_VIM_INPUT)
-setlocal noswapfile nobackup nowritebackup noundofile nomodeline fileformat=unix
-function! s:CodexSubmit()
-  try
-    silent write
-    call writefile(['submit'], $BETTER_CODEX_VIM_ACTION)
-    qall!
-  catch
-    call delete($BETTER_CODEX_VIM_ACTION)
-    echoerr v:exception
-  endtry
-endfunction
-command! Codex call <SID>CodexSubmit()
-nnoremap <silent><buffer> <C-J> :Codex<CR>
-echo 'Ctrl-J or :Codex sends this buffer to Better Codex'
-"#;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct VimInputRequest {
@@ -71,34 +63,8 @@ pub(super) enum VimInputWaitOutcome {
 }
 
 pub(super) async fn run(request: VimInputRequest) -> Result<VimInputOutcome> {
-    let program = resolve_vim_program()?;
-    run_with_program(request, &program).await
-}
-
-fn resolve_vim_program() -> Result<PathBuf> {
-    for candidate in ["vim", "nvim"] {
-        #[cfg(unix)]
-        if let Some(program) = std::env::var_os("PATH").and_then(|path| {
-            use std::os::unix::fs::PermissionsExt;
-
-            std::env::split_paths(&path)
-                .map(|directory| directory.join(candidate))
-                .find(|program| {
-                    program.metadata().is_ok_and(|metadata| {
-                        metadata.is_file() && metadata.permissions().mode() & 0o111 != 0
-                    })
-                })
-        }) {
-            return Ok(program);
-        }
-        #[cfg(windows)]
-        if let Ok(program) = which::which(candidate) {
-            return Ok(program);
-        }
-    }
-    Err(eyre!(
-        "neither `vim` nor `nvim` was found on PATH; install one before running /vim"
-    ))
+    let editor = resolve_vim_editor(&VimEditorEnvironment::current()?)?;
+    run_with_editor(request, &editor).await
 }
 
 pub(super) async fn wait_while_processing_events<S, F>(
@@ -148,7 +114,10 @@ where
     }
 }
 
-async fn run_with_program(request: VimInputRequest, program: &Path) -> Result<VimInputOutcome> {
+async fn run_with_editor(
+    request: VimInputRequest,
+    editor: &VimEditorCommand,
+) -> Result<VimInputOutcome> {
     let temp_dir = Builder::new()
         .prefix("better-codex-vim-")
         .tempdir()
@@ -157,25 +126,13 @@ async fn run_with_program(request: VimInputRequest, program: &Path) -> Result<Vi
     let submit_path = temp_dir.path().join("submit");
     let bridge_path = temp_dir.path().join("bridge.vim");
     fs::write(&input_path, request.seed).wrap_err("failed to seed Vim input")?;
-    fs::write(&bridge_path, VIM_BRIDGE).wrap_err("failed to create Vim bridge")?;
+    fs::write(&bridge_path, bridge::script()).wrap_err("failed to create Vim bridge")?;
 
-    let mut command = Command::new(program);
-    command
-        .arg("-n")
-        .arg("-i")
-        .arg("NONE")
-        .arg("-S")
-        .arg(&bridge_path)
-        .env(VIM_ACTION_ENV, &submit_path)
-        .env(VIM_INPUT_ENV, &input_path)
-        .stdin(Stdio::inherit())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .kill_on_drop(true);
+    let mut command = build_editor_command(editor, &bridge_path, &input_path, &submit_path);
     let status = command
         .status()
         .await
-        .wrap_err_with(|| format!("failed to launch {}", program.display()))?;
+        .wrap_err_with(|| format!("failed to launch {}", editor.program.display()))?;
 
     if !status.success() {
         return Ok(VimInputOutcome::Cancelled);
@@ -277,8 +234,9 @@ impl ShellState {
         &mut self,
         originating_thread_id: ThreadId,
         result: Result<VimInputOutcome>,
+        config: &Config,
         app_server: &mut S,
-    ) -> Result<()>
+    ) -> Result<LocalSlashCommandOutcome>
     where
         S: AppShellBackend,
     {
@@ -293,22 +251,32 @@ impl ShellState {
             Ok(VimInputOutcome::Submit(text)) => {
                 if text.trim().is_empty() {
                     self.push_status("Vim input was empty");
-                    return Ok(());
+                    return Ok(LocalSlashCommandOutcome::Continue);
                 }
                 if self.reject_oversized_input(text.len()) {
-                    return Ok(());
+                    return Ok(LocalSlashCommandOutcome::Continue);
+                }
+                if let Some(command) = LocalSlashCommand::parse(&text) {
+                    let composer_draft = self.composer.submission_text();
+                    let outcome = self
+                        .run_local_slash_command(command, text, config, app_server)
+                        .await?;
+                    if !composer_draft.is_empty() {
+                        self.composer.restore_failed_submission(&composer_draft);
+                    }
+                    return Ok(outcome);
                 }
                 if self.has_pending_backend_action(ActionGroup::TurnStart) {
                     self.pending_prompt_submission = Some(text);
                     self.push_status("Vim input will send after the pending turn starts");
-                    return Ok(());
+                    return Ok(LocalSlashCommandOutcome::Continue);
                 }
                 self.submit_prompt_preserving_draft(app_server, text)
                     .await?;
             }
             Ok(VimInputOutcome::ReturnDraft(text)) => {
                 if self.reject_oversized_input(text.len()) {
-                    return Ok(());
+                    return Ok(LocalSlashCommandOutcome::Continue);
                 }
                 let composer_draft = self.composer.submission_text();
                 self.composer.set_text(text);
@@ -324,7 +292,7 @@ impl ShellState {
             Ok(VimInputOutcome::Cancelled) => self.push_status("Vim input cancelled"),
             Err(err) => self.report_action_error("failed to open Vim input", err),
         }
-        Ok(())
+        Ok(LocalSlashCommandOutcome::Continue)
     }
 }
 

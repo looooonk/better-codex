@@ -346,7 +346,7 @@ pub(crate) async fn run(
             TURN_TIMER_REFRESH_INTERVAL,
         );
         turn_timer_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
-        let exit_reason = loop {
+        let exit_reason = 'event_loop: loop {
             if terminal_width_supported(tui.terminal.size()?.width)
                 && let Some(prompt) = pending_initial_prompt.take()
             {
@@ -379,7 +379,7 @@ pub(crate) async fn run(
                                 Ok(false) => {}
                                 Err(err) => shell.report_action_error("action failed", err),
                             }
-                            if let Some(request) = shell.take_vim_input_request() {
+                            while let Some(request) = shell.take_vim_input_request() {
                                 let originating_thread_id = request.thread_id();
                                 draw_shell(tui, &shell)?;
                                 let wait_outcome = tui
@@ -396,20 +396,27 @@ pub(crate) async fn run(
                                     vim_input::VimInputWaitOutcome::Completed(result) => result,
                                     vim_input::VimInputWaitOutcome::AppServerDisconnected => {
                                         shell.push_system("app-server disconnected");
-                                        break ExitReason::Fatal(
+                                        break 'event_loop ExitReason::Fatal(
                                             "app-server disconnected".to_string(),
                                         );
                                     }
                                 };
-                                if let Err(err) = shell
+                                match shell
                                     .complete_vim_input(
                                         originating_thread_id,
                                         result,
+                                        &config,
                                         &mut app_server,
                                     )
                                     .await
                                 {
-                                    shell.report_action_error("failed to submit Vim input", err);
+                                    Ok(LocalSlashCommandOutcome::Continue) => {}
+                                    Ok(LocalSlashCommandOutcome::Exit) => {
+                                        break 'event_loop ExitReason::UserRequested;
+                                    }
+                                    Err(err) => {
+                                        shell.report_action_error("failed to submit Vim input", err);
+                                    }
                                 }
                             }
                             tui.frame_requester().schedule_frame();

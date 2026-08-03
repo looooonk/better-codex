@@ -1,4 +1,5 @@
 use super::LocalSlashCommand;
+use super::LocalSlashCommandOutcome;
 use super::RecordedBackendCall;
 use super::RecordingBackend;
 use super::ShellState;
@@ -94,6 +95,7 @@ async fn vim_is_an_exact_local_command_and_never_reaches_the_backend() {
 
 #[tokio::test]
 async fn ordinary_vim_exit_returns_the_edited_draft() {
+    let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
     shell.dashboard_visible = false;
@@ -106,6 +108,7 @@ async fn ordinary_vim_exit_returns_the_edited_draft() {
         .complete_vim_input(
             originating_thread_id,
             Ok(VimInputOutcome::ReturnDraft(draft.to_string())),
+            &config,
             &mut backend,
         )
         .await
@@ -136,6 +139,7 @@ async fn ordinary_vim_exit_returns_the_edited_draft() {
         .complete_vim_input(
             originating_thread_id,
             Ok(VimInputOutcome::Submit(switched_draft.to_string())),
+            &config,
             &mut backend,
         )
         .await
@@ -161,7 +165,78 @@ async fn ordinary_vim_exit_returns_the_edited_draft() {
 }
 
 #[tokio::test]
+async fn vim_submissions_dispatch_local_commands_and_preserve_the_draft() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let existing_draft = "Keep this composer draft.";
+    shell.transcript.clear();
+    shell.composer.set_text(existing_draft);
+
+    let clear_outcome = shell
+        .complete_vim_input(
+            shell.thread_id,
+            Ok(VimInputOutcome::Submit("\u{a0}/clear\u{a0}".to_string())),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Vim /clear should run locally");
+    let clear_status = shell
+        .transcript
+        .back()
+        .map(|line| (line.kind, line.text.clone()));
+    let exit_outcome = shell
+        .complete_vim_input(
+            shell.thread_id,
+            Ok(VimInputOutcome::Submit("/exit".to_string())),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Vim /exit should run locally");
+    let reopen_outcome = shell
+        .complete_vim_input(
+            shell.thread_id,
+            Ok(VimInputOutcome::Submit("/vim".to_string())),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Vim /vim should run locally");
+    let composer_text = shell.composer.text().to_string();
+    let pending_vim_input = shell.take_vim_input_request();
+    let thread_id = shell.thread_id;
+    let backend_calls = backend.calls();
+
+    assert_eq!(
+        (
+            clear_outcome,
+            clear_status,
+            exit_outcome,
+            reopen_outcome,
+            composer_text,
+            pending_vim_input,
+            backend_calls,
+        ),
+        (
+            LocalSlashCommandOutcome::Continue,
+            Some((
+                TranscriptKind::System,
+                "visible transcript cleared".to_string(),
+            )),
+            LocalSlashCommandOutcome::Exit,
+            LocalSlashCommandOutcome::Continue,
+            existing_draft.to_string(),
+            Some(VimInputRequest::empty(thread_id)),
+            Vec::new(),
+        )
+    );
+}
+
+#[tokio::test]
 async fn vim_submission_starts_an_idle_turn_and_preserves_an_existing_draft() {
+    let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let backend = RecordingBackend::default();
     let prompt = "  preserve this indentation\n\nand this blank line";
@@ -174,6 +249,7 @@ async fn vim_submission_starts_an_idle_turn_and_preserves_an_existing_draft() {
         .complete_vim_input(
             shell.thread_id,
             Ok(VimInputOutcome::Submit(prompt.to_string())),
+            &config,
             &mut backend.clone(),
         )
         .await
@@ -195,6 +271,7 @@ async fn vim_submission_starts_an_idle_turn_and_preserves_an_existing_draft() {
 
 #[tokio::test]
 async fn vim_submission_steers_an_active_turn_with_exact_input() {
+    let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
     let prompt = "Use the Vim-edited follow-up.";
@@ -206,6 +283,7 @@ async fn vim_submission_steers_an_active_turn_with_exact_input() {
         .complete_vim_input(
             shell.thread_id,
             Ok(VimInputOutcome::Submit(prompt.to_string())),
+            &config,
             &mut backend,
         )
         .await
@@ -244,6 +322,7 @@ async fn vim_submission_steers_an_active_turn_with_exact_input() {
 
 #[tokio::test]
 async fn a_pending_turn_start_completes_before_vim_submission() {
+    let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let gate = std::sync::Arc::new(tokio::sync::Semaphore::new(0));
     let mut backend = RecordingBackend {
@@ -266,7 +345,7 @@ async fn a_pending_turn_start_completes_before_vim_submission() {
         panic!("app-server should remain connected");
     };
     shell
-        .complete_vim_input(shell.thread_id, result, &mut backend)
+        .complete_vim_input(shell.thread_id, result, &config, &mut backend)
         .await
         .expect("Vim input should queue behind the pending turn");
     assert_eq!(shell.pending_prompt_submission.as_deref(), Some(vim_prompt));
