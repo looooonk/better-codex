@@ -56,19 +56,23 @@ fn navigation_wraps_and_completion_preserves_the_tail() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_visible = false;
     shell.composer = composer_with_cursor("/lo|");
-    let down = KeyEvent::new(KeyCode::Down, KeyModifiers::NONE);
-
-    assert_eq!(
-        shell.handle_slash_command_popup_key(down),
-        SlashCommandPopupKeyResult::Consumed
-    );
-    assert_eq!(
-        shell
+    let mut navigation = Vec::new();
+    for code in [KeyCode::Up, KeyCode::Down, KeyCode::Down] {
+        let result = shell.handle_slash_command_popup_key(KeyEvent::new(code, KeyModifiers::NONE));
+        let selected = shell
             .slash_command_suggestions()
             .expect("suggestions should remain open")
             .selected_definition()
-            .name(),
-        "/logout"
+            .name();
+        navigation.push((result, selected));
+    }
+    assert_eq!(
+        navigation,
+        vec![
+            (SlashCommandPopupKeyResult::Consumed, "/logout"),
+            (SlashCommandPopupKeyResult::Consumed, "/login"),
+            (SlashCommandPopupKeyResult::Consumed, "/logout"),
+        ]
     );
     assert_eq!(
         shell.handle_slash_command_popup_key(KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE,)),
