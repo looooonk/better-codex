@@ -18,7 +18,7 @@ struct FakeBackgroundRequestHandle {
 
 #[derive(Debug, PartialEq)]
 enum ObservedRequest {
-    Fork(ThreadForkParams),
+    Fork(Box<ThreadForkParams>),
     Read(ThreadReadParams),
 }
 
@@ -37,7 +37,7 @@ impl BackgroundRequestHandle for FakeBackgroundRequestHandle {
             requests
                 .lock()
                 .expect("requests mutex")
-                .push(ObservedRequest::Fork(params));
+                .push(ObservedRequest::Fork(Box::new(params)));
             Ok(response)
         }
     }
@@ -184,7 +184,7 @@ async fn background_fork_dispatches_boundary_and_hydrates_parent_title() {
     assert_eq!(
         *requests.lock().expect("requests mutex"),
         vec![
-            ObservedRequest::Fork(expected_fork_params),
+            ObservedRequest::Fork(Box::new(expected_fork_params)),
             ObservedRequest::Read(ThreadReadParams {
                 thread_id: source_thread_id.to_string(),
                 include_turns: false,
