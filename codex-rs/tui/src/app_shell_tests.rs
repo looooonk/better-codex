@@ -1849,6 +1849,207 @@ fn renders_transcript_selection_snapshot() {
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
+#[tokio::test]
+async fn rewind_selection_and_branch_editor_snapshots() {
+    let config = test_config().await;
+    let turns = vec![
+        prompt_turn("turn-one", "Plan the first implementation."),
+        prompt_turn("turn-two", "Replace the inherited chat UI."),
+    ];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    shell.dashboard_visible = false;
+    shell.transcript_selection = rewind_prompt_index(&shell, "Replace the inherited chat UI.");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 22,
+    );
+
+    insta::assert_snapshot!("rewind_prompt_selected", render_shell(&shell, area));
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+
+    assert_eq!(shell.composer.text(), "Replace the inherited chat UI.");
+    assert!(matches!(shell.rewind, rewind::RewindState::Editing(_)));
+    insta::assert_snapshot!("rewind_branch_editor", render_shell(&shell, area));
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Esc).await;
+
+    assert!(shell.composer.is_empty());
+    assert!(matches!(shell.rewind, rewind::RewindState::Idle));
+    assert_eq!(
+        shell.transcript_selection,
+        rewind_prompt_index(&shell, "Replace the inherited chat UI.")
+    );
+}
+
+#[tokio::test]
+async fn rewind_forks_before_selected_turn_and_submits_edited_prompt() {
+    let config = test_config().await;
+    let turns = vec![
+        prompt_turn("turn-one", "Keep this prompt."),
+        prompt_turn("turn-two", "Rewrite this prompt."),
+        prompt_turn("turn-three", "Omit this later prompt."),
+    ];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    let source_thread_id = shell.thread_id;
+    shell.dashboard_visible = false;
+    shell.transcript_selection = rewind_prompt_index(&shell, "Rewrite this prompt.");
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+    shell
+        .composer
+        .set_text("Use the new app-shell architecture.");
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+
+    assert!(matches!(shell.rewind, rewind::RewindState::Forking(_)));
+    complete_backend_actions(&mut shell, &backend).await;
+
+    let branch_calls = backend
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            RecordedBackendCall::ForkBefore {
+                thread_id,
+                before_turn_id,
+                goal_continuation,
+            } => Some(("fork", thread_id, before_turn_id, Some(goal_continuation))),
+            RecordedBackendCall::TurnStart {
+                thread_id, prompt, ..
+            } => Some(("turn", thread_id, prompt, None)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        branch_calls,
+        vec![
+            (
+                "fork",
+                source_thread_id,
+                "turn-two".to_string(),
+                Some(ForkGoalContinuation::DeferUntilNextTurn),
+            ),
+            (
+                "turn",
+                test_thread_id("01900000-0000-7000-8000-000000000202"),
+                "Use the new app-shell architecture.".to_string(),
+                None,
+            ),
+        ]
+    );
+    assert_ne!(shell.thread_id, source_thread_id);
+    assert_eq!(
+        shell
+            .transcript
+            .iter()
+            .filter(|line| line.kind == TranscriptKind::User)
+            .map(|line| (
+                line.text.as_str(),
+                line.rewind_anchor
+                    .as_ref()
+                    .map(|anchor| anchor.before_turn_id.as_str()),
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Keep this prompt.", Some("turn-one")),
+            ("Use the new app-shell architecture.", Some("turn-submit")),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn rewind_fork_failure_keeps_source_and_edited_prompt() {
+    let config = test_config().await;
+    let turns = vec![prompt_turn("turn-one", "Rewrite this prompt.")];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    let source_thread_id = shell.thread_id;
+    shell.transcript_selection = rewind_prompt_index(&shell, "Rewrite this prompt.");
+    backend.fail_next_action("fork unavailable");
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+    shell.composer.set_text("Edited prompt remains available.");
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(shell.thread_id, source_thread_id);
+    assert_eq!(shell.composer.text(), "Edited prompt remains available.");
+    assert!(matches!(shell.rewind, rewind::RewindState::Editing(_)));
+}
+
+#[tokio::test]
+async fn rewind_keeps_existing_draft_instead_of_entering_branch_editor() {
+    let config = test_config().await;
+    let turns = vec![prompt_turn("turn-one", "Rewrite this prompt.")];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    shell.transcript_selection = rewind_prompt_index(&shell, "Rewrite this prompt.");
+    shell.composer.set_text("Keep this unsent draft.");
+    let selection = shell.transcript_selection;
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+
+    assert_eq!(shell.composer.text(), "Keep this unsent draft.");
+    assert_eq!(shell.transcript_selection, selection);
+    assert!(matches!(shell.rewind, rewind::RewindState::Idle));
+    assert!(
+        backend
+            .calls()
+            .iter()
+            .all(|call| !matches!(call, RecordedBackendCall::ForkBefore { .. }))
+    );
+}
+
+#[tokio::test]
+async fn rewind_turn_start_failure_stays_on_child_and_restores_edited_prompt() {
+    let config = test_config().await;
+    let turns = vec![
+        prompt_turn("turn-one", "Keep this prompt."),
+        prompt_turn("turn-two", "Rewrite this prompt."),
+        prompt_turn("turn-three", "Omit this later prompt."),
+    ];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    let source_thread_id = shell.thread_id;
+    let child_thread_id = test_thread_id("01900000-0000-7000-8000-000000000202");
+    shell.transcript_selection = rewind_prompt_index(&shell, "Rewrite this prompt.");
+    backend.fail_next_turn_start("turn start unavailable");
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+    shell.composer.set_text("Edited prompt remains available.");
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(shell.thread_id, child_thread_id);
+    assert_eq!(shell.composer.text(), "Edited prompt remains available.");
+    assert_eq!(shell.active_turn_id, None);
+    assert!(matches!(shell.rewind, rewind::RewindState::Idle));
+    assert_eq!(
+        shell
+            .transcript
+            .iter()
+            .filter(|line| line.kind == TranscriptKind::User)
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Keep this prompt."]
+    );
+    assert_eq!(
+        backend
+            .threads
+            .lock()
+            .expect("threads should lock")
+            .iter()
+            .find(|thread| thread.id == source_thread_id.to_string())
+            .map(|thread| {
+                thread
+                    .turns
+                    .iter()
+                    .map(|turn| turn.id.clone())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec![
+            "turn-one".to_string(),
+            "turn-two".to_string(),
+            "turn-three".to_string(),
+        ])
+    );
+}
+
 #[test]
 fn rewind_anchors_only_opening_text_only_prompts() {
     let mut shell = ShellState::snapshot_fixture();
@@ -1910,6 +2111,54 @@ fn rewind_anchors_only_opening_text_only_prompts() {
             .collect::<Vec<_>>(),
         vec![Some("turn-one"), None, None, None,]
     );
+}
+
+#[tokio::test]
+async fn rewind_blocks_pointer_actions_while_editing_and_forking() {
+    let config = test_config().await;
+    let turns = vec![prompt_turn("turn-one", "Rewrite this prompt.")];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    shell.transcript_selection = rewind_prompt_index(&shell, "Rewrite this prompt.");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+    let model_control = position_in(area, |position| {
+        ShellView { shell: &shell }.header_control_at(area, position)
+            == Some(header::HeaderControl::Model)
+    });
+
+    shell
+        .handle_mouse_click(area, model_control, &config, &mut backend)
+        .await
+        .expect("editing pointer action should be consumed");
+    assert!(shell.selector.is_none());
+    assert!(matches!(shell.rewind, rewind::RewindState::Editing(_)));
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+    shell.composer.set_selection(/*anchor*/ 0, /*cursor*/ 7);
+    let composer_before_mouse_down = shell.composer.clone();
+    let transcript_selection_before_mouse_down = shell.transcript_selection;
+    let text_selection_before_mouse_down = shell.text_selection.clone();
+    let prompt_position =
+        rendered_text_position(&render_shell(&shell, area), "Rewrite this prompt.");
+    shell
+        .handle_mouse_selection_down(area, prompt_position, &config, &mut backend)
+        .await
+        .expect("forking selection press should be consumed");
+    assert_eq!(shell.composer, composer_before_mouse_down);
+    assert_eq!(
+        shell.transcript_selection,
+        transcript_selection_before_mouse_down
+    );
+    assert_eq!(shell.text_selection, text_selection_before_mouse_down);
+    shell
+        .handle_mouse_click(area, model_control, &config, &mut backend)
+        .await
+        .expect("forking pointer action should be consumed");
+    assert!(shell.selector.is_none());
+    assert!(matches!(shell.rewind, rewind::RewindState::Forking(_)));
 }
 
 #[test]
@@ -11961,6 +12210,18 @@ async fn complete_backend_actions(shell: &mut ShellState, backend: &RecordingBac
     .expect("background action should complete");
 }
 
+async fn press_plain_key(
+    shell: &mut ShellState,
+    config: &Config,
+    backend: &mut RecordingBackend,
+    code: KeyCode,
+) {
+    shell
+        .handle_key(KeyEvent::new(code, KeyModifiers::NONE), config, backend)
+        .await
+        .expect("plain key should be handled");
+}
+
 fn position_in(area: Rect, predicate: impl Fn(Position) -> bool) -> Position {
     (area.x..area.right())
         .flat_map(|x| (area.y..area.bottom()).map(move |y| Position::new(x, y)))
@@ -15503,6 +15764,9 @@ impl backend::AppShellBackend for RecordingBackend {
             before_turn_id: before_turn_id.clone(),
             goal_continuation,
         });
+        if let Some(error) = self.take_action_error() {
+            return Err(color_eyre::eyre::eyre!(error));
+        }
         let turns = self
             .threads
             .lock()
@@ -15524,6 +15788,24 @@ impl backend::AppShellBackend for RecordingBackend {
         );
         started.turns = turns;
         Ok(started)
+    }
+
+    fn fork_thread_before_turn_in_background(
+        &self,
+        config: Config,
+        thread_id: codex_protocol::ThreadId,
+        before_turn_id: String,
+        goal_continuation: ForkGoalContinuation,
+    ) -> impl std::future::Future<
+        Output = color_eyre::Result<crate::app_server_session::AppServerStartedThread>,
+    > + Send
+    + 'static {
+        let mut backend = self.clone();
+        async move {
+            backend
+                .fork_thread_before_turn(config, thread_id, before_turn_id, goal_continuation)
+                .await
+        }
     }
 
     async fn thread_list(
@@ -16624,6 +16906,28 @@ fn prompt_turn(id: &str, prompt: &str) -> Turn {
         }],
     });
     turn
+}
+
+fn rewind_fixture(turns: Vec<Turn>) -> (ShellState, RecordingBackend) {
+    let mut shell = ShellState::snapshot_fixture();
+    let thread_id = shell.thread_id;
+    let mut started = started_thread("rewind-source", thread_id, /*forked_from_id*/ None);
+    started.turns = turns.clone();
+    shell.replace_started_session(started);
+    let mut thread = thread_fixture(
+        thread_id,
+        /*name*/ Some("rewind-source"),
+        "rewind source",
+    );
+    thread.turns = turns;
+    (shell, RecordingBackend::with_threads(vec![thread]))
+}
+
+fn rewind_prompt_index(shell: &ShellState, prompt: &str) -> Option<usize> {
+    shell
+        .transcript
+        .iter()
+        .position(|line| line.kind == TranscriptKind::User && line.text == prompt)
 }
 
 fn test_thread_id(value: &str) -> codex_protocol::ThreadId {
