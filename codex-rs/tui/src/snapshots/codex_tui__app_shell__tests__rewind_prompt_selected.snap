@@ -1,0 +1,26 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex            gpt-5-codex ▾   default ▾   default ▾  ● ready
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION  SELECT 5/6  e BRANCH EDIT
+ ▎ SYSTEM  switched session
+ ▎ SYSTEM  loaded 2 previous turns
+ ▎ YOU  Plan the first implementation.
+ ──────────────────────────────────────────────────────────────────────────────────────────────────
+ ▶ YOU  Replace the inherited chat UI.
+ ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:1                                                                                    │
+│> Type a message, Shift+Enter for newline                                                         │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

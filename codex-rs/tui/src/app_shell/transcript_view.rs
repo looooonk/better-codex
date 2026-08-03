@@ -51,11 +51,15 @@ pub(super) fn render_transcript(
 ) {
     let viewport = transcript_viewport(shell, area);
     let title = if let Some(selected) = shell.transcript_selection {
-        format!(
+        let mut title = format!(
             "CONVERSATION  SELECT {}/{}",
             selected.saturating_add(1),
             shell.transcript.len()
-        )
+        );
+        if shell.selected_transcript_is_rewindable() {
+            title.push_str("  e BRANCH EDIT");
+        }
+        title
     } else {
         "CONVERSATION".to_string()
     };

@@ -1,0 +1,26 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+
+  Dashboard  ◆ BC              gpt-5-codex ▾   default ▾   default ▾  ● editing conversation branch
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ SYSTEM  switched session
+ ▎ SYSTEM  loaded 2 previous turns
+ ▎ YOU  Plan the first implementation.
+ ──────────────────────────────────────────────────────────────────────────────────────────────────
+ ▎ YOU  Replace the inherited chat UI.
+ ──────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ BRANCH EDIT  SOURCE UNCHANGED  LATER TURNS OMITTED  FILES NOT REVERTED  1:31                    │
+│> Replace the inherited chat UI.                                                                  │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

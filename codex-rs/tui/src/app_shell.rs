@@ -831,6 +831,7 @@ struct ShellState {
     agents_focused: bool,
     composer: ComposerState,
     slash_command_popup: SlashCommandPopupState,
+    rewind: rewind::RewindState,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
     pending_shell_command: Option<PendingShellCommand>,
     session_hydration: SessionHydrationState,
@@ -965,6 +966,7 @@ impl ShellState {
             agents_focused: false,
             composer: ComposerState::default(),
             slash_command_popup: SlashCommandPopupState::default(),
+            rewind: rewind::RewindState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
@@ -1250,6 +1252,10 @@ impl ShellState {
             }
             KeyCode::Char('c') => {
                 self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+                Some(false)
+            }
+            KeyCode::Char('e') if is_unmodified_key_press(key) => {
+                self.begin_rewind_edit();
                 Some(false)
             }
             KeyCode::Backspace
@@ -2672,6 +2678,7 @@ impl ShellState {
                 composer
             },
             slash_command_popup: SlashCommandPopupState::default(),
+            rewind: rewind::RewindState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
@@ -2945,6 +2952,7 @@ pub mod bench_support {
                 composer
             },
             slash_command_popup: SlashCommandPopupState::default(),
+            rewind: rewind::RewindState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),

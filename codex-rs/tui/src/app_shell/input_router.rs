@@ -39,6 +39,8 @@ enum ActiveInputRoute {
     McpManagement,
     PluginManagement,
     UserInput,
+    RewindEditing,
+    RewindForking,
 }
 
 impl ShellState {
@@ -79,6 +81,10 @@ impl ShellState {
             Some(ActiveInputRoute::PluginManagement)
         } else if self.pending_user_input.is_some() {
             Some(ActiveInputRoute::UserInput)
+        } else if self.rewind.is_editing() {
+            Some(ActiveInputRoute::RewindEditing)
+        } else if self.rewind.is_forking() {
+            Some(ActiveInputRoute::RewindForking)
         } else {
             None
         }
@@ -92,7 +98,11 @@ impl ShellState {
 
     fn plain_text_repeat_enabled(&self) -> bool {
         match self.active_input_route() {
-            Some(ActiveInputRoute::ElicitationEditing | ActiveInputRoute::UserInput) => true,
+            Some(
+                ActiveInputRoute::ElicitationEditing
+                | ActiveInputRoute::UserInput
+                | ActiveInputRoute::RewindEditing,
+            ) => true,
             Some(ActiveInputRoute::McpManagement) => self
                 .pending_mcp_management
                 .as_ref()
@@ -189,6 +199,9 @@ impl ShellState {
             }
             ActiveInputRoute::PluginManagement => {
                 self.handle_plugin_management_key(key, app_server).await?;
+            }
+            ActiveInputRoute::RewindEditing | ActiveInputRoute::RewindForking => {
+                return Ok(Some(self.handle_rewind_key(key, config, app_server)));
             }
         }
         Ok(Some(false))

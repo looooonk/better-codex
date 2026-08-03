@@ -16,18 +16,19 @@ use ratatui::layout::Position;
 use ratatui::layout::Rect;
 use std::ops::Range;
 
-#[derive(Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(super) struct TextSelectionState {
     transcript: Option<TranscriptTextSelection>,
     drag: Option<TextSelectionDrag>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct TranscriptTextSelection {
     range: NormalizedVisualRange,
     text: String,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum TextSelectionDrag {
     Transcript {
         anchor: VisualGraphemeHit,
@@ -131,6 +132,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.rewind.is_forking() {
+            return Ok(());
+        }
         self.exit_confirmation_pending = false;
         self.set_pointer_position(position);
         self.text_selection.drag = None;
