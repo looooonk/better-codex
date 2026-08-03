@@ -114,6 +114,7 @@ mod pointer;
 mod queued_messages;
 mod reasoning_ripple;
 mod render;
+mod rewind;
 mod safety_buffering;
 mod scrollback_view;
 mod selection_controller;
@@ -638,6 +639,7 @@ struct TranscriptLine {
     full_text: Option<ToolOutputBuffer>,
     tool_status: Option<ToolBlockStatus>,
     item_id: Option<String>,
+    rewind_anchor: Option<rewind::RewindAnchor>,
     render_revision: u64,
 }
 
@@ -649,6 +651,7 @@ impl TranscriptLine {
             full_text: None,
             tool_status: None,
             item_id: None,
+            rewind_anchor: None,
             render_revision: next_transcript_render_revision(),
         }
     }
@@ -661,6 +664,7 @@ impl TranscriptLine {
             full_text: Some(full_text),
             tool_status: Some(status),
             item_id: Some(item_id),
+            rewind_anchor: None,
             render_revision: next_transcript_render_revision(),
         }
     }
@@ -673,6 +677,11 @@ impl TranscriptLine {
 
     fn item_id(mut self, item_id: impl Into<String>) -> Self {
         self.item_id = Some(item_id.into());
+        self
+    }
+
+    fn rewind_anchor(mut self, anchor: rewind::RewindAnchor) -> Self {
+        self.rewind_anchor = Some(anchor);
         self
     }
 
@@ -689,6 +698,7 @@ impl Clone for TranscriptLine {
             full_text: self.full_text.clone(),
             tool_status: self.tool_status,
             item_id: self.item_id.clone(),
+            rewind_anchor: self.rewind_anchor.clone(),
             render_revision: next_transcript_render_revision(),
         }
     }
@@ -701,6 +711,7 @@ impl PartialEq for TranscriptLine {
             && self.full_text == other.full_text
             && self.tool_status == other.tool_status
             && self.item_id == other.item_id
+            && self.rewind_anchor == other.rewind_anchor
     }
 }
 
@@ -1027,7 +1038,12 @@ impl ShellState {
                 self.diff_store.mark_history_truncated();
             }
             let turn_id = turn.id;
-            for item in turn.items {
+            for (item_index, item) in turn.items.into_iter().enumerate() {
+                let rewind_anchor = if item_index == 0 {
+                    rewind::RewindAnchor::for_opening_item(&turn_id, &item)
+                } else {
+                    None
+                };
                 let origin = if turn.status != TurnStatus::InProgress
                     && matches!(
                         &item,
@@ -1040,7 +1056,7 @@ impl ShellState {
                 } else {
                     CompletedItemOrigin::Historical
                 };
-                self.ingest_completed_item_for_turn(&turn_id, item, origin);
+                self.ingest_completed_item_for_turn(&turn_id, item, origin, rewind_anchor);
             }
             if let Some(error) = turn.error {
                 self.push_error(error.message);
@@ -1630,7 +1646,13 @@ impl ShellState {
             }
         };
         self.scroll_transcript_to_bottom();
-        self.push_user(prompt.clone());
+        self.push_line(
+            TranscriptLine::new(TranscriptKind::User, prompt.clone()).rewind_anchor(
+                rewind::RewindAnchor {
+                    before_turn_id: response.turn.id.clone(),
+                },
+            ),
+        );
         self.status = "thinking".to_string();
         self.clear_streaming_transcript();
         match submission {
@@ -2046,7 +2068,7 @@ impl ShellState {
             .active_turn_id
             .clone()
             .unwrap_or_else(|| "unscoped".to_string());
-        self.ingest_completed_item_for_turn(&turn_id, item, origin);
+        self.ingest_completed_item_for_turn(&turn_id, item, origin, /*rewind_anchor*/ None);
     }
 
     fn ingest_completed_item_for_turn(
@@ -2054,6 +2076,7 @@ impl ShellState {
         turn_id: &str,
         item: ThreadItem,
         origin: CompletedItemOrigin,
+        rewind_anchor: Option<rewind::RewindAnchor>,
     ) {
         self.agent_activity.reduce_completed(&item);
         match item {
@@ -2062,10 +2085,14 @@ impl ShellState {
             } => {
                 let text = format_user_inputs(&content);
                 if !text.is_empty() {
+                    let mut line = TranscriptLine::new(TranscriptKind::User, text);
+                    if let Some(anchor) = rewind_anchor {
+                        line = line.rewind_anchor(anchor);
+                    }
                     if let Some(client_id) = client_id {
-                        self.push_user_with_client_id(text, client_id);
+                        self.upsert_line(line.item_id(client_id));
                     } else {
-                        self.push_user(text);
+                        self.push_line(line);
                     }
                 }
             }
