@@ -2537,6 +2537,10 @@ impl ShellState {
             return;
         }
         self.transcript.push_back(line);
+        self.trim_transcript();
+    }
+
+    fn trim_transcript(&mut self) {
         if self.transcript.len() > MAX_TRANSCRIPT_LINES {
             self.clear_transcript_text_selection();
         }
@@ -2556,6 +2560,40 @@ impl ShellState {
         {
             *existing = line;
             return;
+        }
+
+        if let Some(item_id) = line.item_id.as_deref() {
+            let insert_at = match line.kind {
+                TranscriptKind::Output => self
+                    .transcript
+                    .iter()
+                    .rposition(|existing| existing.item_id.as_deref() == Some(item_id))
+                    .map(|index| index.saturating_add(1)),
+                TranscriptKind::Tool => self.transcript.iter().position(|existing| {
+                    existing.kind == TranscriptKind::Output
+                        && existing.item_id.as_deref() == Some(item_id)
+                }),
+                TranscriptKind::System
+                | TranscriptKind::User
+                | TranscriptKind::Assistant
+                | TranscriptKind::Plan
+                | TranscriptKind::Diff
+                | TranscriptKind::Separator
+                | TranscriptKind::Status
+                | TranscriptKind::Audit
+                | TranscriptKind::Error => None,
+            };
+            if let Some(insert_at) = insert_at {
+                self.clear_transcript_text_selection();
+                if let Some(selected) = self.transcript_selection
+                    && insert_at <= selected
+                {
+                    self.transcript_selection = Some(selected.saturating_add(1));
+                }
+                self.transcript.insert(insert_at, line);
+                self.trim_transcript();
+                return;
+            }
         }
 
         self.push_line(line);

@@ -8448,6 +8448,140 @@ fn command_output_deltas_update_one_output_block() {
 }
 
 #[test]
+fn rapid_command_outputs_stay_grouped_with_their_tool_calls() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+    let commands = [
+        ("exec-1", "printf one", "output one\n"),
+        ("exec-2", "printf two", "output two\n"),
+        ("exec-3", "printf three", "output three\n"),
+    ];
+
+    for (item_id, command, _) in commands {
+        let mut item = command_execution_item(
+            item_id,
+            CommandExecutionStatus::InProgress,
+            /*exit_code*/ None,
+        );
+        let ThreadItem::CommandExecution {
+            command: item_command,
+            ..
+        } = &mut item
+        else {
+            panic!("expected a command execution item");
+        };
+        *item_command = command.to_string();
+        shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            started_at_ms: 0,
+            item,
+        }));
+    }
+    for (item_id, _, output) in commands {
+        shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+            CommandExecutionOutputDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+                item_id: item_id.to_string(),
+                delta: output.to_string(),
+            },
+        ));
+    }
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, "exec printf one")
+                .tool_status(ToolBlockStatus::Running)
+                .item_id("exec-1"),
+            TranscriptLine::output(
+                "output one\n",
+                ToolBlockStatus::Running,
+                "exec-1".to_string(),
+            ),
+            TranscriptLine::new(TranscriptKind::Tool, "exec printf two")
+                .tool_status(ToolBlockStatus::Running)
+                .item_id("exec-2"),
+            TranscriptLine::output(
+                "output two\n",
+                ToolBlockStatus::Running,
+                "exec-2".to_string(),
+            ),
+            TranscriptLine::new(TranscriptKind::Tool, "exec printf three")
+                .tool_status(ToolBlockStatus::Running)
+                .item_id("exec-3"),
+            TranscriptLine::output(
+                "output three\n",
+                ToolBlockStatus::Running,
+                "exec-3".to_string(),
+            ),
+        ])
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 24,
+        )
+    ));
+}
+
+#[test]
+fn late_command_start_is_inserted_before_early_output() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+        CommandExecutionOutputDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            item_id: "exec-late".to_string(),
+            delta: "early output\n".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: thread_id.clone(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: command_execution_item(
+            "exec-late",
+            CommandExecutionStatus::InProgress,
+            /*exit_code*/ None,
+        ),
+    }));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: command_execution_item(
+                "exec-late",
+                CommandExecutionStatus::Completed,
+                /*exit_code*/ Some(0),
+            ),
+        },
+    ));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, "exec cargo test exit 0 42ms")
+                .tool_status(ToolBlockStatus::Success)
+                .item_id("exec-late"),
+            TranscriptLine::output(
+                "early output\n",
+                ToolBlockStatus::Success,
+                "exec-late".to_string(),
+            ),
+        ])
+    );
+}
+
+#[test]
 fn command_output_deltas_preserve_newline_chunks() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
