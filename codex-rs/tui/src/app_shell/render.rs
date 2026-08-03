@@ -98,6 +98,7 @@ impl ShellView<'_> {
                 buf,
             );
         }
+        super::slash_command_popup_view::render(self.shell, layout.transcript, layout.input, buf);
         if let Some(pending) = &self.shell.pending_external_agent_import {
             render_modal(area, "Claude Code Import", pending.lines(), buf);
         }

@@ -1,0 +1,22 @@
+---
+source: tui/src/app_shell/slash_command_popup_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 48, 18))"
+---
+
+  Dashboard  ◆ BC    gpt-5-codex ▾   default ▾
+────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▌ tool exec just test -p codex-tui           │
+╭──────────────────────────────────────────────╮
+│◆ COMMANDS                                    │
+│  /login  Sign in to your OpenAI account      │
+│▌ /logout Sign out of your OpenAI account     │
+│↑↓ navigate   Tab complete   Enter run   Esc …│
+╰──────────────────────────────────────────────╯
+╭──────────────────────────────────────────────╮
+│◆ MESSAGE  1:4                                │
+│> /lo                                         │
+│                                              │
+│                                              │
+╰──────────────────────────────────────────────╯

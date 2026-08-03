@@ -41,12 +41,6 @@ pub(super) const SLASH_COMMANDS: [SlashCommandDefinition; 5] = [
         accepts_arguments: false,
     },
     SlashCommandDefinition {
-        id: SlashCommandId::Exit,
-        name: "/exit",
-        description: "Exit Better Codex",
-        accepts_arguments: false,
-    },
-    SlashCommandDefinition {
         id: SlashCommandId::Goal,
         name: "/goal",
         description: "Show or update the active goal",
@@ -62,6 +56,12 @@ pub(super) const SLASH_COMMANDS: [SlashCommandDefinition; 5] = [
         id: SlashCommandId::Logout,
         name: "/logout",
         description: "Sign out of your OpenAI account",
+        accepts_arguments: false,
+    },
+    SlashCommandDefinition {
+        id: SlashCommandId::Exit,
+        name: "/exit",
+        description: "Exit Better Codex",
         accepts_arguments: false,
     },
 ];

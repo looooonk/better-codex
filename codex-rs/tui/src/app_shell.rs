@@ -128,6 +128,8 @@ mod sessions;
 mod settings;
 mod shell_command;
 mod shell_layout;
+mod slash_command_popup;
+mod slash_command_popup_view;
 mod slash_commands;
 mod startup;
 mod startup_availability_nux;
@@ -189,6 +191,8 @@ use settings::SettingsState;
 use shell_command::PendingShellCommand;
 use shell_command::ShellCommand;
 use shell_layout::terminal_width_supported;
+use slash_command_popup::SlashCommandPopupKeyResult;
+use slash_command_popup::SlashCommandPopupState;
 use slash_commands::GoalSlashCommand;
 use slash_commands::LocalSlashCommand;
 pub(crate) use startup::StartupOnboardingOutcome;
@@ -815,6 +819,7 @@ struct ShellState {
     pointer_position: Option<ratatui::layout::Position>,
     agents_focused: bool,
     composer: ComposerState,
+    slash_command_popup: SlashCommandPopupState,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
     pending_shell_command: Option<PendingShellCommand>,
     session_hydration: SessionHydrationState,
@@ -948,6 +953,7 @@ impl ShellState {
             pointer_position: None,
             agents_focused: false,
             composer: ComposerState::default(),
+            slash_command_popup: SlashCommandPopupState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
@@ -1799,6 +1805,7 @@ impl ShellState {
     }
 
     fn seed_composer_with_edit_prompt(&mut self, edit_prompt: String) {
+        self.slash_command_popup.reset();
         let composer_text = self.composer.text().trim();
         if composer_text.is_empty() {
             self.composer.set_text(edit_prompt);
@@ -2637,6 +2644,7 @@ impl ShellState {
                 composer.set_text("Summarize the new shell architecture");
                 composer
             },
+            slash_command_popup: SlashCommandPopupState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
@@ -2909,6 +2917,7 @@ pub mod bench_support {
                 composer.set_text("Benchmark the app shell render path");
                 composer
             },
+            slash_command_popup: SlashCommandPopupState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),

@@ -3152,13 +3152,13 @@ fn command_palette_clear_resets_visible_transcript() {
 }
 
 #[tokio::test]
-async fn clear_slash_command_resets_visible_transcript_without_submitting_turn() {
+async fn partial_clear_slash_command_completes_and_runs_without_submitting_turn() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
     shell.streaming_assistant = "streaming".to_string();
     shell.streaming_plan = "plan".to_string();
-    shell.composer.set_text("/clear");
+    shell.composer.set_text("/cl");
 
     shell
         .handle_key(
@@ -3185,6 +3185,67 @@ async fn clear_slash_command_resets_visible_transcript_without_submitting_turn()
 
     shell.composer.move_up_or_recall_history();
     assert_eq!(shell.composer.text(), "/clear");
+}
+
+#[tokio::test]
+async fn slash_command_popup_keys_take_priority_over_queue_and_exit_shortcuts() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.set_text("/lo");
+
+    for code in [KeyCode::Down, KeyCode::Tab] {
+        shell
+            .handle_key(
+                KeyEvent::new(code, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("popup key should be handled");
+    }
+    assert_eq!(
+        (
+            shell.composer.text(),
+            shell.composer.has_queued_messages(),
+            backend.calls(),
+        ),
+        ("/logout ", false, Vec::new())
+    );
+
+    shell.active_turn_id = None;
+    shell.composer.set_text("/");
+    shell.slash_command_popup.reset();
+    let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+    assert!(
+        !shell
+            .handle_key(escape, &config, &mut backend)
+            .await
+            .expect("first escape should dismiss suggestions")
+    );
+    assert!(!shell.exit_confirmation_pending);
+    assert!(shell.slash_command_suggestions().is_none());
+    assert!(
+        !shell
+            .handle_key(escape, &config, &mut backend)
+            .await
+            .expect("second escape should arm exit")
+    );
+    assert!(shell.exit_confirmation_pending);
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("editing should reopen suggestions");
+    assert_eq!(shell.composer.text(), "/g");
+    assert!(!shell.exit_confirmation_pending);
+    assert!(shell.slash_command_suggestions().is_some());
 }
 
 #[tokio::test]
