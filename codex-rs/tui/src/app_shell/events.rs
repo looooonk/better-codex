@@ -305,6 +305,7 @@ impl ShellState {
                         &completed.turn_id,
                         completed.item.clone(),
                         super::CompletedItemOrigin::Live,
+                        /*rewind_anchor*/ None,
                     );
                     self.mark_agent_item_live(&completed.item);
                 } else if self.prepare_active_agent_thread(&completed.thread_id) {
