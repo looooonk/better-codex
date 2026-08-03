@@ -3,6 +3,7 @@ use super::LocalSlashCommandOutcome;
 use super::RecordedBackendCall;
 use super::RecordingBackend;
 use super::ShellState;
+use super::SlashCommandPopupKeyResult;
 use super::TranscriptKind;
 use super::complete_backend_actions;
 use super::render_shell;
@@ -161,6 +162,34 @@ async fn ordinary_vim_exit_returns_the_edited_draft() {
             )),
             Vec::new(),
         )
+    );
+
+    shell.composer.set_text("/vim");
+    assert_eq!(
+        shell.handle_slash_command_popup_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)),
+        SlashCommandPopupKeyResult::Consumed
+    );
+    assert!(shell.slash_command_suggestions().is_none());
+    shell.composer.clear();
+    shell
+        .complete_vim_input(
+            shell.thread_id,
+            Ok(VimInputOutcome::ReturnDraft("/vim".to_string())),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("returned Vim input should reset stale slash popup state");
+    let suggestions = shell
+        .slash_command_suggestions()
+        .expect("returned Vim command should show a fresh suggestion");
+    assert_eq!(
+        suggestions
+            .entries()
+            .iter()
+            .map(|definition| definition.name())
+            .collect::<Vec<_>>(),
+        vec!["/vim"]
     );
 }
 

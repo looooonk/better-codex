@@ -19,11 +19,11 @@ expression: "render_shell(&shell, area)"
  ▌ tool exec just test -p codex-tui               │
                                                   │
  ▌ edited 3 files +128 -24                        │
-                                                  │
- ▎ CODEX  The new shell owns the fullscreen       │
-          surface.                                │
-                                                  │
-                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ COMMANDS                                      ││
+│▌ /vim    Edit the prompt in Vim or Neovim      ││
+│↑↓ navigate   Tab complete   Enter run   Esc cl…││
+╰────────────────────────────────────────────────╯│
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  1:5                                  ││
 │> /vim                                          ││

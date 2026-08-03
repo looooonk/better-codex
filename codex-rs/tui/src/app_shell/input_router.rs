@@ -39,6 +39,8 @@ enum ActiveInputRoute {
     McpManagement,
     PluginManagement,
     UserInput,
+    RewindEditing,
+    RewindForking,
 }
 
 impl ShellState {
@@ -79,14 +81,28 @@ impl ShellState {
             Some(ActiveInputRoute::PluginManagement)
         } else if self.pending_user_input.is_some() {
             Some(ActiveInputRoute::UserInput)
+        } else if self.rewind.is_editing() {
+            Some(ActiveInputRoute::RewindEditing)
+        } else if self.rewind.is_forking() {
+            Some(ActiveInputRoute::RewindForking)
         } else {
             None
         }
     }
 
+    pub(super) fn composer_owns_focus(&self) -> bool {
+        self.active_input_route().is_none()
+            && !self.dashboard_focused()
+            && self.transcript_selection.is_none()
+    }
+
     fn plain_text_repeat_enabled(&self) -> bool {
         match self.active_input_route() {
-            Some(ActiveInputRoute::ElicitationEditing | ActiveInputRoute::UserInput) => true,
+            Some(
+                ActiveInputRoute::ElicitationEditing
+                | ActiveInputRoute::UserInput
+                | ActiveInputRoute::RewindEditing,
+            ) => true,
             Some(ActiveInputRoute::McpManagement) => self
                 .pending_mcp_management
                 .as_ref()
@@ -183,6 +199,9 @@ impl ShellState {
             }
             ActiveInputRoute::PluginManagement => {
                 self.handle_plugin_management_key(key, app_server).await?;
+            }
+            ActiveInputRoute::RewindEditing | ActiveInputRoute::RewindForking => {
+                return Ok(Some(self.handle_rewind_key(key, config, app_server)));
             }
         }
         Ok(Some(false))
@@ -375,9 +394,15 @@ impl ShellState {
         {
             return Ok(false);
         }
+        match self.handle_slash_command_popup_key(key) {
+            super::SlashCommandPopupKeyResult::Consumed => return Ok(false),
+            super::SlashCommandPopupKeyResult::Submit
+            | super::SlashCommandPopupKeyResult::Unhandled => {}
+        }
         if !self.dashboard_focused()
             && let Some(action) = text_input_action_from_key(key)
         {
+            self.slash_command_popup.reset();
             self.composer.apply_text_input_action(action);
             return Ok(false);
         }
@@ -397,6 +422,7 @@ impl ShellState {
             KeyCode::Esc => Ok(self.confirm_exit()),
             KeyCode::Enter => {
                 if is_composer_newline_key(key) {
+                    self.slash_command_popup.reset();
                     let result = self.composer.insert_newline();
                     self.report_composer_insert(result);
                     return Ok(false);
@@ -478,12 +504,14 @@ impl ShellState {
             }
             KeyCode::Char(ch) => {
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
+                    self.slash_command_popup.reset();
                     let result = self.composer.insert_char(ch);
                     self.report_composer_insert(result);
                 }
                 Ok(false)
             }
             KeyCode::Tab => {
+                self.slash_command_popup.reset();
                 if self.active_turn_id.is_some() && key_hint::plain(KeyCode::Tab).is_press(key) {
                     self.composer.queue_current_message();
                 } else {
@@ -493,6 +521,7 @@ impl ShellState {
                 Ok(false)
             }
             KeyCode::BackTab => {
+                self.slash_command_popup.reset();
                 let result = self.composer.insert_str("    ");
                 self.report_composer_insert(result);
                 Ok(false)

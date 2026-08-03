@@ -1,0 +1,28 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,))"
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▌ tool exec printf one                           │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+                                                  │▎+ New session  Ctrl+N
+   ▌ output output one                            │▎loading sessions
+                                                  │
+ ▌ tool exec printf two                           │▎◆ THREAD
+                                                  │▎stage-one
+   ▌ output output two                            │▎id 01900000-0000-7000-8000-000000000001
+                                                  │▎resume, fork, archive, delete in session list
+ ▌ tool exec printf three                         │
+                                                  │
+   ▌ output output three                          │
+                                                  │
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

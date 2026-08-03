@@ -1852,6 +1852,319 @@ fn renders_transcript_selection_snapshot() {
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
+#[tokio::test]
+async fn rewind_selection_and_branch_editor_snapshots() {
+    let config = test_config().await;
+    let turns = vec![
+        prompt_turn("turn-one", "Plan the first implementation."),
+        prompt_turn("turn-two", "Replace the inherited chat UI."),
+    ];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    shell.dashboard_visible = false;
+    shell.transcript_selection = rewind_prompt_index(&shell, "Replace the inherited chat UI.");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 22,
+    );
+
+    insta::assert_snapshot!("rewind_prompt_selected", render_shell(&shell, area));
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+
+    assert_eq!(shell.composer.text(), "Replace the inherited chat UI.");
+    assert!(matches!(shell.rewind, rewind::RewindState::Editing(_)));
+    insta::assert_snapshot!("rewind_branch_editor", render_shell(&shell, area));
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Esc).await;
+
+    assert!(shell.composer.is_empty());
+    assert!(matches!(shell.rewind, rewind::RewindState::Idle));
+    assert_eq!(
+        shell.transcript_selection,
+        rewind_prompt_index(&shell, "Replace the inherited chat UI.")
+    );
+}
+
+#[tokio::test]
+async fn rewind_forks_before_selected_turn_and_submits_edited_prompt() {
+    let config = test_config().await;
+    let turns = vec![
+        prompt_turn("turn-one", "Keep this prompt."),
+        prompt_turn("turn-two", "Rewrite this prompt."),
+        prompt_turn("turn-three", "Omit this later prompt."),
+    ];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    let source_thread_id = shell.thread_id;
+    shell.dashboard_visible = false;
+    shell.transcript_selection = rewind_prompt_index(&shell, "Rewrite this prompt.");
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+    shell
+        .composer
+        .set_text("Use the new app-shell architecture.");
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+
+    assert!(matches!(shell.rewind, rewind::RewindState::Forking(_)));
+    complete_backend_actions(&mut shell, &backend).await;
+
+    let branch_calls = backend
+        .calls()
+        .into_iter()
+        .filter_map(|call| match call {
+            RecordedBackendCall::ForkBefore {
+                thread_id,
+                before_turn_id,
+                goal_continuation,
+            } => Some(("fork", thread_id, before_turn_id, Some(goal_continuation))),
+            RecordedBackendCall::TurnStart {
+                thread_id, prompt, ..
+            } => Some(("turn", thread_id, prompt, None)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        branch_calls,
+        vec![
+            (
+                "fork",
+                source_thread_id,
+                "turn-two".to_string(),
+                Some(ForkGoalContinuation::DeferUntilNextTurn),
+            ),
+            (
+                "turn",
+                test_thread_id("01900000-0000-7000-8000-000000000202"),
+                "Use the new app-shell architecture.".to_string(),
+                None,
+            ),
+        ]
+    );
+    assert_ne!(shell.thread_id, source_thread_id);
+    assert_eq!(
+        shell
+            .transcript
+            .iter()
+            .filter(|line| line.kind == TranscriptKind::User)
+            .map(|line| (
+                line.text.as_str(),
+                line.rewind_anchor
+                    .as_ref()
+                    .map(|anchor| anchor.before_turn_id.as_str()),
+            ))
+            .collect::<Vec<_>>(),
+        vec![
+            ("Keep this prompt.", Some("turn-one")),
+            ("Use the new app-shell architecture.", Some("turn-submit")),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn rewind_fork_failure_keeps_source_and_edited_prompt() {
+    let config = test_config().await;
+    let turns = vec![prompt_turn("turn-one", "Rewrite this prompt.")];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    let source_thread_id = shell.thread_id;
+    shell.transcript_selection = rewind_prompt_index(&shell, "Rewrite this prompt.");
+    backend.fail_next_action("fork unavailable");
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+    shell.composer.set_text("Edited prompt remains available.");
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(shell.thread_id, source_thread_id);
+    assert_eq!(shell.composer.text(), "Edited prompt remains available.");
+    assert!(matches!(shell.rewind, rewind::RewindState::Editing(_)));
+}
+
+#[tokio::test]
+async fn rewind_keeps_existing_draft_instead_of_entering_branch_editor() {
+    let config = test_config().await;
+    let turns = vec![prompt_turn("turn-one", "Rewrite this prompt.")];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    shell.transcript_selection = rewind_prompt_index(&shell, "Rewrite this prompt.");
+    shell.composer.set_text("Keep this unsent draft.");
+    let selection = shell.transcript_selection;
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+
+    assert_eq!(shell.composer.text(), "Keep this unsent draft.");
+    assert_eq!(shell.transcript_selection, selection);
+    assert!(matches!(shell.rewind, rewind::RewindState::Idle));
+    assert!(
+        backend
+            .calls()
+            .iter()
+            .all(|call| !matches!(call, RecordedBackendCall::ForkBefore { .. }))
+    );
+}
+
+#[tokio::test]
+async fn rewind_turn_start_failure_stays_on_child_and_restores_edited_prompt() {
+    let config = test_config().await;
+    let turns = vec![
+        prompt_turn("turn-one", "Keep this prompt."),
+        prompt_turn("turn-two", "Rewrite this prompt."),
+        prompt_turn("turn-three", "Omit this later prompt."),
+    ];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    let source_thread_id = shell.thread_id;
+    let child_thread_id = test_thread_id("01900000-0000-7000-8000-000000000202");
+    shell.transcript_selection = rewind_prompt_index(&shell, "Rewrite this prompt.");
+    backend.fail_next_turn_start("turn start unavailable");
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+    shell.composer.set_text("Edited prompt remains available.");
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(shell.thread_id, child_thread_id);
+    assert_eq!(shell.composer.text(), "Edited prompt remains available.");
+    assert_eq!(shell.active_turn_id, None);
+    assert!(matches!(shell.rewind, rewind::RewindState::Idle));
+    assert_eq!(
+        shell
+            .transcript
+            .iter()
+            .filter(|line| line.kind == TranscriptKind::User)
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Keep this prompt."]
+    );
+    assert_eq!(
+        backend
+            .threads
+            .lock()
+            .expect("threads should lock")
+            .iter()
+            .find(|thread| thread.id == source_thread_id.to_string())
+            .map(|thread| {
+                thread
+                    .turns
+                    .iter()
+                    .map(|turn| turn.id.clone())
+                    .collect::<Vec<_>>()
+            }),
+        Some(vec![
+            "turn-one".to_string(),
+            "turn-two".to_string(),
+            "turn-three".to_string(),
+        ])
+    );
+}
+
+#[test]
+fn rewind_anchors_only_opening_text_only_prompts() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    let mut turn = prompt_turn("turn-one", "Opening prompt");
+    turn.items.push(ThreadItem::UserMessage {
+        id: "steer".to_string(),
+        client_id: Some("steer-client".to_string()),
+        content: vec![ApiUserInput::Text {
+            text: "Steered follow-up".to_string(),
+            text_elements: Vec::new(),
+        }],
+    });
+    let mut rich_turn = test_turn("turn-two", TurnStatus::Completed);
+    rich_turn.items.push(ThreadItem::UserMessage {
+        id: "rich".to_string(),
+        client_id: None,
+        content: vec![
+            ApiUserInput::Text {
+                text: "Inspect this image".to_string(),
+                text_elements: Vec::new(),
+            },
+            ApiUserInput::Image {
+                detail: None,
+                url: "https://example.test/image.png".to_string(),
+            },
+        ],
+    });
+    let mut automatic_turn = test_turn("turn-three", TurnStatus::Completed);
+    automatic_turn.items.extend([
+        ThreadItem::AgentMessage {
+            id: "automatic-response".to_string(),
+            text: "Continue the active goal.".to_string(),
+            phase: None,
+            memory_citation: None,
+        },
+        ThreadItem::UserMessage {
+            id: "late-steer".to_string(),
+            client_id: Some("late-steer-client".to_string()),
+            content: vec![ApiUserInput::Text {
+                text: "Steer the automatic turn".to_string(),
+                text_elements: Vec::new(),
+            }],
+        },
+    ]);
+
+    shell.ingest_turn_history(vec![turn, rich_turn, automatic_turn]);
+
+    assert_eq!(
+        shell
+            .transcript
+            .iter()
+            .filter(|line| line.kind == TranscriptKind::User)
+            .map(|line| {
+                line.rewind_anchor
+                    .as_ref()
+                    .map(|anchor| anchor.before_turn_id.as_str())
+            })
+            .collect::<Vec<_>>(),
+        vec![Some("turn-one"), None, None, None,]
+    );
+}
+
+#[tokio::test]
+async fn rewind_blocks_pointer_actions_while_editing_and_forking() {
+    let config = test_config().await;
+    let turns = vec![prompt_turn("turn-one", "Rewrite this prompt.")];
+    let (mut shell, mut backend) = rewind_fixture(turns);
+    shell.transcript_selection = rewind_prompt_index(&shell, "Rewrite this prompt.");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Char('e')).await;
+    let model_control = position_in(area, |position| {
+        ShellView { shell: &shell }.header_control_at(area, position)
+            == Some(header::HeaderControl::Model)
+    });
+
+    shell
+        .handle_mouse_click(area, model_control, &config, &mut backend)
+        .await
+        .expect("editing pointer action should be consumed");
+    assert!(shell.selector.is_none());
+    assert!(matches!(shell.rewind, rewind::RewindState::Editing(_)));
+
+    press_plain_key(&mut shell, &config, &mut backend, KeyCode::Enter).await;
+    shell.composer.set_selection(/*anchor*/ 0, /*cursor*/ 7);
+    let composer_before_mouse_down = shell.composer.clone();
+    let transcript_selection_before_mouse_down = shell.transcript_selection;
+    let text_selection_before_mouse_down = shell.text_selection.clone();
+    let prompt_position =
+        rendered_text_position(&render_shell(&shell, area), "Rewrite this prompt.");
+    shell
+        .handle_mouse_selection_down(area, prompt_position, &config, &mut backend)
+        .await
+        .expect("forking selection press should be consumed");
+    assert_eq!(shell.composer, composer_before_mouse_down);
+    assert_eq!(
+        shell.transcript_selection,
+        transcript_selection_before_mouse_down
+    );
+    assert_eq!(shell.text_selection, text_selection_before_mouse_down);
+    shell
+        .handle_mouse_click(area, model_control, &config, &mut backend)
+        .await
+        .expect("forking pointer action should be consumed");
+    assert!(shell.selector.is_none());
+    assert!(matches!(shell.rewind, rewind::RewindState::Forking(_)));
+    insta::assert_snapshot!("rewind_branch_forking", render_shell(&shell, area));
+}
+
 #[test]
 fn renders_command_palette_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
@@ -3155,13 +3468,13 @@ fn command_palette_clear_resets_visible_transcript() {
 }
 
 #[tokio::test]
-async fn clear_slash_command_resets_visible_transcript_without_submitting_turn() {
+async fn partial_clear_slash_command_completes_and_runs_without_submitting_turn() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
     shell.streaming_assistant = "streaming".to_string();
     shell.streaming_plan = "plan".to_string();
-    shell.composer.set_text("/clear");
+    shell.composer.set_text("/cl");
 
     shell
         .handle_key(
@@ -3188,6 +3501,67 @@ async fn clear_slash_command_resets_visible_transcript_without_submitting_turn()
 
     shell.composer.move_up_or_recall_history();
     assert_eq!(shell.composer.text(), "/clear");
+}
+
+#[tokio::test]
+async fn slash_command_popup_keys_take_priority_over_queue_and_exit_shortcuts() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.set_text("/lo");
+
+    for code in [KeyCode::Down, KeyCode::Tab] {
+        shell
+            .handle_key(
+                KeyEvent::new(code, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("popup key should be handled");
+    }
+    assert_eq!(
+        (
+            shell.composer.text(),
+            shell.composer.has_queued_messages(),
+            backend.calls(),
+        ),
+        ("/logout ", false, Vec::new())
+    );
+
+    shell.active_turn_id = None;
+    shell.composer.set_text("/");
+    shell.slash_command_popup.reset();
+    let escape = KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE);
+    assert!(
+        !shell
+            .handle_key(escape, &config, &mut backend)
+            .await
+            .expect("first escape should dismiss suggestions")
+    );
+    assert!(!shell.exit_confirmation_pending);
+    assert!(shell.slash_command_suggestions().is_none());
+    assert!(
+        !shell
+            .handle_key(escape, &config, &mut backend)
+            .await
+            .expect("second escape should arm exit")
+    );
+    assert!(shell.exit_confirmation_pending);
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("editing should reopen suggestions");
+    assert_eq!(shell.composer.text(), "/g");
+    assert!(!shell.exit_confirmation_pending);
+    assert!(shell.slash_command_suggestions().is_some());
 }
 
 #[tokio::test]
@@ -8451,6 +8825,140 @@ fn command_output_deltas_update_one_output_block() {
 }
 
 #[test]
+fn rapid_command_outputs_stay_grouped_with_their_tool_calls() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+    let commands = [
+        ("exec-1", "printf one", "output one\n"),
+        ("exec-2", "printf two", "output two\n"),
+        ("exec-3", "printf three", "output three\n"),
+    ];
+
+    for (item_id, command, _) in commands {
+        let mut item = command_execution_item(
+            item_id,
+            CommandExecutionStatus::InProgress,
+            /*exit_code*/ None,
+        );
+        let ThreadItem::CommandExecution {
+            command: item_command,
+            ..
+        } = &mut item
+        else {
+            panic!("expected a command execution item");
+        };
+        *item_command = command.to_string();
+        shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            started_at_ms: 0,
+            item,
+        }));
+    }
+    for (item_id, _, output) in commands {
+        shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+            CommandExecutionOutputDeltaNotification {
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".to_string(),
+                item_id: item_id.to_string(),
+                delta: output.to_string(),
+            },
+        ));
+    }
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, "exec printf one")
+                .tool_status(ToolBlockStatus::Running)
+                .item_id("exec-1"),
+            TranscriptLine::output(
+                "output one\n",
+                ToolBlockStatus::Running,
+                "exec-1".to_string(),
+            ),
+            TranscriptLine::new(TranscriptKind::Tool, "exec printf two")
+                .tool_status(ToolBlockStatus::Running)
+                .item_id("exec-2"),
+            TranscriptLine::output(
+                "output two\n",
+                ToolBlockStatus::Running,
+                "exec-2".to_string(),
+            ),
+            TranscriptLine::new(TranscriptKind::Tool, "exec printf three")
+                .tool_status(ToolBlockStatus::Running)
+                .item_id("exec-3"),
+            TranscriptLine::output(
+                "output three\n",
+                ToolBlockStatus::Running,
+                "exec-3".to_string(),
+            ),
+        ])
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 24,
+        )
+    ));
+}
+
+#[test]
+fn late_command_start_is_inserted_before_early_output() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.streaming_assistant.clear();
+    let thread_id = shell.thread_id.to_string();
+
+    shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+        CommandExecutionOutputDeltaNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-1".to_string(),
+            item_id: "exec-late".to_string(),
+            delta: "early output\n".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::ItemStarted(ItemStartedNotification {
+        thread_id: thread_id.clone(),
+        turn_id: "turn-1".to_string(),
+        started_at_ms: 0,
+        item: command_execution_item(
+            "exec-late",
+            CommandExecutionStatus::InProgress,
+            /*exit_code*/ None,
+        ),
+    }));
+    shell.handle_notification(ServerNotification::ItemCompleted(
+        ItemCompletedNotification {
+            thread_id,
+            turn_id: "turn-1".to_string(),
+            completed_at_ms: 1,
+            item: command_execution_item(
+                "exec-late",
+                CommandExecutionStatus::Completed,
+                /*exit_code*/ Some(0),
+            ),
+        },
+    ));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::Tool, "exec cargo test exit 0 42ms")
+                .tool_status(ToolBlockStatus::Success)
+                .item_id("exec-late"),
+            TranscriptLine::output(
+                "early output\n",
+                ToolBlockStatus::Success,
+                "exec-late".to_string(),
+            ),
+        ])
+    );
+}
+
+#[test]
 fn command_output_deltas_preserve_newline_chunks() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -9947,7 +10455,11 @@ async fn turn_submission_and_history_preserve_boundary_whitespace() {
     );
     assert_eq!(
         shell.transcript,
-        VecDeque::from([TranscriptLine::new(TranscriptKind::User, prompt)])
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::User, prompt).rewind_anchor(rewind::RewindAnchor {
+                before_turn_id: "turn-submit".to_string(),
+            },),
+        ])
     );
     shell.composer.move_up_or_recall_history();
     assert_eq!(shell.composer.text(), prompt);
@@ -9957,6 +10469,57 @@ async fn turn_submission_and_history_preserve_boundary_whitespace() {
             /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 16,
         )
     ));
+}
+
+#[tokio::test]
+async fn live_opening_user_message_is_rendered_once_with_rewind_anchor() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    let prompt = "Keep this opening prompt.";
+    shell.active_turn_id = None;
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.composer.set_text(prompt);
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("opening turn should submit");
+    let opening_item = ThreadItem::UserMessage {
+        id: "opening-user".to_string(),
+        client_id: None,
+        content: vec![ApiUserInput::Text {
+            text: prompt.to_string(),
+            text_elements: Vec::new(),
+        }],
+    };
+    let thread_id = shell.thread_id.to_string();
+    let opening_notification = |item| {
+        ServerNotification::ItemCompleted(ItemCompletedNotification {
+            thread_id: thread_id.clone(),
+            turn_id: "turn-submit".to_string(),
+            completed_at_ms: 1,
+            item,
+        })
+    };
+
+    shell.handle_notification(opening_notification(opening_item.clone()));
+    complete_backend_actions(&mut shell, &backend).await;
+    shell.handle_notification(opening_notification(opening_item));
+
+    assert_eq!(
+        shell.transcript,
+        VecDeque::from([
+            TranscriptLine::new(TranscriptKind::User, prompt).rewind_anchor(rewind::RewindAnchor {
+                before_turn_id: "turn-submit".to_string(),
+            }),
+        ])
+    );
 }
 
 #[tokio::test]
@@ -11649,6 +12212,18 @@ async fn complete_backend_actions(shell: &mut ShellState, backend: &RecordingBac
     })
     .await
     .expect("background action should complete");
+}
+
+async fn press_plain_key(
+    shell: &mut ShellState,
+    config: &Config,
+    backend: &mut RecordingBackend,
+    code: KeyCode,
+) {
+    shell
+        .handle_key(KeyEvent::new(code, KeyModifiers::NONE), config, backend)
+        .await
+        .expect("plain key should be handled");
 }
 
 fn position_in(area: Rect, predicate: impl Fn(Position) -> bool) -> Position {
@@ -15219,6 +15794,9 @@ impl backend::AppShellBackend for RecordingBackend {
             before_turn_id: before_turn_id.clone(),
             goal_continuation,
         });
+        if let Some(error) = self.take_action_error() {
+            return Err(color_eyre::eyre::eyre!(error));
+        }
         let turns = self
             .threads
             .lock()
@@ -15240,6 +15818,24 @@ impl backend::AppShellBackend for RecordingBackend {
         );
         started.turns = turns;
         Ok(started)
+    }
+
+    fn fork_thread_before_turn_in_background(
+        &self,
+        config: Config,
+        thread_id: codex_protocol::ThreadId,
+        before_turn_id: String,
+        goal_continuation: ForkGoalContinuation,
+    ) -> impl std::future::Future<
+        Output = color_eyre::Result<crate::app_server_session::AppServerStartedThread>,
+    > + Send
+    + 'static {
+        let mut backend = self.clone();
+        async move {
+            backend
+                .fork_thread_before_turn(config, thread_id, before_turn_id, goal_continuation)
+                .await
+        }
     }
 
     async fn thread_list(
@@ -16327,6 +16923,41 @@ fn test_turn(id: &str, status: TurnStatus) -> Turn {
         completed_at: is_complete.then_some(2),
         duration_ms: is_complete.then_some(1_000),
     }
+}
+
+fn prompt_turn(id: &str, prompt: &str) -> Turn {
+    let mut turn = test_turn(id, TurnStatus::Completed);
+    turn.items.push(ThreadItem::UserMessage {
+        id: format!("item-{id}"),
+        client_id: None,
+        content: vec![ApiUserInput::Text {
+            text: prompt.to_string(),
+            text_elements: Vec::new(),
+        }],
+    });
+    turn
+}
+
+fn rewind_fixture(turns: Vec<Turn>) -> (ShellState, RecordingBackend) {
+    let mut shell = ShellState::snapshot_fixture();
+    let thread_id = shell.thread_id;
+    let mut started = started_thread("rewind-source", thread_id, /*forked_from_id*/ None);
+    started.turns = turns.clone();
+    shell.replace_started_session(started);
+    let mut thread = thread_fixture(
+        thread_id,
+        /*name*/ Some("rewind-source"),
+        "rewind source",
+    );
+    thread.turns = turns;
+    (shell, RecordingBackend::with_threads(vec![thread]))
+}
+
+fn rewind_prompt_index(shell: &ShellState, prompt: &str) -> Option<usize> {
+    shell
+        .transcript
+        .iter()
+        .position(|line| line.kind == TranscriptKind::User && line.text == prompt)
 }
 
 fn test_thread_id(value: &str) -> codex_protocol::ThreadId {

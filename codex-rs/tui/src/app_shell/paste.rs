@@ -14,6 +14,7 @@ impl ShellState {
             || self.safety_buffering_modal_lines().is_some()
             || self.pending_session_delete.is_some()
             || self.pending_approval.is_some()
+            || self.rewind.is_forking()
         {
             return;
         }
@@ -64,6 +65,7 @@ impl ShellState {
     }
 
     fn insert_pasted_composer_text(&mut self, text: &str) {
+        self.slash_command_popup.reset();
         let result = self.composer.insert_str(text);
         if result == ComposerInsertResult::Inserted {
             self.clear_transcript_selection();

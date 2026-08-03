@@ -98,6 +98,14 @@ pub(super) trait AppShellBackend {
         goal_continuation: ForkGoalContinuation,
     ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send;
 
+    fn fork_thread_before_turn_in_background(
+        &self,
+        config: Config,
+        thread_id: ThreadId,
+        before_turn_id: String,
+        goal_continuation: ForkGoalContinuation,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static;
+
     fn thread_list(
         &mut self,
         params: ThreadListParams,
@@ -420,6 +428,22 @@ impl AppShellBackend for AppServerSession {
             goal_continuation,
         )
         .await
+    }
+
+    fn fork_thread_before_turn_in_background(
+        &self,
+        config: Config,
+        thread_id: ThreadId,
+        before_turn_id: String,
+        goal_continuation: ForkGoalContinuation,
+    ) -> impl std::future::Future<Output = Result<AppServerStartedThread>> + Send + 'static {
+        AppServerSession::fork_thread_before_turn_in_background(
+            self,
+            config,
+            thread_id,
+            before_turn_id,
+            goal_continuation,
+        )
     }
 
     async fn thread_list(&mut self, params: ThreadListParams) -> Result<ThreadListResponse> {

@@ -114,6 +114,7 @@ mod pointer;
 mod queued_messages;
 mod reasoning_ripple;
 mod render;
+mod rewind;
 mod safety_buffering;
 mod scrollback_view;
 mod selection_controller;
@@ -128,6 +129,9 @@ mod sessions;
 mod settings;
 mod shell_command;
 mod shell_layout;
+mod slash_command_popup;
+mod slash_command_popup_view;
+mod slash_commands;
 mod startup;
 mod startup_availability_nux;
 mod startup_layout;
@@ -189,6 +193,10 @@ use settings::SettingsState;
 use shell_command::PendingShellCommand;
 use shell_command::ShellCommand;
 use shell_layout::terminal_width_supported;
+use slash_command_popup::SlashCommandPopupKeyResult;
+use slash_command_popup::SlashCommandPopupState;
+use slash_commands::GoalSlashCommand;
+use slash_commands::LocalSlashCommand;
 pub(crate) use startup::StartupOnboardingOutcome;
 pub(crate) use startup::run_startup_onboarding;
 pub(crate) use startup_login::LoginOnboardingOutcome;
@@ -678,6 +686,7 @@ struct TranscriptLine {
     full_text: Option<ToolOutputBuffer>,
     tool_status: Option<ToolBlockStatus>,
     item_id: Option<String>,
+    rewind_anchor: Option<rewind::RewindAnchor>,
     render_revision: u64,
 }
 
@@ -689,6 +698,7 @@ impl TranscriptLine {
             full_text: None,
             tool_status: None,
             item_id: None,
+            rewind_anchor: None,
             render_revision: next_transcript_render_revision(),
         }
     }
@@ -701,6 +711,7 @@ impl TranscriptLine {
             full_text: Some(full_text),
             tool_status: Some(status),
             item_id: Some(item_id),
+            rewind_anchor: None,
             render_revision: next_transcript_render_revision(),
         }
     }
@@ -713,6 +724,11 @@ impl TranscriptLine {
 
     fn item_id(mut self, item_id: impl Into<String>) -> Self {
         self.item_id = Some(item_id.into());
+        self
+    }
+
+    fn rewind_anchor(mut self, anchor: rewind::RewindAnchor) -> Self {
+        self.rewind_anchor = Some(anchor);
         self
     }
 
@@ -729,6 +745,7 @@ impl Clone for TranscriptLine {
             full_text: self.full_text.clone(),
             tool_status: self.tool_status,
             item_id: self.item_id.clone(),
+            rewind_anchor: self.rewind_anchor.clone(),
             render_revision: next_transcript_render_revision(),
         }
     }
@@ -741,6 +758,7 @@ impl PartialEq for TranscriptLine {
             && self.full_text == other.full_text
             && self.tool_status == other.tool_status
             && self.item_id == other.item_id
+            && self.rewind_anchor == other.rewind_anchor
     }
 }
 
@@ -768,63 +786,11 @@ enum ToolBlockStatus {
     Fail,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum LocalSlashCommand {
-    Clear,
-    Exit,
-    Goal(GoalSlashCommand),
-    Login,
-    Logout,
-    Vim,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LocalSlashCommandOutcome {
     Continue,
     Exit,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum GoalSlashCommand {
-    Show,
-    Set(String),
-    Clear,
-    Pause,
-    Resume,
-    Edit,
-}
-
-impl LocalSlashCommand {
-    fn parse(text: &str) -> Option<Self> {
-        let trimmed = text.trim();
-        let mut parts = trimmed.splitn(2, char::is_whitespace);
-        let command = parts.next()?;
-        let args = parts.next().unwrap_or("").trim();
-        match command {
-            "/clear" if args.is_empty() => Some(Self::Clear),
-            "/exit" if args.is_empty() => Some(Self::Exit),
-            "/goal" => Some(Self::Goal(GoalSlashCommand::parse(args))),
-            "/login" if args.is_empty() => Some(Self::Login),
-            "/logout" if args.is_empty() => Some(Self::Logout),
-            "/vim" if args.is_empty() => Some(Self::Vim),
-            _ => None,
-        }
-    }
-}
-
-impl GoalSlashCommand {
-    fn parse(args: &str) -> Self {
-        match args {
-            "" => Self::Show,
-            "clear" => Self::Clear,
-            "pause" => Self::Pause,
-            "resume" => Self::Resume,
-            "edit" => Self::Edit,
-            objective => Self::Set(objective.to_string()),
-        }
-    }
-}
-
 impl TranscriptKind {
     fn label(self) -> &'static str {
         match self {
@@ -910,6 +876,8 @@ struct ShellState {
     pointer_position: Option<ratatui::layout::Position>,
     agents_focused: bool,
     composer: ComposerState,
+    slash_command_popup: SlashCommandPopupState,
+    rewind: rewind::RewindState,
     workspace_command_runner: Option<WorkspaceCommandRunner>,
     pending_shell_command: Option<PendingShellCommand>,
     session_hydration: SessionHydrationState,
@@ -1045,6 +1013,8 @@ impl ShellState {
             pointer_position: None,
             agents_focused: false,
             composer: ComposerState::default(),
+            slash_command_popup: SlashCommandPopupState::default(),
+            rewind: rewind::RewindState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
@@ -1120,7 +1090,12 @@ impl ShellState {
                 self.diff_store.mark_history_truncated();
             }
             let turn_id = turn.id;
-            for item in turn.items {
+            for (item_index, item) in turn.items.into_iter().enumerate() {
+                let rewind_anchor = if item_index == 0 {
+                    rewind::RewindAnchor::for_opening_item(&turn_id, &item)
+                } else {
+                    None
+                };
                 let origin = if turn.status != TurnStatus::InProgress
                     && matches!(
                         &item,
@@ -1133,7 +1108,7 @@ impl ShellState {
                 } else {
                     CompletedItemOrigin::Historical
                 };
-                self.ingest_completed_item_for_turn(&turn_id, item, origin);
+                self.ingest_completed_item_for_turn(&turn_id, item, origin, rewind_anchor);
             }
             if let Some(error) = turn.error {
                 self.push_error(error.message);
@@ -1329,6 +1304,10 @@ impl ShellState {
                 self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
                 Some(false)
             }
+            KeyCode::Char('e') if is_unmodified_key_press(key) => {
+                self.begin_rewind_edit();
+                Some(false)
+            }
             KeyCode::Backspace
             | KeyCode::Left
             | KeyCode::Right
@@ -1428,6 +1407,7 @@ impl ShellState {
     {
         self.composer.remember_submission(&prompt);
         self.composer.clear();
+        self.slash_command_popup.reset();
         let account_change_blocked = self.active_turn_id.is_some()
             || self.has_pending_shell_command()
             || self.has_pending_backend_actions()
@@ -1727,7 +1707,13 @@ impl ShellState {
             }
         };
         self.scroll_transcript_to_bottom();
-        self.push_user(prompt.clone());
+        self.push_line(
+            TranscriptLine::new(TranscriptKind::User, prompt.clone()).rewind_anchor(
+                rewind::RewindAnchor {
+                    before_turn_id: response.turn.id.clone(),
+                },
+            ),
+        );
         self.status = "thinking".to_string();
         self.clear_streaming_transcript();
         match submission {
@@ -1902,6 +1888,7 @@ impl ShellState {
     }
 
     fn seed_composer_with_edit_prompt(&mut self, edit_prompt: String) {
+        self.slash_command_popup.reset();
         let composer_text = self.composer.text().trim();
         if composer_text.is_empty() {
             self.composer.set_text(edit_prompt);
@@ -2142,7 +2129,7 @@ impl ShellState {
             .active_turn_id
             .clone()
             .unwrap_or_else(|| "unscoped".to_string());
-        self.ingest_completed_item_for_turn(&turn_id, item, origin);
+        self.ingest_completed_item_for_turn(&turn_id, item, origin, /*rewind_anchor*/ None);
     }
 
     fn ingest_completed_item_for_turn(
@@ -2150,6 +2137,7 @@ impl ShellState {
         turn_id: &str,
         item: ThreadItem,
         origin: CompletedItemOrigin,
+        rewind_anchor: Option<rewind::RewindAnchor>,
     ) {
         self.agent_activity.reduce_completed(&item);
         match item {
@@ -2158,10 +2146,14 @@ impl ShellState {
             } => {
                 let text = format_user_inputs(&content);
                 if !text.is_empty() {
+                    let mut line = TranscriptLine::new(TranscriptKind::User, text);
+                    if let Some(anchor) = rewind_anchor {
+                        line = line.rewind_anchor(anchor);
+                    }
                     if let Some(client_id) = client_id {
-                        self.push_user_with_client_id(text, client_id);
+                        self.upsert_line(line.item_id(client_id));
                     } else {
-                        self.push_user(text);
+                        self.push_line(line);
                     }
                 }
             }
@@ -2594,6 +2586,10 @@ impl ShellState {
             return;
         }
         self.transcript.push_back(line);
+        self.trim_transcript();
+    }
+
+    fn trim_transcript(&mut self) {
         if self.transcript.len() > MAX_TRANSCRIPT_LINES {
             self.clear_transcript_text_selection();
         }
@@ -2613,6 +2609,40 @@ impl ShellState {
         {
             *existing = line;
             return;
+        }
+
+        if let Some(item_id) = line.item_id.as_deref() {
+            let insert_at = match line.kind {
+                TranscriptKind::Output => self
+                    .transcript
+                    .iter()
+                    .rposition(|existing| existing.item_id.as_deref() == Some(item_id))
+                    .map(|index| index.saturating_add(1)),
+                TranscriptKind::Tool => self.transcript.iter().position(|existing| {
+                    existing.kind == TranscriptKind::Output
+                        && existing.item_id.as_deref() == Some(item_id)
+                }),
+                TranscriptKind::System
+                | TranscriptKind::User
+                | TranscriptKind::Assistant
+                | TranscriptKind::Plan
+                | TranscriptKind::Diff
+                | TranscriptKind::Separator
+                | TranscriptKind::Status
+                | TranscriptKind::Audit
+                | TranscriptKind::Error => None,
+            };
+            if let Some(insert_at) = insert_at {
+                self.clear_transcript_text_selection();
+                if let Some(selected) = self.transcript_selection
+                    && insert_at <= selected
+                {
+                    self.transcript_selection = Some(selected.saturating_add(1));
+                }
+                self.transcript.insert(insert_at, line);
+                self.trim_transcript();
+                return;
+            }
         }
 
         self.push_line(line);
@@ -2702,6 +2732,8 @@ impl ShellState {
                 composer.set_text("Summarize the new shell architecture");
                 composer
             },
+            slash_command_popup: SlashCommandPopupState::default(),
+            rewind: rewind::RewindState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
@@ -2976,6 +3008,8 @@ pub mod bench_support {
                 composer.set_text("Benchmark the app shell render path");
                 composer
             },
+            slash_command_popup: SlashCommandPopupState::default(),
+            rewind: rewind::RewindState::default(),
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),

@@ -183,6 +183,7 @@ impl ShellState {
         S: AppShellBackend,
     {
         let composer_draft = self.composer.submission_text();
+        self.slash_command_popup.reset();
         self.composer.set_text(prompt.clone());
         let result = if self.active_turn_id.is_some() {
             self.steer_active_turn(app_server, prompt).await
@@ -279,6 +280,7 @@ impl ShellState {
                     return Ok(LocalSlashCommandOutcome::Continue);
                 }
                 let composer_draft = self.composer.submission_text();
+                self.slash_command_popup.reset();
                 self.composer.set_text(text);
                 if !composer_draft.is_empty() {
                     self.composer.restore_failed_submission(&composer_draft);
