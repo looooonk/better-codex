@@ -483,14 +483,24 @@ pub(super) fn format_i64(value: i64) -> String {
 fn format_token_count(value: i64) -> String {
     let sign = if value < 0 { "-" } else { "" };
     let value = value.unsigned_abs();
-    if value >= 1_000_000 {
-        let tenths = (value + 50_000) / 100_000;
+    let unit = if value >= 1_000_000_000_000 {
+        Some((1_000_000_000_000, "t"))
+    } else if value >= 1_000_000_000 {
+        Some((1_000_000_000, "b"))
+    } else if value >= 1_000_000 {
+        Some((1_000_000, "m"))
+    } else {
+        None
+    };
+    if let Some((unit, suffix)) = unit {
+        let tenth = unit / 10;
+        let tenths = (value + tenth / 2) / tenth;
         let whole = tenths / 10;
         let decimal = tenths % 10;
         if decimal == 0 {
-            format!("{sign}{whole}m")
+            format!("{sign}{whole}{suffix}")
         } else {
-            format!("{sign}{whole}.{decimal}m")
+            format!("{sign}{whole}.{decimal}{suffix}")
         }
     } else if value >= 1_000 {
         format!("{sign}{}k", (value + 500) / 1_000)
@@ -510,3 +520,7 @@ fn format_u64(value: u64) -> String {
     }
     grouped.chars().rev().collect()
 }
+
+#[cfg(test)]
+#[path = "dashboard_tests.rs"]
+mod tests;
