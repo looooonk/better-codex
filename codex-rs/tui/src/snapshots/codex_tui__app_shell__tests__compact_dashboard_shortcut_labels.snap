@@ -2,17 +2,24 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered(60)
 ---
-◆ COMPOSER                   │ ◆ DASHBOARD
- ⌘←→⌫        Line boundary   │  ^1/^2       Status/agents
- ⌥/^ + ←→    Move by word    │  ^3/^4       Sessions/help
- S/A+↵       Newline         │  Tab/j/k/↵   Navigate/apply
- Fn nav/⌫    Page/delete     │
- ↵           Send            │ ◆ SESSIONS
- Alt+↑/^O    Select / copy   │  ^N/↵        New/focus
- Alt+M/E     Model/effort    │  r / f       Resume / fork
-                             │  a / u       Arc/unarc
-◆ APP                        │  v / d       View/delete
- ^C/Esc×2/^D  Exit/hide      │  n · /       Name/search
-                             │
-◆ AGENTS                     │
- ↵/j/k       Focus/inspect   │
+◆ CONVERSATION               │ ◆ COMPOSER
+ Alt+↑ / ↓   Select msgs     │  ⌘← / →      Line ends
+ ↵ / c       Copy item       │  ⌘⌫          Delete start
+ e           Branch          │  ⌥/^ + ←→    Move word
+ ^O          Copy reply      │  S/A + ↵     Newline
+                             │  Alt+M       Model
+◆ DASHBOARD                  │  Alt+E       Effort
+ ^1 … ^4     Open tab        │
+ Alt+← / →   Prev/next       │ ◆ APP
+ Pg↑ / Pg↓   Scroll help     │  ^P          Commands
+                             │  ^D          Show/hide
+◆ SESSIONS                   │  ^C          Stop/cancel
+ ↑↓ / jk     Select          │  Esc ×2      Exit app
+ ↵ / r       Resume          │  ^N          New chat
+ f           Fork            │
+ a           Archive         │ ◆ AGENTS
+ u           Unarchive       │  ↵           Focus/log
+ v           Switch view     │  ↑↓ / jk     Select
+ n           Rename          │  g / G       First/last
+ /           Search          │  r           Reload log
+ d           Delete          │

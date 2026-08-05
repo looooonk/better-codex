@@ -2,17 +2,24 @@
 source: tui/src/app_shell_tests.rs
 expression: rendered(80)
 ---
-◆ COMPOSER                             │ ◆ DASHBOARD
- Cmd ←/→/⌫           Line boundary     │  Ctrl+1 / Ctrl+2     Status / Agents
- Opt/Ctrl + ←/→      Move by word      │  Ctrl+3 / Ctrl+4     Sessions / Help
- Shift/Alt + Enter   Insert newline    │  Tab/j/k/Enter       Navigate / open
- Fn + arrows/⌫       Page nav / delete │
- Enter               Send              │ ◆ SESSIONS
- Alt+Up/Ctrl+O       Select / copy     │  Ctrl+N / Enter      New / focus
- Alt+M / Alt+E       Model / effort    │  r / f               Resume / fork
-                                       │  a / u               Archive/unarchive
-◆ APP                                  │  v / d               Archived/delete
- Ctrl+C/Esc×2/Ctrl+D  Exit / hide      │  n · /               Rename / search
-                                       │
-◆ AGENTS                               │
- Enter/j/k           Focus log/inspect │
+◆ CONVERSATION                         │ ◆ COMPOSER
+ Alt+Up / Down    Select messages      │  Cmd+Left / Right  Line start / end
+ Enter or c       Copy selected item   │  Cmd+Backspace    Delete to line start
+ e                Branch from prompt   │  Opt/Ctrl + Left/Right  Move by word
+ Ctrl+O           Copy latest response │  Shift/Alt + Enter  Insert newline
+                                       │  Alt+M            Select model
+◆ DASHBOARD                            │  Alt+E            Select effort
+ Ctrl+1 … Ctrl+4  Open a tab           │
+ Alt+Left / Right  Previous / next tab │ ◆ APP
+ Page Up / Page Down  Scroll this guide│  Ctrl+P           Command palette
+                                       │  Ctrl+D           Toggle dashboard
+◆ SESSIONS                             │  Ctrl+C           Interrupt / cancel
+ Up/Down or j/k   Select session       │  Esc ×2           Exit application
+ Enter or r       Resume session       │  Ctrl+N           New session
+ f                Fork session         │
+ a                Archive session      │ ◆ AGENTS
+ u                Unarchive session    │  Enter            Focus / open log
+ v                Active / archived    │  Up/Down or j/k   Select agent
+ n                Rename session       │  g / G            First / last agent
+ /                Search sessions      │  r                Reload open log
+ d                Delete session       │

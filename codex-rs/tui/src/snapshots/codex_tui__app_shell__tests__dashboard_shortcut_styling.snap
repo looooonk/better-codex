@@ -5,20 +5,20 @@ expression: "&styled[..2]"
 [
     Line::from_iter([
         Span::from("◆ ").fg(Color::Rgb(187, 154, 247)),
-        Span::from("COMPOSER").fg(Color::Rgb(187, 154, 247)).bold(),
-        Span::from("                             "),
+        Span::from("CONVERSATION").fg(Color::Rgb(187, 154, 247)).bold(),
+        Span::from("                         "),
         Span::from("│ ").fg(Color::Rgb(65, 72, 104)),
         Span::from("◆ ").fg(Color::Rgb(187, 154, 247)),
-        Span::from("DASHBOARD").fg(Color::Rgb(187, 154, 247)).bold(),
+        Span::from("COMPOSER").fg(Color::Rgb(187, 154, 247)).bold(),
     ]),
     Line::from_iter([
-        Span::from(" Cmd ←/→/⌫          ").fg(Color::Rgb(125, 207, 255)),
+        Span::from(" Alt+Up / Down   ").fg(Color::Rgb(125, 207, 255)),
         Span::from(" "),
-        Span::from("Line boundary"),
-        Span::from("     "),
+        Span::from("Select messages"),
+        Span::from("      "),
         Span::from("│ ").fg(Color::Rgb(65, 72, 104)),
-        Span::from(" Ctrl+1 / Ctrl+2    ").fg(Color::Rgb(125, 207, 255)),
+        Span::from(" Cmd+Left / Right ").fg(Color::Rgb(125, 207, 255)),
         Span::from(" "),
-        Span::from("Status / Agents"),
+        Span::from("Line start / end"),
     ]),
 ]

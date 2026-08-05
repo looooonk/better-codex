@@ -1,18 +1,18 @@
 ---
 source: tui/src/app_shell_tests.rs
-expression: rendered
+expression: scrolled
 ---
   Dashboard  ◆ BC    gpt-5-codex ▾   default ▾
 ────────────────────────────────────────────────
 │
 │  Status   │  Agents   │  Sessions   │  Help
-│◆ CONVERSATION        │ ◆ COMPOSER
-│ Alt+↑ / ↓   Select m…│  ⌘← / →      Line ends
-│ ↵ / c       Copy item│  ⌘⌫          Delete s…
-│ e           Branch   │  ⌥/^ + ←→    Move word
-│ ^O          Copy rep…│  S/A + ↵     Newline
-│◆ DASHBOARD           │  Alt+M       Model
-│ ^1 … ^4     Open tab │  Alt+E       Effort
+│ f           Fork     │  ^N          New chat
+│ a           Archive  │ ◆ AGENTS
+│ u           Unarchive│  ↵           Focus/log
+│ v           Switch v…│  ↑↓ / jk     Select
+│ n           Rename   │  g / G       First/la…
+│ /           Search   │  r           Reload l…
+│ d           Delete   │
 │
 ╭──────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                               │
