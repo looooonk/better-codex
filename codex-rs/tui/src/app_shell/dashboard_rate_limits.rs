@@ -12,6 +12,7 @@ const PERCENT_SCALE: usize = 100;
 const MIN_USED_PERCENT: i32 = 0;
 const MAX_USED_PERCENT: i32 = 100;
 const MIDDLE_HALF_BLOCK: &str = "\u{1cd33}";
+const SECONDS_PER_HOUR: i64 = 60 * 60;
 
 pub(super) fn rate_limit_lines(
     limits: &[RateLimitSnapshot],
@@ -136,7 +137,8 @@ fn format_time_left(resets_at: Option<i64>, current_time_at: i64) -> String {
     let Some(resets_at) = resets_at else {
         return "unknown".to_string();
     };
-    let total_hours = resets_at.saturating_sub(current_time_at).max(0) / (60 * 60);
+    let remaining_seconds = resets_at.saturating_sub(current_time_at).max(0);
+    let total_hours = remaining_seconds.saturating_add(SECONDS_PER_HOUR - 1) / SECONDS_PER_HOUR;
     let days = total_hours / 24;
     let hours = total_hours % 24;
     if days > 0 {
