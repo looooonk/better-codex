@@ -35,8 +35,6 @@ pub(super) enum TurnSubmission {
 pub(super) enum BackendActionResult {
     Approval {
         request_id: RequestId,
-        title: String,
-        decision: &'static str,
         edit_prompt: Option<String>,
         result: std::io::Result<()>,
     },
@@ -216,8 +214,6 @@ impl ShellState {
             } => self.complete_session_rename(thread_id, name, result),
             BackendActionResult::Approval {
                 request_id,
-                title,
-                decision,
                 edit_prompt,
                 result,
             } => match result {
@@ -226,7 +222,6 @@ impl ShellState {
                     if let Some(edit_prompt) = edit_prompt {
                         self.seed_composer_with_edit_prompt(edit_prompt);
                     }
-                    self.push_decision_audit("approval", decision, &title);
                     self.status = "ready".to_string();
                     if removal == super::InteractiveRequestRemoval::Active {
                         self.activate_next_interactive_request();
