@@ -6849,6 +6849,41 @@ fn settings_tab_hover_uses_content_only_geometry() {
 }
 
 #[test]
+fn settings_empty_rows_ignore_pointer_hover_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    for (action, last_row_label, empty_row_count) in [
+        (SettingsAction::ServiceTier, "Service tier", 1),
+        (SettingsAction::ApprovalPolicy, "Approval", 3),
+    ] {
+        shell.settings.focus_action(action);
+        shell.pointer_position = None;
+        let baseline = render_shell_buffer(&shell, area);
+        let last_action_y =
+            row_containing(&baseline, area, last_row_label).expect("last action should be visible");
+        let pointer_x = row_needle_x(&baseline, area, last_action_y, last_row_label)
+            .expect("last action should have an x position");
+
+        for offset in 1..=empty_row_count {
+            let pointer = Position::new(
+                pointer_x,
+                last_action_y.saturating_add(u16::try_from(offset).unwrap_or(u16::MAX)),
+            );
+            shell.pointer_position = Some(pointer);
+            let hovered = render_shell_buffer(&shell, area);
+
+            assert_eq!(hovered[pointer].style().bg, baseline[pointer].style().bg);
+        }
+    }
+
+    insta::assert_snapshot!(buffer_style_grid(&render_shell_buffer(&shell, area)));
+}
+
+#[test]
 fn mouse_wheel_routes_to_the_pane_under_the_pointer_in_both_layouts() {
     for area in [
         Rect::new(

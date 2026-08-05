@@ -350,7 +350,14 @@ fn render_hover(
             return;
         }
     }
-    if interactive && panel_row > 0 {
+    let interactive_row = match panel.title.as_str() {
+        "Settings" => panel_row
+            .checked_sub(1)
+            .and_then(|line| shell.settings.action_index_at_line(line))
+            .is_some(),
+        _ => panel_row > 0,
+    };
+    if interactive && interactive_row {
         buf.set_style(
             Rect::new(text_area.x, pointer.y, text_area.width, 1),
             Style::new().bg(palette::border()),
