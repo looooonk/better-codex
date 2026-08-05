@@ -1885,7 +1885,7 @@ fn wraps_long_code_lines_in_conversation_snapshot() {
 #[test]
 fn renders_transcript_selection_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.transcript_selection = Some(2);
+    shell.select_latest_transcript_item();
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -5599,32 +5599,28 @@ fn resume_hint_uses_public_better_codex_command() {
     );
 }
 
-#[test]
-fn transcript_selection_moves_between_items() {
+#[tokio::test]
+async fn alt_arrow_selection_starts_on_a_user_message() {
+    let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
-    shell.select_latest_transcript_item();
+    let mut backend = RecordingBackend::default();
 
-    assert_eq!(
-        shell.selected_transcript_copy_text(),
-        Some((TranscriptKind::Diff, "3 files +128 -24"))
-    );
+    for code in [KeyCode::Up, KeyCode::Down] {
+        shell.clear_transcript_selection();
+        shell
+            .handle_key(
+                KeyEvent::new(code, KeyModifiers::ALT),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("Alt+arrow should select a transcript message");
 
-    shell.move_transcript_selection_up(/*rows*/ 2);
-
-    assert_eq!(
-        shell.selected_transcript_copy_text(),
-        Some((
-            TranscriptKind::Plan,
-            "1. Build shell\n2. Wire transcript\n3. Render dashboard"
-        ))
-    );
-
-    shell.move_transcript_selection_down(/*rows*/ 1);
-
-    assert_eq!(
-        shell.selected_transcript_copy_text(),
-        Some((TranscriptKind::Tool, "exec just test -p codex-tui"))
-    );
+        assert_eq!(
+            shell.selected_transcript_copy_text(),
+            Some((TranscriptKind::User, "Create a divergent standalone TUI."))
+        );
+    }
 }
 
 #[test]

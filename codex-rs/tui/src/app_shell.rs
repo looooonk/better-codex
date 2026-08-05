@@ -142,6 +142,7 @@ mod text_selection;
 mod tool_output;
 mod tool_output_view;
 mod transcript_render;
+mod transcript_selection;
 mod transcript_view;
 mod turn_timer;
 mod user_input;
@@ -1318,22 +1319,6 @@ impl ShellState {
         }
     }
 
-    fn select_latest_transcript_item(&mut self) {
-        self.clear_text_selections();
-        self.transcript_selection = self.transcript.len().checked_sub(1);
-        self.scroll_transcript_to_bottom();
-    }
-
-    fn select_first_transcript_item(&mut self) {
-        self.clear_text_selections();
-        self.transcript_selection = (!self.transcript.is_empty()).then_some(0);
-        self.scroll_transcript_to_top();
-    }
-
-    fn clear_transcript_selection(&mut self) {
-        self.transcript_selection = None;
-    }
-
     fn clear_visible_transcript(&mut self) {
         self.clear_text_selections();
         self.transcript.clear();
@@ -1515,27 +1500,6 @@ impl ShellState {
             }
             Err(err) => self.push_error(format!("failed to update goal: {err}")),
         }
-    }
-
-    fn move_transcript_selection_up(&mut self, rows: usize) {
-        let selected = self
-            .transcript_selection
-            .unwrap_or_else(|| self.transcript.len().saturating_sub(1));
-        self.transcript_selection = Some(selected.saturating_sub(rows));
-        self.scroll_transcript_up(rows);
-    }
-
-    fn move_transcript_selection_down(&mut self, rows: usize) {
-        let Some(selected) = self.transcript_selection else {
-            self.select_latest_transcript_item();
-            return;
-        };
-        let Some(max_index) = self.transcript.len().checked_sub(1) else {
-            self.clear_transcript_selection();
-            return;
-        };
-        self.transcript_selection = Some(selected.saturating_add(rows).min(max_index));
-        self.scroll_transcript_down(rows);
     }
 
     fn copy_selected_transcript_with(

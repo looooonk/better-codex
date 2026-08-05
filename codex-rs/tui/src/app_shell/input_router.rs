@@ -359,9 +359,10 @@ impl ShellState {
         if key.modifiers.contains(KeyModifiers::ALT)
             && matches!(key.code, KeyCode::Up | KeyCode::Down)
         {
-            self.select_latest_transcript_item();
-            if matches!(key.code, KeyCode::Up) {
+            if key.code == KeyCode::Up {
                 self.move_transcript_selection_up(TRANSCRIPT_SELECTION_STEP);
+            } else {
+                self.move_transcript_selection_down(TRANSCRIPT_SELECTION_STEP);
             }
             return Ok(false);
         }
