@@ -175,8 +175,9 @@ fn single_digit_percentages_have_only_one_space_before_the_type() {
 }
 
 #[test]
-fn reset_countdown_is_truncated_to_hours_and_handles_missing_or_elapsed_resets() {
+fn reset_countdown_rounds_up_partial_hours_and_handles_missing_or_elapsed_resets() {
     const CURRENT_TIME_AT: i64 = 1_900_000_000;
+    const SEVEN_DAYS: i64 = 7 * 24 * 60 * 60;
 
     assert_eq!(
         [
@@ -185,12 +186,16 @@ fn reset_countdown_is_truncated_to_hours_and_handles_missing_or_elapsed_resets()
                 CURRENT_TIME_AT,
             ),
             format_time_left(Some(CURRENT_TIME_AT + 59 * 60), CURRENT_TIME_AT),
+            format_time_left(Some(CURRENT_TIME_AT + SEVEN_DAYS), CURRENT_TIME_AT),
+            format_time_left(Some(CURRENT_TIME_AT + SEVEN_DAYS - 1), CURRENT_TIME_AT),
             format_time_left(Some(CURRENT_TIME_AT - 60), CURRENT_TIME_AT),
             format_time_left(None, CURRENT_TIME_AT),
         ],
         [
-            "3d 5h".to_string(),
-            "0h".to_string(),
+            "3d 6h".to_string(),
+            "1h".to_string(),
+            "7d 0h".to_string(),
+            "7d 0h".to_string(),
             "0h".to_string(),
             "unknown".to_string(),
         ],
