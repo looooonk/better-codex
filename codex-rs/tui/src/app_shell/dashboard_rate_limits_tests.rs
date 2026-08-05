@@ -2,17 +2,17 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn usage_bar_uses_fractional_block_elements_and_clamps_to_ten_segments() {
+fn usage_bar_uses_only_filled_and_empty_segments_and_clamps_to_ten_segments() {
     let cases = [
         (-10, "░░░░░░░░░░"),
         (0, "░░░░░░░░░░"),
-        (1, "▏░░░░░░░░░"),
+        (1, "░░░░░░░░░░"),
         (10, "█░░░░░░░░░"),
-        (41, "████▏░░░░░"),
+        (41, "████░░░░░░"),
         (50, "█████░░░░░"),
-        (82, "████████▎░"),
-        (95, "█████████▌"),
-        (99, "█████████▉"),
+        (82, "████████░░"),
+        (95, "█████████░"),
+        (99, "█████████░"),
         (100, "██████████"),
         (120, "██████████"),
     ];
@@ -34,14 +34,10 @@ fn usage_bar_renders_exactly_ten_visible_chunks() {
 }
 
 #[test]
-fn usage_bar_styles_filled_fractional_and_empty_blocks() {
+fn usage_bar_styles_filled_and_empty_blocks() {
     assert_eq!(
         usage_bar_spans(/*used_percent*/ 82, palette::purple()),
-        [
-            "████████".fg(palette::purple()),
-            "▎".fg(palette::purple()),
-            "░".fg(palette::border()),
-        ],
+        ["████████".fg(palette::purple()), "░░".fg(palette::border()),],
     );
 }
 
@@ -72,7 +68,7 @@ fn quota_bar_and_percentage_follow_usage_severity_thresholds() {
                 plan_type: None,
                 rate_limit_reached_type: None,
             };
-            let line = rate_limit_lines(&limit, /*width*/ 100)
+            let line = rate_limit_lines(&limit, /*width*/ 100, /*current_time_at*/ 0)
                 .into_iter()
                 .next()
                 .expect("rate limit should render");
@@ -93,19 +89,20 @@ fn quota_bar_and_percentage_follow_usage_severity_thresholds() {
 }
 
 #[test]
-fn narrow_layout_omits_bars_but_keeps_every_quota_percentage() {
+fn rows_put_padded_percentage_before_bar_type_and_reset_countdown() {
+    const CURRENT_TIME_AT: i64 = 1_900_000_000;
     let limit = RateLimitSnapshot {
-        limit_id: Some("codex".to_string()),
-        limit_name: Some("Codex".to_string()),
+        limit_id: Some("gpt-5.3-codex-spark".to_string()),
+        limit_name: Some("GPT-5.3-Codex-Spark".to_string()),
         primary: Some(codex_app_server_protocol::RateLimitWindow {
             used_percent: 82,
             window_duration_mins: Some(300),
-            resets_at: None,
+            resets_at: Some(CURRENT_TIME_AT + 3 * 24 * 60 * 60 + 5 * 60 * 60),
         }),
         secondary: Some(codex_app_server_protocol::RateLimitWindow {
-            used_percent: 18,
+            used_percent: 5,
             window_duration_mins: Some(10_080),
-            resets_at: None,
+            resets_at: Some(CURRENT_TIME_AT + 5 * 60 * 60),
         }),
         credits: None,
         individual_limit: None,
@@ -114,37 +111,49 @@ fn narrow_layout_omits_bars_but_keeps_every_quota_percentage() {
     };
 
     assert_eq!(
-        rate_limit_lines(&limit, /*width*/ 42)
+        rate_limit_lines(&limit, /*width*/ 100, CURRENT_TIME_AT)
             .into_iter()
             .map(|line| line.to_string())
             .collect::<Vec<_>>(),
-        vec!["Codex 82% 5h | 18% 7d".to_string()],
-    );
-    assert_eq!(
-        rate_limit_lines(&limit, /*width*/ 43)
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>(),
-        vec!["Codex ████████▎░ 82% 5h | █▊░░░░░░░░ 18% 7d".to_string()],
-    );
-    assert_eq!(
-        rate_limit_lines(&limit, /*width*/ 16)
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>(),
-        vec!["Codex 82% 5h".to_string(), "  18% 7d".to_string(),],
+        vec![
+            "82%  ████████░░ GPT-5.3-Codex-Spark 3d 5h".to_string(),
+            "5%   ░░░░░░░░░░ GPT-5.3-Codex-Spark 5h".to_string(),
+        ],
     );
 }
 
 #[test]
-fn quota_details_wrap_only_below_the_exact_inline_width() {
+fn reset_countdown_is_truncated_to_hours_and_handles_missing_or_elapsed_resets() {
+    const CURRENT_TIME_AT: i64 = 1_900_000_000;
+
+    assert_eq!(
+        [
+            format_time_left(
+                Some(CURRENT_TIME_AT + 3 * 24 * 60 * 60 + 5 * 60 * 60 + 59 * 60),
+                CURRENT_TIME_AT,
+            ),
+            format_time_left(Some(CURRENT_TIME_AT + 59 * 60), CURRENT_TIME_AT),
+            format_time_left(Some(CURRENT_TIME_AT - 60), CURRENT_TIME_AT),
+            format_time_left(None, CURRENT_TIME_AT),
+        ],
+        [
+            "3d 5h".to_string(),
+            "0h".to_string(),
+            "0h".to_string(),
+            "unknown".to_string(),
+        ],
+    );
+}
+
+#[test]
+fn quota_details_render_on_a_separate_indented_line() {
     let limit = RateLimitSnapshot {
         limit_id: Some("codex".to_string()),
-        limit_name: Some("Codex".to_string()),
+        limit_name: None,
         primary: Some(codex_app_server_protocol::RateLimitWindow {
             used_percent: 50,
             window_duration_mins: Some(60),
-            resets_at: None,
+            resets_at: Some(1_900_003_600),
         }),
         secondary: None,
         credits: None,
@@ -159,19 +168,16 @@ fn quota_details_wrap_only_below_the_exact_inline_width() {
     };
 
     assert_eq!(
-        rate_limit_lines(&limit, /*width*/ 40)
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>(),
-        vec!["Codex █████░░░░░ 50% 1h | spend 75% left".to_string()],
-    );
-    assert_eq!(
-        rate_limit_lines(&limit, /*width*/ 39)
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>(),
+        rate_limit_lines(
+            &limit,
+            /*width*/ 100,
+            /*current_time_at*/ 1_900_000_000
+        )
+        .into_iter()
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>(),
         vec![
-            "Codex █████░░░░░ 50% 1h".to_string(),
+            "50%  █████░░░░░ codex 1h".to_string(),
             "  spend 75% left".to_string(),
         ],
     );

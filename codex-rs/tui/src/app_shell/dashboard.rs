@@ -234,8 +234,9 @@ fn dashboard_panel(
         DashboardPanelKind::RateLimits => {
             (!shell.rate_limits.is_empty() || shell.rate_limit_reset_credits.is_some()).then(|| {
                 let mut lines = Vec::new();
+                let current_time_at = chrono::Utc::now().timestamp();
                 for limit in &shell.rate_limits {
-                    lines.extend(rate_limit_lines(limit, content_width));
+                    lines.extend(rate_limit_lines(limit, content_width, current_time_at));
                 }
                 lines.push(credits_and_resets_line(
                     &shell.rate_limits,

@@ -1397,19 +1397,20 @@ fn renders_settings_pages_validation_snapshot() {
 fn renders_rate_limits_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Status;
+    let snapshot_time_at = chrono::Utc::now().timestamp();
     shell.rate_limits = vec![
         codex_app_server_protocol::RateLimitSnapshot {
             limit_id: Some("codex".to_string()),
-            limit_name: Some("Codex".to_string()),
+            limit_name: None,
             primary: Some(codex_app_server_protocol::RateLimitWindow {
                 used_percent: 82,
                 window_duration_mins: Some(300),
-                resets_at: Some(1_900_000_000),
+                resets_at: Some(snapshot_time_at + 3 * 24 * 60 * 60 + 5 * 60 * 60 + 30 * 60),
             }),
             secondary: Some(codex_app_server_protocol::RateLimitWindow {
                 used_percent: 18,
                 window_duration_mins: Some(10_080),
-                resets_at: None,
+                resets_at: Some(snapshot_time_at + 7 * 24 * 60 * 60 + 12 * 60 * 60 + 30 * 60),
             }),
             credits: Some(codex_app_server_protocol::CreditsSnapshot {
                 has_credits: true,
@@ -1431,7 +1432,7 @@ fn renders_rate_limits_snapshot() {
             primary: Some(codex_app_server_protocol::RateLimitWindow {
                 used_percent: 95,
                 window_duration_mins: Some(60),
-                resets_at: None,
+                resets_at: Some(snapshot_time_at + 90 * 60),
             }),
             secondary: None,
             credits: None,
@@ -1443,11 +1444,11 @@ fn renders_rate_limits_snapshot() {
         },
         codex_app_server_protocol::RateLimitSnapshot {
             limit_id: Some("gpt-5.3-codex-spark".to_string()),
-            limit_name: None,
+            limit_name: Some("GPT-5.3-Codex-Spark".to_string()),
             primary: Some(codex_app_server_protocol::RateLimitWindow {
                 used_percent: 41,
                 window_duration_mins: Some(60),
-                resets_at: None,
+                resets_at: Some(snapshot_time_at + 5 * 60 * 60 + 30 * 60),
             }),
             secondary: None,
             credits: None,
@@ -1458,7 +1459,7 @@ fn renders_rate_limits_snapshot() {
     ];
     shell.rate_limit_reset_credits = Some(2);
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 42,
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 43,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
