@@ -421,7 +421,7 @@ impl ShellState {
                     || self.is_active_agent_thread(&resolved.thread_id)
                     || self.has_interactive_request(&resolved.request_id)
                 {
-                    self.push_status(format!("request resolved: {}", resolved.request_id));
+                    self.push_status("request resolved");
                     if self.remove_interactive_request(&resolved.request_id)
                         == super::InteractiveRequestRemoval::Active
                     {
@@ -592,7 +592,10 @@ impl ShellState {
                     self.reject_request_with_message(
                         app_server,
                         pending.request_id(),
-                        format!("interactive request queue is full: {}", pending.title()),
+                        format!(
+                            "interactive request queue is full: {}",
+                            pending.transcript_title()
+                        ),
                     )
                     .await
                 }

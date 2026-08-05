@@ -1738,21 +1738,11 @@ impl ShellState {
             return Ok(());
         };
         let request_id = pending.request_id();
-        let title = pending.title().to_string();
-        let decision = if edit_prompt.is_some() {
-            "edit"
-        } else if pending.is_denial(option_index) {
-            "denied"
-        } else {
-            "approved"
-        };
         let result = pending.result(option_index)?;
         let request = app_server.resolve_server_request_in_background(request_id.clone(), result);
         self.start_backend_action(ActionGroup::Approval, "resolving approval", async move {
             BackendActionResult::Approval {
                 request_id,
-                title,
-                decision,
                 edit_prompt,
                 result: request.await,
             }

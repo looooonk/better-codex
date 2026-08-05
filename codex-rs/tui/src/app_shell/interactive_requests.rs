@@ -6,6 +6,8 @@ use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ServerRequest;
 
 const MAX_QUEUED_INTERACTIVE_REQUESTS: usize = 64;
+const MAX_APPROVAL_TRANSCRIPT_TITLE_GRAPHEMES: usize = 160;
+const MAX_APPROVAL_TRANSCRIPT_TITLE_LINES: usize = 3;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum PendingInteractiveRequest {
@@ -40,17 +42,33 @@ impl PendingInteractiveRequest {
         }
     }
 
-    pub(super) fn title(&self) -> &str {
+    pub(super) fn transcript_title(&self) -> String {
         match self {
-            Self::Approval(pending) => pending.title(),
-            Self::Elicitation(pending) => pending.title(),
-            Self::UserInput(pending) => pending.title(),
+            Self::Approval(pending) => {
+                let mut source_lines = pending.title().lines();
+                let mut title_lines = source_lines
+                    .by_ref()
+                    .take(MAX_APPROVAL_TRANSCRIPT_TITLE_LINES)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>();
+                if source_lines.next().is_some()
+                    && let Some(last) = title_lines.last_mut()
+                {
+                    last.push_str("...");
+                }
+                crate::text_formatting::truncate_text(
+                    &title_lines.join("\n"),
+                    MAX_APPROVAL_TRANSCRIPT_TITLE_GRAPHEMES,
+                )
+            }
+            Self::Elicitation(pending) => pending.title().to_string(),
+            Self::UserInput(pending) => pending.title().to_string(),
         }
     }
 
     fn requested_status(&self) -> String {
         match self {
-            Self::Approval(pending) => format!("approval requested: {}", pending.title()),
+            Self::Approval(_) => format!("approval requested: {}", self.transcript_title()),
             Self::Elicitation(pending) => format!("elicitation requested: {}", pending.title()),
             Self::UserInput(pending) => format!("input requested: {}", pending.title()),
         }
@@ -65,7 +83,10 @@ impl ShellState {
         if !self.has_pending_interactive_request() {
             self.activate_interactive_request(pending);
         } else if self.queued_interactive_requests.len() < MAX_QUEUED_INTERACTIVE_REQUESTS {
-            self.push_status(format!("interactive request queued: {}", pending.title()));
+            self.push_status(format!(
+                "interactive request queued: {}",
+                pending.transcript_title()
+            ));
             self.queued_interactive_requests.push_back(pending);
         } else {
             return Err(pending);

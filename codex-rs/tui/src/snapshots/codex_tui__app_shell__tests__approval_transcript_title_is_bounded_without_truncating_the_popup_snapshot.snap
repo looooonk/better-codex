@@ -1,0 +1,32 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
+---
+
+  Dashboard  ◆ BETTER CODEX  better-codex         gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ STATUS  approval requested: Run command: printf first
+           printf second
+           printf third...
+
+ ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ APPROVAL                                                                                        │
+│? Run command: printf first                                                                       │
+│printf second                                                                                     │
+│printf third                                                                                      │
+│printf private-fourth                                                                             │
+│  Reason: Needs network access                                                                    │
+│  Working directory: /workspace/better-codex                                                      │
+│> 1 Run once                                                                                      │
+│  2 Deny and interrupt                                                                            │
+│   e Edit   ? Explain                                                                             │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

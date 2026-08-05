@@ -3162,6 +3162,83 @@ async fn interactive_requests_preempt_management_overlays() {
 }
 
 #[tokio::test]
+async fn approval_transcript_title_is_bounded_without_truncating_the_popup_snapshot() {
+    let mut request = command_approval_request();
+    let command = "printf first\nprintf second\nprintf third\nprintf private-fourth";
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
+        panic!("expected command approval request");
+    };
+    params.command = Some(command.to_string());
+
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.dashboard_visible = false;
+    let mut backend = RecordingBackend::default();
+    shell
+        .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request.clone()))
+        .await
+        .expect("approval request should open");
+
+    assert_eq!(
+        shell.transcript,
+        std::collections::VecDeque::from([TranscriptLine::new(
+            TranscriptKind::Status,
+            "approval requested: Run command: printf first\nprintf second\nprintf third...",
+        )])
+    );
+    assert_eq!(
+        shell
+            .pending_approval
+            .as_ref()
+            .expect("approval should remain pending")
+            .title(),
+        format!("Run command: {command}")
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        )
+    ));
+
+    let mut bounded_request = request.clone();
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut bounded_request else {
+        panic!("expected command approval request");
+    };
+    params.command = Some("x".repeat(300));
+    let bounded = PendingInteractiveRequest::Approval(
+        PendingApproval::from_request(&bounded_request)
+            .expect("approval request should be valid")
+            .expect("request should be supported"),
+    );
+    assert_eq!(
+        bounded.transcript_title(),
+        format!("Run command: {}...", "x".repeat(144))
+    );
+
+    let mut queued_shell = ShellState::snapshot_fixture();
+    queued_shell.transcript.clear();
+    queued_shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerRequest(tool_user_input_request()),
+        )
+        .await
+        .expect("tool input should open");
+    queued_shell
+        .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request))
+        .await
+        .expect("approval request should queue");
+    assert_eq!(
+        queued_shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Status,
+            "interactive request queued: Run command: printf first\nprintf second\nprintf third...",
+        ))
+    );
+}
+
+#[tokio::test]
 async fn concurrent_interactive_requests_wait_and_resolve_in_order() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -3248,6 +3325,7 @@ async fn resolved_notifications_remove_only_the_matching_interactive_request() {
             .expect("interactive request should be accepted");
     }
     shell.composer.set_text("stale answer");
+    shell.transcript.clear();
 
     for request_id in [RequestId::Integer(41), RequestId::Integer(999)] {
         shell.handle_notification(ServerNotification::ServerRequestResolved(
@@ -3292,6 +3370,30 @@ async fn resolved_notifications_remove_only_the_matching_interactive_request() {
     assert!(shell.pending_elicitation.is_none());
     assert!(shell.pending_user_input.is_none());
     assert_eq!(backend.calls(), Vec::new());
+    assert_eq!(
+        shell
+            .transcript
+            .iter()
+            .map(|line| (line.kind, line.text.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            (TranscriptKind::Status, "request resolved"),
+            (
+                TranscriptKind::Status,
+                "elicitation requested: MCP github: URL request",
+            ),
+            (TranscriptKind::Status, "request resolved"),
+        ]
+    );
+    insta::assert_snapshot!(
+        "resolved_interactive_request_messages",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
+    );
 }
 
 #[tokio::test]
@@ -7929,12 +8031,18 @@ fn approval_denial_shortcuts_avoid_persistent_network_rules() {
 }
 
 #[tokio::test]
-async fn approval_keys_take_priority_over_transcript_selection() {
+async fn approval_keys_take_priority_over_transcript_selection_without_writing_audit() {
     let config = test_config().await;
     let mut backend = RecordingBackend::default();
     let mut shell = ShellState::snapshot_fixture();
-    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
-        .expect("approval request should be valid");
+    shell.transcript.clear();
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerRequest(command_approval_request()),
+        )
+        .await
+        .expect("approval request should open");
     shell.transcript_selection = Some(0);
 
     let should_exit = shell
@@ -7952,6 +8060,13 @@ async fn approval_keys_take_priority_over_transcript_selection() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::Resolve(RequestId::Integer(41))]
+    );
+    assert_eq!(
+        shell.transcript,
+        std::collections::VecDeque::from([TranscriptLine::new(
+            TranscriptKind::Status,
+            "approval requested: Run command: cargo test -p codex-tui",
+        )])
     );
 }
 
@@ -8085,7 +8200,6 @@ fn long_mcp_elicitation_keeps_destination_visible_snapshot() {
 #[test]
 fn renders_decision_audit_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.push_decision_audit("approval", "approved", "Command: cargo test -p codex-tui");
     shell.push_decision_audit("elicitation", "declined", "MCP github: URL request");
     shell.push_decision_audit("tool input", "submitted", "Tool input: environment");
     let area = Rect::new(
