@@ -1,0 +1,40 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: rendered
+---
+                                                  │
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│━━━━━━━━━━━━────────────────────────────────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SETTINGS
+ ▎ SYSTEM  Better Codex app shell                 │▎Model │ Permissions │ Appearance │Integrations
+ ▎ YOU  Create a divergent standalone TUI.        │▎━━━━━━─────────────────────────────────────────
+                                                  │▎› Model: gpt-5-codex
+ ▎ CODEX  Started a fullscreen app shell backed   │▎  Reasoning: default
+          by app-server turns.                    │▎  Service tier: default
+ ▎ PLAN  1. Build shell                           │▎
+         2. Wire transcript                       │
+         3. Render dashboard                      │▎◆ PLAN
+                                                  │▎Build the standalone shell in slices.
+ ▌ tool exec just test -p codex-tui               │▎x Shell frame
+                                                  │▎> Transcript model
+ ▌ edited 3 files +128 -24                        │▎- Approvals
+                                                  │
+ ▎ CODEX  The new shell owns the fullscreen       │▎◆ TOOLS
+          surface.                                │▎in progress exec just test -p codex-tui
+                                                  │
+                                                  │▎◆ EDITS
+                                                  │▎3 files +128 -24
+                                                  │
+                                                  │▎◆ WORKSPACE
+                                                  │▎profile managed
+                                                  │▎cwd ~/Projects/better-codex
+                                                  │▎files restricted, net restricted
+                                                  │▎roots none selected
+                                                  │
+╭────────────────────────────────────────────────╮│▎◆ TOKENS
+│◆ MESSAGE  1:37                                 ││▎input 1k | output 240
+│> Summarize the new shell architecture          ││▎Context 100% left
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│
