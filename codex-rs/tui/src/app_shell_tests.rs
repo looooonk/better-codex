@@ -14020,6 +14020,36 @@ async fn completed_list_refresh_cannot_restore_a_deleted_session() {
 }
 
 #[tokio::test]
+async fn periodic_rate_limit_refresh_fetches_canonical_state() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    shell.start_initial_dashboard_hydration(&backend);
+    finish_session_hydration(&mut shell, &backend).await;
+    backend.set_rate_limits_used_percent(/*used_percent*/ 41);
+
+    shell.request_rate_limits_refresh();
+    assert!(shell.has_pending_session_hydration());
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(
+        shell
+            .rate_limits
+            .first()
+            .and_then(|limit| limit.primary.as_ref())
+            .map(|window| window.used_percent),
+        Some(41)
+    );
+    assert_eq!(
+        backend
+            .calls()
+            .into_iter()
+            .filter(|call| matches!(call, RecordedBackendCall::RateLimits))
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
 async fn rate_limit_notification_during_startup_baseline_triggers_a_refetch() {
     let mut shell = ShellState::snapshot_fixture();
     let backend = RecordingBackend::default();

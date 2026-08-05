@@ -500,7 +500,7 @@ impl ShellState {
         self.rate_limits = app_server_rate_limit_snapshots(response);
     }
 
-    pub(super) fn mark_rate_limits_updated(&mut self) {
+    pub(super) fn request_rate_limits_refresh(&mut self) {
         self.session_hydration.rate_limits_refresh_due = true;
         self.session_hydration.rate_limits_revision =
             self.session_hydration.rate_limits_revision.wrapping_add(1);

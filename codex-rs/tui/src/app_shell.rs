@@ -218,6 +218,7 @@ const TRANSCRIPT_SELECTION_STEP: usize = 1;
 const APP_SERVER_FRAME_INTERVAL: Duration = Duration::from_millis(33);
 const BACKEND_ACTION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const AGENT_HISTORY_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const RATE_LIMITS_REFRESH_INTERVAL: Duration = Duration::from_secs(/*secs*/ 60);
 const WORKSPACE_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(/*secs*/ 5);
 const STATUS_SPINNER_FRAME_INTERVAL: Duration = Duration::from_millis(120);
 const TURN_TIMER_REFRESH_INTERVAL: Duration = Duration::from_secs(/*secs*/ 1);
@@ -339,6 +340,11 @@ pub(crate) async fn run(
         agent_history_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut backend_action_poll = tokio::time::interval(BACKEND_ACTION_POLL_INTERVAL);
         backend_action_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut rate_limits_refresh = tokio::time::interval_at(
+            tokio::time::Instant::now() + RATE_LIMITS_REFRESH_INTERVAL,
+            RATE_LIMITS_REFRESH_INTERVAL,
+        );
+        rate_limits_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut workspace_status_poll = tokio::time::interval_at(
             tokio::time::Instant::now() + WORKSPACE_STATUS_POLL_INTERVAL,
             WORKSPACE_STATUS_POLL_INTERVAL,
@@ -536,6 +542,9 @@ pub(crate) async fn run(
                     if shell.poll_backend_actions(&app_server).await {
                         tui.frame_requester().schedule_frame();
                     }
+                }
+                _ = rate_limits_refresh.tick() => {
+                    shell.request_rate_limits_refresh();
                 }
                 _ = workspace_status_poll.tick() => {
                     shell.poll_workspace_status_if_visible();
@@ -1150,7 +1159,7 @@ impl ShellState {
     }
 
     fn apply_rate_limit_update(&mut self, snapshot: RateLimitSnapshot) {
-        self.mark_rate_limits_updated();
+        self.request_rate_limits_refresh();
         let Some(limit_id) = snapshot.limit_id.as_deref() else {
             if self.rate_limits.is_empty() {
                 self.rate_limits.push(snapshot);
