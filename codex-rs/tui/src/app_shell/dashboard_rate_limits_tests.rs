@@ -2,17 +2,23 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn usage_bar_uses_only_filled_and_empty_segments_and_clamps_to_ten_segments() {
+fn usage_bar_rounds_to_nearest_segment_and_clamps_to_ten_segments() {
     let cases = [
         (-10, "░░░░░░░░░░"),
         (0, "░░░░░░░░░░"),
         (1, "░░░░░░░░░░"),
+        (4, "░░░░░░░░░░"),
+        (5, "█░░░░░░░░░"),
         (10, "█░░░░░░░░░"),
+        (14, "█░░░░░░░░░"),
+        (15, "██░░░░░░░░"),
         (41, "████░░░░░░"),
+        (45, "█████░░░░░"),
         (50, "█████░░░░░"),
         (82, "████████░░"),
-        (95, "█████████░"),
-        (99, "█████████░"),
+        (85, "█████████░"),
+        (95, "██████████"),
+        (99, "██████████"),
         (100, "██████████"),
         (120, "██████████"),
     ];
@@ -125,7 +131,7 @@ fn rows_put_bar_before_padded_percentage_type_and_reset_countdown() {
         .collect::<Vec<_>>(),
         vec![
             "████████░░ 82% GPT-5.3-Codex-Spark 3d 5h".to_string(),
-            "░░░░░░░░░░ 5%  GPT-5.3-Codex-Spark 5h".to_string(),
+            "█░░░░░░░░░ 5%  GPT-5.3-Codex-Spark 5h".to_string(),
         ],
     );
 }
@@ -157,8 +163,8 @@ fn single_digit_percentages_have_only_one_space_before_the_type() {
             .map(|line| line.to_string())
             .collect::<Vec<_>>(),
         vec![
-            "░░░░░░░░░░ 5% codex unknown".to_string(),
-            "░░░░░░░░░░ 8% codex unknown".to_string(),
+            "█░░░░░░░░░ 5% codex unknown".to_string(),
+            "█░░░░░░░░░ 8% codex unknown".to_string(),
         ],
     );
 }

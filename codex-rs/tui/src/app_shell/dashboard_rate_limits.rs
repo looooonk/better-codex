@@ -8,6 +8,7 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 
 const USAGE_BAR_SEGMENTS: usize = 10;
+const PERCENT_SCALE: usize = 100;
 const MIN_USED_PERCENT: i32 = 0;
 const MAX_USED_PERCENT: i32 = 100;
 
@@ -146,8 +147,9 @@ fn format_time_left(resets_at: Option<i64>, current_time_at: i64) -> String {
 
 fn usage_bar_spans(used_percent: i32, usage_color: Color) -> [Span<'static>; 2] {
     let used_percent = used_percent.clamp(MIN_USED_PERCENT, MAX_USED_PERCENT);
-    let filled_segments =
-        usize::try_from(used_percent).unwrap_or_default() * USAGE_BAR_SEGMENTS / 100;
+    let filled_segments = (usize::try_from(used_percent).unwrap_or_default() * USAGE_BAR_SEGMENTS
+        + PERCENT_SCALE / 2)
+        / PERCENT_SCALE;
     let empty_segments = USAGE_BAR_SEGMENTS.saturating_sub(filled_segments);
     [
         "█".repeat(filled_segments).fg(usage_color),
