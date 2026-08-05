@@ -406,6 +406,7 @@ pub(super) fn app_theme_label(theme: TuiAppTheme) -> &'static str {
         TuiAppTheme::TokyoNight => "Tokyo Night",
         TuiAppTheme::GruvboxDark => "Gruvbox Dark",
         TuiAppTheme::CatppuccinMocha => "Catppuccin Mocha",
+        TuiAppTheme::Monochrome => "Monochrome",
     }
 }
 

@@ -64,6 +64,11 @@ fn catppuccin_mocha_renders_with_its_palette() {
 }
 
 #[test]
+fn monochrome_renders_with_its_palette() {
+    insta::assert_debug_snapshot!(render_theme_sample(TuiAppTheme::Monochrome));
+}
+
+#[test]
 fn nested_activation_restores_the_previous_palette() {
     let initial = palette();
     let gruvbox = {
