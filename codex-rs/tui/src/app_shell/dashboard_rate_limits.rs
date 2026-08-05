@@ -37,13 +37,20 @@ pub(super) fn rate_limit_lines(
                 .saturating_add(3);
             let label = dashboard_value(label, width, label_reserve);
             let percent = format!("{used_percent}%");
-            let mut spans = vec![
-                percent.clone().fg(usage_color),
-                " ".repeat(PERCENT_WIDTH.saturating_sub(percent.len()) + 1)
-                    .into(),
-            ];
-            spans.extend(usage_bar_spans(used_percent, usage_color));
-            spans.extend([" ".into(), Span::from(label), " ".dim(), time_left.dim()]);
+            let percent_padding = " ".repeat(
+                PERCENT_WIDTH
+                    .saturating_sub(percent.len())
+                    .saturating_add(1),
+            );
+            let mut spans = Vec::from(usage_bar_spans(used_percent, usage_color));
+            spans.extend([
+                " ".into(),
+                percent.fg(usage_color),
+                percent_padding.into(),
+                Span::from(label),
+                " ".dim(),
+                time_left.dim(),
+            ]);
             Line::from(spans)
         })
         .collect::<Vec<_>>();

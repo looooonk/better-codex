@@ -89,7 +89,7 @@ fn quota_bar_and_percentage_follow_usage_severity_thresholds() {
 }
 
 #[test]
-fn rows_put_padded_percentage_before_bar_type_and_reset_countdown() {
+fn rows_put_bar_before_padded_percentage_type_and_reset_countdown() {
     const CURRENT_TIME_AT: i64 = 1_900_000_000;
     let limit = RateLimitSnapshot {
         limit_id: Some("gpt-5.3-codex-spark".to_string()),
@@ -116,8 +116,8 @@ fn rows_put_padded_percentage_before_bar_type_and_reset_countdown() {
             .map(|line| line.to_string())
             .collect::<Vec<_>>(),
         vec![
-            "82%  ████████░░ GPT-5.3-Codex-Spark 3d 5h".to_string(),
-            "5%   ░░░░░░░░░░ GPT-5.3-Codex-Spark 5h".to_string(),
+            "████████░░ 82%  GPT-5.3-Codex-Spark 3d 5h".to_string(),
+            "░░░░░░░░░░ 5%   GPT-5.3-Codex-Spark 5h".to_string(),
         ],
     );
 }
@@ -177,7 +177,7 @@ fn quota_details_render_on_a_separate_indented_line() {
         .map(|line| line.to_string())
         .collect::<Vec<_>>(),
         vec![
-            "50%  █████░░░░░ codex 1h".to_string(),
+            "█████░░░░░ 50%  codex 1h".to_string(),
             "  spend 75% left".to_string(),
         ],
     );
