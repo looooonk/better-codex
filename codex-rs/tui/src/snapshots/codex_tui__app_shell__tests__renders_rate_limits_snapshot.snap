@@ -41,7 +41,7 @@ expression: "render_shell(&shell, area)"
                                                   │▎𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳 18% codex 7d 13h
 ╭────────────────────────────────────────────────╮│▎  spend 75% left
 │◆ MESSAGE  1:37                                 ││▎𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳 95% Background 2h
-│> Summarize the new shell architecture          ││▎  limited RateLimitReached
-│                                                ││▎𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳 41% GPT-5.3-Codex-Spark 6h
+│> Summarize the new shell architecture          ││▎𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳 41% GPT-5.3-Codex-Spark 6h
 │                                                ││▎credits $12.34 | resets 2
+│                                                ││
 ╰────────────────────────────────────────────────╯│

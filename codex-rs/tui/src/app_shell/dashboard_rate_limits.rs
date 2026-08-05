@@ -75,18 +75,14 @@ pub(super) fn rate_limit_lines(
                 })
                 .collect::<Vec<_>>();
 
-            let mut details = Vec::new();
-            if let Some(reached) = limit.rate_limit_reached_type {
-                details.push(format!("limited {reached:?}").fg(palette::error()));
-            }
             if let Some(individual_limit) = &limit.individual_limit {
-                if !details.is_empty() {
-                    details.push(" | ".dim());
-                }
-                details.push(format!("spend {}% left", individual_limit.remaining_percent).into());
-            }
-            if !details.is_empty() {
-                lines.push(Line::from_iter(std::iter::once("  ".into()).chain(details)));
+                lines.push(
+                    vec![
+                        "  ".into(),
+                        format!("spend {}% left", individual_limit.remaining_percent).into(),
+                    ]
+                    .into(),
+                );
             }
             lines
         })
