@@ -172,13 +172,9 @@ impl SettingsState {
         if matches!(line, 0 | 1) {
             return false;
         }
-        if line < self.action_line_start() {
+        let Some(action_line) = self.action_index_at_line(line) else {
             return false;
-        }
-        let action_line = line.saturating_sub(self.action_line_start());
-        if action_line >= self.actions().len() {
-            return false;
-        }
+        };
         self.selected = action_line;
         self.edit = None;
         self.feedback = None;
@@ -295,6 +291,11 @@ impl SettingsState {
         2usize
             .saturating_add(usize::from(self.edit.is_some()))
             .saturating_add(usize::from(self.feedback.is_some()))
+    }
+
+    pub(super) fn action_index_at_line(&self, line: usize) -> Option<usize> {
+        let action_line = line.checked_sub(self.action_line_start())?;
+        (action_line < self.actions().len()).then_some(action_line)
     }
 
     fn set_page(&mut self, page: SettingsPage) {

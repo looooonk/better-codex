@@ -73,6 +73,24 @@ fn action_rows_select_only_the_clicked_action() {
 }
 
 #[test]
+fn only_rendered_actions_have_action_indices() {
+    let mut settings = SettingsState::default();
+    let expected_action_counts = [3, 1, 4, 2];
+
+    for (page, expected_action_count) in SettingsPage::ALL.into_iter().zip(expected_action_counts) {
+        settings.set_page(page);
+        let action_indices = (0..SETTINGS_PAGE_LINE_COUNT)
+            .filter_map(|line| settings.action_index_at_line(line))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            action_indices,
+            (0..expected_action_count).collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
 fn settings_pages_have_a_consistent_height() {
     let view = SettingsView {
         model: "gpt-5-codex".to_string(),
