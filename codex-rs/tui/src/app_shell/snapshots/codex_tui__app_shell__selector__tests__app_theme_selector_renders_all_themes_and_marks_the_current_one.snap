@@ -9,5 +9,7 @@ expression: "buffer_text(&buffer, geometry.modal)"
 │       A warm, retro palette with earthy contrast.                │
 │ › 3 ● Catppuccin Mocha  current                                  │
 │       A soft pastel palette on a dark base.                      │
-│  wheel / j k  Enter select  Esc cancel  3/3                      │
+│   4 ○ Monochrome                                                 │
+│       A high-contrast grayscale palette with no color.           │
+│  wheel / j k  Enter select  Esc cancel  3/4                      │
 ╰──────────────────────────────────────────────────────────────────╯

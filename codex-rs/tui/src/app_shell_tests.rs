@@ -5576,6 +5576,11 @@ fn shell_render_uses_the_selected_app_theme() {
         "shell_render_uses_catppuccin_mocha_styles",
         buffer_style_grid(&render_shell_buffer(&shell, area))
     );
+    shell.app_theme = TuiAppTheme::Monochrome;
+    insta::assert_snapshot!(
+        "shell_render_uses_monochrome_styles",
+        buffer_style_grid(&render_shell_buffer(&shell, area))
+    );
 }
 
 #[test]

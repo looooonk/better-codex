@@ -3393,6 +3393,13 @@
             "catppuccin-mocha"
           ],
           "type": "string"
+        },
+        {
+          "description": "A high-contrast grayscale palette.",
+          "enum": [
+            "monochrome"
+          ],
+          "type": "string"
         }
       ]
     },

@@ -337,6 +337,10 @@ impl SelectorState<SelectorValue> {
                 TuiAppTheme::CatppuccinMocha,
                 "A soft pastel palette on a dark base.",
             ),
+            (
+                TuiAppTheme::Monochrome,
+                "A high-contrast grayscale palette with no color.",
+            ),
         ];
         let options = themes
             .into_iter()
