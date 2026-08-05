@@ -8,67 +8,86 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 
 const USAGE_BAR_SEGMENTS: usize = 10;
-const PERCENT_WIDTH: usize = 4;
 const MIN_USED_PERCENT: i32 = 0;
 const MAX_USED_PERCENT: i32 = 100;
 
 pub(super) fn rate_limit_lines(
-    limit: &RateLimitSnapshot,
+    limits: &[RateLimitSnapshot],
     width: usize,
     current_time_at: i64,
 ) -> Vec<Line<'static>> {
-    let label = limit
-        .limit_name
-        .as_deref()
-        .or(limit.limit_id.as_deref())
-        .unwrap_or("account");
-    let mut lines = [limit.primary.as_ref(), limit.secondary.as_ref()]
-        .into_iter()
+    let percent_width = limits
+        .iter()
+        .flat_map(|limit| [limit.primary.as_ref(), limit.secondary.as_ref()])
         .flatten()
         .map(|window| {
-            let used_percent = window
+            window
                 .used_percent
-                .clamp(MIN_USED_PERCENT, MAX_USED_PERCENT);
-            let usage_color = usage_color(used_percent);
-            let time_left = format_time_left(window.resets_at, current_time_at);
-            let label_reserve = PERCENT_WIDTH
-                .saturating_add(USAGE_BAR_SEGMENTS)
-                .saturating_add(time_left.len())
-                .saturating_add(3);
-            let label = dashboard_value(label, width, label_reserve);
-            let percent = format!("{used_percent}%");
-            let percent_padding = " ".repeat(
-                PERCENT_WIDTH
-                    .saturating_sub(percent.len())
-                    .saturating_add(1),
-            );
-            let mut spans = Vec::from(usage_bar_spans(used_percent, usage_color));
-            spans.extend([
-                " ".into(),
-                percent.fg(usage_color),
-                percent_padding.into(),
-                Span::from(label),
-                " ".dim(),
-                time_left.dim(),
-            ]);
-            Line::from(spans)
+                .clamp(MIN_USED_PERCENT, MAX_USED_PERCENT)
+                .to_string()
+                .len()
+                .saturating_add(1)
         })
-        .collect::<Vec<_>>();
+        .max()
+        .unwrap_or_default();
 
-    let mut details = Vec::new();
-    if let Some(reached) = limit.rate_limit_reached_type {
-        details.push(format!("limited {reached:?}").fg(palette::error()));
-    }
-    if let Some(individual_limit) = &limit.individual_limit {
-        if !details.is_empty() {
-            details.push(" | ".dim());
-        }
-        details.push(format!("spend {}% left", individual_limit.remaining_percent).into());
-    }
-    if !details.is_empty() {
-        lines.push(Line::from_iter(std::iter::once("  ".into()).chain(details)));
-    }
-    lines
+    limits
+        .iter()
+        .flat_map(|limit| {
+            let label = limit
+                .limit_name
+                .as_deref()
+                .or(limit.limit_id.as_deref())
+                .unwrap_or("account");
+            let mut lines = [limit.primary.as_ref(), limit.secondary.as_ref()]
+                .into_iter()
+                .flatten()
+                .map(|window| {
+                    let used_percent = window
+                        .used_percent
+                        .clamp(MIN_USED_PERCENT, MAX_USED_PERCENT);
+                    let usage_color = usage_color(used_percent);
+                    let time_left = format_time_left(window.resets_at, current_time_at);
+                    let label_reserve = percent_width
+                        .saturating_add(USAGE_BAR_SEGMENTS)
+                        .saturating_add(time_left.len())
+                        .saturating_add(3);
+                    let label = dashboard_value(label, width, label_reserve);
+                    let percent = format!("{used_percent}%");
+                    let percent_padding = " ".repeat(
+                        percent_width
+                            .saturating_sub(percent.len())
+                            .saturating_add(1),
+                    );
+                    let mut spans = Vec::from(usage_bar_spans(used_percent, usage_color));
+                    spans.extend([
+                        " ".into(),
+                        percent.fg(usage_color),
+                        percent_padding.into(),
+                        Span::from(label),
+                        " ".dim(),
+                        time_left.dim(),
+                    ]);
+                    Line::from(spans)
+                })
+                .collect::<Vec<_>>();
+
+            let mut details = Vec::new();
+            if let Some(reached) = limit.rate_limit_reached_type {
+                details.push(format!("limited {reached:?}").fg(palette::error()));
+            }
+            if let Some(individual_limit) = &limit.individual_limit {
+                if !details.is_empty() {
+                    details.push(" | ".dim());
+                }
+                details.push(format!("spend {}% left", individual_limit.remaining_percent).into());
+            }
+            if !details.is_empty() {
+                lines.push(Line::from_iter(std::iter::once("  ".into()).chain(details)));
+            }
+            lines
+        })
+        .collect()
 }
 
 pub(super) fn credits_and_resets_line(

@@ -231,20 +231,17 @@ fn dashboard_panel(
         DashboardPanelKind::Background => {
             background_activity_lines(shell).map(|lines| DashboardPanel::new("Background", lines))
         }
-        DashboardPanelKind::RateLimits => {
-            (!shell.rate_limits.is_empty() || shell.rate_limit_reset_credits.is_some()).then(|| {
-                let mut lines = Vec::new();
-                let current_time_at = chrono::Utc::now().timestamp();
-                for limit in &shell.rate_limits {
-                    lines.extend(rate_limit_lines(limit, content_width, current_time_at));
-                }
-                lines.push(credits_and_resets_line(
-                    &shell.rate_limits,
-                    shell.rate_limit_reset_credits,
-                ));
-                DashboardPanel::new("Rate Limits", lines)
-            })
-        }
+        DashboardPanelKind::RateLimits => (!shell.rate_limits.is_empty()
+            || shell.rate_limit_reset_credits.is_some())
+        .then(|| {
+            let current_time_at = chrono::Utc::now().timestamp();
+            let mut lines = rate_limit_lines(&shell.rate_limits, content_width, current_time_at);
+            lines.push(credits_and_resets_line(
+                &shell.rate_limits,
+                shell.rate_limit_reset_credits,
+            ));
+            DashboardPanel::new("Rate Limits", lines)
+        }),
         DashboardPanelKind::Edits => {
             let session = shell.diff_store.session_stats();
             let has_recorded_history = shell.diff_store.has_recorded_history();
