@@ -1,24 +1,24 @@
 ---
 source: tui/src/app_shell_tests.rs
-expression: rendered
+expression: scrolled
 ---
 
   Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
 ──────────────────────────────────────────────────────────────────────────────
                             │
  ◆ CONVERSATION             │   Status   │  Agents   │  Sessions   │  Help
- ▎ YOU  Create a divergent s│◆ CONVERSATION         │ ◆ COMPOSER
-                            │ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
- ▎ CODEX  Started a fullscre│ ↵ / c       Copy item │  ⌘⌫          Delete st…
- ▎ PLAN  1. Build shell     │ e           Branch    │  ⌥/^ + ←→    Move word
-         2. Wire transcript │ ^O          Copy reply│  S/A + ↵     Newline
-         3. Render dashboard│◆ DASHBOARD            │  Alt+M       Model
-                            │ ^1 … ^4     Open tab  │  Alt+E       Effort
- ▌ tool exec just test -p co│ Alt+← / →   Prev/next │ ◆ APP
+ ▎ YOU  Create a divergent s│ Alt+← / →   Prev/next │ ◆ APP
                             │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
- ▌ edited 3 files +128 -24  │◆ SESSIONS             │  ^D          Show/hide
-                            │ ↑↓ / jk     Select    │  ^C          Stop/canc…
- ▎ CODEX  The new shell owns│ ↵ / r       Resume    │  Esc ×2      Exit app
+ ▎ CODEX  Started a fullscre│◆ SESSIONS             │  ^D          Show/hide
+ ▎ PLAN  1. Build shell     │ ↑↓ / jk     Select    │  ^C          Stop/canc…
+         2. Wire transcript │ ↵ / r       Resume    │  Esc ×2      Exit app
+         3. Render dashboard│ f           Fork      │  ^N          New chat
+                            │ a           Archive   │ ◆ AGENTS
+ ▌ tool exec just test -p co│ u           Unarchive │  ↵           Focus/log
+                            │ v           Switch vi…│  ↑↓ / jk     Select
+ ▌ edited 3 files +128 -24  │ n           Rename    │  g / G       First/last
+                            │ /           Search    │  r           Reload log
+ ▎ CODEX  The new shell owns│ d           Delete    │
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                                                             │

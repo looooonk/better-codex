@@ -1314,7 +1314,7 @@ fn renders_status_route_snapshot() {
 fn dashboard_routes_keep_session_and_status_panels_separate() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Sessions;
-    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
 
     assert_eq!(
         panels
@@ -1330,7 +1330,7 @@ fn dashboard_routes_keep_session_and_status_panels_separate() {
         ThreadGoalStatus::Active,
         "Keep route ownership explicit",
     ));
-    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
 
     assert_eq!(
         panels
@@ -1350,7 +1350,7 @@ fn dashboard_routes_keep_session_and_status_panels_separate() {
     );
 
     shell.dashboard_route = DashboardRoute::Help;
-    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
 
     assert_eq!(
         panels
@@ -1667,23 +1667,23 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         "Tab page",
     ];
     let centralized_guides = [
-        "Cmd ←/→/⌫",
-        "Opt/Ctrl + ←/→",
-        "Ctrl+1 / Ctrl+2",
-        "Ctrl+3 / Ctrl+4",
-        "Ctrl+N / Enter",
-        "r / f",
-        "a / u",
-        "v / d",
-        "n · /",
-        "Ctrl+C/Esc×2/Ctrl+D",
-        "Enter/j/k",
+        "Branch from prompt",
+        "Command palette",
+        "Previous / next tab",
+        "Fork session",
+        "Reload open log",
+        "Insert newline",
+        "Interrupt / cancel",
+        "Toggle dashboard",
+        "Search sessions",
+        "Select effort",
+        "Scroll this guide",
     ];
     let mut leaked_guides = Vec::new();
 
     let visibility = DashboardRoute::ALL.map(|route| {
         shell.dashboard_route = route;
-        let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+        let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
         let has_keys = panels.iter().any(|panel| panel.title == "Keys");
         let has_route_shortcut = panels
             .iter()
@@ -1691,7 +1691,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             .into_iter()
             .flat_map(|panel| &panel.lines)
             .flat_map(|line| &line.spans)
-            .any(|span| span.content.contains("Cmd ←/→/⌫"));
+            .any(|span| span.content.contains("Cmd+Left / Right"));
         if route != DashboardRoute::Help {
             let text = panels
                 .iter()
@@ -1719,7 +1719,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             (DashboardRoute::Help, true, true),
         ]
     );
-    let help_text = dashboard::dashboard_panels(&shell, /*width*/ 80)
+    let help_text = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40)
         .into_iter()
         .flat_map(|panel| panel.lines)
         .flat_map(|line| line.spans)
@@ -1728,6 +1728,12 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
     assert_eq!(
         centralized_guides.map(|guide| help_text.contains(guide)),
         [true; 11]
+    );
+    assert!(!help_text.contains("Send"));
+    assert!(
+        ["Alt+M/E", "a/u/v/d", "^C/Esc×2/^D"]
+            .iter()
+            .all(|grouped| !help_text.contains(grouped))
     );
     let active_session_lines = shell
         .session_list
@@ -1774,7 +1780,9 @@ fn dashboard_shortcut_guides_fit_layout_boundaries() {
 
     for shell in [&shell, &selecting] {
         for width in [38, 40, 48, 54, 55, 58, 71, 72, 80] {
-            for line in super::dashboard_help::key_hint_lines(shell, width) {
+            for line in
+                super::dashboard_help::key_hint_lines(shell, width, /*panel_height*/ 40)
+            {
                 assert!(
                     line.width() <= width,
                     "shortcut help exceeds width {width}: {line}"
@@ -1788,7 +1796,7 @@ fn dashboard_shortcut_guides_fit_layout_boundaries() {
 fn dashboard_shortcut_label_variants_snapshot() {
     let shell = ShellState::snapshot_fixture();
     let rendered = |panel_width| {
-        super::dashboard_help::key_hint_lines(&shell, panel_width)
+        super::dashboard_help::key_hint_lines(&shell, panel_width, /*panel_height*/ 40)
             .into_iter()
             .map(|line| line.to_string())
             .join("\n")
@@ -1802,8 +1810,23 @@ fn dashboard_shortcut_label_variants_snapshot() {
         "wide_dashboard_shortcut_labels",
         rendered(/*panel_width*/ 80)
     );
-    let styled = super::dashboard_help::key_hint_lines(&shell, /*panel_width*/ 80);
+    let styled = super::dashboard_help::key_hint_lines(
+        &shell, /*panel_width*/ 80, /*panel_height*/ 40,
+    );
     insta::assert_debug_snapshot!("dashboard_shortcut_styling", &styled[..2]);
+}
+
+#[test]
+fn dashboard_shortcut_groups_gain_spacing_when_height_allows() {
+    let shell = ShellState::snapshot_fixture();
+    let compact = super::dashboard_help::key_hint_lines(
+        &shell, /*panel_width*/ 60, /*panel_height*/ 20,
+    );
+    let spacious = super::dashboard_help::key_hint_lines(
+        &shell, /*panel_width*/ 60, /*panel_height*/ 40,
+    );
+
+    assert!(spacious.len() > compact.len());
 }
 
 #[test]
@@ -3786,13 +3809,14 @@ async fn shell_operator_remains_interactive_while_command_is_running() {
     assert_eq!(shell.status, "running shell command");
     assert_eq!(shell.transcript.len(), transcript_len);
     for panel_width in [50, 60, 80] {
-        let help = super::dashboard_help::key_hint_lines(&shell, panel_width)
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let help =
+            super::dashboard_help::key_hint_lines(&shell, panel_width, /*panel_height*/ 40)
+                .into_iter()
+                .map(|line| line.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
         assert!(
-            help.contains("Cancel"),
+            help.contains("Stop/cancel") || help.contains("Interrupt / cancel"),
             "running-command help should explain cancellation at width {panel_width}:\n{help}"
         );
     }
@@ -8238,10 +8262,18 @@ fn help_dashboard_shows_every_shortcut_at_78_by_24_snapshot() {
     let rendered = render_shell(&shell, area);
 
     assert!(
-        rendered.contains("Name/search"),
-        "shortcut tail should remain visible:\n{rendered}"
+        rendered.contains("Branch"),
+        "the first shortcut groups should remain visible:\n{rendered}"
     );
     insta::assert_snapshot!(rendered);
+
+    shell.dashboard_scroll.set(usize::MAX);
+    let scrolled = render_shell(&shell, area);
+    assert!(
+        scrolled.contains("Delete") && scrolled.contains("Reload"),
+        "the shortcut tail should be reachable:\n{scrolled}"
+    );
+    insta::assert_snapshot!("help_dashboard_78_by_24_scrolled", scrolled);
 }
 
 #[test]
@@ -8255,12 +8287,57 @@ fn help_dashboard_shows_every_shortcut_at_48_by_16_snapshot() {
     let rendered = render_shell(&shell, area);
 
     assert!(
-        rendered.contains("Name/search"),
-        "shortcut tail should remain visible:\n{rendered}"
+        rendered.contains("Branch"),
+        "the first shortcut groups should remain visible:\n{rendered}"
     );
     assert!(rendered.contains("> Summarize the new shell architecture"));
     assert!(!rendered.contains("Esc composer"));
     insta::assert_snapshot!(rendered);
+
+    shell.dashboard_scroll.set(usize::MAX);
+    let scrolled = render_shell(&shell, area);
+    assert!(
+        scrolled.contains("Delete") && scrolled.contains("Reload"),
+        "the shortcut tail should be reachable:\n{scrolled}"
+    );
+    insta::assert_snapshot!("help_dashboard_48_by_16_scrolled", scrolled);
+}
+
+#[tokio::test]
+async fn page_keys_scroll_the_help_guide_instead_of_the_conversation() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_route = DashboardRoute::Help;
+    shell.transcript_scroll = 3;
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Page Down should scroll the help guide");
+    let after_page_down = (shell.dashboard_scroll.get(), shell.transcript_scroll);
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Page Up should scroll the help guide");
+
+    assert_eq!(
+        (
+            after_page_down,
+            shell.dashboard_scroll.get(),
+            shell.transcript_scroll,
+            backend.calls(),
+        ),
+        ((8, 3), 0, 3, Vec::new())
+    );
 }
 
 #[test]

@@ -89,10 +89,14 @@ impl DashboardPanel {
     }
 }
 
-pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<DashboardPanel> {
+pub(super) fn dashboard_panels(
+    shell: &ShellState,
+    width: usize,
+    height: usize,
+) -> Vec<DashboardPanel> {
     dashboard_panel_kinds(shell.dashboard_route)
         .iter()
-        .filter_map(|kind| dashboard_panel(shell, width, *kind))
+        .filter_map(|kind| dashboard_panel(shell, width, height, *kind))
         .collect()
 }
 
@@ -155,6 +159,7 @@ fn dashboard_panel_kinds(route: DashboardRoute) -> &'static [DashboardPanelKind]
 fn dashboard_panel(
     shell: &ShellState,
     width: usize,
+    height: usize,
     kind: DashboardPanelKind,
 ) -> Option<DashboardPanel> {
     let content_width = width.saturating_sub(1);
@@ -355,8 +360,10 @@ fn dashboard_panel(
         )),
         DashboardPanelKind::Keys => {
             let dense = super::dashboard_help::uses_dense_layout(width);
-            let mut panel =
-                DashboardPanel::new("Keys", super::dashboard_help::key_hint_lines(shell, width));
+            let mut panel = DashboardPanel::new(
+                "Keys",
+                super::dashboard_help::key_hint_lines(shell, width, height),
+            );
             if dense {
                 panel.show_title = false;
             }

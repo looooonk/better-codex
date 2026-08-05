@@ -53,7 +53,11 @@ impl DashboardView {
     fn new(shell: &ShellState, placement: DashboardPlacement) -> Self {
         let area = placement.area();
         let mut content = pane_content_rect(area);
-        let panels = dashboard_panels(shell, usize::from(content.width));
+        let panels = dashboard_panels(
+            shell,
+            usize::from(content.width),
+            usize::from(content.height),
+        );
         if shell.dashboard_route == DashboardRoute::Help {
             let help_height = panels
                 .iter()
