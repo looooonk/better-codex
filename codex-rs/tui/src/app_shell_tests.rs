@@ -1264,6 +1264,26 @@ fn renders_workspace_git_status_snapshot() {
 }
 
 #[test]
+fn renders_home_relative_workspace_cwd_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    shell.cwd = dirs::home_dir()
+        .expect("home directory should be available")
+        .join("Projects")
+        .join("better-codex")
+        .display()
+        .to_string();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 36,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(rendered.contains("cwd ~/Projects/better-codex"));
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn renders_status_route_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Status;
