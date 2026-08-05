@@ -452,12 +452,13 @@ impl Session {
         let codex_apps_auth_manager =
             codex_mcp::host_owned_codex_apps_enabled(&mcp_config, auth.as_ref())
                 .then(|| Arc::clone(&self.services.auth_manager));
+        let approval_policy = turn_context.approval_policy.snapshot();
         let refreshed_manager = McpConnectionManager::new(
             &mcp_servers,
             mcp_config.mcp_oauth_credentials_store_mode,
             mcp_config.auth_keyring_backend_kind,
             auth_statuses,
-            &turn_context.approval_policy,
+            &approval_policy,
             turn_context.sub_id.clone(),
             self.get_tx_event(),
             mcp_startup_cancellation_token,

@@ -206,6 +206,7 @@ pub(crate) mod context_window;
 mod handlers;
 mod inject;
 mod input_queue;
+mod live_approval_policy;
 mod mcp;
 mod mcp_runtime;
 pub(crate) mod multi_agents;
@@ -229,6 +230,7 @@ use self::handlers::submission_loop;
 pub(crate) use self::input_queue::InputQueueActivity;
 pub(crate) use self::input_queue::TurnInput;
 pub(crate) use self::input_queue::TurnInputQueue;
+use self::live_approval_policy::LiveApprovalPolicy;
 pub use self::mcp_runtime::McpRuntimeSnapshot;
 use self::review::spawn_review_thread;
 use self::session::AppServerClientMetadata;
@@ -1532,7 +1534,7 @@ impl Session {
         updates: SessionSettingsUpdate,
     ) -> ConstraintResult<()> {
         let notify_config_contributors = !self.services.extensions.config_contributors().is_empty();
-        let (previous_config, new_config, permission_profile_changed) = {
+        let (previous_config, new_config, permission_profile_changed, updated_approval_policy) = {
             let mut state = self.state.lock().await;
             let updated = match state.session_configuration.apply(&updates) {
                 Ok(updated) => updated,
@@ -1550,15 +1552,41 @@ impl Session {
             let updated_permission_profile = updated.permission_profile();
             let permission_profile_changed =
                 previous_permission_profile != updated_permission_profile;
+            let updated_approval_policy = (state.session_configuration.approval_policy
+                != updated.approval_policy)
+                .then(|| updated.approval_policy.clone());
             if updates.environments.is_some() {
                 self.services
                     .turn_environments
                     .update_selections(updated.environment_selections());
             }
             state.session_configuration = updated;
-            (previous_config, new_config, permission_profile_changed)
+            (
+                previous_config,
+                new_config,
+                permission_profile_changed,
+                updated_approval_policy,
+            )
         };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
+        if let Some(approval_policy) = updated_approval_policy {
+            let active_turn_context = self
+                .active_turn
+                .lock()
+                .await
+                .as_ref()
+                .and_then(|turn| turn.task.as_ref())
+                .map(|task| Arc::clone(&task.turn_context));
+            if let Some(turn_context) = active_turn_context {
+                turn_context
+                    .approval_policy
+                    .replace(approval_policy.clone());
+            }
+            self.services
+                .latest_mcp_runtime()
+                .manager()
+                .set_approval_policy(&approval_policy);
+        }
         if permission_profile_changed {
             self.refresh_managed_network_proxy_for_current_permission_profile()
                 .await;

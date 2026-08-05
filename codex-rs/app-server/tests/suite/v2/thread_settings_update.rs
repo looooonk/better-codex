@@ -6,11 +6,14 @@ use app_test_support::create_mock_responses_server_sequence_unchecked;
 use app_test_support::to_response;
 use app_test_support::write_mock_responses_config_toml;
 use app_test_support::write_models_cache;
+use codex_app_server_protocol::CommandExecutionApprovalDecision;
+use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
 use codex_app_server_protocol::JSONRPCError;
 use codex_app_server_protocol::JSONRPCNotification;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::SandboxPolicy;
+use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
@@ -24,6 +27,8 @@ use codex_app_server_protocol::UserInput as V2UserInput;
 use codex_core::test_support::all_model_presets;
 use codex_protocol::config_types::SERVICE_TIER_DEFAULT_REQUEST_VALUE;
 use core_test_support::responses;
+use core_test_support::skip_if_no_network;
+use core_test_support::skip_if_wine_exec;
 use pretty_assertions::assert_eq;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -174,12 +179,30 @@ async fn thread_settings_update_cwd_retargets_default_environment() -> Result<()
 }
 
 #[tokio::test]
-async fn thread_settings_update_while_turn_is_active_emits_notification() -> Result<()> {
+async fn approval_policy_update_applies_to_active_turn() -> Result<()> {
+    skip_if_wine_exec!(
+        Ok(()),
+        "shell-command approval routing requires a host-native cwd under Wine-exec"
+    );
+    skip_if_no_network!(Ok(()));
+
     let server = responses::start_mock_server().await;
-    let first_response =
-        responses::sse_response(create_final_assistant_message_sse_response("first done")?)
-            .set_delay(Duration::from_secs(2));
-    let _requests = responses::mount_response_sequence(&server, vec![first_response]).await;
+    let call_id = "live-approval-policy";
+    let tool_args = serde_json::to_string(&serde_json::json!({
+        "command": "printf 'live approval policy'",
+        "timeout_ms": 5_000,
+        "sandbox_permissions": "require_escalated",
+    }))?;
+    let first_response = responses::sse_response(responses::sse(vec![
+        responses::ev_response_created("resp-1"),
+        responses::ev_function_call(call_id, "shell_command", &tool_args),
+        responses::ev_completed("resp-1"),
+    ]))
+    .set_delay(Duration::from_secs(2));
+    let final_response =
+        responses::sse_response(create_final_assistant_message_sse_response("done")?);
+    let requests =
+        responses::mount_response_sequence(&server, vec![first_response, final_response]).await;
     let codex_home = TempDir::new()?;
     create_config_toml(codex_home.path(), &server.uri())?;
 
@@ -200,7 +223,7 @@ async fn thread_settings_update_while_turn_is_active_emits_notification() -> Res
         &mut mcp,
         ThreadSettingsUpdateParams {
             thread_id: thread.id.clone(),
-            model: Some("mock-model-4".to_string()),
+            approval_policy: Some(codex_app_server_protocol::AskForApproval::OnRequest),
             ..Default::default()
         },
     )
@@ -208,13 +231,37 @@ async fn thread_settings_update_while_turn_is_active_emits_notification() -> Res
 
     let updated = read_thread_settings_updated(&mut mcp).await?;
     assert_eq!(updated.thread_id, thread.id);
-    assert_eq!(updated.thread_settings.model, "mock-model-4");
+    assert_eq!(
+        updated.thread_settings.approval_policy,
+        codex_app_server_protocol::AskForApproval::OnRequest
+    );
+
+    let server_request =
+        timeout(DEFAULT_TIMEOUT, mcp.read_stream_until_request_message()).await??;
+    let ServerRequest::CommandExecutionRequestApproval { request_id, params } = server_request
+    else {
+        panic!("expected command approval request after the live policy update");
+    };
+    assert_eq!(params.item_id, call_id);
+    mcp.send_response(
+        request_id,
+        serde_json::to_value(CommandExecutionRequestApprovalResponse {
+            decision: CommandExecutionApprovalDecision::Accept,
+        })?,
+    )
+    .await?;
 
     timeout(
         DEFAULT_TIMEOUT,
         mcp.read_stream_until_notification_message("turn/completed"),
     )
     .await??;
+    assert!(
+        requests
+            .function_call_output_text(call_id)
+            .is_some_and(|output| output.contains("live approval policy")),
+        "approved command output should be sent to the model"
+    );
     Ok(())
 }
 
