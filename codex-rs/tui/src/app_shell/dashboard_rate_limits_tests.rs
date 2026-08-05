@@ -4,30 +4,35 @@ use pretty_assertions::assert_eq;
 #[test]
 fn usage_bar_rounds_to_nearest_segment_and_clamps_to_ten_segments() {
     let cases = [
-        (-10, "░░░░░░░░░░"),
-        (0, "░░░░░░░░░░"),
-        (1, "░░░░░░░░░░"),
-        (4, "░░░░░░░░░░"),
-        (5, "█░░░░░░░░░"),
-        (10, "█░░░░░░░░░"),
-        (14, "█░░░░░░░░░"),
-        (15, "██░░░░░░░░"),
-        (41, "████░░░░░░"),
-        (45, "█████░░░░░"),
-        (50, "█████░░░░░"),
-        (82, "████████░░"),
-        (85, "█████████░"),
-        (95, "██████████"),
-        (99, "██████████"),
-        (100, "██████████"),
-        (120, "██████████"),
+        (-10, 0),
+        (0, 0),
+        (1, 0),
+        (4, 0),
+        (5, 1),
+        (10, 1),
+        (14, 1),
+        (15, 2),
+        (41, 4),
+        (45, 5),
+        (50, 5),
+        (82, 8),
+        (85, 9),
+        (95, 10),
+        (99, 10),
+        (100, 10),
+        (120, 10),
     ];
 
     assert_eq!(
-        cases.map(|(used_percent, _)| {
-            Line::from(Vec::from(usage_bar_spans(used_percent, palette::purple()))).to_string()
-        }),
-        cases.map(|(_, expected_bar)| expected_bar.to_string()),
+        cases.map(|(used_percent, _)| usage_bar_spans(used_percent, palette::purple())),
+        cases.map(|(_, filled_segments)| [
+            MIDDLE_HALF_BLOCK
+                .repeat(filled_segments)
+                .fg(palette::purple()),
+            MIDDLE_HALF_BLOCK
+                .repeat(USAGE_BAR_SEGMENTS.saturating_sub(filled_segments))
+                .fg(palette::border()),
+        ]),
     );
 }
 
@@ -43,7 +48,7 @@ fn usage_bar_renders_exactly_ten_visible_chunks() {
 fn usage_bar_styles_filled_and_empty_blocks() {
     assert_eq!(
         usage_bar_spans(/*used_percent*/ 82, palette::purple()),
-        ["████████".fg(palette::purple()), "░░".fg(palette::border()),],
+        ["𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳".fg(palette::purple()), "𜴳𜴳".fg(palette::border()),],
     );
 }
 
@@ -85,7 +90,7 @@ fn quota_bar_and_percentage_follow_usage_severity_thresholds() {
             let bar_color = line
                 .spans
                 .iter()
-                .find(|span| span.content.contains('█'))
+                .find(|span| span.content.contains('𜴳'))
                 .and_then(|span| span.style.fg);
             let percentage_color = line
                 .spans
@@ -130,8 +135,8 @@ fn rows_put_bar_before_padded_percentage_type_and_reset_countdown() {
         .map(|line| line.to_string())
         .collect::<Vec<_>>(),
         vec![
-            "████████░░ 82% GPT-5.3-Codex-Spark 3d 5h".to_string(),
-            "█░░░░░░░░░ 5%  GPT-5.3-Codex-Spark 5h".to_string(),
+            "𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳 82% GPT-5.3-Codex-Spark 3d 5h".to_string(),
+            "𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳 5%  GPT-5.3-Codex-Spark 5h".to_string(),
         ],
     );
 }
@@ -163,8 +168,8 @@ fn single_digit_percentages_have_only_one_space_before_the_type() {
             .map(|line| line.to_string())
             .collect::<Vec<_>>(),
         vec![
-            "█░░░░░░░░░ 5% codex unknown".to_string(),
-            "█░░░░░░░░░ 8% codex unknown".to_string(),
+            "𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳 5% codex unknown".to_string(),
+            "𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳 8% codex unknown".to_string(),
         ],
     );
 }
@@ -224,7 +229,7 @@ fn quota_details_render_on_a_separate_indented_line() {
         .map(|line| line.to_string())
         .collect::<Vec<_>>(),
         vec![
-            "█████░░░░░ 50% codex 1h".to_string(),
+            "𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳𜴳 50% codex 1h".to_string(),
             "  spend 75% left".to_string(),
         ],
     );
