@@ -217,7 +217,7 @@ pub struct ThreadSettingsUpdateParams {
     /// Override the working directory for subsequent turns.
     #[ts(optional = nullable)]
     pub cwd: Option<PathBuf>,
-    /// Override the approval policy for subsequent turns.
+    /// Override the approval policy for the active turn and subsequent turns.
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,

@@ -10710,7 +10710,7 @@ async fn rejects_escalated_permissions_when_policy_not_on_request() {
     use codex_protocol::protocol::AskForApproval;
     use codex_tools::ShellCommandBackendConfig;
 
-    let (session, mut turn_context_raw) = make_session_and_context().await;
+    let (session, turn_context_raw) = make_session_and_context().await;
     // Ensure policy is NOT OnRequest so the early rejection path triggers
     turn_context_raw
         .approval_policy
@@ -10876,7 +10876,7 @@ async fn unified_exec_rejects_escalated_permissions_when_policy_not_on_request()
     use crate::turn_diff_tracker::TurnDiffTracker;
     use codex_protocol::protocol::AskForApproval;
 
-    let (session, mut turn_context_raw) = make_session_and_context().await;
+    let (session, turn_context_raw) = make_session_and_context().await;
     turn_context_raw
         .approval_policy
         .set(AskForApproval::Never)

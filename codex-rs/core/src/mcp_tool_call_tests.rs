@@ -1460,12 +1460,13 @@ async fn host_owned_codex_apps_manager(
             Some(&turn_context.originator),
         )),
     )]);
+    let approval_policy = turn_context.approval_policy.snapshot();
     let manager = codex_mcp::McpConnectionManager::new(
         &mcp_servers,
         turn_context.config.mcp_oauth_credentials_store_mode,
         turn_context.config.auth_keyring_backend_kind(),
         HashMap::new(),
-        &turn_context.approval_policy,
+        &approval_policy,
         turn_context.sub_id.clone(),
         tx_event,
         startup_cancellation_token,
