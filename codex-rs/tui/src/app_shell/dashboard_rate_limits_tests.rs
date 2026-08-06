@@ -2,26 +2,37 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn usage_bar_uses_fractional_block_elements_and_clamps_to_ten_segments() {
+fn usage_bar_rounds_to_nearest_segment_and_clamps_to_ten_segments() {
     let cases = [
-        (-10, "░░░░░░░░░░"),
-        (0, "░░░░░░░░░░"),
-        (1, "▏░░░░░░░░░"),
-        (10, "█░░░░░░░░░"),
-        (41, "████▏░░░░░"),
-        (50, "█████░░░░░"),
-        (82, "████████▎░"),
-        (95, "█████████▌"),
-        (99, "█████████▉"),
-        (100, "██████████"),
-        (120, "██████████"),
+        (-10, 0),
+        (0, 0),
+        (1, 0),
+        (4, 0),
+        (5, 1),
+        (10, 1),
+        (14, 1),
+        (15, 2),
+        (41, 4),
+        (45, 5),
+        (50, 5),
+        (82, 8),
+        (85, 9),
+        (95, 10),
+        (99, 10),
+        (100, 10),
+        (120, 10),
     ];
 
     assert_eq!(
-        cases.map(|(used_percent, _)| {
-            Line::from(Vec::from(usage_bar_spans(used_percent, palette::purple()))).to_string()
-        }),
-        cases.map(|(_, expected_bar)| expected_bar.to_string()),
+        cases.map(|(used_percent, _)| usage_bar_spans(used_percent, palette::purple())),
+        cases.map(|(_, filled_segments)| [
+            USAGE_BAR_SEGMENT
+                .repeat(filled_segments)
+                .fg(palette::purple()),
+            USAGE_BAR_SEGMENT
+                .repeat(USAGE_BAR_SEGMENTS.saturating_sub(filled_segments))
+                .fg(palette::border()),
+        ]),
     );
 }
 
@@ -34,14 +45,10 @@ fn usage_bar_renders_exactly_ten_visible_chunks() {
 }
 
 #[test]
-fn usage_bar_styles_filled_fractional_and_empty_blocks() {
+fn usage_bar_styles_filled_and_empty_blocks() {
     assert_eq!(
         usage_bar_spans(/*used_percent*/ 82, palette::purple()),
-        [
-            "████████".fg(palette::purple()),
-            "▎".fg(palette::purple()),
-            "░".fg(palette::border()),
-        ],
+        ["━━━━━━━━".fg(palette::purple()), "━━".fg(palette::border()),],
     );
 }
 
@@ -72,14 +79,18 @@ fn quota_bar_and_percentage_follow_usage_severity_thresholds() {
                 plan_type: None,
                 rate_limit_reached_type: None,
             };
-            let line = rate_limit_lines(&limit, /*width*/ 100)
-                .into_iter()
-                .next()
-                .expect("rate limit should render");
+            let line = rate_limit_lines(
+                std::slice::from_ref(&limit),
+                /*width*/ 100,
+                /*current_time_at*/ 0,
+            )
+            .into_iter()
+            .next()
+            .expect("rate limit should render");
             let bar_color = line
                 .spans
                 .iter()
-                .find(|span| span.content.contains('█'))
+                .find(|span| span.content.contains('━'))
                 .and_then(|span| span.style.fg);
             let percentage_color = line
                 .spans
@@ -93,18 +104,56 @@ fn quota_bar_and_percentage_follow_usage_severity_thresholds() {
 }
 
 #[test]
-fn narrow_layout_omits_bars_but_keeps_every_quota_percentage() {
+fn rows_put_bar_before_padded_percentage_type_and_reset_countdown() {
+    const CURRENT_TIME_AT: i64 = 1_900_000_000;
     let limit = RateLimitSnapshot {
-        limit_id: Some("codex".to_string()),
-        limit_name: Some("Codex".to_string()),
+        limit_id: Some("gpt-5.3-codex-spark".to_string()),
+        limit_name: Some("GPT-5.3-Codex-Spark".to_string()),
         primary: Some(codex_app_server_protocol::RateLimitWindow {
             used_percent: 82,
             window_duration_mins: Some(300),
+            resets_at: Some(CURRENT_TIME_AT + 3 * 24 * 60 * 60 + 5 * 60 * 60),
+        }),
+        secondary: Some(codex_app_server_protocol::RateLimitWindow {
+            used_percent: 5,
+            window_duration_mins: Some(10_080),
+            resets_at: Some(CURRENT_TIME_AT + 5 * 60 * 60),
+        }),
+        credits: None,
+        individual_limit: None,
+        plan_type: None,
+        rate_limit_reached_type: None,
+    };
+
+    assert_eq!(
+        rate_limit_lines(
+            std::slice::from_ref(&limit),
+            /*width*/ 100,
+            CURRENT_TIME_AT
+        )
+        .into_iter()
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>(),
+        vec![
+            "━━━━━━━━━━ 82% GPT-5.3-Codex-Spark 3d 5h".to_string(),
+            "━━━━━━━━━━ 5%  GPT-5.3-Codex-Spark 5h".to_string(),
+        ],
+    );
+}
+
+#[test]
+fn single_digit_percentages_have_only_one_space_before_the_type() {
+    let limit = RateLimitSnapshot {
+        limit_id: Some("codex".to_string()),
+        limit_name: None,
+        primary: Some(codex_app_server_protocol::RateLimitWindow {
+            used_percent: 5,
+            window_duration_mins: None,
             resets_at: None,
         }),
         secondary: Some(codex_app_server_protocol::RateLimitWindow {
-            used_percent: 18,
-            window_duration_mins: Some(10_080),
+            used_percent: 8,
+            window_duration_mins: None,
             resets_at: None,
         }),
         credits: None,
@@ -114,37 +163,54 @@ fn narrow_layout_omits_bars_but_keeps_every_quota_percentage() {
     };
 
     assert_eq!(
-        rate_limit_lines(&limit, /*width*/ 42)
+        rate_limit_lines(std::slice::from_ref(&limit), /*width*/ 100, 0)
             .into_iter()
             .map(|line| line.to_string())
             .collect::<Vec<_>>(),
-        vec!["Codex 82% 5h | 18% 7d".to_string()],
-    );
-    assert_eq!(
-        rate_limit_lines(&limit, /*width*/ 43)
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>(),
-        vec!["Codex ████████▎░ 82% 5h | █▊░░░░░░░░ 18% 7d".to_string()],
-    );
-    assert_eq!(
-        rate_limit_lines(&limit, /*width*/ 16)
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>(),
-        vec!["Codex 82% 5h".to_string(), "  18% 7d".to_string(),],
+        vec![
+            "━━━━━━━━━━ 5% codex unknown".to_string(),
+            "━━━━━━━━━━ 8% codex unknown".to_string(),
+        ],
     );
 }
 
 #[test]
-fn quota_details_wrap_only_below_the_exact_inline_width() {
+fn reset_countdown_rounds_up_partial_hours_and_handles_missing_or_elapsed_resets() {
+    const CURRENT_TIME_AT: i64 = 1_900_000_000;
+    const SEVEN_DAYS: i64 = 7 * 24 * 60 * 60;
+
+    assert_eq!(
+        [
+            format_time_left(
+                Some(CURRENT_TIME_AT + 3 * 24 * 60 * 60 + 5 * 60 * 60 + 59 * 60),
+                CURRENT_TIME_AT,
+            ),
+            format_time_left(Some(CURRENT_TIME_AT + 59 * 60), CURRENT_TIME_AT),
+            format_time_left(Some(CURRENT_TIME_AT + SEVEN_DAYS), CURRENT_TIME_AT),
+            format_time_left(Some(CURRENT_TIME_AT + SEVEN_DAYS - 1), CURRENT_TIME_AT),
+            format_time_left(Some(CURRENT_TIME_AT - 60), CURRENT_TIME_AT),
+            format_time_left(None, CURRENT_TIME_AT),
+        ],
+        [
+            "3d 6h".to_string(),
+            "1h".to_string(),
+            "7d 0h".to_string(),
+            "7d 0h".to_string(),
+            "0h".to_string(),
+            "unknown".to_string(),
+        ],
+    );
+}
+
+#[test]
+fn quota_details_render_on_a_separate_indented_line() {
     let limit = RateLimitSnapshot {
         limit_id: Some("codex".to_string()),
-        limit_name: Some("Codex".to_string()),
+        limit_name: None,
         primary: Some(codex_app_server_protocol::RateLimitWindow {
             used_percent: 50,
             window_duration_mins: Some(60),
-            resets_at: None,
+            resets_at: Some(1_900_003_600),
         }),
         secondary: None,
         credits: None,
@@ -159,19 +225,16 @@ fn quota_details_wrap_only_below_the_exact_inline_width() {
     };
 
     assert_eq!(
-        rate_limit_lines(&limit, /*width*/ 40)
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>(),
-        vec!["Codex █████░░░░░ 50% 1h | spend 75% left".to_string()],
-    );
-    assert_eq!(
-        rate_limit_lines(&limit, /*width*/ 39)
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>(),
+        rate_limit_lines(
+            std::slice::from_ref(&limit),
+            /*width*/ 100,
+            /*current_time_at*/ 1_900_000_000
+        )
+        .into_iter()
+        .map(|line| line.to_string())
+        .collect::<Vec<_>>(),
         vec![
-            "Codex █████░░░░░ 50% 1h".to_string(),
+            "━━━━━━━━━━ 50% codex 1h".to_string(),
             "  spend 75% left".to_string(),
         ],
     );

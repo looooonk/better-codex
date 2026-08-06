@@ -49,6 +49,8 @@ curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/
 The installer downloads the archive for the current CPU, verifies its SHA-256
 checksum, and installs a `better-codex` launcher in `$HOME/.local/bin`. Releases
 include binaries for Apple Silicon and Intel macOS, plus ARM64 and x86_64 Linux.
+Automatic release discovery uses a static version pointer that is updated only
+after every release asset has been published.
 
 The macOS binaries are not code-signed yet. On first launch, macOS may require
 you to allow the binary in System Settings under Privacy & Security.
@@ -57,7 +59,7 @@ To install a specific version:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh \
-  | sh -s -- --version 0.1.0-alpha.6
+  | sh -s -- --version 0.1.0-alpha.9
 ```
 
 ### Build from source

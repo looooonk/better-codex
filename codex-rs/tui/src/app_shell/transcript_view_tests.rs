@@ -227,6 +227,57 @@ fn output_hit_testing_ignores_non_card_rows_and_empty_viewport_space() {
 }
 
 #[test]
+fn hyperlink_hit_testing_resolves_visible_markdown_destinations() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_assistant();
+    shell.push_assistant("Open [the docs](https://example.com/reference) for details.");
+    let area = Rect::new(
+        /*x*/ 7, /*y*/ 3, /*width*/ 54, /*height*/ 10,
+    );
+    let viewport = transcript_viewport(&shell, area);
+    let (row, hyperlink) = (viewport.visible_from
+        ..viewport.visible_from.saturating_add(viewport.visible_count))
+        .find_map(|row| {
+            let line = viewport.layout.row_at(row)?.line()?;
+            line.hyperlinks.first().map(|hyperlink| (row, hyperlink))
+        })
+        .expect("the Markdown link should be visible");
+    let y = viewport.text_body.y.saturating_add(
+        u16::try_from(row.saturating_sub(viewport.visible_from)).expect("row should fit"),
+    );
+    let start = viewport
+        .text_body
+        .x
+        .saturating_add(u16::try_from(hyperlink.columns.start).expect("column should fit"));
+    let end = viewport
+        .text_body
+        .x
+        .saturating_add(u16::try_from(hyperlink.columns.end).expect("column should fit"));
+
+    assert_eq!(
+        transcript_hyperlink_at(&shell, area, Position::new(start, y)),
+        Some("https://example.com/reference".to_string())
+    );
+    assert_eq!(
+        transcript_hyperlink_at(&shell, area, Position::new(end.saturating_sub(1), y)),
+        Some("https://example.com/reference".to_string())
+    );
+    assert_eq!(
+        transcript_hyperlink_at(&shell, area, Position::new(end, y)),
+        None
+    );
+    assert_eq!(
+        transcript_hyperlink_at(
+            &shell,
+            area,
+            Position::new(start, viewport.text_body.y.saturating_sub(1)),
+        ),
+        None
+    );
+}
+
+#[test]
 fn text_hit_testing_resolves_scrolled_wide_graphemes_and_rejects_chrome() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -376,11 +427,83 @@ fn selected_text_normalizes_reverse_drag_and_preserves_blank_rows() {
 }
 
 #[test]
+fn selected_text_excludes_visual_continuation_prefixes() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_assistant();
+    shell.push_assistant(
+        "Released the alpha.9 source and started CD.\n\n\
+         - Version bumped to 0.1.0-alpha.9.\n\
+         - Commit pushed: 307e72ba1",
+    );
+    let area = Rect::new(
+        /*x*/ 4, /*y*/ 2, /*width*/ 64, /*height*/ 12,
+    );
+    let viewport = transcript_viewport(&shell, area);
+    let first = rendered_line_text(
+        viewport
+            .layout
+            .row_at(0)
+            .and_then(TranscriptLayoutRow::line)
+            .expect("first assistant row"),
+    );
+    let last_row = viewport.layout.total_lines.saturating_sub(1);
+    let last_line = viewport
+        .layout
+        .row_at(last_row)
+        .and_then(TranscriptLayoutRow::line)
+        .expect("last assistant row");
+    let last = rendered_line_text(last_line);
+    let anchor = grapheme_hit_at(&first, /*row*/ 0, /*column*/ 0).expect("first label hit");
+    let last = trim_synthetic_right_padding(&last);
+    let focus = grapheme_hit_at(last, last_row, last.width().saturating_sub(1))
+        .expect("last assistant text hit");
+
+    assert_eq!(
+        transcript_selected_text(
+            &shell,
+            area,
+            NormalizedVisualRange::from_hits(anchor, focus),
+        ),
+        Some(
+            "▎ CODEX  Released the alpha.9 source and started CD.\n\n\
+             - Version bumped to 0.1.0-alpha.9.\n\
+             - Commit pushed: 307e72ba1"
+                .to_string()
+        )
+    );
+
+    let last_y = viewport.text_body.y.saturating_add(
+        u16::try_from(last_row.saturating_sub(viewport.visible_from)).expect("last row fits"),
+    );
+    let prefix_end = viewport
+        .text_body
+        .x
+        .saturating_add(u16::try_from(last_line.synthetic_prefix_width).expect("prefix fits"));
+    assert_eq!(
+        transcript_text_hit_at(
+            &shell,
+            area,
+            Position::new(prefix_end.saturating_sub(1), last_y),
+        ),
+        None
+    );
+    assert_eq!(
+        transcript_text_hit_at(&shell, area, Position::new(prefix_end, last_y)),
+        Some(VisualGraphemeHit::new(
+            last_row,
+            last_line.synthetic_prefix_width,
+            /*width*/ 1,
+        ))
+    );
+}
+
+#[test]
 fn selected_text_trims_full_width_card_padding() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
     shell.clear_streaming_assistant();
-    shell.push_output_with_status_for_item("exec-1", "first\nsecond", ToolBlockStatus::Success);
+    shell.push_output_with_status_for_item("exec-1", "first\n  second", ToolBlockStatus::Success);
     let area = Rect::new(
         /*x*/ 2, /*y*/ 2, /*width*/ 60, /*height*/ 12,
     );
@@ -409,7 +532,7 @@ fn selected_text_trims_full_width_card_padding() {
     let selection = NormalizedVisualRange::from_hits(anchor, focus);
     let selected = transcript_selected_text(&shell, area, selection).expect("selected text");
 
-    assert_eq!(selected, format!("first\n{second}"));
+    assert_eq!(selected, "first\n  second");
     assert!(
         !selected
             .lines()
@@ -464,4 +587,74 @@ fn text_selection_patches_only_selected_grapheme_cells() {
         .saturating_add(u16::try_from(start.saturating_sub(1)).expect("column should fit"));
     assert_ne!(buf[(before, y)].style().bg, Some(palette::focus()));
     insta::assert_debug_snapshot!("transcript_text_selection_cells", selected_cells);
+}
+
+#[test]
+fn text_selection_does_not_patch_visual_continuation_prefixes() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_assistant();
+    shell.push_assistant("first line\n\nsecond line");
+    let area = Rect::new(
+        /*x*/ 3, /*y*/ 2, /*width*/ 60, /*height*/ 12,
+    );
+    let viewport = transcript_viewport(&shell, area);
+    let first = rendered_line_text(
+        viewport
+            .layout
+            .row_at(0)
+            .and_then(TranscriptLayoutRow::line)
+            .expect("first assistant row"),
+    );
+    let last_row = viewport.layout.total_lines.saturating_sub(1);
+    let last = rendered_line_text(
+        viewport
+            .layout
+            .row_at(last_row)
+            .and_then(TranscriptLayoutRow::line)
+            .expect("last assistant row"),
+    );
+    let anchor = grapheme_hit_at(&first, /*row*/ 0, /*column*/ 0).expect("first label hit");
+    let focus = grapheme_hit_at(&last, last_row, last.width().saturating_sub(1))
+        .expect("last assistant hit");
+    let selection = NormalizedVisualRange::from_hits(anchor, focus);
+    let mut buf = Buffer::empty(area);
+
+    render_transcript(&shell, area, /*hover_position*/ None, &mut buf);
+    render_transcript_text_selection(&shell, area, selection, &mut buf);
+
+    let rendered_rows = (0..viewport.layout.total_lines)
+        .map(|row| {
+            let line = viewport
+                .layout
+                .row_at(row)
+                .and_then(TranscriptLayoutRow::line)
+                .expect("assistant row");
+            let text = rendered_line_text(line);
+            let y = viewport
+                .text_body
+                .y
+                .saturating_add(u16::try_from(row).expect("row fits"));
+            let selection_mask = (0..text.width())
+                .map(|column| {
+                    let x = viewport
+                        .text_body
+                        .x
+                        .saturating_add(u16::try_from(column).expect("column fits"));
+                    let style = buf[(x, y)].style();
+                    if style.fg == Some(palette::dark()) && style.bg == Some(palette::focus()) {
+                        '^'
+                    } else {
+                        '.'
+                    }
+                })
+                .collect::<String>();
+            (text, selection_mask)
+        })
+        .collect::<Vec<_>>();
+
+    insta::assert_debug_snapshot!(
+        "transcript_text_selection_skips_visual_prefixes",
+        rendered_rows
+    );
 }

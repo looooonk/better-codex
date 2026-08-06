@@ -53,7 +53,11 @@ impl DashboardView {
     fn new(shell: &ShellState, placement: DashboardPlacement) -> Self {
         let area = placement.area();
         let mut content = pane_content_rect(area);
-        let panels = dashboard_panels(shell, usize::from(content.width));
+        let panels = dashboard_panels(
+            shell,
+            usize::from(content.width),
+            usize::from(content.height),
+        );
         if shell.dashboard_route == DashboardRoute::Help {
             let help_height = panels
                 .iter()
@@ -186,14 +190,20 @@ pub(super) fn render_dashboard(
 ) {
     let area = placement.area();
     fill_rect(buf, area, palette::dark());
+    let divider_highlighted = shell.dashboard_resize.dragging
+        || pointer.is_some_and(|position| {
+            position.x == area.x && (area.y..area.bottom()).contains(&position.y)
+        });
     for y in area.y..area.bottom() {
         if let Some(cell) = buf.cell_mut((area.x, y)) {
-            cell.set_symbol("│")
-                .set_style(Style::new().fg(if shell.dashboard_focused() {
-                    palette::focus()
-                } else {
-                    palette::border()
-                }));
+            cell.set_symbol(if divider_highlighted { "┃" } else { "│" })
+                .set_style(
+                    Style::new().fg(if shell.dashboard_focused() || divider_highlighted {
+                        palette::focus()
+                    } else {
+                        palette::border()
+                    }),
+                );
         }
     }
 
@@ -350,7 +360,14 @@ fn render_hover(
             return;
         }
     }
-    if interactive && panel_row > 0 {
+    let interactive_row = match panel.title.as_str() {
+        "Settings" => panel_row
+            .checked_sub(1)
+            .and_then(|line| shell.settings.action_index_at_line(line))
+            .is_some(),
+        _ => panel_row > 0,
+    };
+    if interactive && interactive_row {
         buf.set_style(
             Rect::new(text_area.x, pointer.y, text_area.width, 1),
             Style::new().bg(palette::border()),

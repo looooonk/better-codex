@@ -1,0 +1,7 @@
+---
+source: tui/src/app_shell/dashboard_tests.rs
+expression: "panel.render_lines(100).into_iter().map(|line|\nline.to_string()).collect::<Vec<_>>().join(\"\\n\")"
+---
+◆ TOKENS
+input 1.7b | output 1.1t
+Context 100% left

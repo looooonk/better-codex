@@ -33,6 +33,8 @@ pub(crate) struct TerminalHyperlink {
 pub(crate) struct HyperlinkLine {
     pub(crate) line: Line<'static>,
     pub(crate) hyperlinks: Vec<TerminalHyperlink>,
+    /// Leading display cells that exist only to align this row with preceding UI chrome.
+    pub(crate) synthetic_prefix_width: usize,
 }
 
 impl HyperlinkLine {
@@ -40,6 +42,7 @@ impl HyperlinkLine {
         Self {
             line,
             hyperlinks: Vec::new(),
+            synthetic_prefix_width: 0,
         }
     }
 
@@ -114,6 +117,9 @@ pub(crate) fn prefix_hyperlink_lines(
             line.line = Line::from(spans).style(line.line.style);
             for hyperlink in &mut line.hyperlinks {
                 hyperlink.columns = hyperlink.columns.start + shift..hyperlink.columns.end + shift;
+            }
+            if index > 0 {
+                line.synthetic_prefix_width = line.synthetic_prefix_width.saturating_add(shift);
             }
             line
         })
@@ -564,6 +570,7 @@ mod tests {
                 columns: 0..destination.width(),
                 destination: destination.to_string(),
             }],
+            synthetic_prefix_width: 0,
         };
 
         assert_eq!(

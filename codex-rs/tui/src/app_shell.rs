@@ -83,6 +83,7 @@ mod composer_render;
 mod dashboard;
 mod dashboard_help;
 mod dashboard_rate_limits;
+mod dashboard_resize;
 mod dashboard_view;
 mod dashboard_workspace;
 mod design;
@@ -142,6 +143,7 @@ mod text_selection;
 mod tool_output;
 mod tool_output_view;
 mod transcript_render;
+mod transcript_selection;
 mod transcript_view;
 mod turn_timer;
 mod user_input;
@@ -219,6 +221,7 @@ const TRANSCRIPT_SELECTION_STEP: usize = 1;
 const APP_SERVER_FRAME_INTERVAL: Duration = Duration::from_millis(33);
 const BACKEND_ACTION_POLL_INTERVAL: Duration = Duration::from_millis(25);
 const AGENT_HISTORY_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const RATE_LIMITS_REFRESH_INTERVAL: Duration = Duration::from_secs(/*secs*/ 60);
 const WORKSPACE_STATUS_POLL_INTERVAL: Duration = Duration::from_secs(/*secs*/ 5);
 const STATUS_SPINNER_FRAME_INTERVAL: Duration = Duration::from_millis(120);
 const TURN_TIMER_REFRESH_INTERVAL: Duration = Duration::from_secs(/*secs*/ 1);
@@ -340,6 +343,11 @@ pub(crate) async fn run(
         agent_history_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut backend_action_poll = tokio::time::interval(BACKEND_ACTION_POLL_INTERVAL);
         backend_action_poll.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        let mut rate_limits_refresh = tokio::time::interval_at(
+            tokio::time::Instant::now() + RATE_LIMITS_REFRESH_INTERVAL,
+            RATE_LIMITS_REFRESH_INTERVAL,
+        );
+        rate_limits_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let mut workspace_status_poll = tokio::time::interval_at(
             tokio::time::Instant::now() + WORKSPACE_STATUS_POLL_INTERVAL,
             WORKSPACE_STATUS_POLL_INTERVAL,
@@ -380,6 +388,16 @@ pub(crate) async fn run(
                                 if exits_warning {
                                     break ExitReason::UserRequested;
                                 }
+                                continue;
+                            }
+                            let area = ratatui::layout::Rect::new(
+                                /*x*/ 0,
+                                /*y*/ 0,
+                                size.width,
+                                size.height,
+                            );
+                            if shell.handle_dashboard_resize_key(area, key) {
+                                tui.frame_requester().schedule_frame();
                                 continue;
                             }
                             match shell.handle_key(key, &config, &mut app_server).await {
@@ -526,6 +544,7 @@ pub(crate) async fn run(
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::Resize => {
+                            shell.cancel_dashboard_resize();
                             shell.clear_text_selections();
                             shell.clear_pointer_position();
                             draw_shell(tui, &shell)?;
@@ -583,6 +602,9 @@ pub(crate) async fn run(
                         }
                         tui.frame_requester().schedule_frame();
                     }
+                }
+                _ = rate_limits_refresh.tick() => {
+                    shell.request_rate_limits_refresh();
                 }
                 _ = workspace_status_poll.tick() => {
                     shell.poll_workspace_status_if_visible();
@@ -872,6 +894,7 @@ struct ShellState {
     resume_cwd_runtime: ResumeCwdRuntime,
     dashboard_route: DashboardRoute,
     dashboard_visible: bool,
+    dashboard_resize: dashboard_resize::DashboardResizeState,
     dashboard_scroll: Cell<usize>,
     pointer_position: Option<ratatui::layout::Position>,
     agents_focused: bool,
@@ -1009,6 +1032,7 @@ impl ShellState {
             resume_cwd_runtime,
             dashboard_route: DashboardRoute::Status,
             dashboard_visible: true,
+            dashboard_resize: dashboard_resize::DashboardResizeState::default(),
             dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,
@@ -1200,7 +1224,7 @@ impl ShellState {
     }
 
     fn apply_rate_limit_update(&mut self, snapshot: RateLimitSnapshot) {
-        self.mark_rate_limits_updated();
+        self.request_rate_limits_refresh();
         let Some(limit_id) = snapshot.limit_id.as_deref() else {
             if self.rate_limits.is_empty() {
                 self.rate_limits.push(snapshot);
@@ -1250,6 +1274,7 @@ impl ShellState {
     fn toggle_dashboard(&mut self) {
         self.dashboard_visible = !self.dashboard_visible;
         if !self.dashboard_visible {
+            self.cancel_dashboard_resize();
             self.session_list.focused = false;
             self.settings.focused = false;
             self.agents_focused = false;
@@ -1357,22 +1382,6 @@ impl ShellState {
         } else {
             scroll.min(max_scroll)
         }
-    }
-
-    fn select_latest_transcript_item(&mut self) {
-        self.clear_text_selections();
-        self.transcript_selection = self.transcript.len().checked_sub(1);
-        self.scroll_transcript_to_bottom();
-    }
-
-    fn select_first_transcript_item(&mut self) {
-        self.clear_text_selections();
-        self.transcript_selection = (!self.transcript.is_empty()).then_some(0);
-        self.scroll_transcript_to_top();
-    }
-
-    fn clear_transcript_selection(&mut self) {
-        self.transcript_selection = None;
     }
 
     fn clear_visible_transcript(&mut self) {
@@ -1561,27 +1570,6 @@ impl ShellState {
             }
             Err(err) => self.push_error(format!("failed to update goal: {err}")),
         }
-    }
-
-    fn move_transcript_selection_up(&mut self, rows: usize) {
-        let selected = self
-            .transcript_selection
-            .unwrap_or_else(|| self.transcript.len().saturating_sub(1));
-        self.transcript_selection = Some(selected.saturating_sub(rows));
-        self.scroll_transcript_up(rows);
-    }
-
-    fn move_transcript_selection_down(&mut self, rows: usize) {
-        let Some(selected) = self.transcript_selection else {
-            self.select_latest_transcript_item();
-            return;
-        };
-        let Some(max_index) = self.transcript.len().checked_sub(1) else {
-            self.clear_transcript_selection();
-            return;
-        };
-        self.transcript_selection = Some(selected.saturating_add(rows).min(max_index));
-        self.scroll_transcript_down(rows);
     }
 
     fn copy_selected_transcript_with(
@@ -1793,21 +1781,11 @@ impl ShellState {
             return Ok(());
         };
         let request_id = pending.request_id();
-        let title = pending.title().to_string();
-        let decision = if edit_prompt.is_some() {
-            "edit"
-        } else if pending.is_denial(option_index) {
-            "denied"
-        } else {
-            "approved"
-        };
         let result = pending.result(option_index)?;
         let request = app_server.resolve_server_request_in_background(request_id.clone(), result);
         self.start_backend_action(ActionGroup::Approval, "resolving approval", async move {
             BackendActionResult::Approval {
                 request_id,
-                title,
-                decision,
                 edit_prompt,
                 result: request.await,
             }
@@ -2724,6 +2702,7 @@ impl ShellState {
             },
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            dashboard_resize: dashboard_resize::DashboardResizeState::default(),
             dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,
@@ -3000,6 +2979,7 @@ pub mod bench_support {
             },
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            dashboard_resize: dashboard_resize::DashboardResizeState::default(),
             dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,

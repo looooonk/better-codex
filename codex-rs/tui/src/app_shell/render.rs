@@ -183,6 +183,17 @@ impl ShellView<'_> {
         super::transcript_view::transcript_card_at(self.shell, layout.transcript, position)
     }
 
+    pub(super) fn transcript_hyperlink_at(&self, area: Rect, position: Position) -> Option<String> {
+        let layout = self.layout(area)?;
+        if layout
+            .dashboard
+            .is_some_and(|dashboard| dashboard.area().contains(position))
+        {
+            return None;
+        }
+        super::transcript_view::transcript_hyperlink_at(self.shell, layout.transcript, position)
+    }
+
     pub(super) fn pointer_pane_at(&self, area: Rect, position: Position) -> Option<PointerPane> {
         let layout = self.layout(area)?;
         if layout.header.contains(position) {

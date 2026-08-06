@@ -1267,6 +1267,26 @@ fn renders_workspace_git_status_snapshot() {
 }
 
 #[test]
+fn renders_home_relative_workspace_cwd_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    shell.cwd = dirs::home_dir()
+        .expect("home directory should be available")
+        .join("Projects")
+        .join("better-codex")
+        .display()
+        .to_string();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 36,
+    );
+
+    let rendered = render_shell(&shell, area);
+
+    assert!(rendered.contains("cwd ~/Projects/better-codex"));
+    insta::assert_snapshot!(rendered);
+}
+
+#[test]
 fn renders_status_route_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Status;
@@ -1297,7 +1317,7 @@ fn renders_status_route_snapshot() {
 fn dashboard_routes_keep_session_and_status_panels_separate() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Sessions;
-    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
 
     assert_eq!(
         panels
@@ -1313,7 +1333,7 @@ fn dashboard_routes_keep_session_and_status_panels_separate() {
         ThreadGoalStatus::Active,
         "Keep route ownership explicit",
     ));
-    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
 
     assert_eq!(
         panels
@@ -1333,7 +1353,7 @@ fn dashboard_routes_keep_session_and_status_panels_separate() {
     );
 
     shell.dashboard_route = DashboardRoute::Help;
-    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+    let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
 
     assert_eq!(
         panels
@@ -1400,19 +1420,20 @@ fn renders_settings_pages_validation_snapshot() {
 fn renders_rate_limits_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Status;
+    let snapshot_time_at = chrono::Utc::now().timestamp();
     shell.rate_limits = vec![
         codex_app_server_protocol::RateLimitSnapshot {
             limit_id: Some("codex".to_string()),
-            limit_name: Some("Codex".to_string()),
+            limit_name: None,
             primary: Some(codex_app_server_protocol::RateLimitWindow {
                 used_percent: 82,
                 window_duration_mins: Some(300),
-                resets_at: Some(1_900_000_000),
+                resets_at: Some(snapshot_time_at + 3 * 24 * 60 * 60 + 5 * 60 * 60 + 30 * 60),
             }),
             secondary: Some(codex_app_server_protocol::RateLimitWindow {
                 used_percent: 18,
                 window_duration_mins: Some(10_080),
-                resets_at: None,
+                resets_at: Some(snapshot_time_at + 7 * 24 * 60 * 60 + 12 * 60 * 60 + 30 * 60),
             }),
             credits: Some(codex_app_server_protocol::CreditsSnapshot {
                 has_credits: true,
@@ -1434,7 +1455,7 @@ fn renders_rate_limits_snapshot() {
             primary: Some(codex_app_server_protocol::RateLimitWindow {
                 used_percent: 95,
                 window_duration_mins: Some(60),
-                resets_at: None,
+                resets_at: Some(snapshot_time_at + 90 * 60),
             }),
             secondary: None,
             credits: None,
@@ -1446,11 +1467,11 @@ fn renders_rate_limits_snapshot() {
         },
         codex_app_server_protocol::RateLimitSnapshot {
             limit_id: Some("gpt-5.3-codex-spark".to_string()),
-            limit_name: None,
+            limit_name: Some("GPT-5.3-Codex-Spark".to_string()),
             primary: Some(codex_app_server_protocol::RateLimitWindow {
                 used_percent: 41,
                 window_duration_mins: Some(60),
-                resets_at: None,
+                resets_at: Some(snapshot_time_at + 5 * 60 * 60 + 30 * 60),
             }),
             secondary: None,
             credits: None,
@@ -1461,7 +1482,7 @@ fn renders_rate_limits_snapshot() {
     ];
     shell.rate_limit_reset_credits = Some(2);
     let area = Rect::new(
-        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 42,
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 43,
     );
 
     insta::assert_snapshot!(render_shell(&shell, area));
@@ -1649,23 +1670,23 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
         "Tab page",
     ];
     let centralized_guides = [
-        "Cmd ←/→/⌫",
-        "Opt/Ctrl + ←/→",
-        "Ctrl+1 / Ctrl+2",
-        "Ctrl+3 / Ctrl+4",
-        "Ctrl+N / Enter",
-        "r / f",
-        "a / u",
-        "v / d",
-        "n · /",
-        "Ctrl+C/Esc×2/Ctrl+D",
-        "Enter/j/k",
+        "Branch from prompt",
+        "Command palette",
+        "Previous / next tab",
+        "Fork session",
+        "Reload open log",
+        "Insert newline",
+        "Interrupt / cancel",
+        "Toggle dashboard",
+        "Search sessions",
+        "Select effort",
+        "Scroll this guide",
     ];
     let mut leaked_guides = Vec::new();
 
     let visibility = DashboardRoute::ALL.map(|route| {
         shell.dashboard_route = route;
-        let panels = dashboard::dashboard_panels(&shell, /*width*/ 80);
+        let panels = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40);
         let has_keys = panels.iter().any(|panel| panel.title == "Keys");
         let has_route_shortcut = panels
             .iter()
@@ -1673,7 +1694,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             .into_iter()
             .flat_map(|panel| &panel.lines)
             .flat_map(|line| &line.spans)
-            .any(|span| span.content.contains("Cmd ←/→/⌫"));
+            .any(|span| span.content.contains("Cmd+Left / Right"));
         if route != DashboardRoute::Help {
             let text = panels
                 .iter()
@@ -1701,7 +1722,7 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
             (DashboardRoute::Help, true, true),
         ]
     );
-    let help_text = dashboard::dashboard_panels(&shell, /*width*/ 80)
+    let help_text = dashboard::dashboard_panels(&shell, /*width*/ 80, /*height*/ 40)
         .into_iter()
         .flat_map(|panel| panel.lines)
         .flat_map(|line| line.spans)
@@ -1710,6 +1731,12 @@ fn dashboard_shortcut_guides_only_appear_on_help_route() {
     assert_eq!(
         centralized_guides.map(|guide| help_text.contains(guide)),
         [true; 11]
+    );
+    assert!(!help_text.contains("Send"));
+    assert!(
+        ["Alt+M/E", "a/u/v/d", "^C/Esc×2/^D"]
+            .iter()
+            .all(|grouped| !help_text.contains(grouped))
     );
     let active_session_lines = shell
         .session_list
@@ -1756,7 +1783,9 @@ fn dashboard_shortcut_guides_fit_layout_boundaries() {
 
     for shell in [&shell, &selecting] {
         for width in [38, 40, 48, 54, 55, 58, 71, 72, 80] {
-            for line in super::dashboard_help::key_hint_lines(shell, width) {
+            for line in
+                super::dashboard_help::key_hint_lines(shell, width, /*panel_height*/ 40)
+            {
                 assert!(
                     line.width() <= width,
                     "shortcut help exceeds width {width}: {line}"
@@ -1770,7 +1799,7 @@ fn dashboard_shortcut_guides_fit_layout_boundaries() {
 fn dashboard_shortcut_label_variants_snapshot() {
     let shell = ShellState::snapshot_fixture();
     let rendered = |panel_width| {
-        super::dashboard_help::key_hint_lines(&shell, panel_width)
+        super::dashboard_help::key_hint_lines(&shell, panel_width, /*panel_height*/ 40)
             .into_iter()
             .map(|line| line.to_string())
             .join("\n")
@@ -1784,8 +1813,23 @@ fn dashboard_shortcut_label_variants_snapshot() {
         "wide_dashboard_shortcut_labels",
         rendered(/*panel_width*/ 80)
     );
-    let styled = super::dashboard_help::key_hint_lines(&shell, /*panel_width*/ 80);
+    let styled = super::dashboard_help::key_hint_lines(
+        &shell, /*panel_width*/ 80, /*panel_height*/ 40,
+    );
     insta::assert_debug_snapshot!("dashboard_shortcut_styling", &styled[..2]);
+}
+
+#[test]
+fn dashboard_shortcut_groups_gain_spacing_when_height_allows() {
+    let shell = ShellState::snapshot_fixture();
+    let compact = super::dashboard_help::key_hint_lines(
+        &shell, /*panel_width*/ 60, /*panel_height*/ 20,
+    );
+    let spacious = super::dashboard_help::key_hint_lines(
+        &shell, /*panel_width*/ 60, /*panel_height*/ 40,
+    );
+
+    assert!(spacious.len() > compact.len());
 }
 
 #[test]
@@ -1844,7 +1888,7 @@ fn wraps_long_code_lines_in_conversation_snapshot() {
 #[test]
 fn renders_transcript_selection_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.transcript_selection = Some(2);
+    shell.select_latest_transcript_item();
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
@@ -3121,6 +3165,83 @@ async fn interactive_requests_preempt_management_overlays() {
 }
 
 #[tokio::test]
+async fn approval_transcript_title_is_bounded_without_truncating_the_popup_snapshot() {
+    let mut request = command_approval_request();
+    let command = "printf first\nprintf second\nprintf third\nprintf private-fourth";
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut request else {
+        panic!("expected command approval request");
+    };
+    params.command = Some(command.to_string());
+
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.dashboard_visible = false;
+    let mut backend = RecordingBackend::default();
+    shell
+        .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request.clone()))
+        .await
+        .expect("approval request should open");
+
+    assert_eq!(
+        shell.transcript,
+        std::collections::VecDeque::from([TranscriptLine::new(
+            TranscriptKind::Status,
+            "approval requested: Run command: printf first\nprintf second\nprintf third...",
+        )])
+    );
+    assert_eq!(
+        shell
+            .pending_approval
+            .as_ref()
+            .expect("approval should remain pending")
+            .title(),
+        format!("Run command: {command}")
+    );
+    insta::assert_snapshot!(render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+        )
+    ));
+
+    let mut bounded_request = request.clone();
+    let ServerRequest::CommandExecutionRequestApproval { params, .. } = &mut bounded_request else {
+        panic!("expected command approval request");
+    };
+    params.command = Some("x".repeat(300));
+    let bounded = PendingInteractiveRequest::Approval(
+        PendingApproval::from_request(&bounded_request)
+            .expect("approval request should be valid")
+            .expect("request should be supported"),
+    );
+    assert_eq!(
+        bounded.transcript_title(),
+        format!("Run command: {}...", "x".repeat(144))
+    );
+
+    let mut queued_shell = ShellState::snapshot_fixture();
+    queued_shell.transcript.clear();
+    queued_shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerRequest(tool_user_input_request()),
+        )
+        .await
+        .expect("tool input should open");
+    queued_shell
+        .handle_app_server_event(&mut backend, AppServerEvent::ServerRequest(request))
+        .await
+        .expect("approval request should queue");
+    assert_eq!(
+        queued_shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Status,
+            "interactive request queued: Run command: printf first\nprintf second\nprintf third...",
+        ))
+    );
+}
+
+#[tokio::test]
 async fn concurrent_interactive_requests_wait_and_resolve_in_order() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();
@@ -3207,6 +3328,7 @@ async fn resolved_notifications_remove_only_the_matching_interactive_request() {
             .expect("interactive request should be accepted");
     }
     shell.composer.set_text("stale answer");
+    shell.transcript.clear();
 
     for request_id in [RequestId::Integer(41), RequestId::Integer(999)] {
         shell.handle_notification(ServerNotification::ServerRequestResolved(
@@ -3251,6 +3373,30 @@ async fn resolved_notifications_remove_only_the_matching_interactive_request() {
     assert!(shell.pending_elicitation.is_none());
     assert!(shell.pending_user_input.is_none());
     assert_eq!(backend.calls(), Vec::new());
+    assert_eq!(
+        shell
+            .transcript
+            .iter()
+            .map(|line| (line.kind, line.text.as_str()))
+            .collect::<Vec<_>>(),
+        vec![
+            (TranscriptKind::Status, "request resolved"),
+            (
+                TranscriptKind::Status,
+                "elicitation requested: MCP github: URL request",
+            ),
+            (TranscriptKind::Status, "request resolved"),
+        ]
+    );
+    insta::assert_snapshot!(
+        "resolved_interactive_request_messages",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
+    );
 }
 
 #[tokio::test]
@@ -3768,13 +3914,14 @@ async fn shell_operator_remains_interactive_while_command_is_running() {
     assert_eq!(shell.status, "running shell command");
     assert_eq!(shell.transcript.len(), transcript_len);
     for panel_width in [50, 60, 80] {
-        let help = super::dashboard_help::key_hint_lines(&shell, panel_width)
-            .into_iter()
-            .map(|line| line.to_string())
-            .collect::<Vec<_>>()
-            .join("\n");
+        let help =
+            super::dashboard_help::key_hint_lines(&shell, panel_width, /*panel_height*/ 40)
+                .into_iter()
+                .map(|line| line.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
         assert!(
-            help.contains("Cancel"),
+            help.contains("Stop/cancel") || help.contains("Interrupt / cancel"),
             "running-command help should explain cancellation at width {panel_width}:\n{help}"
         );
     }
@@ -5432,6 +5579,11 @@ fn shell_render_uses_the_selected_app_theme() {
         "shell_render_uses_catppuccin_mocha_styles",
         buffer_style_grid(&render_shell_buffer(&shell, area))
     );
+    shell.app_theme = TuiAppTheme::Monochrome;
+    insta::assert_snapshot!(
+        "shell_render_uses_monochrome_styles",
+        buffer_style_grid(&render_shell_buffer(&shell, area))
+    );
 }
 
 #[test]
@@ -5450,32 +5602,28 @@ fn resume_hint_uses_public_better_codex_command() {
     );
 }
 
-#[test]
-fn transcript_selection_moves_between_items() {
+#[tokio::test]
+async fn alt_arrow_selection_starts_on_a_user_message() {
+    let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
-    shell.select_latest_transcript_item();
+    let mut backend = RecordingBackend::default();
 
-    assert_eq!(
-        shell.selected_transcript_copy_text(),
-        Some((TranscriptKind::Diff, "3 files +128 -24"))
-    );
+    for code in [KeyCode::Up, KeyCode::Down] {
+        shell.clear_transcript_selection();
+        shell
+            .handle_key(
+                KeyEvent::new(code, KeyModifiers::ALT),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("Alt+arrow should select a transcript message");
 
-    shell.move_transcript_selection_up(/*rows*/ 2);
-
-    assert_eq!(
-        shell.selected_transcript_copy_text(),
-        Some((
-            TranscriptKind::Plan,
-            "1. Build shell\n2. Wire transcript\n3. Render dashboard"
-        ))
-    );
-
-    shell.move_transcript_selection_down(/*rows*/ 1);
-
-    assert_eq!(
-        shell.selected_transcript_copy_text(),
-        Some((TranscriptKind::Tool, "exec just test -p codex-tui"))
-    );
+        assert_eq!(
+            shell.selected_transcript_copy_text(),
+            Some((TranscriptKind::User, "Create a divergent standalone TUI."))
+        );
+    }
 }
 
 #[test]
@@ -6851,6 +6999,41 @@ fn settings_tab_hover_uses_content_only_geometry() {
 }
 
 #[test]
+fn settings_empty_rows_ignore_pointer_hover_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+    );
+
+    for (action, last_row_label, empty_row_count) in [
+        (SettingsAction::ServiceTier, "Service tier", 1),
+        (SettingsAction::ApprovalPolicy, "Approval", 3),
+    ] {
+        shell.settings.focus_action(action);
+        shell.pointer_position = None;
+        let baseline = render_shell_buffer(&shell, area);
+        let last_action_y =
+            row_containing(&baseline, area, last_row_label).expect("last action should be visible");
+        let pointer_x = row_needle_x(&baseline, area, last_action_y, last_row_label)
+            .expect("last action should have an x position");
+
+        for offset in 1..=empty_row_count {
+            let pointer = Position::new(
+                pointer_x,
+                last_action_y.saturating_add(u16::try_from(offset).unwrap_or(u16::MAX)),
+            );
+            shell.pointer_position = Some(pointer);
+            let hovered = render_shell_buffer(&shell, area);
+
+            assert_eq!(hovered[pointer].style().bg, baseline[pointer].style().bg);
+        }
+    }
+
+    insta::assert_snapshot!(buffer_style_grid(&render_shell_buffer(&shell, area)));
+}
+
+#[test]
 fn mouse_wheel_routes_to_the_pane_under_the_pointer_in_both_layouts() {
     for area in [
         Rect::new(
@@ -7852,12 +8035,18 @@ fn approval_denial_shortcuts_avoid_persistent_network_rules() {
 }
 
 #[tokio::test]
-async fn approval_keys_take_priority_over_transcript_selection() {
+async fn approval_keys_take_priority_over_transcript_selection_without_writing_audit() {
     let config = test_config().await;
     let mut backend = RecordingBackend::default();
     let mut shell = ShellState::snapshot_fixture();
-    shell.pending_approval = PendingApproval::from_request(&command_approval_request())
-        .expect("approval request should be valid");
+    shell.transcript.clear();
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerRequest(command_approval_request()),
+        )
+        .await
+        .expect("approval request should open");
     shell.transcript_selection = Some(0);
 
     let should_exit = shell
@@ -7875,6 +8064,13 @@ async fn approval_keys_take_priority_over_transcript_selection() {
     assert_eq!(
         backend.calls(),
         vec![RecordedBackendCall::Resolve(RequestId::Integer(41))]
+    );
+    assert_eq!(
+        shell.transcript,
+        std::collections::VecDeque::from([TranscriptLine::new(
+            TranscriptKind::Status,
+            "approval requested: Run command: cargo test -p codex-tui",
+        )])
     );
 }
 
@@ -8008,7 +8204,6 @@ fn long_mcp_elicitation_keeps_destination_visible_snapshot() {
 #[test]
 fn renders_decision_audit_snapshot() {
     let mut shell = ShellState::snapshot_fixture();
-    shell.push_decision_audit("approval", "approved", "Command: cargo test -p codex-tui");
     shell.push_decision_audit("elicitation", "declined", "MCP github: URL request");
     shell.push_decision_audit("tool input", "submitted", "Tool input: environment");
     let area = Rect::new(
@@ -8185,10 +8380,18 @@ fn help_dashboard_shows_every_shortcut_at_78_by_24_snapshot() {
     let rendered = render_shell(&shell, area);
 
     assert!(
-        rendered.contains("Name/search"),
-        "shortcut tail should remain visible:\n{rendered}"
+        rendered.contains("Branch"),
+        "the first shortcut groups should remain visible:\n{rendered}"
     );
     insta::assert_snapshot!(rendered);
+
+    shell.dashboard_scroll.set(usize::MAX);
+    let scrolled = render_shell(&shell, area);
+    assert!(
+        scrolled.contains("Delete") && scrolled.contains("Reload"),
+        "the shortcut tail should be reachable:\n{scrolled}"
+    );
+    insta::assert_snapshot!("help_dashboard_78_by_24_scrolled", scrolled);
 }
 
 #[test]
@@ -8202,12 +8405,57 @@ fn help_dashboard_shows_every_shortcut_at_48_by_16_snapshot() {
     let rendered = render_shell(&shell, area);
 
     assert!(
-        rendered.contains("Name/search"),
-        "shortcut tail should remain visible:\n{rendered}"
+        rendered.contains("Branch"),
+        "the first shortcut groups should remain visible:\n{rendered}"
     );
     assert!(rendered.contains("> Summarize the new shell architecture"));
     assert!(!rendered.contains("Esc composer"));
     insta::assert_snapshot!(rendered);
+
+    shell.dashboard_scroll.set(usize::MAX);
+    let scrolled = render_shell(&shell, area);
+    assert!(
+        scrolled.contains("Delete") && scrolled.contains("Reload"),
+        "the shortcut tail should be reachable:\n{scrolled}"
+    );
+    insta::assert_snapshot!("help_dashboard_48_by_16_scrolled", scrolled);
+}
+
+#[tokio::test]
+async fn page_keys_scroll_the_help_guide_instead_of_the_conversation() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_route = DashboardRoute::Help;
+    shell.transcript_scroll = 3;
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::PageDown, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Page Down should scroll the help guide");
+    let after_page_down = (shell.dashboard_scroll.get(), shell.transcript_scroll);
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::PageUp, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("Page Up should scroll the help guide");
+
+    assert_eq!(
+        (
+            after_page_down,
+            shell.dashboard_scroll.get(),
+            shell.transcript_scroll,
+            backend.calls(),
+        ),
+        ((8, 3), 0, 3, Vec::new())
+    );
 }
 
 #[test]
@@ -13772,6 +14020,36 @@ async fn completed_list_refresh_cannot_restore_a_deleted_session() {
             },
             RecordedBackendCall::Delete(session_id),
         ]
+    );
+}
+
+#[tokio::test]
+async fn periodic_rate_limit_refresh_fetches_canonical_state() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    shell.start_initial_dashboard_hydration(&backend);
+    finish_session_hydration(&mut shell, &backend).await;
+    backend.set_rate_limits_used_percent(/*used_percent*/ 41);
+
+    shell.request_rate_limits_refresh();
+    assert!(shell.has_pending_session_hydration());
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(
+        shell
+            .rate_limits
+            .first()
+            .and_then(|limit| limit.primary.as_ref())
+            .map(|window| window.used_percent),
+        Some(41)
+    );
+    assert_eq!(
+        backend
+            .calls()
+            .into_iter()
+            .filter(|call| matches!(call, RecordedBackendCall::RateLimits))
+            .count(),
+        2
     );
 }
 

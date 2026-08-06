@@ -2,10 +2,12 @@ use super::ShellState;
 use super::dashboard::dashboard_value;
 use super::dashboard::format_usize;
 use super::design::palette;
+use crate::status::format_directory_display;
 use codex_protocol::models::ManagedFileSystemPermissions;
 use codex_protocol::models::PermissionProfile;
 use ratatui::style::Stylize;
 use ratatui::text::Line;
+use std::path::Path;
 
 pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'static>> {
     let mut workspace_lines = Vec::new();
@@ -49,9 +51,10 @@ pub(super) fn workspace_lines(shell: &ShellState, width: usize) -> Vec<Line<'sta
             Some(Line::from(format!("net {network}")))
         }
     };
+    let cwd = format_directory_display(Path::new(&shell.cwd), /*max_width*/ None);
     workspace_lines.push(Line::from(vec![
         "cwd ".dim(),
-        dashboard_value(&shell.cwd, width, /*prefix_width*/ 4).into(),
+        dashboard_value(&cwd, width, /*prefix_width*/ 4).into(),
     ]));
     if let Some(permission_details) = permission_details {
         workspace_lines.push(permission_details);

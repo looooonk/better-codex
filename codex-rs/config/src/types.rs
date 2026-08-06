@@ -681,6 +681,8 @@ pub enum TuiAppTheme {
     GruvboxDark,
     /// Catppuccin's Mocha palette.
     CatppuccinMocha,
+    /// A high-contrast grayscale palette.
+    Monochrome,
 }
 
 impl TuiAppTheme {
@@ -689,6 +691,7 @@ impl TuiAppTheme {
             Self::TokyoNight => "tokyo-night",
             Self::GruvboxDark => "gruvbox-dark",
             Self::CatppuccinMocha => "catppuccin-mocha",
+            Self::Monochrome => "monochrome",
         }
     }
 }

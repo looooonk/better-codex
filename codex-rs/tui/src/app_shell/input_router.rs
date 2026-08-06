@@ -22,6 +22,8 @@ use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
 
+const HELP_PAGE_SCROLL_STEP: usize = 8;
+
 #[derive(Clone, Copy)]
 enum ActiveInputRoute {
     DiffView,
@@ -357,9 +359,10 @@ impl ShellState {
         if key.modifiers.contains(KeyModifiers::ALT)
             && matches!(key.code, KeyCode::Up | KeyCode::Down)
         {
-            self.select_latest_transcript_item();
-            if matches!(key.code, KeyCode::Up) {
+            if key.code == KeyCode::Up {
                 self.move_transcript_selection_up(TRANSCRIPT_SELECTION_STEP);
+            } else {
+                self.move_transcript_selection_down(TRANSCRIPT_SELECTION_STEP);
             }
             return Ok(false);
         }
@@ -480,6 +483,30 @@ impl ShellState {
             }
             KeyCode::Down => {
                 self.composer.move_down_or_recall_history();
+                Ok(false)
+            }
+            KeyCode::PageUp
+                if self.dashboard_visible
+                    && self.dashboard_route == DashboardRoute::Help
+                    && key.modifiers == KeyModifiers::NONE =>
+            {
+                self.dashboard_scroll.set(
+                    self.dashboard_scroll
+                        .get()
+                        .saturating_sub(HELP_PAGE_SCROLL_STEP),
+                );
+                Ok(false)
+            }
+            KeyCode::PageDown
+                if self.dashboard_visible
+                    && self.dashboard_route == DashboardRoute::Help
+                    && key.modifiers == KeyModifiers::NONE =>
+            {
+                self.dashboard_scroll.set(
+                    self.dashboard_scroll
+                        .get()
+                        .saturating_add(HELP_PAGE_SCROLL_STEP),
+                );
                 Ok(false)
             }
             KeyCode::PageUp => {

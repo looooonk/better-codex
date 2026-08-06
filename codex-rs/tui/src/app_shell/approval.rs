@@ -329,10 +329,6 @@ impl PendingApproval {
             .position(|option| option.decision.is_safe_denial())
     }
 
-    pub(super) fn is_denial(&self, option_index: usize) -> bool {
-        self.options[option_index].decision.is_denial()
-    }
-
     pub(super) fn result(&self, option_index: usize) -> serde_json::Result<Value> {
         match &self.options[option_index].decision {
             ApprovalDecision::Command(decision) => {
@@ -368,32 +364,6 @@ impl ApprovalDecision {
                 | CommandExecutionApprovalDecision::AcceptForSession
                 | CommandExecutionApprovalDecision::AcceptWithExecpolicyAmendment { .. }
                 | CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment { .. },
-            )
-            | Self::FileChange(
-                FileChangeApprovalDecision::Accept | FileChangeApprovalDecision::AcceptForSession,
-            ) => false,
-        }
-    }
-
-    fn is_denial(&self) -> bool {
-        match self {
-            Self::Command(
-                CommandExecutionApprovalDecision::Decline
-                | CommandExecutionApprovalDecision::Cancel,
-            )
-            | Self::FileChange(
-                FileChangeApprovalDecision::Decline | FileChangeApprovalDecision::Cancel,
-            ) => true,
-            Self::Command(CommandExecutionApprovalDecision::ApplyNetworkPolicyAmendment {
-                network_policy_amendment,
-            }) => network_policy_amendment.action == NetworkPolicyRuleAction::Deny,
-            Self::Permissions(response) => {
-                response.permissions == GrantedPermissionProfile::default()
-            }
-            Self::Command(
-                CommandExecutionApprovalDecision::Accept
-                | CommandExecutionApprovalDecision::AcceptForSession
-                | CommandExecutionApprovalDecision::AcceptWithExecpolicyAmendment { .. },
             )
             | Self::FileChange(
                 FileChangeApprovalDecision::Accept | FileChangeApprovalDecision::AcceptForSession,

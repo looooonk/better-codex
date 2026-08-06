@@ -4,16 +4,16 @@ expression: rendered
 ---
   Dashboard  ◆ BC    gpt-5-codex ▾   default ▾
 ────────────────────────────────────────────────
+│
 │  Status   │  Agents   │  Sessions   │  Help
-│◆ COMPOSER            │ ◆ DASHBOARD
-│ ⌘←→⌫/⌥^  Line · word │  ^1–4/Tab  Switch/page
-│ S/A↵/Fn  Newline/nav │ ◆ AGENTS
-│ ↵        Send        │  ↵/jk     Focus/log
-│ Alt+↑/^O  Select/copy│ ◆ SESSIONS
-│ Alt+M/E  Model/effort│  ^N/↵     New/focus
-│◆ APP                 │  r/f      Resume/fork
-│ ^C/Esc×2  Exit       │  a/u/v/d  Arc/view/del
-│ ^D       Hide dash   │  n · /    Name/search
+│◆ CONVERSATION        │ ◆ COMPOSER
+│ Alt+↑ / ↓   Select m…│  ⌘← / →      Line ends
+│ ↵ / c       Copy item│  ⌘⌫          Delete s…
+│ e           Branch   │  ⌥/^ + ←→    Move word
+│ ^O          Copy rep…│  S/A + ↵     Newline
+│◆ DASHBOARD           │  Alt+M       Model
+│ ^1 … ^4     Open tab │  Alt+E       Effort
+│
 ╭──────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                               │
 │> Summarize the new shell architecture        │

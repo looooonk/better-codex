@@ -461,7 +461,7 @@ pub struct ThreadSettingsOverrides {
     /// per-turn config reconstruction.
     pub profile_workspace_roots: Option<Vec<AbsolutePathBuf>>,
 
-    /// Updated command approval policy.
+    /// Updated command approval policy, applied to the active turn when present.
     pub approval_policy: Option<AskForApproval>,
 
     /// Updated approval reviewer for future approval prompts.

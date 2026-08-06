@@ -1,0 +1,28 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: scrolled
+---
+
+  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────
+                            │
+ ◆ CONVERSATION             │   Status   │  Agents   │  Sessions   │  Help
+ ▎ YOU  Create a divergent s│ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
+                            │ ⇧Alt+←/→    Resize    │  ^D          Show/hide
+ ▎ CODEX  Started a fullscre│◆ SESSIONS             │  ^C          Stop/canc…
+ ▎ PLAN  1. Build shell     │ ↑↓ / jk     Select    │  Esc ×2      Exit app
+         2. Wire transcript │ ↵ / r       Resume    │  ^N          New chat
+         3. Render dashboard│ f           Fork      │ ◆ AGENTS
+                            │ a           Archive   │  ↵           Focus/log
+ ▌ tool exec just test -p co│ u           Unarchive │  ↑↓ / jk     Select
+                            │ v           Switch vi…│  g / G       First/last
+ ▌ edited 3 files +128 -24  │ n           Rename    │  r           Reload log
+                            │ /           Search    │
+ ▎ CODEX  The new shell owns│ d           Delete    │
+                            │
+╭────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:37                                                             │
+│> Summarize the new shell architecture                                      │
+│                                                                            │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯

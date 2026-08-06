@@ -6,11 +6,11 @@ use ratatui::text::Line;
 use unicode_width::UnicodeWidthStr;
 
 const DENSE_HELP_MAX_WIDTH: usize = 54;
+const SPACIOUS_HELP_MIN_HEIGHT: usize = 28;
 const HELP_COLUMN_GAP: &str = "│ ";
 const WIDE_HELP_COLUMN_WIDTH: usize = 34;
-const DENSE_KEY_WIDTH: usize = 7;
 const COMPACT_KEY_WIDTH: usize = 10;
-const WIDE_KEY_WIDTH: usize = 18;
+const WIDE_KEY_WIDTH: usize = 15;
 
 #[derive(Clone, Copy)]
 struct Shortcut {
@@ -29,16 +29,6 @@ enum HelpRow {
     Section(&'static str),
     Shortcut(Shortcut),
     Spacer,
-}
-
-impl HelpRow {
-    const fn section(title: &'static str) -> Self {
-        Self::Section(title)
-    }
-
-    const fn shortcut(keys: &'static str, description: &'static str) -> Self {
-        Self::Shortcut(Shortcut::new(keys, description))
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -67,21 +57,230 @@ pub(super) fn uses_dense_layout(panel_width: usize) -> bool {
     panel_width <= DENSE_HELP_MAX_WIDTH
 }
 
-pub(super) fn key_hint_lines(shell: &ShellState, panel_width: usize) -> Vec<Line<'static>> {
-    if uses_dense_layout(panel_width) {
-        let (left, right) = dense_help_columns(shell);
-        return two_column_lines(&left, &right, panel_width, DENSE_KEY_WIDTH);
-    }
-
-    let text_width = panel_width.saturating_sub(1);
-    let column_width = text_width.saturating_sub(UnicodeWidthStr::width(HELP_COLUMN_GAP)) / 2;
+pub(super) fn key_hint_lines(
+    shell: &ShellState,
+    panel_width: usize,
+    panel_height: usize,
+) -> Vec<Line<'static>> {
+    let text_width = panel_width.saturating_sub(usize::from(!uses_dense_layout(panel_width)));
+    let column_width = text_width
+        .saturating_sub(UnicodeWidthStr::width(HELP_COLUMN_GAP))
+        .div_ceil(2);
     let detail = if column_width >= WIDE_HELP_COLUMN_WIDTH {
         LabelDetail::Wide
     } else {
         LabelDetail::Compact
     };
-    let (left, right) = standard_help_columns(shell, detail);
+    let spacious = panel_height >= SPACIOUS_HELP_MIN_HEIGHT;
+    let (left, right) = help_columns(shell, detail, spacious);
     two_column_lines(&left, &right, text_width, detail.key_width())
+}
+
+fn help_columns(
+    shell: &ShellState,
+    detail: LabelDetail,
+    spacious: bool,
+) -> (Vec<HelpRow>, Vec<HelpRow>) {
+    let mut left = Vec::new();
+    append_group(
+        &mut left,
+        "CONVERSATION",
+        &conversation_shortcuts(shell, detail),
+        spacious,
+    );
+    append_group(
+        &mut left,
+        "DASHBOARD",
+        &[
+            Shortcut::new(
+                detail.select("^1 … ^4", "Ctrl+1 … Ctrl+4"),
+                detail.select("Open tab", "Open a tab"),
+            ),
+            Shortcut::new(
+                detail.select("Alt+← / →", "Alt+Left / Right"),
+                detail.select("Prev/next", "Previous / next tab"),
+            ),
+            Shortcut::new(
+                detail.select("Pg↑ / Pg↓", "Page Up / Page Down"),
+                detail.select("Scroll help", "Scroll this guide"),
+            ),
+            Shortcut::new(
+                detail.select("⇧Alt+←/→", "Shift+Alt+← / →"),
+                detail.select("Resize", "Resize dashboard"),
+            ),
+        ],
+        spacious,
+    );
+    append_group(
+        &mut left,
+        "SESSIONS",
+        &[
+            Shortcut::new(
+                detail.select("↑↓ / jk", "Up/Down or j/k"),
+                detail.select("Select", "Select session"),
+            ),
+            Shortcut::new(
+                detail.select("↵ / r", "Enter or r"),
+                detail.select("Resume", "Resume session"),
+            ),
+            Shortcut::new("f", detail.select("Fork", "Fork session")),
+            Shortcut::new("a", detail.select("Archive", "Archive session")),
+            Shortcut::new("u", detail.select("Unarchive", "Unarchive session")),
+            Shortcut::new("v", detail.select("Switch view", "Active / archived")),
+            Shortcut::new("n", detail.select("Rename", "Rename session")),
+            Shortcut::new("/", detail.select("Search", "Search sessions")),
+            Shortcut::new("d", detail.select("Delete", "Delete session")),
+        ],
+        spacious,
+    );
+
+    let mut right = Vec::new();
+    append_group(
+        &mut right,
+        "COMPOSER",
+        &composer_shortcuts(shell, detail),
+        spacious,
+    );
+    append_group(
+        &mut right,
+        "APP",
+        &[
+            Shortcut::new(
+                detail.select("^P", "Ctrl+P"),
+                detail.select("Commands", "Command palette"),
+            ),
+            Shortcut::new(
+                detail.select("^D", "Ctrl+D"),
+                detail.select("Show/hide", "Toggle dashboard"),
+            ),
+            Shortcut::new(
+                detail.select("^C", "Ctrl+C"),
+                detail.select("Stop/cancel", "Interrupt / cancel"),
+            ),
+            Shortcut::new("Esc ×2", detail.select("Exit app", "Exit application")),
+            Shortcut::new(
+                detail.select("^N", "Ctrl+N"),
+                detail.select("New chat", "New session"),
+            ),
+        ],
+        spacious,
+    );
+    append_group(
+        &mut right,
+        "AGENTS",
+        &[
+            Shortcut::new(
+                detail.select("↵", "Enter"),
+                detail.select("Focus/log", "Focus / open log"),
+            ),
+            Shortcut::new(
+                detail.select("↑↓ / jk", "Up/Down or j/k"),
+                detail.select("Select", "Select agent"),
+            ),
+            Shortcut::new("g / G", detail.select("First/last", "First / last agent")),
+            Shortcut::new("r", detail.select("Reload log", "Reload open log")),
+        ],
+        spacious,
+    );
+    (left, right)
+}
+
+fn conversation_shortcuts(shell: &ShellState, detail: LabelDetail) -> Vec<Shortcut> {
+    let mut shortcuts = Vec::new();
+    if shell.transcript_selection.is_some() {
+        shortcuts.push(Shortcut::new(
+            detail.select("↑ / ↓", "Up / Down"),
+            detail.select("Select msgs", "Select messages"),
+        ));
+    } else if !shell.composer.has_queued_messages() {
+        shortcuts.push(Shortcut::new(
+            detail.select("Alt+↑ / ↓", "Alt+Up / Down"),
+            detail.select("Select msgs", "Select messages"),
+        ));
+    }
+    if shell.selected_transcript_is_output() {
+        shortcuts.push(Shortcut::new(
+            detail.select("↵", "Enter"),
+            detail.select("Open output", "Open selected output"),
+        ));
+        shortcuts.push(Shortcut::new(
+            "c",
+            detail.select("Copy item", "Copy selected item"),
+        ));
+    } else {
+        shortcuts.push(Shortcut::new(
+            detail.select("↵ / c", "Enter or c"),
+            detail.select("Copy item", "Copy selected item"),
+        ));
+    }
+    shortcuts.extend([
+        Shortcut::new("e", detail.select("Branch", "Branch from prompt")),
+        Shortcut::new(
+            detail.select("^O", "Ctrl+O"),
+            detail.select("Copy reply", "Copy latest response"),
+        ),
+    ]);
+    shortcuts
+}
+
+fn composer_shortcuts(shell: &ShellState, detail: LabelDetail) -> Vec<Shortcut> {
+    let mut shortcuts = vec![
+        Shortcut::new(
+            detail.select("⌘← / →", "Cmd+Left / Right"),
+            detail.select("Line ends", "Line start / end"),
+        ),
+        Shortcut::new(
+            detail.select("⌘⌫", "Cmd+Backspace"),
+            detail.select("Delete start", "Delete to line start"),
+        ),
+        Shortcut::new(
+            detail.select("⌥/^ + ←→", "Opt/Ctrl + Left/Right"),
+            detail.select("Move word", "Move by word"),
+        ),
+        Shortcut::new(
+            detail.select("S/A + ↵", "Shift/Alt + Enter"),
+            detail.select("Newline", "Insert newline"),
+        ),
+        Shortcut::new("Alt+M", detail.select("Model", "Select model")),
+        Shortcut::new("Alt+E", detail.select("Effort", "Select effort")),
+    ];
+
+    let editing_queue = shell.composer.queued_edit_position().is_some();
+    if editing_queue {
+        shortcuts.push(Shortcut::new(
+            detail.select("↵ / Tab", "Enter or Tab"),
+            detail.select("Save edit", "Save queued edit"),
+        ));
+    } else if shell.active_turn_id.is_some() {
+        shortcuts.push(Shortcut::new(
+            detail.select("↵", "Enter"),
+            detail.select("Steer turn", "Steer active turn"),
+        ));
+        shortcuts.push(Shortcut::new(
+            "Tab",
+            detail.select("Queue next", "Queue follow-up"),
+        ));
+    }
+    if shell.composer.has_queued_messages() {
+        shortcuts.push(Shortcut::new(
+            detail.select("Alt+↑ / ↓", "Alt+Up / Down"),
+            detail.select("Edit queue", "Edit queued messages"),
+        ));
+    }
+    shortcuts
+}
+
+fn append_group(
+    column: &mut Vec<HelpRow>,
+    title: &'static str,
+    shortcuts: &[Shortcut],
+    spacious: bool,
+) {
+    if spacious && !column.is_empty() {
+        column.push(HelpRow::Spacer);
+    }
+    column.push(HelpRow::Section(title));
+    column.extend(shortcuts.iter().copied().map(HelpRow::Shortcut));
 }
 
 fn two_column_lines(
@@ -135,275 +334,13 @@ fn help_row_line(row: HelpRow, key_width: usize) -> Line<'static> {
         HelpRow::Shortcut(shortcut) => {
             let padding = key_width.saturating_sub(UnicodeWidthStr::width(shortcut.keys));
             let key_label = format!(" {}{} ", shortcut.keys, " ".repeat(padding));
-            Line::from(vec![
+            vec![
                 key_label.fg(palette::cyan()),
                 " ".into(),
                 shortcut.description.into(),
-            ])
+            ]
+            .into()
         }
         HelpRow::Spacer => Line::default(),
     }
-}
-
-fn dense_help_columns(shell: &ShellState) -> (Vec<HelpRow>, Vec<HelpRow>) {
-    let contextual = dense_contextual_shortcuts(shell);
-    let left = vec![
-        HelpRow::section("COMPOSER"),
-        HelpRow::shortcut("⌘←→⌫/⌥^", "Line · word"),
-        HelpRow::shortcut("S/A↵/Fn", "Newline/nav"),
-        HelpRow::Shortcut(contextual[0]),
-        HelpRow::Shortcut(contextual[1]),
-        HelpRow::shortcut("Alt+M/E", "Model/effort"),
-        HelpRow::section("APP"),
-        HelpRow::Shortcut(contextual[2]),
-        HelpRow::Shortcut(contextual[3]),
-    ];
-    let right = vec![
-        HelpRow::section("DASHBOARD"),
-        HelpRow::shortcut("^1–4/Tab", "Switch/page"),
-        HelpRow::section("AGENTS"),
-        HelpRow::shortcut("↵/jk", "Focus/log"),
-        HelpRow::section("SESSIONS"),
-        HelpRow::shortcut("^N/↵", "New/focus"),
-        HelpRow::shortcut("r/f", "Resume/fork"),
-        HelpRow::shortcut("a/u/v/d", "Arc/view/del"),
-        HelpRow::shortcut("n · /", "Name/search"),
-    ];
-    (left, right)
-}
-
-fn dense_contextual_shortcuts(shell: &ShellState) -> [Shortcut; 4] {
-    if shell.transcript_selection.is_some() {
-        return [
-            Shortcut::new("↑↓", "Select"),
-            Shortcut::new(
-                "↵",
-                if shell.selected_transcript_is_output() {
-                    "Open output"
-                } else {
-                    "Copy"
-                },
-            ),
-            Shortcut::new("Esc", "Composer"),
-            Shortcut::new("^O/^D", "Copy/hide"),
-        ];
-    }
-
-    if shell.active_turn_id.is_some() {
-        let editing_queue = shell.composer.queued_edit_position().is_some();
-        return [
-            Shortcut::new(
-                "↵/Tab",
-                if editing_queue {
-                    "Save edit"
-                } else {
-                    "Steer/queue"
-                },
-            ),
-            Shortcut::new(
-                "Alt+↑↓/^O",
-                if editing_queue {
-                    "Move/copy"
-                } else {
-                    "Edit/copy"
-                },
-            ),
-            Shortcut::new("^C/Esc×2", "Stop/exit"),
-            Shortcut::new("^D", "Hide dash"),
-        ];
-    }
-
-    if shell.has_pending_shell_command() {
-        return [
-            Shortcut::new("↵", "Send"),
-            Shortcut::new("Alt+↑/^O", "Select/copy"),
-            Shortcut::new("^C/Esc×2", "Cancel/exit"),
-            Shortcut::new("^D", "Hide dash"),
-        ];
-    }
-
-    if shell.composer.has_queued_messages() {
-        let editing_queue = shell.composer.queued_edit_position().is_some();
-        return [
-            Shortcut::new(
-                if editing_queue { "↵/Tab" } else { "↵" },
-                if editing_queue {
-                    "Save/resume"
-                } else {
-                    "Send/resume"
-                },
-            ),
-            Shortcut::new(
-                "Alt+↑↓/^O",
-                if editing_queue {
-                    "Move/copy"
-                } else {
-                    "Edit/copy"
-                },
-            ),
-            Shortcut::new("^C/Esc×2", "Exit"),
-            Shortcut::new("^D", "Hide dash"),
-        ];
-    }
-
-    [
-        Shortcut::new("↵", "Send"),
-        Shortcut::new("Alt+↑/^O", "Select/copy"),
-        Shortcut::new("^C/Esc×2", "Exit"),
-        Shortcut::new("^D", "Hide dash"),
-    ]
-}
-
-fn standard_help_columns(shell: &ShellState, detail: LabelDetail) -> (Vec<HelpRow>, Vec<HelpRow>) {
-    let contextual = standard_contextual_shortcuts(shell, detail);
-    let left = vec![
-        HelpRow::section("COMPOSER"),
-        HelpRow::shortcut(detail.select("⌘←→⌫", "Cmd ←/→/⌫"), "Line boundary"),
-        HelpRow::shortcut(detail.select("⌥/^ + ←→", "Opt/Ctrl + ←/→"), "Move by word"),
-        HelpRow::shortcut(
-            detail.select("S/A+↵", "Shift/Alt + Enter"),
-            detail.select("Newline", "Insert newline"),
-        ),
-        HelpRow::shortcut(
-            detail.select("Fn nav/⌫", "Fn + arrows/⌫"),
-            detail.select("Page/delete", "Page nav / delete"),
-        ),
-        HelpRow::Shortcut(contextual[0]),
-        HelpRow::Shortcut(contextual[1]),
-        HelpRow::shortcut(
-            detail.select("Alt+M/E", "Alt+M / Alt+E"),
-            detail.select("Model/effort", "Model / effort"),
-        ),
-        HelpRow::Spacer,
-        HelpRow::section("APP"),
-        HelpRow::Shortcut(contextual[2]),
-        HelpRow::Spacer,
-        HelpRow::section("AGENTS"),
-        HelpRow::shortcut(
-            detail.select("↵/j/k", "Enter/j/k"),
-            detail.select("Focus/inspect", "Focus log/inspect"),
-        ),
-    ];
-    let right = vec![
-        HelpRow::section("DASHBOARD"),
-        HelpRow::shortcut(
-            detail.select("^1/^2", "Ctrl+1 / Ctrl+2"),
-            detail.select("Status/agents", "Status / Agents"),
-        ),
-        HelpRow::shortcut(
-            detail.select("^3/^4", "Ctrl+3 / Ctrl+4"),
-            detail.select("Sessions/help", "Sessions / Help"),
-        ),
-        HelpRow::shortcut(
-            detail.select("Tab/j/k/↵", "Tab/j/k/Enter"),
-            detail.select("Navigate/apply", "Navigate / open"),
-        ),
-        HelpRow::Spacer,
-        HelpRow::section("SESSIONS"),
-        HelpRow::shortcut(
-            detail.select("^N/↵", "Ctrl+N / Enter"),
-            detail.select("New/focus", "New / focus"),
-        ),
-        HelpRow::shortcut("r / f", "Resume / fork"),
-        HelpRow::shortcut("a / u", detail.select("Arc/unarc", "Archive/unarchive")),
-        HelpRow::shortcut("v / d", detail.select("View/delete", "Archived/delete")),
-        HelpRow::shortcut("n · /", detail.select("Name/search", "Rename / search")),
-    ];
-    (left, right)
-}
-
-fn standard_contextual_shortcuts(shell: &ShellState, detail: LabelDetail) -> [Shortcut; 3] {
-    if shell.transcript_selection.is_some() {
-        return [
-            Shortcut::new(detail.select("↑/↓", "Up / Down"), "Select"),
-            Shortcut::new(
-                detail.select("↵", "Enter"),
-                if shell.selected_transcript_is_output() {
-                    "Open output"
-                } else {
-                    "Copy"
-                },
-            ),
-            Shortcut::new(
-                detail.select("Esc/^O/^D", "Esc/Ctrl+O/Ctrl+D"),
-                detail.select("Back/copy/hide", "Composer/copy/hide"),
-            ),
-        ];
-    }
-
-    if shell.active_turn_id.is_some() {
-        let editing_queue = shell.composer.queued_edit_position().is_some();
-        return [
-            Shortcut::new(
-                detail.select("↵/Tab", "Enter/Tab"),
-                if editing_queue {
-                    "Save queued edit"
-                } else {
-                    "Steer / queue"
-                },
-            ),
-            Shortcut::new(
-                detail.select("Alt+↑↓/^O", "Alt+Up/Down/Ctrl+O"),
-                if editing_queue {
-                    "Traverse / copy"
-                } else {
-                    "Edit queue / copy"
-                },
-            ),
-            Shortcut::new(
-                detail.select("^C/Esc×2/^D", "Ctrl+C/Esc×2/Ctrl+D"),
-                detail.select("Stop/exit/hide", "Stop/exit/hide"),
-            ),
-        ];
-    }
-
-    if shell.has_pending_shell_command() {
-        return [
-            Shortcut::new(detail.select("↵", "Enter"), "Send"),
-            Shortcut::new(detail.select("Alt+↑/^O", "Alt+Up/Ctrl+O"), "Select / copy"),
-            Shortcut::new(
-                detail.select("^C/Esc×2/^D", "Ctrl+C/Esc×2/Ctrl+D"),
-                detail.select("Cancel/exit/hide", "Cancel/exit/hide"),
-            ),
-        ];
-    }
-
-    if shell.composer.has_queued_messages() {
-        let editing_queue = shell.composer.queued_edit_position().is_some();
-        return [
-            Shortcut::new(
-                if editing_queue {
-                    detail.select("↵/Tab", "Enter/Tab")
-                } else {
-                    detail.select("↵", "Enter")
-                },
-                if editing_queue {
-                    "Save / resume"
-                } else {
-                    "Send / resume"
-                },
-            ),
-            Shortcut::new(
-                detail.select("Alt+↑↓/^O", "Alt+Up/Down/Ctrl+O"),
-                if editing_queue {
-                    "Traverse / copy"
-                } else {
-                    "Edit queue / copy"
-                },
-            ),
-            Shortcut::new(
-                detail.select("^C/Esc×2/^D", "Ctrl+C/Esc×2/Ctrl+D"),
-                detail.select("Exit/hide", "Exit / hide"),
-            ),
-        ];
-    }
-
-    [
-        Shortcut::new(detail.select("↵", "Enter"), "Send"),
-        Shortcut::new(detail.select("Alt+↑/^O", "Alt+Up/Ctrl+O"), "Select / copy"),
-        Shortcut::new(
-            detail.select("^C/Esc×2/^D", "Ctrl+C/Esc×2/Ctrl+D"),
-            detail.select("Exit/hide", "Exit / hide"),
-        ),
-    ]
 }

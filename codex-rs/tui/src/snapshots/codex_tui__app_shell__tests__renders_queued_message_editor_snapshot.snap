@@ -5,28 +5,28 @@ expression: "render_shell(&shell, area)"
                                                   │
   Dashboard  ◆ BC      gpt-5-codex ▾   default ▾  │   Status   │  Agents   │  Sessions   │  Help
 ──────────────────────────────────────────────────│
-                                                  │◆ COMPOSER             │ ◆ DASHBOARD
- ◆ CONVERSATION                                   │ ⌘←→⌫/⌥^  Line · word  │  ^1–4/Tab  Switch/page
- ▎ SYSTEM  Better Codex app shell                 │ S/A↵/Fn  Newline/nav  │ ◆ AGENTS
- ▎ YOU  Create a divergent standalone TUI.        │ ↵/Tab    Save/resume  │  ↵/jk     Focus/log
-                                                  │ Alt+↑↓/^O  Move/copy  │ ◆ SESSIONS
- ▎ CODEX  Started a fullscreen app shell backed   │ Alt+M/E  Model/effort │  ^N/↵     New/focus
-          by app-server turns.                    │◆ APP                  │  r/f      Resume/fork
- ▎ PLAN  1. Build shell                           │ ^C/Esc×2  Exit        │  a/u/v/d  Arc/view/del
-         2. Wire transcript                       │ ^D       Hide dash    │  n · /    Name/search
-         3. Render dashboard                      │
-                                                  │
- ▌ tool exec just test -p codex-tui               │
-                                                  │
- ▌ edited 3 files +128 -24                        │
-                                                  │
- ▎ CODEX  The new shell owns the fullscreen       │
-          surface.                                │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
+                                                  │◆ CONVERSATION         │ ◆ COMPOSER
+ ◆ CONVERSATION                                   │ ↵ / c       Copy item │  ⌘← / →      Line ends
+ ▎ SYSTEM  Better Codex app shell                 │ e           Branch    │  ⌘⌫          Delete st…
+ ▎ YOU  Create a divergent standalone TUI.        │ ^O          Copy reply│  ⌥/^ + ←→    Move word
+                                                  │                       │  S/A + ↵     Newline
+ ▎ CODEX  Started a fullscreen app shell backed   │◆ DASHBOARD            │  Alt+M       Model
+          by app-server turns.                    │ ^1 … ^4     Open tab  │  Alt+E       Effort
+ ▎ PLAN  1. Build shell                           │ Alt+← / →   Prev/next │  ↵ / Tab     Save edit
+         2. Wire transcript                       │ Pg↑ / Pg↓   Scroll he…│  Alt+↑ / ↓   Edit queue
+         3. Render dashboard                      │ ⇧Alt+←/→    Resize    │
+                                                  │                       │ ◆ APP
+ ▌ tool exec just test -p codex-tui               │◆ SESSIONS             │  ^P          Commands
+                                                  │ ↑↓ / jk     Select    │  ^D          Show/hide
+ ▌ edited 3 files +128 -24                        │ ↵ / r       Resume    │  ^C          Stop/canc…
+                                                  │ f           Fork      │  Esc ×2      Exit app
+ ▎ CODEX  The new shell owns the fullscreen       │ a           Archive   │  ^N          New chat
+          surface.                                │ u           Unarchive │
+                                                  │ v           Switch vi…│ ◆ AGENTS
+                                                  │ n           Rename    │  ↵           Focus/log
+                                                  │ /           Search    │  ↑↓ / jk     Select
+                                                  │ d           Delete    │  g / G       First/last
+                                                  │                       │  r           Reload log
                                                   │
                                                   │
                                                   │

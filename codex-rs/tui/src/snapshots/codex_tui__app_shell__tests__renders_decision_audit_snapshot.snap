@@ -7,16 +7,16 @@ expression: "render_shell(&shell, area)"
 ──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
                                                   │
  ◆ CONVERSATION                                   │▎◆ SESSIONS
- ▎ PLAN  1. Build shell                         │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
-         2. Wire transcript                     │ │▎+ New session  Ctrl+N
-         3. Render dashboard                    │ │▎loading sessions
+                                                │ │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ CODEX  Started a fullscreen app shell backed ┃ │▎+ New session  Ctrl+N
+          by app-server turns.                  ┃ │▎loading sessions
+ ▎ PLAN  1. Build shell                         ┃ │
+         2. Wire transcript                     ┃ │▎◆ THREAD
+         3. Render dashboard                    ┃ │▎stage-one
+                                                ┃ │▎id 01900000-0000-7000-8000-000000000001
+ ▌ tool exec just test -p codex-tui             ┃ │▎resume, fork, archive, delete in session list
                                                 ┃ │
- ▌ tool exec just test -p codex-tui             ┃ │▎◆ THREAD
-                                                ┃ │▎stage-one
- ▌ edited 3 files +128 -24                      ┃ │▎id 01900000-0000-7000-8000-000000000001
-                                                ┃ │▎resume, fork, archive, delete in session list
- ▎ AUDIT  approval approved: Command: cargo     ┃ │
-          test -p codex-tui                     ┃ │
+ ▌ edited 3 files +128 -24                      ┃ │
                                                 ┃ │
  ▎ AUDIT  elicitation declined: MCP github:     ┃ │
           URL request                           ┃ │

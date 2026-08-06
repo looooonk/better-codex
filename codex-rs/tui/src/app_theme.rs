@@ -79,6 +79,24 @@ const CATPPUCCIN_MOCHA: ThemePalette = ThemePalette {
     error: Color::Rgb(243, 139, 168),
 };
 
+const MONOCHROME: ThemePalette = ThemePalette {
+    base: Color::Rgb(12, 12, 12),
+    dark: Color::Rgb(0, 0, 0),
+    surface: Color::Rgb(24, 24, 24),
+    elevated: Color::Rgb(36, 36, 36),
+    diff_added_background: Color::Rgb(30, 30, 30),
+    diff_removed_background: Color::Rgb(18, 18, 18),
+    border: Color::Rgb(64, 64, 64),
+    text: Color::Rgb(224, 224, 224),
+    muted: Color::Rgb(128, 128, 128),
+    focus: Color::Rgb(245, 245, 245),
+    cyan: Color::Rgb(180, 180, 180),
+    purple: Color::Rgb(210, 210, 210),
+    success: Color::Rgb(192, 192, 192),
+    warning: Color::Rgb(160, 160, 160),
+    error: Color::Rgb(240, 240, 240),
+};
+
 thread_local! {
     static ACTIVE_PALETTE: Cell<ThemePalette> = const { Cell::new(TOKYO_NIGHT) };
 }
@@ -100,6 +118,7 @@ pub(crate) fn activate(theme: TuiAppTheme) -> ActiveThemeGuard {
         TuiAppTheme::TokyoNight => TOKYO_NIGHT,
         TuiAppTheme::GruvboxDark => GRUVBOX_DARK,
         TuiAppTheme::CatppuccinMocha => CATPPUCCIN_MOCHA,
+        TuiAppTheme::Monochrome => MONOCHROME,
     };
     ActiveThemeGuard {
         previous: ACTIVE_PALETTE.replace(palette),

@@ -89,10 +89,14 @@ impl DashboardPanel {
     }
 }
 
-pub(super) fn dashboard_panels(shell: &ShellState, width: usize) -> Vec<DashboardPanel> {
+pub(super) fn dashboard_panels(
+    shell: &ShellState,
+    width: usize,
+    height: usize,
+) -> Vec<DashboardPanel> {
     dashboard_panel_kinds(shell.dashboard_route)
         .iter()
-        .filter_map(|kind| dashboard_panel(shell, width, *kind))
+        .filter_map(|kind| dashboard_panel(shell, width, height, *kind))
         .collect()
 }
 
@@ -155,6 +159,7 @@ fn dashboard_panel_kinds(route: DashboardRoute) -> &'static [DashboardPanelKind]
 fn dashboard_panel(
     shell: &ShellState,
     width: usize,
+    height: usize,
     kind: DashboardPanelKind,
 ) -> Option<DashboardPanel> {
     let content_width = width.saturating_sub(1);
@@ -231,19 +236,17 @@ fn dashboard_panel(
         DashboardPanelKind::Background => {
             background_activity_lines(shell).map(|lines| DashboardPanel::new("Background", lines))
         }
-        DashboardPanelKind::RateLimits => {
-            (!shell.rate_limits.is_empty() || shell.rate_limit_reset_credits.is_some()).then(|| {
-                let mut lines = Vec::new();
-                for limit in &shell.rate_limits {
-                    lines.extend(rate_limit_lines(limit, content_width));
-                }
-                lines.push(credits_and_resets_line(
-                    &shell.rate_limits,
-                    shell.rate_limit_reset_credits,
-                ));
-                DashboardPanel::new("Rate Limits", lines)
-            })
-        }
+        DashboardPanelKind::RateLimits => (!shell.rate_limits.is_empty()
+            || shell.rate_limit_reset_credits.is_some())
+        .then(|| {
+            let current_time_at = chrono::Utc::now().timestamp();
+            let mut lines = rate_limit_lines(&shell.rate_limits, content_width, current_time_at);
+            lines.push(credits_and_resets_line(
+                &shell.rate_limits,
+                shell.rate_limit_reset_credits,
+            ));
+            DashboardPanel::new("Rate Limits", lines)
+        }),
         DashboardPanelKind::Edits => {
             let session = shell.diff_store.session_stats();
             let has_recorded_history = shell.diff_store.has_recorded_history();
@@ -357,8 +360,10 @@ fn dashboard_panel(
         )),
         DashboardPanelKind::Keys => {
             let dense = super::dashboard_help::uses_dense_layout(width);
-            let mut panel =
-                DashboardPanel::new("Keys", super::dashboard_help::key_hint_lines(shell, width));
+            let mut panel = DashboardPanel::new(
+                "Keys",
+                super::dashboard_help::key_hint_lines(shell, width, height),
+            );
             if dense {
                 panel.show_title = false;
             }
@@ -478,14 +483,24 @@ pub(super) fn format_i64(value: i64) -> String {
 fn format_token_count(value: i64) -> String {
     let sign = if value < 0 { "-" } else { "" };
     let value = value.unsigned_abs();
-    if value >= 1_000_000 {
-        let tenths = (value + 50_000) / 100_000;
+    let unit = if value >= 1_000_000_000_000 {
+        Some((1_000_000_000_000, "t"))
+    } else if value >= 1_000_000_000 {
+        Some((1_000_000_000, "b"))
+    } else if value >= 1_000_000 {
+        Some((1_000_000, "m"))
+    } else {
+        None
+    };
+    if let Some((unit, suffix)) = unit {
+        let tenth = unit / 10;
+        let tenths = (value + tenth / 2) / tenth;
         let whole = tenths / 10;
         let decimal = tenths % 10;
         if decimal == 0 {
-            format!("{sign}{whole}m")
+            format!("{sign}{whole}{suffix}")
         } else {
-            format!("{sign}{whole}.{decimal}m")
+            format!("{sign}{whole}.{decimal}{suffix}")
         }
     } else if value >= 1_000 {
         format!("{sign}{}k", (value + 500) / 1_000)
@@ -505,3 +520,7 @@ fn format_u64(value: u64) -> String {
     }
     grouped.chars().rev().collect()
 }
+
+#[cfg(test)]
+#[path = "dashboard_tests.rs"]
+mod tests;
