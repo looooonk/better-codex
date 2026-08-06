@@ -131,6 +131,28 @@ pub(super) fn transcript_output_at(
     }
 }
 
+/// Resolve a terminal position inside the rendered transcript body to its web destination.
+pub(super) fn transcript_hyperlink_at(
+    shell: &ShellState,
+    area: Rect,
+    position: Position,
+) -> Option<String> {
+    let viewport = transcript_viewport(shell, area);
+    if !viewport.text_body.contains(position) {
+        return None;
+    }
+
+    let row = viewport
+        .visible_from
+        .saturating_add(usize::from(position.y.saturating_sub(viewport.text_body.y)));
+    let line = viewport.layout.row_at(row)?.line()?;
+    let column = usize::from(position.x.saturating_sub(viewport.text_body.x));
+    line.hyperlinks
+        .iter()
+        .find(|hyperlink| hyperlink.columns.contains(&column))
+        .map(|hyperlink| hyperlink.destination.clone())
+}
+
 /// Resolve a terminal position inside the rendered transcript body to its complete grapheme.
 pub(super) fn transcript_text_hit_at(
     shell: &ShellState,

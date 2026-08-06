@@ -227,6 +227,57 @@ fn output_hit_testing_ignores_non_card_rows_and_empty_viewport_space() {
 }
 
 #[test]
+fn hyperlink_hit_testing_resolves_visible_markdown_destinations() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_assistant();
+    shell.push_assistant("Open [the docs](https://example.com/reference) for details.");
+    let area = Rect::new(
+        /*x*/ 7, /*y*/ 3, /*width*/ 54, /*height*/ 10,
+    );
+    let viewport = transcript_viewport(&shell, area);
+    let (row, hyperlink) = (viewport.visible_from
+        ..viewport.visible_from.saturating_add(viewport.visible_count))
+        .find_map(|row| {
+            let line = viewport.layout.row_at(row)?.line()?;
+            line.hyperlinks.first().map(|hyperlink| (row, hyperlink))
+        })
+        .expect("the Markdown link should be visible");
+    let y = viewport.text_body.y.saturating_add(
+        u16::try_from(row.saturating_sub(viewport.visible_from)).expect("row should fit"),
+    );
+    let start = viewport
+        .text_body
+        .x
+        .saturating_add(u16::try_from(hyperlink.columns.start).expect("column should fit"));
+    let end = viewport
+        .text_body
+        .x
+        .saturating_add(u16::try_from(hyperlink.columns.end).expect("column should fit"));
+
+    assert_eq!(
+        transcript_hyperlink_at(&shell, area, Position::new(start, y)),
+        Some("https://example.com/reference".to_string())
+    );
+    assert_eq!(
+        transcript_hyperlink_at(&shell, area, Position::new(end.saturating_sub(1), y)),
+        Some("https://example.com/reference".to_string())
+    );
+    assert_eq!(
+        transcript_hyperlink_at(&shell, area, Position::new(end, y)),
+        None
+    );
+    assert_eq!(
+        transcript_hyperlink_at(
+            &shell,
+            area,
+            Position::new(start, viewport.text_body.y.saturating_sub(1)),
+        ),
+        None
+    );
+}
+
+#[test]
 fn text_hit_testing_resolves_scrolled_wide_graphemes_and_rejects_chrome() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();

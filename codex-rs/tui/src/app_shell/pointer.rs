@@ -231,6 +231,18 @@ impl ShellState {
             }
             return Ok(());
         }
+        if let Some(destination) =
+            (ShellView { shell: self }).transcript_hyperlink_at(area, position)
+        {
+            match webbrowser::open(&destination) {
+                Ok(()) => self.push_status("opened link in browser"),
+                Err(error) => {
+                    tracing::warn!(%destination, "failed to open transcript URL: {error}");
+                    self.push_error(format!("Could not open link: {error}"));
+                }
+            }
+            return Ok(());
+        }
         if let Some(card) = (ShellView { shell: self }).transcript_card_at(area, position) {
             match card {
                 TranscriptCardHit::ToolOutput { transcript_index } => {
