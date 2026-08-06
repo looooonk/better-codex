@@ -16,6 +16,9 @@ use crossterm::cursor::Show;
 use crossterm::event::DisableBracketedPaste;
 use crossterm::event::DisableFocusChange;
 use crossterm::event::DisableMouseCapture;
+use crossterm::event::EnableBracketedPaste;
+use crossterm::event::EnableFocusChange;
+use crossterm::event::EnableMouseCapture;
 use crossterm::terminal::EnterAlternateScreen;
 use crossterm::terminal::LeaveAlternateScreen;
 
@@ -86,6 +89,7 @@ fn interactive_child_handoff_releases_and_reacquires_the_pty() {
         .map(|index| index + handoff_leave + leave.len())
         .expect("handoff restores alternate screen");
     let resumed = output.find("TUI_RESUMED").expect("TUI resume marker");
+    assert_reacquired_terminal_sequences(&output[child_got..resumed]);
     assert!(
         first_enter < handoff_leave
             && handoff_leave < child_ready
@@ -142,6 +146,7 @@ fn cancelled_interactive_child_handoff_restores_the_pty() {
     let resumed = output
         .find("TUI_CANCEL_RESUMED")
         .expect("TUI cancellation resume marker");
+    assert_reacquired_terminal_sequences(&output[child_ready..resumed]);
     assert!(
         first_enter < handoff_leave
             && handoff_leave < child_ready
@@ -149,6 +154,100 @@ fn cancelled_interactive_child_handoff_restores_the_pty() {
             && resumed_enter < resumed,
         "unexpected cancellation handoff ordering in PTY output {output:?}"
     );
+}
+
+#[test]
+fn inline_interactive_child_handoffs_preserve_scrollback_and_restore_the_pty() {
+    for (
+        helper_mode,
+        ready_marker,
+        resumed_marker,
+        resumed_key,
+        child_input,
+        child_finished_marker,
+    ) in [
+        (
+            "inline",
+            "CHILD_READY",
+            "TUI_RESUMED",
+            b"r".as_slice(),
+            Some(b"child-input\n".as_slice()),
+            Some("CHILD_GOT:child-input"),
+        ),
+        (
+            "cancel-inline",
+            "CANCEL_CHILD_READY",
+            "TUI_CANCEL_RESUMED",
+            b"c".as_slice(),
+            None,
+            None,
+        ),
+    ] {
+        let pty = open_pty();
+        let original_termios = termios(pty.slave.as_raw_fd());
+        let codex_tui = codex_utils_cargo_bin::cargo_bin("codex-tui").expect("codex-tui binary");
+        let mut command = ProcessCommand::new(codex_tui);
+        command
+            .env(INTERACTIVE_CHILD_HANDOFF_HELPER_ENV, helper_mode)
+            .stdin(Stdio::from(dup_file(pty.slave.as_raw_fd())))
+            .stdout(Stdio::from(dup_file(pty.slave.as_raw_fd())))
+            .stderr(Stdio::from(dup_file(pty.slave.as_raw_fd())));
+
+        let mut child = command.spawn().expect("spawn inline handoff helper");
+        let mut reader = dup_file(pty.master.as_raw_fd());
+        set_nonblocking(reader.as_raw_fd());
+        let mut writer = dup_file(pty.master.as_raw_fd());
+        let mut output = Vec::new();
+        wait_for_pty_text(&mut child, &mut reader, &mut output, ready_marker);
+        if let Some(child_input) = child_input {
+            writer.write_all(child_input).expect("write child input");
+            writer.flush().expect("flush child input");
+        }
+        if let Some(child_finished_marker) = child_finished_marker {
+            wait_for_pty_text(&mut child, &mut reader, &mut output, child_finished_marker);
+        }
+        wait_for_pty_text(&mut child, &mut reader, &mut output, resumed_marker);
+        writer
+            .write_all(resumed_key)
+            .expect("write resumed TUI input");
+        writer.flush().expect("flush resumed TUI input");
+        let resumed_input_marker = format!("TUI_GOT:{}", char::from(resumed_key[0]));
+        wait_for_pty_text(&mut child, &mut reader, &mut output, &resumed_input_marker);
+        let status = wait_for_child_with_pty_output(&mut child, &mut reader, &mut output);
+        assert!(status.success(), "inline handoff helper should succeed");
+        assert_termios_restored(&original_termios, &termios(pty.slave.as_raw_fd()));
+
+        let output = String::from_utf8_lossy(&output);
+        let resumed_input = output
+            .find(&resumed_input_marker)
+            .expect("resumed TUI input marker");
+        let handoff_output = &output[..resumed_input + resumed_input_marker.len()];
+        assert_missing_sequence(
+            handoff_output,
+            EnterAlternateScreen,
+            "enter alternate screen during inline handoff",
+        );
+        assert_missing_sequence(
+            handoff_output,
+            LeaveAlternateScreen,
+            "leave alternate screen during inline handoff",
+        );
+        let ready = output.find(ready_marker).expect("child ready marker");
+        let resumed = output.find(resumed_marker).expect("TUI resume marker");
+        assert!(
+            ready < resumed,
+            "inline child should finish before TUI resume in output {output:?}"
+        );
+        if let Some(child_finished_marker) = child_finished_marker {
+            let child_finished = output
+                .find(child_finished_marker)
+                .expect("child completion marker");
+            assert!(
+                ready < child_finished && child_finished < resumed,
+                "unexpected inline handoff ordering in PTY output {output:?}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -235,6 +334,22 @@ fn assert_restored_terminal_sequences(output: &str) {
     );
 }
 
+fn assert_reacquired_terminal_sequences(output: &str) {
+    assert_contains_sequence(output, EnableBracketedPaste, "bracketed paste enable");
+    assert_contains_sequence(output, EnableFocusChange, "focus-report enable");
+    assert_contains_sequence(output, EnableMouseCapture, "mouse enable");
+    assert_contains_sequence(output, EnableAlternateScroll, "alternate scroll enable");
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct EnableAlternateScroll;
+
+impl Command for EnableAlternateScroll {
+    fn write_ansi(&self, f: &mut impl fmt::Write) -> fmt::Result {
+        write!(f, "\x1b[?1007h")
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct DisableAlternateScroll;
 
@@ -252,7 +367,7 @@ struct Pty {
 fn open_pty() -> Pty {
     let mut master = 0;
     let mut slave = 0;
-    let window_size = libc::winsize {
+    let mut window_size = libc::winsize {
         ws_row: 24,
         ws_col: 80,
         ws_xpixel: 0,
@@ -265,7 +380,7 @@ fn open_pty() -> Pty {
             &mut slave,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-            &window_size,
+            &mut window_size,
         )
     };
     assert_eq!(

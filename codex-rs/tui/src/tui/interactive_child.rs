@@ -114,8 +114,19 @@ pub fn run_handoff_helper_for_tests() -> ! {
         }
     };
     let result: Result<()> = runtime.block_on(async {
-        let cancellation_mode = std::env::var("CODEX_TUI_INTERACTIVE_CHILD_HANDOFF_HELPER")
-            .is_ok_and(|mode| mode == "cancel");
+        let helper_mode = std::env::var("CODEX_TUI_INTERACTIVE_CHILD_HANDOFF_HELPER")
+            .unwrap_or_else(|_| "alternate".to_string());
+        let (cancellation_mode, alternate_screen_mode) = match helper_mode.as_str() {
+            "1" | "alternate" => (false, true),
+            "cancel" => (true, true),
+            "inline" => (false, false),
+            "cancel-inline" => (true, false),
+            mode => {
+                return Err(std::io::Error::other(format!(
+                    "unknown interactive child handoff helper mode `{mode}`"
+                )));
+            }
+        };
         set_modes()?;
         let backend = CrosstermBackend::new(stdout());
         let terminal = CustomTerminal::with_options_and_cursor_position(
@@ -128,7 +139,9 @@ pub fn run_handoff_helper_for_tests() -> ! {
             /*enhanced_keys_supported*/ false,
             stderr_guard,
         );
-        tui.enter_alt_screen()?;
+        if alternate_screen_mode {
+            tui.enter_alt_screen()?;
+        }
         let mut events = tui.event_stream();
         std::future::poll_fn(|cx| loop {
             match events.as_mut().poll_next(cx) {
@@ -197,7 +210,9 @@ pub fn run_handoff_helper_for_tests() -> ! {
         }
 
         drop(events);
-        tui.leave_alt_screen()?;
+        if alternate_screen_mode {
+            tui.leave_alt_screen()?;
+        }
         drop(tui);
         super::restore_after_exit()
     });

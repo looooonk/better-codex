@@ -16825,6 +16825,12 @@ impl backend::AppShellBackend for RecordingBackend {
             client_user_message_id: params.client_user_message_id,
             prompt,
         });
+        if let Some(error) = self.take_action_error() {
+            return Err(TypedRequestError::Transport {
+                method: "turn/steer".to_string(),
+                source: std::io::Error::other(error),
+            });
+        }
         Ok(TurnSteerResponse {
             turn_id: params.turn_id,
         })

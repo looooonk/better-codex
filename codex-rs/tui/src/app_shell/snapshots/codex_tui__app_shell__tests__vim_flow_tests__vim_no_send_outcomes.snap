@@ -1,0 +1,54 @@
+---
+source: tui/src/app_shell/vim_flow_tests.rs
+expression: "rendered_outcomes.join(\"\\n---\\n\")"
+---
+  Dashboard  ◆ BC             gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ STATUS  Vim input cancelled
+
+ ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:26                                                               │
+│> Keep this composer draft.                                                   │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+---
+  Dashboard  ◆ BC             gpt-5-codex ▾   default ▾   default ▾  ● thinking
+────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ STATUS  Vim input cancelled
+ ▎ STATUS  Vim input was empty
+
+ ▎ CODEX  The new shell owns the fullscreen surface.
+
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:26                                                               │
+│> Keep this composer draft.                                                   │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+---
+  Dashboard  ◆ BC        gpt-5-codex ▾   default ▾   default ▾  ● action failed
+────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ STATUS  Vim input cancelled
+ ▎ STATUS  Vim input was empty
+ ▎ ERROR  failed to open Vim input: editor unavailable
+
+ ▎ CODEX  The new shell owns the fullscreen surface.
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:26                                                               │
+│> Keep this composer draft.                                                   │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

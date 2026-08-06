@@ -526,9 +526,13 @@ async fn real_neovim_bridge_loads_user_config_lints_commands_and_submits() {
 fn input_reader_preserves_text_and_rejects_invalid_content() {
     let temp_dir = tempfile::tempdir().expect("Vim input directory");
     let input = temp_dir.path().join("input.md");
+    let exact_limit = temp_dir.path().join("exact-limit.md");
     let oversized = temp_dir.path().join("oversized.md");
     let invalid = temp_dir.path().join("invalid.md");
     fs::write(&input, b"first  \r\nsecond \r\n\r\n").expect("Vim input fixture");
+    let mut exact_limit_contents = vec![b'x'; MAX_COMPOSER_BYTES];
+    exact_limit_contents.extend_from_slice(b"\r\n");
+    fs::write(&exact_limit, exact_limit_contents).expect("exact-limit Vim input fixture");
     fs::write(&oversized, vec![b'x'; MAX_COMPOSER_BYTES.saturating_add(1)])
         .expect("oversized Vim input fixture");
     fs::write(&invalid, [0xff]).expect("invalid Vim input fixture");
@@ -536,6 +540,9 @@ fn input_reader_preserves_text_and_rejects_invalid_content() {
     assert_eq!(
         (
             read_vim_input(&input).expect("valid Vim input"),
+            read_vim_input(&exact_limit)
+                .expect("editor newline should not exceed the input limit")
+                .len(),
             read_vim_input(&oversized)
                 .expect_err("oversized input should fail")
                 .to_string(),
@@ -546,6 +553,7 @@ fn input_reader_preserves_text_and_rejects_invalid_content() {
         ),
         (
             "first  \nsecond \n".to_string(),
+            MAX_COMPOSER_BYTES,
             input_too_large_message(MAX_COMPOSER_BYTES.saturating_add(1)),
             true,
         )

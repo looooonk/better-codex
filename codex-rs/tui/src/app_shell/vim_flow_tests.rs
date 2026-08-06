@@ -14,6 +14,7 @@ use crate::app_shell::backend_actions::ActionGroup;
 use crate::app_shell::backend_actions::BackendActionResult;
 use crate::app_shell::user_input::PendingUserInput;
 use crate::app_shell::vim_input::MAX_CONSECUTIVE_APP_SERVER_EVENTS;
+use crate::app_shell::vim_input::MAX_VIM_SUBMISSION_BYTES;
 use crate::app_shell::vim_input::VimInputOutcome;
 use crate::app_shell::vim_input::VimInputRequest;
 use crate::app_shell::vim_input::VimInputWaitOutcome;
@@ -347,6 +348,186 @@ async fn vim_submission_steers_an_active_turn_with_exact_input() {
         ),
         ("", Some((TranscriptKind::User, prompt)))
     );
+}
+
+#[tokio::test]
+async fn oversized_vim_submission_returns_to_the_composer() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    let existing_draft = "Keep this composer draft.";
+    let vim_input = "x".repeat(MAX_VIM_SUBMISSION_BYTES.saturating_add(1));
+    let expected_draft = format!("{existing_draft}\n\n{vim_input}");
+    shell.composer.set_text(existing_draft);
+    shell.transcript.clear();
+
+    shell
+        .complete_vim_input(
+            shell.thread_id,
+            Ok(VimInputOutcome::Submit(vim_input.clone())),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("oversized Vim input should return without submitting");
+
+    assert_eq!(
+        (
+            shell.composer.text(),
+            shell
+                .transcript
+                .back()
+                .map(|line| (line.kind, line.text.as_str())),
+            backend.calls(),
+        ),
+        (
+            expected_draft.as_str(),
+            Some((
+                TranscriptKind::Status,
+                "Vim input exceeds the 10000-byte submission limit; returned it to the composer",
+            )),
+            Vec::new(),
+        )
+    );
+    shell.composer.clear();
+    insta::assert_snapshot!(
+        "oversized_vim_submission",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 16,
+            ),
+        )
+    );
+}
+
+#[tokio::test]
+async fn failed_vim_submissions_preserve_the_prompt_and_existing_draft() {
+    let config = test_config().await;
+    let vim_input = "Retry the Vim-edited prompt.";
+    let existing_draft = "Keep this composer draft.";
+    let expected_draft = format!("{vim_input}\n\n{existing_draft}");
+
+    let mut steer_shell = ShellState::snapshot_fixture();
+    let mut steer_backend = RecordingBackend::default();
+    steer_shell.active_turn_id = Some("turn-active".to_string());
+    steer_shell.composer.set_text(existing_draft);
+    steer_shell.transcript.clear();
+    steer_backend.fail_next_action("steer rejected");
+
+    let steer_error = steer_shell
+        .complete_vim_input(
+            steer_shell.thread_id,
+            Ok(VimInputOutcome::Submit(vim_input.to_string())),
+            &config,
+            &mut steer_backend,
+        )
+        .await
+        .expect_err("rejected Vim steer should surface an error");
+    assert_eq!(
+        (
+            format!("{steer_error:#}"),
+            steer_shell.composer.text(),
+            steer_shell
+                .transcript
+                .iter()
+                .any(|line| { line.kind == TranscriptKind::User && line.text == vim_input }),
+        ),
+        (
+            "failed to steer active turn: turn/steer transport error: steer rejected: steer rejected"
+                .to_string(),
+            expected_draft.as_str(),
+            false,
+        )
+    );
+
+    let mut start_shell = ShellState::snapshot_fixture();
+    let start_backend = RecordingBackend::default();
+    start_shell.active_turn_id = None;
+    start_shell.composer.set_text(existing_draft);
+    start_shell.transcript.clear();
+    start_backend.fail_next_turn_start("turn start rejected");
+
+    start_shell
+        .complete_vim_input(
+            start_shell.thread_id,
+            Ok(VimInputOutcome::Submit(vim_input.to_string())),
+            &config,
+            &mut start_backend.clone(),
+        )
+        .await
+        .expect("Vim turn start should begin in the background");
+    complete_backend_actions(&mut start_shell, &start_backend).await;
+    assert_eq!(
+        (
+            start_shell.composer.text(),
+            start_shell
+                .transcript
+                .back()
+                .map(|line| (line.kind, line.text.as_str())),
+        ),
+        (
+            expected_draft.as_str(),
+            Some((
+                TranscriptKind::Error,
+                "failed to submit turn: turn start rejected",
+            )),
+        )
+    );
+}
+
+#[tokio::test]
+async fn no_send_vim_outcomes_preserve_the_existing_draft() {
+    let config = test_config().await;
+    let existing_draft = "Keep this composer draft.";
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    shell.composer.set_text(existing_draft);
+    shell.transcript.clear();
+    let mut rendered_outcomes = Vec::new();
+
+    for (result, expected_line) in [
+        (
+            Ok(VimInputOutcome::Cancelled),
+            (TranscriptKind::Status, "Vim input cancelled"),
+        ),
+        (
+            Ok(VimInputOutcome::Submit(" \n ".to_string())),
+            (TranscriptKind::Status, "Vim input was empty"),
+        ),
+        (
+            Err(color_eyre::eyre::eyre!("editor unavailable")),
+            (
+                TranscriptKind::Error,
+                "failed to open Vim input: editor unavailable",
+            ),
+        ),
+    ] {
+        shell
+            .complete_vim_input(shell.thread_id, result, &config, &mut backend)
+            .await
+            .expect("no-send Vim outcome should remain in the shell");
+        assert_eq!(
+            (
+                shell.composer.text(),
+                shell
+                    .transcript
+                    .back()
+                    .map(|line| (line.kind, line.text.as_str())),
+                backend.calls(),
+            ),
+            (existing_draft, Some(expected_line), Vec::new())
+        );
+        rendered_outcomes.push(render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 16,
+            ),
+        ));
+    }
+    insta::assert_snapshot!("vim_no_send_outcomes", rendered_outcomes.join("\n---\n"));
 }
 
 #[tokio::test]

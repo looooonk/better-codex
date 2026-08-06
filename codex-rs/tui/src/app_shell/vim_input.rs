@@ -30,6 +30,7 @@ use editor::resolve_program;
 use editor::resolve_vim_editor;
 
 pub(super) const MAX_CONSECUTIVE_APP_SERVER_EVENTS: usize = 32;
+pub(super) const MAX_VIM_SUBMISSION_BYTES: usize = 10_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct VimInputRequest {
@@ -155,22 +156,25 @@ fn is_submit_marker(path: &Path) -> Result<bool> {
 }
 
 fn read_vim_input(path: &Path) -> Result<String> {
-    let mut bytes = Vec::with_capacity(MAX_COMPOSER_BYTES.saturating_add(1));
+    let read_limit = MAX_COMPOSER_BYTES.saturating_add(3);
+    let mut bytes = Vec::with_capacity(read_limit);
     fs::File::open(path)
         .wrap_err("failed to open Vim input")?
-        .take(u64::try_from(MAX_COMPOSER_BYTES.saturating_add(1)).unwrap_or(u64::MAX))
+        .take(u64::try_from(read_limit).unwrap_or(u64::MAX))
         .read_to_end(&mut bytes)
         .wrap_err("failed to read Vim input")?;
+    if bytes.last() == Some(&b'\n') {
+        bytes.pop();
+        if bytes.last() == Some(&b'\r') {
+            bytes.pop();
+        }
+    }
     if bytes.len() > MAX_COMPOSER_BYTES {
         return Err(eyre!(input_too_large_message(bytes.len())));
     }
-    let mut text = String::from_utf8(bytes)
-        .wrap_err("Vim input was not valid UTF-8")?
-        .replace("\r\n", "\n");
-    if text.ends_with('\n') {
-        text.pop();
-    }
-    Ok(text)
+    String::from_utf8(bytes)
+        .map(|text| text.replace("\r\n", "\n"))
+        .wrap_err("Vim input was not valid UTF-8")
 }
 
 impl ShellState {
@@ -186,13 +190,18 @@ impl ShellState {
         self.slash_command_popup.reset();
         self.composer.set_text(prompt.clone());
         let result = if self.active_turn_id.is_some() {
-            self.steer_active_turn(app_server, prompt).await
+            self.steer_active_turn(app_server, prompt.clone()).await
         } else {
-            self.submit_prompt(app_server, prompt);
+            self.submit_prompt(app_server, prompt.clone());
             Ok(())
         };
         if !composer_draft.is_empty() {
-            self.composer.restore_failed_submission(&composer_draft);
+            if result.is_err() {
+                self.composer.set_text(composer_draft);
+                self.composer.restore_failed_submission(&prompt);
+            } else {
+                self.composer.restore_failed_submission(&composer_draft);
+            }
         }
         result
     }
@@ -266,6 +275,18 @@ impl ShellState {
                         self.composer.restore_failed_submission(&composer_draft);
                     }
                     return Ok(outcome);
+                }
+                if text.len() > MAX_VIM_SUBMISSION_BYTES {
+                    let composer_draft = self.composer.submission_text();
+                    self.slash_command_popup.reset();
+                    self.composer.set_text(text);
+                    if !composer_draft.is_empty() {
+                        self.composer.restore_failed_submission(&composer_draft);
+                    }
+                    self.push_status(format!(
+                        "Vim input exceeds the {MAX_VIM_SUBMISSION_BYTES}-byte submission limit; returned it to the composer"
+                    ));
+                    return Ok(LocalSlashCommandOutcome::Continue);
                 }
                 if self.has_pending_backend_action(ActionGroup::TurnStart) {
                     self.pending_prompt_submission = Some(text);
