@@ -11,7 +11,7 @@ const USAGE_BAR_SEGMENTS: usize = 10;
 const PERCENT_SCALE: usize = 100;
 const MIN_USED_PERCENT: i32 = 0;
 const MAX_USED_PERCENT: i32 = 100;
-const MIDDLE_HALF_BLOCK: &str = "\u{1cd33}";
+const USAGE_BAR_SEGMENT: &str = "\u{2501}";
 const SECONDS_PER_HOUR: i64 = 60 * 60;
 
 pub(super) fn rate_limit_lines(
@@ -151,8 +151,8 @@ fn usage_bar_spans(used_percent: i32, usage_color: Color) -> [Span<'static>; 2] 
         / PERCENT_SCALE;
     let empty_segments = USAGE_BAR_SEGMENTS.saturating_sub(filled_segments);
     [
-        MIDDLE_HALF_BLOCK.repeat(filled_segments).fg(usage_color),
-        MIDDLE_HALF_BLOCK
+        USAGE_BAR_SEGMENT.repeat(filled_segments).fg(usage_color),
+        USAGE_BAR_SEGMENT
             .repeat(empty_segments)
             .fg(palette::border()),
     ]
