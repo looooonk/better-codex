@@ -5,6 +5,8 @@ set -eu
 repository="looooonk/better-codex"
 version=${BETTER_CODEX_RELEASE:-}
 archive_path=${BETTER_CODEX_ARCHIVE_PATH:-}
+release_index_url="https://raw.githubusercontent.com/$repository/main/scripts/latest-release"
+github_releases_url="https://api.github.com/repos/$repository/releases?per_page=1"
 
 usage() {
     cat <<'EOF'
@@ -17,6 +19,7 @@ Environment:
   BETTER_CODEX_BIN_DIR       Directory for the better-codex launcher
   BETTER_CODEX_RELEASE       Release version, equivalent to --version
   BETTER_CODEX_ARCHIVE_PATH  Local archive for package testing
+  GH_TOKEN/GITHUB_TOKEN      GitHub token for fallback release discovery
 EOF
 }
 
@@ -64,17 +67,98 @@ download() {
     fi
 }
 
+download_github_release_metadata() {
+    destination=$1
+    headers=$2
+    github_token=${GH_TOKEN:-${GITHUB_TOKEN:-}}
+    status=
+
+    if command -v curl >/dev/null 2>&1; then
+        if [ -n "$github_token" ]; then
+            status=$(curl -sSL --connect-timeout 15 \
+                -D "$headers" \
+                -H "Accept: application/vnd.github+json" \
+                -H "Authorization: Bearer $github_token" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                -o "$destination" \
+                -w '%{http_code}' \
+                "$github_releases_url") || return 1
+        else
+            status=$(curl -sSL --connect-timeout 15 \
+                -D "$headers" \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                -o "$destination" \
+                -w '%{http_code}' \
+                "$github_releases_url") || return 1
+        fi
+    elif command -v wget >/dev/null 2>&1; then
+        if [ -n "$github_token" ]; then
+            wget --server-response --tries=1 --timeout=15 \
+                --header="Accept: application/vnd.github+json" \
+                --header="Authorization: Bearer $github_token" \
+                --header="X-GitHub-Api-Version: 2022-11-28" \
+                -O "$destination" "$github_releases_url" 2>"$headers" || true
+        else
+            wget --server-response --tries=1 --timeout=15 \
+                --header="Accept: application/vnd.github+json" \
+                --header="X-GitHub-Api-Version: 2022-11-28" \
+                -O "$destination" "$github_releases_url" 2>"$headers" || true
+        fi
+        status=$(sed -n \
+            's/^[[:space:]]*HTTP\/[^ ]*[[:space:]]*\([0-9][0-9][0-9]\).*/\1/p' \
+            "$headers" | tail -n 1)
+    else
+        fail "curl or wget is required"
+    fi
+
+    case "$status" in
+        2??) return 0 ;;
+    esac
+
+    remaining=$(sed -n \
+        's/^[[:space:]]*[Xx]-[Rr]ate[Ll]imit-[Rr]emaining:[[:space:]]*//p' \
+        "$headers" | tail -n 1 | tr -d '\r')
+    reset=$(sed -n \
+        's/^[[:space:]]*[Xx]-[Rr]ate[Ll]imit-[Rr]eset:[[:space:]]*//p' \
+        "$headers" | tail -n 1 | tr -d '\r')
+    if { [ "$status" = 403 ] || [ "$status" = 429 ]; } && [ "$remaining" = 0 ]; then
+        if [ -n "$reset" ]; then
+            printf 'better-codex installer: GitHub API rate limit exhausted; resets at Unix time %s\n' \
+                "$reset" >&2
+        else
+            printf '%s\n' \
+                'better-codex installer: GitHub API rate limit exhausted' >&2
+        fi
+        if [ -z "$github_token" ]; then
+            printf '%s\n' \
+                'better-codex installer: set GH_TOKEN or GITHUB_TOKEN to authenticate the fallback request' >&2
+        fi
+    else
+        printf 'better-codex installer: GitHub release request failed with HTTP %s\n' \
+            "${status:-unknown}" >&2
+    fi
+    return 1
+}
+
 if [ -z "$version" ]; then
     [ -z "$archive_path" ] || fail "set --version when installing a local archive"
-    metadata=$(mktemp)
-    trap 'rm -f "$metadata"' EXIT HUP INT TERM
-    download "https://api.github.com/repos/$repository/releases?per_page=1" "$metadata"
-    tag=$(sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' "$metadata")
-    case "$tag" in
-        v*) version=${tag#v} ;;
-        *) fail "latest release tag is not a Better Codex version" ;;
-    esac
-    rm -f "$metadata"
+    metadata_dir=$(mktemp -d "${TMPDIR:-/tmp}/better-codex-metadata.XXXXXX")
+    metadata="$metadata_dir/release"
+    headers="$metadata_dir/headers"
+    trap 'rm -rf "$metadata_dir"' EXIT HUP INT TERM
+    if download "$release_index_url" "$metadata" 2>/dev/null; then
+        version=$(sed -n '1{s/[[:space:]]*$//;p;}' "$metadata")
+    else
+        download_github_release_metadata "$metadata" "$headers" || \
+            fail "could not determine the latest release; pass --version VERSION to bypass release discovery"
+        tag=$(sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' "$metadata")
+        case "$tag" in
+            v*) version=${tag#v} ;;
+            *) fail "latest release tag is not a Better Codex version" ;;
+        esac
+    fi
+    rm -rf "$metadata_dir"
     trap - EXIT HUP INT TERM
 fi
 

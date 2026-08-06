@@ -1,0 +1,65 @@
+name: publish release index
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/publish-release-index.yml
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published release tag; defaults to the newest published release
+        required: false
+  workflow_run:
+    workflows:
+      - release
+    types:
+      - completed
+
+concurrency:
+  group: publish-release-index
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v'))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: main
+      - name: Publish latest release version
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_RELEASE_TAG: >-
+            ${{ github.event.workflow_run.head_branch || inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          release_tag="$REQUESTED_RELEASE_TAG"
+          if [[ -z "$release_tag" ]]; then
+            release_tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=1" \
+              --jq 'map(select(.draft == false))[0].tag_name')"
+          fi
+          [[ "$release_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] \
+            || { echo "Invalid release tag: ${release_tag}" >&2; exit 1; }
+          is_draft="$(gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft --jq .isDraft)"
+          [[ "$is_draft" == false ]] \
+            || { echo "Release is still a draft: ${release_tag}" >&2; exit 1; }
+          version="${release_tag#v}"
+          printf '%s\n' "$version" >scripts/latest-release
+          if git diff --quiet -- scripts/latest-release; then
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- scripts/latest-release
+          git commit -m "Update latest release to ${version}"
+          git push origin HEAD:main
