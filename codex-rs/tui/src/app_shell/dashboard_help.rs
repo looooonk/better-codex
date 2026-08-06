@@ -104,6 +104,10 @@ fn help_columns(
                 detail.select("Pg↑ / Pg↓", "Page Up / Page Down"),
                 detail.select("Scroll help", "Scroll this guide"),
             ),
+            Shortcut::new(
+                detail.select("⇧Alt+←/→", "Shift+Alt+← / →"),
+                detail.select("Resize", "Resize dashboard"),
+            ),
         ],
         spacious,
     );

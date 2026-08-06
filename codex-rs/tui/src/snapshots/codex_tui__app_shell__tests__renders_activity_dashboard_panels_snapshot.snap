@@ -15,18 +15,18 @@ expression: "render_shell(&shell, area)"
          2. Wire transcript                                           │ ^1 … ^4     Open tab  │  ↵           Steer turn
          3. Render dashboard                                          │ Alt+← / →   Prev/next │  Tab         Queue next
                                                                       │ Pg↑ / Pg↓   Scroll he…│
- ▌ tool exec just test -p codex-tui                                   │                       │ ◆ APP
-                                                                      │◆ SESSIONS             │  ^P          Commands
- ▌ edited 3 files +128 -24                                            │ ↑↓ / jk     Select    │  ^D          Show/hide
- ▎ PLAN  1. Route activity into dashboard panels                      │ ↵ / r       Resume    │  ^C          Stop/canc…
-                                                                      │ f           Fork      │  Esc ×2      Exit app
- ▎ CODEX  The new shell owns the fullscreen surface.                  │ a           Archive   │  ^N          New chat
-                                                                      │ u           Unarchive │
-                                                                      │ v           Switch vi…│ ◆ AGENTS
-                                                                      │ n           Rename    │  ↵           Focus/log
-                                                                      │ /           Search    │  ↑↓ / jk     Select
-                                                                      │ d           Delete    │  g / G       First/last
-                                                                      │                       │  r           Reload log
+ ▌ tool exec just test -p codex-tui                                   │ ⇧Alt+←/→    Resize    │ ◆ APP
+                                                                      │                       │  ^P          Commands
+ ▌ edited 3 files +128 -24                                            │◆ SESSIONS             │  ^D          Show/hide
+ ▎ PLAN  1. Route activity into dashboard panels                      │ ↑↓ / jk     Select    │  ^C          Stop/canc…
+                                                                      │ ↵ / r       Resume    │  Esc ×2      Exit app
+ ▎ CODEX  The new shell owns the fullscreen surface.                  │ f           Fork      │  ^N          New chat
+                                                                      │ a           Archive   │
+                                                                      │ u           Unarchive │ ◆ AGENTS
+                                                                      │ v           Switch vi…│  ↵           Focus/log
+                                                                      │ n           Rename    │  ↑↓ / jk     Select
+                                                                      │ /           Search    │  g / G       First/last
+                                                                      │ d           Delete    │  r           Reload log
                                                                       │
                                                                       │▎◆ APPROVALS
                                                                       │▎approval Run command: cargo test -p codex-tui

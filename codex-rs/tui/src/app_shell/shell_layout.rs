@@ -12,9 +12,12 @@ use ratatui::layout::Layout;
 use ratatui::layout::Rect;
 
 const DASHBOARD_SIDE_BY_SIDE_MIN_WIDTH: u16 = 100;
-const DASHBOARD_MIN_WIDTH: u16 = 50;
-const DASHBOARD_MAX_WIDTH: u16 = 64;
+const DASHBOARD_DEFAULT_MIN_WIDTH: u16 = 50;
+const DASHBOARD_DEFAULT_MAX_WIDTH: u16 = 64;
 const DASHBOARD_WIDTH_PERCENT: u16 = 34;
+const DASHBOARD_RESIZABLE_MIN_WIDTH: u16 = 32;
+const DASHBOARD_RESIZE_STEP: u16 = 4;
+const WORKSPACE_RESIZABLE_MIN_WIDTH: u16 = 40;
 const COMPACT_HEADER_HEIGHT: u16 = 2;
 const PADDED_HEADER_HEIGHT: u16 = 3;
 const PADDED_HEADER_MIN_SCREEN_HEIGHT: u16 = 17;
@@ -33,6 +36,12 @@ pub(super) const MIN_TERMINAL_WIDTH: u16 = 40;
 pub(super) enum DashboardPlacement {
     Sidebar(Rect),
     Overlay(Rect),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum DashboardWidthChange {
+    Narrower,
+    Wider,
 }
 
 impl DashboardPlacement {
@@ -89,7 +98,7 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
             dashboard: None,
         };
         if shell.dashboard_visible {
-            let width = dashboard_width(area.width).min(layout.transcript.width);
+            let width = dashboard_width(shell, area.width).min(layout.transcript.width);
             layout.dashboard = Some(DashboardPlacement::Overlay(Rect::new(
                 layout.transcript.right().saturating_sub(width),
                 layout.transcript.y,
@@ -100,7 +109,7 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
         return Some(layout);
     }
 
-    let dashboard_width = dashboard_width(area.width);
+    let dashboard_width = dashboard_width(shell, area.width);
     let horizontal = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -137,14 +146,68 @@ fn transcript_min_height(shell: &ShellState) -> u16 {
     }
 }
 
-fn dashboard_width(terminal_width: u16) -> u16 {
-    u32::from(terminal_width)
+fn dashboard_width(shell: &ShellState, terminal_width: u16) -> u16 {
+    let default_width = u32::from(terminal_width)
         .saturating_mul(u32::from(DASHBOARD_WIDTH_PERCENT))
         .div_ceil(100)
         .try_into()
         .unwrap_or(u16::MAX)
-        .clamp(DASHBOARD_MIN_WIDTH, DASHBOARD_MAX_WIDTH)
-        .min(terminal_width)
+        .clamp(DASHBOARD_DEFAULT_MIN_WIDTH, DASHBOARD_DEFAULT_MAX_WIDTH);
+    clamp_dashboard_width(
+        terminal_width,
+        shell
+            .dashboard_resize
+            .preferred_width
+            .unwrap_or(default_width),
+    )
+}
+
+fn clamp_dashboard_width(terminal_width: u16, width: u16) -> u16 {
+    let min_width = DASHBOARD_RESIZABLE_MIN_WIDTH.min(terminal_width);
+    let max_width = if terminal_width >= DASHBOARD_SIDE_BY_SIDE_MIN_WIDTH {
+        terminal_width.saturating_sub(WORKSPACE_RESIZABLE_MIN_WIDTH)
+    } else {
+        terminal_width
+    }
+    .max(min_width)
+    .min(terminal_width);
+    width.clamp(min_width, max_width)
+}
+
+pub(super) fn dashboard_divider_contains(
+    shell: &ShellState,
+    area: Rect,
+    position: ratatui::layout::Position,
+) -> bool {
+    calculate(shell, area)
+        .and_then(|layout| layout.dashboard)
+        .is_some_and(|dashboard| {
+            let dashboard = dashboard.area();
+            position.x == dashboard.x && (dashboard.y..dashboard.bottom()).contains(&position.y)
+        })
+}
+
+pub(super) fn dashboard_width_from_divider(area: Rect, divider_x: u16) -> Option<u16> {
+    if !terminal_width_supported(area.width) {
+        return None;
+    }
+    let divider_x = divider_x.clamp(area.x, area.right());
+    Some(clamp_dashboard_width(
+        area.width,
+        area.right().saturating_sub(divider_x),
+    ))
+}
+
+pub(super) fn adjust_dashboard_width(
+    terminal_width: u16,
+    current_width: u16,
+    change: DashboardWidthChange,
+) -> u16 {
+    let width = match change {
+        DashboardWidthChange::Narrower => current_width.saturating_sub(DASHBOARD_RESIZE_STEP),
+        DashboardWidthChange::Wider => current_width.saturating_add(DASHBOARD_RESIZE_STEP),
+    };
+    clamp_dashboard_width(terminal_width, width)
 }
 
 fn input_panel_height(shell: &ShellState, available_height: u16, input_width: u16) -> u16 {

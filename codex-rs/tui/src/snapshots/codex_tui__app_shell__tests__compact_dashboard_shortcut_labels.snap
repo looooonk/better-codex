@@ -12,14 +12,15 @@ expression: rendered(60)
  ^1 … ^4     Open tab        │
  Alt+← / →   Prev/next       │ ◆ APP
  Pg↑ / Pg↓   Scroll help     │  ^P          Commands
-                             │  ^D          Show/hide
-◆ SESSIONS                   │  ^C          Stop/cancel
- ↑↓ / jk     Select          │  Esc ×2      Exit app
- ↵ / r       Resume          │  ^N          New chat
- f           Fork            │
- a           Archive         │ ◆ AGENTS
- u           Unarchive       │  ↵           Focus/log
- v           Switch view     │  ↑↓ / jk     Select
- n           Rename          │  g / G       First/last
- /           Search          │  r           Reload log
+ ⇧Alt+←/→    Resize          │  ^D          Show/hide
+                             │  ^C          Stop/cancel
+◆ SESSIONS                   │  Esc ×2      Exit app
+ ↑↓ / jk     Select          │  ^N          New chat
+ ↵ / r       Resume          │
+ f           Fork            │ ◆ AGENTS
+ a           Archive         │  ↵           Focus/log
+ u           Unarchive       │  ↑↓ / jk     Select
+ v           Switch view     │  g / G       First/last
+ n           Rename          │  r           Reload log
+ /           Search          │
  d           Delete          │

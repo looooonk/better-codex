@@ -190,14 +190,20 @@ pub(super) fn render_dashboard(
 ) {
     let area = placement.area();
     fill_rect(buf, area, palette::dark());
+    let divider_highlighted = shell.dashboard_resize.dragging
+        || pointer.is_some_and(|position| {
+            position.x == area.x && (area.y..area.bottom()).contains(&position.y)
+        });
     for y in area.y..area.bottom() {
         if let Some(cell) = buf.cell_mut((area.x, y)) {
-            cell.set_symbol("│")
-                .set_style(Style::new().fg(if shell.dashboard_focused() {
-                    palette::focus()
-                } else {
-                    palette::border()
-                }));
+            cell.set_symbol(if divider_highlighted { "┃" } else { "│" })
+                .set_style(
+                    Style::new().fg(if shell.dashboard_focused() || divider_highlighted {
+                        palette::focus()
+                    } else {
+                        palette::border()
+                    }),
+                );
         }
     }
 

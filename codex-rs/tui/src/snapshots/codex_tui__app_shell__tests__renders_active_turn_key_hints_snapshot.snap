@@ -14,18 +14,18 @@ expression: "render_shell(&shell, area)"
           by app-server turns.                    │ ^1 … ^4     Open tab  │  Alt+E       Effort
  ▎ PLAN  1. Build shell                           │ Alt+← / →   Prev/next │  ↵           Steer turn
          2. Wire transcript                       │ Pg↑ / Pg↓   Scroll he…│  Tab         Queue next
-         3. Render dashboard                      │                       │  Alt+↑ / ↓   Edit queue
-                                                  │◆ SESSIONS             │
- ▌ tool exec just test -p codex-tui               │ ↑↓ / jk     Select    │ ◆ APP
-                                                  │ ↵ / r       Resume    │  ^P          Commands
- ▌ edited 3 files +128 -24                        │ f           Fork      │  ^D          Show/hide
-                                                  │ a           Archive   │  ^C          Stop/canc…
- ▎ CODEX  The new shell owns the fullscreen       │ u           Unarchive │  Esc ×2      Exit app
-          surface.                                │ v           Switch vi…│  ^N          New chat
-                                                  │ n           Rename    │
-                                                  │ /           Search    │ ◆ AGENTS
-                                                  │ d           Delete    │  ↵           Focus/log
-                                                  │                       │  ↑↓ / jk     Select
+         3. Render dashboard                      │ ⇧Alt+←/→    Resize    │  Alt+↑ / ↓   Edit queue
+                                                  │                       │
+ ▌ tool exec just test -p codex-tui               │◆ SESSIONS             │ ◆ APP
+                                                  │ ↑↓ / jk     Select    │  ^P          Commands
+ ▌ edited 3 files +128 -24                        │ ↵ / r       Resume    │  ^D          Show/hide
+                                                  │ f           Fork      │  ^C          Stop/canc…
+ ▎ CODEX  The new shell owns the fullscreen       │ a           Archive   │  Esc ×2      Exit app
+          surface.                                │ u           Unarchive │  ^N          New chat
+                                                  │ v           Switch vi…│
+                                                  │ n           Rename    │ ◆ AGENTS
+                                                  │ /           Search    │  ↵           Focus/log
+                                                  │ d           Delete    │  ↑↓ / jk     Select
                                                   │                       │  g / G       First/last
                                                   │                       │  r           Reload log
                                                   │

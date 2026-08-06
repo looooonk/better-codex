@@ -83,6 +83,7 @@ mod composer_render;
 mod dashboard;
 mod dashboard_help;
 mod dashboard_rate_limits;
+mod dashboard_resize;
 mod dashboard_view;
 mod dashboard_workspace;
 mod design;
@@ -388,6 +389,16 @@ pub(crate) async fn run(
                                 }
                                 continue;
                             }
+                            let area = ratatui::layout::Rect::new(
+                                /*x*/ 0,
+                                /*y*/ 0,
+                                size.width,
+                                size.height,
+                            );
+                            if shell.handle_dashboard_resize_key(area, key) {
+                                tui.frame_requester().schedule_frame();
+                                continue;
+                            }
                             match shell.handle_key(key, &config, &mut app_server).await {
                                 Ok(true) => break ExitReason::UserRequested,
                                 Ok(false) => {}
@@ -492,6 +503,7 @@ pub(crate) async fn run(
                             tui.frame_requester().schedule_frame();
                         }
                         TuiEvent::Resize => {
+                            shell.cancel_dashboard_resize();
                             shell.clear_text_selections();
                             shell.clear_pointer_position();
                             draw_shell(tui, &shell)?;
@@ -836,6 +848,7 @@ struct ShellState {
     resume_cwd_runtime: ResumeCwdRuntime,
     dashboard_route: DashboardRoute,
     dashboard_visible: bool,
+    dashboard_resize: dashboard_resize::DashboardResizeState,
     dashboard_scroll: Cell<usize>,
     pointer_position: Option<ratatui::layout::Position>,
     agents_focused: bool,
@@ -971,6 +984,7 @@ impl ShellState {
             resume_cwd_runtime,
             dashboard_route: DashboardRoute::Status,
             dashboard_visible: true,
+            dashboard_resize: dashboard_resize::DashboardResizeState::default(),
             dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,
@@ -1210,6 +1224,7 @@ impl ShellState {
     fn toggle_dashboard(&mut self) {
         self.dashboard_visible = !self.dashboard_visible;
         if !self.dashboard_visible {
+            self.cancel_dashboard_resize();
             self.session_list.focused = false;
             self.settings.focused = false;
             self.agents_focused = false;
@@ -2632,6 +2647,7 @@ impl ShellState {
             },
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            dashboard_resize: dashboard_resize::DashboardResizeState::default(),
             dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,
@@ -2906,6 +2922,7 @@ pub mod bench_support {
             },
             dashboard_route: DashboardRoute::Sessions,
             dashboard_visible: true,
+            dashboard_resize: dashboard_resize::DashboardResizeState::default(),
             dashboard_scroll: Cell::new(0),
             pointer_position: None,
             agents_focused: false,

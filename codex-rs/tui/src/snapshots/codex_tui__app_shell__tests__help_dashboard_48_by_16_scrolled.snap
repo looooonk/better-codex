@@ -6,12 +6,12 @@ expression: scrolled
 ────────────────────────────────────────────────
 │
 │  Status   │  Agents   │  Sessions   │  Help
-│ f           Fork     │  ^N          New chat
-│ a           Archive  │ ◆ AGENTS
-│ u           Unarchive│  ↵           Focus/log
-│ v           Switch v…│  ↑↓ / jk     Select
-│ n           Rename   │  g / G       First/la…
-│ /           Search   │  r           Reload l…
+│ f           Fork     │ ◆ AGENTS
+│ a           Archive  │  ↵           Focus/log
+│ u           Unarchive│  ↑↓ / jk     Select
+│ v           Switch v…│  g / G       First/la…
+│ n           Rename   │  r           Reload l…
+│ /           Search   │
 │ d           Delete   │
 │
 ╭──────────────────────────────────────────────╮

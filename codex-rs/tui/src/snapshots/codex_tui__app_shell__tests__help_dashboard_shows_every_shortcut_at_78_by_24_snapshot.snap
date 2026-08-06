@@ -16,9 +16,9 @@ expression: rendered
                             │ ^1 … ^4     Open tab  │  Alt+E       Effort
  ▌ tool exec just test -p co│ Alt+← / →   Prev/next │ ◆ APP
                             │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
- ▌ edited 3 files +128 -24  │◆ SESSIONS             │  ^D          Show/hide
-                            │ ↑↓ / jk     Select    │  ^C          Stop/canc…
- ▎ CODEX  The new shell owns│ ↵ / r       Resume    │  Esc ×2      Exit app
+ ▌ edited 3 files +128 -24  │ ⇧Alt+←/→    Resize    │  ^D          Show/hide
+                            │◆ SESSIONS             │  ^C          Stop/canc…
+ ▎ CODEX  The new shell owns│ ↑↓ / jk     Select    │  Esc ×2      Exit app
                             │
 ╭────────────────────────────────────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                                                             │

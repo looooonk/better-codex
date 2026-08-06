@@ -138,6 +138,10 @@ impl ShellState {
         self.exit_confirmation_pending = false;
         self.set_pointer_position(position);
         self.text_selection.drag = None;
+        if self.begin_dashboard_resize(area, position) {
+            self.clear_text_selections();
+            return Ok(());
+        }
 
         let selection_blocked = self.diff_view.is_some()
             || self.tool_output.is_some()
@@ -204,6 +208,9 @@ impl ShellState {
     }
 
     pub(super) fn handle_mouse_selection_drag(&mut self, area: Rect, position: Position) {
+        if self.update_dashboard_resize(area, position) {
+            return;
+        }
         let Some(drag) = self.text_selection.drag.clone() else {
             return;
         };
@@ -285,6 +292,9 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
+        if self.finish_dashboard_resize(area, position) {
+            return Ok(());
+        }
         let Some(pending) = self.text_selection.drag.clone() else {
             return Ok(());
         };

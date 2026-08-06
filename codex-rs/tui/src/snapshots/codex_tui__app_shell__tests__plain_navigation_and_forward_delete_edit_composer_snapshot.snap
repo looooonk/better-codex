@@ -14,17 +14,17 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28,))"
           by app-server turns.                    │ ^1 … ^4     Open tab  │  Alt+E       Effort
  ▎ PLAN  1. Build shell                           │ Alt+← / →   Prev/next │ ◆ APP
          2. Wire transcript                       │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
-         3. Render dashboard                      │◆ SESSIONS             │  ^D          Show/hide
-                                                  │ ↑↓ / jk     Select    │  ^C          Stop/canc…
- ▌ tool exec just test -p codex-tui               │ ↵ / r       Resume    │  Esc ×2      Exit app
-                                                  │ f           Fork      │  ^N          New chat
- ▌ edited 3 files +128 -24                        │ a           Archive   │ ◆ AGENTS
-                                                  │ u           Unarchive │  ↵           Focus/log
- ▎ CODEX  The new shell owns the fullscreen       │ v           Switch vi…│  ↑↓ / jk     Select
-          surface.                                │ n           Rename    │  g / G       First/last
-                                                  │ /           Search    │  r           Reload log
-                                                  │ d           Delete    │
-╭────────────────────────────────────────────────╮│
+         3. Render dashboard                      │ ⇧Alt+←/→    Resize    │  ^D          Show/hide
+                                                  │◆ SESSIONS             │  ^C          Stop/canc…
+ ▌ tool exec just test -p codex-tui               │ ↑↓ / jk     Select    │  Esc ×2      Exit app
+                                                  │ ↵ / r       Resume    │  ^N          New chat
+ ▌ edited 3 files +128 -24                        │ f           Fork      │ ◆ AGENTS
+                                                  │ a           Archive   │  ↵           Focus/log
+ ▎ CODEX  The new shell owns the fullscreen       │ u           Unarchive │  ↑↓ / jk     Select
+          surface.                                │ v           Switch vi…│  g / G       First/last
+                                                  │ n           Rename    │  r           Reload log
+                                                  │ /           Search    │
+╭────────────────────────────────────────────────╮│ d           Delete    │
 │◆ MESSAGE  1:6                                  ││
 │> alpha beta                                    ││
 │                                                ││

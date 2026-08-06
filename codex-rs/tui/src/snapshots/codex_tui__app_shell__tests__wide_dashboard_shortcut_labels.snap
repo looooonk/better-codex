@@ -12,14 +12,15 @@ expression: rendered(80)
  Ctrl+1 … Ctrl+4  Open a tab           │
  Alt+Left / Right  Previous / next tab │ ◆ APP
  Page Up / Page Down  Scroll this guide│  Ctrl+P           Command palette
-                                       │  Ctrl+D           Toggle dashboard
-◆ SESSIONS                             │  Ctrl+C           Interrupt / cancel
- Up/Down or j/k   Select session       │  Esc ×2           Exit application
- Enter or r       Resume session       │  Ctrl+N           New session
- f                Fork session         │
- a                Archive session      │ ◆ AGENTS
- u                Unarchive session    │  Enter            Focus / open log
- v                Active / archived    │  Up/Down or j/k   Select agent
- n                Rename session       │  g / G            First / last agent
- /                Search sessions      │  r                Reload open log
+ Shift+Alt+← / →  Resize dashboard     │  Ctrl+D           Toggle dashboard
+                                       │  Ctrl+C           Interrupt / cancel
+◆ SESSIONS                             │  Esc ×2           Exit application
+ Up/Down or j/k   Select session       │  Ctrl+N           New session
+ Enter or r       Resume session       │
+ f                Fork session         │ ◆ AGENTS
+ a                Archive session      │  Enter            Focus / open log
+ u                Unarchive session    │  Up/Down or j/k   Select agent
+ v                Active / archived    │  g / G            First / last agent
+ n                Rename session       │  r                Reload open log
+ /                Search sessions      │
  d                Delete session       │
