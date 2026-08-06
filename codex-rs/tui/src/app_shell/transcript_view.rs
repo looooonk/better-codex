@@ -36,6 +36,7 @@ use ratatui::text::Line;
 use ratatui::text::Span;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Widget;
+use std::ops::Range;
 use std::sync::Arc;
 use unicode_width::UnicodeWidthStr;
 
@@ -171,13 +172,17 @@ pub(super) fn transcript_text_hit_at(
     let text = rendered_line_text(line);
     let text = trim_synthetic_right_padding(&text);
     let column = usize::from(position.x.saturating_sub(viewport.text_body.x));
+    if column < line.synthetic_prefix_width {
+        return None;
+    }
     grapheme_hit_at(text, row, column)
 }
 
 /// Extract the visible rendered characters covered by a transcript selection.
 ///
 /// The returned text contains rendered labels and Markdown rather than source markup, excludes
-/// hyperlink control sequences, and removes right-edge card padding before joining logical rows.
+/// hyperlink control sequences, and removes alignment prefixes and right-edge card padding before
+/// joining logical rows.
 pub(super) fn transcript_selected_text(
     shell: &ShellState,
     area: Rect,
@@ -192,12 +197,15 @@ pub(super) fn transcript_selected_text(
 
     let mut selected_rows = Vec::new();
     for row in selection.start().row()..=selection.end().row() {
-        let text = match viewport.layout.row_at(row)? {
-            TranscriptLayoutRow::Blank => String::new(),
-            TranscriptLayoutRow::Rendered(line) => rendered_line_text(line),
+        let (text, synthetic_prefix_width) = match viewport.layout.row_at(row)? {
+            TranscriptLayoutRow::Blank => (String::new(), 0),
+            TranscriptLayoutRow::Rendered(line) => {
+                (rendered_line_text(line), line.synthetic_prefix_width)
+            }
         };
         let text = trim_synthetic_right_padding(&text);
-        let columns = selection.columns_on_row(row, text.width())?;
+        let columns =
+            selectable_columns_on_row(selection, row, text.width(), synthetic_prefix_width)?;
         selected_rows.push(graphemes_in_columns(text, columns));
     }
     Some(selected_rows.join("\n"))
@@ -230,7 +238,9 @@ pub(super) fn render_transcript_text_selection(
         };
         let text = rendered_line_text(line);
         let text = trim_synthetic_right_padding(&text);
-        let Some(columns) = selection.columns_on_row(row, text.width()) else {
+        let Some(columns) =
+            selectable_columns_on_row(selection, row, text.width(), line.synthetic_prefix_width)
+        else {
             continue;
         };
         let start = columns.start.min(usize::from(viewport.text_body.width));
@@ -260,6 +270,17 @@ fn rendered_line_text(line: &crate::terminal_hyperlinks::HyperlinkLine) -> Strin
         .iter()
         .map(|span| span.content.as_ref())
         .collect()
+}
+
+fn selectable_columns_on_row(
+    selection: NormalizedVisualRange,
+    row: usize,
+    line_width: usize,
+    synthetic_prefix_width: usize,
+) -> Option<Range<usize>> {
+    let columns = selection.columns_on_row(row, line_width)?;
+    let start = columns.start.max(synthetic_prefix_width).min(columns.end);
+    Some(start..columns.end)
 }
 
 fn transcript_card_hit_at(
@@ -629,7 +650,11 @@ fn tool_block_lines(
                     Style::new().bg(block_background),
                 ));
             }
-            HyperlinkLine::new(line)
+            let mut line = HyperlinkLine::new(line);
+            if index > 0 {
+                line.synthetic_prefix_width = block_indent + label_prefix_width;
+            }
+            line
         })
         .collect::<Vec<_>>();
 
