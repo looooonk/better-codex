@@ -453,7 +453,14 @@ impl ShellState {
                 false
             }
             Some(PointerPane::Dashboard) => self.scroll_dashboard_at(area, position, direction),
-            Some(PointerPane::Header | PointerPane::Input) | None => false,
+            Some(PointerPane::Input) => {
+                match direction {
+                    MouseScrollDirection::Up => self.composer.move_up(),
+                    MouseScrollDirection::Down => self.composer.move_down(),
+                };
+                false
+            }
+            Some(PointerPane::Header) | None => false,
         }
     }
 
@@ -535,3 +542,7 @@ impl ShellState {
         false
     }
 }
+
+#[cfg(test)]
+#[path = "pointer_tests.rs"]
+mod tests;
