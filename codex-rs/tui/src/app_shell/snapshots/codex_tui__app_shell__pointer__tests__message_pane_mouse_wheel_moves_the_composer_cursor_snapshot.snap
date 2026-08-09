@@ -1,0 +1,20 @@
+---
+source: tui/src/app_shell/pointer_tests.rs
+expression: "render_shell(&shell, area)"
+---
+  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+                                                                            ┃
+ ▎ CODEX  The new shell owns the fullscreen surface.                        ┃
+
+╭────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  7:16                                                             │
+│  message line 02                                                           │
+│  message line 03                                                           │
+│  message line 04                                                           │
+│  message line 05                                                           │
+│  message line 06                                                           │
+│  message line 07                                                           │
+╰────────────────────────────────────────────────────────────────────────────╯
