@@ -10916,6 +10916,64 @@ async fn tab_queues_multiple_messages_only_during_an_active_turn() {
 }
 
 #[tokio::test]
+async fn plain_arrows_follow_visual_rows_without_changing_modified_arrows() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    let text = "You should do items A, B, plus items C and D, and C.";
+    shell.composer.set_text(text);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 50, /*height*/ 16,
+    );
+
+    shell
+        .handle_key_in_area(
+            area,
+            KeyEvent::new(KeyCode::Up, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("plain Up should follow the visual row");
+    let after_up = shell.composer.cursor();
+    shell
+        .handle_key_in_area(
+            area,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("plain Down should follow the visual row");
+    let after_down = shell.composer.cursor();
+
+    let mut modified_results = Vec::new();
+    for modifiers in [
+        KeyModifiers::ALT,
+        KeyModifiers::CONTROL,
+        KeyModifiers::SUPER,
+    ] {
+        shell.composer.set_text(text);
+        shell
+            .handle_key_in_area(
+                area,
+                KeyEvent::new(KeyCode::Up, modifiers),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("modified Up should preserve its existing route");
+        modified_results.push(shell.composer.cursor());
+    }
+
+    assert_eq!(
+        (after_up, after_down, modified_results, backend.calls()),
+        (6, text.len(), vec![text.len(); 3], Vec::new())
+    );
+}
+
+#[tokio::test]
 async fn alt_arrows_traverse_queued_messages_without_selecting_the_transcript() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();

@@ -1,0 +1,20 @@
+---
+source: tui/src/app_shell/composer_navigation_tests.rs
+expression: "render_shell_with_visible_cursor(&shell, area)"
+---
+  Dashboard  ◆ BC      gpt-5-codex ▾   default ▾
+──────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+                                                │
+ ▌ edited 3 files +128 -24                      │
+                                                │
+ ▎ CODEX  The new shell owns the fullscreen     ┃
+          surface.                              ┃
+
+╭────────────────────────────────────────────────╮
+│◆ MESSAGE  1:7                                  │
+│> You sh▏uld do items A, B, plus items C and D, │
+│  and C.                                        │
+│                                                │
+╰────────────────────────────────────────────────╯

@@ -79,6 +79,8 @@ mod command_display;
 mod command_palette;
 mod command_palette_view;
 mod composer;
+mod composer_layout;
+mod composer_navigation;
 mod composer_render;
 mod dashboard;
 mod dashboard_help;
@@ -401,7 +403,10 @@ pub(crate) async fn run(
                                 tui.frame_requester().schedule_frame();
                                 continue;
                             }
-                            match shell.handle_key(key, &config, &mut app_server).await {
+                            match shell
+                                .handle_key_in_area(area, key, &config, &mut app_server)
+                                .await
+                            {
                                 Ok(true) => break ExitReason::UserRequested,
                                 Ok(false) => {}
                                 Err(err) => shell.report_action_error("action failed", err),
