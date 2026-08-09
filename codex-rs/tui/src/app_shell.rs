@@ -112,6 +112,7 @@ mod navigation;
 mod paste;
 mod plugin_management;
 mod pointer;
+mod queued_message_popup_view;
 mod queued_messages;
 mod reasoning_ripple;
 mod render;

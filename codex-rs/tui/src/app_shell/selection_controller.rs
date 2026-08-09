@@ -142,6 +142,21 @@ impl ShellState {
             self.clear_text_selections();
             return Ok(());
         }
+        let queued_message_popup_hit = {
+            let view = ShellView { shell: self };
+            super::queued_message_popup_view::hit_at(
+                self,
+                view.transcript_area(area),
+                view.input_area(area),
+                position,
+            )
+        };
+        if queued_message_popup_hit.is_some() {
+            self.clear_text_selections();
+            return self
+                .handle_mouse_click(area, position, config, app_server)
+                .await;
+        }
 
         let selection_blocked = self.diff_view.is_some()
             || self.tool_output.is_some()

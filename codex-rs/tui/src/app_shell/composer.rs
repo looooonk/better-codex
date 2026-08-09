@@ -175,9 +175,41 @@ impl ComposerState {
         self.queued.len()
     }
 
+    pub(super) fn queued_messages(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (usize, &str)> + ExactSizeIterator {
+        self.queued
+            .iter()
+            .enumerate()
+            .map(|(index, message)| (index, message.as_str()))
+    }
+
     pub(super) fn queued_edit_position(&self) -> Option<(usize, usize)> {
         self.queued_index
             .map(|index| (index.saturating_add(1), self.queued.len()))
+    }
+
+    pub(super) fn edit_queued_message(&mut self, mut index: usize) -> bool {
+        if index >= self.queued.len() {
+            return false;
+        }
+        match self.queued_index {
+            Some(current) if current == index => return true,
+            Some(current) => {
+                if self.save_queued_message_edit() && current < index {
+                    index = index.saturating_sub(1);
+                }
+            }
+            None => {
+                self.draft_before_queue = Some(ComposerDraft {
+                    input: self.input.clone(),
+                    history_index: self.history_index,
+                    draft_before_history: self.draft_before_history.clone(),
+                });
+            }
+        }
+        self.select_queued_message(index);
+        true
     }
 
     pub(super) fn edit_previous_queued_message(&mut self) -> bool {
