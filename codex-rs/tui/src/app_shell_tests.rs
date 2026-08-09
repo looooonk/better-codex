@@ -7086,6 +7086,43 @@ fn mouse_wheel_routes_to_the_pane_under_the_pointer_in_both_layouts() {
     }
 }
 
+#[tokio::test]
+async fn clicking_a_queued_message_popup_row_edits_that_message() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    for message in ["first queued", "second queued", "third queued"] {
+        shell.composer.set_text(message);
+        assert!(shell.composer.queue_current_message());
+    }
+    shell.composer.set_text("ordinary draft");
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 78, /*height*/ 18,
+    );
+    let view = ShellView { shell: &shell };
+    let transcript = view.transcript_area(area);
+    let input = view.input_area(area);
+    let position = position_in(area, |position| {
+        super::queued_message_popup_view::hit_at(&shell, transcript, input, position)
+            == Some(super::queued_message_popup_view::QueuedMessagePopupHit::Message(1))
+    });
+
+    shell
+        .handle_mouse_selection_down(area, position, &config, &mut backend)
+        .await
+        .expect("queue popup click should succeed");
+
+    assert_eq!(
+        (
+            shell.composer.text(),
+            shell.composer.queued_edit_position(),
+            backend.calls(),
+        ),
+        ("second queued", Some((2, 3)), Vec::new())
+    );
+}
+
 #[test]
 fn scrolled_dashboard_keeps_tabs_fixed_in_both_layouts_snapshot() {
     for area in [

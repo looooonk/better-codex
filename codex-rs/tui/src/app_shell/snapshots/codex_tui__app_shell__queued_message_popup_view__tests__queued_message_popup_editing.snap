@@ -1,0 +1,22 @@
+---
+source: tui/src/app_shell/queued_message_popup_view_tests.rs
+expression: "render_shell(&shell, area)"
+---
+
+  Dashboard  ◆ BC           gpt-5-codex ▾   default ▾   default ▾  ● thinking
+──────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+                                                                            │
+╭──────────────────────────────────────────────────────────────────────╮    │
+│◆ QUEUED  3                                                           │    │
+│   2  second queued message                                           │    ┃
+│▌  3  newest queued message continued                                 │    ┃
+│Click a message to edit   Alt+↑↓ navigate                             │    ┃
+╰──────────────────────────────────────────────────────────────────────╯
+╭────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  EDIT 3/3  2:10                                                   │
+│> newest queued message                                                     │
+│  continued                                                                 │
+│                                                                            │
+╰────────────────────────────────────────────────────────────────────────────╯

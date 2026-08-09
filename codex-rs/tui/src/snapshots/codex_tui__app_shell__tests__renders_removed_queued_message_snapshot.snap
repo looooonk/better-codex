@@ -35,13 +35,13 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │
                                                   │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
 ╭────────────────────────────────────────────────╮│
-│◆ MESSAGE  QUEUED 1  1:15                       ││
+│◆ QUEUED  1                                     ││
+│   1  first queued follow-up                    ││
+│Click a message to edit   Alt+↑↓ navigate       ││
+╰────────────────────────────────────────────────╯│
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:15                                 ││
 │> ordinary draft                                ││
 │                                                ││
 │                                                ││

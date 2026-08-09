@@ -222,6 +222,27 @@ impl ShellState {
         if self.rewind.is_active() {
             return Ok(());
         }
+        let queued_message_popup_hit = {
+            let view = ShellView { shell: self };
+            super::queued_message_popup_view::hit_at(
+                self,
+                view.transcript_area(area),
+                view.input_area(area),
+                position,
+            )
+        };
+        match queued_message_popup_hit {
+            Some(super::queued_message_popup_view::QueuedMessagePopupHit::Message(index)) => {
+                self.session_list.focused = false;
+                self.settings.focused = false;
+                self.agents_focused = false;
+                self.clear_transcript_selection();
+                self.composer.edit_queued_message(index);
+                return Ok(());
+            }
+            Some(super::queued_message_popup_view::QueuedMessagePopupHit::Chrome) => return Ok(()),
+            None => {}
+        }
         if let Some(control) = (ShellView { shell: self }).header_control_at(area, position) {
             match control {
                 HeaderControl::Dashboard => self.toggle_dashboard(),

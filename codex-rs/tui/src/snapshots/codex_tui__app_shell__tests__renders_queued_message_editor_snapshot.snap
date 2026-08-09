@@ -34,12 +34,12 @@ expression: "render_shell(&shell, area)"
                                                   │
                                                   │
                                                   │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
-                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ QUEUED  2                                     ││
+│   1  first queued follow-up                    ││
+│▌  2  second queued follow-up                   ││
+│Click a message to edit   Alt+↑↓ navigate       ││
+╰────────────────────────────────────────────────╯│
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  EDIT 2/2  1:35                       ││
 │> second queued follow-up with edits            ││

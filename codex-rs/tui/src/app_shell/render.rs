@@ -98,6 +98,7 @@ impl ShellView<'_> {
                 buf,
             );
         }
+        super::queued_message_popup_view::render(self.shell, layout.transcript, layout.input, buf);
         super::slash_command_popup_view::render(self.shell, layout.transcript, layout.input, buf);
         if let Some(pending) = &self.shell.pending_external_agent_import {
             render_modal(area, "Claude Code Import", pending.lines(), buf);
@@ -444,30 +445,26 @@ impl ShellView<'_> {
         let (line, column) = self.shell.composer.cursor_position();
         let position = format!("{}:{}", line + 1, column + 1);
         let title_width = usize::from(pane_content_rect(area).width).saturating_sub(2);
-        let queue_label = self
+        let queue_edit_label = self
             .shell
             .composer
             .queued_edit_position()
-            .map(|(index, count)| format!("EDIT {index}/{count}"))
-            .or_else(|| {
-                let count = self.shell.composer.queued_count();
-                (count > 0).then(|| format!("QUEUED {count}"))
-            });
+            .map(|(index, count)| format!("EDIT {index}/{count}"));
         let titles = if let Some(titles) = self.shell.rewind_input_titles(&position) {
             titles
-        } else if let Some(queue_label) = queue_label {
+        } else if let Some(queue_edit_label) = queue_edit_label {
             if self.shell.active_turn_id.is_some() {
                 vec![
-                    format!("MESSAGE  ● RUNNING  {queue_label}  {position}"),
-                    format!("MESSAGE  ●  {queue_label}  {position}"),
-                    format!("MESSAGE  {queue_label}  {position}"),
-                    format!("{queue_label}  {position}"),
+                    format!("MESSAGE  ● RUNNING  {queue_edit_label}  {position}"),
+                    format!("MESSAGE  ●  {queue_edit_label}  {position}"),
+                    format!("MESSAGE  {queue_edit_label}  {position}"),
+                    format!("{queue_edit_label}  {position}"),
                     position.clone(),
                 ]
             } else {
                 vec![
-                    format!("MESSAGE  {queue_label}  {position}"),
-                    format!("{queue_label}  {position}"),
+                    format!("MESSAGE  {queue_edit_label}  {position}"),
+                    format!("{queue_edit_label}  {position}"),
                     position.clone(),
                 ]
             }

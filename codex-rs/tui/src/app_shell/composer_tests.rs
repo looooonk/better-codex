@@ -139,6 +139,30 @@ fn deleting_queued_edits_while_traversing_keeps_adjacent_messages() {
 }
 
 #[test]
+fn selecting_a_queued_message_accounts_for_a_removed_earlier_edit() {
+    let mut composer = ComposerState::default();
+    for message in ["first", "second", "third"] {
+        composer.set_text(message);
+        assert!(composer.queue_current_message());
+    }
+    composer.set_text("ordinary draft");
+    assert!(composer.edit_queued_message(/*index*/ 0));
+    composer.clear();
+
+    assert!(composer.edit_queued_message(/*index*/ 2));
+
+    assert_eq!(
+        (composer.text(), &composer.queued),
+        (
+            "third",
+            &VecDeque::from(["second".to_string(), "third".to_string()]),
+        )
+    );
+    assert!(composer.finish_queued_message_edit());
+    assert_eq!(composer.text(), "ordinary draft");
+}
+
+#[test]
 fn oversized_paste_is_rejected_before_normalization() {
     let mut composer = ComposerState::default();
     composer.set_text("draft");
