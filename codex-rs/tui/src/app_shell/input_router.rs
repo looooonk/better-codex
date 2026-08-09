@@ -7,6 +7,7 @@ use super::TRANSCRIPT_PAGE_SCROLL_STEP;
 use super::TRANSCRIPT_SELECTION_STEP;
 use super::approval_action_from_key;
 use super::backend::AppShellBackend;
+use super::composer_navigation::ComposerNavigationLayout;
 use super::dashboard_route_from_key;
 use super::dashboard_route_step_from_key;
 use super::elicitation_action_from_key;
@@ -21,6 +22,7 @@ use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
 use crossterm::event::KeyEventKind;
 use crossterm::event::KeyModifiers;
+use ratatui::layout::Rect;
 
 const HELP_PAGE_SCROLL_STEP: usize = 8;
 
@@ -209,9 +211,48 @@ impl ShellState {
         Ok(Some(false))
     }
 
+    #[cfg(test)]
     pub(super) async fn handle_key<S>(
         &mut self,
         key: KeyEvent,
+        config: &Config,
+        app_server: &mut S,
+    ) -> Result<bool>
+    where
+        S: AppShellBackend,
+    {
+        self.handle_key_with_composer_layout(
+            key,
+            ComposerNavigationLayout::LogicalLines,
+            config,
+            app_server,
+        )
+        .await
+    }
+
+    pub(super) async fn handle_key_in_area<S>(
+        &mut self,
+        area: Rect,
+        key: KeyEvent,
+        config: &Config,
+        app_server: &mut S,
+    ) -> Result<bool>
+    where
+        S: AppShellBackend,
+    {
+        self.handle_key_with_composer_layout(
+            key,
+            ComposerNavigationLayout::Area(area),
+            config,
+            app_server,
+        )
+        .await
+    }
+
+    async fn handle_key_with_composer_layout<S>(
+        &mut self,
+        key: KeyEvent,
+        composer_navigation_layout: ComposerNavigationLayout,
         config: &Config,
         app_server: &mut S,
     ) -> Result<bool>
@@ -475,6 +516,14 @@ impl ShellState {
                         self.submit_prompt(app_server, prompt);
                     }
                 }
+                Ok(false)
+            }
+            KeyCode::Up if key.modifiers == KeyModifiers::NONE => {
+                self.move_composer_up(composer_navigation_layout);
+                Ok(false)
+            }
+            KeyCode::Down if key.modifiers == KeyModifiers::NONE => {
+                self.move_composer_down(composer_navigation_layout);
                 Ok(false)
             }
             KeyCode::Up => {

@@ -6,7 +6,6 @@ use std::collections::VecDeque;
 use std::ops::Range;
 use unicode_width::UnicodeWidthStr;
 
-const MAX_COMPOSER_HISTORY: usize = 50;
 pub(super) const MAX_COMPOSER_BYTES: usize = MAX_USER_INPUT_TEXT_CHARS;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -351,81 +350,6 @@ impl ComposerState {
         }
     }
 
-    pub(super) fn move_up_or_recall_history(&mut self) {
-        if !self.move_up() {
-            self.recall_previous_history();
-        }
-    }
-
-    pub(super) fn move_down_or_recall_history(&mut self) {
-        if self.input.selection_range().is_some() {
-            self.move_down();
-        } else if self.history_index.is_some() {
-            self.recall_next_history();
-        } else {
-            self.move_down();
-        }
-    }
-
-    pub(super) fn remember_submission(&mut self, text: &str) {
-        if text.trim().is_empty() || self.history.back().is_some_and(|entry| entry == text) {
-            return;
-        }
-
-        self.history.push_back(text.to_string());
-        while self.history.len() > MAX_COMPOSER_HISTORY {
-            self.history.pop_front();
-        }
-    }
-
-    pub(super) fn move_up(&mut self) -> bool {
-        self.input.move_up()
-    }
-
-    pub(super) fn move_down(&mut self) -> bool {
-        self.input.move_down()
-    }
-
-    fn recall_previous_history(&mut self) {
-        if self.history.is_empty() {
-            return;
-        }
-
-        let index = match self.history_index {
-            Some(index) => index.saturating_sub(1),
-            None => {
-                self.draft_before_history = self.input.text().to_string();
-                self.history.len() - 1
-            }
-        };
-        self.history_index = Some(index);
-        if let Some(entry) = self.history.get(index).cloned() {
-            self.set_recalled_text(entry);
-        }
-    }
-
-    fn recall_next_history(&mut self) {
-        let Some(index) = self.history_index else {
-            return;
-        };
-
-        if index + 1 < self.history.len() {
-            let next = index + 1;
-            self.history_index = Some(next);
-            if let Some(entry) = self.history.get(next).cloned() {
-                self.set_recalled_text(entry);
-            }
-        } else {
-            self.history_index = None;
-            let draft = std::mem::take(&mut self.draft_before_history);
-            self.set_recalled_text(draft);
-        }
-    }
-
-    fn set_recalled_text(&mut self, text: String) {
-        self.input.set_text(text);
-    }
-
     fn select_queued_message(&mut self, index: usize) {
         self.queued_index = Some(index);
         if let Some(message) = self.queued.get(index).cloned() {
@@ -452,6 +376,9 @@ impl ComposerState {
         self.draft_before_history.clear();
     }
 }
+
+#[path = "composer_history.rs"]
+mod history;
 
 impl super::ShellState {
     pub(super) fn report_composer_insert(&mut self, result: ComposerInsertResult) {
