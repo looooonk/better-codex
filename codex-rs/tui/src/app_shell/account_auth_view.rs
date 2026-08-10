@@ -48,7 +48,9 @@ pub(super) fn lines(state: &AccountAuthState, width: usize) -> Vec<Line<'static>
                 "Only continue if you started this login in Better Codex."
                     .dim()
                     .into(),
-                "Enter open link   C copy code   Esc cancel".dim().into(),
+                "Enter open link   L copy link   C copy code   Esc cancel"
+                    .dim()
+                    .into(),
             ],
             state,
         ),

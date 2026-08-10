@@ -288,6 +288,7 @@ impl ShellState {
             },
             AccountAuthMode::DeviceCode { .. } => match key.code {
                 KeyCode::Enter => actions::open_url(self),
+                KeyCode::Char('l') => actions::copy_url(self),
                 KeyCode::Char('c') => actions::copy_code(self),
                 KeyCode::Esc => self.cancel_pending_account_login(app_server).await,
                 _ => {}

@@ -300,6 +300,7 @@ enum LoginKeyAction {
     StartDeviceCode,
     SubmitApiKey,
     OpenUrl,
+    CopyUrl,
     CopyCode,
     Exit,
     Redraw,
@@ -371,6 +372,7 @@ fn handle_api_key_key(key: KeyEvent, state: &mut LoginOnboardingState) -> LoginK
 fn handle_device_code_key(key: KeyEvent) -> LoginKeyAction {
     match key.code {
         KeyCode::Enter => LoginKeyAction::OpenUrl,
+        KeyCode::Char('l') if key.modifiers == KeyModifiers::NONE => LoginKeyAction::CopyUrl,
         KeyCode::Char('c') if key.modifiers == KeyModifiers::NONE => LoginKeyAction::CopyCode,
         KeyCode::Esc => LoginKeyAction::Exit,
         _ => LoginKeyAction::Ignored,
@@ -409,6 +411,7 @@ async fn apply_login_action(
         LoginKeyAction::StartDeviceCode => start_device_code_login(app_server, state).await,
         LoginKeyAction::SubmitApiKey => return submit_api_key(app_server, state).await,
         LoginKeyAction::OpenUrl => open_login_url(state),
+        LoginKeyAction::CopyUrl => copy_login_url(state, clipboard_lease),
         LoginKeyAction::CopyCode => copy_login_code(state, clipboard_lease),
         LoginKeyAction::Exit => {
             cancel_active_login(app_server, state).await;
@@ -442,10 +445,27 @@ fn copy_login_code(state: &mut LoginOnboardingState, clipboard_lease: &mut Optio
     let Some(code) = code else {
         return;
     };
-    match crate::clipboard_copy::copy_to_clipboard(&code) {
+    copy_login_value(state, clipboard_lease, &code, "Copied the one-time code.");
+}
+
+fn copy_login_url(state: &mut LoginOnboardingState, clipboard_lease: &mut Option<ClipboardLease>) {
+    let url = state.active_url().map(str::to_string);
+    let Some(url) = url else {
+        return;
+    };
+    copy_login_value(state, clipboard_lease, &url, "Copied the sign-in link.");
+}
+
+fn copy_login_value(
+    state: &mut LoginOnboardingState,
+    clipboard_lease: &mut Option<ClipboardLease>,
+    value: &str,
+    notice: &str,
+) {
+    match crate::clipboard_copy::copy_to_clipboard(value) {
         Ok(lease) => {
             *clipboard_lease = lease;
-            state.notice = Some("Copied the one-time code.".to_string());
+            state.notice = Some(notice.to_string());
             state.error = None;
         }
         Err(error) => {

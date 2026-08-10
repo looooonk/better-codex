@@ -18,7 +18,7 @@ expression: render_state(&state)
 "        │ABCD-EFGH                                                             │        "
 "        │                                                                      │        "
 "        │Only continue if you started this login in Better Codex.              │        "
-"        │Enter open link   C copy code   Esc cancel                            │        "
+"        │Enter open link   L copy link   C copy code   Esc cancel              │        "
 "        │                                                                      │        "
 "        ╰──────────────────────────────────────────────────────────────────────╯        "
 "                                                                                        "

@@ -39,11 +39,27 @@ pub(super) fn copy_code(shell: &mut ShellState) {
     let Some(code) = code else {
         return;
     };
-    match crate::clipboard_copy::copy_to_clipboard(&code) {
+    copy_value(shell, &code, "Copied the one-time code.");
+}
+
+pub(super) fn copy_url(shell: &mut ShellState) {
+    let url = shell
+        .pending_account_auth
+        .as_ref()
+        .and_then(AccountAuthState::active_url)
+        .map(str::to_string);
+    let Some(url) = url else {
+        return;
+    };
+    copy_value(shell, &url, "Copied the sign-in link.");
+}
+
+fn copy_value(shell: &mut ShellState, value: &str, notice: &str) {
+    match crate::clipboard_copy::copy_to_clipboard(value) {
         Ok(lease) => {
             shell.clipboard_lease = lease;
             if let Some(state) = &mut shell.pending_account_auth {
-                state.notice = Some("Copied the one-time code.".to_string());
+                state.notice = Some(notice.to_string());
                 state.error = None;
             }
         }

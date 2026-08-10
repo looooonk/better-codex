@@ -152,6 +152,10 @@ fn device_code_prompt_supports_open_and_copy_actions() {
         LoginKeyAction::OpenUrl
     );
     assert_eq!(
+        handle_device_code_key(KeyEvent::new(KeyCode::Char('l'), KeyModifiers::NONE)),
+        LoginKeyAction::CopyUrl
+    );
+    assert_eq!(
         handle_device_code_key(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE)),
         LoginKeyAction::CopyCode
     );

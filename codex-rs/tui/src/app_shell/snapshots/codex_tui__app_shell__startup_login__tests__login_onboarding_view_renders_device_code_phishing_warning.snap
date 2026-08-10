@@ -20,7 +20,7 @@ expression: terminal.backend().to_string()
 "              │ABCD-EFGH                                                             │              "
 "              │                                                                      │              "
 "              │Only continue if you started this login in Better Codex.              │              "
-"              │Enter open link   C copy code   Esc cancel and exit                   │              "
+"              │Enter open link   L copy link   C copy code   Esc cancel and exit     │              "
 "              │                                                                      │              "
 "              ╰──────────────────────────────────────────────────────────────────────╯              "
 "                                                                                                    "

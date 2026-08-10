@@ -90,7 +90,7 @@ pub(super) fn login_lines(state: &LoginOnboardingState, width: usize) -> Vec<Lin
             "Only continue if you started this login in Better Codex."
                 .dim()
                 .into(),
-            "Enter open link   C copy code   Esc cancel and exit"
+            "Enter open link   L copy link   C copy code   Esc cancel and exit"
                 .dim()
                 .into(),
         ],
