@@ -86,6 +86,7 @@ impl ShellState {
         if self.workspace_status_refresh_due && self.active_turn_id.is_none() {
             self.start_workspace_status_refresh();
         }
+        self.maybe_start_goal_rate_limit_recovery(app_server);
         Ok(())
     }
 

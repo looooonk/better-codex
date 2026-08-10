@@ -34,6 +34,7 @@ use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoalClearResponse;
 use codex_app_server_protocol::ThreadGoalGetParams;
 use codex_app_server_protocol::ThreadGoalGetResponse;
+use codex_app_server_protocol::ThreadGoalSetParams;
 use codex_app_server_protocol::ThreadGoalSetResponse;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadListParams;
@@ -195,6 +196,12 @@ pub(super) trait AppShellBackend {
         status: Option<ThreadGoalStatus>,
         token_budget: Option<Option<i64>>,
     ) -> impl std::future::Future<Output = Result<ThreadGoalSetResponse>> + Send;
+
+    /// Resumes a goal without borrowing the event-loop-owned backend.
+    fn resume_usage_limited_goal_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<ThreadGoalSetResponse>> + Send + 'static;
 
     fn thread_goal_clear(
         &mut self,
@@ -589,6 +596,27 @@ impl AppShellBackend for AppServerSession {
         token_budget: Option<Option<i64>>,
     ) -> Result<ThreadGoalSetResponse> {
         AppServerSession::thread_goal_set(self, thread_id, objective, status, token_budget).await
+    }
+
+    fn resume_usage_limited_goal_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<ThreadGoalSetResponse>> + Send + 'static {
+        let request_handle = AppServerSession::request_handle(self);
+        async move {
+            request_handle
+                .request_typed(ClientRequest::ThreadGoalSet {
+                    request_id: app_shell_request_id("app-shell-goal-rate-limit-recovery"),
+                    params: ThreadGoalSetParams {
+                        thread_id: thread_id.to_string(),
+                        objective: None,
+                        status: Some(ThreadGoalStatus::Active),
+                        token_budget: None,
+                    },
+                })
+                .await
+                .map_err(Into::into)
+        }
     }
 
     async fn thread_goal_clear(&mut self, thread_id: ThreadId) -> Result<ThreadGoalClearResponse> {

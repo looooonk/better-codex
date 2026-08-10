@@ -101,6 +101,7 @@ mod diff_view_view;
 mod elicitation;
 mod events;
 mod external_agent_import;
+mod goal_rate_limit_recovery;
 mod header;
 mod input_request_layout;
 mod input_request_view;
@@ -177,6 +178,7 @@ use elicitation::ElicitationChoice;
 use elicitation::PendingElicitation;
 use elicitation::elicitation_action_from_key;
 use external_agent_import::ExternalAgentImportState;
+use goal_rate_limit_recovery::GoalRateLimitRecoveryState;
 use integrations::McpInventorySummary;
 use integrations::PluginInventorySummary;
 use interactive_requests::InteractiveRequestRemoval;
@@ -910,6 +912,7 @@ struct ShellState {
     workspace_command_runner: Option<WorkspaceCommandRunner>,
     pending_shell_command: Option<PendingShellCommand>,
     session_hydration: SessionHydrationState,
+    goal_rate_limit_recovery: GoalRateLimitRecoveryState,
     exit_confirmation_pending: bool,
     clipboard_lease: Option<ClipboardLease>,
     active_turn_id: Option<String>,
@@ -1048,6 +1051,7 @@ impl ShellState {
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
+            goal_rate_limit_recovery: GoalRateLimitRecoveryState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: None,
@@ -2722,6 +2726,7 @@ impl ShellState {
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
+            goal_rate_limit_recovery: GoalRateLimitRecoveryState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: None,
@@ -2999,6 +3004,7 @@ pub mod bench_support {
             workspace_command_runner: None,
             pending_shell_command: None,
             session_hydration: SessionHydrationState::default(),
+            goal_rate_limit_recovery: GoalRateLimitRecoveryState::default(),
             exit_confirmation_pending: false,
             clipboard_lease: None,
             active_turn_id: Some("turn-bench-1234567890".to_string()),

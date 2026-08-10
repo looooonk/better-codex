@@ -14149,6 +14149,70 @@ async fn periodic_rate_limit_refresh_fetches_canonical_state() {
 }
 
 #[tokio::test]
+async fn refreshed_rate_limits_resume_the_current_usage_limited_goal() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_route = DashboardRoute::Status;
+    let backend = RecordingBackend::default();
+    backend.set_rate_limits_used_percent(/*used_percent*/ 41);
+    let usage_limited_goal = test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::UsageLimited,
+        "Continue after the account limit resets",
+    );
+    *backend.active_goal.lock().expect("goal should lock") = Some(usage_limited_goal.clone());
+
+    shell.record_active_goal(Some(usage_limited_goal));
+    finish_session_hydration(&mut shell, &backend).await;
+
+    let expected_goal = test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::Active,
+        "Continue after the account limit resets",
+    );
+    assert_eq!(shell.active_goal, Some(expected_goal));
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::RateLimits,
+            RecordedBackendCall::GoalSet {
+                thread_id: shell.thread_id,
+                objective: None,
+                status: Some(ThreadGoalStatus::Active),
+                token_budget: None,
+            },
+        ]
+    );
+    insta::assert_snapshot!(
+        "goal_status_recovers_after_rate_limit_reset",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 34,
+            )
+        )
+    );
+}
+
+#[tokio::test]
+async fn exhausted_rate_limits_keep_the_current_goal_usage_limited() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    backend.set_rate_limits_used_percent(/*used_percent*/ 100);
+    let usage_limited_goal = test_thread_goal(
+        &shell.thread_id,
+        ThreadGoalStatus::UsageLimited,
+        "Wait for account capacity",
+    );
+    *backend.active_goal.lock().expect("goal should lock") = Some(usage_limited_goal.clone());
+
+    shell.record_active_goal(Some(usage_limited_goal.clone()));
+    finish_session_hydration(&mut shell, &backend).await;
+
+    assert_eq!(shell.active_goal, Some(usage_limited_goal));
+    assert_eq!(backend.calls(), vec![RecordedBackendCall::RateLimits]);
+}
+
+#[tokio::test]
 async fn rate_limit_notification_during_startup_baseline_triggers_a_refetch() {
     let mut shell = ShellState::snapshot_fixture();
     let backend = RecordingBackend::default();
@@ -16521,6 +16585,24 @@ impl backend::AppShellBackend for RecordingBackend {
         }
         *goal = Some(updated.clone());
         Ok(ThreadGoalSetResponse { goal: updated })
+    }
+
+    fn resume_usage_limited_goal_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> impl std::future::Future<Output = color_eyre::Result<ThreadGoalSetResponse>> + Send + 'static
+    {
+        let mut backend = self.clone();
+        async move {
+            backend
+                .thread_goal_set(
+                    thread_id,
+                    /*objective*/ None,
+                    Some(ThreadGoalStatus::Active),
+                    /*token_budget*/ None,
+                )
+                .await
+        }
     }
 
     async fn thread_goal_clear(

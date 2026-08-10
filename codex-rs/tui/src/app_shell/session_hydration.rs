@@ -243,6 +243,7 @@ impl ShellState {
             || self.session_hydration.session_list_task.is_some()
             || self.session_hydration.rate_limits_task.is_some()
             || self.session_hydration.rate_limits_refresh_due
+            || self.has_pending_goal_rate_limit_recovery()
     }
 
     pub(super) async fn poll_session_hydration<S>(&mut self, app_server: &S) -> bool
@@ -273,7 +274,7 @@ impl ShellState {
             {
                 match lookup.value {
                     Ok(goal) => {
-                        self.active_goal = goal;
+                        self.record_active_goal(goal);
                         changed = true;
                     }
                     Err(err) => tracing::warn!(%err, "failed to hydrate session goal"),
@@ -380,6 +381,8 @@ impl ShellState {
         {
             self.start_rate_limits_hydration(app_server);
         }
+        changed |= self.poll_goal_rate_limit_recovery().await;
+        self.maybe_start_goal_rate_limit_recovery(app_server);
         changed
     }
 
@@ -407,6 +410,7 @@ impl ShellState {
         if let Some(task) = self.session_hydration.rate_limits_task.take() {
             task.abort();
         }
+        self.cancel_goal_rate_limit_recovery();
     }
 
     pub(super) fn invalidate_session_list_refresh(&mut self) {
@@ -421,6 +425,7 @@ impl ShellState {
     pub(super) fn record_active_goal(&mut self, goal: Option<ThreadGoal>) {
         self.session_hydration.goal_revision = self.session_hydration.goal_revision.wrapping_add(1);
         self.active_goal = goal;
+        self.goal_status_changed_for_rate_limit_recovery();
     }
 
     pub(super) fn record_workspace_git_probe(&mut self, probe: WorkspaceGitStatusProbe) {
@@ -489,6 +494,7 @@ impl ShellState {
     }
 
     pub(super) fn record_rate_limit_response(&mut self, response: GetAccountRateLimitsResponse) {
+        self.rate_limits_refreshed_for_goal_recovery(&response);
         self.session_hydration.rate_limits_loaded = true;
         self.session_hydration.rate_limits_refresh_due = false;
         self.session_hydration.rate_limits_revision =
