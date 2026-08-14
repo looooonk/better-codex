@@ -3,6 +3,7 @@ use pretty_assertions::assert_eq;
 
 #[test]
 fn foreign_read_preserves_target_native_path_and_other_command_actions() {
+    let api_key = "sk-abcdefghijklmnopqrstuvwxyz123456";
     #[cfg(windows)]
     let cwd = PathUri::parse("file:///usr/local/src").expect("valid foreign POSIX cwd");
     #[cfg(not(windows))]
@@ -16,6 +17,11 @@ fn foreign_read_preserves_target_native_path_and_other_command_actions() {
         ParsedCommand::ListFiles {
             cmd: "ls".to_string(),
             path: Some("subdir".to_string()),
+        },
+        ParsedCommand::Search {
+            cmd: format!("rg {api_key}"),
+            query: Some(api_key.to_string()),
+            path: Some("src".to_string()),
         },
         ParsedCommand::Search {
             cmd: "rg needle".to_string(),
@@ -36,6 +42,11 @@ fn foreign_read_preserves_target_native_path_and_other_command_actions() {
             CommandAction::ListFiles {
                 command: "ls".to_string(),
                 path: Some("subdir".to_string()),
+            },
+            CommandAction::Search {
+                command: "rg [REDACTED_SECRET]".to_string(),
+                query: Some("[REDACTED_SECRET]".to_string()),
+                path: Some("src".to_string()),
             },
             CommandAction::Search {
                 command: "rg needle".to_string(),
