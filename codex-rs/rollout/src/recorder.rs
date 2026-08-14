@@ -52,6 +52,8 @@ use super::list::parse_timestamp_uuid_from_filename;
 use super::metadata;
 use super::ordinal::RolloutOrdinalState;
 use super::ordinal::ordinal_state_for_rollout;
+use super::sanitizer::potentially_contains_sensitive_material;
+use super::sanitizer::redact_persisted_json;
 use super::session_index::find_thread_names_by_ids;
 use crate::config::RolloutConfigView;
 use crate::state_db;
@@ -977,12 +979,14 @@ impl RolloutRecorder {
             // floating-point rate-limit fields through RolloutLine's flattened item
             // representation. Legacy ghost snapshots deserialize as `ResponseItem::Other`; when
             // the typed result contains one, reparse as a mutable value and remove it below.
-            let requires_value_deserialization = line.contains("\"token_count\"");
+            let is_token_count_event = line.contains("\"token_count\"");
+            let requires_value_deserialization =
+                is_token_count_event || potentially_contains_sensitive_material(&line);
             let parsed = if requires_value_deserialization {
                 let mut value: Value = match serde_json::from_str(&line) {
                     Ok(value) => value,
                     Err(err) => {
-                        warn!("failed to parse line as JSON: {line:?}, error: {err}");
+                        warn!("failed to parse rollout line as JSON: {err}");
                         parse_errors = parse_errors.saturating_add(1);
                         continue;
                     }
@@ -995,6 +999,9 @@ impl RolloutRecorder {
                     // Preserve the explicit error for an unknown history mode before moving the
                     // value into typed deserialization.
                     reject_unknown_thread_history_mode(&value)?;
+                }
+                if !is_token_count_event {
+                    redact_persisted_json(&mut value);
                 }
                 serde_json::from_value::<RolloutLine>(value)
             } else {
@@ -1014,7 +1021,7 @@ impl RolloutRecorder {
                         let mut value = match serde_json::from_str::<Value>(&line) {
                             Ok(value) => value,
                             Err(err) => {
-                                warn!("failed to parse line as JSON: {line:?}, error: {err}");
+                                warn!("failed to parse rollout line as JSON: {err}");
                                 parse_errors = parse_errors.saturating_add(1);
                                 continue;
                             }
@@ -1026,6 +1033,7 @@ impl RolloutRecorder {
                         if thread_id.is_none() {
                             reject_unknown_thread_history_mode(&value)?;
                         }
+                        redact_persisted_json(&mut value);
                         serde_json::from_value::<RolloutLine>(value)
                     }
                     Ok(rollout_line) => Ok(rollout_line),
@@ -1038,6 +1046,7 @@ impl RolloutRecorder {
                             if thread_id.is_none() {
                                 reject_unknown_thread_history_mode(&value)?;
                             }
+                            redact_persisted_json(&mut value);
                             serde_json::from_value::<RolloutLine>(value)
                         }
                         Err(_) => Err(direct_err),
@@ -1059,7 +1068,7 @@ impl RolloutRecorder {
                 }
                 Err(err) => {
                     if err.is_syntax() || err.is_eof() {
-                        warn!("failed to parse line as JSON: {line:?}, error: {err}");
+                        warn!("failed to parse rollout line as JSON: {err}");
                     } else {
                         trace!("failed to parse rollout line: {err}");
                     }
@@ -1945,7 +1954,9 @@ impl JsonlWriter {
         self.write_line(&line).await
     }
     async fn write_line(&mut self, item: &impl serde::Serialize) -> std::io::Result<()> {
-        let mut json = serde_json::to_string(item)?;
+        let mut value = serde_json::to_value(item)?;
+        redact_persisted_json(&mut value);
+        let mut json = serde_json::to_string(&value)?;
         json.push('\n');
         self.file.write_all(json.as_bytes()).await?;
         self.file.flush().await?;
@@ -2094,3 +2105,7 @@ fn cwd_matches(session_cwd: &Path, cwd: &Path) -> bool {
 #[cfg(test)]
 #[path = "recorder_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "recorder_redaction_tests.rs"]
+mod redaction_tests;

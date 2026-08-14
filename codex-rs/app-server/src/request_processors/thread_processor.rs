@@ -4742,7 +4742,15 @@ fn paginated_history_list_error(err: ThreadStoreError) -> JSONRPCErrorError {
 fn deserialize_stored_thread_item(
     item: codex_thread_store::StoredThreadItem,
 ) -> Result<ThreadItem, JSONRPCErrorError> {
-    serde_json::from_slice::<ThreadItem>(&item.item_json).map_err(|err| {
+    let mut value =
+        serde_json::from_slice::<serde_json::Value>(&item.item_json).map_err(|err| {
+            internal_error(format!(
+                "failed to deserialize stored thread item {}: {err}",
+                item.item_id
+            ))
+        })?;
+    codex_rollout::redact_persisted_json(&mut value);
+    serde_json::from_value::<ThreadItem>(value).map_err(|err| {
         internal_error(format!(
             "failed to deserialize stored thread item {}: {err}",
             item.item_id

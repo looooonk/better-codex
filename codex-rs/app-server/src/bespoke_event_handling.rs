@@ -121,6 +121,7 @@ use std::time::UNIX_EPOCH;
 use tokio::sync::Mutex;
 use tokio::sync::oneshot;
 use tracing::error;
+use tracing::warn;
 
 enum CommandExecutionApprovalPresentation {
     Network(V2NetworkApprovalContext),
@@ -245,6 +246,16 @@ pub(crate) async fn apply_bespoke_event_handling(
                 .await;
         }
         EventMsg::GuardianAssessment(assessment) => {
+            let assessment = match codex_rollout::redacted_event_msg_for_diagnostics(
+                EventMsg::GuardianAssessment(assessment),
+            ) {
+                Ok(EventMsg::GuardianAssessment(assessment)) => assessment,
+                Ok(_) => unreachable!("guardian assessment redaction changed the event variant"),
+                Err(err) => {
+                    warn!("failed to redact guardian diagnostic; suppressing event: {err}");
+                    return;
+                }
+            };
             let pending_command_execution = match build_item_from_guardian_event(
                 &assessment,
                 CommandExecutionStatus::InProgress,
@@ -966,12 +977,21 @@ pub(crate) async fn apply_bespoke_event_handling(
                 _ => None,
             };
             if should_emit {
-                let notification = item_event_to_server_notification(
-                    EventMsg::ItemStarted(event),
-                    &conversation_id.to_string(),
-                    &event_turn_id,
-                );
-                outgoing.send_server_notification(notification).await;
+                match codex_rollout::redacted_event_msg_for_diagnostics(EventMsg::ItemStarted(
+                    event,
+                )) {
+                    Ok(event) => {
+                        let notification = item_event_to_server_notification(
+                            event,
+                            &conversation_id.to_string(),
+                            &event_turn_id,
+                        );
+                        outgoing.send_server_notification(notification).await;
+                    }
+                    Err(err) => {
+                        warn!("failed to redact started item diagnostic; suppressing event: {err}");
+                    }
+                }
             }
             if let Some(params) = dynamic_tool_call_params {
                 let call_id = params.call_id.clone();
@@ -991,12 +1011,20 @@ pub(crate) async fn apply_bespoke_event_handling(
                 &event.item,
             )
             .await;
-            let notification = item_event_to_server_notification(
-                EventMsg::ItemCompleted(event),
-                &conversation_id.to_string(),
-                &event_turn_id,
-            );
-            outgoing.send_server_notification(notification).await;
+            match codex_rollout::redacted_event_msg_for_diagnostics(EventMsg::ItemCompleted(event))
+            {
+                Ok(event) => {
+                    let notification = item_event_to_server_notification(
+                        event,
+                        &conversation_id.to_string(),
+                        &event_turn_id,
+                    );
+                    outgoing.send_server_notification(notification).await;
+                }
+                Err(err) => {
+                    warn!("failed to redact completed item diagnostic; suppressing event: {err}");
+                }
+            }
         }
         msg @ (EventMsg::PatchApplyUpdated(_) | EventMsg::TerminalInteraction(_)) => {
             let notification = item_event_to_server_notification(
@@ -1405,6 +1433,13 @@ async fn maybe_emit_raw_response_item_completed(
     item: codex_protocol::models::ResponseItem,
     outgoing: &ThreadScopedOutgoingMessageSender,
 ) {
+    let item = match codex_rollout::redacted_response_item_for_diagnostics(item) {
+        Ok(item) => item,
+        Err(err) => {
+            warn!("failed to redact raw response item diagnostic; suppressing event: {err}");
+            return;
+        }
+    };
     let notification = RawResponseItemCompletedNotification {
         thread_id: conversation_id.to_string(),
         turn_id: turn_id.to_string(),
@@ -2058,6 +2093,10 @@ fn now_unix_timestamp_ms() -> i64 {
         .map(|duration| duration.as_millis() as i64)
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+#[path = "bespoke_event_handling_redaction_tests.rs"]
+mod redaction_tests;
 
 #[cfg(test)]
 mod tests {

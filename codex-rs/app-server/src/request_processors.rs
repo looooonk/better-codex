@@ -675,7 +675,14 @@ pub(crate) fn build_legacy_api_turns_from_rollout_items(items: &[RolloutItem]) -
     let mut builder = ThreadHistoryBuilder::new();
     for item in items {
         if is_persisted_rollout_item(item, codex_protocol::protocol::ThreadHistoryMode::Legacy) {
-            builder.handle_rollout_item(item);
+            match codex_rollout::redacted_rollout_item_for_diagnostics(item) {
+                Ok(item) => builder.handle_rollout_item(&item),
+                Err(err) => {
+                    tracing::warn!(
+                        "failed to redact replayed rollout item; suppressing item: {err}"
+                    );
+                }
+            }
         }
     }
     builder.finish()

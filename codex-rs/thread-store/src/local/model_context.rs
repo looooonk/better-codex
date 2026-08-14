@@ -11,6 +11,7 @@ use codex_rollout::ModelContextScan;
 use codex_rollout::ModelContextScanProgress;
 use codex_rollout::ReverseJsonlScanner;
 use codex_rollout::ScanOutcome;
+use serde_json::Value;
 
 use super::LocalThreadStore;
 use super::read_thread;
@@ -107,8 +108,12 @@ fn scan_model_context_from_end_blocking(
 ) -> io::Result<Vec<RolloutItem>> {
     let mut scan = ModelContextScan::default();
     let mut scanner = ReverseJsonlScanner::new(File::open(path)?)?;
-    while let Some(outcome) = scanner.scan_next::<RolloutLine>()? {
-        let ScanOutcome::Parsed(line) = outcome else {
+    while let Some(outcome) = scanner.scan_next::<Value>()? {
+        let ScanOutcome::Parsed(mut value) = outcome else {
+            continue;
+        };
+        codex_rollout::redact_persisted_json(&mut value);
+        let Ok(line) = serde_json::from_value::<RolloutLine>(value) else {
             continue;
         };
         match scan.push(line.item) {
