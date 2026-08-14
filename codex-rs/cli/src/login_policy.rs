@@ -76,11 +76,17 @@ pub(crate) async fn persist_access_token(
     .await
 }
 
+pub(crate) async fn logout_stored_auth_with_revoke(
+    auth_config: &AuthConfig,
+) -> std::io::Result<bool> {
+    AuthManager::shared_from_stored_auth_config(auth_config.clone())
+        .await
+        .logout_with_revoke()
+        .await
+}
+
 async fn clear_existing_auth_before_login(auth_config: &AuthConfig) {
-    let auth_manager =
-        AuthManager::shared_from_auth_config(auth_config.clone(), /*enable_codex_api_key_env*/ false)
-            .await;
-    if let Err(err) = auth_manager.logout_with_revoke().await {
+    if let Err(err) = logout_stored_auth_with_revoke(auth_config).await {
         tracing::warn!("failed to clear existing auth before login: {err}");
     }
 }

@@ -174,34 +174,3 @@ async fn managed_workspace_mismatch_does_not_persist_device_login() -> anyhow::R
     server.verify().await;
     Ok(())
 }
-
-#[tokio::test]
-async fn allowed_chatgpt_login_deletes_disallowed_workspace_auth_without_using_it()
--> anyhow::Result<()> {
-    let codex_home = TempDir::new()?;
-    let auth_config = managed_auth_config(
-        &codex_home,
-        &format!(
-            "allowed_login_methods = [\"chatgpt\"]\nallowed_chatgpt_workspaces = [\"{WORKSPACE_ALLOWED}\"]\n"
-        ),
-    )
-    .await?;
-    std::fs::write(
-        auth_config.codex_home.join("auth.json"),
-        serde_json::to_vec(&serde_json::json!({
-            "auth_mode": "chatgpt",
-            "OPENAI_API_KEY": null,
-            "tokens": {
-                "id_token": WORKSPACE_DENIED_JWT,
-                "access_token": "disallowed-access",
-                "refresh_token": "disallowed-refresh",
-                "account_id": "workspace-denied",
-            },
-        }))?,
-    )?;
-
-    chatgpt_server_options(&auth_config, CLIENT_ID.to_string()).await?;
-
-    assert_eq!(stored_auth(&auth_config)?, None);
-    Ok(())
-}

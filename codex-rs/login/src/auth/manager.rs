@@ -1059,6 +1059,37 @@ pub fn load_auth_dot_json(
     storage.load()
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthSources {
+    EnvironmentAndStorage { enable_codex_api_key_env: bool },
+    StoredOnly,
+}
+
+impl AuthSources {
+    fn codex_api_key_env_enabled(self) -> bool {
+        match self {
+            Self::EnvironmentAndStorage {
+                enable_codex_api_key_env,
+            } => enable_codex_api_key_env,
+            Self::StoredOnly => false,
+        }
+    }
+
+    fn access_token_env_enabled(self) -> bool {
+        matches!(self, Self::EnvironmentAndStorage { .. })
+    }
+
+    fn includes_ephemeral_store(
+        self,
+        auth_credentials_store_mode: AuthCredentialsStoreMode,
+    ) -> bool {
+        match self {
+            Self::EnvironmentAndStorage { .. } => true,
+            Self::StoredOnly => auth_credentials_store_mode == AuthCredentialsStoreMode::Ephemeral,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuthConfig {
     pub codex_home: PathBuf,
@@ -1101,13 +1132,20 @@ impl AuthConfig {
         &self,
         enable_codex_api_key_env: bool,
     ) -> std::io::Result<Option<CodexAuth>> {
+        self.load_auth_from(AuthSources::EnvironmentAndStorage {
+            enable_codex_api_key_env,
+        })
+        .await
+    }
+
+    async fn load_auth_from(&self, auth_sources: AuthSources) -> std::io::Result<Option<CodexAuth>> {
         self.validate()?;
         let policy = self.effective_policy();
         let agent_identity_authapi_base_url =
             agent_identity_authapi_base_url(self.chatgpt_base_url.as_deref()).ok();
         load_auth_with_policy(
             &self.codex_home,
-            enable_codex_api_key_env,
+            auth_sources,
             self.auth_credentials_store_mode,
             &policy,
             self.chatgpt_base_url.as_deref(),
@@ -1176,6 +1214,16 @@ fn validate_auth_restrictions(policy: &ManagedAuthPolicy, auth: &CodexAuth) -> R
             expected_workspaces.join(", ")
         ))
     }
+}
+
+fn stored_auth_requires_policy_unsafe_hydration(
+    auth_sources: AuthSources,
+    policy: &ManagedAuthPolicy,
+    auth: &AuthDotJson,
+) -> bool {
+    auth_sources == AuthSources::StoredOnly
+        && policy.allowed_chatgpt_workspaces().is_some()
+        && auth.resolved_mode() == AuthMode::PersonalAccessToken
 }
 
 /// Enforces configured login restrictions using auth-owned HTTP settings.
@@ -1367,7 +1415,9 @@ async fn load_auth(
     };
     load_auth_with_policy(
         codex_home,
-        enable_codex_api_key_env,
+        AuthSources::EnvironmentAndStorage {
+            enable_codex_api_key_env,
+        },
         auth_credentials_store_mode,
         &policy,
         chatgpt_base_url,
@@ -1381,7 +1431,7 @@ async fn load_auth(
 #[allow(clippy::too_many_arguments)]
 async fn load_auth_with_policy(
     codex_home: &Path,
-    enable_codex_api_key_env: bool,
+    auth_sources: AuthSources,
     auth_credentials_store_mode: AuthCredentialsStoreMode,
     policy: &ManagedAuthPolicy,
     chatgpt_base_url: Option<&str>,
@@ -1390,23 +1440,31 @@ async fn load_auth_with_policy(
     auth_route_config: Option<&AuthRouteConfig>,
 ) -> std::io::Result<Option<CodexAuth>> {
     // API key via env var takes precedence over any other auth method.
-    if enable_codex_api_key_env
+    if auth_sources.codex_api_key_env_enabled()
         && policy.is_login_method_allowed(ForcedLoginMethod::Api)
         && let Some(api_key) = read_codex_api_key_from_env()
     {
         return Ok(Some(CodexAuth::from_api_key(api_key.as_str())));
     }
 
-    // External ChatGPT auth tokens live in the in-memory (ephemeral) store. Always check this
-    // first so external auth takes precedence over any persisted credentials.
-    let ephemeral_storage = create_auth_storage(
-        codex_home.to_path_buf(),
-        AuthCredentialsStoreMode::Ephemeral,
-        AuthKeyringBackendKind::default(),
-    );
-    if let Some(auth_dot_json) = ephemeral_storage.load()?
+    // Runtime auth gives the in-memory external store precedence. Stored-only operations inspect
+    // it only when ephemeral storage is the configured backend.
+    let ephemeral_auth = if auth_sources.includes_ephemeral_store(auth_credentials_store_mode) {
+        create_auth_storage(
+            codex_home.to_path_buf(),
+            AuthCredentialsStoreMode::Ephemeral,
+            AuthKeyringBackendKind::default(),
+        )
+        .load()?
+    } else {
+        None
+    };
+    if let Some(auth_dot_json) = ephemeral_auth
         && policy.is_login_method_allowed(login_method_for_auth_mode(auth_dot_json.resolved_mode()))
     {
+        if stored_auth_requires_policy_unsafe_hydration(auth_sources, policy, &auth_dot_json) {
+            return Ok(None);
+        }
         if let Some(agent_identity) = auth_dot_json.agent_identity.as_ref() {
             ensure_agent_identity_workspace_allowed(
                 policy.allowed_chatgpt_workspaces(),
@@ -1431,7 +1489,8 @@ async fn load_auth_with_policy(
             .map(|()| auth));
     }
 
-    if policy.is_login_method_allowed(ForcedLoginMethod::Chatgpt)
+    if auth_sources.access_token_env_enabled()
+        && policy.is_login_method_allowed(ForcedLoginMethod::Chatgpt)
         && let Some(access_token) = read_codex_access_token_from_env()
     {
         return match classify_codex_access_token(&access_token) {
@@ -1477,6 +1536,9 @@ async fn load_auth_with_policy(
         None => return Ok(None),
     };
     if !policy.is_login_method_allowed(login_method_for_auth_mode(auth_dot_json.resolved_mode())) {
+        return Ok(None);
+    }
+    if stored_auth_requires_policy_unsafe_hydration(auth_sources, policy, &auth_dot_json) {
         return Ok(None);
     }
     if let Some(agent_identity) = auth_dot_json.agent_identity.as_ref() {
@@ -1969,7 +2031,7 @@ pub struct AuthManager {
     codex_home: PathBuf,
     inner: RwLock<CachedAuth>,
     auth_change_tx: watch::Sender<u64>,
-    enable_codex_api_key_env: bool,
+    auth_sources: AuthSources,
     auth_credentials_store_mode: AuthCredentialsStoreMode,
     keyring_backend_kind: AuthKeyringBackendKind,
     forced_login_method: Option<ForcedLoginMethod>,
@@ -2021,7 +2083,7 @@ impl Debug for AuthManager {
         f.debug_struct("AuthManager")
             .field("codex_home", &self.codex_home)
             .field("inner", &self.inner)
-            .field("enable_codex_api_key_env", &self.enable_codex_api_key_env)
+            .field("auth_sources", &self.auth_sources)
             .field(
                 "auth_credentials_store_mode",
                 &self.auth_credentials_store_mode,
@@ -2058,7 +2120,7 @@ impl AuthManager {
         keyring_backend_kind: AuthKeyringBackendKind,
         auth_route_config: Option<AuthRouteConfig>,
     ) -> Self {
-        Self::new_from_auth_config(
+        Self::new_from_auth_config_with_sources(
             AuthConfig {
                 codex_home,
                 auth_credentials_store_mode,
@@ -2069,14 +2131,32 @@ impl AuthManager {
                 managed_auth_policy: ManagedAuthPolicy::default(),
                 auth_route_config,
             },
-            enable_codex_api_key_env,
+            AuthSources::EnvironmentAndStorage {
+                enable_codex_api_key_env,
+            },
         )
         .await
     }
 
-    async fn new_from_auth_config(auth_config: AuthConfig, enable_codex_api_key_env: bool) -> Self {
+    async fn new_from_auth_config(
+        auth_config: AuthConfig,
+        enable_codex_api_key_env: bool,
+    ) -> Self {
+        Self::new_from_auth_config_with_sources(
+            auth_config,
+            AuthSources::EnvironmentAndStorage {
+                enable_codex_api_key_env,
+            },
+        )
+        .await
+    }
+
+    async fn new_from_auth_config_with_sources(
+        auth_config: AuthConfig,
+        auth_sources: AuthSources,
+    ) -> Self {
         let managed_auth = auth_config
-            .load_auth(enable_codex_api_key_env)
+            .load_auth_from(auth_sources)
             .await
             .ok()
             .flatten();
@@ -2100,7 +2180,7 @@ impl AuthManager {
                 permanent_refresh_failure: None,
             }),
             auth_change_tx,
-            enable_codex_api_key_env,
+            auth_sources,
             auth_credentials_store_mode,
             keyring_backend_kind,
             forced_login_method,
@@ -2128,7 +2208,9 @@ impl AuthManager {
             codex_home: PathBuf::from("non-existent"),
             inner: RwLock::new(cached),
             auth_change_tx,
-            enable_codex_api_key_env: false,
+            auth_sources: AuthSources::EnvironmentAndStorage {
+                enable_codex_api_key_env: false,
+            },
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
             keyring_backend_kind: AuthKeyringBackendKind::default(),
             forced_login_method: None,
@@ -2155,7 +2237,9 @@ impl AuthManager {
             codex_home,
             inner: RwLock::new(cached),
             auth_change_tx,
-            enable_codex_api_key_env: false,
+            auth_sources: AuthSources::EnvironmentAndStorage {
+                enable_codex_api_key_env: false,
+            },
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
             keyring_backend_kind: AuthKeyringBackendKind::default(),
             forced_login_method: None,
@@ -2186,7 +2270,9 @@ impl AuthManager {
             codex_home: PathBuf::from("non-existent"),
             inner: RwLock::new(cached),
             auth_change_tx,
-            enable_codex_api_key_env: false,
+            auth_sources: AuthSources::EnvironmentAndStorage {
+                enable_codex_api_key_env: false,
+            },
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
             keyring_backend_kind: AuthKeyringBackendKind::default(),
             forced_login_method: None,
@@ -2215,7 +2301,9 @@ impl AuthManager {
                 permanent_refresh_failure: None,
             }),
             auth_change_tx,
-            enable_codex_api_key_env: false,
+            auth_sources: AuthSources::EnvironmentAndStorage {
+                enable_codex_api_key_env: false,
+            },
             auth_credentials_store_mode: AuthCredentialsStoreMode::File,
             keyring_backend_kind: AuthKeyringBackendKind::default(),
             forced_login_method: None,
@@ -2446,7 +2534,7 @@ impl AuthManager {
         let policy = self.effective_policy();
         load_auth_with_policy(
             &self.codex_home,
-            self.enable_codex_api_key_env,
+            self.auth_sources,
             self.auth_credentials_store_mode,
             &policy,
             self.chatgpt_base_url.as_deref(),
@@ -2536,7 +2624,7 @@ impl AuthManager {
     }
 
     pub fn codex_api_key_env_enabled(&self) -> bool {
-        self.enable_codex_api_key_env
+        self.auth_sources.codex_api_key_env_enabled()
     }
 
     /// Convenience constructor returning an `Arc` wrapper.
@@ -2589,7 +2677,16 @@ impl AuthManager {
         auth_config: AuthConfig,
         enable_codex_api_key_env: bool,
     ) -> Arc<Self> {
-        Arc::new(Self::new_from_auth_config(auth_config, enable_codex_api_key_env).await)
+        Arc::new(
+            Self::new_from_auth_config(auth_config, enable_codex_api_key_env).await,
+        )
+    }
+
+    /// Builds a shared manager that ignores ambient auth environment variables.
+    pub async fn shared_from_stored_auth_config(auth_config: AuthConfig) -> Arc<Self> {
+        Arc::new(
+            Self::new_from_auth_config_with_sources(auth_config, AuthSources::StoredOnly).await,
+        )
     }
 
     pub fn unauthorized_recovery(self: &Arc<Self>) -> UnauthorizedRecovery {

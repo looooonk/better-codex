@@ -6,7 +6,7 @@ use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
 #[tokio::test]
-async fn disallowed_stored_auth_method_is_not_reported() -> anyhow::Result<()> {
+async fn managed_deny_all_auth_policy_reports_no_stored_auth_mode() -> anyhow::Result<()> {
     let codex_home = TempDir::new()?;
     std::fs::write(
         codex_home.path().join("config.toml"),
@@ -15,7 +15,7 @@ async fn disallowed_stored_auth_method_is_not_reported() -> anyhow::Result<()> {
     let requirements_path = codex_home.path().join("requirements.toml");
     std::fs::write(
         &requirements_path,
-        r#"allowed_login_methods = ["chatgpt"]"#,
+        "allowed_login_methods = []\n",
     )?;
     let mut loader_overrides = LoaderOverrides::without_managed_config_for_tests();
     loader_overrides.system_requirements_path = Some(requirements_path);

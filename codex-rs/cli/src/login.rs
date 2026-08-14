@@ -11,7 +11,6 @@ use crate::login_policy;
 use codex_core::config::Config;
 use codex_login::CLIENT_ID;
 use codex_login::ServerOptions;
-use codex_login::logout_with_revoke;
 use codex_login::run_device_code_login;
 use codex_login::run_login_server;
 use codex_protocol::auth::AuthMode;
@@ -392,16 +391,8 @@ pub async fn run_login_status(cli_config_overrides: CliConfigOverrides) -> ! {
 
 pub async fn run_logout(cli_config_overrides: CliConfigOverrides) -> ! {
     let config = load_config_or_exit(cli_config_overrides).await;
-    let auth_route_config = config.auth_route_config();
 
-    match logout_with_revoke(
-        &config.codex_home,
-        config.cli_auth_credentials_store_mode,
-        config.auth_keyring_backend_kind(),
-        auth_route_config.as_ref(),
-    )
-    .await
-    {
+    match login_policy::logout_stored_auth_with_revoke(&config.auth_config()).await {
         Ok(true) => {
             eprintln!("Successfully logged out");
             std::process::exit(0);
