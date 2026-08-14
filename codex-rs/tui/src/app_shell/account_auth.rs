@@ -1,12 +1,12 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
 use super::is_unmodified_action_key;
+use super::login_method_availability::LoginMethodAvailability;
 use crate::text_input::EditableText;
 use crate::text_input::text_input_action_from_key;
 use codex_app_server_protocol::AccountLoginCompletedNotification;
 use codex_app_server_protocol::LoginAccountParams;
 use codex_app_server_protocol::LoginAccountResponse;
-use codex_protocol::config_types::ForcedLoginMethod;
 use color_eyre::Result;
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -61,7 +61,7 @@ enum AccountAuthMode {
 
 #[derive(Clone, PartialEq, Eq)]
 pub(super) struct AccountAuthState {
-    forced_login_method: Option<ForcedLoginMethod>,
+    login_methods: LoginMethodAvailability,
     selected: usize,
     mode: AccountAuthMode,
     api_key: EditableText,
@@ -70,9 +70,9 @@ pub(super) struct AccountAuthState {
 }
 
 impl AccountAuthState {
-    pub(super) fn new(forced_login_method: Option<ForcedLoginMethod>) -> Self {
+    pub(super) fn new(login_methods: LoginMethodAvailability) -> Self {
         Self {
-            forced_login_method,
+            login_methods,
             selected: 0,
             mode: AccountAuthMode::Choose,
             api_key: EditableText::default(),
@@ -82,22 +82,18 @@ impl AccountAuthState {
     }
 
     fn choices(&self) -> Vec<AccountAuthChoice> {
-        match self.forced_login_method {
-            Some(ForcedLoginMethod::Chatgpt) => vec![
+        let mut choices = Vec::new();
+        if self.login_methods.allows_chatgpt() {
+            choices.extend([
                 AccountAuthChoice::ChatGptBrowser,
                 AccountAuthChoice::ChatGptDeviceCode,
-                AccountAuthChoice::Cancel,
-            ],
-            Some(ForcedLoginMethod::Api) => {
-                vec![AccountAuthChoice::ApiKey, AccountAuthChoice::Cancel]
-            }
-            None => vec![
-                AccountAuthChoice::ChatGptBrowser,
-                AccountAuthChoice::ChatGptDeviceCode,
-                AccountAuthChoice::ApiKey,
-                AccountAuthChoice::Cancel,
-            ],
+            ]);
         }
+        if self.login_methods.allows_api() {
+            choices.push(AccountAuthChoice::ApiKey);
+        }
+        choices.push(AccountAuthChoice::Cancel);
+        choices
     }
 
     fn selected(&self) -> AccountAuthChoice {
@@ -207,11 +203,11 @@ impl AccountAuthState {
 }
 
 impl ShellState {
-    pub(super) fn open_account_auth(&mut self, forced_login_method: Option<ForcedLoginMethod>) {
+    pub(super) fn open_account_auth(&mut self, login_methods: LoginMethodAvailability) {
         self.close_agent_log();
         self.close_tool_output();
         self.close_diff_view();
-        self.pending_account_auth = Some(AccountAuthState::new(forced_login_method));
+        self.pending_account_auth = Some(AccountAuthState::new(login_methods));
     }
 
     pub(super) async fn handle_account_auth_key<S>(
