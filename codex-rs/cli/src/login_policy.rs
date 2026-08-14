@@ -1,8 +1,8 @@
 use codex_login::AuthConfig;
+use codex_login::AuthManager;
 use codex_login::ServerOptions;
 use codex_login::login_with_access_token;
 use codex_login::login_with_api_key;
-use codex_login::logout_with_revoke;
 use codex_login::run_device_code_login;
 use codex_protocol::config_types::ForcedLoginMethod;
 
@@ -77,14 +77,10 @@ pub(crate) async fn persist_access_token(
 }
 
 async fn clear_existing_auth_before_login(auth_config: &AuthConfig) {
-    if let Err(err) = logout_with_revoke(
-        &auth_config.codex_home,
-        auth_config.auth_credentials_store_mode,
-        auth_config.keyring_backend_kind,
-        auth_config.auth_route_config.as_ref(),
-    )
-    .await
-    {
+    let auth_manager =
+        AuthManager::shared_from_auth_config(auth_config.clone(), /*enable_codex_api_key_env*/ false)
+            .await;
+    if let Err(err) = auth_manager.logout_with_revoke().await {
         tracing::warn!("failed to clear existing auth before login: {err}");
     }
 }

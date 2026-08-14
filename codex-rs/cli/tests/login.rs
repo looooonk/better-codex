@@ -15,6 +15,13 @@ use wiremock::ResponseTemplate;
 use wiremock::matchers::method;
 use wiremock::matchers::path;
 
+const WORKSPACE_DENIED_JWT: &str = concat!(
+    "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.",
+    "eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOnsiY2hhdGdwdF9hY2NvdW50X2lkIjo",
+    "id29ya3NwYWNlLWRlbmllZCIsIm9yZ2FuaXphdGlvbl9pZCI6IndvcmtzcGFjZS1kZW5pZWQifX0.",
+    "c2ln"
+);
+
 fn codex_command(codex_home: &Path) -> Result<assert_cmd::Command> {
     let mut cmd = assert_cmd::Command::new(codex_utils_cargo_bin::cargo_bin("codex")?);
     cmd.env("CODEX_HOME", codex_home);
@@ -187,5 +194,75 @@ async fn device_login_revokes_existing_auth_before_requesting_new_tokens() -> Re
 
     let auth = read_auth_json(codex_home.path())?;
     assert_eq!(auth["tokens"]["refresh_token"], "new-refresh");
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn device_login_does_not_revoke_disallowed_workspace_auth() -> Result<()> {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/oauth/revoke"))
+        .respond_with(ResponseTemplate::new(200))
+        .expect(0)
+        .mount(&server)
+        .await;
+    Mock::given(method("POST"))
+        .and(path("/api/accounts/deviceauth/usercode"))
+        .respond_with(ResponseTemplate::new(503))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let codex_home = TempDir::new()?;
+    write_file_auth_config(codex_home.path())?;
+    std::fs::write(
+        codex_home.path().join("auth.json"),
+        serde_json::to_vec(&json!({
+            "auth_mode": "chatgpt",
+            "OPENAI_API_KEY": null,
+            "tokens": {
+                "id_token": WORKSPACE_DENIED_JWT,
+                "access_token": "disallowed-access",
+                "refresh_token": "disallowed-refresh",
+                "account_id": "workspace-denied",
+            },
+        }))?,
+    )?;
+
+    let issuer = server.uri();
+    let mut cmd = codex_command(codex_home.path())?;
+    cmd.env(
+        REVOKE_TOKEN_URL_OVERRIDE_ENV_VAR,
+        format!("{issuer}/oauth/revoke"),
+    )
+    .env("NO_PROXY", "127.0.0.1,localhost")
+    .env("no_proxy", "127.0.0.1,localhost")
+    .env_remove("CODEX_ACCESS_TOKEN")
+    .env_remove("OPENAI_API_KEY")
+    .args([
+        "-c",
+        "forced_chatgpt_workspace_id=[\"workspace-allowed\"]",
+        "login",
+        "--device-auth",
+        "--experimental_issuer",
+        &issuer,
+    ])
+    .assert()
+    .failure()
+    .stderr(contains("Error logging in with device code"));
+
+    assert!(!codex_home.path().join("auth.json").exists());
+    let requests = server
+        .received_requests()
+        .await
+        .context("failed to read mock OAuth requests")?;
+    assert_eq!(
+        requests
+            .iter()
+            .map(|request| request.url.path())
+            .collect::<Vec<_>>(),
+        vec!["/api/accounts/deviceauth/usercode"]
+    );
+    server.verify().await;
     Ok(())
 }
