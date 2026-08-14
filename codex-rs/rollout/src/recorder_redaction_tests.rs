@@ -107,7 +107,7 @@ async fn old_unsanitized_rollout_replays_redacted_and_preserves_encrypted_conten
                 encrypted_content: encrypted.clone(),
             },
             FunctionCallOutputContentItem::InputText {
-                text: format!("Authorization: Bearer {SECRET}"),
+                text: "Authorization: Basic short-secret".to_string(),
             },
         ]),
         internal_chat_message_metadata_passthrough: None,
@@ -134,6 +134,7 @@ async fn old_unsanitized_rollout_replays_redacted_and_preserves_encrypted_conten
     assert!(serialized.contains("call-output"));
     assert!(serialized.contains("call-curl-user"));
     assert!(!serialized.contains("alice:hunter2"));
+    assert!(!serialized.contains("short-secret"));
     assert!(!serialized.contains(SECRET));
     assert!(serialized.contains("[REDACTED_SECRET]"));
     let RolloutItem::ResponseItem(ResponseItem::FunctionCallOutput { output, .. }) = &items[2]
@@ -148,7 +149,7 @@ async fn old_unsanitized_rollout_replays_redacted_and_preserves_encrypted_conten
                     encrypted_content: encrypted,
                 },
                 FunctionCallOutputContentItem::InputText {
-                    text: "Authorization: Bearer [REDACTED_SECRET]".to_string(),
+                    text: "Authorization: [REDACTED_SECRET]".to_string(),
                 },
             ]
             .as_slice()

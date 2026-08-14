@@ -4,9 +4,19 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::RolloutItem;
 use codex_secrets::redact_secrets;
+use regex::Regex;
 use serde_json::Value;
+use std::sync::LazyLock;
 
+const MAX_NESTED_COMMAND_DEPTH: usize = 2;
 const REDACTION: &str = "[REDACTED_SECRET]";
+static AUTHORIZATION_HEADER_REGEX: LazyLock<Regex> =
+    LazyLock::new(
+        || match Regex::new(r"(?im)(?P<prefix>\bauthorization[ \t]*:[ \t]*)[^\r\n]+") {
+            Ok(regex) => regex,
+            Err(err) => panic!("invalid authorization header regex: {err}"),
+        },
+    );
 
 /// Redacts recognizable credentials in a serialized persistence or diagnostic copy.
 ///
@@ -106,7 +116,7 @@ fn redact_command_array(values: &mut [Value]) -> bool {
         }
         return changed;
     };
-    let changed = redact_argv(&mut argv);
+    let changed = redact_argv(&mut argv, /*depth*/ 0);
     if changed {
         for (value, argument) in values.iter_mut().zip(argv) {
             *value = Value::String(argument);
@@ -116,10 +126,14 @@ fn redact_command_array(values: &mut [Value]) -> bool {
 }
 
 fn redact_command_text(text: &mut String) -> bool {
+    redact_command_text_at_depth(text, /*depth*/ 0)
+}
+
+fn redact_command_text_at_depth(text: &mut String, depth: usize) -> bool {
     let Some(mut argv) = shlex::split(text) else {
         return redact_string(text, /*field_name*/ None);
     };
-    if !redact_argv(&mut argv) {
+    if !redact_argv(&mut argv, depth) {
         return false;
     }
     *text =
@@ -127,7 +141,7 @@ fn redact_command_text(text: &mut String) -> bool {
     true
 }
 
-fn redact_argv(argv: &mut [String]) -> bool {
+fn redact_argv(argv: &mut [String], depth: usize) -> bool {
     let is_curl = argv.first().is_some_and(|executable| {
         executable
             .rsplit(['/', '\\'])
@@ -174,8 +188,19 @@ fn redact_argv(argv: &mut [String]) -> bool {
             inspect_header_next = true;
             continue;
         }
-        let redacted = redact_secrets(std::mem::take(argument));
-        changed |= redacted.contains(REDACTION);
+        // Shell wrappers commonly carry a complete command in one argument. Only recurse for
+        // strings that already look sensitive, and cap the depth so malformed nesting cannot loop.
+        if depth < MAX_NESTED_COMMAND_DEPTH
+            && potentially_contains_sensitive_material(argument)
+            && argument.bytes().any(|byte| byte.is_ascii_whitespace())
+            && redact_command_text_at_depth(argument, depth.saturating_add(1))
+        {
+            changed = true;
+            continue;
+        }
+        let original = std::mem::take(argument);
+        let redacted = redact_plain_text(original.clone());
+        changed |= redacted != original;
         *argument = redacted;
     }
     changed
@@ -231,10 +256,17 @@ fn redact_string(text: &mut String, field_name: Option<&str>) -> bool {
     }
 
     let original = std::mem::take(text);
-    let redacted = redact_secrets(original.clone());
+    let redacted = redact_plain_text(original.clone());
     let changed = redacted != original;
     *text = redacted;
     changed
+}
+
+fn redact_plain_text(text: String) -> String {
+    let redacted = redact_secrets(text);
+    AUTHORIZATION_HEADER_REGEX
+        .replace_all(&redacted, "${prefix}[REDACTED_SECRET]")
+        .into_owned()
 }
 
 fn is_protected_field(field_name: &str) -> bool {
@@ -248,6 +280,7 @@ fn is_credential_field(field_name: &str) -> bool {
     let normalized = field_name.to_ascii_lowercase().replace('-', "_");
     normalized == "authorization"
         || normalized.ends_with("_authorization")
+        || normalized == "aws_secret_access_key"
         || normalized == "api_key"
         || normalized.ends_with("_api_key")
         || normalized.ends_with("apikey")

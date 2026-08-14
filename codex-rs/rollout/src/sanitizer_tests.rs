@@ -94,6 +94,54 @@ fn redacts_contextual_command_credentials_and_preserves_ordinary_arguments() {
 }
 
 #[test]
+fn redacts_credentials_inside_shell_wrapped_commands() {
+    let mut value = json!({
+        "command": [
+            "/bin/sh",
+            "-lc",
+            "curl -u alice:hunter2 https://example.test --request-id request-1",
+        ],
+    });
+
+    redact_persisted_json(&mut value);
+
+    let inner = value["command"][2]
+        .as_str()
+        .expect("inner command should remain a string");
+    assert!(!inner.contains("alice:hunter2"));
+    assert!(inner.contains(REDACTION));
+    assert!(inner.contains("https://example.test"));
+    assert!(inner.contains("request-1"));
+    assert_eq!(value["command"][0], "/bin/sh");
+    assert_eq!(value["command"][1], "-lc");
+}
+
+#[test]
+fn redacts_non_bearer_authorization_headers_in_arbitrary_text() {
+    let mut value = json!({
+        "output": "request failed\nAuthorization: Basic short-secret\nretained detail",
+    });
+
+    redact_persisted_json(&mut value);
+
+    assert_eq!(
+        value["output"],
+        "request failed\nAuthorization: [REDACTED_SECRET]\nretained detail"
+    );
+}
+
+#[test]
+fn redacts_standard_aws_secret_access_key_fields() {
+    let mut value = json!({
+        "AWS_SECRET_ACCESS_KEY": "synthetic-short-secret",
+    });
+
+    redact_persisted_json(&mut value);
+
+    assert_eq!(value["AWS_SECRET_ACCESS_KEY"], REDACTION);
+}
+
+#[test]
 fn leaves_token_usage_fields_unchanged() {
     let mut value = json!({
         "type": "token_count",
