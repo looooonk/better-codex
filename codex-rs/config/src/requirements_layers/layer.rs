@@ -65,8 +65,20 @@ impl ComposableRequirementsLayer {
             let _guard = base_dir
                 .as_ref()
                 .map(|base_dir| AbsolutePathBufGuard::new(base_dir.as_path()));
-            let regular_toml = parse_layer_toml(&toml, &source)?;
-            let requirements = parse_layer_requirements(&toml, &source)?;
+            let mut regular_toml = parse_layer_toml(&toml, &source)?;
+
+            // Authentication requirements must be available before cloud
+            // requirements can be fetched. Remote policy therefore cannot
+            // define or replace these locally managed bootstrap restrictions.
+            if matches!(&source, RequirementSource::EnterpriseManaged { .. }) {
+                remove_top_level_field(&mut regular_toml, "allowed_login_methods");
+                remove_top_level_field(&mut regular_toml, "allowed_chatgpt_workspaces");
+            }
+
+            let requirements = parse_layer_requirements(
+                &RequirementsLayerToml::Value(regular_toml.clone()),
+                &source,
+            )?;
             (regular_toml, requirements)
         };
 
@@ -84,6 +96,8 @@ impl ComposableRequirementsLayer {
             source,
             regular_toml,
             domain_fields: DomainMergedRequirementsFields {
+                allowed_login_methods: requirements.allowed_login_methods,
+                allowed_chatgpt_workspaces: requirements.allowed_chatgpt_workspaces,
                 rules: requirements.rules,
                 hooks: requirements.hooks,
                 permissions: requirements.permissions,
@@ -94,6 +108,9 @@ impl ComposableRequirementsLayer {
 
 #[derive(Clone, Debug)]
 pub(super) struct DomainMergedRequirementsFields {
+    pub(super) allowed_login_methods:
+        Option<Vec<codex_protocol::config_types::ForcedLoginMethod>>,
+    pub(super) allowed_chatgpt_workspaces: Option<Vec<String>>,
     pub(super) rules: Option<RequirementsExecPolicyToml>,
     pub(super) hooks: Option<ManagedHooksRequirementsToml>,
     pub(super) permissions: Option<crate::config_requirements::PermissionsRequirementsToml>,
@@ -167,6 +184,8 @@ fn toml_value_from_serializable<T: serde::Serialize>(
 }
 
 fn strip_special_fields(layer_toml: &mut TomlValue) {
+    remove_top_level_field(layer_toml, "allowed_login_methods");
+    remove_top_level_field(layer_toml, "allowed_chatgpt_workspaces");
     remove_top_level_field(layer_toml, "rules");
     remove_top_level_field(layer_toml, "hooks");
     remove_nested_field_and_prune_empty(layer_toml, &["permissions", "filesystem", "deny_read"]);

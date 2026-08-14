@@ -6,8 +6,10 @@ use super::compose_requirements_for_hostname_and_hook_directory;
 use super::compose_requirements_with_hostname_resolver;
 use crate::ConfigRequirementsToml;
 use crate::ConfigRequirementsWithSources;
+use crate::ConfigRequirements;
 use crate::RequirementSource;
 use crate::Sourced;
+use codex_protocol::config_types::ForcedLoginMethod;
 use codex_protocol::protocol::AskForApproval;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use pretty_assertions::assert_eq;
@@ -54,6 +56,144 @@ fn expected_requirements(contents: impl AsRef<str>) -> ConfigRequirementsToml {
 fn empty_layers_compose_to_none() {
     let composed = compose(Vec::new()).expect("compose empty layers");
     assert_eq!(composed, None);
+}
+
+#[test]
+fn lower_priority_local_auth_requirements_cannot_widen_higher_priority_policy() {
+    let composed = compose(vec![
+        RequirementsLayerEntry::from_toml(
+            RequirementSource::SystemRequirementsToml {
+                file: AbsolutePathBuf::from_absolute_path(if cfg!(windows) {
+                    "C:\\requirements.toml"
+                } else {
+                    "/etc/codex/requirements.toml"
+                })
+                .expect("absolute requirements path"),
+            },
+            r#"
+allowed_login_methods = ["api", "chatgpt"]
+allowed_chatgpt_workspaces = ["workspace-a", "workspace-b"]
+"#,
+        ),
+        RequirementsLayerEntry::from_toml(
+            RequirementSource::MdmManagedPreferences {
+                domain: "com.openai.codex".to_string(),
+                key: "requirements_toml_base64".to_string(),
+            },
+            r#"
+allowed_login_methods = ["api"]
+allowed_chatgpt_workspaces = ["workspace-a"]
+"#,
+        ),
+    ])
+    .expect("compose requirements")
+    .expect("requirements present");
+
+    assert_eq!(
+        composed,
+        expected_requirements(
+            r#"
+allowed_login_methods = ["api"]
+allowed_chatgpt_workspaces = ["workspace-a"]
+"#
+        )
+    );
+}
+
+#[test]
+fn local_auth_requirements_intersect_even_when_lower_priority_is_stricter() {
+    let composed = compose(vec![
+        RequirementsLayerEntry::from_toml(
+            RequirementSource::Unknown,
+            r#"allowed_login_methods = ["api"]"#,
+        ),
+        RequirementsLayerEntry::from_toml(
+            RequirementSource::LegacyManagedConfigTomlFromMdm,
+            r#"allowed_login_methods = ["api", "chatgpt"]"#,
+        ),
+    ])
+    .expect("compose requirements")
+    .expect("requirements present");
+
+    assert_eq!(
+        composed.allowed_login_methods,
+        Some(vec![ForcedLoginMethod::Api])
+    );
+}
+
+#[test]
+fn cloud_auth_keys_cannot_replace_local_policy_or_invalidate_other_cloud_fields() {
+    let local = RequirementsLayerEntry::from_toml(
+        RequirementSource::Unknown,
+        r#"
+allowed_login_methods = ["api"]
+allowed_chatgpt_workspaces = ["local-workspace"]
+"#,
+    );
+    let cloud = layer(
+        "req_cloud",
+        "Cloud policy",
+        r#"
+allowed_login_methods = ["chatgpt"]
+allowed_chatgpt_workspaces = "not-a-list"
+allow_remote_control = false
+"#,
+    );
+
+    assert_eq!(
+        compose(vec![local, cloud]).expect("cloud auth keys are ignored before validation"),
+        Some(expected_requirements(
+            r#"
+allowed_login_methods = ["api"]
+allowed_chatgpt_workspaces = ["local-workspace"]
+allow_remote_control = false
+"#
+        ))
+    );
+}
+
+#[test]
+fn cloud_only_auth_keys_do_not_materialize_an_unrestricted_local_policy() {
+    let cloud = layer(
+        "req_cloud",
+        "Cloud policy",
+        r#"
+allowed_login_methods = ["chatgpt"]
+allowed_chatgpt_workspaces = "not-a-list"
+"#,
+    );
+
+    assert_eq!(compose(vec![cloud]).expect("compose cloud layer"), None);
+}
+
+#[test]
+fn disjoint_local_auth_requirements_fail_closed_in_normalized_policy() {
+    let composed = compose_requirements_for_hostname(
+        vec![
+            RequirementsLayerEntry::from_toml(
+                RequirementSource::Unknown,
+                r#"
+allowed_login_methods = ["chatgpt"]
+allowed_chatgpt_workspaces = ["workspace-a"]
+"#,
+            ),
+            RequirementsLayerEntry::from_toml(
+                RequirementSource::LegacyManagedConfigTomlFromMdm,
+                r#"allowed_chatgpt_workspaces = ["workspace-b"]"#,
+            ),
+        ],
+        /*hostname*/ None,
+    )
+    .expect("compose requirements")
+    .expect("requirements present");
+    let requirements = ConfigRequirements::try_from(composed).expect("normalize requirements");
+
+    assert_eq!(
+        requirements
+            .managed_auth_policy()
+            .allowed_login_methods(),
+        Vec::new()
+    );
 }
 
 #[test]
