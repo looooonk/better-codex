@@ -313,3 +313,4 @@ lettered commits.
 | Stage | Upstream references | Compatibility impact | Scoped validation | Status |
 | --- | --- | --- | --- | --- |
 | 0 | `678157aca..86b1123ff` | None; documentation only | ancestry, commit count, overlap audit | Complete |
+| 1B | `bab7c2dc` (#36908) | More complete bearer redaction; no wire/config change | `just test -p codex-secrets` (8 passed), `just fmt` | Complete |
