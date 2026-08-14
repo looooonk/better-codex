@@ -13,9 +13,8 @@ use crate::legacy_core::config::Config;
 use crate::legacy_core::config::ConfigBuilder;
 use crate::legacy_core::config::ConfigOverrides;
 use crate::legacy_core::config::ConfigTomlLoadResult;
+use crate::legacy_core::config::bootstrap_auth_config;
 use crate::legacy_core::config::load_config_toml_with_layer_stack;
-use crate::legacy_core::config::resolve_bootstrap_auth_keyring_backend_kind;
-use crate::legacy_core::config::resolve_bootstrap_auth_route_config;
 use crate::legacy_core::config::resolve_oss_provider;
 use crate::legacy_core::config::resolve_profile_v2_config_path;
 use crate::session_resume::ResolveCwdOutcome;
@@ -240,6 +239,16 @@ pub(crate) enum AppServerTarget {
 impl AppServerTarget {
     pub(crate) fn uses_remote_workspace(&self) -> bool {
         matches!(self, Self::Remote { .. })
+    }
+
+    fn auth_config_for_cloud_loader(&self, mut auth_config: AuthConfig) -> AuthConfig {
+        if self.uses_remote_workspace() {
+            // The remote app server owns authentication policy for its workspace.
+            auth_config.forced_login_method = None;
+            auth_config.forced_chatgpt_workspace_id = None;
+            auth_config.managed_auth_policy = Default::default();
+        }
+        auth_config
     }
 
     fn thread_params_mode(&self) -> ThreadParamsMode {
@@ -977,6 +986,7 @@ pub async fn run_main(
         loader_overrides.user_config_path = Some(user_config_path);
         loader_overrides.user_config_profile = Some(profile_v2.clone());
     }
+    loader_overrides.ignore_login_requirements = app_server_target.uses_remote_workspace();
 
     let bootstrap_config = load_bootstrap_config_or_exit(
         &codex_home,
@@ -987,31 +997,13 @@ pub async fn run_main(
         CloudConfigBundleLoader::default(),
     )
     .await;
-    let bootstrap_config_toml = &bootstrap_config.config_toml;
-
-    let chatgpt_base_url = bootstrap_config_toml
-        .chatgpt_base_url
-        .clone()
-        .unwrap_or_else(|| "https://chatgpt.com/backend-api/".to_string());
-    let auth_route_config = resolve_bootstrap_auth_route_config(
-        bootstrap_config_toml,
-        bootstrap_config
-            .config_layer_stack
-            .requirements()
-            .feature_requirements
-            .as_ref(),
-    )?;
     let cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-        codex_home.to_path_buf(),
+        app_server_target
+            .auth_config_for_cloud_loader(bootstrap_auth_config(&codex_home, &bootstrap_config)?),
         /*enable_codex_api_key_env*/ false,
-        bootstrap_config_toml
-            .cli_auth_credentials_store
-            .unwrap_or_default(),
-        resolve_bootstrap_auth_keyring_backend_kind(&bootstrap_config)?,
-        chatgpt_base_url,
-        auth_route_config,
     )
     .await;
+    let bootstrap_config_toml = &bootstrap_config.config_toml;
 
     let cwd_override = if app_server_target.uses_remote_workspace() {
         None
@@ -1156,23 +1148,8 @@ pub async fn run_main(
     }
 
     if !app_server_target.uses_remote_workspace() {
-        let auth_route_config = config.auth_route_config();
         #[allow(clippy::print_stderr)]
-        if let Err(err) = enforce_login_restrictions(&AuthConfig {
-            codex_home: config.codex_home.to_path_buf(),
-            auth_credentials_store_mode: config.cli_auth_credentials_store_mode,
-            keyring_backend_kind: config.auth_keyring_backend_kind(),
-            forced_login_method: config.forced_login_method,
-            forced_chatgpt_workspace_id: config.forced_chatgpt_workspace_id.clone(),
-            managed_auth_policy: config
-                .config_layer_stack
-                .requirements()
-                .managed_auth_policy(),
-            chatgpt_base_url: Some(config.chatgpt_base_url.clone()),
-            auth_route_config,
-        })
-        .await
-        {
+        if let Err(err) = enforce_login_restrictions(&config.auth_config()).await {
             eprintln!("{err}");
             std::process::exit(1);
         }
@@ -1410,12 +1387,8 @@ async fn run_ratatui_app(
         // status detection edge cases.
         if !uses_remote_workspace {
             cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-                initial_config.codex_home.to_path_buf(),
+                initial_config.auth_config(),
                 /*enable_codex_api_key_env*/ false,
-                initial_config.cli_auth_credentials_store_mode,
-                initial_config.auth_keyring_backend_kind(),
-                initial_config.chatgpt_base_url.clone(),
-                initial_config.auth_route_config(),
             )
             .await;
         }

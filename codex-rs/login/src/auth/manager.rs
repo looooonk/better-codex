@@ -1096,7 +1096,8 @@ impl AuthConfig {
         }
     }
 
-    async fn load_auth(
+    /// Loads credentials after applying this config's effective restrictions.
+    pub async fn load_auth(
         &self,
         enable_codex_api_key_env: bool,
     ) -> std::io::Result<Option<CodexAuth>> {
@@ -2567,22 +2568,28 @@ impl AuthManager {
         config: &impl AuthManagerConfig,
         enable_codex_api_key_env: bool,
     ) -> Arc<Self> {
-        Arc::new(
-            Self::new_from_auth_config(
-                AuthConfig {
-                    codex_home: config.codex_home(),
-                    auth_credentials_store_mode: config.cli_auth_credentials_store_mode(),
-                    keyring_backend_kind: config.auth_keyring_backend_kind(),
-                    forced_login_method: config.forced_login_method(),
-                    chatgpt_base_url: Some(config.chatgpt_base_url()),
-                    forced_chatgpt_workspace_id: config.forced_chatgpt_workspace_id(),
-                    managed_auth_policy: config.managed_auth_policy(),
-                    auth_route_config: config.auth_route_config(),
-                },
-                enable_codex_api_key_env,
-            )
-            .await,
+        Self::shared_from_auth_config(
+            AuthConfig {
+                codex_home: config.codex_home(),
+                auth_credentials_store_mode: config.cli_auth_credentials_store_mode(),
+                keyring_backend_kind: config.auth_keyring_backend_kind(),
+                forced_login_method: config.forced_login_method(),
+                chatgpt_base_url: Some(config.chatgpt_base_url()),
+                forced_chatgpt_workspace_id: config.forced_chatgpt_workspace_id(),
+                managed_auth_policy: config.managed_auth_policy(),
+                auth_route_config: config.auth_route_config(),
+            },
+            enable_codex_api_key_env,
         )
+        .await
+    }
+
+    /// Builds a shared manager using restrictions resolved before authentication.
+    pub async fn shared_from_auth_config(
+        auth_config: AuthConfig,
+        enable_codex_api_key_env: bool,
+    ) -> Arc<Self> {
+        Arc::new(Self::new_from_auth_config(auth_config, enable_codex_api_key_env).await)
     }
 
     pub fn unauthorized_recovery(self: &Arc<Self>) -> UnauthorizedRecovery {

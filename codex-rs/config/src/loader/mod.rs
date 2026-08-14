@@ -188,7 +188,14 @@ pub async fn load_config_layers_state(
         requirements_layers.extend(managed_preferences_requirements_layer);
     }
 
-    let config_requirements_toml = compose_requirements(requirements_layers)?.unwrap_or_default();
+    let mut config_requirements_toml =
+        compose_requirements(requirements_layers)?.unwrap_or_default();
+    if overrides.ignore_login_requirements {
+        // A connected remote app server enforces auth policy for its workspace.
+        // Local requirements must not restrict credentials used to connect to it.
+        config_requirements_toml.allowed_login_methods = None;
+        config_requirements_toml.allowed_chatgpt_workspaces = None;
+    }
 
     let thread_config_context = ThreadConfigContext {
         thread_id: None,
