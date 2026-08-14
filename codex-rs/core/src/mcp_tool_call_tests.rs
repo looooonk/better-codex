@@ -1930,7 +1930,7 @@ async fn guardian_review_decision_maps_to_mcp_tool_decision() {
     let denial = mcp_tool_approval_decision_from_guardian(
         session.as_ref(),
         "review-id",
-        ReviewDecision::Denied,
+        ReviewDecision::denied(),
     )
     .await;
     let McpToolApprovalDecision::Decline {

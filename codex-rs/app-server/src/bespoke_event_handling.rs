@@ -1870,7 +1870,7 @@ fn map_file_change_approval_decision(decision: FileChangeApprovalDecision) -> Re
     match decision {
         FileChangeApprovalDecision::Accept => ReviewDecision::Approved,
         FileChangeApprovalDecision::AcceptForSession => ReviewDecision::ApprovedForSession,
-        FileChangeApprovalDecision::Decline => ReviewDecision::Denied,
+        FileChangeApprovalDecision::Decline => ReviewDecision::denied(),
         FileChangeApprovalDecision::Cancel => ReviewDecision::Abort,
     }
 }
@@ -1902,11 +1902,11 @@ async fn on_file_change_request_approval_response(
         Ok(Err(err)) if is_turn_transition_server_request_error(&err) => return,
         Ok(Err(err)) => {
             error!("request failed with client error: {err:?}");
-            ReviewDecision::Denied
+            ReviewDecision::denied()
         }
         Err(err) => {
             error!("request failed: {err:?}");
-            ReviewDecision::Denied
+            ReviewDecision::denied()
         }
     };
 
@@ -1978,7 +1978,7 @@ async fn on_command_execution_request_approval_response(
                     )
                 }
                 CommandExecutionApprovalDecision::Decline => (
-                    ReviewDecision::Denied,
+                    ReviewDecision::denied(),
                     Some(CommandExecutionStatus::Declined),
                 ),
                 CommandExecutionApprovalDecision::Cancel => (
@@ -1991,11 +1991,17 @@ async fn on_command_execution_request_approval_response(
         Ok(Err(err)) if is_turn_transition_server_request_error(&err) => return,
         Ok(Err(err)) => {
             error!("request failed with client error: {err:?}");
-            (ReviewDecision::Denied, Some(CommandExecutionStatus::Failed))
+            (
+                ReviewDecision::denied(),
+                Some(CommandExecutionStatus::Failed),
+            )
         }
         Err(err) => {
             error!("request failed: {err:?}");
-            (ReviewDecision::Denied, Some(CommandExecutionStatus::Failed))
+            (
+                ReviewDecision::denied(),
+                Some(CommandExecutionStatus::Failed),
+            )
         }
     };
 

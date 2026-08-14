@@ -2337,7 +2337,7 @@ async fn guardian_review_surfaces_responses_api_errors_in_rejection_reason() -> 
     )
     .await;
 
-    assert_eq!(decision, ReviewDecision::Denied);
+    assert_eq!(decision, ReviewDecision::denied());
     assert_eq!(request_log.requests().len(), 1);
 
     let mut warnings = Vec::new();
@@ -2470,7 +2470,7 @@ async fn guardian_review_does_not_retry_missing_assessment_payload() -> anyhow::
     )
     .await;
 
-    assert_eq!(decision, ReviewDecision::Denied);
+    assert_eq!(decision, ReviewDecision::denied());
     assert_eq!(request_log.requests().len(), 1);
     Ok(())
 }
@@ -2574,7 +2574,7 @@ async fn guardian_review_exhausts_three_failures_with_one_terminal_event() -> an
     )
     .await;
 
-    assert_eq!(decision, ReviewDecision::Denied);
+    assert_eq!(decision, ReviewDecision::denied());
     assert_eq!(request_log.requests().len(), 3);
     let mut statuses = Vec::new();
     while let Ok(event) = rx.try_recv() {
@@ -2625,7 +2625,7 @@ async fn guardian_review_does_not_retry_valid_denial() -> anyhow::Result<()> {
     )
     .await;
 
-    assert_eq!(decision, ReviewDecision::Denied);
+    assert_eq!(decision, ReviewDecision::denied());
     assert_eq!(request_log.requests().len(), 1);
     Ok(())
 }

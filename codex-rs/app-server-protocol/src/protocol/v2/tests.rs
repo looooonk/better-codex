@@ -73,6 +73,16 @@ fn test_absolute_path() -> AbsolutePathBuf {
 }
 
 #[test]
+fn command_approval_conversion_fails_closed_for_mcp_policy_amendments() {
+    assert_eq!(
+        CommandExecutionApprovalDecision::from(
+            codex_protocol::protocol::ReviewDecision::ApprovedMcpPolicyAmendment,
+        ),
+        CommandExecutionApprovalDecision::Decline
+    );
+}
+
+#[test]
 fn thread_sources_round_trip_as_scalar_labels() {
     for (source, label) in [
         (ThreadSource::User, "user"),

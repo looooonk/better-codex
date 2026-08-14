@@ -897,7 +897,7 @@ async fn mcp_elicitation_response_from_guardian_decision(
     decision: ReviewDecision,
 ) -> ElicitationResponse {
     let denial_message = match decision {
-        ReviewDecision::Denied => {
+        ReviewDecision::Denied { .. } => {
             Some(crate::guardian::guardian_rejection_message(session, review_id).await)
         }
         _ => None,
@@ -912,13 +912,14 @@ fn mcp_elicitation_response_from_guardian_decision_parts(
     match decision {
         ReviewDecision::Approved
         | ReviewDecision::ApprovedForSession
+        | ReviewDecision::ApprovedMcpPolicyAmendment
         | ReviewDecision::ApprovedExecpolicyAmendment { .. }
         | ReviewDecision::NetworkPolicyAmendment { .. } => ElicitationResponse {
             action: ElicitationAction::Accept,
             content: Some(serde_json::json!({})),
             meta: Some(mcp_elicitation_auto_meta()),
         },
-        ReviewDecision::Denied => mcp_elicitation_decline_with_message(
+        ReviewDecision::Denied { .. } => mcp_elicitation_decline_with_message(
             denial_message.unwrap_or_else(|| "Guardian denied this request.".to_string()),
         ),
         ReviewDecision::TimedOut => {

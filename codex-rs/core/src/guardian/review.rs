@@ -591,7 +591,7 @@ async fn run_guardian_review(
     if approved {
         ReviewDecision::Approved
     } else {
-        ReviewDecision::Denied
+        ReviewDecision::denied()
     }
 }
 
@@ -653,7 +653,7 @@ pub(crate) fn spawn_approval_request_review(
             .enable_all()
             .build()
         else {
-            let _ = tx.send(ReviewDecision::Denied);
+            let _ = tx.send(ReviewDecision::denied());
             return;
         };
         let decision = runtime.block_on(review_approval_request_with_cancel(

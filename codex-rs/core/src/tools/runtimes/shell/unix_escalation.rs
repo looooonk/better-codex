@@ -482,7 +482,7 @@ impl CoreShellActionProvider {
                     }
                     Some(PermissionRequestDecision::Deny { message }) => {
                         return PromptDecision {
-                            decision: ReviewDecision::Denied,
+                            decision: ReviewDecision::denied(),
                             guardian_review_id: None,
                             rejection_message: Some(message),
                         };
@@ -588,7 +588,7 @@ impl CoreShellActionProvider {
                                 EscalationDecision::deny(Some("User denied execution".to_string()))
                             }
                         },
-                        ReviewDecision::Denied => {
+                        ReviewDecision::Denied { .. } => {
                             let message = if let Some(message) =
                                 prompt_decision.rejection_message.clone()
                             {
@@ -605,6 +605,9 @@ impl CoreShellActionProvider {
                         ReviewDecision::TimedOut => {
                             EscalationDecision::deny(Some(guardian_timeout_message()))
                         }
+                        ReviewDecision::ApprovedMcpPolicyAmendment => EscalationDecision::deny(
+                            Some("Invalid MCP policy amendment for shell approval".to_string()),
+                        ),
                         ReviewDecision::Abort => {
                             EscalationDecision::deny(Some("User cancelled execution".to_string()))
                         }
