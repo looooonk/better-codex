@@ -7,6 +7,7 @@ use codex_file_system::FileSystemReadStream;
 use codex_file_system::FileSystemSandboxContext;
 use codex_file_system::ReadDirectoryEntry;
 use codex_file_system::RemoveOptions;
+use codex_protocol::config_types::ForcedLoginMethod;
 use codex_utils_path_uri::PathUri;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
@@ -102,6 +103,77 @@ impl ExecutorFileSystem for TestFileSystem {
     ) -> ExecutorFileSystemFuture<'a, ()> {
         Box::pin(async move { unimplemented!("test filesystem only supports reads") })
     }
+}
+
+#[tokio::test]
+async fn ignore_login_requirements_only_strips_managed_auth_policy() {
+    let tmp = tempdir().expect("tempdir");
+    std::fs::write(
+        tmp.path().join("requirements.toml"),
+        concat!(
+            "allowed_login_methods = [\"api\"]\n",
+            "allowed_chatgpt_workspaces = [\"workspace-a\"]\n",
+            "sandbox_mode = \"read-only\"\n",
+        ),
+    )
+    .expect("write requirements");
+    let loader_overrides = LoaderOverrides::with_managed_config_path_for_tests(
+        tmp.path().join("managed_config.toml"),
+    );
+
+    let local_layers = load_config_layers_state(
+        &TestFileSystem,
+        tmp.path(),
+        /*cwd*/ None,
+        &[],
+        loader_overrides.clone(),
+        &crate::NoopThreadConfigLoader,
+    )
+    .await
+    .expect("load local requirements");
+    assert_eq!(
+        local_layers
+            .requirements()
+            .managed_auth_policy()
+            .allowed_login_methods(),
+        vec![ForcedLoginMethod::Api]
+    );
+    assert_eq!(
+        local_layers
+            .requirements()
+            .managed_auth_policy()
+            .allowed_chatgpt_workspaces(),
+        Some(["workspace-a".to_string()].as_slice())
+    );
+
+    let remote_layers = load_config_layers_state(
+        &TestFileSystem,
+        tmp.path(),
+        /*cwd*/ None,
+        &[],
+        LoaderOverrides {
+            ignore_login_requirements: true,
+            ..loader_overrides
+        },
+        &crate::NoopThreadConfigLoader,
+    )
+    .await
+    .expect("load requirements for remote workspace");
+    assert_eq!(
+        remote_layers
+            .requirements()
+            .managed_auth_policy()
+            .allowed_login_methods(),
+        vec![ForcedLoginMethod::Api, ForcedLoginMethod::Chatgpt]
+    );
+    assert_eq!(
+        remote_layers
+            .requirements()
+            .managed_auth_policy()
+            .allowed_chatgpt_workspaces(),
+        None
+    );
+    assert!(remote_layers.requirements().sandbox_mode.is_some());
 }
 
 #[tokio::test]

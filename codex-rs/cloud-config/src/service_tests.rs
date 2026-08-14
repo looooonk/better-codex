@@ -15,12 +15,18 @@ use codex_config::CloudConfigFragment;
 use codex_config::CloudConfigTomlBundle;
 use codex_config::CloudRequirementsFragment;
 use codex_config::CloudRequirementsTomlBundle;
+use codex_config::ManagedAuthPolicy;
 use codex_config::types::AuthCredentialsStoreMode;
+use codex_login::AuthConfig;
+use codex_login::AuthDotJson;
 use codex_login::AuthKeyringBackendKind;
 use codex_login::auth::AgentIdentityAuth;
 use codex_login::auth::AgentIdentityAuthRecord;
+use codex_login::auth::AgentIdentityStorage;
 use codex_login::auth::ExternalAuth;
 use codex_login::auth::ExternalAuthRefreshContext;
+use codex_protocol::auth::AuthMode;
+use codex_protocol::config_types::ForcedLoginMethod;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::collections::VecDeque;
@@ -390,6 +396,80 @@ async fn get_bundle_skips_non_chatgpt_auth() {
         auth_manager_with_api_key().await,
         fetcher.clone(),
         codex_home.path().to_path_buf(),
+        CLOUD_CONFIG_BUNDLE_TIMEOUT,
+    );
+
+    assert_eq!(service.load_startup_bundle().await, Ok(None));
+    assert_eq!(fetcher.request_count.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn api_only_policy_blocks_stored_chatgpt_and_agent_identity_before_cloud_request() {
+    let chatgpt_home = tempdir().expect("tempdir");
+    write_auth_json(
+        chatgpt_home.path(),
+        chatgpt_auth_json(
+            "business",
+            Some("user-12345"),
+            Some("account-12345"),
+            "test-access-token",
+            "test-refresh-token",
+        ),
+    )
+    .expect("write ChatGPT auth");
+    assert_disallowed_stored_auth_skips_cloud(chatgpt_home.path()).await;
+
+    let agent_identity_home = tempdir().expect("tempdir");
+    let key_material =
+        codex_agent_identity::generate_agent_key_material().expect("generate agent key material");
+    codex_login::save_auth(
+        agent_identity_home.path(),
+        &AuthDotJson {
+            auth_mode: Some(AuthMode::AgentIdentity),
+            openai_api_key: None,
+            tokens: None,
+            last_refresh: None,
+            agent_identity: Some(AgentIdentityStorage::Record(AgentIdentityAuthRecord {
+                agent_runtime_id: "agent-runtime-123".to_string(),
+                agent_private_key: key_material.private_key_pkcs8_base64,
+                account_id: "account-12345".to_string(),
+                chatgpt_user_id: "user-12345".to_string(),
+                email: Some("user@example.com".to_string()),
+                plan_type: PlanType::Business,
+                chatgpt_account_is_fedramp: false,
+                task_id: Some("task-123".to_string()),
+            })),
+            personal_access_token: None,
+            bedrock_api_key: None,
+        },
+        AuthCredentialsStoreMode::File,
+        AuthKeyringBackendKind::Direct,
+    )
+    .expect("write Agent Identity auth");
+    assert_disallowed_stored_auth_skips_cloud(agent_identity_home.path()).await;
+}
+
+async fn assert_disallowed_stored_auth_skips_cloud(codex_home: &Path) {
+    let auth_manager = AuthManager::shared_from_auth_config(
+        AuthConfig {
+            codex_home: codex_home.to_path_buf(),
+            auth_credentials_store_mode: AuthCredentialsStoreMode::File,
+            keyring_backend_kind: AuthKeyringBackendKind::Direct,
+            forced_login_method: None,
+            chatgpt_base_url: None,
+            forced_chatgpt_workspace_id: None,
+            managed_auth_policy: ManagedAuthPolicy::default()
+                .restrict_login_methods_to([ForcedLoginMethod::Api]),
+            auth_route_config: None,
+        },
+        /*enable_codex_api_key_env*/ false,
+    )
+    .await;
+    let fetcher = Arc::new(StaticBundleClient::new(test_bundle()));
+    let service = CloudConfigBundleService::new(
+        auth_manager,
+        fetcher.clone(),
+        codex_home.to_path_buf(),
         CLOUD_CONFIG_BUNDLE_TIMEOUT,
     );
 
