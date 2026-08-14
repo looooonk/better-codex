@@ -190,13 +190,18 @@ fn redact_argv(argv: &mut [String], depth: usize) -> bool {
         }
         // Shell wrappers commonly carry a complete command in one argument. Only recurse for
         // strings that already look sensitive, and cap the depth so malformed nesting cannot loop.
-        if depth < MAX_NESTED_COMMAND_DEPTH
-            && potentially_contains_sensitive_material(argument)
+        if potentially_contains_sensitive_material(argument)
             && argument.bytes().any(|byte| byte.is_ascii_whitespace())
-            && redact_command_text_at_depth(argument, depth.saturating_add(1))
         {
-            changed = true;
-            continue;
+            if depth >= MAX_NESTED_COMMAND_DEPTH {
+                *argument = REDACTION.to_string();
+                changed = true;
+                continue;
+            }
+            if redact_command_text_at_depth(argument, depth.saturating_add(1)) {
+                changed = true;
+                continue;
+            }
         }
         let original = std::mem::take(argument);
         let redacted = redact_plain_text(original.clone());

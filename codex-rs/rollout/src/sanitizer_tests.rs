@@ -117,6 +117,23 @@ fn redacts_credentials_inside_shell_wrapped_commands() {
 }
 
 #[test]
+fn redacts_sensitive_commands_nested_beyond_the_depth_limit() {
+    let mut value = json!({
+        "command": [
+            "/bin/sh",
+            "-lc",
+            r#"/bin/sh -lc '/bin/sh -lc "curl -u deeply:nested https://example.test"'"#,
+        ],
+    });
+
+    redact_persisted_json(&mut value);
+
+    let serialized = serde_json::to_string(&value).expect("redacted JSON should serialize");
+    assert!(!serialized.contains("deeply:nested"));
+    assert!(serialized.contains(REDACTION));
+}
+
+#[test]
 fn redacts_non_bearer_authorization_headers_in_arbitrary_text() {
     let mut value = json!({
         "output": "request failed\nAuthorization: Basic short-secret\nretained detail",
