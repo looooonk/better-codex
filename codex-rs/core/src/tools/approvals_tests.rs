@@ -20,3 +20,25 @@ fn guardian_cwd_rejects_foreign_remote_path() {
 
     assert!(guardian_cwd(codex_exec_server::REMOTE_ENVIRONMENT_ID, cwd).is_err());
 }
+
+#[test]
+fn timeout_rejection_is_specific_to_the_reviewer() {
+    let rejection = |source| {
+        let ToolError::Rejected(message) =
+            normalize_decision(ReviewDecision::TimedOut, source).expect_err("timeout should reject")
+        else {
+            panic!("timeout should produce a rejection")
+        };
+        message
+    };
+    assert_eq!(
+        (
+            rejection(ApprovalResolutionSource::Guardian),
+            rejection(ApprovalResolutionSource::User),
+        ),
+        (
+            guardian_timeout_message(),
+            "approval request timed out".to_string(),
+        )
+    );
+}

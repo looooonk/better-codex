@@ -215,7 +215,6 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
             &req,
             &tool_ctx,
             &turn,
-            turn.approval_policy.value(),
         )
         .await
         .map(|result| result.output);

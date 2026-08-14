@@ -77,8 +77,14 @@ async fn approval_action_preserves_patch_path_uris() {
             id: "call-1".to_string(),
             environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
             cwd: expected_cwd,
-            files: vec![path],
+            files: vec![path.clone()],
             patch: expected_patch,
+            changes: Arc::new(HashMap::new()),
+            permissions_preapproved: false,
+            cache_keys: vec![ApprovalCacheKey::ApplyPatch(ApplyPatchApprovalKey {
+                environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
+                path,
+            })],
         }
     );
 }
