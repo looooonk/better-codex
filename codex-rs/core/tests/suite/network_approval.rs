@@ -9,6 +9,8 @@ use codex_exec_server::RemoveOptions;
 use codex_features::Feature;
 use codex_protocol::approvals::NetworkApprovalContext;
 use codex_protocol::approvals::NetworkApprovalProtocol;
+use codex_protocol::approvals::NetworkPolicyAmendment;
+use codex_protocol::approvals::NetworkPolicyRuleAction;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
@@ -325,6 +327,85 @@ async fn approved_network_host_for_one_environment_still_prompts_in_another() ->
             /*sandbox*/ None,
         )
         .await?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "requires the trusted Linux proxy bridge"
+)]
+async fn failed_network_policy_amendment_denies_request_and_does_not_approve_host() -> Result<()> {
+    skip_if_target_windows!(Ok(()), "uses the POSIX/Python network fixture");
+    skip_if_host_windows!(Ok(()));
+    skip_if_no_network!(Ok(()));
+    skip_if_sandbox!(Ok(()));
+
+    let server = start_mock_server().await;
+    let test = managed_network_unified_exec_test(&server).await?;
+    let environments = vec![local(test.config.cwd.clone())];
+    let first_responses = mount_exec_network_turn(
+        &server,
+        "resp-network-failed-amendment-1",
+        "network-failed-amendment-1",
+        network_fetch_args(LOCAL_ENVIRONMENT_ID),
+    )
+    .await?;
+    submit_managed_network_turn(
+        &test,
+        "reject an invalid network policy amendment",
+        environments.clone(),
+        ApprovalsReviewer::User,
+        AskForApproval::OnRequest,
+    )
+    .await?;
+    let approval = expect_network_approval(&test, LOCAL_ENVIRONMENT_ID).await?;
+    test.codex
+        .submit(Op::ExecApproval {
+            id: approval.effective_approval_id(),
+            turn_id: Some(approval.turn_id),
+            decision: ReviewDecision::NetworkPolicyAmendment {
+                network_policy_amendment: NetworkPolicyAmendment {
+                    host: "not-the-approved-host.invalid".to_string(),
+                    action: NetworkPolicyRuleAction::Allow,
+                },
+            },
+        })
+        .await?;
+    wait_for_turn_complete(&test).await;
+
+    let denied_output = first_responses
+        .requests()
+        .iter()
+        .find_map(|request| request.function_call_output_text("network-failed-amendment-1"))
+        .context("expected the failed policy amendment to reject the network request")?;
+    assert!(denied_output.contains("blocked by policy"));
+
+    mount_exec_network_turn(
+        &server,
+        "resp-network-failed-amendment-2",
+        "network-failed-amendment-2",
+        network_fetch_args(LOCAL_ENVIRONMENT_ID),
+    )
+    .await?;
+    submit_managed_network_turn(
+        &test,
+        "a failed policy amendment must not approve the host for the session",
+        environments,
+        ApprovalsReviewer::User,
+        AskForApproval::OnRequest,
+    )
+    .await?;
+    let approval = expect_network_approval(&test, LOCAL_ENVIRONMENT_ID).await?;
+    test.codex
+        .submit(Op::ExecApproval {
+            id: approval.effective_approval_id(),
+            turn_id: Some(approval.turn_id),
+            decision: ReviewDecision::Denied,
+        })
+        .await?;
+    wait_for_turn_complete(&test).await;
 
     Ok(())
 }

@@ -315,3 +315,4 @@ lettered commits.
 | 0 | `678157aca..86b1123ff` | None; documentation only | ancestry, commit count, overlap audit | Complete |
 | 1B | `bab7c2dc` (#36908) | More complete bearer redaction; no wire/config change | `just test -p codex-secrets` (8 passed), `just fmt` | Complete |
 | 1I | `17801b42` (#36960), `683716ce` (#38390) | Automatic trust now follows effective managed permissions; existing explicit trust remains compatible | two focused `codex-app-server` v2 tests, `just fmt` | Complete |
+| 1A | `3834c47c` (#36037), `63fe5a6b` (#35267), `020f6c96` (#38256) | A failed allow amendment denies/cancels the owning call and cannot approve the host for the session | `just test -p codex-core network_approval` (25 passed; Linux regression compiled/ignored on macOS), `just fmt` | Complete |
