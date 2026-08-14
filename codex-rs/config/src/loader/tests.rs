@@ -113,7 +113,7 @@ async fn ignore_login_requirements_only_strips_managed_auth_policy() {
         concat!(
             "allowed_login_methods = [\"api\"]\n",
             "allowed_chatgpt_workspaces = [\"workspace-a\"]\n",
-            "sandbox_mode = \"read-only\"\n",
+            "allowed_approval_policies = [\"never\"]\n",
         ),
     )
     .expect("write requirements");
@@ -173,7 +173,13 @@ async fn ignore_login_requirements_only_strips_managed_auth_policy() {
             .allowed_chatgpt_workspaces(),
         None
     );
-    assert!(remote_layers.requirements().sandbox_mode.is_some());
+    assert!(
+        remote_layers
+            .requirements()
+            .approval_policy
+            .source
+            .is_some()
+    );
 }
 
 #[tokio::test]
