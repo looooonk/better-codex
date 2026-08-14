@@ -3071,6 +3071,8 @@ impl Config {
         // Ensure that every field of ConfigRequirements is applied to the final
         // Config.
         let ConfigRequirements {
+            allowed_login_methods: _,
+            allowed_chatgpt_workspaces: _,
             approval_policy: mut constrained_approval_policy,
             approvals_reviewer: mut constrained_approvals_reviewer,
             permission_profile: mut constrained_permission_profile,
