@@ -314,3 +314,4 @@ lettered commits.
 | --- | --- | --- | --- | --- |
 | 0 | `678157aca..86b1123ff` | None; documentation only | ancestry, commit count, overlap audit | Complete |
 | 1B | `bab7c2dc` (#36908) | More complete bearer redaction; no wire/config change | `just test -p codex-secrets` (8 passed), `just fmt` | Complete |
+| 1I | `17801b42` (#36960), `683716ce` (#38390) | Automatic trust now follows effective managed permissions; existing explicit trust remains compatible | two focused `codex-app-server` v2 tests, `just fmt` | Complete |
