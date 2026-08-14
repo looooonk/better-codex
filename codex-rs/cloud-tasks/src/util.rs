@@ -5,6 +5,7 @@ use reqwest::header::HeaderMap;
 
 use codex_core::config::Config;
 use codex_login::AuthManager;
+use std::sync::Arc;
 
 pub fn set_user_agent_suffix(suffix: &str) {
     if let Ok(mut guard) = codex_login::default_client::USER_AGENT_SUFFIX.lock() {
@@ -41,21 +42,19 @@ pub fn normalize_base_url(input: &str) -> String {
     base_url
 }
 
-pub async fn load_auth_manager(chatgpt_base_url: Option<String>) -> Option<AuthManager> {
+pub async fn load_auth_manager(chatgpt_base_url: Option<String>) -> Option<Arc<AuthManager>> {
     // TODO: pass in cli overrides once cloud tasks properly support them.
     let config = Config::load_with_cli_overrides(Vec::new()).await.ok()?;
-    Some(
-        AuthManager::new(
-            config.codex_home.to_path_buf(),
-            /*enable_codex_api_key_env*/ false,
-            config.cli_auth_credentials_store_mode,
-            config.forced_chatgpt_workspace_id.clone(),
-            chatgpt_base_url.or(Some(config.chatgpt_base_url.clone())),
-            config.auth_keyring_backend_kind(),
-            config.auth_route_config(),
-        )
-        .await,
-    )
+    Some(load_auth_manager_from_config(&config, chatgpt_base_url).await)
+}
+
+async fn load_auth_manager_from_config(
+    config: &Config,
+    chatgpt_base_url: Option<String>,
+) -> Arc<AuthManager> {
+    let mut auth_config = config.auth_config();
+    auth_config.chatgpt_base_url = chatgpt_base_url.or(Some(config.chatgpt_base_url.clone()));
+    AuthManager::shared_from_auth_config(auth_config, /*enable_codex_api_key_env*/ false).await
 }
 
 /// Build headers for ChatGPT-backed requests: `User-Agent`, optional `Authorization`,
@@ -118,3 +117,7 @@ pub fn format_relative_time(reference: DateTime<Utc>, ts: DateTime<Utc>) -> Stri
 pub fn format_relative_time_now(ts: DateTime<Utc>) -> String {
     format_relative_time(Utc::now(), ts)
 }
+
+#[cfg(test)]
+#[path = "util_tests.rs"]
+mod tests;

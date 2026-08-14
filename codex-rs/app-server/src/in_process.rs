@@ -381,6 +381,7 @@ pub async fn start(mut args: InProcessStartArgs) -> IoResult<InProcessClientHand
 }
 
 async fn start_uninitialized(args: InProcessStartArgs) -> IoResult<InProcessClientHandle> {
+    args.config.auth_config().validate()?;
     let channel_capacity = args.channel_capacity.max(1);
     let installation_id = resolve_installation_id(&args.config.codex_home).await?;
     let (client_tx, mut client_rx) = mpsc::channel::<InProcessClientMessage>(channel_capacity);
@@ -873,6 +874,65 @@ mod tests {
             .shutdown()
             .await
             .expect("in-process runtime should shutdown cleanly");
+    }
+
+    #[tokio::test]
+    async fn in_process_start_rejects_empty_managed_auth_policy() {
+        let codex_home = TempDir::new().expect("temp dir");
+        std::fs::write(
+            codex_home.path().join("requirements.toml"),
+            "allowed_login_methods = []\n",
+        )
+        .expect("write requirements");
+        let loader_overrides = LoaderOverrides::with_managed_config_path_for_tests(
+            codex_home.path().join("managed_config.toml"),
+        );
+        let config = Arc::new(
+            ConfigBuilder::default()
+                .codex_home(codex_home.path().to_path_buf())
+                .loader_overrides(loader_overrides.clone())
+                .build()
+                .await
+                .expect("load managed requirements"),
+        );
+        let args = InProcessStartArgs {
+            arg0_paths: Arg0DispatchPaths::default(),
+            config,
+            cli_overrides: Vec::new(),
+            loader_overrides,
+            strict_config: false,
+            cloud_config_bundle: CloudConfigBundleLoader::default(),
+            thread_config_loader: Arc::new(codex_config::NoopThreadConfigLoader),
+            feedback: CodexFeedback::new(),
+            log_db: None,
+            state_db: None,
+            environment_manager: Arc::new(EnvironmentManager::default_for_tests()),
+            config_warnings: Vec::new(),
+            session_source: SessionSource::Cli,
+            enable_codex_api_key_env: false,
+            initialize: InitializeParams {
+                client_info: ClientInfo {
+                    name: "codex-in-process-test".to_string(),
+                    title: None,
+                    version: "0.0.0".to_string(),
+                },
+                capabilities: None,
+            },
+            channel_capacity: DEFAULT_IN_PROCESS_CHANNEL_CAPACITY,
+        };
+
+        let err = match start(args).await {
+            Ok(client) => {
+                let _ = client.shutdown().await;
+                panic!("empty managed auth policy should fail startup")
+            }
+            Err(err) => err,
+        };
+        assert_eq!(err.kind(), ErrorKind::PermissionDenied);
+        assert_eq!(
+            err.to_string(),
+            "authentication requirements do not permit any usable login method"
+        );
     }
 
     #[test]

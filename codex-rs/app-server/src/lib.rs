@@ -537,6 +537,7 @@ pub async fn run_main_with_transport_options(
             })?
         }
     };
+    config.auth_config().validate()?;
 
     let otel = codex_core::otel_init::build_provider(
         &config,
