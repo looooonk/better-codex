@@ -29,12 +29,15 @@ impl AuthRequirementsMergeState {
         );
         merge_allowlist(
             &mut self.allowed_chatgpt_workspaces,
-            incoming.allowed_chatgpt_workspaces.as_ref().map(|workspaces| {
-                unique_values(workspaces.iter().filter_map(|workspace| {
-                    let workspace = workspace.trim();
-                    (!workspace.is_empty()).then(|| workspace.to_string())
-                }))
-            }),
+            incoming
+                .allowed_chatgpt_workspaces
+                .as_ref()
+                .map(|workspaces| {
+                    unique_values(workspaces.iter().filter_map(|workspace| {
+                        let workspace = workspace.trim();
+                        (!workspace.is_empty()).then(|| workspace.to_string())
+                    }))
+                }),
             source,
         );
     }

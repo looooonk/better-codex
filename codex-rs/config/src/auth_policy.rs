@@ -1,7 +1,6 @@
 use codex_protocol::config_types::ForcedLoginMethod;
 
-const LOGIN_METHODS: [ForcedLoginMethod; 2] =
-    [ForcedLoginMethod::Api, ForcedLoginMethod::Chatgpt];
+const LOGIN_METHODS: [ForcedLoginMethod; 2] = [ForcedLoginMethod::Api, ForcedLoginMethod::Chatgpt];
 
 /// Authentication restrictions supplied by locally managed requirements.
 ///
@@ -22,8 +21,7 @@ impl ManagedAuthPolicy {
         mut self,
         allowed: impl IntoIterator<Item = ForcedLoginMethod>,
     ) -> Self {
-        self.login_methods
-            .restrict_to(unique_values(allowed.into_iter()));
+        self.login_methods.restrict_to(unique_values(allowed));
         self
     }
 
@@ -35,14 +33,11 @@ impl ManagedAuthPolicy {
         mut self,
         allowed: impl IntoIterator<Item = String>,
     ) -> Self {
-        let allowed = allowed
-            .into_iter()
-            .filter_map(|workspace| {
-                let workspace = workspace.trim();
-                (!workspace.is_empty()).then(|| workspace.to_string())
-            });
-        self.chatgpt_workspaces
-            .restrict_to(unique_values(allowed));
+        let allowed = allowed.into_iter().filter_map(|workspace| {
+            let workspace = workspace.trim();
+            (!workspace.is_empty()).then(|| workspace.to_string())
+        });
+        self.chatgpt_workspaces.restrict_to(unique_values(allowed));
         self
     }
 
@@ -50,8 +45,7 @@ impl ManagedAuthPolicy {
     #[must_use]
     pub fn intersect(mut self, other: &Self) -> Self {
         self.login_methods.intersect(&other.login_methods);
-        self.chatgpt_workspaces
-            .intersect(&other.chatgpt_workspaces);
+        self.chatgpt_workspaces.intersect(&other.chatgpt_workspaces);
         self
     }
 
@@ -117,7 +111,6 @@ impl<T: Clone + PartialEq> Allowlist<T> {
             Self::Restricted(allowed) => Some(allowed),
         }
     }
-
 }
 
 fn unique_values<T: PartialEq>(values: impl IntoIterator<Item = T>) -> Vec<T> {

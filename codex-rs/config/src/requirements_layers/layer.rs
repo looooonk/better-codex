@@ -108,8 +108,7 @@ impl ComposableRequirementsLayer {
 
 #[derive(Clone, Debug)]
 pub(super) struct DomainMergedRequirementsFields {
-    pub(super) allowed_login_methods:
-        Option<Vec<codex_protocol::config_types::ForcedLoginMethod>>,
+    pub(super) allowed_login_methods: Option<Vec<codex_protocol::config_types::ForcedLoginMethod>>,
     pub(super) allowed_chatgpt_workspaces: Option<Vec<String>>,
     pub(super) rules: Option<RequirementsExecPolicyToml>,
     pub(super) hooks: Option<ManagedHooksRequirementsToml>,

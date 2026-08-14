@@ -24,9 +24,9 @@ use std::io;
 use thiserror::Error;
 use toml::Value as TomlValue;
 
+use super::auth::AuthRequirementsMergeState;
 use super::hooks::HookDirectoryField;
 use super::hooks::HookMergeState;
-use super::auth::AuthRequirementsMergeState;
 use super::layer::ComposableRequirementsLayer;
 use super::layer::RequirementsLayerEntry;
 use super::permissions::DenyReadMergeState;

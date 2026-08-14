@@ -4,9 +4,9 @@ use super::RequirementsCompositionError;
 use super::compose_requirements_for_hostname;
 use super::compose_requirements_for_hostname_and_hook_directory;
 use super::compose_requirements_with_hostname_resolver;
+use crate::ConfigRequirements;
 use crate::ConfigRequirementsToml;
 use crate::ConfigRequirementsWithSources;
-use crate::ConfigRequirements;
 use crate::RequirementSource;
 use crate::Sourced;
 use codex_protocol::config_types::ForcedLoginMethod;
@@ -189,9 +189,7 @@ allowed_chatgpt_workspaces = ["workspace-a"]
     let requirements = ConfigRequirements::try_from(composed).expect("normalize requirements");
 
     assert_eq!(
-        requirements
-            .managed_auth_policy()
-            .allowed_login_methods(),
+        requirements.managed_auth_policy().allowed_login_methods(),
         Vec::new()
     );
 }

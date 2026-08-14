@@ -24,10 +24,7 @@ fn repeated_restrictions_only_narrow_the_policy() {
             "workspace-b".to_string(),
             "workspace-a".to_string(),
         ])
-        .restrict_chatgpt_workspaces_to([
-            "workspace-a".to_string(),
-            "workspace-c".to_string(),
-        ]);
+        .restrict_chatgpt_workspaces_to(["workspace-a".to_string(), "workspace-c".to_string()]);
 
     assert_eq!(
         policy.allowed_login_methods(),
@@ -46,8 +43,8 @@ fn empty_workspace_intersection_disables_chatgpt_login() {
     let local = ManagedAuthPolicy::default()
         .restrict_login_methods_to([ForcedLoginMethod::Chatgpt])
         .restrict_chatgpt_workspaces_to(["workspace-a".to_string()]);
-    let other = ManagedAuthPolicy::default()
-        .restrict_chatgpt_workspaces_to(["workspace-b".to_string()]);
+    let other =
+        ManagedAuthPolicy::default().restrict_chatgpt_workspaces_to(["workspace-b".to_string()]);
 
     let policy = local.intersect(&other);
 

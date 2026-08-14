@@ -2000,10 +2000,7 @@ mod tests {
         assert_eq!(
             target,
             ConfigRequirementsWithSources {
-                allowed_login_methods: Some(Sourced::new(
-                    allowed_login_methods,
-                    source.clone(),
-                )),
+                allowed_login_methods: Some(Sourced::new(allowed_login_methods, source.clone(),)),
                 allowed_chatgpt_workspaces: Some(Sourced::new(
                     allowed_chatgpt_workspaces,
                     source.clone(),
