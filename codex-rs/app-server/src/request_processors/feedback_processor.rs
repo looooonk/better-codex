@@ -3,6 +3,8 @@ use super::*;
 use codex_feedback::WINDOWS_SANDBOX_LOG_ATTACHMENT_FILENAME;
 
 const MAX_FEEDBACK_TREE_THREADS: usize = 8;
+// Match the existing feedback ring-buffer budget instead of buffering an unbounded rollout.
+const MAX_REDACTED_ROLLOUT_ATTACHMENT_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone)]
 pub(crate) struct FeedbackRequestProcessor {
@@ -161,6 +163,7 @@ impl FeedbackRequestProcessor {
             (Vec::new(), None, None)
         };
 
+        let mut rollout_attachments = Vec::new();
         let mut attachment_paths = Vec::new();
         let mut seen_attachment_paths = HashSet::new();
         if include_logs {
@@ -171,11 +174,11 @@ impl FeedbackRequestProcessor {
                 else {
                     continue;
                 };
-                if seen_attachment_paths.insert(rollout_path.clone()) {
-                    attachment_paths.push(FeedbackAttachmentPath {
-                        path: rollout_path,
-                        attachment_filename_override: None,
-                    });
+                if seen_attachment_paths.insert(rollout_path.clone())
+                    && let Some(attachment) =
+                        redacted_rollout_attachment(&rollout_path, /*filename_override*/ None).await
+                {
+                    rollout_attachments.push(attachment);
                 }
             }
             if let Some(conversation_id) = conversation_id
@@ -183,13 +186,13 @@ impl FeedbackRequestProcessor {
                 && let Some(guardian_rollout_path) =
                     conversation.guardian_trunk_rollout_path().await
                 && seen_attachment_paths.insert(guardian_rollout_path.clone())
+                && let Some(attachment) = redacted_rollout_attachment(
+                    &guardian_rollout_path,
+                    Some(auto_review_rollout_filename(conversation_id)),
+                )
+                .await
             {
-                attachment_paths.push(FeedbackAttachmentPath {
-                    path: guardian_rollout_path,
-                    attachment_filename_override: Some(auto_review_rollout_filename(
-                        conversation_id,
-                    )),
-                });
+                rollout_attachments.push(attachment);
             }
             if let Some(sandbox_log_attachment) =
                 windows_sandbox_log_attachment(&self.config.codex_home)
@@ -219,6 +222,7 @@ impl FeedbackRequestProcessor {
                 upload_tags.entry(key).or_insert(value);
             }
         }
+        extra_attachments.extend(rollout_attachments);
 
         let session_source = self.thread_manager.session_source();
 
@@ -272,6 +276,78 @@ impl FeedbackRequestProcessor {
     }
 }
 
+async fn redacted_rollout_attachment(
+    path: &Path,
+    filename_override: Option<String>,
+) -> Option<codex_feedback::FeedbackAttachment> {
+    let mut reader = match codex_rollout::open_rollout_line_reader(path).await {
+        Ok(reader) => reader,
+        Err(err) => {
+            warn!(path = %path.display(), %err, "failed to open rollout feedback attachment; skipping");
+            return None;
+        }
+    };
+    let mut buffer = Vec::new();
+    let mut line_number = 0usize;
+    loop {
+        let line = match reader.next_line().await {
+            Ok(Some(line)) => line,
+            Ok(None) => break,
+            Err(err) => {
+                warn!(path = %path.display(), %err, "failed to read rollout feedback attachment; skipping");
+                return None;
+            }
+        };
+        line_number = line_number.saturating_add(1);
+        if line.trim().is_empty() {
+            continue;
+        }
+        if line.len().saturating_add(1)
+            > MAX_REDACTED_ROLLOUT_ATTACHMENT_BYTES.saturating_sub(buffer.len())
+        {
+            warn!(path = %path.display(), max_bytes = MAX_REDACTED_ROLLOUT_ATTACHMENT_BYTES, "rollout feedback attachment exceeds byte cap; skipping");
+            return None;
+        }
+        let mut value = match serde_json::from_str(&line) {
+            Ok(value) => value,
+            Err(err) => {
+                warn!(path = %path.display(), line_number, %err, "malformed rollout feedback attachment; skipping");
+                return None;
+            }
+        };
+        codex_rollout::redact_persisted_json(&mut value);
+        let mut redacted_line = match serde_json::to_vec(&value) {
+            Ok(line) => line,
+            Err(err) => {
+                warn!(path = %path.display(), line_number, %err, "failed to serialize rollout feedback attachment; skipping");
+                return None;
+            }
+        };
+        redacted_line.push(b'\n');
+        let Some(new_len) = buffer.len().checked_add(redacted_line.len()) else {
+            warn!(path = %path.display(), max_bytes = MAX_REDACTED_ROLLOUT_ATTACHMENT_BYTES, "rollout feedback attachment size overflow; skipping");
+            return None;
+        };
+        if new_len > MAX_REDACTED_ROLLOUT_ATTACHMENT_BYTES {
+            warn!(path = %path.display(), max_bytes = MAX_REDACTED_ROLLOUT_ATTACHMENT_BYTES, "rollout feedback attachment exceeds byte cap; skipping");
+            return None;
+        }
+        buffer.extend_from_slice(&redacted_line);
+    }
+
+    let filename = filename_override.unwrap_or_else(|| {
+        codex_rollout::plain_rollout_path(path)
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "rollout.jsonl".to_string())
+    });
+    Some(codex_feedback::FeedbackAttachment {
+        filename,
+        content_type: Some("text/plain".to_string()),
+        buffer,
+    })
+}
+
 fn auto_review_rollout_filename(thread_id: ThreadId) -> String {
     format!("auto-review-rollout-{thread_id}.jsonl")
 }
@@ -292,11 +368,71 @@ fn windows_sandbox_log_attachment(_codex_home: &Path) -> Option<FeedbackAttachme
     None
 }
 
-#[cfg(all(test, target_os = "windows"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
+    use std::io::Write;
 
+    const SECRET: &str = "example_synthetic_bearer_token_123456";
+
+    #[tokio::test]
+    async fn compressed_rollout_attachment_is_redacted_and_remains_valid_jsonl() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+        let path = temp.path().join("rollout.jsonl.zst");
+        let contents = format!(
+            "{{\"type\":\"response_item\",\"payload\":{{\"type\":\"function_call\",\"arguments\":\"{{\\\"authorization\\\":\\\"Bearer {SECRET}\\\"}}\",\"call_id\":\"call-1\"}}}}\n"
+        );
+        let file = std::fs::File::create(&path).expect("create compressed rollout");
+        let mut encoder = zstd::stream::write::Encoder::new(file, 1).expect("create encoder");
+        encoder
+            .write_all(contents.as_bytes())
+            .expect("compress rollout");
+        encoder.finish().expect("finish compressed rollout");
+
+        let attachment = redacted_rollout_attachment(&path, /*filename_override*/ None)
+            .await
+            .expect("create attachment");
+
+        let text = String::from_utf8(attachment.buffer).expect("attachment should be utf-8");
+        assert!(!text.contains(SECRET));
+        assert!(text.contains("[REDACTED_SECRET]"));
+        assert_eq!(attachment.filename, "rollout.jsonl");
+        for line in text.lines() {
+            serde_json::from_str::<serde_json::Value>(line).expect("line should remain valid JSON");
+        }
+    }
+
+    #[tokio::test]
+    async fn oversized_rollout_attachment_is_omitted() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+        let path = temp.path().join("rollout.jsonl");
+        let contents = serde_json::json!({
+            "message": "x".repeat(MAX_REDACTED_ROLLOUT_ATTACHMENT_BYTES),
+        });
+        std::fs::write(&path, format!("{contents}\n")).expect("write oversized rollout");
+
+        assert!(
+            redacted_rollout_attachment(&path, /*filename_override*/ None)
+                .await
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn malformed_rollout_attachment_is_omitted_without_raw_fallback() {
+        let temp = tempfile::tempdir().expect("create tempdir");
+        let path = temp.path().join("rollout.jsonl");
+        std::fs::write(&path, format!(r#"{{"token":"{SECRET}""#)).expect("write malformed rollout");
+
+        assert!(
+            redacted_rollout_attachment(&path, /*filename_override*/ None)
+                .await
+                .is_none()
+        );
+    }
+
+    #[cfg(target_os = "windows")]
     #[test]
     fn windows_sandbox_log_attachment_uses_current_log() {
         let codex_home = tempfile::tempdir().expect("create tempdir");

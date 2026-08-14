@@ -2071,6 +2071,7 @@ dependencies = [
  "url",
  "uuid",
  "wiremock",
+ "zstd 0.13.3",
 ]
 
 [[package]]
@@ -3901,6 +3902,7 @@ dependencies = [
  "anyhow",
  "codex-code-mode",
  "codex-protocol",
+ "codex-rollout",
  "http 1.4.0",
  "pretty_assertions",
  "serde",

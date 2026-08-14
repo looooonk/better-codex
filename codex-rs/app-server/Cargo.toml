@@ -140,3 +140,4 @@ tokio-tungstenite = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 url = { workspace = true }
 wiremock = { workspace = true }
+zstd = { workspace = true }
