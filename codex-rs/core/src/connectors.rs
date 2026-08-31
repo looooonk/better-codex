@@ -546,6 +546,20 @@ pub(crate) fn mcp_approvals_reviewer(
     server_name: &str,
     connector_id: Option<&str>,
 ) -> ApprovalsReviewer {
+    mcp_approvals_reviewer_with_default(
+        config,
+        server_name,
+        connector_id,
+        config.approvals_reviewer,
+    )
+}
+
+pub(crate) fn mcp_approvals_reviewer_with_default(
+    config: &Config,
+    server_name: &str,
+    connector_id: Option<&str>,
+    default_reviewer: ApprovalsReviewer,
+) -> ApprovalsReviewer {
     let app_reviewer = if server_name == CODEX_APPS_MCP_SERVER_NAME {
         apps_config_from_layer_stack(&config.config_layer_stack).and_then(|apps_config| {
             connector_id
@@ -572,7 +586,7 @@ pub(crate) fn mcp_approvals_reviewer(
         return reviewer;
     }
 
-    config.approvals_reviewer
+    default_reviewer
 }
 
 #[cfg(test)]
