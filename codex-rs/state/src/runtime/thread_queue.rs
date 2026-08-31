@@ -230,10 +230,6 @@ LIMIT ? OFFSET ?
         &self,
         thread_id: ThreadId,
     ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
-        validate_queue_identifier(item_id)?;
-        if payload.len() > MAX_QUEUED_INPUT_BYTES {
-            return Err(ThreadQueueError::InputBytesExceeded);
-        }
         let row = sqlx::query(&format!(
             r#"
 SELECT {QUEUED_SUBMISSION_COLUMNS}
@@ -257,6 +253,10 @@ ORDER BY updated_at_ms DESC LIMIT 1
         item_id: &str,
         payload: &str,
     ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
+        validate_queue_identifier(item_id)?;
+        if payload.len() > MAX_QUEUED_INPUT_BYTES {
+            return Err(ThreadQueueError::InputBytesExceeded);
+        }
         let row = sqlx::query(&format!(
             r#"
 UPDATE thread_queue_items
