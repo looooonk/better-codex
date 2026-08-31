@@ -103,12 +103,11 @@ fn roots_from_layer_stack(
         match &layer.name {
             ConfigLayerSource::Project { .. } => {
                 if let Some(repository_file_system) = &repository_file_system {
-                    roots.push(HostSkillRoot {
-                        path: config_folder.join(SKILLS_DIR_NAME),
-                        scope: SkillScope::Repo,
-                        file_system: Arc::clone(repository_file_system),
-                        plugin_root: None,
-                    });
+                    roots.push(HostSkillRoot::host(
+                        config_folder.join(SKILLS_DIR_NAME),
+                        SkillScope::Repo,
+                        Arc::clone(repository_file_system),
+                    ));
                 }
             }
             ConfigLayerSource::User { .. } => {
@@ -149,23 +148,23 @@ fn roots_from_layer_stack(
 }
 
 fn local_root(path: AbsolutePathBuf, scope: SkillScope) -> HostSkillRoot {
-    HostSkillRoot {
-        path,
-        scope,
-        file_system: Arc::clone(&LOCAL_FS),
-        plugin_root: None,
-    }
+    HostSkillRoot::host(path, scope, Arc::clone(&LOCAL_FS))
 }
 
 fn host_root_to_skill_root(root: HostSkillRoot) -> SkillRoot {
+    let plugin_root = root.plugin_skill_root();
     SkillRoot {
         path: root.path,
         scope: root.scope,
         file_system: root.file_system,
-        plugin_id: None,
-        plugin_namespace: None,
-        plugin_root: None,
-        discovery_mode: SkillDiscoveryMode::Recursive,
+        plugin_id: plugin_root.as_ref().map(|root| root.plugin_id.clone()),
+        plugin_namespace: plugin_root
+            .as_ref()
+            .map(|root| root.plugin_namespace.clone()),
+        plugin_root: plugin_root.as_ref().map(|root| root.plugin_root.clone()),
+        discovery_mode: plugin_root
+            .as_ref()
+            .map_or(SkillDiscoveryMode::Recursive, |root| root.discovery_mode),
     }
 }
 
@@ -197,12 +196,11 @@ async fn repo_agents_skill_roots(
         .buffered(MAX_CONCURRENT_ANCESTOR_PROBES);
     while let Some((agents_skills, result)) = results.next().await {
         match result {
-            Ok(metadata) if metadata.is_directory => roots.push(HostSkillRoot {
-                path: agents_skills,
-                scope: SkillScope::Repo,
-                file_system: Arc::clone(&repository_file_system),
-                plugin_root: None,
-            }),
+            Ok(metadata) if metadata.is_directory => roots.push(HostSkillRoot::host(
+                agents_skills,
+                SkillScope::Repo,
+                Arc::clone(&repository_file_system),
+            )),
             Ok(_) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
             Err(error) => {

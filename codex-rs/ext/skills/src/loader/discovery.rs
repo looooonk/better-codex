@@ -6,6 +6,7 @@ use codex_exec_server::WalkEntryKind;
 use codex_exec_server::WalkOptions;
 use codex_utils_path_uri::PathUri;
 use codex_utils_plugins::DISCOVERABLE_PLUGIN_MANIFEST_PATHS;
+use codex_utils_plugins::SkillDiscoveryMode;
 
 use super::MAX_SCAN_DEPTH;
 use super::MAX_SKILLS_DIRS_PER_ROOT;
@@ -29,6 +30,7 @@ pub(super) enum HiddenDirectoryPolicy {
 pub(super) struct SkillDiscoveryOptions {
     pub directory_symlinks: DirectorySymlinkPolicy,
     pub hidden_directories: HiddenDirectoryPolicy,
+    pub mode: SkillDiscoveryMode,
 }
 
 pub(super) struct SkillDiscovery {
@@ -64,7 +66,10 @@ pub(super) async fn discover_skills(
         .walk(
             root,
             WalkOptions {
-                max_depth: MAX_SCAN_DEPTH,
+                max_depth: match options.mode {
+                    SkillDiscoveryMode::Recursive => MAX_SCAN_DEPTH,
+                    SkillDiscoveryMode::DirectChildren => 2,
+                },
                 max_directories: MAX_SKILLS_DIRS_PER_ROOT,
                 max_entries: MAX_SKILLS_ENTRIES_PER_ROOT,
                 follow_directory_symlinks: matches!(
