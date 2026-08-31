@@ -5,6 +5,7 @@ use serde_json::Value;
 use serde_json::json;
 
 use super::*;
+use crate::protocol_mode::McpProtocolMode;
 
 fn input_required(meta: Value, input_requests: Value, request_state: Value) -> Value {
     json!({
@@ -165,4 +166,59 @@ fn legacy_sse_payload_is_unchanged() {
             .expect("legacy payload should not be parsed"),
         None
     );
+}
+
+#[test]
+fn stdio_input_required_requires_requested_and_negotiated_modern_protocol() {
+    for (requested, negotiated, expect_modern) in [
+        (
+            McpProtocolMode::V20260728,
+            ProtocolVersion::V_2026_07_28,
+            true,
+        ),
+        (
+            McpProtocolMode::V20260728,
+            ProtocolVersion::V_2025_06_18,
+            false,
+        ),
+        (
+            McpProtocolMode::Legacy,
+            ProtocolVersion::V_2026_07_28,
+            false,
+        ),
+    ] {
+        let state = StdioProtocolState::new(requested);
+        state
+            .deserialize(
+                &serde_json::to_vec(&json!({
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "result": {
+                        "protocolVersion": negotiated,
+                        "capabilities": {},
+                        "serverInfo": {"name": "stdio-test", "version": "1.0.0"},
+                    },
+                }))
+                .expect("serialize initialize response"),
+            )
+            .expect("decode initialize response");
+        let decoded = state
+            .deserialize(
+                &serde_json::to_vec(&input_required(
+                    json!({"trace": "round-one"}),
+                    json!({}),
+                    json!("state"),
+                ))
+                .expect("serialize input-required response"),
+            )
+            .expect("decode input-required response");
+        let JsonRpcMessage::Response(response) = decoded else {
+            panic!("expected JSON-RPC response");
+        };
+        assert_eq!(
+            matches!(response.result, ServerResult::InputRequiredResult(_)),
+            expect_modern
+        );
+        assert_eq!(state.enforce_modern_bounds(), expect_modern);
+    }
 }

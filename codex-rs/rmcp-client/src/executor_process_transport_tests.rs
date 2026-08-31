@@ -10,6 +10,8 @@ use codex_exec_server::ReadResponse;
 use codex_exec_server::WriteResponse;
 use codex_exec_server::WriteStatus;
 use pretty_assertions::assert_eq;
+use rmcp::model::JsonRpcMessage;
+use rmcp::model::ServerResult;
 use rmcp::service::RoleClient;
 use rmcp::service::TxJsonRpcMessage;
 use rmcp::transport::Transport;
@@ -240,6 +242,84 @@ async fn modern_outbound_limit_is_checked_before_executor_write() {
             }
         }
     }
+}
+
+#[test]
+fn executor_input_required_requires_modern_peer_negotiation() {
+    for (negotiated, expect_modern) in [
+        ("2026-07-28", true),
+        ("2025-06-18", false),
+    ] {
+        let process = Arc::new(RetainedReadProcess {
+            process_id: ProcessId::from(format!("mcp-stdio-{negotiated}")),
+            response: retained_read_response(Vec::new(), /*next_seq*/ 0),
+        });
+        let mut transport = ExecutorProcessTransport::new(
+            process,
+            "mcp-stdio-negotiation-test".to_string(),
+            McpProtocolMode::V20260728,
+        );
+        transport
+            .stdout
+            .extend_from_slice(
+                format!(
+                    "{{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{{\"protocolVersion\":\"{negotiated}\",\"capabilities\":{{}},\"serverInfo\":{{\"name\":\"test\",\"version\":\"1\"}}}}}}\n\
+                     {{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{{\"resultType\":\"input_required\",\"requestState\":\"state\",\"_meta\":{{\"trace\":\"round-one\"}}}}}}\n"
+                )
+                .as_bytes(),
+            )
+            .expect("protocol lines should fit");
+
+        transport
+            .take_stdout_message(/*allow_partial*/ false)
+            .expect("initialize response");
+        let JsonRpcMessage::Response(response) = transport
+            .take_stdout_message(/*allow_partial*/ false)
+            .expect("input-required response")
+        else {
+            panic!("expected JSON-RPC response");
+        };
+        assert_eq!(
+            matches!(response.result, ServerResult::InputRequiredResult(_)),
+            expect_modern
+        );
+    }
+}
+
+#[tokio::test]
+async fn executor_preserves_legacy_outbound_behavior_after_downgrade() {
+    let process = Arc::new(BlockingFirstWriteProcess {
+        process_id: ProcessId::from("mcp-stdio-downgrade"),
+        writes: StdMutex::new(Vec::new()),
+        release_first_write: AtomicBool::new(true),
+    });
+    let mut transport = ExecutorProcessTransport::new(
+        process.clone(),
+        "mcp-stdio-downgrade-test".to_string(),
+        McpProtocolMode::V20260728,
+    );
+    transport
+        .stdout
+        .extend_from_slice(
+            b"{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"serverInfo\":{\"name\":\"test\",\"version\":\"1\"}}}\n",
+        )
+        .expect("initialize response should fit");
+    transport
+        .take_stdout_message(/*allow_partial*/ false)
+        .expect("initialize response");
+    let message: TxJsonRpcMessage<RoleClient> = serde_json::from_value(json!({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {"arguments": {"value": "x".repeat(MAX_MCP_STDIO_LINE_BYTES + 1)}},
+    }))
+    .expect("oversized MCP message should deserialize");
+
+    transport
+        .send(message)
+        .await
+        .expect("negotiated legacy executor writes must remain unbounded");
+    assert_eq!(process.writes().len(), 1);
 }
 
 #[tokio::test]
