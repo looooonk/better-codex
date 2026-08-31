@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 pub const MAX_QUEUED_SUBMISSIONS: usize = 100;
 pub const MAX_QUEUED_INPUT_BYTES: usize = 1024 * 1024;
+pub const MAX_QUEUE_IDENTIFIER_BYTES: usize = 256;
 const TERMINAL_TOMBSTONES_PER_THREAD: i64 = 100;
 const QUEUED_SUBMISSION_COLUMNS: &str =
     "id, thread_id, payload_json, client_user_message_id, state, turn_id, terminal_status";
@@ -16,6 +17,7 @@ pub enum ThreadQueueError {
     QueueFull,
     InputBytesExceeded,
     InvalidReorder,
+    InvalidIdentifier,
     Storage(anyhow::Error),
 }
 
@@ -34,6 +36,10 @@ impl fmt::Display for ThreadQueueError {
                 formatter,
                 "queue reorder must include every pending submission exactly once"
             ),
+            Self::InvalidIdentifier => write!(
+                formatter,
+                "queue identifiers must contain 1 to {MAX_QUEUE_IDENTIFIER_BYTES} bytes"
+            ),
             Self::Storage(error) => write!(formatter, "queue storage failed: {error}"),
         }
     }
@@ -43,7 +49,10 @@ impl std::error::Error for ThreadQueueError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Storage(error) => Some(error.as_ref()),
-            Self::QueueFull | Self::InputBytesExceeded | Self::InvalidReorder => None,
+            Self::QueueFull
+            | Self::InputBytesExceeded
+            | Self::InvalidReorder
+            | Self::InvalidIdentifier => None,
         }
     }
 }
@@ -75,6 +84,10 @@ impl StateRuntime {
         payload: &str,
         client_user_message_id: &str,
     ) -> Result<QueuedSubmissionRecord, ThreadQueueError> {
+        validate_queue_identifier(client_user_message_id)?;
+        if payload.len() > MAX_QUEUED_INPUT_BYTES {
+            return Err(ThreadQueueError::InputBytesExceeded);
+        }
         if let Some(existing) = self
             .queued_submission_by_client_message_id(thread_id, client_user_message_id)
             .await?
@@ -95,11 +108,12 @@ SELECT ?, ?, ?, ?,
            WHERE thread_id = ? AND state != 'terminal'
        ), -1) + 1,
        'pending', NULL, NULL, ?, ?
-WHERE (SELECT COUNT(*) FROM thread_queue_items WHERE thread_id = ? AND state = 'pending') < ?
+WHERE (SELECT COUNT(*) FROM thread_queue_items WHERE thread_id = ? AND state != 'terminal') < ?
   AND COALESCE((
       SELECT SUM(length(CAST(payload_json AS BLOB)))
-      FROM thread_queue_items WHERE thread_id = ? AND state = 'pending'
+      FROM thread_queue_items WHERE thread_id = ? AND state != 'terminal'
   ), 0) + ? <= ?
+ON CONFLICT(thread_id, client_user_message_id) DO NOTHING
 RETURNING {QUEUED_SUBMISSION_COLUMNS}
             "#
         ))
@@ -120,10 +134,16 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
         if let Some(row) = row {
             return QueuedSubmissionRecord::try_from_row(&row).map_err(Into::into);
         }
+        if let Some(existing) = self
+            .queued_submission_by_client_message_id(thread_id, client_user_message_id)
+            .await?
+        {
+            return Ok(existing);
+        }
         let (count, bytes): (i64, i64) = sqlx::query_as(
             r#"
 SELECT COUNT(*), COALESCE(SUM(length(CAST(payload_json AS BLOB))), 0)
-FROM thread_queue_items WHERE thread_id = ? AND state = 'pending'
+FROM thread_queue_items WHERE thread_id = ? AND state != 'terminal'
             "#,
         )
         .bind(thread_id.to_string())
@@ -147,6 +167,7 @@ FROM thread_queue_items WHERE thread_id = ? AND state = 'pending'
         thread_id: ThreadId,
         client_user_message_id: &str,
     ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
+        validate_queue_identifier(client_user_message_id)?;
         let row = sqlx::query(&format!(
             "SELECT {QUEUED_SUBMISSION_COLUMNS} FROM thread_queue_items WHERE thread_id = ? AND client_user_message_id = ?"
         ))
@@ -191,6 +212,7 @@ LIMIT ? OFFSET ?
         thread_id: ThreadId,
         item_id: &str,
     ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
+        validate_queue_identifier(item_id)?;
         let row = sqlx::query(&format!(
             "SELECT {QUEUED_SUBMISSION_COLUMNS} FROM thread_queue_items WHERE thread_id = ? AND id = ?"
         ))
@@ -208,6 +230,10 @@ LIMIT ? OFFSET ?
         &self,
         thread_id: ThreadId,
     ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
+        validate_queue_identifier(item_id)?;
+        if payload.len() > MAX_QUEUED_INPUT_BYTES {
+            return Err(ThreadQueueError::InputBytesExceeded);
+        }
         let row = sqlx::query(&format!(
             r#"
 SELECT {QUEUED_SUBMISSION_COLUMNS}
@@ -239,7 +265,7 @@ WHERE thread_id = ? AND id = ? AND state = 'pending'
   AND COALESCE((
       SELECT SUM(length(CAST(payload_json AS BLOB)))
       FROM thread_queue_items
-      WHERE thread_id = ? AND state = 'pending' AND id <> ?
+      WHERE thread_id = ? AND state != 'terminal' AND id <> ?
   ), 0) + ? <= ?
 RETURNING {QUEUED_SUBMISSION_COLUMNS}
             "#
@@ -279,6 +305,7 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
         thread_id: ThreadId,
         item_id: &str,
     ) -> Result<bool, ThreadQueueError> {
+        validate_queue_identifier(item_id)?;
         Ok(sqlx::query(
             "DELETE FROM thread_queue_items WHERE thread_id = ? AND id = ? AND state = 'pending'",
         )
@@ -295,6 +322,9 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
         thread_id: ThreadId,
         item_ids: &[String],
     ) -> Result<(), ThreadQueueError> {
+        for item_id in item_ids {
+            validate_queue_identifier(item_id)?;
+        }
         let mut transaction = self.pool.begin().await?;
         let rows = sqlx::query_as::<_, (String, i64)>(
             "SELECT id, queue_order FROM thread_queue_items WHERE thread_id = ? AND state = 'pending' ORDER BY queue_order, id",
@@ -359,6 +389,9 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
         item_id: Option<&str>,
         turn_id: &str,
     ) -> Result<QueueClaimResult, ThreadQueueError> {
+        if let Some(item_id) = item_id {
+            validate_queue_identifier(item_id)?;
+        }
         if let Some(item_id) = item_id
             && let Some(existing) = self.queued_submission(thread_id, item_id).await?
             && existing.state != QueuedSubmissionState::Pending
@@ -438,6 +471,7 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
         item_id: &str,
         turn_id: &str,
     ) -> Result<bool, ThreadQueueError> {
+        validate_queue_identifier(item_id)?;
         Ok(sqlx::query(
             r#"
 UPDATE thread_queue_items
@@ -485,7 +519,7 @@ WHERE thread_id = ? AND turn_id = ? AND state = 'starting'
         let changed = sqlx::query(
             r#"
 UPDATE thread_queue_items
-SET state = 'terminal', terminal_status = ?, updated_at_ms = ?
+SET state = 'terminal', terminal_status = ?, payload_json = '[]', updated_at_ms = ?
 WHERE thread_id = ? AND turn_id = ? AND state IN ('starting', 'inflight')
             "#,
         )
@@ -515,6 +549,14 @@ WHERE rowid IN (
             .await?;
         }
         Ok(changed)
+    }
+}
+
+fn validate_queue_identifier(identifier: &str) -> Result<(), ThreadQueueError> {
+    if identifier.is_empty() || identifier.len() > MAX_QUEUE_IDENTIFIER_BYTES {
+        Err(ThreadQueueError::InvalidIdentifier)
+    } else {
+        Ok(())
     }
 }
 

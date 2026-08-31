@@ -2,7 +2,9 @@ CREATE TABLE thread_queue_items (
     id TEXT PRIMARY KEY NOT NULL,
     thread_id TEXT NOT NULL,
     payload_json TEXT NOT NULL,
-    client_user_message_id TEXT NOT NULL,
+    client_user_message_id TEXT NOT NULL CHECK (
+        length(CAST(client_user_message_id AS BLOB)) BETWEEN 1 AND 256
+    ),
     queue_order INTEGER NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('pending', 'starting', 'inflight', 'terminal')),
     turn_id TEXT,

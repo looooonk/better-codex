@@ -319,3 +319,72 @@ async fn enqueue_retry_reuses_stable_submission_id() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+#[tokio::test]
+async fn active_items_remain_within_queue_limits_and_terminal_payloads_are_scrubbed()
+-> anyhow::Result<()> {
+    let runtime = runtime().await?;
+    let thread_id = ThreadId::new();
+    let item = runtime
+        .enqueue_queued_submission(
+            thread_id,
+            &"x".repeat(MAX_QUEUED_INPUT_BYTES),
+            "client-1",
+        )
+        .await?;
+    assert!(matches!(
+        runtime
+            .claim_queued_submission(thread_id, Some(&item.id), "turn-1")
+            .await?,
+        QueueClaimResult::Claimed(_)
+    ));
+    assert!(matches!(
+        runtime
+            .enqueue_queued_submission(thread_id, "x", "client-2")
+            .await,
+        Err(ThreadQueueError::InputBytesExceeded)
+    ));
+    assert!(runtime
+        .finish_queued_submission(
+            thread_id,
+            "turn-1",
+            QueuedSubmissionTerminalStatus::Completed,
+        )
+        .await?);
+    assert_eq!(
+        runtime
+            .queued_submission(thread_id, &item.id)
+            .await?
+            .expect("terminal tombstone should remain")
+            .payload_json,
+        "[]"
+    );
+    assert!(runtime
+        .enqueue_queued_submission(thread_id, "x", "client-2")
+        .await
+        .is_ok());
+    Ok(())
+}
+
+#[tokio::test]
+async fn queue_rejects_unbounded_identifiers() -> anyhow::Result<()> {
+    let runtime = runtime().await?;
+    let thread_id = ThreadId::new();
+    assert!(matches!(
+        runtime
+            .enqueue_queued_submission(
+                thread_id,
+                "[]",
+                &"x".repeat(MAX_QUEUE_IDENTIFIER_BYTES + 1),
+            )
+            .await,
+        Err(ThreadQueueError::InvalidIdentifier)
+    ));
+    assert!(matches!(
+        runtime
+            .queued_submission(thread_id, &"x".repeat(MAX_QUEUE_IDENTIFIER_BYTES + 1))
+            .await,
+        Err(ThreadQueueError::InvalidIdentifier)
+    ));
+    Ok(())
+}

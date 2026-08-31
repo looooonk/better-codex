@@ -95,6 +95,7 @@ pub use remote_control::RemoteControlEnrollmentRecord;
 pub use thread_section_order::ThreadSectionMove;
 pub use thread_queue::MAX_QUEUED_INPUT_BYTES;
 pub use thread_queue::MAX_QUEUED_SUBMISSIONS;
+pub use thread_queue::MAX_QUEUE_IDENTIFIER_BYTES;
 pub use thread_queue::QueueClaimResult;
 pub use thread_queue::ThreadQueueError;
 pub use thread_sections::ThreadSectionAppearanceUpdate;
