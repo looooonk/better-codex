@@ -365,6 +365,124 @@ async fn close_is_a_tool_dispatch_barrier() {
 }
 
 #[tokio::test]
+async fn close_after_tool_reservation_does_not_commit_or_deliver() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, lease) = open_session(&host).await;
+    let mut subscription = host
+        .subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
+            session_id: session_id.clone(),
+            tool_names: Vec::new(),
+        }))
+        .await
+        .unwrap()
+        .into_inner();
+    let session = host.state.session(&session_id).unwrap();
+    session
+        .reserve_execution("execution-reserved-close")
+        .unwrap();
+    session
+        .admit_execution(
+            "execution-reserved-close".to_string(),
+            "cell-reserved-close".to_string(),
+            host.state.cell_permit().unwrap(),
+        )
+        .unwrap();
+    let sender = session.state.lock().unwrap().subscriptions[0].sender.clone();
+    for _ in 0..OUTGOING_CHANNEL_CAPACITY {
+        sender.try_send(Ok(proto::ToolCall::default())).unwrap();
+    }
+    let baseline_senders = sender.strong_count();
+    let invocation_id = Uuid::new_v4();
+    let dispatch_session = Arc::clone(&session);
+    let dispatch = tokio::spawn(async move {
+        let (response, _receiver) = oneshot::channel();
+        dispatch_session
+            .dispatch_tool(
+                invocation("cell-reserved-close", "echo"),
+                "execution-reserved-close".to_string(),
+                invocation_id,
+                /*input_json*/ None,
+                response,
+                &CancellationToken::new(),
+            )
+            .await
+    });
+    while sender.strong_count() <= baseline_senders {
+        tokio::task::yield_now().await;
+    }
+    let state = session.state.lock().unwrap();
+    subscription.next().await.unwrap().unwrap();
+    while sender.capacity() != 0 {
+        tokio::task::yield_now().await;
+    }
+    session.closed.cancel();
+    drop(state);
+
+    assert!(dispatch.await.unwrap().unwrap_err().contains("session closed"));
+    let state = session.state.lock().unwrap();
+    assert!(state.pending_invocations.is_empty());
+    assert!(
+        state
+            .cells
+            .get("cell-reserved-close")
+            .is_none_or(|execution| execution.tool_call_sequence == 0)
+    );
+    drop(state);
+    while let Some(Ok(call)) = subscription.next().await {
+        assert_ne!(call.invocation_id, invocation_id.to_string());
+    }
+    drop(lease);
+}
+
+#[tokio::test]
+async fn terminal_outcome_precedes_cell_closed_and_permit_release() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, mut events) = open_session(&host).await;
+    let (cell_id, mut execution) = execute_events(
+        &host,
+        execute_request(&session_id, "execution-terminal-order", "text(\"done\");"),
+    )
+    .await;
+    let session = host.state.session(&session_id).unwrap();
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 2), async {
+        loop {
+            if session
+                .state
+                .lock()
+                .unwrap()
+                .cells
+                .get(&cell_id)
+                .is_some_and(|execution| execution.runtime_closed)
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+
+    assert!(events.next().now_or_never().is_none());
+    assert!(matches!(
+        execution.next().await.unwrap().unwrap().event,
+        Some(proto::execute_event::Event::Outcome(proto::ExecutionOutcome {
+            outcome: Some(proto::execution_outcome::Outcome::Completed(_)),
+            ..
+        }))
+    ));
+    assert_eq!(
+        events.next().await.unwrap().unwrap(),
+        proto::SessionEvent {
+            event: Some(proto::session_event::Event::CellClosed(proto::CellClosed {
+                execution_id: "execution-terminal-order".to_string(),
+                cell_id,
+                final_tool_call_sequence: 0,
+            })),
+        }
+    );
+}
+
+#[tokio::test]
 async fn consumed_wait_tombstone_survives_reinsertion_churn() {
     let host = GrpcCodeModeHost::new();
     let (session_id, _lease) = open_session(&host).await;

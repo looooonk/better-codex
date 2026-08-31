@@ -215,6 +215,9 @@ impl GrpcSession {
     ) -> Result<(), Status> {
         let response = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            if self.closed.is_cancelled() {
+                return Err(Status::cancelled("code-mode session is closed"));
+            }
             match state.pending_invocations.remove(&invocation_id) {
                 Some(invocation) => Some(invocation.response),
                 None if state.seen_invocations.contains(&invocation_id) => None,

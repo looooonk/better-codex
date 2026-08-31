@@ -74,6 +74,8 @@ pub(super) struct SessionState {
 pub(super) struct ExecutionState {
     pub(super) execution_id: String,
     pub(super) tool_call_sequence: u64,
+    pub(super) runtime_closed: bool,
+    pub(super) terminal_observed: bool,
     permit: OwnedSemaphorePermit,
 }
 
@@ -347,6 +349,7 @@ impl GrpcSession {
         if !state.pending_executions.remove(&execution_id) {
             return Err(Status::cancelled("code-mode execution was abandoned"));
         }
+        let runtime_closed = state.pending_closures.remove(&cell_id);
         let Entry::Vacant(entry) = state.cells.entry(cell_id.clone()) else {
             return Err(Status::internal(
                 "code-mode runtime reused an active cell ID",
@@ -355,28 +358,36 @@ impl GrpcSession {
         entry.insert(ExecutionState {
             execution_id,
             tool_call_sequence: 0,
+            runtime_closed,
+            terminal_observed: false,
             permit,
         });
-        let closed = state.pending_closures.remove(&cell_id);
-        let closed_execution = closed.then(|| state.cells.remove(&cell_id)).flatten();
         drop(state);
         self.cells_changed.notify_waiters();
-        if let Some(execution) = closed_execution {
-            self.send_cell_closed(&cell_id, execution);
-        }
         Ok(())
     }
 
     pub(super) fn abandon_execution(self: &Arc<Self>, execution_id: &str) {
-        let cell_id = {
+        let (cell_id, closed_execution) = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             state.pending_executions.remove(execution_id);
-            state
+            let cell_id = state
                 .cells
                 .iter()
                 .find(|(_, execution)| execution.execution_id == execution_id)
-                .map(|(cell_id, _)| cell_id.clone())
+                .map(|(cell_id, _)| cell_id.clone());
+            let closed_execution = cell_id.as_ref().and_then(|cell_id| {
+                let should_remove = state.cells.get_mut(cell_id).is_some_and(|execution| {
+                    execution.terminal_observed = true;
+                    execution.runtime_closed
+                });
+                should_remove.then(|| state.cells.remove(cell_id)).flatten()
+            });
+            (cell_id, closed_execution)
         };
+        if let (Some(cell_id), Some(execution)) = (&cell_id, closed_execution) {
+            self.send_cell_closed(cell_id, execution);
+        }
         if let Some(cell_id) = cell_id {
             let session = Arc::clone(self);
             tokio::spawn(async move {
@@ -417,8 +428,12 @@ impl GrpcSession {
     pub(super) fn close_cell(&self, cell_id: &str) {
         let execution = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            match state.cells.remove(cell_id) {
-                Some(execution) => Some(execution),
+            match state.cells.get_mut(cell_id) {
+                Some(execution) => {
+                    execution.runtime_closed = true;
+                    let should_remove = execution.terminal_observed;
+                    should_remove.then(|| state.cells.remove(cell_id)).flatten()
+                }
                 None if state.pending_closures.len() < MAX_ACTIVE_CELLS => {
                     state.pending_closures.insert(cell_id.to_string());
                     None
@@ -428,6 +443,21 @@ impl GrpcSession {
                     None
                 }
             }
+        };
+        if let Some(execution) = execution {
+            self.send_cell_closed(cell_id, execution);
+        }
+    }
+
+    pub(super) fn terminal_outcome_observed(&self, cell_id: &str) {
+        let execution = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let Some(execution) = state.cells.get_mut(cell_id) else {
+                return;
+            };
+            execution.terminal_observed = true;
+            let should_remove = execution.runtime_closed;
+            should_remove.then(|| state.cells.remove(cell_id)).flatten()
         };
         if let Some(execution) = execution {
             self.send_cell_closed(cell_id, execution);

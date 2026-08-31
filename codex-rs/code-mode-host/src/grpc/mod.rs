@@ -222,7 +222,11 @@ impl GrpcCodeModeHost {
                 outcome.map_err(Status::failed_precondition)?
             }
         };
-        Ok(Response::new(conversions::wait_response(outcome)?))
+        let response = conversions::wait_response(outcome)?;
+        if let Some(cell_id) = terminal_wait_cell_id(&response) {
+            session.terminal_outcome_observed(cell_id);
+        }
+        Ok(Response::new(response))
     }
 
     async fn cancel_wait_request(
@@ -250,7 +254,11 @@ impl GrpcCodeModeHost {
         validation::identifier(&request.cell_id, "cell ID")?;
         let _permit = self.state.request_permit()?;
         let result = session.terminate(CellId::new(request.cell_id)).await?;
-        Ok(Response::new(conversions::wait_response(result)?))
+        let response = conversions::wait_response(result)?;
+        if let Some(cell_id) = terminal_wait_cell_id(&response) {
+            session.terminal_outcome_observed(cell_id);
+        }
+        Ok(Response::new(response))
     }
 }
 
@@ -259,15 +267,22 @@ fn execution_stream(
     mut admission: ExecutionAdmission,
 ) -> GrpcStream<proto::ExecuteEvent> {
     Box::pin(ReceiverStream::new(receiver).inspect(move |event| {
-        if matches!(
-            event,
-            Ok(proto::ExecuteEvent {
-                event: Some(proto::execute_event::Event::Outcome(_)),
-            })
-        ) {
-            admission.disarm();
-        }
+        admission.observe(event);
     }))
+}
+
+fn terminal_wait_cell_id(response: &proto::WaitResponse) -> Option<&str> {
+    let Some(proto::wait_response::State::LiveCell(outcome)) = &response.state else {
+        return None;
+    };
+    matches!(
+        outcome.outcome.as_ref(),
+        Some(
+            proto::execution_outcome::Outcome::Terminated(_)
+                | proto::execution_outcome::Outcome::Completed(_)
+        )
+    )
+    .then_some(outcome.cell_id.as_str())
 }
 
 /// Builds the only routable gRPC service, restricted to one loopback TCP caller per session.
@@ -418,6 +433,25 @@ struct ExecutionAdmission {
 }
 
 impl ExecutionAdmission {
+    fn observe(&mut self, event: &Result<proto::ExecuteEvent, Status>) {
+        let Ok(proto::ExecuteEvent {
+            event: Some(proto::execute_event::Event::Outcome(outcome)),
+        }) = event
+        else {
+            return;
+        };
+        if matches!(
+            outcome.outcome.as_ref(),
+            Some(
+                proto::execution_outcome::Outcome::Terminated(_)
+                    | proto::execution_outcome::Outcome::Completed(_)
+            )
+        ) {
+            self.session.terminal_outcome_observed(&outcome.cell_id);
+        }
+        self.disarm();
+    }
+
     fn disarm(&mut self) {
         self.execution_id = None;
     }
