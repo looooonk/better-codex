@@ -37,6 +37,7 @@ use rmcp::model::ListResourceTemplatesResult;
 use rmcp::model::ListResourcesResult;
 use rmcp::model::ListToolsResult;
 use rmcp::model::PaginatedRequestParams;
+use rmcp::model::ProtocolVersion;
 use rmcp::model::ReadResourceRequestParams;
 use rmcp::model::ReadResourceResult;
 use rmcp::model::RequestId;
@@ -674,10 +675,22 @@ impl RmcpClient {
         timeout: Option<Duration>,
     ) -> Result<ReadResourceResult> {
         self.refresh_oauth_if_needed().await?;
+        let requested_modern = self.protocol_mode == McpProtocolMode::V20260728;
         let result = self
             .run_service_operation("resources/read", timeout, move |service| {
                 let params = params.clone();
-                async move { service.read_resource(params).await }.boxed()
+                async move {
+                    let negotiated_modern = service
+                        .peer()
+                        .peer_info()
+                        .is_some_and(|info| info.protocol_version == ProtocolVersion::V_2026_07_28);
+                    if requested_modern && negotiated_modern {
+                        service.read_resource(params).await
+                    } else {
+                        service.peer().read_resource(params).await
+                    }
+                }
+                .boxed()
             })
             .await?;
         self.persist_oauth_tokens().await;
@@ -712,11 +725,20 @@ impl RmcpClient {
         };
         let mut rmcp_params = CallToolRequestParams::new(name);
         rmcp_params.arguments = arguments;
+        let requested_modern = self.protocol_mode == McpProtocolMode::V20260728;
         let result = self
             .run_service_operation("tools/call", timeout, move |service| {
-                let rmcp_params = rmcp_params.clone();
+                let mut rmcp_params = rmcp_params.clone();
                 let meta = meta.clone();
                 async move {
+                    let negotiated_modern = service
+                        .peer()
+                        .peer_info()
+                        .is_some_and(|info| info.protocol_version == ProtocolVersion::V_2026_07_28);
+                    if requested_modern && negotiated_modern {
+                        rmcp_params.meta = meta;
+                        return service.call_tool(rmcp_params).await;
+                    }
                     let mut options = rmcp::service::PeerRequestOptions::no_options();
                     options.meta = meta;
                     let result = service
@@ -1267,6 +1289,10 @@ impl RmcpClient {
                 initialize_context.timeout,
             )
             .await?;
+        service
+            .peer()
+            .peer_info()
+            .ok_or_else(|| anyhow!("recovered handshake succeeded but server info was missing"))?;
 
         {
             let mut guard = self.state.lock().await;
