@@ -3214,7 +3214,14 @@ dependencies = [
 name = "codex-history"
 version = "0.1.0-alpha.12"
 dependencies = [
+ "anyhow",
  "codex-protocol",
+ "codex-utils-absolute-path",
+ "pretty_assertions",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "ts-rs",
 ]
 
 [[package]]
