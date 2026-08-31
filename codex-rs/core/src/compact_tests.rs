@@ -1,4 +1,5 @@
 use super::*;
+use codex_history::CodexHarnessMetadata;
 use codex_history::ResponseItemEnvelope;
 use crate::session::tests::build_world_state_from_turn_context;
 use codex_model_provider_info::ModelProviderInfo;
@@ -50,6 +51,7 @@ fn compacted_user_message(text: &str) -> CompactedUserMessage {
         id: None,
         message: text.to_string(),
         internal_chat_message_metadata_passthrough: None,
+        harness_metadata: None,
     }
 }
 
@@ -123,6 +125,36 @@ fn collect_annotated_user_messages_extracts_user_text_only() {
     let collected = collect_annotated_user_messages(&items);
 
     assert_eq!(vec![compacted_user_message("first")], collected);
+}
+
+#[test]
+fn local_and_legacy_compaction_preserve_nonempty_harness_metadata() {
+    let message = "word ".repeat(30);
+    let metadata = CodexHarnessMetadata::default();
+    let items = vec![ResponseItemEnvelope {
+        item: user_message(&message),
+        metadata: Some(metadata.clone()),
+    }];
+    let collected = collect_annotated_user_messages(&items);
+
+    let history = super::build_annotated_compacted_history_with_limit(
+        Vec::new(),
+        &collected,
+        "summary",
+        4,
+    );
+    let truncated = truncate_text(&message, TruncationPolicy::Tokens(4));
+
+    assert_eq!(
+        history,
+        vec![
+            ResponseItemEnvelope {
+                item: user_message(&truncated),
+                metadata: Some(metadata),
+            },
+            ResponseItemEnvelope::new(user_message("summary")),
+        ]
+    );
 }
 
 #[test]
@@ -312,6 +344,7 @@ fn build_compacted_history_preserves_user_message_passthrough_metadata() {
                     ..Default::default()
                 },
             ),
+            harness_metadata: None,
         }],
         "summary text",
     );

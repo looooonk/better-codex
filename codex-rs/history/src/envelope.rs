@@ -3,16 +3,30 @@ use std::ops::Deref;
 use std::ops::DerefMut;
 
 use codex_protocol::models::ResponseItem;
+use schemars::JsonSchema;
+use serde::Deserialize;
+use serde::Serialize;
 
-/// A history-owned, in-memory wrapper around a raw response item.
+/// A model-history item with room for history-only metadata.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResponseItemEnvelope {
     pub item: ResponseItem,
+    pub metadata: Option<CodexHarnessMetadata>,
 }
+
+/// Metadata owned by the Codex harness and kept separate from provider payloads.
+///
+/// This intentionally has no fields yet. Keeping it closed prevents history metadata from
+/// becoming an untyped extension point.
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
+pub struct CodexHarnessMetadata {}
 
 impl ResponseItemEnvelope {
     pub fn new(item: ResponseItem) -> Self {
-        Self { item }
+        Self {
+            item,
+            metadata: None,
+        }
     }
 
     pub fn into_item(self) -> ResponseItem {

@@ -362,6 +362,7 @@ use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_history::CompactedItem;
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::protocol::DeprecationNoticeEvent;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::Event;
@@ -3100,9 +3101,31 @@ impl Session {
         world_state_baseline: Option<Arc<WorldState>>,
         compacted_item: CompactedItem,
     ) {
-        let items = Self::assign_missing_response_item_ids(Cow::Owned(items)).into_owned();
+        self.replace_annotated_compacted_history(
+            items.into_iter().map(ResponseItemEnvelope::new).collect(),
+            reference_context_item,
+            world_state_baseline,
+            compacted_item,
+        )
+        .await;
+    }
+
+    pub(crate) async fn replace_annotated_compacted_history(
+        &self,
+        mut items: Vec<ResponseItemEnvelope>,
+        reference_context_item: Option<TurnContextItem>,
+        world_state_baseline: Option<Arc<WorldState>>,
+        compacted_item: CompactedItem,
+    ) {
+        for envelope in &mut items {
+            Self::assign_missing_response_item_id(&mut envelope.item);
+        }
+        let raw_items = items
+            .iter()
+            .map(|envelope| envelope.item.clone())
+            .collect();
         let compacted_item = CompactedItem {
-            replacement_history: Some(items.clone()),
+            replacement_history: Some(raw_items),
             ..compacted_item
         };
         // Compaction starts a new history window, so its WorldState baseline must be full.
@@ -3112,7 +3135,7 @@ impl Session {
             let mut state = self.state.lock().await;
             persist_reference_context_item =
                 state.reference_context_item() != reference_context_item;
-            state.replace_history(items, reference_context_item.clone());
+            state.replace_annotated_history(items, reference_context_item.clone());
             if let Some(world_state) = world_state_baseline {
                 let snapshot = world_state.snapshot();
                 world_state_item = Some(WorldStateItem::full(snapshot.clone().into_value()));
@@ -3602,7 +3625,7 @@ impl Session {
         &self,
         step_context: &StepContext,
         world_state: Arc<WorldState>,
-        preserved_turn_items: Vec<ResponseItem>,
+        preserved_turn_items: Vec<ResponseItemEnvelope>,
     ) -> u64 {
         let turn_context = step_context.turn.as_ref();
         let window = {
@@ -3610,12 +3633,15 @@ impl Session {
             state.start_new_context_window()
         };
         let (window_number, window_ids) = window;
-        let mut context_items = self
+        let mut context_items: Vec<ResponseItemEnvelope> = self
             .build_reset_initial_context_for_step(step_context, world_state.as_ref())
-            .await;
+            .await
+            .into_iter()
+            .map(ResponseItemEnvelope::new)
+            .collect();
         context_items.extend(preserved_turn_items);
         let turn_context_item = turn_context.to_turn_context_item();
-        self.replace_compacted_history(
+        self.replace_annotated_compacted_history(
             context_items,
             Some(turn_context_item),
             Some(world_state),

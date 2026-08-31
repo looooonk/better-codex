@@ -360,12 +360,12 @@ impl Session {
                         let user_messages = compact::collect_annotated_user_messages(
                             history.annotated_items(),
                         );
-                        let rebuilt = compact::build_compacted_history(
+                        let rebuilt = compact::build_annotated_compacted_history(
                             Vec::new(),
                             &user_messages,
                             &compacted.message,
                         );
-                        history.replace(rebuilt);
+                        history.replace_annotated(rebuilt);
                     }
                 }
                 RolloutItem::EventMsg(EventMsg::ThreadRolledBack(rollback)) => {

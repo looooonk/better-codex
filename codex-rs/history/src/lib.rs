@@ -4,6 +4,7 @@ mod envelope;
 mod initial;
 mod persisted;
 
+pub use envelope::CodexHarnessMetadata;
 pub use envelope::ResponseItemEnvelope;
 pub use initial::InitialHistory;
 pub use initial::ResumedHistory;

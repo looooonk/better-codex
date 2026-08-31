@@ -199,7 +199,8 @@ pub(crate) async fn run_turn(
 
     let prepared_history = sess.clone_history().await;
     let turn_items = prepared_history
-        .raw_items()
+        .annotated_items()
+        .iter()
         .skip(turn_items_start)
         .cloned()
         .collect();
