@@ -27,11 +27,17 @@ use codex_tools::ToolSearchInfo;
 use codex_tools::ToolSearchSourceInfo;
 use codex_tools::ToolSpec;
 use codex_tools::mcp_tool_to_responses_api_tool;
+use codex_utils_image::PromptImageMode;
+use codex_utils_image::PromptImageResizeLimits;
+use codex_utils_image::load_sanitized_data_url_for_prompt;
 use serde_json::Map;
 use serde_json::Value;
 
 const LEGACY_MCP_TOOL_NAME_PREFIX: &str = "mcp__";
 const MCP_TOOL_NAME_DELIMITER: &str = "__";
+const MAX_NODE_IMAGE_SOURCE_BYTES: usize = 64 * 1024;
+const MAX_NODE_IMAGE_ENCODED_BYTES: usize = 12 * 1024;
+const MAX_NODE_IMAGES: usize = 2;
 const MAX_NODE_STRUCTURED_CONTENT_BYTES: usize = 64 * 1024;
 
 pub struct McpHandler {
@@ -246,6 +252,8 @@ impl CoreToolRuntime for McpHandler {
 
         let mut items = Vec::new();
         let mut has_text = false;
+        let mut image_count = 0_usize;
+        let mut encoded_image_bytes = 0_usize;
         for item in content {
             match item.get("type").and_then(Value::as_str) {
                 Some("text") => {
@@ -258,6 +266,48 @@ impl CoreToolRuntime for McpHandler {
                     };
                     has_text = true;
                     items.push(NodeReplReviewEvidenceItem::Text(text.to_string()));
+                }
+                Some("image") if image_count < MAX_NODE_IMAGES => {
+                    let Some(payload) = item.get("data").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    let Some(mime_type) = item.get("mimeType").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    if payload.is_empty()
+                        || payload.len() > MAX_NODE_IMAGE_SOURCE_BYTES
+                        || !mime_type
+                            .get(..6)
+                            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("image/"))
+                    {
+                        continue;
+                    }
+                    let image_url =
+                        format!("data:{};base64,{payload}", mime_type.to_ascii_lowercase());
+                    let Ok(image) = load_sanitized_data_url_for_prompt(
+                        &image_url,
+                        PromptImageMode::ResizeWithLimits(PromptImageResizeLimits {
+                            max_dimension: 512,
+                            max_patches: 256,
+                        }),
+                    ) else {
+                        continue;
+                    };
+                    let image_url = image.into_data_url();
+                    let Some(encoded_bytes) = image_url.split_once(',').map(|(_, data)| data.len())
+                    else {
+                        continue;
+                    };
+                    if encoded_image_bytes.saturating_add(encoded_bytes)
+                        > MAX_NODE_IMAGE_ENCODED_BYTES
+                    {
+                        continue;
+                    }
+                    image_count += 1;
+                    encoded_image_bytes = encoded_image_bytes.saturating_add(encoded_bytes);
+                    items.push(NodeReplReviewEvidenceItem::Image {
+                        data_url: image_url,
+                    });
                 }
                 Some("image") | Some(_) | None => {}
             }

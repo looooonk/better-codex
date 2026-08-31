@@ -245,6 +245,34 @@ async fn data_url_processing_preserves_supported_source_bytes() {
     assert_eq!(processed.bytes.as_ref(), original_bytes);
 }
 
+#[test]
+fn sanitized_data_url_processing_strips_source_metadata() {
+    let image = ImageBuffer::from_pixel(64, 32, Rgba([10u8, 20, 30, 255]));
+    let original_bytes =
+        image_bytes_with_metadata(&image, ImageFormat::Png, TEST_RGB_ICC_PROFILE);
+    let image_url = data_url_from_bytes("image/png", &original_bytes);
+
+    let processed = load_sanitized_data_url_for_prompt(
+        &image_url,
+        PromptImageMode::ResizeWithLimits(PromptImageResizeLimits {
+            max_dimension: 512,
+            max_patches: 256,
+        }),
+    )
+    .expect("sanitize data URL image");
+    let mut decoder = ImageReader::with_format(Cursor::new(&processed.bytes), ImageFormat::Png)
+        .into_decoder()
+        .expect("create decoder");
+
+    assert_eq!(
+        (
+            decoder.icc_profile().expect("read ICC profile"),
+            decoder.exif_metadata().expect("read EXIF metadata"),
+        ),
+        (None, None)
+    );
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn data_url_processing_converts_gif_to_png() {
     let image = ImageBuffer::from_pixel(64, 32, Rgba([10u8, 20, 30, 255]));
