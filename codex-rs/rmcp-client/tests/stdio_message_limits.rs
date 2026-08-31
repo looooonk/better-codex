@@ -95,9 +95,11 @@ async fn stdio_message_limits_preserve_legacy_local_compatibility() -> anyhow::R
 async fn modern_stdio_rejects_oversized_outbound_requests() -> anyhow::Result<()> {
     let server = codex_utils_cargo_bin::cargo_bin("test_stdio_server")?;
 
-    for (protocol_mode, accepts_oversized) in [
-        (McpProtocolMode::Legacy, true),
-        (McpProtocolMode::V20260728, false),
+    for (executor, protocol_mode, rejects_outbound) in [
+        (false, McpProtocolMode::Legacy, false),
+        (false, McpProtocolMode::V20260728, true),
+        (true, McpProtocolMode::Legacy, false),
+        (true, McpProtocolMode::V20260728, true),
     ] {
         let mut env = HashMap::new();
         if protocol_mode == McpProtocolMode::V20260728 {
@@ -106,13 +108,20 @@ async fn modern_stdio_rejects_oversized_outbound_requests() -> anyhow::Result<()
                 OsString::from("2026-07-28"),
             );
         }
+        let launcher: Arc<dyn StdioServerLauncher> = if executor {
+            Arc::new(ExecutorStdioServerLauncher::new(
+                Environment::default_for_tests().get_exec_backend(),
+            ))
+        } else {
+            Arc::new(LocalStdioServerLauncher::new(std::env::current_dir()?))
+        };
         let client = RmcpClient::new_stdio_client_with_protocol_mode(
             server.clone().into(),
             Vec::new(),
             Some(env),
             &[],
             Some(std::env::current_dir()?.to_string_lossy().into_owned()),
-            Arc::new(LocalStdioServerLauncher::new(std::env::current_dir()?)),
+            launcher,
             protocol_mode,
         )
         .await?;
@@ -147,14 +156,14 @@ async fn modern_stdio_rejects_oversized_outbound_requests() -> anyhow::Result<()
                 Some(Duration::from_secs(10)),
             )
             .await;
+        let outbound_limit_error = result
+            .as_ref()
+            .err()
+            .is_some_and(|error| error.to_string().contains("MCP stdio message exceeds"));
         assert_eq!(
-            result.is_ok(),
-            accepts_oversized,
-            "unexpected outbound stdio size handling (mode={protocol_mode:?})"
+            outbound_limit_error, rejects_outbound,
+            "unexpected outbound stdio size handling (executor={executor}, mode={protocol_mode:?})"
         );
-        if let Err(error) = result {
-            assert!(error.to_string().contains("MCP stdio message exceeds"));
-        }
         client.shutdown().await;
     }
     Ok(())
