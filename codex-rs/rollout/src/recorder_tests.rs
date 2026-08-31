@@ -679,6 +679,51 @@ async fn recorder_materializes_on_flush_with_pending_items() -> std::io::Result<
 }
 
 #[tokio::test]
+async fn replacement_rollout_path_preserves_thread_identity() -> std::io::Result<()> {
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let thread_id = ThreadId::new();
+    let rollout_id = ThreadId::new();
+    let recorder = RolloutRecorder::new(
+        &config,
+        RolloutRecorderParams::new(
+            thread_id,
+            /*forked_from_id*/ None,
+            /*parent_thread_id*/ None,
+            SessionSource::Exec,
+            /*thread_source*/ None,
+            "test_originator".to_string(),
+            BaseInstructions::default(),
+            Vec::new(),
+        )
+        .with_rollout_id(rollout_id),
+    )
+    .await?;
+    let selected_path = recorder.rollout_path().to_path_buf();
+    let expected_suffix = format!("-{thread_id}_{rollout_id}.jsonl");
+    assert!(
+        selected_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(expected_suffix.as_str()))
+    );
+
+    recorder.persist().await?;
+    assert_eq!(recorder.rollout_path(), selected_path.as_path());
+    assert_eq!(
+        crate::rollout_id_from_path(selected_path.as_path()),
+        Some(rollout_id)
+    );
+    let RolloutItem::SessionMeta(meta) = &read_rollout_lines(selected_path.as_path())?[0].item
+    else {
+        panic!("first rollout item should be session metadata");
+    };
+    assert_eq!(meta.meta.id, thread_id);
+
+    recorder.shutdown().await
+}
+
+#[tokio::test]
 async fn recorder_omits_ordinals_from_legacy_rollouts() -> std::io::Result<()> {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());

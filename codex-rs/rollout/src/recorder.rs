@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use chrono::SecondsFormat;
+use codex_protocol::RolloutId;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
@@ -52,6 +53,7 @@ use super::list::parse_timestamp_uuid_from_filename;
 use super::metadata;
 use super::ordinal::RolloutOrdinalState;
 use super::ordinal::ordinal_state_for_rollout;
+use super::rollout_file_name::RolloutFileName;
 use super::sanitizer::potentially_contains_sensitive_material;
 use super::sanitizer::redact_persisted_json;
 use super::session_index::find_thread_names_by_ids;
@@ -96,6 +98,7 @@ pub enum RolloutRecorderParams {
     Create {
         session_id: SessionId,
         conversation_id: ThreadId,
+        rollout_id_override: Option<RolloutId>,
         forked_from_id: Option<ThreadId>,
         parent_thread_id: Option<ThreadId>,
         source: Box<SessionSource>,
@@ -190,6 +193,7 @@ impl RolloutRecorderParams {
         Self::Create {
             session_id: conversation_id.into(),
             conversation_id,
+            rollout_id_override: None,
             forked_from_id,
             parent_thread_id,
             source: Box::new(source),
@@ -208,6 +212,18 @@ impl RolloutRecorderParams {
     pub fn with_session_id(mut self, session_id: SessionId) -> Self {
         if let Self::Create { session_id: id, .. } = &mut self {
             *id = session_id;
+        }
+        self
+    }
+
+    /// Selects a distinct immutable rollout ID while preserving the thread ID.
+    pub fn with_rollout_id(mut self, rollout_id: RolloutId) -> Self {
+        if let Self::Create {
+            rollout_id_override,
+            ..
+        } = &mut self
+        {
+            *rollout_id_override = Some(rollout_id);
         }
         self
     }
@@ -783,6 +799,7 @@ impl RolloutRecorder {
             RolloutRecorderParams::Create {
                 session_id,
                 conversation_id,
+                rollout_id_override,
                 forked_from_id,
                 parent_thread_id,
                 source,
@@ -797,7 +814,11 @@ impl RolloutRecorder {
                 initial_window_id,
             } => {
                 let ordinal_state = RolloutOrdinalState::for_new_rollout(history_mode);
-                let log_file_info = precompute_log_file_info(config, conversation_id)?;
+                let log_file_info = precompute_log_file_info(
+                    config,
+                    conversation_id,
+                    rollout_id_override,
+                )?;
                 let path = log_file_info.path.clone();
                 let thread_id = log_file_info.conversation_id;
                 let started_at = log_file_info.timestamp;
@@ -1582,7 +1603,7 @@ struct LogFileInfo {
     /// Full path to the rollout file.
     path: PathBuf,
 
-    /// Session ID (also embedded in filename).
+    /// Thread ID embedded before any replacement rollout ID.
     conversation_id: ThreadId,
 
     /// Timestamp for the start of the session.
@@ -1592,6 +1613,7 @@ struct LogFileInfo {
 fn precompute_log_file_info(
     config: &impl RolloutConfigView,
     conversation_id: ThreadId,
+    rollout_id_override: Option<RolloutId>,
 ) -> std::io::Result<LogFileInfo> {
     // Resolve ~/.codex/sessions/YYYY/MM/DD path.
     let timestamp = OffsetDateTime::now_local()
@@ -1602,15 +1624,10 @@ fn precompute_log_file_info(
     dir.push(format!("{:02}", u8::from(timestamp.month())));
     dir.push(format!("{:02}", timestamp.day()));
 
-    // Custom format for YYYY-MM-DDThh-mm-ss. Use `-` instead of `:` for
-    // compatibility with filesystems that do not allow colons in filenames.
-    let format: &[FormatItem] =
-        format_description!("[year]-[month]-[day]T[hour]-[minute]-[second]");
-    let date_str = timestamp
-        .format(format)
+    let rollout_id = rollout_id_override.unwrap_or(conversation_id);
+    let filename = RolloutFileName::new(timestamp, conversation_id, rollout_id)
+        .render()
         .map_err(|e| IoError::other(format!("failed to format timestamp: {e}")))?;
-
-    let filename = format!("rollout-{date_str}-{conversation_id}.jsonl");
 
     let path = dir.join(filename);
 
