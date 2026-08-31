@@ -1,3 +1,4 @@
+pub use codex_rmcp_client::McpProtocolMode;
 pub use connection_manager::McpConnectionManager;
 pub use connection_manager::tool_is_model_visible;
 pub use elicitation::ElicitationLifecycle;
@@ -84,6 +85,7 @@ pub(crate) mod codex_apps_cache;
 pub(crate) mod connection_manager;
 pub(crate) mod elicitation;
 pub(crate) mod mcp;
+mod pagination;
 mod plugin_config;
 mod resource_client;
 pub(crate) mod rmcp_client;
