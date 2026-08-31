@@ -15,7 +15,9 @@ use crate::tools::approvals::ApprovalAction;
 use crate::tools::approvals::ApprovalCacheKey;
 use crate::tools::approvals::guardian_cwd;
 use crate::tools::approval_review_boundary::prepare_approval_review_input;
+use crate::tools::approval_review_boundary::prepare_approval_review_action;
 use crate::tools::approval_review_boundary::sanitize_approval_review_result;
+use crate::tools::approval_review_lifecycle::ApprovalReviewLifecycle;
 use crate::tools::flat_tool_name;
 use crate::tools::context::ToolCallSource;
 use crate::tools::sandboxing::ToolError;
@@ -438,6 +440,28 @@ async fn request_guardian_v2_approval_until(
             return ApprovalReviewResult::ManualReview(ApprovalReviewFailure::InvalidInput);
         }
     };
+    let action = match prepare_approval_review_action(action) {
+        Ok(action) => action,
+        Err(failure) => return ApprovalReviewResult::ManualReview(failure),
+    };
+    let lifecycle = ApprovalReviewLifecycle::begin(
+        session,
+        &ctx.turn,
+        ctx.call_id.clone(),
+        action.assessment_action(),
+    )
+    .await;
+    let result = request_guardian_v2_approval_loop(session, action, ctx, deadline).await;
+    lifecycle.finish(session, &ctx.turn, &result).await;
+    result
+}
+
+async fn request_guardian_v2_approval_loop(
+    session: &Arc<Session>,
+    action: codex_extension_api::ApprovalReviewAction,
+    ctx: &ApprovalContext,
+    deadline: Instant,
+) -> ApprovalReviewResult {
     let history = session.clone_history().await.raw_items().to_vec();
     for _ in 0..MAX_REVIEWER_REROUTES {
         if ctx.cancellation_token.is_cancelled() {

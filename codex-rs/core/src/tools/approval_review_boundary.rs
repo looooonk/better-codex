@@ -36,7 +36,7 @@ pub(super) fn prepare_approval_review_input(
     input: ApprovalReviewInput,
 ) -> Result<ApprovalReviewInput, ApprovalReviewFailure> {
     validate_binding(&input)?;
-    let action = bounded_action(input.action)?;
+    let action = prepare_approval_review_action(input.action)?;
     let history = bounded_history(input.history);
     let evidence = bounded_evidence(input.evidence);
     validate_images(&input.images)?;
@@ -102,7 +102,7 @@ fn validate_identifier(identifier: &str) -> Result<(), ApprovalReviewFailure> {
     }
 }
 
-fn bounded_action(
+pub(super) fn prepare_approval_review_action(
     action: ApprovalReviewAction,
 ) -> Result<ApprovalReviewAction, ApprovalReviewFailure> {
     let mut payload = serde_json::json!({

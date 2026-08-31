@@ -1,5 +1,6 @@
 mod approval_pipeline;
 mod approval_review_boundary;
+mod approval_review_lifecycle;
 mod approvals;
 pub(crate) use approval_pipeline::ApprovalContext;
 pub(crate) use approval_pipeline::ensure_approval_grant_is_current;

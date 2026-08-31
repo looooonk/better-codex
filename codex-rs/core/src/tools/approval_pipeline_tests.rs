@@ -160,9 +160,15 @@ struct NonReturningApprovalAuthority {
     cancel_on_review: Option<CancellationToken>,
 }
 
+struct DenyingApprovalAuthority;
+
 struct StaleEvidenceApprovalAuthority {
     turn: Arc<StdMutex<Option<Arc<TurnContext>>>>,
     revisions: Arc<StdMutex<Vec<u64>>>,
+}
+
+struct GuardianV2DenialCircuitTask {
+    action: ApprovalAction,
 }
 
 #[derive(Debug)]
@@ -240,6 +246,24 @@ impl codex_extension_api::ApprovalReviewContributor for NonReturningApprovalAuth
     }
 }
 
+impl codex_extension_api::ApprovalReviewContributor for DenyingApprovalAuthority {
+    fn review<'a>(
+        &'a self,
+        _session_store: &'a codex_extension_api::ExtensionData,
+        _thread_store: &'a codex_extension_api::ExtensionData,
+        _input: codex_extension_api::ApprovalReviewInput,
+    ) -> codex_extension_api::ExtensionFuture<'a, codex_extension_api::ApprovalReviewResult> {
+        Box::pin(std::future::ready(ApprovalReviewResult::Deny(
+            codex_extension_api::ApprovalReviewOutcome {
+                risk_level: codex_protocol::protocol::GuardianRiskLevel::High,
+                user_authorization:
+                    codex_protocol::protocol::GuardianUserAuthorization::Low,
+                rationale: "blocked by the V2 authority".to_string(),
+            },
+        )))
+    }
+}
+
 impl codex_extension_api::ApprovalReviewContributor for StaleEvidenceApprovalAuthority {
     fn review<'a>(
         &'a self,
@@ -284,6 +308,47 @@ impl codex_extension_api::ApprovalReviewContributor for StaleEvidenceApprovalAut
     }
 }
 
+impl crate::tasks::SessionTask for GuardianV2DenialCircuitTask {
+    fn kind(&self) -> crate::state::TaskKind {
+        crate::state::TaskKind::Regular
+    }
+
+    fn span_name(&self) -> &'static str {
+        "session_task.guardian_v2_denial_circuit"
+    }
+
+    async fn run(
+        self: Arc<Self>,
+        session: Arc<crate::tasks::SessionTaskContext>,
+        turn: Arc<TurnContext>,
+        _input: Vec<crate::session::TurnInput>,
+        cancellation_token: CancellationToken,
+    ) -> crate::tasks::SessionTaskResult {
+        let session = session.clone_session();
+        for index in 0..3 {
+            let _ = request_approval(
+                &session,
+                self.action.clone(),
+                ApprovalContext {
+                    turn: Arc::clone(&turn),
+                    call_id: format!("circuit-call-{index}"),
+                    tool_name: ToolName::plain("shell"),
+                    approval_reason: None,
+                    retry_reason: None,
+                    network_approval_context: None,
+                    required_by_strict: false,
+                    attempt_id: format!("circuit-attempt-{index}"),
+                    source: ToolCallSource::Direct,
+                    cancellation_token: cancellation_token.clone(),
+                },
+            )
+            .await;
+        }
+        cancellation_token.cancelled().await;
+        Ok(None)
+    }
+}
+
 async fn guardian_review_test_fixture(
     authority: Arc<dyn codex_extension_api::ApprovalReviewContributor>,
     cancellation_token: CancellationToken,
@@ -291,12 +356,19 @@ async fn guardian_review_test_fixture(
     Arc<crate::session::session::Session>,
     ApprovalAction,
     ApprovalContext,
+    async_channel::Receiver<codex_protocol::protocol::Event>,
 ) {
-    use crate::session::tests::make_session_and_context;
+    use crate::session::tests::make_session_and_context_with_rx;
     use codex_protocol::models::SandboxPermissions;
     use codex_utils_path_uri::PathUri;
 
-    let (mut session, mut turn) = make_session_and_context().await;
+    let (session, turn, events) = make_session_and_context_with_rx().await;
+    let Ok(mut session) = Arc::try_unwrap(session) else {
+        panic!("single session reference")
+    };
+    let Ok(mut turn) = Arc::try_unwrap(turn) else {
+        panic!("single turn context reference")
+    };
     let mut config = turn.config.as_ref().clone();
     config.features.enable(Feature::GuardianV2);
     turn.config = Arc::new(config);
@@ -333,7 +405,7 @@ async fn guardian_review_test_fixture(
         source: ToolCallSource::Direct,
         cancellation_token,
     };
-    (Arc::new(session), action, context)
+    (Arc::new(session), action, context, events)
 }
 
 async fn allowed_guardian_grant_fixture() -> (
@@ -343,7 +415,7 @@ async fn allowed_guardian_grant_fixture() -> (
 ) {
     use crate::config::Constrained;
 
-    let (session, action, context) = guardian_review_test_fixture(
+    let (session, action, context, _events) = guardian_review_test_fixture(
         Arc::new(RecordingApprovalAuthority {
             bindings: Arc::new(StdMutex::new(Vec::new())),
         }),
@@ -408,7 +480,7 @@ async fn live_never_policy_blocks_new_action_after_strict_review() {
     use crate::state::ActiveTurn;
 
     let bindings = Arc::new(StdMutex::new(Vec::new()));
-    let (session, action, mut context) = guardian_review_test_fixture(
+    let (session, action, mut context, _events) = guardian_review_test_fixture(
         Arc::new(RecordingApprovalAuthority {
             bindings: Arc::clone(&bindings),
         }),
@@ -467,7 +539,7 @@ async fn guardian_v2_host_bounds_untrusted_contributor_input_and_result() {
 
     let secret = "sk-abcdefghijklmnopqrstuvwxyz012345";
     let observation = Arc::new(StdMutex::new(None));
-    let (session, action, mut context) = guardian_review_test_fixture(
+    let (session, action, mut context, events) = guardian_review_test_fixture(
         Arc::new(HostileApprovalAuthority {
             observation: Arc::clone(&observation),
             secret: secret.to_string(),
@@ -535,12 +607,140 @@ async fn guardian_v2_host_bounds_untrusted_contributor_input_and_result() {
     assert!(!observation.contains_secret);
     assert!(message.len() <= 4 * 1024);
     assert!(!message.contains(secret));
+    let terminal = loop {
+        let event = events.recv().await.expect("Guardian lifecycle event");
+        if let codex_protocol::protocol::EventMsg::GuardianAssessment(assessment) = event.msg
+            && assessment.completed_at_ms.is_some()
+        {
+            break assessment;
+        }
+    };
+    let serialized = serde_json::to_string(&terminal).expect("serialize terminal assessment");
+    assert!(!serialized.contains(secret));
+    assert!(serialized.len() <= 16 * 1024);
+}
+
+#[tokio::test]
+async fn guardian_v2_denial_emits_one_persisted_lifecycle_and_preserves_context() {
+    use crate::config::Constrained;
+    use codex_protocol::protocol::EventMsg;
+    use codex_protocol::protocol::GuardianAssessmentStatus;
+
+    let (session, action, context, events) = guardian_review_test_fixture(
+        Arc::new(DenyingApprovalAuthority),
+        CancellationToken::new(),
+    )
+    .await;
+    context
+        .turn
+        .approval_policy
+        .replace(Constrained::allow_any(AskForApproval::OnRequest));
+    context
+        .turn
+        .approvals_reviewer
+        .replace(ApprovalsReviewer::AutoReview);
+    let expected_action = action
+        .approval_review_action()
+        .expect("review action")
+        .assessment_action();
+
+    let error = request_approval(&session, action, context)
+        .await
+        .expect_err("V2 denial should block the action");
+    let ToolError::Rejected(message) = error else {
+        panic!("V2 denial should be a rejection: {error:?}")
+    };
+    assert_eq!(message, "blocked by the V2 authority");
+
+    let mut assessments = Vec::new();
+    while assessments.len() < 2 {
+        let event = tokio::time::timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("Guardian lifecycle event timed out")
+            .expect("Guardian lifecycle event");
+        if let EventMsg::GuardianAssessment(assessment) = event.msg {
+            assessments.push(assessment);
+        }
+    }
+    assert_eq!(
+        assessments
+            .iter()
+            .map(|assessment| assessment.status)
+            .collect::<Vec<_>>(),
+        [
+            GuardianAssessmentStatus::InProgress,
+            GuardianAssessmentStatus::Denied,
+        ]
+    );
+    assert_eq!(assessments[0].id, assessments[1].id);
+    assert_eq!(assessments[0].action, expected_action);
+    assert_eq!(assessments[1].action, expected_action);
+    assert_eq!(
+        assessments[1].rationale.as_deref(),
+        Some("blocked by the V2 authority")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn guardian_v2_repeated_denials_interrupt_the_active_turn() {
+    use crate::config::Constrained;
+    use codex_protocol::protocol::EventMsg;
+    use codex_protocol::protocol::GuardianAssessmentStatus;
+    use codex_protocol::protocol::TurnAbortReason;
+
+    let (session, action, context, events) = guardian_review_test_fixture(
+        Arc::new(DenyingApprovalAuthority),
+        CancellationToken::new(),
+    )
+    .await;
+    context
+        .turn
+        .approval_policy
+        .replace(Constrained::allow_any(AskForApproval::OnRequest));
+    context
+        .turn
+        .approvals_reviewer
+        .replace(ApprovalsReviewer::AutoReview);
+    session
+        .spawn_task(
+            Arc::clone(&context.turn),
+            Vec::new(),
+            GuardianV2DenialCircuitTask { action },
+        )
+        .await;
+
+    let mut statuses = Vec::new();
+    let aborted = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let event = events.recv().await.expect("Guardian circuit event");
+            match event.msg {
+                EventMsg::GuardianAssessment(assessment) => statuses.push(assessment.status),
+                EventMsg::TurnAborted(aborted) => break aborted,
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("Guardian V2 circuit breaker should interrupt the turn");
+
+    assert_eq!(aborted.reason, TurnAbortReason::Interrupted);
+    assert_eq!(
+        statuses,
+        [
+            GuardianAssessmentStatus::InProgress,
+            GuardianAssessmentStatus::Denied,
+            GuardianAssessmentStatus::InProgress,
+            GuardianAssessmentStatus::Denied,
+            GuardianAssessmentStatus::InProgress,
+            GuardianAssessmentStatus::Denied,
+        ]
+    );
 }
 
 #[tokio::test]
 async fn guardian_v2_host_deadline_bounds_non_returning_authority() {
     let cancellation_token = CancellationToken::new();
-    let (session, action, context) = guardian_review_test_fixture(
+    let (session, action, context, _events) = guardian_review_test_fixture(
         Arc::new(NonReturningApprovalAuthority {
             cancel_on_review: None,
         }),
@@ -563,7 +763,7 @@ async fn guardian_v2_host_deadline_bounds_non_returning_authority() {
 #[tokio::test]
 async fn guardian_v2_host_cancellation_stops_non_returning_authority() {
     let cancellation_token = CancellationToken::new();
-    let (session, action, context) = guardian_review_test_fixture(
+    let (session, action, context, _events) = guardian_review_test_fixture(
         Arc::new(NonReturningApprovalAuthority {
             cancel_on_review: Some(cancellation_token.clone()),
         }),
@@ -704,7 +904,7 @@ async fn code_mode_review_evidence_is_correlated_by_sequence() {
 async fn code_mode_allow_is_retried_when_evidence_revision_changes() {
     let turn_slot = Arc::new(StdMutex::new(None));
     let revisions = Arc::new(StdMutex::new(Vec::new()));
-    let (session, action, mut context) = guardian_review_test_fixture(
+    let (session, action, mut context, _events) = guardian_review_test_fixture(
         Arc::new(StaleEvidenceApprovalAuthority {
             turn: Arc::clone(&turn_slot),
             revisions: Arc::clone(&revisions),
