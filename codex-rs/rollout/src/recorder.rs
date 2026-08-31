@@ -64,6 +64,7 @@ use codex_git_utils::collect_git_info;
 use codex_git_utils::get_git_repo_root;
 use codex_protocol::protocol::GitInfo as ProtocolGitInfo;
 use codex_history::InitialHistory;
+use codex_protocol::protocol::HistoryPosition;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_history::ResumedHistory;
 use codex_history::RolloutItem;
@@ -109,6 +110,7 @@ pub enum RolloutRecorderParams {
         selected_capability_roots: Vec<SelectedCapabilityRoot>,
         multi_agent_version: Option<MultiAgentVersion>,
         history_mode: ThreadHistoryMode,
+        history_base: Option<HistoryPosition>,
         subagent_history_start_ordinal: Option<u64>,
         initial_window_id: Option<String>,
     },
@@ -204,6 +206,7 @@ impl RolloutRecorderParams {
             selected_capability_roots: Vec::new(),
             multi_agent_version: None,
             history_mode: Default::default(),
+            history_base: None,
             subagent_history_start_ordinal: None,
             initial_window_id: None,
         }
@@ -262,6 +265,16 @@ impl RolloutRecorderParams {
         } = &mut self
         {
             *mode = history_mode;
+        }
+        self
+    }
+
+    pub fn with_history_base(mut self, history_base: Option<HistoryPosition>) -> Self {
+        if let Self::Create {
+            history_base: base, ..
+        } = &mut self
+        {
+            *base = history_base;
         }
         self
     }
@@ -810,10 +823,12 @@ impl RolloutRecorder {
                 selected_capability_roots,
                 multi_agent_version,
                 history_mode,
+                history_base,
                 subagent_history_start_ordinal,
                 initial_window_id,
             } => {
-                let ordinal_state = RolloutOrdinalState::for_new_rollout(history_mode);
+                let ordinal_state =
+                    RolloutOrdinalState::for_new_rollout(history_mode, history_base);
                 let log_file_info = precompute_log_file_info(
                     config,
                     conversation_id,
@@ -855,7 +870,7 @@ impl RolloutRecorder {
                     selected_capability_roots,
                     memory_mode: (!config.generate_memories()).then_some("disabled".to_string()),
                     history_mode,
-                    history_base: None,
+                    history_base,
                     subagent_history_start_ordinal,
                     multi_agent_version,
                     context_window: initial_window_id.map(SessionContextWindow::new),
@@ -1024,7 +1039,7 @@ impl RolloutRecorder {
                 if !is_token_count_event {
                     redact_persisted_json(&mut value);
                 }
-                serde_json::from_value::<RolloutLine>(value)
+                crate::decode_rollout_line(value)
             } else {
                 match serde_json::from_str::<RolloutLine>(&line) {
                     Ok(rollout_line)
@@ -1055,7 +1070,7 @@ impl RolloutRecorder {
                             reject_unknown_thread_history_mode(&value)?;
                         }
                         redact_persisted_json(&mut value);
-                        serde_json::from_value::<RolloutLine>(value)
+                        crate::decode_rollout_line(value)
                     }
                     Ok(rollout_line) => Ok(rollout_line),
                     Err(direct_err) => match serde_json::from_str::<Value>(&line) {
@@ -1068,7 +1083,7 @@ impl RolloutRecorder {
                                 reject_unknown_thread_history_mode(&value)?;
                             }
                             redact_persisted_json(&mut value);
-                            serde_json::from_value::<RolloutLine>(value)
+                            crate::decode_rollout_line(value)
                         }
                         Err(_) => Err(direct_err),
                     },

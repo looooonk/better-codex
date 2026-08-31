@@ -2787,7 +2787,6 @@ impl SessionContextWindow {
     }
 }
 
-/// Exclusive position in another thread's paginated rollout history.
 /// Exclusive position in another rollout's paginated history.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema, TS)]
 pub struct HistoryPosition {

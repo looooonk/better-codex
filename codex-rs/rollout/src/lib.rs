@@ -3,6 +3,8 @@
 use std::sync::LazyLock;
 
 use codex_protocol::protocol::SessionSource;
+use serde::de::Error as _;
+use serde_json::Value;
 
 pub(crate) mod compression;
 pub(crate) mod config;
@@ -27,6 +29,33 @@ pub use codex_history::ResumedHistory;
 pub use codex_history::RolloutItem;
 pub use codex_history::RolloutLine;
 pub(crate) use codex_protocol::protocol;
+
+/// Decodes a persisted rollout record without Serde's flattened-envelope buffering.
+///
+/// With `serde_json/arbitrary_precision`, generic buffering cannot replay floating-point values
+/// nested inside flattened or internally tagged fields. Keep this workaround at the JSON
+/// persistence boundary so resume and projection use the same decoder.
+pub fn decode_rollout_line(value: Value) -> serde_json::Result<RolloutLine> {
+    let Value::Object(mut fields) = value else {
+        return serde_json::from_value(value);
+    };
+    let timestamp = fields
+        .remove("timestamp")
+        .ok_or_else(|| serde_json::Error::missing_field("timestamp"))
+        .and_then(serde_json::from_value)?;
+    let ordinal = fields
+        .remove("ordinal")
+        .map(serde_json::from_value::<Option<u64>>)
+        .transpose()?
+        .flatten();
+    let item = serde_json::from_value(Value::Object(fields))?;
+
+    Ok(RolloutLine {
+        timestamp,
+        ordinal,
+        item,
+    })
+}
 
 pub const SESSIONS_SUBDIR: &str = "sessions";
 pub const ARCHIVED_SESSIONS_SUBDIR: &str = "archived_sessions";

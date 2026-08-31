@@ -5,7 +5,6 @@ use chrono::DateTime;
 use codex_app_server_protocol::ThreadHistoryChangeSet;
 use codex_app_server_protocol::project_rollout_line;
 use codex_protocol::RolloutId;
-use codex_rollout::RolloutLine;
 use serde_json::Value;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncSeekExt;
@@ -135,7 +134,7 @@ async fn read_complete_rollout_lines(
     for line in text.lines() {
         let parsed = serde_json::from_str::<Value>(line).and_then(|mut value| {
             codex_rollout::redact_persisted_json(&mut value);
-            serde_json::from_value::<RolloutLine>(value)
+            codex_rollout::decode_rollout_line(value)
         })
         .map_err(|err| ThreadStoreError::Internal {
             message: format!(

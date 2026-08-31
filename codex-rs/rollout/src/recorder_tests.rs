@@ -9,6 +9,7 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AgentMessageEvent;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::HistoryPosition;
 use codex_history::RolloutItem;
 use codex_history::RolloutLine;
 use codex_protocol::protocol::SandboxPolicy;
@@ -721,6 +722,60 @@ async fn replacement_rollout_path_preserves_thread_identity() -> std::io::Result
     assert_eq!(meta.meta.id, thread_id);
 
     recorder.shutdown().await
+}
+
+#[tokio::test]
+async fn referenced_paginated_rollout_starts_at_history_cutoff_and_resumes() -> std::io::Result<()>
+{
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let history_base = HistoryPosition {
+        thread_id: ThreadId::new(),
+        end_ordinal_exclusive: 41,
+        end_byte_offset: 1,
+    };
+    let recorder = RolloutRecorder::new(
+        &config,
+        RolloutRecorderParams::new(
+            ThreadId::new(),
+            /*forked_from_id*/ None,
+            /*parent_thread_id*/ None,
+            SessionSource::Exec,
+            /*thread_source*/ None,
+            "test_originator".to_string(),
+            BaseInstructions::default(),
+            Vec::new(),
+        )
+        .with_history_mode(ThreadHistoryMode::Paginated)
+        .with_history_base(Some(history_base)),
+    )
+    .await?;
+    let rollout_path = recorder.rollout_path().to_path_buf();
+    recorder.persist().await?;
+    recorder.shutdown().await?;
+
+    let resumed =
+        RolloutRecorder::new(&config, RolloutRecorderParams::resume(rollout_path.clone())).await?;
+    resumed
+        .record_canonical_items(&[agent_message_item("first child record")])
+        .await?;
+    resumed.flush().await?;
+    resumed.shutdown().await?;
+
+    let resumed =
+        RolloutRecorder::new(&config, RolloutRecorderParams::resume(rollout_path.clone())).await?;
+    resumed
+        .record_canonical_items(&[agent_message_item("second child record")])
+        .await?;
+    resumed.flush().await?;
+    assert_eq!(
+        read_rollout_lines(&rollout_path)?
+            .into_iter()
+            .map(|line| line.ordinal)
+            .collect::<Vec<_>>(),
+        vec![Some(41), Some(42), Some(43)]
+    );
+    resumed.shutdown().await
 }
 
 #[tokio::test]
