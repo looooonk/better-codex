@@ -1,4 +1,5 @@
 use super::threads::ThreadFilterOptions;
+use super::threads::ThreadSectionFilter;
 use super::threads::push_thread_filters;
 use super::*;
 use crate::SortDirection;
@@ -196,6 +197,19 @@ SELECT
     threads.tokens_used,
     threads.first_user_message,
     threads.archived_at,
+    threads.thread_section_id AS section,
+    (
+        SELECT thread_sections.name
+        FROM thread_sections
+        WHERE thread_sections.id = threads.thread_section_id
+    ) AS section_name,
+    (
+        SELECT thread_sections.appearance
+        FROM thread_sections
+        WHERE thread_sections.id = threads.thread_section_id
+    ) AS section_appearance,
+    threads.section_position,
+    threads.section_entered_at_ms,
     threads.git_sha,
     threads.git_branch,
     threads.git_origin_url
@@ -209,6 +223,7 @@ FROM threads
                 allowed_sources,
                 model_providers: None,
                 cwd_filters: None,
+                section: ThreadSectionFilter::All,
                 anchor: None,
                 sort_key: SortKey::UpdatedAt,
                 sort_direction: SortDirection::Desc,
@@ -578,6 +593,19 @@ SELECT
     threads.tokens_used,
     threads.first_user_message,
     threads.archived_at,
+    threads.thread_section_id AS section,
+    (
+        SELECT thread_sections.name
+        FROM thread_sections
+        WHERE thread_sections.id = threads.thread_section_id
+    ) AS section_name,
+    (
+        SELECT thread_sections.appearance
+        FROM thread_sections
+        WHERE thread_sections.id = threads.thread_section_id
+    ) AS section_appearance,
+    threads.section_position,
+    threads.section_entered_at_ms,
     threads.git_sha,
     threads.git_branch,
     threads.git_origin_url
