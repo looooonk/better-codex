@@ -156,6 +156,8 @@ pub enum Feature {
     Apps,
     /// Enable MCP apps.
     EnableMcpApps,
+    /// Enable MCP protocol version 2026-07-28 support.
+    Mcp20260728,
     /// Removed compatibility flag for the legacy Apps MCP path override.
     AppsMcpPathOverride,
     /// Removed compatibility flag retained as a no-op now that tool_search is always enabled.
@@ -1065,6 +1067,12 @@ pub const FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         id: Feature::EnableMcpApps,
         key: "enable_mcp_apps",
+        stage: Stage::UnderDevelopment,
+        default_enabled: false,
+    },
+    FeatureSpec {
+        id: Feature::Mcp20260728,
+        key: "mcp_2026_07_28",
         stage: Stage::UnderDevelopment,
         default_enabled: false,
     },

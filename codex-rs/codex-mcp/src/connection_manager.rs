@@ -14,6 +14,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use crate::McpAuthStatusEntry;
+use crate::McpProtocolMode;
 use crate::codex_apps::prepare_openai_file_params_for_model;
 use crate::codex_apps_cache::CodexAppsToolsCache;
 use crate::codex_apps_cache::CodexAppsToolsCacheKey;
@@ -23,6 +24,7 @@ use crate::elicitation::ElicitationRequestRouter;
 use crate::elicitation::ElicitationReviewerHandle;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::mcp::ToolPluginProvenance;
+use crate::pagination::collect_paginated;
 use crate::rmcp_client::AsyncManagedClient;
 use crate::rmcp_client::CODEX_APPS_REFRESH_DURATION_METRIC;
 use crate::rmcp_client::DEFAULT_STARTUP_TIMEOUT;
@@ -140,6 +142,7 @@ impl McpConnectionManager {
         tool_catalog_cache: McpToolCatalogCache,
         codex_apps_tools_cache_key: CodexAppsToolsCacheKey,
         prefix_mcp_tool_names: bool,
+        protocol_mode: McpProtocolMode,
         client_elicitation_capability: ElicitationCapability,
         supports_openai_form_elicitation: bool,
         tool_plugin_provenance: ToolPluginProvenance,
@@ -267,6 +270,7 @@ impl McpConnectionManager {
                 runtime_auth_provider,
                 client_elicitation_capability.clone(),
                 supports_openai_form_elicitation,
+                protocol_mode,
             );
             clients.insert(server_name.clone(), async_managed_client.clone());
             let tx_event = tx_event.clone();
@@ -670,33 +674,15 @@ impl McpConnectionManager {
             let client = managed_client.client.clone();
 
             join_set.spawn(async move {
-                let mut collected: Vec<Resource> = Vec::new();
-                let mut cursor: Option<String> = None;
-
-                loop {
-                    let params = cursor.as_ref().map(|next| {
-                        PaginatedRequestParams::default().with_cursor(Some(next.clone()))
-                    });
-                    let response = match client.list_resources(params, timeout).await {
-                        Ok(result) => result,
-                        Err(err) => return (server_name, Err(err)),
-                    };
-
-                    collected.extend(response.resources);
-
-                    match response.next_cursor {
-                        Some(next) => {
-                            if cursor.as_ref() == Some(&next) {
-                                return (
-                                    server_name,
-                                    Err(anyhow!("resources/list returned duplicate cursor")),
-                                );
-                            }
-                            cursor = Some(next);
-                        }
-                        None => return (server_name, Ok(collected)),
+                let resources = collect_paginated("resources/list", timeout, |params| {
+                    let client = Arc::clone(&client);
+                    async move {
+                        let response = client.list_resources(params, timeout).await?;
+                        Ok((response.resources, response.next_cursor))
                     }
-                }
+                })
+                .await;
+                (server_name, resources)
             });
         }
 
@@ -741,35 +727,15 @@ impl McpConnectionManager {
             let timeout = managed_client.tool_timeout;
 
             join_set.spawn(async move {
-                let mut collected: Vec<ResourceTemplate> = Vec::new();
-                let mut cursor: Option<String> = None;
-
-                loop {
-                    let params = cursor.as_ref().map(|next| {
-                        PaginatedRequestParams::default().with_cursor(Some(next.clone()))
-                    });
-                    let response = match client.list_resource_templates(params, timeout).await {
-                        Ok(result) => result,
-                        Err(err) => return (server_name_cloned, Err(err)),
-                    };
-
-                    collected.extend(response.resource_templates);
-
-                    match response.next_cursor {
-                        Some(next) => {
-                            if cursor.as_ref() == Some(&next) {
-                                return (
-                                    server_name_cloned,
-                                    Err(anyhow!(
-                                        "resources/templates/list returned duplicate cursor"
-                                    )),
-                                );
-                            }
-                            cursor = Some(next);
-                        }
-                        None => return (server_name_cloned, Ok(collected)),
+                let templates = collect_paginated("resources/templates/list", timeout, |params| {
+                    let client = Arc::clone(&client);
+                    async move {
+                        let response = client.list_resource_templates(params, timeout).await?;
+                        Ok((response.resource_templates, response.next_cursor))
                     }
-                }
+                })
+                .await;
+                (server_name_cloned, templates)
             });
         }
 

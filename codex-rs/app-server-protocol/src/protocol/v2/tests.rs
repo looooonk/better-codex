@@ -1909,16 +1909,16 @@ fn client_request_turn_start_granular_approval_policy_is_marked_experimental() {
 }
 
 #[test]
-fn mcp_server_elicitation_response_round_trips_rmcp_result() {
-    let rmcp_result = rmcp::model::CreateElicitationResult {
-        action: rmcp::model::ElicitationAction::Accept,
-        content: Some(json!({
+fn mcp_server_elicitation_response_preserves_rmcp_result() {
+    let mut rmcp_result = rmcp::model::ElicitResult::new(rmcp::model::ElicitationAction::Accept)
+        .with_content(json!({
             "confirmed": true,
-        })),
-        meta: None,
-    };
+        }));
+    rmcp_result.meta = Some(rmcp::model::MetaObject::from(serde_json::Map::from_iter([
+        ("requestId".to_string(), json!("req-123")),
+    ])));
 
-    let v2_response = McpServerElicitationRequestResponse::from(rmcp_result.clone());
+    let v2_response = McpServerElicitationRequestResponse::from(rmcp_result);
     assert_eq!(
         v2_response,
         McpServerElicitationRequestResponse {
@@ -1926,12 +1926,10 @@ fn mcp_server_elicitation_response_round_trips_rmcp_result() {
             content: Some(json!({
                 "confirmed": true,
             })),
-            meta: None,
+            meta: Some(json!({
+                "requestId": "req-123",
+            })),
         }
-    );
-    assert_eq!(
-        rmcp::model::CreateElicitationResult::from(v2_response),
-        rmcp_result
     );
 }
 

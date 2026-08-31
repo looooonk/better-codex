@@ -43,13 +43,13 @@ rmcp = { workspace = true, default-features = false, features = [
     "server",
     "transport-async-rw",
     "transport-child-process",
-    "transport-streamable-http-client-reqwest",
+    "transport-streamable-http-client",
     "transport-streamable-http-server",
 ] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-sse-stream = "0.2.1"
+sse-stream = "0.2.5"
 thiserror = { workspace = true }
 tiny_http = { workspace = true }
 tokio = { workspace = true, features = [

@@ -43,14 +43,14 @@ use rmcp::handler::server::ServerHandler;
 use rmcp::model::BooleanSchema;
 use rmcp::model::CallToolRequestParams;
 use rmcp::model::CallToolResult;
-use rmcp::model::Content;
-use rmcp::model::CreateElicitationRequestParams;
+use rmcp::model::ContentBlock;
+use rmcp::model::ElicitRequestParams;
 use rmcp::model::ElicitationAction;
 use rmcp::model::ElicitationSchema;
 use rmcp::model::JsonObject;
 use rmcp::model::ListToolsResult;
-use rmcp::model::Meta;
-use rmcp::model::PrimitiveSchema;
+use rmcp::model::MetaObject;
+use rmcp::model::PrimitiveSchemaDefinition;
 use rmcp::model::ServerCapabilities;
 use rmcp::model::ServerInfo;
 use rmcp::model::Tool;
@@ -274,7 +274,10 @@ url = "{mcp_server_url}/mcp"
     };
     let requested_schema: McpElicitationSchema = serde_json::from_value(serde_json::to_value(
         ElicitationSchema::builder()
-            .required_property("confirmed", PrimitiveSchema::Boolean(BooleanSchema::new()))
+            .required_property(
+                "confirmed",
+                PrimitiveSchemaDefinition::Boolean(BooleanSchema::new()),
+            )
             .build()
             .map_err(anyhow::Error::msg)?,
     )?)?;
@@ -739,18 +742,14 @@ impl ServerHandler for ToolAppsMcpServer {
         );
         tool.annotations = Some(ToolAnnotations::new().read_only(true));
 
-        Ok(ListToolsResult {
-            tools: vec![tool],
-            next_cursor: None,
-            meta: None,
-        })
+        Ok(ListToolsResult::with_all_items(vec![tool]))
     }
 
     async fn call_tool(
         &self,
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
-    ) -> Result<CallToolResult, rmcp::ErrorData> {
+    ) -> Result<rmcp::model::CallToolResponse, rmcp::ErrorData> {
         assert_eq!(request.name.as_ref(), TEST_TOOL_NAME);
         let message = request
             .arguments
@@ -761,11 +760,12 @@ impl ServerHandler for ToolAppsMcpServer {
         let thread_id = context
             .meta
             .0
+            .0
             .get("threadId")
             .and_then(|value| value.as_str())
             .unwrap_or_default();
 
-        let mut meta = Meta::new();
+        let mut meta = MetaObject::new();
         meta.0.insert("calledBy".to_string(), json!("mcp-app"));
 
         if message == LARGE_RESPONSE_MESSAGE {
@@ -773,19 +773,22 @@ impl ServerHandler for ToolAppsMcpServer {
             let mut result = CallToolResult::structured(json!({
                 "large": "structured-value-".repeat(DEFAULT_OUTPUT_BYTES_CAP / 8),
             }));
-            result.content = vec![Content::text(large_text)];
+            result.content = vec![ContentBlock::text(large_text)];
             result.meta = Some(meta);
-            return Ok(result);
+            return Ok(result.into());
         }
 
         if message == ELICITATION_TRIGGER_MESSAGE {
             let requested_schema = ElicitationSchema::builder()
-                .required_property("confirmed", PrimitiveSchema::Boolean(BooleanSchema::new()))
+                .required_property(
+                    "confirmed",
+                    PrimitiveSchemaDefinition::Boolean(BooleanSchema::new()),
+                )
                 .build()
                 .map_err(|err| rmcp::ErrorData::internal_error(err.to_string(), None))?;
             let result = context
                 .peer
-                .create_elicitation(CreateElicitationRequestParams::FormElicitationParams {
+                .create_elicitation(ElicitRequestParams::FormElicitationParams {
                     meta: None,
                     message: ELICITATION_MESSAGE.to_string(),
                     requested_schema,
@@ -804,14 +807,20 @@ impl ServerHandler for ToolAppsMcpServer {
                 }
                 ElicitationAction::Decline => "declined",
                 ElicitationAction::Cancel => "cancelled",
+                _ => {
+                    return Err(rmcp::ErrorData::invalid_params(
+                        "unsupported MCP elicitation action",
+                        None,
+                    ));
+                }
             };
-            return Ok(CallToolResult::success(vec![Content::text(output)]));
+            return Ok(CallToolResult::success(vec![ContentBlock::text(output)]).into());
         }
 
         if message == URL_ELICITATION_TRIGGER_MESSAGE {
             let result = context
                 .peer
-                .create_elicitation(CreateElicitationRequestParams::UrlElicitationParams {
+                .create_elicitation(ElicitRequestParams::UrlElicitationParams {
                     meta: None,
                     message: URL_ELICITATION_MESSAGE.to_string(),
                     url: URL_ELICITATION_URL.to_string(),
@@ -826,17 +835,23 @@ impl ServerHandler for ToolAppsMcpServer {
                 }
                 ElicitationAction::Decline => "declined",
                 ElicitationAction::Cancel => "cancelled",
+                _ => {
+                    return Err(rmcp::ErrorData::invalid_params(
+                        "unsupported MCP elicitation action",
+                        None,
+                    ));
+                }
             };
-            return Ok(CallToolResult::success(vec![Content::text(output)]));
+            return Ok(CallToolResult::success(vec![ContentBlock::text(output)]).into());
         }
 
         let mut result = CallToolResult::structured(json!({
             "echoed": message,
             "threadId": thread_id,
         }));
-        result.content = vec![Content::text(format!("echo: {message}"))];
+        result.content = vec![ContentBlock::text(format!("echo: {message}"))];
         result.meta = Some(meta);
-        Ok(result)
+        Ok(result.into())
     }
 }
 

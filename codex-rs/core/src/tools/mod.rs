@@ -1,3 +1,4 @@
+mod approval_pipeline;
 mod approvals;
 pub(crate) mod code_mode;
 pub(crate) mod context;

@@ -206,7 +206,7 @@ pub(crate) mod context_window;
 mod handlers;
 mod inject;
 mod input_queue;
-mod live_approval_policy;
+pub(crate) mod live_approval_policy;
 mod mcp;
 mod mcp_runtime;
 pub(crate) mod multi_agents;
@@ -231,6 +231,7 @@ pub(crate) use self::input_queue::InputQueueActivity;
 pub(crate) use self::input_queue::TurnInput;
 pub(crate) use self::input_queue::TurnInputQueue;
 use self::live_approval_policy::LiveApprovalPolicy;
+use self::live_approval_policy::LiveApprovalsReviewer;
 pub use self::mcp_runtime::McpRuntimeSnapshot;
 use self::review::spawn_review_thread;
 use self::session::AppServerClientMetadata;
@@ -1532,7 +1533,13 @@ impl Session {
         updates: SessionSettingsUpdate,
     ) -> ConstraintResult<()> {
         let notify_config_contributors = !self.services.extensions.config_contributors().is_empty();
-        let (previous_config, new_config, permission_profile_changed, updated_approval_policy) = {
+        let (
+            previous_config,
+            new_config,
+            permission_profile_changed,
+            updated_approval_policy,
+            updated_approvals_reviewer,
+        ) = {
             let mut state = self.state.lock().await;
             let updated = match state.session_configuration.apply(&updates) {
                 Ok(updated) => updated,
@@ -1553,6 +1560,9 @@ impl Session {
             let updated_approval_policy = (state.session_configuration.approval_policy
                 != updated.approval_policy)
                 .then(|| updated.approval_policy.clone());
+            let updated_approvals_reviewer = (state.session_configuration.approvals_reviewer
+                != updated.approvals_reviewer)
+                .then_some(updated.approvals_reviewer);
             if updates.environments.is_some() {
                 self.services
                     .turn_environments
@@ -1564,10 +1574,11 @@ impl Session {
                 new_config,
                 permission_profile_changed,
                 updated_approval_policy,
+                updated_approvals_reviewer,
             )
         };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
-        if let Some(approval_policy) = updated_approval_policy {
+        if updated_approval_policy.is_some() || updated_approvals_reviewer.is_some() {
             let active_turn_context = self
                 .active_turn
                 .lock()
@@ -1576,10 +1587,17 @@ impl Session {
                 .and_then(|turn| turn.task.as_ref())
                 .map(|task| Arc::clone(&task.turn_context));
             if let Some(turn_context) = active_turn_context {
-                turn_context
-                    .approval_policy
-                    .replace(approval_policy.clone());
+                if let Some(approval_policy) = updated_approval_policy.as_ref() {
+                    turn_context
+                        .approval_policy
+                        .replace(approval_policy.clone());
+                }
+                if let Some(approvals_reviewer) = updated_approvals_reviewer {
+                    turn_context.approvals_reviewer.replace(approvals_reviewer);
+                }
             }
+        }
+        if let Some(approval_policy) = updated_approval_policy {
             self.services
                 .latest_mcp_runtime()
                 .manager()

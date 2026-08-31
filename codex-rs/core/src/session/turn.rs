@@ -2194,7 +2194,7 @@ async fn try_run_sampling_request(
                     turn_context: turn_context.clone(),
                     turn_store: Arc::clone(&turn_store),
                     tool_runtime: tool_runtime.clone(),
-                    cancellation_token: cancellation_token.child_token(),
+                    cancellation_token: cancellation_token.clone(),
                 };
 
                 let preempt_for_mailbox_mail = match &item {
