@@ -58,7 +58,57 @@ mod tests {
     use crate::ThreadPersistenceMetadata;
     use crate::ThreadSortKey;
     use codex_protocol::models::BaseInstructions;
+    use codex_protocol::models::ContentItem;
+    use codex_protocol::models::ResponseItem;
     use codex_protocol::protocol::SessionSource;
+
+    #[tokio::test]
+    async fn turn_start_persist_surfaces_latched_append_failure() {
+        let store = Arc::new(InMemoryThreadStore::default());
+        let thread_id = ThreadId::new();
+        let live_thread = crate::LiveThread::create(
+            store.clone(),
+            create_thread_params(thread_id, ThreadHistoryMode::Legacy),
+        )
+        .await
+        .expect("create live thread");
+        store.fail_appends_with("append rejected").await;
+
+        let append_error = live_thread
+            .append_items(&[RolloutItem::ResponseItem(ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "must be durable".to_string(),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            })])
+            .await
+            .expect_err("append should fail");
+        assert_eq!(
+            append_error.to_string(),
+            "thread-store internal error: append rejected"
+        );
+
+        let persist_error = live_thread
+            .persist(PersistContext::TurnStart)
+            .await
+            .expect_err("successful store persist must not hide append failure");
+        assert_eq!(
+            persist_error.to_string(),
+            "thread-store internal error: canonical thread append failed before turn start: thread-store internal error: append rejected"
+        );
+        assert_eq!(
+            store.calls().await,
+            InMemoryThreadStoreCalls {
+                create_thread: 1,
+                append_items: 1,
+                persist_thread: 1,
+                ..Default::default()
+            }
+        );
+    }
 
     #[tokio::test]
     async fn default_turn_pagination_methods_return_unsupported() {
@@ -393,6 +443,8 @@ pub struct InMemoryThreadStore {
 #[derive(Default)]
 struct InMemoryThreadStoreState {
     calls: InMemoryThreadStoreCalls,
+    #[cfg(test)]
+    append_failure: Option<String>,
     created_threads: HashMap<ThreadId, CreateThreadParams>,
     histories: HashMap<ThreadId, Vec<RolloutItem>>,
     metadata_updates: HashMap<ThreadId, ThreadMetadataPatch>,
@@ -419,6 +471,11 @@ impl InMemoryThreadStore {
     /// Returns the calls observed by this store.
     pub async fn calls(&self) -> InMemoryThreadStoreCalls {
         self.state.lock().await.calls.clone()
+    }
+
+    #[cfg(test)]
+    async fn fail_appends_with(&self, message: &str) {
+        self.state.lock().await.append_failure = Some(message.to_string());
     }
 
     async fn create_thread(&self, params: CreateThreadParams) -> ThreadStoreResult<()> {
@@ -489,6 +546,10 @@ impl InMemoryThreadStore {
             return Ok(());
         }
         state.calls.append_items += 1;
+        #[cfg(test)]
+        if let Some(message) = state.append_failure.clone() {
+            return Err(ThreadStoreError::Internal { message });
+        }
         state
             .histories
             .entry(params.thread_id)

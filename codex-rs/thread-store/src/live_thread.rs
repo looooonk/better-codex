@@ -38,6 +38,7 @@ pub struct LiveThread {
     history_mode: ThreadHistoryMode,
     thread_store: Arc<dyn ThreadStore>,
     metadata_sync: Arc<Mutex<ThreadMetadataSync>>,
+    canonical_append_failure: Arc<Mutex<Option<String>>>,
     persistence_telemetry: RolloutPersistenceTelemetry,
 }
 
@@ -104,6 +105,7 @@ impl LiveThread {
             history_mode,
             thread_store,
             metadata_sync: Arc::new(Mutex::new(metadata_sync)),
+            canonical_append_failure: Arc::new(Mutex::new(None)),
             persistence_telemetry: RolloutPersistenceTelemetry::new(thread_id),
         })
     }
@@ -178,6 +180,7 @@ impl LiveThread {
             history_mode,
             thread_store,
             metadata_sync: Arc::new(Mutex::new(metadata_sync)),
+            canonical_append_failure: Arc::new(Mutex::new(None)),
             persistence_telemetry: RolloutPersistenceTelemetry::new(thread_id),
         })
     }
@@ -228,12 +231,20 @@ impl LiveThread {
         } else {
             (persisted_rollout_items(raw_items, self.history_mode), None)
         };
-        self.thread_store
+        if let Err(err) = self
+            .thread_store
             .append_items(AppendThreadItemsParams {
                 thread_id: self.thread_id,
                 items: raw_items.to_vec(),
             })
-            .await?;
+            .await
+        {
+            let mut failure = self.canonical_append_failure.lock().await;
+            if failure.is_none() {
+                *failure = Some(err.to_string());
+            }
+            return Err(err);
+        }
         if let Some(measurement) = measurement.as_ref() {
             self.persistence_telemetry
                 .record_batch(raw_items, measurement);
@@ -249,6 +260,13 @@ impl LiveThread {
         self.thread_store
             .persist_thread(self.thread_id, context)
             .await?;
+        if context == PersistContext::TurnStart
+            && let Some(message) = self.canonical_append_failure.lock().await.clone()
+        {
+            return Err(ThreadStoreError::Internal {
+                message: format!("canonical thread append failed before turn start: {message}"),
+            });
+        }
         self.flush_pending_metadata_update().await
     }
 
