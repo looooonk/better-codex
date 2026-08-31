@@ -3,21 +3,17 @@ use crate::exec::ExecCapturePolicy;
 use crate::exec::ExecExpiration;
 use crate::exec::cancel_when_either;
 use crate::exec::is_likely_sandbox_denied;
-use crate::guardian::GuardianApprovalRequest;
-use crate::guardian::guardian_rejection_message;
-use crate::guardian::guardian_timeout_message;
-use crate::guardian::new_guardian_review_id;
-use crate::guardian::review_approval_request;
-use crate::guardian::routes_approval_to_guardian;
-use crate::hook_runtime::run_permission_request_hooks;
 use crate::sandboxing::ExecOptions;
 use crate::sandboxing::ExecRequest;
 use crate::sandboxing::SandboxPermissions;
 use crate::shell::ShellType;
+use crate::tools::approval_pipeline::ApprovalContext;
+use crate::tools::approval_pipeline::request_approval;
+use crate::tools::approvals::ApprovalAction;
+use crate::tools::context::ToolCallSource;
 use crate::tools::runtimes::build_sandbox_command;
 use crate::tools::runtimes::exec_env_for_sandbox_permissions;
 use crate::tools::runtimes::prepend_zsh_fork_bin_to_path;
-use crate::tools::sandboxing::PermissionRequestPayload;
 use crate::tools::sandboxing::SandboxAttempt;
 use crate::tools::sandboxing::ToolCtx;
 use crate::tools::sandboxing::ToolError;
@@ -30,7 +26,6 @@ use codex_execpolicy::MatchOptions;
 use codex_execpolicy::Policy;
 use codex_execpolicy::RuleMatch;
 use codex_features::Feature;
-use codex_hooks::PermissionRequestDecision;
 use codex_protocol::config_types::WindowsSandboxLevel;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::SandboxErr;
@@ -42,7 +37,6 @@ use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::permissions::NetworkSandboxPolicy;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::GuardianCommandSource;
-use codex_protocol::protocol::NetworkPolicyRuleAction;
 use codex_protocol::protocol::ReviewDecision;
 use codex_sandboxing::SandboxCommand;
 use codex_sandboxing::SandboxManager;
@@ -87,6 +81,8 @@ const REJECT_SANDBOX_APPROVAL_REASON: &str =
     "approval required by policy, but AskForApproval::Granular.sandbox_approval is false";
 const REJECT_RULES_APPROVAL_REASON: &str =
     "approval required by policy rule, but AskForApproval::Granular.rules is false";
+const APPROVAL_SETTINGS_CHANGED_REASON: &str =
+    "approval settings changed before execution could begin";
 fn approval_sandbox_permissions(
     sandbox_permissions: SandboxPermissions,
     additional_permissions_preapproved: bool,
@@ -226,6 +222,7 @@ pub(super) async fn try_run_zsh_fork(
     // escalation server.
     let stopwatch = Stopwatch::new(effective_timeout);
     let mut cancel_token = stopwatch.cancellation_token();
+    cancel_token = cancel_when_either(cancel_token, ctx.cancellation_token.clone());
     if let Some(cancellation) = attempt.network_denial_cancellation_token.clone() {
         cancel_token = cancel_when_either(cancel_token, cancellation);
     }
@@ -240,7 +237,8 @@ pub(super) async fn try_run_zsh_fork(
         call_id: ctx.call_id.clone(),
         environment_id: req.turn_environment.environment_id.clone(),
         tool_name: GuardianCommandSource::Shell,
-        approval_policy: ctx.turn.approval_policy.value(),
+        source: ctx.source.clone(),
+        cancellation_token: ctx.cancellation_token.clone(),
         permission_profile: command_executor.permission_profile.clone(),
         file_system_sandbox_policy: command_executor.file_system_sandbox_policy.clone(),
         sandbox_permissions: req.sandbox_permissions,
@@ -324,7 +322,8 @@ pub(crate) async fn prepare_unified_exec_zsh_fork(
         call_id: ctx.call_id.clone(),
         environment_id: req.turn_environment.environment_id.clone(),
         tool_name: GuardianCommandSource::UnifiedExec,
-        approval_policy: ctx.turn.approval_policy.value(),
+        source: ctx.source.clone(),
+        cancellation_token: ctx.cancellation_token.clone(),
         permission_profile: exec_request.permission_profile.clone(),
         file_system_sandbox_policy: exec_request.file_system_sandbox_policy.clone(),
         sandbox_permissions: req.sandbox_permissions,
@@ -342,7 +341,7 @@ pub(crate) async fn prepare_unified_exec_zsh_fork(
         escalation_policy,
     );
     let escalation_session = escalate_server
-        .start_session(CancellationToken::new(), Arc::new(command_executor))
+        .start_session(ctx.cancellation_token.clone(), Arc::new(command_executor))
         .map_err(|err| ToolError::Rejected(err.to_string()))?;
     let mut exec_request = exec_request;
     exec_request.env.extend(escalation_session.env().clone());
@@ -359,7 +358,8 @@ struct CoreShellActionProvider {
     call_id: String,
     environment_id: String,
     tool_name: GuardianCommandSource,
-    approval_policy: AskForApproval,
+    source: ToolCallSource,
+    cancellation_token: CancellationToken,
     permission_profile: PermissionProfile,
     file_system_sandbox_policy: FileSystemSandboxPolicy,
     sandbox_permissions: SandboxPermissions,
@@ -377,7 +377,6 @@ enum DecisionSource {
 
 struct PromptDecision {
     decision: ReviewDecision,
-    guardian_review_id: Option<String>,
     rejection_message: Option<String>,
 }
 
@@ -447,96 +446,59 @@ impl CoreShellActionProvider {
         workdir: &AbsolutePathBuf,
         stopwatch: &Stopwatch,
         additional_permissions: Option<AdditionalPermissionProfile>,
+        required_by_strict: bool,
     ) -> anyhow::Result<PromptDecision> {
-        let command = join_program_and_argv(program, argv);
-        let workdir = workdir.clone();
+        let approval_id = Uuid::new_v4().to_string();
+        let action = ApprovalAction::Execve {
+            id: self.call_id.clone(),
+            approval_id: approval_id.clone(),
+            environment_id: self.environment_id.clone(),
+            source: self.tool_name,
+            program: program.to_string_lossy().into_owned(),
+            argv: argv.to_vec(),
+            cwd: workdir.clone(),
+            additional_permissions,
+        };
         let session = self.session.clone();
-        let turn = self.turn.clone();
-        let call_id = self.call_id.clone();
-        let approval_id = Some(Uuid::new_v4().to_string());
-        let environment_id = Some(self.environment_id.clone());
-        let source = self.tool_name;
-        let guardian_review_id = routes_approval_to_guardian(&turn).then(new_guardian_review_id);
-        Ok(stopwatch
-            .pause_for(async move {
-                // 1) Run PermissionRequest hooks
-                let permission_request = PermissionRequestPayload::bash(
-                    codex_shell_command::parse_command::shlex_join(&command),
-                    /*description*/ None,
-                );
-                let effective_approval_id = approval_id.clone().unwrap_or_else(|| call_id.clone());
-                match run_permission_request_hooks(
-                    &session,
-                    &turn,
-                    &effective_approval_id,
-                    permission_request,
-                )
-                .await
-                {
-                    Some(PermissionRequestDecision::Allow) => {
-                        return PromptDecision {
-                            decision: ReviewDecision::Approved,
-                            guardian_review_id: None,
-                            rejection_message: None,
-                        };
-                    }
-                    Some(PermissionRequestDecision::Deny { message }) => {
-                        return PromptDecision {
-                            decision: ReviewDecision::denied(),
-                            guardian_review_id: None,
-                            rejection_message: Some(message),
-                        };
-                    }
-                    None => {}
-                }
-
-                // 2) Route to Guardian if configured
-                if let Some(review_id) = guardian_review_id.clone() {
-                    let decision = review_approval_request(
-                        &session,
-                        &turn,
-                        review_id.clone(),
-                        GuardianApprovalRequest::Execve {
-                            id: call_id.clone(),
-                            source,
-                            program: program.to_string_lossy().into_owned(),
-                            argv: argv.to_vec(),
-                            cwd: workdir.clone(),
-                            additional_permissions,
-                        },
-                        /*retry_reason*/ None,
-                    )
-                    .await;
-                    return PromptDecision {
-                        decision,
-                        guardian_review_id,
-                        rejection_message: None,
-                    };
-                }
-
-                // 3) Fall back to regular user prompt
-                let decision = session
-                    .request_command_approval(
-                        &turn,
-                        call_id,
-                        approval_id,
-                        environment_id,
-                        command,
-                        workdir.clone(),
-                        /*reason*/ None,
-                        /*network_approval_context*/ None,
-                        /*proposed_execpolicy_amendment*/ None,
-                        additional_permissions,
-                        Some(vec![ReviewDecision::Approved, ReviewDecision::Abort]),
-                    )
-                    .await;
-                PromptDecision {
-                    decision,
-                    guardian_review_id: None,
-                    rejection_message: None,
-                }
-            })
-            .await)
+        let result = stopwatch
+            .pause_for(request_approval(
+                &session,
+                action,
+                ApprovalContext {
+                    turn: self.turn.clone(),
+                    call_id: self.call_id.clone(),
+                    tool_name: codex_tools::ToolName::plain(match self.tool_name {
+                        GuardianCommandSource::Shell => "shell",
+                        GuardianCommandSource::UnifiedExec => "exec_command",
+                    }),
+                    approval_reason: None,
+                    retry_reason: None,
+                    network_approval_context: None,
+                    required_by_strict,
+                    attempt_id: approval_id,
+                    source: self.source.clone(),
+                    cancellation_token: self.cancellation_token.clone(),
+                },
+            ))
+            .await;
+        Ok(match result {
+            Ok(decision) => PromptDecision {
+                decision,
+                rejection_message: None,
+            },
+            Err(ToolError::Rejected(message)) => PromptDecision {
+                decision: ReviewDecision::denied(),
+                rejection_message: Some(message),
+            },
+            Err(ToolError::Codex(CodexErr::TurnAborted)) => PromptDecision {
+                decision: ReviewDecision::Abort,
+                rejection_message: None,
+            },
+            Err(ToolError::Codex(err)) => PromptDecision {
+                decision: ReviewDecision::denied(),
+                rejection_message: Some(err.to_string()),
+            },
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -556,14 +518,43 @@ impl CoreShellActionProvider {
                 EscalationDecision::deny(Some("Execution forbidden by policy".to_string()))
             }
             Decision::Prompt => {
-                if execve_prompt_is_rejected_by_policy(self.approval_policy, &decision_source)
+                let policy_before = self.turn.approval_policy.decision_snapshot();
+                let reviewer_before = self.turn.approvals_reviewer.snapshot();
+                let strict_before = self.session.strict_auto_review_enabled_for_turn().await;
+                if execve_prompt_is_rejected_by_policy(policy_before.value, &decision_source)
                     .is_some()
                 {
                     EscalationDecision::deny(Some("Execution forbidden by policy".to_string()))
                 } else {
                     let prompt_decision = self
-                        .prompt(program, argv, workdir, &self.stopwatch, prompt_permissions)
+                        .prompt(
+                            program,
+                            argv,
+                            workdir,
+                            &self.stopwatch,
+                            prompt_permissions,
+                            strict_before,
+                        )
                         .await?;
+                    let policy_after = self.turn.approval_policy.decision_snapshot();
+                    if self.cancellation_token.is_cancelled() {
+                        return Ok(EscalationDecision::deny(Some(
+                            "Execution cancelled".to_string(),
+                        )));
+                    }
+                    if policy_after.revision != policy_before.revision
+                        || self.turn.approvals_reviewer.snapshot() != reviewer_before
+                        || self.session.strict_auto_review_enabled_for_turn().await != strict_before
+                    {
+                        return Ok(EscalationDecision::deny(Some(
+                            APPROVAL_SETTINGS_CHANGED_REASON.to_string(),
+                        )));
+                    }
+                    if let Some(reason) =
+                        execve_prompt_is_rejected_by_policy(policy_after.value, &decision_source)
+                    {
+                        return Ok(EscalationDecision::deny(Some(reason.to_string())));
+                    }
                     match prompt_decision.decision {
                         ReviewDecision::Approved
                         | ReviewDecision::ApprovedForSession
@@ -574,37 +565,19 @@ impl CoreShellActionProvider {
                                 EscalationDecision::run()
                             }
                         }
-                        ReviewDecision::NetworkPolicyAmendment {
-                            network_policy_amendment,
-                        } => match network_policy_amendment.action {
-                            NetworkPolicyRuleAction::Allow => {
-                                if needs_escalation {
-                                    EscalationDecision::escalate(escalation_execution.clone())
-                                } else {
-                                    EscalationDecision::run()
-                                }
-                            }
-                            NetworkPolicyRuleAction::Deny => {
-                                EscalationDecision::deny(Some("User denied execution".to_string()))
-                            }
-                        },
+                        ReviewDecision::NetworkPolicyAmendment { .. } => EscalationDecision::deny(
+                            Some("Invalid network policy amendment for shell approval".to_string()),
+                        ),
                         ReviewDecision::Denied { .. } => {
-                            let message = if let Some(message) =
-                                prompt_decision.rejection_message.clone()
-                            {
-                                message
-                            } else if let Some(review_id) =
-                                prompt_decision.guardian_review_id.as_deref()
-                            {
-                                guardian_rejection_message(self.session.as_ref(), review_id).await
-                            } else {
-                                "User denied execution".to_string()
-                            };
+                            let message = prompt_decision
+                                .rejection_message
+                                .clone()
+                                .unwrap_or_else(|| "User denied execution".to_string());
                             EscalationDecision::deny(Some(message))
                         }
-                        ReviewDecision::TimedOut => {
-                            EscalationDecision::deny(Some(guardian_timeout_message()))
-                        }
+                        ReviewDecision::TimedOut => EscalationDecision::deny(Some(
+                            "Approval request timed out".to_string(),
+                        )),
                         ReviewDecision::ApprovedMcpPolicyAmendment => EscalationDecision::deny(
                             Some("Invalid MCP policy amendment for shell approval".to_string()),
                         ),
@@ -648,12 +621,13 @@ impl CoreShellActionProvider {
 
         let evaluation = {
             let policy = self.policy.read().await;
+            let approval_policy = self.turn.approval_policy.value();
             evaluate_intercepted_exec_policy(
                 &policy,
                 program,
                 argv,
                 InterceptedExecPolicyContext {
-                    approval_policy: self.approval_policy,
+                    approval_policy,
                     permission_profile: self.permission_profile.clone(),
                     windows_sandbox_level: self.turn.windows_sandbox_level,
                     sandbox_permissions: self.approval_sandbox_permissions,

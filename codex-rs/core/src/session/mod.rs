@@ -322,6 +322,7 @@ use crate::skills::SkillLoadOutcome;
 use crate::state::AutoCompactWindowIds;
 use crate::state::AutoCompactWindowSnapshot;
 use crate::state::PendingRequestPermissions;
+use crate::state::RequestPermissionsResponseConstraint;
 use crate::state::SessionServices;
 use crate::state::SessionState;
 #[cfg(test)]
@@ -332,6 +333,7 @@ use crate::tasks::ReviewTask;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::network_approval::build_blocked_request_observer;
 use crate::tools::network_approval::build_network_policy_decider;
+use crate::tools::context::ToolCallSource;
 #[cfg(test)]
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::sandboxing::ApprovalStore;
@@ -2350,6 +2352,7 @@ impl Session {
         call_id: String,
         args: RequestPermissionsArgs,
         environment: TurnEnvironmentSelection,
+        source: ToolCallSource,
         cancellation_token: CancellationToken,
     ) -> Option<RequestPermissionsResponse> {
         match turn_context.as_ref().approval_policy.value() {
@@ -2375,6 +2378,7 @@ impl Session {
         }
 
         let requested_permissions = args.permissions;
+        let reason = args.reason;
         // TODO(anp): Migrate request_permissions to support paths from foreign environments.
         let Ok(native_environment_cwd) = environment.cwd.to_abs_path() else {
             warn!(
@@ -2388,6 +2392,97 @@ impl Session {
             });
         };
 
+        if turn_context.config.features.enabled(Feature::GuardianV2) {
+            let originating_turn_state = {
+                let active = self.active_turn.lock().await;
+                active.as_ref().map(|active| Arc::clone(&active.turn_state))
+            };
+            let policy_before = turn_context.approval_policy.decision_snapshot();
+            let reviewer_before = turn_context.approvals_reviewer.snapshot();
+            let strict_before = self.strict_auto_review_enabled_for_turn().await;
+            if matches!(policy_before.value, AskForApproval::Never)
+                || matches!(
+                    policy_before.value,
+                    AskForApproval::Granular(config)
+                        if !config.allows_request_permissions()
+                )
+            {
+                return Some(RequestPermissionsResponse {
+                    permissions: RequestPermissionProfile::default(),
+                    scope: PermissionGrantScope::Turn,
+                    strict_auto_review: false,
+                });
+            }
+            let attempt_id = Uuid::new_v4().to_string();
+            let decision = crate::tools::request_approval(
+                self,
+                crate::tools::ApprovalAction::RequestPermissions {
+                    id: call_id.clone(),
+                    turn_id: turn_context.sub_id.clone(),
+                    environment: environment.clone(),
+                    cwd: native_environment_cwd.clone(),
+                    reason: reason.clone(),
+                    permissions: requested_permissions.clone(),
+                },
+                crate::tools::ApprovalContext {
+                    turn: Arc::clone(turn_context),
+                    call_id,
+                    tool_name: codex_tools::ToolName::plain("request_permissions"),
+                    approval_reason: reason.clone(),
+                    retry_reason: None,
+                    network_approval_context: None,
+                    required_by_strict: strict_before,
+                    attempt_id,
+                    source,
+                    cancellation_token: cancellation_token.clone(),
+                },
+            )
+            .await;
+            if cancellation_token.is_cancelled() {
+                return None;
+            }
+            if matches!(
+                &decision,
+                Err(crate::tools::sandboxing::ToolError::Codex(
+                    CodexErr::TurnAborted
+                ))
+            ) {
+                return None;
+            }
+            if turn_context.approval_policy.decision_snapshot().revision
+                != policy_before.revision
+                || turn_context.approvals_reviewer.snapshot() != reviewer_before
+                || self.strict_auto_review_enabled_for_turn().await != strict_before
+            {
+                return Some(RequestPermissionsResponse {
+                    permissions: RequestPermissionProfile::default(),
+                    scope: PermissionGrantScope::Turn,
+                    strict_auto_review: false,
+                });
+            }
+            let response = RequestPermissionsResponse {
+                permissions: if matches!(&decision, Ok(ReviewDecision::Approved)) {
+                    requested_permissions.clone()
+                } else {
+                    RequestPermissionProfile::default()
+                },
+                scope: PermissionGrantScope::Turn,
+                strict_auto_review: false,
+            };
+            let response = Self::normalize_request_permissions_response(
+                requested_permissions,
+                response,
+                native_environment_cwd.as_path(),
+            );
+            self.record_granted_request_permissions_for_turn(
+                &response,
+                &environment.environment_id,
+                originating_turn_state.as_ref(),
+            )
+            .await;
+            return Some(response);
+        }
+
         if crate::guardian::routes_approval_to_guardian(turn_context.as_ref()) {
             let originating_turn_state = {
                 let active = self.active_turn.lock().await;
@@ -2399,7 +2494,7 @@ impl Session {
             let request = crate::guardian::GuardianApprovalRequest::RequestPermissions {
                 id: call_id,
                 turn_id: turn_context.sub_id.clone(),
-                reason: args.reason,
+                reason,
                 permissions: requested_permissions.clone(),
             };
             let review_rx = crate::guardian::spawn_approval_request_review(
@@ -2466,6 +2561,35 @@ impl Session {
             return Some(response);
         }
 
+        self.request_permissions_user_review(
+            turn_context,
+            call_id,
+            reason,
+            requested_permissions,
+            environment,
+            native_environment_cwd,
+            RequestPermissionsResponseConstraint::UserSelected,
+            cancellation_token,
+        )
+        .await
+    }
+
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn request_permissions_user_review(
+        &self,
+        turn_context: &TurnContext,
+        call_id: String,
+        reason: Option<String>,
+        requested_permissions: RequestPermissionProfile,
+        environment: TurnEnvironmentSelection,
+        native_environment_cwd: AbsolutePathBuf,
+        response_constraint: RequestPermissionsResponseConstraint,
+        cancellation_token: CancellationToken,
+    ) -> Option<RequestPermissionsResponse> {
         let _elicitation = self.services.elicitations.register();
         let (tx_response, rx_response) = oneshot::channel();
         let prev_entry = {
@@ -2479,6 +2603,7 @@ impl Session {
                             tx_response,
                             requested_permissions: requested_permissions.clone(),
                             environment: environment.clone(),
+                            response_constraint,
                         },
                     )
                 }
@@ -2494,11 +2619,11 @@ impl Session {
             turn_id: turn_context.sub_id.clone(),
             environment_id: Some(environment.environment_id.clone()),
             started_at_ms: now_unix_timestamp_ms(),
-            reason: args.reason,
+            reason,
             permissions: requested_permissions,
             cwd: Some(native_environment_cwd),
         });
-        self.send_event(turn_context.as_ref(), event).await;
+        self.send_event(turn_context, event).await;
         tokio::select! {
             biased;
             _ = cancellation_token.cancelled() => {
@@ -2519,6 +2644,7 @@ impl Session {
         call_id: String,
         args: RequestPermissionsArgs,
         cwd: AbsolutePathBuf,
+        source: ToolCallSource,
         cancellation_token: CancellationToken,
     ) -> Option<RequestPermissionsResponse> {
         let turn_environment = match args.environment_id.as_deref() {
@@ -2543,6 +2669,7 @@ impl Session {
             call_id,
             args,
             environment,
+            source,
             cancellation_token,
         )
         .await
@@ -2642,6 +2769,7 @@ impl Session {
         match entry {
             Some(entry) => {
                 // TODO(anp): Migrate request_permissions to support paths from foreign environments.
+                let requested_permissions = entry.requested_permissions.clone();
                 let response = match entry.environment.cwd.to_abs_path() {
                     Ok(native_environment_cwd) => Self::normalize_request_permissions_response(
                         entry.requested_permissions,
@@ -2661,12 +2789,36 @@ impl Session {
                         }
                     }
                 };
-                self.record_granted_request_permissions_for_turn(
-                    &response,
-                    &entry.environment.environment_id,
-                    originating_turn_state.as_ref(),
-                )
-                .await;
+                let response = match entry.response_constraint {
+                    RequestPermissionsResponseConstraint::UserSelected => response,
+                    RequestPermissionsResponseConstraint::OneShotExact
+                        if response.permissions == requested_permissions =>
+                    {
+                        RequestPermissionsResponse {
+                            permissions: response.permissions,
+                            scope: PermissionGrantScope::Turn,
+                            strict_auto_review: false,
+                        }
+                    }
+                    RequestPermissionsResponseConstraint::OneShotExact => {
+                        RequestPermissionsResponse {
+                            permissions: RequestPermissionProfile::default(),
+                            scope: PermissionGrantScope::Turn,
+                            strict_auto_review: false,
+                        }
+                    }
+                };
+                if matches!(
+                    entry.response_constraint,
+                    RequestPermissionsResponseConstraint::UserSelected
+                ) {
+                    self.record_granted_request_permissions_for_turn(
+                        &response,
+                        &entry.environment.environment_id,
+                        originating_turn_state.as_ref(),
+                    )
+                    .await;
+                }
                 entry.tx_response.send(response).ok();
             }
             None => {

@@ -6032,6 +6032,7 @@ async fn request_permissions_emits_event_when_granular_policy_allows_requests() 
                         },
                     },
                     environment,
+                    ToolCallSource::Direct,
                     CancellationToken::new(),
                 )
                 .await
@@ -6267,6 +6268,7 @@ async fn request_permissions_response_materializes_session_cwd_grants_before_rec
                         permissions: requested_permissions,
                     },
                     environment,
+                    ToolCallSource::Direct,
                     CancellationToken::new(),
                 )
                 .await
@@ -6363,6 +6365,7 @@ async fn request_permissions_is_auto_denied_when_granular_policy_blocks_tool_req
                 },
             },
             environment,
+            ToolCallSource::Direct,
             CancellationToken::new(),
         )
         .await;

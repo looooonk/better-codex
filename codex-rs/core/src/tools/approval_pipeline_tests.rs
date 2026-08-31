@@ -5,6 +5,54 @@ use std::cell::Cell;
 use std::future::ready;
 use std::sync::Mutex as StdMutex;
 
+async fn complete_permission_review(
+    session: &Arc<crate::session::session::Session>,
+    turn: &Arc<crate::session::turn_context::TurnContext>,
+    events: &async_channel::Receiver<codex_protocol::protocol::Event>,
+    call_id: &str,
+    requested: codex_protocol::request_permissions::RequestPermissionProfile,
+    response: codex_protocol::request_permissions::RequestPermissionsResponse,
+) -> Option<codex_protocol::request_permissions::RequestPermissionsResponse> {
+    let review = tokio::spawn({
+        let session = Arc::clone(session);
+        let turn = Arc::clone(turn);
+        let call_id = call_id.to_string();
+        async move {
+            let environment = turn
+                .environments
+                .primary()
+                .expect("primary environment")
+                .selection();
+            session
+                .request_permissions_for_environment(
+                    &turn,
+                    call_id,
+                    codex_protocol::request_permissions::RequestPermissionsArgs {
+                        environment_id: None,
+                        reason: None,
+                        permissions: requested,
+                    },
+                    environment,
+                    ToolCallSource::Direct,
+                    CancellationToken::new(),
+                )
+                .await
+        }
+    });
+    let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
+        .await
+        .expect("manual fallback event timed out")
+        .expect("manual fallback event");
+    let codex_protocol::protocol::EventMsg::RequestPermissions(request) = event.msg else {
+        panic!("expected request_permissions event")
+    };
+    assert_eq!(request.call_id, call_id);
+    session
+        .notify_request_permissions_response(call_id, response)
+        .await;
+    review.await.expect("permission review task")
+}
+
 #[tokio::test]
 async fn stable_snapshot_fails_closed_after_bounded_churn() {
     let reads = Cell::new(0_usize);
@@ -214,6 +262,85 @@ async fn code_mode_review_evidence_is_correlated_by_sequence() {
         }]
     );
     assert_eq!(images, Vec::<ApprovalReviewImage>::new());
+}
+
+#[tokio::test]
+async fn request_permissions_manual_fallback_is_one_shot_and_exact() {
+    use crate::config::Constrained;
+    use crate::session::tests::make_session_and_context_with_rx;
+    use crate::state::ActiveTurn;
+    use codex_protocol::models::FileSystemPermissions;
+    use codex_protocol::models::NetworkPermissions;
+    use codex_protocol::request_permissions::PermissionGrantScope;
+    use codex_protocol::request_permissions::RequestPermissionProfile;
+    use codex_protocol::request_permissions::RequestPermissionsResponse;
+
+    let (session, mut turn, events) = make_session_and_context_with_rx().await;
+    *session.active_turn.lock().await = Some(ActiveTurn::default());
+    let mut config = turn.config.as_ref().clone();
+    config.features.enable(Feature::GuardianV2);
+    Arc::get_mut(&mut turn).expect("unique turn context").config = Arc::new(config);
+    turn.approval_policy
+        .replace(Constrained::allow_any(AskForApproval::OnRequest));
+    turn.approvals_reviewer
+        .replace(ApprovalsReviewer::AutoReview);
+
+    let network_permissions = RequestPermissionProfile {
+        network: Some(NetworkPermissions {
+            enabled: Some(true),
+        }),
+        ..RequestPermissionProfile::default()
+    };
+    assert_eq!(
+        complete_permission_review(
+            &session,
+            &turn,
+            &events,
+            "permissions-one-shot",
+            network_permissions.clone(),
+            RequestPermissionsResponse {
+                permissions: network_permissions.clone(),
+                scope: PermissionGrantScope::Session,
+                strict_auto_review: false,
+            },
+        )
+        .await,
+        Some(RequestPermissionsResponse {
+            permissions: network_permissions.clone(),
+            scope: PermissionGrantScope::Turn,
+            strict_auto_review: false,
+        })
+    );
+
+    #[allow(deprecated)]
+    let cwd = turn.cwd.clone();
+    let requested_permissions = RequestPermissionProfile {
+        network: network_permissions.network.clone(),
+        file_system: Some(FileSystemPermissions::from_read_write_roots(
+            /*read*/ None,
+            Some(vec![cwd]),
+        )),
+    };
+    assert_eq!(
+        complete_permission_review(
+            &session,
+            &turn,
+            &events,
+            "permissions-subset",
+            requested_permissions,
+            RequestPermissionsResponse {
+                permissions: network_permissions,
+                scope: PermissionGrantScope::Turn,
+                strict_auto_review: false,
+            },
+        )
+        .await,
+        Some(RequestPermissionsResponse {
+            permissions: RequestPermissionProfile::default(),
+            scope: PermissionGrantScope::Turn,
+            strict_auto_review: false,
+        })
+    );
 }
 
 #[cfg(unix)]

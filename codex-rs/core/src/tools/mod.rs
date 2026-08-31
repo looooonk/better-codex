@@ -1,5 +1,8 @@
 mod approval_pipeline;
 mod approvals;
+pub(crate) use approval_pipeline::ApprovalContext;
+pub(crate) use approval_pipeline::request_approval;
+pub(crate) use approvals::ApprovalAction;
 pub(crate) mod code_mode;
 pub(crate) mod context;
 pub(crate) mod events;

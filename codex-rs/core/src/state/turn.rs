@@ -103,6 +103,13 @@ pub(crate) struct PendingRequestPermissions {
     pub(crate) tx_response: oneshot::Sender<RequestPermissionsResponse>,
     pub(crate) requested_permissions: RequestPermissionProfile,
     pub(crate) environment: TurnEnvironmentSelection,
+    pub(crate) response_constraint: RequestPermissionsResponseConstraint,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum RequestPermissionsResponseConstraint {
+    UserSelected,
+    OneShotExact,
 }
 
 impl TurnState {

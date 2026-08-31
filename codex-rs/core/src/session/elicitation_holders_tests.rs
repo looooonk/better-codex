@@ -12,6 +12,7 @@ use tokio_util::sync::CancellationToken;
 
 use super::tests::make_session_and_context_with_rx;
 use crate::state::ActiveTurn;
+use crate::tools::context::ToolCallSource;
 
 async fn wait_until_held(pause_state: &mut watch::Receiver<bool>) {
     pause_state
@@ -122,6 +123,7 @@ async fn permission_request_holds_an_elicitation_until_response() {
                         permissions: RequestPermissionProfile::default(),
                     },
                     environment,
+                    ToolCallSource::Direct,
                     CancellationToken::new(),
                 )
                 .await

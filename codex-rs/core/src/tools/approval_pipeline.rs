@@ -1,4 +1,4 @@
-//! Session-scoped approval routing for command and patch actions.
+//! Session-scoped approval routing for effectful actions.
 
 use crate::guardian::guardian_rejection_message;
 use crate::guardian::guardian_timeout_message;
@@ -10,6 +10,7 @@ use crate::hook_runtime::run_permission_request_hooks;
 use crate::session::live_approval_policy::LiveApprovalPolicySnapshot;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
+use crate::state::RequestPermissionsResponseConstraint;
 use crate::tools::approvals::ApprovalAction;
 use crate::tools::approvals::ApprovalCacheKey;
 use crate::tools::approvals::guardian_cwd;
@@ -105,6 +106,9 @@ pub(crate) async fn request_approval(
     action: ApprovalAction,
     ctx: ApprovalContext,
 ) -> Result<ReviewDecision, ToolError> {
+    if ctx.cancellation_token.is_cancelled() {
+        return Err(ToolError::Codex(CodexErr::TurnAborted));
+    }
     let Some(initial) = route_snapshot(session, &ctx.turn).await else {
         return reject_settings_churn(&ctx);
     };
@@ -119,10 +123,19 @@ pub(crate) async fn request_approval(
         );
     }
 
-    let permission_request_run_id = if ctx.retry_reason.is_some() {
-        format!("{}:retry", ctx.call_id)
-    } else {
-        ctx.call_id.clone()
+    let permission_request_run_id = match &action {
+        #[cfg(unix)]
+        ApprovalAction::Execve { approval_id, .. } => approval_id.clone(),
+        ApprovalAction::RequestPermissions { .. } => ctx.attempt_id.clone(),
+        ApprovalAction::Shell { .. }
+        | ApprovalAction::ExecCommand { .. }
+        | ApprovalAction::ApplyPatch { .. } => {
+            if ctx.retry_reason.is_some() {
+                format!("{}:retry", ctx.call_id)
+            } else {
+                ctx.call_id.clone()
+            }
+        }
     };
     let hook_decision = run_permission_request_hooks(
         session,
@@ -573,6 +586,11 @@ async fn request_user_approval(
                 ApprovalAction::Shell { .. } => "shell",
                 ApprovalAction::ExecCommand { .. } => "unified_exec",
                 ApprovalAction::ApplyPatch { .. } => unreachable!("matched command approval"),
+                #[cfg(unix)]
+                ApprovalAction::Execve { .. } => unreachable!("matched command approval"),
+                ApprovalAction::RequestPermissions { .. } => {
+                    unreachable!("matched command approval")
+                }
             };
             let reason = ctx
                 .retry_reason
@@ -594,6 +612,41 @@ async fn request_user_approval(
                     /*available_decisions*/ None,
                 )
                 .await;
+            (tool_name, decision)
+        }
+        #[cfg(unix)]
+        ApprovalAction::Execve {
+            approval_id,
+            environment_id,
+            source,
+            program,
+            argv,
+            cwd,
+            additional_permissions,
+            ..
+        } => {
+            let command = std::iter::once(program.clone())
+                .chain(argv.iter().skip(1).cloned())
+                .collect();
+            let decision = session
+                .request_command_approval(
+                    &ctx.turn,
+                    ctx.call_id.clone(),
+                    Some(approval_id.clone()),
+                    Some(environment_id.clone()),
+                    command,
+                    cwd.clone(),
+                    ctx.approval_reason.clone(),
+                    /*network_approval_context*/ None,
+                    /*proposed_execpolicy_amendment*/ None,
+                    additional_permissions.clone(),
+                    Some(vec![ReviewDecision::Approved, ReviewDecision::Abort]),
+                )
+                .await;
+            let tool_name = match source {
+                codex_protocol::approvals::GuardianCommandSource::Shell => "shell",
+                codex_protocol::approvals::GuardianCommandSource::UnifiedExec => "unified_exec",
+            };
             (tool_name, decision)
         }
         ApprovalAction::ApplyPatch {
@@ -622,6 +675,37 @@ async fn request_user_approval(
                 )
                 .await;
             ("apply_patch", decision)
+        }
+        ApprovalAction::RequestPermissions {
+            environment,
+            cwd,
+            reason,
+            permissions,
+            ..
+        } => {
+            let response = session
+                .request_permissions_user_review(
+                    &ctx.turn,
+                    ctx.call_id.clone(),
+                    reason.clone(),
+                    permissions.clone(),
+                    environment.clone(),
+                    cwd.clone(),
+                    RequestPermissionsResponseConstraint::OneShotExact,
+                    ctx.cancellation_token.clone(),
+                )
+                .await;
+            let decision = match response {
+                Some(response)
+                    if !response.permissions.is_empty()
+                        && response.permissions == *permissions =>
+                {
+                    ReviewDecision::Approved
+                }
+                Some(_) => ReviewDecision::denied(),
+                None => ReviewDecision::Abort,
+            };
+            ("request_permissions", decision)
         }
     };
     record_approval_request(session, tool_name, &decision);
@@ -730,6 +814,9 @@ fn finish_resolution(
     ctx: &ApprovalContext,
     resolution: ApprovalResolution,
 ) -> Result<ReviewDecision, ToolError> {
+    if ctx.cancellation_token.is_cancelled() {
+        return Err(ToolError::Codex(CodexErr::TurnAborted));
+    }
     let telemetry_source = match resolution.source {
         ApprovalResolutionSource::Hook => ToolDecisionSource::Config,
         ApprovalResolutionSource::Guardian => ToolDecisionSource::AutomatedReviewer,

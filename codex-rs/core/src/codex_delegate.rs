@@ -815,6 +815,7 @@ async fn handle_request_permissions(
         call_id.clone(),
         args,
         cwd,
+        crate::tools::context::ToolCallSource::Direct,
         cancel_token.clone(),
     );
     let response =
