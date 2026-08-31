@@ -79,7 +79,7 @@ fn request_is_redacted_and_inside_both_serialized_limits() {
 }
 
 #[test]
-fn evidence_is_limited_to_the_newest_forty_entries() {
+fn auxiliary_evidence_is_limited_to_its_newest_reserved_entries() {
     let mut request = request(json!({"script": "return 1"}));
     request.evidence = (0..45)
         .map(|index| GuardianEvidenceEntry {
@@ -99,9 +99,57 @@ fn evidence_is_limited_to_the_newest_forty_entries() {
     let body: Value = serde_json::from_str(text).expect("review body");
     let evidence = body["evidence"].as_array().expect("evidence array");
 
-    assert_eq!(evidence.len(), MAX_EVIDENCE_ENTRIES);
-    assert_eq!(evidence[0]["text"], "entry-5");
-    assert_eq!(evidence[39]["text"], "entry-44");
+    assert_eq!(evidence.len(), MAX_AUXILIARY_EVIDENCE_ENTRIES);
+    assert_eq!(evidence[0]["text"], "entry-25");
+    assert_eq!(evidence[19]["text"], "entry-44");
+}
+
+#[test]
+fn auxiliary_pressure_preserves_the_reserved_transcript() {
+    let mut request = request(json!({"script": "return 1"}));
+    request.history = (0..MAX_TRANSCRIPT_ENTRIES)
+        .map(|index| ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: format!("history-{index} {}", "h".repeat(1_200)),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        })
+        .collect();
+    request.evidence = (0..MAX_AUXILIARY_EVIDENCE_ENTRIES)
+        .map(|index| GuardianEvidenceEntry {
+            kind: "node_repl_output".to_string(),
+            provenance: Some(format!("auxiliary-{index}")),
+            text: format!("auxiliary-{index} {}", "a".repeat(1_200)),
+        })
+        .collect();
+
+    let request = build_sampling_request(attribution(), request).expect("bounded request");
+    let ResponseItem::Message { content, .. } = &request.input[2] else {
+        panic!("expected user message");
+    };
+    let ContentItem::InputText { text } = &content[0] else {
+        panic!("expected text review context");
+    };
+    let body: Value = serde_json::from_str(text).expect("review body");
+    let evidence = body["evidence"].as_array().expect("evidence array");
+
+    assert_eq!(
+        evidence
+            .iter()
+            .filter(|entry| entry["kind"] == "message")
+            .count(),
+        MAX_TRANSCRIPT_ENTRIES
+    );
+    assert!(
+        evidence
+            .iter()
+            .filter(|entry| entry["kind"] == "node_repl_output")
+            .count()
+            < MAX_AUXILIARY_EVIDENCE_ENTRIES
+    );
 }
 
 #[test]
@@ -167,7 +215,10 @@ fn request_pressure_drops_images_before_text_evidence() {
     };
     let body: Value = serde_json::from_str(text).expect("review body");
 
-    assert_eq!(body["evidence"].as_array().map(Vec::len), Some(40));
+    assert_eq!(
+        body["evidence"].as_array().map(Vec::len),
+        Some(MAX_AUXILIARY_EVIDENCE_ENTRIES)
+    );
     assert!(
         content
             .iter()
