@@ -42,6 +42,8 @@ use crate::session::turn_context::TurnContext;
 use crate::session::turn_context::TurnEnvironment;
 use crate::shell::ShellType;
 use crate::tools::network_approval::DeferredNetworkApproval;
+use crate::tools::context::ToolCallSource;
+use tokio_util::sync::CancellationToken;
 
 mod async_watcher;
 mod errors;
@@ -76,6 +78,8 @@ pub(crate) struct UnifiedExecContext {
     pub session: Arc<Session>,
     pub turn: Arc<TurnContext>,
     pub call_id: String,
+    pub source: ToolCallSource,
+    pub cancellation_token: CancellationToken,
 }
 
 impl UnifiedExecContext {
@@ -84,7 +88,19 @@ impl UnifiedExecContext {
             session,
             turn,
             call_id,
+            source: ToolCallSource::Direct,
+            cancellation_token: CancellationToken::new(),
         }
+    }
+
+    pub fn with_invocation(
+        mut self,
+        source: ToolCallSource,
+        cancellation_token: CancellationToken,
+    ) -> Self {
+        self.source = source;
+        self.cancellation_token = cancellation_token;
+        self
     }
 }
 

@@ -140,6 +140,7 @@ async fn request_permissions_routes_to_guardian_when_reviewer_is_enabled() {
                 permissions: requested_permissions.clone(),
             },
             environment,
+            ToolCallSource::Direct,
             CancellationToken::new(),
         ),
     )
@@ -235,6 +236,7 @@ async fn request_permissions_guardian_review_stops_when_cancelled() {
                         permissions: requested_permissions,
                     },
                     environment,
+                    ToolCallSource::Direct,
                     cancellation_token,
                 )
                 .await

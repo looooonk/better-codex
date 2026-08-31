@@ -113,6 +113,8 @@ impl ExecCommandHandler {
             step_context,
             tracker,
             call_id,
+            source,
+            cancellation_token,
             payload,
             ..
         } = invocation;
@@ -127,7 +129,8 @@ impl ExecCommandHandler {
         };
 
         let manager: &UnifiedExecProcessManager = &session.services.unified_exec_manager;
-        let context = UnifiedExecContext::new(session.clone(), turn.clone(), call_id.clone());
+        let context = UnifiedExecContext::new(session.clone(), turn.clone(), call_id.clone())
+            .with_invocation(source, cancellation_token);
         let environment_args: ExecCommandEnvironmentArgs = parse_arguments(&arguments)?;
         let Some(turn_environment) = resolve_tool_environment(
             &step_context.environments,
@@ -321,6 +324,8 @@ impl ExecCommandHandler {
             Some(&tracker),
             &context.call_id,
             "exec_command",
+            &context.source,
+            &context.cancellation_token,
         )
         .await?
         {

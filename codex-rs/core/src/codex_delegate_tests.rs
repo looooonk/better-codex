@@ -32,9 +32,94 @@ use core_test_support::test_path_buf;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
 use tokio::sync::watch;
 use tokio::time::timeout;
+
+#[derive(Default)]
+struct AllowingDelegatedAuthority {
+    reviews: Arc<
+        StdMutex<
+            Vec<(
+                codex_extension_api::ApprovalReviewBinding,
+                codex_extension_api::ApprovalReviewAction,
+            )>,
+        >,
+    >,
+}
+
+impl codex_extension_api::ApprovalReviewContributor for AllowingDelegatedAuthority {
+    fn review<'a>(
+        &'a self,
+        _session_store: &'a codex_extension_api::ExtensionData,
+        _thread_store: &'a codex_extension_api::ExtensionData,
+        input: codex_extension_api::ApprovalReviewInput,
+    ) -> codex_extension_api::ExtensionFuture<'a, codex_extension_api::ApprovalReviewResult> {
+        self.reviews
+            .lock()
+            .expect("review lock")
+            .push((input.binding, input.action));
+        Box::pin(std::future::ready(
+            codex_extension_api::ApprovalReviewResult::Allow(
+                codex_extension_api::ApprovalReviewOutcome {
+                    risk_level: codex_protocol::protocol::GuardianRiskLevel::Low,
+                    user_authorization:
+                        codex_protocol::protocol::GuardianUserAuthorization::High,
+                    rationale: "allowed".to_string(),
+                },
+            ),
+        ))
+    }
+}
+
+async fn delegated_v2_fixture() -> (
+    Arc<Session>,
+    Arc<TurnContext>,
+    Arc<AllowingDelegatedAuthority>,
+) {
+    use crate::state::ActiveTurn;
+
+    let (session, turn, _events) = crate::session::tests::make_session_and_context_with_rx().await;
+    let Ok(mut session) = Arc::try_unwrap(session) else {
+        panic!("single session reference")
+    };
+    let mut turn = Arc::try_unwrap(turn).expect("single turn context reference");
+    let mut config = (*turn.config).clone();
+    config
+        .features
+        .enable(Feature::GuardianV2)
+        .expect("enable Guardian V2");
+    config.approvals_reviewer = ApprovalsReviewer::AutoReview;
+    turn.config = Arc::new(config);
+    turn.approval_policy
+        .set(AskForApproval::OnRequest)
+        .expect("set on-request policy");
+    turn.approvals_reviewer
+        .replace(ApprovalsReviewer::AutoReview);
+    let authority = Arc::new(AllowingDelegatedAuthority::default());
+    let mut extensions = codex_extension_api::ExtensionRegistryBuilder::new();
+    extensions.approval_review_contributor(authority.clone());
+    session.services.extensions = Arc::new(extensions.build());
+    *session.active_turn.lock().await = Some(ActiveTurn::default());
+    (Arc::new(session), Arc::new(turn), authority)
+}
+
+fn delegated_codex(session: Arc<Session>) -> (Arc<Codex>, Receiver<Submission>) {
+    let (tx_sub, rx_sub) = bounded(SUBMISSION_CHANNEL_CAPACITY);
+    let (_tx_events, rx_events) = bounded(SUBMISSION_CHANNEL_CAPACITY);
+    let (_agent_status_tx, agent_status) = watch::channel(AgentStatus::PendingInit);
+    (
+        Arc::new(Codex {
+            tx_sub,
+            rx_event: rx_events,
+            agent_status,
+            session,
+            session_loop_termination: completed_session_loop_termination(),
+        }),
+        rx_sub,
+    )
+}
 
 #[tokio::test]
 async fn forward_events_filters_private_events_before_blocked_send_is_cancelled() {
@@ -303,6 +388,255 @@ async fn handle_request_permissions_uses_tool_call_id_for_round_trip() {
             id: call_id,
             response: expected_response,
         }
+    );
+}
+
+#[tokio::test]
+async fn delegated_shell_and_patch_use_the_exact_v2_actions() {
+    use codex_protocol::models::SandboxPermissions;
+    use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
+    use codex_protocol::protocol::FileChange;
+    use codex_utils_path_uri::PathUri;
+
+    let (parent_session, parent_ctx, authority) = delegated_v2_fixture().await;
+    let (codex, submissions) = delegated_codex(Arc::clone(&parent_session));
+    let cwd = test_path_buf("/tmp").abs();
+    let command = vec!["printf".to_string(), "%s".to_string(), "safe".to_string()];
+    parent_session
+        .register_pending_delegated_approval_action(
+            "child-shell-call".to_string(),
+            ApprovalAction::Shell {
+                id: "child-shell-call".to_string(),
+                environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
+                command: command.clone(),
+                hook_command: "printf %s safe".to_string(),
+                cwd: PathUri::from_abs_path(&cwd),
+                sandbox_permissions: SandboxPermissions::UseDefault,
+                additional_permissions: None,
+                justification: Some("child justification".to_string()),
+                proposed_execpolicy_amendment: None,
+                cache_keys: Vec::new(),
+            },
+        )
+        .await;
+    handle_exec_approval(
+        &codex,
+        "child-turn".to_string(),
+        &parent_session,
+        &parent_ctx,
+        ExecApprovalRequestEvent {
+            call_id: "child-shell-call".to_string(),
+            approval_id: None,
+            turn_id: "child-turn".to_string(),
+            environment_id: None,
+            started_at_ms: 0,
+            command: vec!["lossy-event".to_string()],
+            cwd: cwd.clone(),
+            reason: None,
+            network_approval_context: None,
+            proposed_execpolicy_amendment: None,
+            proposed_network_policy_amendments: None,
+            additional_permissions: None,
+            available_decisions: None,
+            parsed_cmd: Vec::new(),
+        },
+        &CancellationToken::new(),
+    )
+    .await;
+    assert_eq!(
+        submissions.recv().await.expect("shell approval submission").op,
+        Op::ExecApproval {
+            id: "child-shell-call".to_string(),
+            turn_id: Some("child-turn".to_string()),
+            decision: ReviewDecision::Approved,
+        }
+    );
+
+    let relative_path = std::path::PathBuf::from("nested.txt");
+    let absolute_path = cwd.join(&relative_path);
+    let changes = HashMap::from([(
+        relative_path,
+        FileChange::Add {
+            content: "exact patch content".to_string(),
+        },
+    )]);
+    parent_session
+        .register_pending_delegated_approval_action(
+            "child-patch-call".to_string(),
+            ApprovalAction::ApplyPatch {
+                id: "child-patch-call".to_string(),
+                environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
+                cwd: PathUri::from_abs_path(&cwd),
+                files: vec![PathUri::from_abs_path(&absolute_path)],
+                patch: "*** Add File: nested.txt\nexact patch content".to_string(),
+                changes: Arc::new(changes.clone()),
+                permissions_preapproved: false,
+                cache_keys: Vec::new(),
+            },
+        )
+        .await;
+    handle_patch_approval(
+        &codex,
+        "child-turn".to_string(),
+        &parent_session,
+        &parent_ctx,
+        ApplyPatchApprovalRequestEvent {
+            call_id: "child-patch-call".to_string(),
+            turn_id: "child-turn".to_string(),
+            started_at_ms: 0,
+            changes,
+            reason: None,
+            grant_root: None,
+        },
+        &CancellationToken::new(),
+    )
+    .await;
+    assert_eq!(
+        submissions.recv().await.expect("patch approval submission").op,
+        Op::PatchApproval {
+            id: "child-patch-call".to_string(),
+            decision: ReviewDecision::Approved,
+        }
+    );
+
+    assert_eq!(
+        authority.reviews.lock().expect("review lock").as_slice(),
+        [
+            (
+                codex_extension_api::ApprovalReviewBinding {
+                    thread_id: parent_session.thread_id.to_string(),
+                    turn_id: parent_ctx.sub_id.clone(),
+                    action_id: "child-shell-call".to_string(),
+                    attempt_id: "child-shell-call".to_string(),
+                    source: codex_extension_api::ToolCallSource::Direct,
+                    evidence_revision: 0,
+                },
+                codex_extension_api::ApprovalReviewAction::Command {
+                    source: GuardianCommandSource::Shell,
+                    command: "printf %s safe".to_string(),
+                    argv: command,
+                    cwd: cwd.clone(),
+                    sandbox_permissions: SandboxPermissions::UseDefault,
+                    additional_permissions: None,
+                    justification: Some("child justification".to_string()),
+                    tty: None,
+                },
+            ),
+            (
+                codex_extension_api::ApprovalReviewBinding {
+                    thread_id: parent_session.thread_id.to_string(),
+                    turn_id: parent_ctx.sub_id.clone(),
+                    action_id: "child-patch-call".to_string(),
+                    attempt_id: "child-patch-call".to_string(),
+                    source: codex_extension_api::ToolCallSource::Direct,
+                    evidence_revision: 0,
+                },
+                codex_extension_api::ApprovalReviewAction::ApplyPatch {
+                    cwd,
+                    files: vec![absolute_path],
+                    patch: "*** Add File: nested.txt\nexact patch content".to_string(),
+                },
+            ),
+        ]
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn delegated_execve_attempts_keep_unique_approval_ids() {
+    let (parent_session, parent_ctx, authority) = delegated_v2_fixture().await;
+    let (codex, submissions) = delegated_codex(Arc::clone(&parent_session));
+    let cwd = test_path_buf("/tmp").abs();
+
+    for (approval_id, program) in [("execve-1", "/bin/echo"), ("execve-2", "/bin/printf")] {
+        parent_session
+            .register_pending_delegated_approval_action(
+                approval_id.to_string(),
+                ApprovalAction::Execve {
+                    id: "shared-parent-call".to_string(),
+                    approval_id: approval_id.to_string(),
+                    environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
+                    source: GuardianCommandSource::Shell,
+                    program: program.to_string(),
+                    argv: vec!["custom-zero".to_string(), "arg".to_string()],
+                    cwd: cwd.clone(),
+                    additional_permissions: None,
+                },
+            )
+            .await;
+        handle_exec_approval(
+            &codex,
+            "child-turn".to_string(),
+            &parent_session,
+            &parent_ctx,
+            ExecApprovalRequestEvent {
+                call_id: "shared-parent-call".to_string(),
+                approval_id: Some(approval_id.to_string()),
+                turn_id: "child-turn".to_string(),
+                environment_id: None,
+                started_at_ms: 0,
+                command: vec!["lossy-event".to_string()],
+                cwd: cwd.clone(),
+                reason: None,
+                network_approval_context: None,
+                proposed_execpolicy_amendment: None,
+                proposed_network_policy_amendments: None,
+                additional_permissions: None,
+                available_decisions: None,
+                parsed_cmd: Vec::new(),
+            },
+            &CancellationToken::new(),
+        )
+        .await;
+        assert_eq!(
+            submissions.recv().await.expect("execve approval submission").op,
+            Op::ExecApproval {
+                id: approval_id.to_string(),
+                turn_id: Some("child-turn".to_string()),
+                decision: ReviewDecision::Approved,
+            }
+        );
+    }
+
+    let reviews = authority.reviews.lock().expect("review lock");
+    assert_eq!(
+        reviews.as_slice(),
+        [
+            (
+                codex_extension_api::ApprovalReviewBinding {
+                    thread_id: parent_session.thread_id.to_string(),
+                    turn_id: parent_ctx.sub_id.clone(),
+                    action_id: "shared-parent-call".to_string(),
+                    attempt_id: "execve-1".to_string(),
+                    source: codex_extension_api::ToolCallSource::Direct,
+                    evidence_revision: 0,
+                },
+                codex_extension_api::ApprovalReviewAction::Execve {
+                    source: GuardianCommandSource::Shell,
+                    program: "/bin/echo".to_string(),
+                    argv: vec!["custom-zero".to_string(), "arg".to_string()],
+                    cwd: cwd.clone(),
+                    additional_permissions: None,
+                },
+            ),
+            (
+                codex_extension_api::ApprovalReviewBinding {
+                    thread_id: parent_session.thread_id.to_string(),
+                    turn_id: parent_ctx.sub_id.clone(),
+                    action_id: "shared-parent-call".to_string(),
+                    attempt_id: "execve-2".to_string(),
+                    source: codex_extension_api::ToolCallSource::Direct,
+                    evidence_revision: 0,
+                },
+                codex_extension_api::ApprovalReviewAction::Execve {
+                    source: GuardianCommandSource::Shell,
+                    program: "/bin/printf".to_string(),
+                    argv: vec!["custom-zero".to_string(), "arg".to_string()],
+                    cwd,
+                    additional_permissions: None,
+                },
+            ),
+        ]
     );
 }
 

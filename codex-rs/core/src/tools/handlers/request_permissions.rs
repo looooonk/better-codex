@@ -50,6 +50,7 @@ impl RequestPermissionsHandler {
             step_context,
             cancellation_token,
             call_id,
+            source,
             payload,
             ..
         } = invocation;
@@ -98,6 +99,7 @@ impl RequestPermissionsHandler {
                 call_id,
                 args,
                 turn_environment.selection(),
+                source,
                 cancellation_token,
             )
             .await

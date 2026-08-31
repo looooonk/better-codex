@@ -1,6 +1,7 @@
 //! Turn-scoped state and active turn metadata scaffolding.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::Notify;
@@ -22,6 +23,7 @@ use crate::agent::control::AgentExecutionGuard;
 use crate::session::TurnInputQueue;
 use crate::session::turn_context::TurnContext;
 use crate::tasks::AnySessionTask;
+use crate::tools::approvals::ApprovalAction;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::TokenUsage;
@@ -86,7 +88,9 @@ pub(crate) struct RunningTask {
 #[derive(Default)]
 pub(crate) struct TurnState {
     pending_approvals: HashMap<String, oneshot::Sender<ReviewDecision>>,
+    pending_delegated_approval_actions: HashMap<String, ApprovalAction>,
     pending_request_permissions: HashMap<String, PendingRequestPermissions>,
+    used_request_permission_ids: HashSet<String>,
     pending_user_input: HashMap<String, oneshot::Sender<RequestUserInputResponse>>,
     pending_elicitations: HashMap<(String, RequestId), oneshot::Sender<ElicitationResponse>>,
     pending_dynamic_tools: HashMap<String, oneshot::Sender<DynamicToolResponse>>,
@@ -103,6 +107,13 @@ pub(crate) struct PendingRequestPermissions {
     pub(crate) tx_response: oneshot::Sender<RequestPermissionsResponse>,
     pub(crate) requested_permissions: RequestPermissionProfile,
     pub(crate) environment: TurnEnvironmentSelection,
+    pub(crate) response_constraint: RequestPermissionsResponseConstraint,
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum RequestPermissionsResponseConstraint {
+    UserSelected,
+    OneShotExact,
 }
 
 impl TurnState {
@@ -118,11 +129,28 @@ impl TurnState {
         &mut self,
         key: &str,
     ) -> Option<oneshot::Sender<ReviewDecision>> {
+        self.pending_delegated_approval_actions.remove(key);
         self.pending_approvals.remove(key)
+    }
+
+    pub(crate) fn insert_pending_delegated_approval_action(
+        &mut self,
+        key: String,
+        action: ApprovalAction,
+    ) -> Option<ApprovalAction> {
+        self.pending_delegated_approval_actions.insert(key, action)
+    }
+
+    pub(crate) fn pending_delegated_approval_action(
+        &self,
+        key: &str,
+    ) -> Option<ApprovalAction> {
+        self.pending_delegated_approval_actions.get(key).cloned()
     }
 
     pub(crate) fn clear_pending_waiters(&mut self) {
         self.pending_approvals.clear();
+        self.pending_delegated_approval_actions.clear();
         self.pending_request_permissions.clear();
         self.pending_user_input.clear();
         self.pending_elicitations.clear();
@@ -133,9 +161,16 @@ impl TurnState {
         &mut self,
         key: String,
         pending_request_permissions: PendingRequestPermissions,
-    ) -> Option<PendingRequestPermissions> {
-        self.pending_request_permissions
-            .insert(key, pending_request_permissions)
+    ) -> Result<(), PendingRequestPermissions> {
+        if !self.used_request_permission_ids.insert(key.clone()) {
+            return Err(pending_request_permissions);
+        }
+        debug_assert!(
+            self.pending_request_permissions
+                .insert(key, pending_request_permissions)
+                .is_none()
+        );
+        Ok(())
     }
 
     pub(crate) fn remove_pending_request_permissions(

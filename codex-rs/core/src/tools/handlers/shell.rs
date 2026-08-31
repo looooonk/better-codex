@@ -11,6 +11,7 @@ use crate::session::turn_context::TurnContext;
 use crate::session::turn_context::TurnEnvironment;
 use crate::shell::ShellType;
 use crate::tools::context::FunctionToolOutput;
+use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolPayload;
 use crate::tools::events::ToolEmitter;
 use crate::tools::events::ToolEventCtx;
@@ -58,6 +59,7 @@ struct RunExecLikeArgs {
     tracker: crate::tools::context::SharedTurnDiffTracker,
     call_id: String,
     shell_runtime_backend: ShellRuntimeBackend,
+    source: ToolCallSource,
 }
 
 async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, FunctionCallError> {
@@ -75,6 +77,7 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
         tracker,
         call_id,
         shell_runtime_backend,
+        source,
     } = args;
 
     let fs = turn_environment.environment.get_filesystem();
@@ -149,14 +152,20 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
         Some(&tracker),
         &call_id,
         tool_name.name.as_str(),
+        &source,
+        &cancellation_token,
     )
     .await?
     {
         return Ok(output);
     }
 
-    let source = ExecCommandSource::Agent;
-    let emitter = ToolEmitter::shell(exec_params.command.clone(), exec_params.cwd.clone(), source);
+    let emitter_source = ExecCommandSource::Agent;
+    let emitter = ToolEmitter::shell(
+        exec_params.command.clone(),
+        exec_params.cwd.clone(),
+        emitter_source,
+    );
     let event_ctx = ToolEventCtx::new(
         session.as_ref(),
         turn.as_ref(),
@@ -189,7 +198,7 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
         hook_command,
         cwd: exec_params.cwd.clone(),
         timeout_ms: exec_params.expiration.timeout_ms(),
-        cancellation_token,
+        cancellation_token: cancellation_token.clone(),
         env: exec_params.env.clone(),
         explicit_env_overrides,
         network: exec_params.network.clone(),
@@ -208,6 +217,8 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
         turn: turn.clone(),
         call_id: call_id.clone(),
         tool_name,
+        source,
+        cancellation_token,
     };
     let out = orchestrator
         .run(&mut runtime, &req, &tool_ctx, &turn)

@@ -10,6 +10,7 @@ use super::map_exec_result;
 use crate::config::Constrained;
 use crate::sandboxing::SandboxPermissions;
 use crate::session::tests::make_session_and_context;
+use crate::tools::context::ToolCallSource;
 use anyhow::Context;
 use codex_execpolicy::Decision;
 use codex_execpolicy::Evaluation;
@@ -46,6 +47,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tokio_util::sync::CancellationToken;
 
 fn host_absolute_path(segments: &[&str]) -> String {
     let mut path = if cfg!(windows) {
@@ -428,7 +430,8 @@ async fn preapproved_additional_permissions_escalate_intercepted_exec() -> anyho
         call_id: "preapproved-additional-permissions".to_string(),
         environment_id: "local".to_string(),
         tool_name: GuardianCommandSource::Shell,
-        approval_policy: AskForApproval::OnRequest,
+        source: ToolCallSource::Direct,
+        cancellation_token: CancellationToken::new(),
         permission_profile: permission_profile.clone(),
         file_system_sandbox_policy: read_only_file_system_sandbox_policy(),
         sandbox_permissions: SandboxPermissions::WithAdditionalPermissions,
@@ -566,7 +569,8 @@ async fn execve_permission_request_hook_short_circuits_prompt() -> anyhow::Resul
         call_id: "execve-hook-call".to_string(),
         environment_id: "local".to_string(),
         tool_name: GuardianCommandSource::Shell,
-        approval_policy: AskForApproval::OnRequest,
+        source: ToolCallSource::Direct,
+        cancellation_token: CancellationToken::new(),
         permission_profile: PermissionProfile::read_only(),
         file_system_sandbox_policy: read_only_file_system_sandbox_policy(),
         sandbox_permissions: SandboxPermissions::RequireEscalated,
@@ -610,6 +614,48 @@ async fn execve_permission_request_hook_short_circuits_prompt() -> anyhow::Resul
         serde_json::Value::Null
     );
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn cancelled_execve_review_cannot_run_the_action() -> anyhow::Result<()> {
+    let (session, turn_context) = make_session_and_context().await;
+    turn_context
+        .approval_policy
+        .replace(Constrained::allow_any(AskForApproval::OnRequest));
+    let cancellation_token = CancellationToken::new();
+    cancellation_token.cancel();
+    let provider = CoreShellActionProvider {
+        policy: Arc::new(RwLock::new(codex_execpolicy::Policy::empty())),
+        session: Arc::new(session),
+        turn: Arc::new(turn_context),
+        call_id: "cancelled-execve".to_string(),
+        environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
+        tool_name: GuardianCommandSource::Shell,
+        source: ToolCallSource::Direct,
+        cancellation_token,
+        permission_profile: PermissionProfile::read_only(),
+        file_system_sandbox_policy: read_only_file_system_sandbox_policy(),
+        sandbox_permissions: SandboxPermissions::RequireEscalated,
+        approval_sandbox_permissions: SandboxPermissions::RequireEscalated,
+        prompt_permissions: None,
+        stopwatch: codex_shell_escalation::Stopwatch::new(Duration::from_secs(1)),
+    };
+
+    let action = codex_shell_escalation::EscalationPolicy::determine_action(
+        &provider,
+        &AbsolutePathBuf::from_absolute_path("/usr/bin/printf")?,
+        &["printf".to_string(), "hello".to_string()],
+        &test_sandbox_cwd(),
+    )
+    .await?;
+
+    assert_eq!(
+        action,
+        codex_shell_escalation::EscalationDecision::Deny {
+            reason: Some("Execution cancelled".to_string()),
+        }
+    );
     Ok(())
 }
 
@@ -777,7 +823,8 @@ prefix_rule(pattern = ["{cat_path_literal}"], decision = "allow")
         call_id: "deny-read-prefix-allow".to_string(),
         environment_id: "local".to_string(),
         tool_name: GuardianCommandSource::Shell,
-        approval_policy: AskForApproval::OnRequest,
+        source: ToolCallSource::Direct,
+        cancellation_token: CancellationToken::new(),
         permission_profile,
         file_system_sandbox_policy,
         sandbox_permissions: SandboxPermissions::UseDefault,
@@ -801,6 +848,17 @@ prefix_rule(pattern = ["{cat_path_literal}"], decision = "allow")
 #[tokio::test(flavor = "current_thread")]
 async fn denied_reads_keep_granular_sandbox_rejection_for_escalation() -> anyhow::Result<()> {
     let (session, turn_context) = make_session_and_context().await;
+    turn_context
+        .approval_policy
+        .replace(Constrained::allow_any(AskForApproval::Granular(
+            GranularApprovalConfig {
+                sandbox_approval: false,
+                rules: true,
+                skill_approval: true,
+                request_permissions: true,
+                mcp_elicitations: true,
+            },
+        )));
     let file_system_sandbox_policy = denied_read_file_system_sandbox_policy();
     let permission_profile = PermissionProfile::from_runtime_permissions(
         &file_system_sandbox_policy,
@@ -814,13 +872,8 @@ async fn denied_reads_keep_granular_sandbox_rejection_for_escalation() -> anyhow
         call_id: "deny-read-granular-sandbox-reject".to_string(),
         environment_id: "local".to_string(),
         tool_name: GuardianCommandSource::Shell,
-        approval_policy: AskForApproval::Granular(GranularApprovalConfig {
-            sandbox_approval: false,
-            rules: true,
-            skill_approval: true,
-            request_permissions: true,
-            mcp_elicitations: true,
-        }),
+        source: ToolCallSource::Direct,
+        cancellation_token: CancellationToken::new(),
         permission_profile,
         file_system_sandbox_policy,
         sandbox_permissions: SandboxPermissions::RequireEscalated,

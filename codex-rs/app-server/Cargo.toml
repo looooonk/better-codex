@@ -49,6 +49,7 @@ codex-external-agent-sessions = { workspace = true }
 codex-features = { workspace = true }
 codex-goal-extension = { workspace = true }
 codex-guardian = { workspace = true }
+codex-guardian-v2 = { workspace = true }
 codex-git-utils = { workspace = true }
 codex-file-watcher = { workspace = true }
 codex-hooks = { workspace = true }

@@ -245,6 +245,85 @@ async fn data_url_processing_preserves_supported_source_bytes() {
     assert_eq!(processed.bytes.as_ref(), original_bytes);
 }
 
+#[test]
+fn sanitized_data_url_processing_strips_source_metadata() {
+    let image = ImageBuffer::from_pixel(64, 32, Rgba([10u8, 20, 30, 255]));
+    let original_bytes =
+        image_bytes_with_metadata(&image, ImageFormat::Png, TEST_RGB_ICC_PROFILE);
+    let image_url = data_url_from_bytes("image/png", &original_bytes);
+
+    let processed = load_sanitized_data_url_for_prompt(
+        &image_url,
+        PromptImageMode::ResizeWithLimits(PromptImageResizeLimits {
+            max_dimension: 512,
+            max_patches: 256,
+        }),
+    )
+    .expect("sanitize data URL image");
+    let mut decoder = ImageReader::with_format(Cursor::new(&processed.bytes), ImageFormat::Png)
+        .into_decoder()
+        .expect("create decoder");
+
+    assert_eq!(
+        (
+            decoder.icc_profile().expect("read ICC profile"),
+            decoder.exif_metadata().expect("read EXIF metadata"),
+        ),
+        (None, None)
+    );
+}
+
+#[test]
+fn limited_resize_rejects_tiny_png_dimension_bombs_before_allocation() {
+    let png_with_declared_dimensions = |width: u32, height: u32| {
+        let image = ImageBuffer::from_pixel(
+            /*width*/ 1,
+            /*height*/ 1,
+            Rgba([0u8, 0, 0, 255]),
+        );
+        let mut bytes = image_bytes(&image, ImageFormat::Png);
+        bytes[16..20].copy_from_slice(&width.to_be_bytes());
+        bytes[20..24].copy_from_slice(&height.to_be_bytes());
+        let mut crc = u32::MAX;
+        for byte in &bytes[12..29] {
+            crc ^= u32::from(*byte);
+            for _ in 0..8 {
+                crc = (crc >> 1) ^ (0xedb8_8320 & 0_u32.wrapping_sub(crc & 1));
+            }
+        }
+        bytes[29..33].copy_from_slice(&(!crc).to_be_bytes());
+        bytes
+    };
+    for dimensions in [
+        (MAX_LIMITED_IMAGE_SOURCE_DIMENSION + 1, 1),
+        (
+            MAX_LIMITED_IMAGE_SOURCE_DIMENSION,
+            MAX_LIMITED_IMAGE_SOURCE_DIMENSION,
+        ),
+    ] {
+        let bytes = png_with_declared_dimensions(dimensions.0, dimensions.1);
+        assert!(bytes.len() < 1_024);
+        let image_url = data_url_from_bytes("image/png", &bytes);
+
+        let error = load_sanitized_data_url_for_prompt(
+            &image_url,
+            PromptImageMode::ResizeWithLimits(PromptImageResizeLimits {
+                max_dimension: 512,
+                max_patches: 256,
+            }),
+        )
+        .expect_err("dimension bomb must fail before decoded image allocation");
+
+        assert!(matches!(
+            error,
+            ImageProcessingError::Decode {
+                source: image::ImageError::Limits(_),
+                ..
+            }
+        ));
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn data_url_processing_converts_gif_to_png() {
     let image = ImageBuffer::from_pixel(64, 32, Rgba([10u8, 20, 30, 255]));

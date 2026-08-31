@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use codex_protocol::protocol::ReviewDecision;
-
 use crate::ApprovalReviewContributor;
+use crate::ApprovalReviewFailure;
+use crate::ApprovalReviewInput;
+use crate::ApprovalReviewResult;
 use crate::ConfigContributor;
 use crate::ContextContributor;
 use crate::ExtensionData;
@@ -208,24 +209,26 @@ impl<C: Sync> ExtensionRegistry<C> {
         &self.skill_invocation_contributors
     }
 
-    /// Claims the first rendered approval-review prompt accepted by an
-    /// installed contributor.
+    /// Dispatches one review when exactly one authority is installed.
     pub async fn approval_review(
         &self,
         session_store: &ExtensionData,
         thread_store: &ExtensionData,
-        prompt: &str,
-    ) -> Option<ReviewDecision> {
-        for contributor in &self.approval_review_contributors {
-            if let Some(decision) = contributor
-                .contribute(session_store, thread_store, prompt)
-                .await
-            {
-                return Some(decision);
-            }
+        input: ApprovalReviewInput,
+    ) -> ApprovalReviewResult {
+        let [contributor] = self.approval_review_contributors.as_slice() else {
+            return ApprovalReviewResult::ManualReview(
+                if self.approval_review_contributors.is_empty() {
+                    ApprovalReviewFailure::NotInstalled
+                } else {
+                    ApprovalReviewFailure::MultipleAuthorities
+                },
+            );
+        };
+        if input.cancellation.is_cancelled() {
+            return ApprovalReviewResult::Cancelled;
         }
-
-        None
+        contributor.review(session_store, thread_store, input).await
     }
 
     /// Returns the registered prompt contributors.

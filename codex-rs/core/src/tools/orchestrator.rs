@@ -8,7 +8,8 @@ caching).
 */
 use crate::network_policy_decision::network_approval_context_from_payload;
 use crate::tools::approval_pipeline::ApprovalContext;
-use crate::tools::approval_pipeline::POLICY_CHANGED_REJECTION;
+use crate::tools::approval_pipeline::ApprovalGrant;
+use crate::tools::approval_pipeline::ensure_approval_grant_is_current;
 use crate::tools::approval_pipeline::request_approval;
 use crate::tools::approval_pipeline::routes_to_guardian;
 use crate::tools::flat_tool_name;
@@ -61,6 +62,7 @@ impl ToolOrchestrator {
         tool_ctx: &ToolCtx,
         attempt: &SandboxAttempt<'_>,
         managed_network_active: bool,
+        approval_grant: Option<&ApprovalGrant>,
     ) -> (Result<Out, ToolError>, Option<DeferredNetworkApproval>)
     where
         T: ToolRuntime<Rq, Out>,
@@ -76,12 +78,42 @@ impl ToolOrchestrator {
             Ok(network_approval) => network_approval,
             Err(err) => return (Err(err), None),
         };
+        if let Some(grant) = approval_grant
+            && let Err(error) = ensure_approval_grant_is_current(
+                &tool_ctx.session,
+                &tool_ctx.turn,
+                &tool_ctx.cancellation_token,
+                grant,
+            )
+            .await
+        {
+            if let Some(network_approval) = network_approval {
+                let finalized = match network_approval.mode() {
+                    NetworkApprovalMode::Immediate => {
+                        finish_immediate_network_approval(&tool_ctx.session, network_approval).await
+                    }
+                    NetworkApprovalMode::Deferred => {
+                        finish_deferred_network_approval(
+                            &tool_ctx.session,
+                            network_approval.into_deferred(),
+                        )
+                        .await
+                    }
+                };
+                if let Err(finalize_error) = finalized {
+                    return (Err(finalize_error), None);
+                }
+            }
+            return (Err(error), None);
+        }
 
         let attempt_tool_ctx = ToolCtx {
             session: tool_ctx.session.clone(),
             turn: tool_ctx.turn.clone(),
             call_id: tool_ctx.call_id.clone(),
             tool_name: tool_ctx.tool_name.clone(),
+            source: tool_ctx.source.clone(),
+            cancellation_token: tool_ctx.cancellation_token.clone(),
         };
         let attempt_with_network_approval = SandboxAttempt {
             sandbox: attempt.sandbox,
@@ -151,8 +183,7 @@ impl ToolOrchestrator {
         let approval_policy = turn_ctx.approval_policy.value();
         // 1) Approval
         let mut already_approved = false;
-        let mut approval_never_revision = None;
-        let mut approved_under_strict = false;
+        let mut approval_grant = None;
 
         let workspace_roots = tool.workspace_roots(req);
         let permission_profile = turn_ctx.config.permissions.permission_profile();
@@ -171,8 +202,6 @@ impl ToolOrchestrator {
         match &requirement {
             ExecApprovalRequirement::Skip { .. } => {
                 if tool_ctx.session.strict_auto_review_enabled_for_turn().await {
-                    approval_never_revision =
-                        Some(turn_ctx.approval_policy.decision_snapshot().never_revision);
                     let action = tool
                         .approval_action(req, &tool_ctx.call_id)
                         .map_err(|err| {
@@ -186,10 +215,14 @@ impl ToolOrchestrator {
                         retry_reason: None,
                         network_approval_context: None,
                         required_by_strict: true,
+                        attempt_id: uuid::Uuid::new_v4().to_string(),
+                        source: tool_ctx.source.clone(),
+                        cancellation_token: tool_ctx.cancellation_token.clone(),
                     };
-                    request_approval(&tool_ctx.session, action, approval_ctx).await?;
+                    approval_grant = Some(
+                        request_approval(&tool_ctx.session, action, approval_ctx).await?,
+                    );
                     already_approved = true;
-                    approved_under_strict = true;
                 } else {
                     otel.tool_decision(
                         &otel_tn,
@@ -203,8 +236,6 @@ impl ToolOrchestrator {
                 return Err(ToolError::Rejected(reason.clone()));
             }
             ExecApprovalRequirement::NeedsApproval { reason, .. } => {
-                approval_never_revision =
-                    Some(turn_ctx.approval_policy.decision_snapshot().never_revision);
                 let action = tool
                     .approval_action(req, &tool_ctx.call_id)
                     .map_err(|err| {
@@ -218,8 +249,13 @@ impl ToolOrchestrator {
                     retry_reason: None,
                     network_approval_context: None,
                     required_by_strict: false,
+                    attempt_id: uuid::Uuid::new_v4().to_string(),
+                    source: tool_ctx.source.clone(),
+                    cancellation_token: tool_ctx.cancellation_token.clone(),
                 };
-                request_approval(&tool_ctx.session, action, approval_ctx).await?;
+                approval_grant = Some(
+                    request_approval(&tool_ctx.session, action, approval_ctx).await?,
+                );
                 already_approved = true;
             }
         }
@@ -280,7 +316,13 @@ impl ToolOrchestrator {
             network_proxy: None,
         };
 
-        ensure_approval_is_current(turn_ctx, approval_never_revision, approved_under_strict)?;
+        ensure_approval_is_current(
+            &tool_ctx.session,
+            turn_ctx,
+            &tool_ctx.cancellation_token,
+            approval_grant.as_ref(),
+        )
+        .await?;
 
         let initial_attempt_start = Instant::now();
         let (first_result, first_deferred_network_approval) = Self::run_attempt(
@@ -289,6 +331,7 @@ impl ToolOrchestrator {
             tool_ctx,
             &initial_attempt,
             managed_network_active,
+            approval_grant.as_ref(),
         )
         .await;
         let initial_duration = initial_attempt_start.elapsed();
@@ -395,10 +438,10 @@ impl ToolOrchestrator {
 
                 // Strict auto-review approval covers the sandboxed attempt only;
                 // retrying without the sandbox requires a fresh guardian review.
-                let retry_never_revision = retry_policy.never_revision;
                 let bypass_retry_approval = !guardian_review
                     && tool.should_bypass_approval(approval_policy, already_approved)
                     && network_approval_context.is_none();
+                let mut retry_approval_grant = None;
                 if !bypass_retry_approval {
                     let approval_reason = match &requirement {
                         ExecApprovalRequirement::NeedsApproval { reason, .. } => reason.clone(),
@@ -418,8 +461,13 @@ impl ToolOrchestrator {
                         retry_reason: Some(retry_reason),
                         network_approval_context: network_approval_context.clone(),
                         required_by_strict: false,
+                        attempt_id: uuid::Uuid::new_v4().to_string(),
+                        source: tool_ctx.source.clone(),
+                        cancellation_token: tool_ctx.cancellation_token.clone(),
                     };
-                    request_approval(&tool_ctx.session, action, approval_ctx).await?;
+                    retry_approval_grant = Some(
+                        request_approval(&tool_ctx.session, action, approval_ctx).await?,
+                    );
                 }
 
                 let retry_sandbox_requested = !unsandboxed_allowed
@@ -465,17 +513,28 @@ impl ToolOrchestrator {
                     network_proxy: None,
                 };
 
+                let current_approval_grant =
+                    retry_approval_grant.as_ref().or(approval_grant.as_ref());
                 ensure_approval_is_current(
+                    &tool_ctx.session,
                     turn_ctx,
-                    Some(retry_never_revision),
-                    /*approved_under_strict*/ false,
-                )?;
+                    &tool_ctx.cancellation_token,
+                    current_approval_grant,
+                )
+                .await?;
 
                 // Second attempt.
                 let escalated_attempt_start = Instant::now();
                 let (retry_result, retry_deferred_network_approval) =
-                    Self::run_attempt(tool, req, tool_ctx, &retry_attempt, managed_network_active)
-                        .await;
+                    Self::run_attempt(
+                        tool,
+                        req,
+                        tool_ctx,
+                        &retry_attempt,
+                        managed_network_active,
+                        current_approval_grant,
+                    )
+                    .await;
                 let escalated_duration = escalated_attempt_start.elapsed();
                 match retry_result {
                     Ok(output) => {
@@ -521,20 +580,19 @@ impl ToolOrchestrator {
     }
 }
 
-fn ensure_approval_is_current(
+async fn ensure_approval_is_current(
+    session: &crate::session::session::Session,
     turn: &crate::session::turn_context::TurnContext,
-    never_revision: Option<u64>,
-    approved_under_strict: bool,
+    cancellation_token: &tokio_util::sync::CancellationToken,
+    grant: Option<&ApprovalGrant>,
 ) -> Result<(), ToolError> {
-    let Some(never_revision) = never_revision else {
+    if cancellation_token.is_cancelled() {
+        return Err(ToolError::Codex(CodexErr::TurnAborted));
+    }
+    let Some(grant) = grant else {
         return Ok(());
     };
-    if !approved_under_strict
-        && turn.approval_policy.decision_snapshot().never_revision != never_revision
-    {
-        return Err(ToolError::Rejected(POLICY_CHANGED_REJECTION.to_string()));
-    }
-    Ok(())
+    ensure_approval_grant_is_current(session, turn, cancellation_token, grant).await
 }
 
 fn sandbox_outcome_from_tool_error(err: &ToolError) -> Option<&'static str> {

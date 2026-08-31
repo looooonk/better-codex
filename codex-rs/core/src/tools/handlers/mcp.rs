@@ -1,12 +1,15 @@
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::context::NodeReplReviewEvidence;
+use crate::context::NodeReplReviewEvidenceItem;
 use crate::function_tool::FunctionCallError;
 use crate::mcp_tool_call::handle_mcp_tool_call;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::session::session::Session;
 use crate::tools::context::McpToolOutput;
 use crate::tools::context::ToolInvocation;
+use crate::tools::context::ToolCallSource;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
 use crate::tools::flat_tool_name;
@@ -18,6 +21,7 @@ use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolTelemetryTags;
 use codex_mcp::McpBinding;
 use codex_mcp::ToolInfo;
+use codex_features::Feature;
 use codex_tools::ResponsesApiNamespace;
 use codex_tools::ResponsesApiNamespaceTool;
 use codex_tools::ToolName;
@@ -26,11 +30,18 @@ use codex_tools::ToolSearchSourceInfo;
 use codex_tools::ToolSpec;
 use codex_tools::mcp_tool_to_responses_api_tool;
 use futures::future::BoxFuture;
+use codex_utils_image::PromptImageMode;
+use codex_utils_image::PromptImageResizeLimits;
+use codex_utils_image::load_sanitized_data_url_for_prompt;
 use serde_json::Map;
 use serde_json::Value;
 
 const LEGACY_MCP_TOOL_NAME_PREFIX: &str = "mcp__";
 const MCP_TOOL_NAME_DELIMITER: &str = "__";
+const MAX_NODE_IMAGE_SOURCE_BYTES: usize = 64 * 1024;
+const MAX_NODE_IMAGE_ENCODED_BYTES: usize = 12 * 1024;
+const MAX_NODE_IMAGES: usize = 2;
+const MAX_NODE_STRUCTURED_CONTENT_BYTES: usize = 64 * 1024;
 
 pub struct McpHandler {
     tool_info: ToolInfo,
@@ -251,6 +262,117 @@ impl CoreToolRuntime for McpHandler {
         };
         Ok(invocation)
     }
+
+    fn on_tool_result_accepted(
+        &self,
+        invocation: &ToolInvocation,
+        result: &dyn crate::tools::context::ToolOutput,
+    ) {
+        let ToolCallSource::CodeMode {
+            cell_id,
+            runtime_tool_call_id,
+        } = &invocation.source
+        else {
+            return;
+        };
+        if self.tool_info.server_name != "node_repl"
+            || self.tool_info.tool.name.as_ref() != "js"
+            || !invocation
+                .turn
+                .config
+                .features
+                .enabled(Feature::GuardianV2)
+            || !result.success_for_logging()
+        {
+            return;
+        }
+
+        let result = result.code_mode_result(&invocation.payload);
+        let Some(content) = result.get("content").and_then(Value::as_array) else {
+            return;
+        };
+        if content.iter().any(mcp_content_is_encrypted) {
+            return;
+        }
+
+        let mut items = Vec::new();
+        let mut has_text = false;
+        let mut image_count = 0_usize;
+        let mut encoded_image_bytes = 0_usize;
+        for item in content {
+            match item.get("type").and_then(Value::as_str) {
+                Some("text") => {
+                    let Some(text) = item
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .filter(|text| !text.trim().is_empty())
+                    else {
+                        continue;
+                    };
+                    has_text = true;
+                    items.push(NodeReplReviewEvidenceItem::Text(text.to_string()));
+                }
+                Some("image") if image_count < MAX_NODE_IMAGES => {
+                    let Some(payload) = item.get("data").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    let Some(mime_type) = item.get("mimeType").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    if payload.is_empty()
+                        || payload.len() > MAX_NODE_IMAGE_SOURCE_BYTES
+                        || !mime_type
+                            .get(..6)
+                            .is_some_and(|prefix| prefix.eq_ignore_ascii_case("image/"))
+                    {
+                        continue;
+                    }
+                    let image_url =
+                        format!("data:{};base64,{payload}", mime_type.to_ascii_lowercase());
+                    let Ok(image) = load_sanitized_data_url_for_prompt(
+                        &image_url,
+                        PromptImageMode::ResizeWithLimits(PromptImageResizeLimits {
+                            max_dimension: 512,
+                            max_patches: 256,
+                        }),
+                    ) else {
+                        continue;
+                    };
+                    let image_url = image.into_data_url();
+                    let Some(encoded_bytes) = image_url.split_once(',').map(|(_, data)| data.len())
+                    else {
+                        continue;
+                    };
+                    if encoded_image_bytes.saturating_add(encoded_bytes)
+                        > MAX_NODE_IMAGE_ENCODED_BYTES
+                    {
+                        continue;
+                    }
+                    image_count += 1;
+                    encoded_image_bytes = encoded_image_bytes.saturating_add(encoded_bytes);
+                    items.push(NodeReplReviewEvidenceItem::Image {
+                        data_url: image_url,
+                    });
+                }
+                Some("image") | Some(_) | None => {}
+            }
+        }
+        if !has_text
+            && let Some(structured_content) = result.get("structuredContent")
+            && !structured_content.is_null()
+            && let Ok(text) = serde_json::to_string(structured_content)
+            && text.len() <= MAX_NODE_STRUCTURED_CONTENT_BYTES
+        {
+            items.insert(/*index*/ 0, NodeReplReviewEvidenceItem::Text(text));
+        }
+
+        invocation
+            .turn
+            .extension_data
+            .get_or_init(NodeReplReviewEvidence::default)
+            .record(cell_id, runtime_tool_call_id, items);
+    }
+
     fn post_tool_use_payload(
         &self,
         invocation: &ToolInvocation,
@@ -269,6 +391,13 @@ impl CoreToolRuntime for McpHandler {
             tool_response,
         })
     }
+}
+
+fn mcp_content_is_encrypted(item: &Value) -> bool {
+    item.get("_meta")
+        .and_then(|meta| meta.get("codex/encryptedContent"))
+        .and_then(Value::as_bool)
+        == Some(true)
 }
 
 fn create_tool_spec(tool_info: &ToolInfo) -> Result<ToolSpec, serde_json::Error> {
@@ -533,6 +662,152 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn accepted_node_repl_js_result_is_captured_as_redacted_evidence() {
+        let (session, mut turn) = make_session_and_context().await;
+        let mut config = (*turn.config).clone();
+        config
+            .features
+            .enable(Feature::GuardianV2)
+            .expect("enable Guardian V2");
+        turn.config = Arc::new(config);
+        let session = Arc::new(session);
+        let turn = Arc::new(turn);
+        let invocation = node_repl_invocation(
+            Arc::clone(&session),
+            turn,
+            ToolCallSource::CodeMode {
+                cell_id: "cell-1".to_string(),
+                runtime_tool_call_id: "runtime-call-1".to_string(),
+            },
+        );
+        let output = mcp_output(
+            vec![json!({
+                "type": "text",
+                "text": "token=sk-abcdefghijklmnopqrstuvwxyz012345"
+            })],
+            /*is_error*/ None,
+        );
+        let handler = McpHandler::new(tool_info("node_repl", "node_repl", "js"))
+            .expect("MCP tool spec should build");
+
+        handler.on_tool_result_accepted(&invocation, &output);
+
+        let evidence = invocation
+            .turn
+            .extension_data
+            .get::<NodeReplReviewEvidence>()
+            .expect("accepted result should create evidence");
+        let snapshot = evidence.snapshot();
+        assert_eq!(snapshot.records.len(), 1);
+        assert_eq!(
+            snapshot.records[0].provenance,
+            "tool=node_repl/js cell=cell-1 call=runtime-call-1"
+        );
+        assert_eq!(snapshot.records[0].cell_id, "cell-1");
+        assert_eq!(snapshot.records[0].runtime_tool_call_id, "runtime-call-1");
+        let NodeReplReviewEvidenceItem::Text(text) = &snapshot.records[0].items[0] else {
+            panic!("accepted result should retain text evidence");
+        };
+        assert_eq!(text, "token=[REDACTED_SECRET]");
+    }
+
+    #[tokio::test]
+    async fn protected_failed_non_js_and_direct_mcp_results_are_not_captured() {
+        let (session, mut turn) = make_session_and_context().await;
+        let mut config = (*turn.config).clone();
+        config
+            .features
+            .enable(Feature::GuardianV2)
+            .expect("enable Guardian V2");
+        turn.config = Arc::new(config);
+        let session = Arc::new(session);
+        let turn = Arc::new(turn);
+        let handler = McpHandler::new(tool_info("node_repl", "node_repl", "js"))
+            .expect("MCP tool spec should build");
+        let code_mode_invocation = node_repl_invocation(
+            Arc::clone(&session),
+            Arc::clone(&turn),
+            ToolCallSource::CodeMode {
+                cell_id: "cell-1".to_string(),
+                runtime_tool_call_id: "runtime-call-1".to_string(),
+            },
+        );
+        let encrypted = mcp_output(
+            vec![json!({
+                "type": "text",
+                "text": "encrypted result",
+                "_meta": { "codex/encryptedContent": true }
+            })],
+            /*is_error*/ None,
+        );
+        handler.on_tool_result_accepted(&code_mode_invocation, &encrypted);
+
+        let failed = mcp_output(
+            vec![json!({ "type": "text", "text": "failed result" })],
+            /*is_error*/ Some(true),
+        );
+        handler.on_tool_result_accepted(&code_mode_invocation, &failed);
+
+        let non_js = McpHandler::new(tool_info("node_repl", "node_repl", "echo"))
+            .expect("MCP tool spec should build");
+        non_js.on_tool_result_accepted(
+            &code_mode_invocation,
+            &mcp_output(
+                vec![json!({ "type": "text", "text": "other tool" })],
+                /*is_error*/ None,
+            ),
+        );
+
+        handler.on_tool_result_accepted(
+            &node_repl_invocation(Arc::clone(&session), turn, ToolCallSource::Direct),
+            &mcp_output(
+                vec![json!({ "type": "text", "text": "direct result" })],
+                /*is_error*/ None,
+            ),
+        );
+
+        assert!(
+            code_mode_invocation
+                .turn
+                .extension_data
+                .get::<NodeReplReviewEvidence>()
+                .is_none()
+        );
+    }
+
+    #[tokio::test]
+    async fn node_repl_result_capture_is_disabled_by_default() {
+        let (session, turn) = make_session_and_context().await;
+        let session = Arc::new(session);
+        let invocation = node_repl_invocation(
+            Arc::clone(&session),
+            Arc::new(turn),
+            ToolCallSource::CodeMode {
+                cell_id: "cell-1".to_string(),
+                runtime_tool_call_id: "runtime-call-1".to_string(),
+            },
+        );
+        let handler = McpHandler::new(tool_info("node_repl", "node_repl", "js"))
+            .expect("MCP tool spec should build");
+
+        handler.on_tool_result_accepted(
+            &invocation,
+            &mcp_output(
+                vec![json!({ "type": "text", "text": "disabled result" })],
+                /*is_error*/ None,
+            ),
+        );
+
+        assert!(
+            invocation
+                .turn
+                .extension_data
+                .get::<NodeReplReviewEvidence>()
+                .is_none()
+        );
+    }
+
     #[test]
     fn mcp_read_only_hint_supports_parallel_calls_without_server_opt_in() {
         let mut read_only_info = tool_info("foo", "mcp__foo__", "read");
@@ -590,6 +865,41 @@ mod tests {
             connector_id: None,
             connector_name: None,
             plugin_display_names: Vec::new(),
+        }
+    }
+
+    fn node_repl_invocation(
+        session: Arc<crate::session::session::Session>,
+        turn: Arc<crate::session::turn_context::TurnContext>,
+        source: ToolCallSource,
+    ) -> ToolInvocation {
+        ToolInvocation {
+            session,
+            step_context: StepContext::for_test(Arc::clone(&turn)),
+            turn,
+            cancellation_token: tokio_util::sync::CancellationToken::new(),
+            tracker: Arc::new(Mutex::new(TurnDiffTracker::new())),
+            call_id: "call-node-js".to_string(),
+            tool_name: codex_tools::ToolName::namespaced("node_repl", "js"),
+            source,
+            payload: ToolPayload::Function {
+                arguments: json!({ "code": "return 1" }).to_string(),
+            },
+        }
+    }
+
+    fn mcp_output(content: Vec<Value>, is_error: Option<bool>) -> McpToolOutput {
+        McpToolOutput {
+            result: codex_protocol::mcp::CallToolResult {
+                content,
+                structured_content: None,
+                is_error,
+                meta: None,
+            },
+            tool_input: json!({ "code": "return 1" }),
+            wall_time: Duration::from_millis(1),
+            original_image_detail_supported: true,
+            truncation_policy: codex_utils_output_truncation::TruncationPolicy::Bytes(1024),
         }
     }
 }

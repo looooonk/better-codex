@@ -10175,6 +10175,33 @@ auto_review = false
 }
 
 #[tokio::test]
+async fn feature_requirements_cannot_enable_guardian_v2_authority() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .cloud_config_bundle(
+            CloudConfigBundleFixture::loader_with_enterprise_requirement(
+                r#"
+[features]
+guardianv2 = true
+"#,
+            ),
+        )
+        .build()
+        .await?;
+
+    assert!(!config.features.enabled(Feature::GuardianV2));
+    assert!(
+        config
+            .startup_warnings
+            .iter()
+            .any(|warning| warning.contains("Ignoring unavailable `features` requirement"))
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn browser_feature_requirements_are_valid() -> std::io::Result<()> {
     let codex_home = TempDir::new()?;
 
@@ -10324,6 +10351,26 @@ async fn approvals_reviewer_defaults_to_manual_only_without_guardian_feature() -
         .await?;
 
     assert_eq!(config.approvals_reviewer, ApprovalsReviewer::User);
+    Ok(())
+}
+
+#[tokio::test]
+async fn guardian_v2_authority_cannot_be_enabled_from_config() -> std::io::Result<()> {
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join(CONFIG_TOML_FILE),
+        r#"[features]
+guardianv2 = true
+"#,
+    )?;
+
+    let config = ConfigBuilder::without_managed_config_for_tests()
+        .codex_home(codex_home.path().to_path_buf())
+        .fallback_cwd(Some(codex_home.path().to_path_buf()))
+        .build()
+        .await?;
+
+    assert!(!config.features.enabled(Feature::GuardianV2));
     Ok(())
 }
 

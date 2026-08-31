@@ -41,6 +41,7 @@ use codex_protocol::protocol::ThreadGoal;
 use codex_protocol::protocol::ThreadGoalStatus;
 use codex_protocol::protocol::ThreadGoalUpdatedEvent;
 use codex_protocol::protocol::UserMessageEvent;
+use codex_protocol::security_risk::SecurityRiskScore;
 
 const NO_SOURCE_FILTER: &[SessionSource] = &[];
 const TEST_PROVIDER: &str = "test-provider";
@@ -377,6 +378,64 @@ fn write_session_file_with_provider(
     let times = FileTimes::new().set_modified(dt.into());
     file.set_times(times)?;
     Ok((dt, uuid))
+}
+
+#[tokio::test]
+async fn rollout_search_excludes_security_risk_correlation_ids() {
+    let temp = TempDir::new().expect("temp dir");
+    let home = temp.path();
+    let timestamp = "2025-01-03T12-00-00";
+    let uuid = Uuid::from_u128(777);
+    write_session_file(
+        home,
+        timestamp,
+        uuid,
+        /*num_records*/ 0,
+        Some(SessionSource::Cli),
+    )
+    .expect("write session");
+    let rollout_path = home.join(format!(
+        "sessions/2025/01/03/rollout-{timestamp}-{uuid}.jsonl"
+    ));
+    crate::append_rollout_item_to_path(
+        &rollout_path,
+        &RolloutItem::SecurityRiskScore(
+            SecurityRiskScore::new(
+                "risk-only-review-id",
+                "risk-only-turn-id",
+                "risk-only-action-id",
+                /*score*/ 0.92,
+            )
+            .expect("valid security risk score"),
+        ),
+    )
+    .await
+    .expect("append security risk score");
+
+    for rg_command in ["rg", "missing-rg-for-test"] {
+        let matches = crate::search_rollout_matches(
+            Path::new(rg_command),
+            home,
+            /*archived*/ false,
+            "risk-only-review-id",
+        )
+        .await
+        .expect("search rollouts");
+        assert!(matches.is_empty());
+    }
+
+    let matches = crate::search_rollout_matches(
+        Path::new("missing-rg-for-test"),
+        home,
+        /*archived*/ false,
+        "Hello from user",
+    )
+    .await
+    .expect("search conversation content");
+    assert_eq!(
+        matches.get(&rollout_path),
+        Some(&Some("Hello from user".to_string()))
+    );
 }
 
 fn write_goal_started_session_file(

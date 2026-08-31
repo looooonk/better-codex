@@ -170,6 +170,7 @@ impl ShellCommandHandler {
             cancellation_token,
             tracker,
             call_id,
+            source,
             payload,
             ..
         } = invocation;
@@ -231,6 +232,7 @@ impl ShellCommandHandler {
             tracker,
             call_id,
             shell_runtime_backend: self.shell_runtime_backend(),
+            source,
         })
         .await
         .map(boxed_tool_output)

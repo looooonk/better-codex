@@ -14,6 +14,7 @@ use codex_protocol::protocol::SessionContextWindow;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::WorldStateItem;
+use codex_protocol::security_risk::SecurityRiskScore;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use std::path::PathBuf;
@@ -131,6 +132,33 @@ async fn record_initial_history_reconstructs_typed_inter_agent_message() {
     assert_eq!(
         session.state.lock().await.clone_history().raw_items(),
         &[communication.to_model_input_item()]
+    );
+}
+
+#[tokio::test]
+async fn record_initial_history_ignores_security_risk_scores() {
+    let (session, _turn_context) = make_session_and_context().await;
+    let user = user_message("visible user input");
+    let assistant = assistant_message("visible assistant output");
+    let security_risk =
+        SecurityRiskScore::new("review-1", "turn-1", "action-1", /*score*/ 0.92)
+            .expect("valid security risk score");
+
+    session
+        .record_initial_history(InitialHistory::Resumed(ResumedHistory {
+            conversation_id: ThreadId::default(),
+            history: Arc::new(vec![
+                RolloutItem::ResponseItem(user.clone()),
+                RolloutItem::SecurityRiskScore(security_risk),
+                RolloutItem::ResponseItem(assistant.clone()),
+            ]),
+            rollout_path: Some(PathBuf::from("/tmp/resume.jsonl")),
+        }))
+        .await;
+
+    assert_eq!(
+        session.state.lock().await.clone_history().raw_items(),
+        &[user, assistant]
     );
 }
 

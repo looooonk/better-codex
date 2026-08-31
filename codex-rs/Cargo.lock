@@ -2016,6 +2016,7 @@ dependencies = [
  "codex-git-utils",
  "codex-goal-extension",
  "codex-guardian",
+ "codex-guardian-v2",
  "codex-home",
  "codex-hooks",
  "codex-http-client",
@@ -2706,6 +2707,7 @@ dependencies = [
  "codex-rollout",
  "codex-rollout-trace",
  "codex-sandboxing",
+ "codex-secrets",
  "codex-shell-command",
  "codex-shell-escalation",
  "codex-state",
@@ -3202,7 +3204,24 @@ dependencies = [
 name = "codex-guardian-v2"
 version = "0.1.0-alpha.12"
 dependencies = [
+ "anyhow",
+ "codex-api",
  "codex-extension-api",
+ "codex-http-client",
+ "codex-login",
+ "codex-model-provider",
+ "codex-model-provider-info",
+ "codex-protocol",
+ "codex-secrets",
+ "codex-utils-output-truncation",
+ "core_test_support",
+ "http 1.4.0",
+ "pretty_assertions",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

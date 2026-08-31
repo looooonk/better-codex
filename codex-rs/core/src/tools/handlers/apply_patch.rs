@@ -352,6 +352,8 @@ impl ApplyPatchHandler {
             tracker,
             call_id,
             tool_name,
+            source,
+            cancellation_token,
             payload,
             ..
         } = invocation;
@@ -445,6 +447,8 @@ impl ApplyPatchHandler {
                             turn: turn.clone(),
                             call_id: call_id.clone(),
                             tool_name: tool_name.clone(),
+                            source,
+                            cancellation_token,
                         };
                         let out = orchestrator
                             .run(&mut runtime, &req, &tool_ctx, turn.as_ref())
@@ -545,6 +549,8 @@ pub(crate) async fn intercept_apply_patch(
     tracker: Option<&SharedTurnDiffTracker>,
     call_id: &str,
     tool_name: &str,
+    source: &crate::tools::context::ToolCallSource,
+    cancellation_token: &tokio_util::sync::CancellationToken,
 ) -> Result<Option<FunctionToolOutput>, FunctionCallError> {
     let sandbox =
         turn.file_system_sandbox_context(/*additional_permissions*/ None, &turn_environment);
@@ -603,6 +609,8 @@ pub(crate) async fn intercept_apply_patch(
                         turn: turn.clone(),
                         call_id: call_id.to_string(),
                         tool_name: ToolName::plain(tool_name),
+                        source: source.clone(),
+                        cancellation_token: cancellation_token.clone(),
                     };
                     let out = orchestrator
                         .run(&mut runtime, &req, &tool_ctx, turn.as_ref())

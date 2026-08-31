@@ -218,7 +218,7 @@ pub enum Feature {
     DefaultModeRequestUserInput,
     /// Enable automatic review for approval prompts.
     GuardianApproval,
-    /// Enable Guardian V2 automatic approval reviews.
+    /// Enable Guardian V2 as the automatic approval authority.
     GuardianV2,
     /// Enable persisted thread goals and automatic goal continuation.
     Goals,
@@ -482,6 +482,10 @@ impl Features {
                     continue;
                 }
                 "image_detail_original" | "resize_all_images" | "item_ids" => {
+                    continue;
+                }
+                "guardianv2" => {
+                    // Keep V2 internal until every effectful approval family shares its live route.
                     continue;
                 }
                 "plugin_hooks" => {

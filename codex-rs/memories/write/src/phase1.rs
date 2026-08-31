@@ -416,6 +416,7 @@ mod job {
                 | RolloutItem::Compacted(_)
                 | RolloutItem::TurnContext(_)
                 | RolloutItem::WorldState(_)
+                | RolloutItem::SecurityRiskScore(_)
                 | RolloutItem::EventMsg(_) => None,
             })
             .collect::<Vec<_>>();
@@ -671,6 +672,7 @@ mod tests {
     use super::*;
     use codex_protocol::AgentPath;
     use codex_protocol::protocol::InterAgentCommunication;
+    use codex_protocol::security_risk::SecurityRiskScore;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -721,6 +723,10 @@ mod tests {
         let serialized = job::serialize_filtered_rollout_response_items(&[
             RolloutItem::ResponseItem(mixed_contextual_message),
             RolloutItem::ResponseItem(skill_message),
+            RolloutItem::SecurityRiskScore(
+                SecurityRiskScore::new("review-1", "turn-1", "action-1", /*score*/ 0.92)
+                    .expect("valid security risk score"),
+            ),
             RolloutItem::ResponseItem(subagent_message.clone()),
         ])
         .expect("serialize");

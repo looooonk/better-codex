@@ -1149,6 +1149,8 @@ async fn danger_full_access_tool_attempts_do_not_enforce_managed_network() -> an
         turn: Arc::clone(&turn),
         call_id: "probe-call".to_string(),
         tool_name: codex_tools::ToolName::plain("probe"),
+        source: crate::tools::context::ToolCallSource::Direct,
+        cancellation_token: tokio_util::sync::CancellationToken::new(),
     };
 
     orchestrator
@@ -2858,6 +2860,7 @@ async fn start_new_context_window_assigns_and_persists_item_ids() {
         | RolloutItem::InterAgentCommunicationMetadata { .. }
         | RolloutItem::TurnContext(_)
         | RolloutItem::WorldState(_)
+        | RolloutItem::SecurityRiskScore(_)
         | RolloutItem::EventMsg(_) => None,
     });
     assert_eq!(
@@ -2917,6 +2920,7 @@ async fn record_initial_history_assigns_and_persists_id_for_forked_response_item
         | RolloutItem::Compacted(_)
         | RolloutItem::TurnContext(_)
         | RolloutItem::WorldState(_)
+        | RolloutItem::SecurityRiskScore(_)
         | RolloutItem::EventMsg(_) => None,
     });
     assert_eq!(
@@ -3192,6 +3196,15 @@ async fn thread_rollback_drops_last_turn_from_history() {
         let mut state = sess.state.lock().await;
         state.set_reference_context_item(Some(tc.to_turn_context_item()));
     }
+    tc.extension_data
+        .get_or_init(crate::context::NodeReplReviewEvidence::default)
+        .record(
+            "cell-1",
+            "call-1",
+            vec![crate::context::NodeReplReviewEvidenceItem::Text(
+                "rolled-back evidence".to_string(),
+            )],
+        );
 
     handlers::thread_rollback(&sess, "sub-1".to_string(), /*num_turns*/ 1).await;
 
@@ -3206,6 +3219,11 @@ async fn thread_rollback_drops_last_turn_from_history() {
     assert_eq!(expected, history.raw_items());
     assert_eq!(sess.previous_turn_settings().await, None);
     assert!(sess.reference_context_item().await.is_none());
+    assert!(
+        tc.extension_data
+            .get::<crate::context::NodeReplReviewEvidence>()
+            .is_none()
+    );
 
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
         .await
@@ -5793,6 +5811,124 @@ async fn notify_request_permissions_response_ignores_unmatched_call_id() {
 }
 
 #[tokio::test]
+async fn request_permissions_call_ids_are_single_use_after_duplicate_and_cancellation() {
+    let (session, turn_context, rx) = make_session_and_context_with_rx().await;
+    *session.active_turn.lock().await = Some(ActiveTurn::default());
+    let session = Arc::new(session);
+    let environment = turn_context
+        .environments
+        .primary()
+        .expect("primary environment")
+        .selection();
+    let cwd = environment.cwd.to_abs_path().expect("native cwd");
+    let permissions = RequestPermissionProfile {
+        network: Some(codex_protocol::models::NetworkPermissions {
+            enabled: Some(true),
+        }),
+        ..RequestPermissionProfile::default()
+    };
+    let cancellation_token = CancellationToken::new();
+    let first = tokio::spawn({
+        let session = Arc::clone(&session);
+        let turn_context = Arc::clone(&turn_context);
+        let environment = environment.clone();
+        let cwd = cwd.clone();
+        let permissions = permissions.clone();
+        let cancellation_token = cancellation_token.clone();
+        async move {
+            session
+                .request_permissions_user_review(
+                    &turn_context,
+                    "reused-permissions-call".to_string(),
+                    Some("first request".to_string()),
+                    permissions,
+                    environment,
+                    cwd,
+                    RequestPermissionsResponseConstraint::UserSelected,
+                    cancellation_token,
+                )
+                .await
+        }
+    });
+    let event = rx.recv().await.expect("first permissions event");
+    assert!(matches!(event.msg, EventMsg::RequestPermissions(_)));
+
+    let duplicate = session
+        .request_permissions_user_review(
+            &turn_context,
+            "reused-permissions-call".to_string(),
+            Some("duplicate request".to_string()),
+            permissions.clone(),
+            environment.clone(),
+            cwd.clone(),
+            RequestPermissionsResponseConstraint::UserSelected,
+            CancellationToken::new(),
+        )
+        .await;
+    assert_eq!(
+        duplicate,
+        Some(codex_protocol::request_permissions::RequestPermissionsResponse {
+            permissions: RequestPermissionProfile::default(),
+            scope: PermissionGrantScope::Turn,
+            strict_auto_review: false,
+        })
+    );
+    assert!(rx.try_recv().is_err());
+
+    cancellation_token.cancel();
+    assert_eq!(
+        tokio::time::timeout(StdDuration::from_secs(1), first)
+            .await
+            .expect("cancelled request timed out")
+            .expect("first request task"),
+        None
+    );
+    session
+        .notify_request_permissions_response(
+            "reused-permissions-call",
+            codex_protocol::request_permissions::RequestPermissionsResponse {
+                permissions: permissions.clone(),
+                scope: PermissionGrantScope::Session,
+                strict_auto_review: false,
+            },
+        )
+        .await;
+
+    let reused = session
+        .request_permissions_user_review(
+            &turn_context,
+            "reused-permissions-call".to_string(),
+            Some("request after cancellation".to_string()),
+            permissions,
+            environment,
+            cwd,
+            RequestPermissionsResponseConstraint::UserSelected,
+            CancellationToken::new(),
+        )
+        .await;
+    assert_eq!(
+        reused,
+        Some(codex_protocol::request_permissions::RequestPermissionsResponse {
+            permissions: RequestPermissionProfile::default(),
+            scope: PermissionGrantScope::Turn,
+            strict_auto_review: false,
+        })
+    );
+    assert_eq!(
+        session
+            .granted_turn_permissions(codex_exec_server::LOCAL_ENVIRONMENT_ID)
+            .await,
+        None
+    );
+    assert_eq!(
+        session
+            .granted_session_permissions(codex_exec_server::LOCAL_ENVIRONMENT_ID)
+            .await,
+        None
+    );
+}
+
+#[tokio::test]
 async fn record_granted_request_permissions_for_turn_uses_originating_turn() {
     let (session, _turn_context) = make_session_and_context().await;
     let originating_active_turn = ActiveTurn::default();
@@ -6013,6 +6149,7 @@ async fn request_permissions_emits_event_when_granular_policy_allows_requests() 
                         },
                     },
                     environment,
+                    ToolCallSource::Direct,
                     CancellationToken::new(),
                 )
                 .await
@@ -6248,6 +6385,7 @@ async fn request_permissions_response_materializes_session_cwd_grants_before_rec
                         permissions: requested_permissions,
                     },
                     environment,
+                    ToolCallSource::Direct,
                     CancellationToken::new(),
                 )
                 .await
@@ -6344,6 +6482,7 @@ async fn request_permissions_is_auto_denied_when_granular_policy_blocks_tool_req
                 },
             },
             environment,
+            ToolCallSource::Direct,
             CancellationToken::new(),
         )
         .await;

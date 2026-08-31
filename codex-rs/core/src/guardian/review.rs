@@ -211,7 +211,7 @@ fn track_guardian_review(
         .track_guardian_review(tracking, result, completed_at_ms);
 }
 
-async fn record_guardian_non_denial(session: &Arc<Session>, turn_id: &str) {
+pub(crate) async fn record_guardian_non_denial(session: &Arc<Session>, turn_id: &str) {
     session
         .services
         .guardian_rejection_circuit_breaker
@@ -220,7 +220,11 @@ async fn record_guardian_non_denial(session: &Arc<Session>, turn_id: &str) {
         .record_non_denial(turn_id);
 }
 
-async fn record_guardian_denial(session: &Arc<Session>, turn: &Arc<TurnContext>, turn_id: &str) {
+pub(crate) async fn record_guardian_denial(
+    session: &Arc<Session>,
+    turn: &Arc<TurnContext>,
+    turn_id: &str,
+) {
     let action = session
         .services
         .guardian_rejection_circuit_breaker

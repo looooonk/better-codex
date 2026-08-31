@@ -216,6 +216,15 @@ fn parse_feature_requirements(
         }
 
         if let Some(feature) = canonical_feature_for_key(&key) {
+            if feature == Feature::GuardianV2 {
+                push_feature_requirement_warning(
+                    &mut startup_warnings,
+                    format!(
+                        "Ignoring unavailable `features` requirement `{key}` from {source}"
+                    ),
+                );
+                continue;
+            }
             pinned_features.insert(feature, enabled);
             continue;
         }

@@ -155,6 +155,25 @@ fn guardian_approval_is_stable_and_enabled_by_default() {
 }
 
 #[test]
+fn guardian_v2_cannot_be_enabled_from_external_feature_sources() {
+    let features_toml = FeaturesToml::from(BTreeMap::from([(
+        Feature::GuardianV2.key().to_string(),
+        true,
+    )]));
+
+    let features = Features::from_sources(
+        FeatureConfigSource {
+            features: Some(&features_toml),
+            ..Default::default()
+        },
+        FeatureConfigSource::default(),
+        FeatureOverrides::default(),
+    );
+
+    assert!(!features.enabled(Feature::GuardianV2));
+}
+
+#[test]
 fn request_permissions_is_under_development() {
     assert_eq!(
         Feature::ExecPermissionApprovals.stage(),

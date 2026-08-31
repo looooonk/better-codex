@@ -37,7 +37,7 @@ pub enum ImageProcessingError {
 
 impl ImageProcessingError {
     pub fn decode_error(path: &std::path::Path, source: image::ImageError) -> Self {
-        if matches!(source, ImageError::Decoding(_)) {
+        if matches!(source, ImageError::Decoding(_) | ImageError::Limits(_)) {
             return ImageProcessingError::Decode {
                 path: path.to_path_buf(),
                 source,
