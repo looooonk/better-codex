@@ -664,7 +664,7 @@ async fn request_user_approval(
             ..
         } => {
             let command = std::iter::once(program.clone())
-                .chain(argv.iter().skip(1).cloned())
+                .chain(argv.iter().cloned())
                 .collect();
             let decision = session
                 .request_command_approval(

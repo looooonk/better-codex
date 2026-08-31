@@ -186,7 +186,7 @@ impl ApprovalAction {
             } => PermissionRequestPayload::bash(
                 codex_shell_command::parse_command::shlex_join(
                     &std::iter::once(program.clone())
-                        .chain(argv.iter().skip(1).cloned())
+                        .chain(argv.iter().cloned())
                         .collect::<Vec<_>>(),
                 ),
                 /*description*/ None,

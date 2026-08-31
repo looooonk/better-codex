@@ -733,6 +733,80 @@ async fn code_mode_allow_is_retried_when_evidence_revision_changes() {
     assert_eq!(revisions.lock().expect("revision lock").as_slice(), [0, 1]);
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn execve_manual_review_preserves_program_and_custom_argv_zero() {
+    use crate::session::tests::make_session_and_context_with_rx;
+    use crate::state::ActiveTurn;
+    use codex_protocol::approvals::GuardianCommandSource;
+    use codex_utils_absolute_path::AbsolutePathBuf;
+
+    let (session, turn, events) = make_session_and_context_with_rx().await;
+    *session.active_turn.lock().await = Some(ActiveTurn::default());
+    let program = "/usr/bin/printf".to_string();
+    let argv = vec!["custom-zero".to_string(), "%s".to_string()];
+    let cwd = AbsolutePathBuf::from_absolute_path(
+        std::env::current_dir().expect("current directory"),
+    )
+    .expect("absolute current directory");
+    let action = ApprovalAction::Execve {
+        id: "parent-call".to_string(),
+        approval_id: "execve-attempt".to_string(),
+        environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
+        source: GuardianCommandSource::Shell,
+        program: program.clone(),
+        argv: argv.clone(),
+        cwd,
+        additional_permissions: None,
+    };
+    let context = ApprovalContext {
+        turn: Arc::clone(&turn),
+        call_id: "parent-call".to_string(),
+        tool_name: ToolName::plain("shell"),
+        approval_reason: None,
+        retry_reason: None,
+        network_approval_context: None,
+        required_by_strict: false,
+        attempt_id: "execve-attempt".to_string(),
+        source: ToolCallSource::Direct,
+        cancellation_token: CancellationToken::new(),
+    };
+    let route = route_snapshot(&session, &turn)
+        .await
+        .expect("stable approval route");
+    let review = tokio::spawn({
+        let session = Arc::clone(&session);
+        async move {
+            request_user_approval(
+                &session,
+                &action,
+                &context,
+                route,
+                ApprovalCacheMode::Bypass,
+            )
+            .await
+        }
+    });
+
+    let event = events.recv().await.expect("execve approval event");
+    let codex_protocol::protocol::EventMsg::ExecApprovalRequest(event) = event.msg else {
+        panic!("expected exec approval event")
+    };
+    assert_eq!(
+        event.command,
+        std::iter::once(program)
+            .chain(argv)
+            .collect::<Vec<_>>()
+    );
+    session
+        .notify_approval("execve-attempt", ReviewDecision::Approved)
+        .await;
+    assert_eq!(
+        review.await.expect("manual review task").decision,
+        ReviewDecision::Approved
+    );
+}
+
 #[tokio::test]
 async fn request_permissions_manual_fallback_is_one_shot_and_exact() {
     use crate::config::Constrained;
