@@ -28,6 +28,12 @@ use crate::StoredThread;
 use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
 
+#[derive(Clone, Copy)]
+pub(super) enum RolloutCollection {
+    Active,
+    Archived,
+}
+
 pub(super) fn scoped_rollout_path(
     root: PathBuf,
     rollout_path: &Path,
@@ -64,6 +70,55 @@ pub(super) fn rollout_path_is_archived(codex_home: &Path, path: &Path) -> bool {
         || path
             .components()
             .any(|component| component.as_os_str() == OsStr::new(ARCHIVED_SESSIONS_SUBDIR))
+}
+
+pub(super) async fn rollout_paths_for_thread(
+    codex_home: &Path,
+    selected_path: &Path,
+    thread_id: ThreadId,
+    collection: RolloutCollection,
+) -> ThreadStoreResult<Vec<PathBuf>> {
+    let (root, root_name, paths) = match collection {
+        RolloutCollection::Active => (
+            codex_home.join(codex_rollout::SESSIONS_SUBDIR),
+            "sessions",
+            codex_rollout::find_thread_paths_by_id(codex_home, thread_id).await,
+        ),
+        RolloutCollection::Archived => (
+            codex_home.join(codex_rollout::ARCHIVED_SESSIONS_SUBDIR),
+            "archived",
+            codex_rollout::find_archived_thread_paths_by_id(codex_home, thread_id).await,
+        ),
+    };
+    let mut paths = paths.map_err(|err| ThreadStoreError::InvalidRequest {
+        message: format!("failed to locate thread id {thread_id}: {err}"),
+    })?;
+    let plain_selected = codex_rollout::plain_rollout_path(selected_path);
+    for path in [
+        selected_path.to_path_buf(),
+        plain_selected.clone(),
+        plain_selected.with_extension("jsonl.zst"),
+    ] {
+        match path.try_exists() {
+            Ok(true) => paths.push(path),
+            Ok(false) => {}
+            Err(err) => {
+                return Err(ThreadStoreError::Internal {
+                    message: format!("failed to inspect rollout path `{}`: {err}", path.display()),
+                });
+            }
+        }
+    }
+
+    let mut canonical_paths = Vec::with_capacity(paths.len());
+    for path in paths {
+        let canonical_path = scoped_rollout_path(root.clone(), path.as_path(), root_name)?;
+        matching_rollout_file_name(canonical_path.as_path(), thread_id, path.as_path())?;
+        canonical_paths.push(canonical_path);
+    }
+    canonical_paths.sort();
+    canonical_paths.dedup();
+    Ok(canonical_paths)
 }
 
 pub(super) fn matching_rollout_file_name(
@@ -115,24 +170,6 @@ pub(super) fn touch_modified_time(path: &Path) -> std::io::Result<()> {
 pub(super) fn set_modified_time(path: &Path, modified: SystemTime) -> std::io::Result<()> {
     let times = FileTimes::new().set_modified(modified);
     OpenOptions::new().append(true).open(path)?.set_times(times)
-}
-
-pub(super) fn file_move_error_with_rollback(
-    moved_path: &Path,
-    original_path: &Path,
-    operation: &str,
-    cause: impl std::fmt::Display,
-) -> ThreadStoreError {
-    let message = format!("failed to {operation} thread: {cause}");
-    match std::fs::rename(moved_path, original_path) {
-        Ok(()) => ThreadStoreError::Internal { message },
-        Err(rollback_err) => ThreadStoreError::Internal {
-            message: format!(
-                "{message}; failed to restore rollout to {}: {rollback_err}",
-                original_path.display()
-            ),
-        },
-    }
 }
 
 pub(super) fn stored_thread_from_rollout_item(

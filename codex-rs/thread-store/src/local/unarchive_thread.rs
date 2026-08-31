@@ -5,12 +5,14 @@ use codex_rollout::read_thread_item_from_rollout;
 use codex_rollout::rollout_date_parts;
 
 use super::LocalThreadStore;
-use super::helpers::file_move_error_with_rollback;
-use super::helpers::matching_rollout_file_name;
+use super::helpers::RolloutCollection;
+use super::helpers::rollout_paths_for_thread;
 use super::helpers::scoped_rollout_path;
 use super::helpers::set_modified_time;
 use super::helpers::stored_thread_from_rollout_item;
 use super::helpers::touch_modified_time;
+use super::rollout_moves::PendingRolloutMoves;
+use super::rollout_moves::move_rollouts;
 use crate::ArchiveThreadParams;
 use crate::StoredThread;
 use crate::ThreadStoreError;
@@ -43,28 +45,43 @@ pub(super) async fn unarchive_thread(
         archived_path.as_path(),
         "archived",
     )?;
-    let file_name = matching_rollout_file_name(
+    let rollout_paths = rollout_paths_for_thread(
+        store.config.codex_home.as_path(),
         canonical_archived_path.as_path(),
         thread_id,
-        archived_path.as_path(),
-    )?;
-    let Some((year, month, day)) = rollout_date_parts(&file_name) else {
-        return Err(ThreadStoreError::InvalidRequest {
-            message: format!(
-                "rollout path `{}` missing filename timestamp",
-                archived_path.display()
-            ),
-        });
-    };
-
-    let dest_dir = store
-        .config
-        .codex_home
-        .join(codex_rollout::SESSIONS_SUBDIR)
-        .join(year)
-        .join(month)
-        .join(day);
-    let restored_path = dest_dir.join(&file_name);
+        RolloutCollection::Archived,
+    )
+    .await?;
+    let mut restored_path = None;
+    let mut moves = Vec::with_capacity(rollout_paths.len());
+    for source in rollout_paths {
+        let file_name = source.file_name().ok_or_else(|| ThreadStoreError::InvalidRequest {
+            message: format!("rollout path `{}` missing file name", source.display()),
+        })?;
+        let Some((year, month, day)) = rollout_date_parts(file_name) else {
+            return Err(ThreadStoreError::InvalidRequest {
+                message: format!(
+                    "rollout path `{}` missing filename timestamp",
+                    source.display()
+                ),
+            });
+        };
+        let destination = store
+            .config
+            .codex_home
+            .join(codex_rollout::SESSIONS_SUBDIR)
+            .join(year)
+            .join(month)
+            .join(day)
+            .join(file_name);
+        if source == canonical_archived_path {
+            restored_path = Some(destination.clone());
+        }
+        moves.push((source, destination));
+    }
+    let restored_path = restored_path.ok_or_else(|| ThreadStoreError::Internal {
+        message: "selected rollout missing from unarchive set".to_string(),
+    })?;
     let mut item = read_thread_item_from_rollout(canonical_archived_path.clone())
         .await
         .ok_or_else(|| ThreadStoreError::Internal {
@@ -98,19 +115,12 @@ pub(super) async fn unarchive_thread(
     let original_modified = std::fs::metadata(&canonical_archived_path)
         .and_then(|metadata| metadata.modified())
         .ok();
-    std::fs::create_dir_all(&dest_dir).map_err(|err| ThreadStoreError::Internal {
-        message: format!("failed to unarchive thread: {err}"),
-    })?;
-    std::fs::rename(&canonical_archived_path, &restored_path).map_err(|err| {
-        ThreadStoreError::Internal {
-            message: format!("failed to unarchive thread: {err}"),
-        }
-    })?;
+    let pending_moves = move_rollouts(moves, "unarchive")?;
     if let Err(err) = touch_modified_time(restored_path.as_path()) {
-        return Err(file_move_error_with_rollback(
+        return Err(fail_unarchive(
+            pending_moves,
             restored_path.as_path(),
-            canonical_archived_path.as_path(),
-            "unarchive",
+            original_modified,
             format!("failed to update rollout timestamp: {err}"),
         ));
     }
@@ -120,21 +130,14 @@ pub(super) async fn unarchive_thread(
             .mark_unarchived(thread_id, restored_path.as_path())
             .await
     {
-        let cause = match original_modified
-            .map(|modified| set_modified_time(restored_path.as_path(), modified))
-        {
-            Some(Err(restore_err)) => {
-                format!("{err}; failed to restore rollout timestamp: {restore_err}")
-            }
-            Some(Ok(())) | None => err.to_string(),
-        };
-        return Err(file_move_error_with_rollback(
+        return Err(fail_unarchive(
+            pending_moves,
             restored_path.as_path(),
-            canonical_archived_path.as_path(),
-            "unarchive",
-            cause,
+            original_modified,
+            err,
         ));
     }
+    pending_moves.commit();
 
     if let Ok(modified) =
         std::fs::metadata(restored_path.as_path()).and_then(|metadata| metadata.modified())
@@ -144,6 +147,21 @@ pub(super) async fn unarchive_thread(
         thread.recency_at = modified;
     }
     Ok(thread)
+}
+
+fn fail_unarchive(
+    pending_moves: PendingRolloutMoves,
+    restored_path: &std::path::Path,
+    original_modified: Option<std::time::SystemTime>,
+    cause: impl std::fmt::Display,
+) -> ThreadStoreError {
+    let cause = match original_modified.map(|modified| set_modified_time(restored_path, modified)) {
+        Some(Err(restore_err)) => {
+            format!("{cause}; failed to restore rollout timestamp: {restore_err}")
+        }
+        Some(Ok(())) | None => cause.to_string(),
+    };
+    pending_moves.fail(format!("failed to unarchive thread: {cause}"))
 }
 
 #[cfg(test)]
@@ -169,6 +187,15 @@ mod tests {
         let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
         let archived_path = write_archived_session_file(home.path(), "2025-01-03T13-00-00", uuid)
             .expect("archived session file");
+        let replacement_source =
+            write_archived_session_file(home.path(), "2025-01-03T14-00-00", uuid)
+                .expect("replacement source");
+        let rollout_id = Uuid::from_u128(209);
+        let selected_archived_path = replacement_source.with_file_name(format!(
+            "rollout-2025-01-03T14-00-00-{thread_id}_{rollout_id}.jsonl"
+        ));
+        std::fs::rename(replacement_source, &selected_archived_path)
+            .expect("replacement rollout");
 
         let thread = store
             .unarchive_thread(ArchiveThreadParams { thread_id })
@@ -176,11 +203,17 @@ mod tests {
             .expect("unarchive thread");
 
         assert!(!archived_path.exists());
+        assert!(!selected_archived_path.exists());
         let restored_path = home
+            .path()
+            .join("sessions/2025/01/03")
+            .join(selected_archived_path.file_name().expect("file name"));
+        let restored_original_path = home
             .path()
             .join("sessions/2025/01/03")
             .join(archived_path.file_name().expect("file name"));
         assert!(restored_path.exists());
+        assert!(restored_original_path.exists());
         assert_eq!(thread.thread_id, thread_id);
         assert_eq!(thread.rollout_path, Some(restored_path));
         assert_eq!(thread.archived_at, None);
@@ -279,6 +312,15 @@ mod tests {
         let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
         let archived_path = write_archived_session_file(home.path(), "2025-01-03T13-00-00", uuid)
             .expect("archived session file");
+        let replacement_source =
+            write_archived_session_file(home.path(), "2025-01-03T14-00-00", uuid)
+                .expect("replacement source");
+        let selected_archived_path = replacement_source.with_file_name(format!(
+            "rollout-2025-01-03T14-00-00-{thread_id}_{}.jsonl",
+            Uuid::from_u128(211)
+        ));
+        std::fs::rename(replacement_source, &selected_archived_path)
+            .expect("replacement rollout");
         let runtime = codex_state::StateRuntime::init(
             home.path().to_path_buf(),
             config.default_model_provider_id.clone(),
@@ -288,7 +330,7 @@ mod tests {
         let store = LocalThreadStore::new(config.clone(), Some(runtime.clone()));
         let mut builder = codex_state::ThreadMetadataBuilder::new(
             thread_id,
-            archived_path.clone(),
+            selected_archived_path.clone(),
             Utc::now(),
             SessionSource::Cli,
         );
@@ -309,11 +351,19 @@ mod tests {
 
         assert!(matches!(error, ThreadStoreError::Internal { .. }));
         assert!(archived_path.exists());
+        assert!(selected_archived_path.exists());
         assert!(
             !home
                 .path()
                 .join("sessions/2025/01/03")
                 .join(archived_path.file_name().expect("file name"))
+                .exists()
+        );
+        assert!(
+            !home
+                .path()
+                .join("sessions/2025/01/03")
+                .join(selected_archived_path.file_name().expect("file name"))
                 .exists()
         );
     }
