@@ -122,7 +122,7 @@ impl LocalThreadStore {
                         rollout_path.display()
                     ),
                 })?;
-            if next_rollout_id.is_none() && meta.meta.id != requested_thread_id {
+            if meta.meta.id != requested_thread_id {
                 return Err(malformed_lineage(
                     requested_thread_id,
                     "source rollout belongs to another thread",
@@ -219,19 +219,24 @@ async fn validate_cutoff_bounds(
             "cutoff cannot include source session metadata",
         ));
     }
-    let file_len = tokio::fs::metadata(rollout_path)
-        .await
-        .map_err(|err| ThreadStoreError::Internal {
-            message: format!(
-                "failed to read lineage metadata {}: {err}",
-                rollout_path.display()
-            ),
-        })?
-        .len();
-    if end.end_byte_offset > file_len {
+    let (previous_ordinal, next_ordinal) = codex_rollout::rollout_ordinals_at_boundary(
+        rollout_path,
+        end.end_byte_offset,
+    )
+    .await
+    .map_err(|err| {
+        let detail = format!("invalid cutoff record boundary: {err}");
+        malformed_lineage(requested_thread_id, detail.as_str())
+    })?;
+    let expected_previous = end.end_ordinal_exclusive.checked_sub(1).ok_or_else(|| {
+        malformed_lineage(requested_thread_id, "cutoff ordinal underflow")
+    })?;
+    if previous_ordinal != expected_previous
+        || next_ordinal.is_some_and(|ordinal| ordinal != end.end_ordinal_exclusive)
+    {
         return Err(malformed_lineage(
             requested_thread_id,
-            "cutoff byte offset is past the source rollout",
+            "cutoff byte offset disagrees with rollout ordinals",
         ));
     }
     Ok(())

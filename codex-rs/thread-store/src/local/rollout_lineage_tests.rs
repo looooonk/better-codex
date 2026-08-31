@@ -148,9 +148,83 @@ async fn rejects_missing_cycles_and_out_of_bounds_offsets() {
     assert_invalid_lineage(
         &store,
         invalid_thread,
-        "cutoff byte offset is past the source rollout",
+        "rollout boundary is past the final record",
     )
     .await;
+}
+
+#[tokio::test]
+async fn rejects_cutoffs_inside_records_and_with_mismatched_ordinals() {
+    let home = TempDir::new().expect("temp dir");
+    let store = test_store(home.path()).await;
+
+    for (end_ordinal_exclusive, offset_adjustment, detail) in [
+        (2, -1i64, "rollout boundary is inside a JSONL record"),
+        (
+            3,
+            0,
+            "cutoff byte offset disagrees with rollout ordinals",
+        ),
+    ] {
+        let thread_id = ThreadId::new();
+        let root_path = write_rollout(
+            home.path(),
+            thread_id,
+            thread_id,
+            /*history_base*/ None,
+            /*next_ordinal*/ 4,
+        );
+        let offset = rollout_end_byte_offset(root_path.as_path(), /*end_ordinal_exclusive*/ 2);
+        let end_byte_offset = if offset_adjustment < 0 {
+            offset - offset_adjustment.unsigned_abs()
+        } else {
+            offset + offset_adjustment as u64
+        };
+        let head_id = RolloutId::new();
+        let head_path = write_rollout(
+            home.path(),
+            thread_id,
+            head_id,
+            Some(HistoryPosition {
+                thread_id,
+                end_ordinal_exclusive,
+                end_byte_offset,
+            }),
+            /*next_ordinal*/ 5,
+        );
+        seed_selected_rollout(&store, thread_id, head_path).await;
+        assert_invalid_lineage(&store, thread_id, detail).await;
+    }
+}
+
+#[tokio::test]
+async fn rejects_ancestor_rollouts_owned_by_another_logical_thread() {
+    let home = TempDir::new().expect("temp dir");
+    let store = test_store(home.path()).await;
+    let thread_id = ThreadId::new();
+    let other_thread_id = ThreadId::new();
+    let ancestor_id = RolloutId::new();
+    let ancestor_path = write_rollout(
+        home.path(),
+        other_thread_id,
+        ancestor_id,
+        /*history_base*/ None,
+        /*next_ordinal*/ 3,
+    );
+    let head_path = write_rollout(
+        home.path(),
+        thread_id,
+        RolloutId::new(),
+        Some(history_position(
+            ancestor_path.as_path(),
+            ancestor_id,
+            /*end_ordinal_exclusive*/ 2,
+        )),
+        /*next_ordinal*/ 4,
+    );
+    seed_selected_rollout(&store, thread_id, head_path).await;
+
+    assert_invalid_lineage(&store, thread_id, "source rollout belongs to another thread").await;
 }
 
 async fn assert_invalid_lineage(store: &LocalThreadStore, thread_id: ThreadId, detail: &str) {
