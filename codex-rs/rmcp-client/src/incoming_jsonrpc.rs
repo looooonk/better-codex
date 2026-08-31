@@ -55,7 +55,16 @@ pub(crate) fn normalize_sse_jsonrpc_message(
     let changed = message
         .get_mut("result")
         .and_then(Value::as_object_mut)
-        .is_some_and(|result| result.remove("_meta").is_some());
+        .is_some_and(|result| {
+            if !result.contains_key("_meta") {
+                return false;
+            }
+            // rmcp tries CallToolResult before InputRequiredResult, and `_meta`
+            // alone makes the former match. This invalid CallToolResult field
+            // makes serde continue to the typed input-required variant.
+            result.insert("content".to_string(), Value::Bool(false));
+            true
+        });
     changed
         .then(|| serde_json::to_string(&message))
         .transpose()

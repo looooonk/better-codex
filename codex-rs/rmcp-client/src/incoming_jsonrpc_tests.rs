@@ -94,7 +94,7 @@ fn modern_input_required_fields_are_bounded() {
 }
 
 #[test]
-fn sse_normalization_keeps_nested_input_metadata() {
+fn sse_normalization_preserves_typed_input_required_metadata() {
     let message = input_required(
         json!({"response": "private"}),
         json!({
@@ -116,12 +116,38 @@ fn sse_normalization_keeps_nested_input_metadata() {
     )
     .expect("normalize SSE message")
     .expect("response metadata requires normalization");
-    let normalized: Value = serde_json::from_str(&normalized).expect("parse normalized message");
+    let normalized_value: Value =
+        serde_json::from_str(&normalized).expect("parse normalized message");
 
-    assert_eq!(normalized.pointer("/result/_meta"), None);
     assert_eq!(
-        normalized.pointer("/result/inputRequests/confirm/params/_meta"),
+        normalized_value.pointer("/result/_meta"),
+        Some(&json!({"response": "private"}))
+    );
+    assert_eq!(
+        normalized_value.pointer("/result/inputRequests/confirm/params/_meta"),
         Some(&json!({"prompt": "visible"}))
+    );
+
+    let JsonRpcMessage::Response(response) =
+        serde_json::from_str::<rmcp::model::ServerJsonRpcMessage>(&normalized)
+            .expect("normalized SSE response should select the typed result")
+    else {
+        panic!("expected JSON-RPC response");
+    };
+    let ServerResult::InputRequiredResult(result) = response.result else {
+        panic!("expected typed input-required result");
+    };
+    assert_eq!(
+        result.meta.map(|meta| Value::Object(meta.0)),
+        Some(json!({"response": "private"}))
+    );
+    assert_eq!(
+        result
+            .input_requests
+            .and_then(|requests| requests.get("confirm").cloned())
+            .and_then(|request| serde_json::to_value(request).ok())
+            .and_then(|request| request.pointer("/params/_meta").cloned()),
+        Some(json!({"prompt": "visible"}))
     );
 }
 
