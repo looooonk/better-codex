@@ -97,6 +97,24 @@ impl SkillLoadOutcome {
     }
 }
 
+impl codex_skills::ExplicitSkillLookup for SkillLoadOutcome {
+    fn skills(&self) -> &[SkillMetadata] {
+        &self.skills
+    }
+
+    fn disabled_paths(&self) -> &HashSet<AbsolutePathBuf> {
+        &self.disabled_paths
+    }
+
+    fn skill_discovery_path_for_path(&self, path: &AbsolutePathBuf) -> Option<&AbsolutePathBuf> {
+        SkillLoadOutcome::skill_discovery_path_for_path(self, path)
+    }
+
+    fn is_skill_enabled(&self, skill: &SkillMetadata) -> bool {
+        SkillLoadOutcome::is_skill_enabled(self, skill)
+    }
+}
+
 /// Immutable snapshot of host-owned skills and the filesystem mapping needed
 /// to read each skill through the environment that discovered it.
 #[derive(Debug, Clone)]

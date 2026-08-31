@@ -633,8 +633,7 @@ async fn build_skills_and_plugins(
         build_skill_name_counts(&skills_outcome.skills, &skills_outcome.disabled_paths).1;
     let mentioned_skills = collect_explicit_skill_mentions(
         &user_input,
-        &skills_outcome.skills,
-        &skills_outcome.disabled_paths,
+        skills_outcome,
         &connector_slug_counts,
     );
     maybe_prompt_and_install_mcp_dependencies(
