@@ -22,7 +22,7 @@ fn renders_full_state_and_omits_unchanged_state() {
         render_fragments(state.render_diff(&state.snapshot()))
     );
     assert_eq!(
-        state.snapshot().into_value(),
+        Value::Object(state.snapshot().into_object()),
         json!({"agents_md": {"text": "use the project formatter"}}),
     );
 }

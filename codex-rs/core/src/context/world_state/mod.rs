@@ -227,23 +227,53 @@ pub(crate) struct WorldStateSnapshot {
     sections: BTreeMap<String, Value>,
 }
 
+impl From<&Map<String, Value>> for WorldStateSnapshot {
+    fn from(state: &Map<String, Value>) -> Self {
+        Self {
+            sections: state
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+        }
+    }
+}
+
 impl WorldStateSnapshot {
-    pub(crate) fn into_value(self) -> Value {
-        Value::Object(self.sections.into_iter().collect())
+    pub(crate) fn into_object(self) -> Map<String, Value> {
+        self.sections.into_iter().collect()
     }
 
     /// Returns the RFC 7386 merge patch that advances `previous` to `self`.
-    pub(crate) fn merge_patch_from(&self, previous: &Self) -> Option<Value> {
-        let previous = Value::Object(previous.sections.clone().into_iter().collect());
-        let current = Value::Object(self.sections.clone().into_iter().collect());
-        create_merge_patch(&previous, &current)
+    pub(crate) fn merge_patch_from(&self, previous: &Self) -> Option<Map<String, Value>> {
+        let mut patch = Map::new();
+        for key in previous.sections.keys() {
+            if !self.sections.contains_key(key) {
+                patch.insert(key.clone(), Value::Null);
+            }
+        }
+        for (key, current) in &self.sections {
+            let Some(previous) = previous.sections.get(key) else {
+                patch.insert(key.clone(), current.clone());
+                continue;
+            };
+            if let Some(value_patch) = create_merge_patch(previous, current) {
+                patch.insert(key.clone(), value_patch);
+            }
+        }
+        (!patch.is_empty()).then_some(patch)
     }
 
-    pub(crate) fn apply_merge_patch(&mut self, patch: &Value) -> serde_json::Result<()> {
-        let mut current = self.clone().into_value();
-        apply_merge_patch_value(&mut current, patch);
-        *self = serde_json::from_value(current)?;
-        Ok(())
+    pub(crate) fn apply_merge_patch(&mut self, patch: &Map<String, Value>) {
+        for (key, value) in patch {
+            if value.is_null() {
+                self.sections.remove(key);
+            } else {
+                apply_merge_patch_value(
+                    self.sections.entry(key.clone()).or_insert(Value::Null),
+                    value,
+                );
+            }
+        }
     }
 }
 

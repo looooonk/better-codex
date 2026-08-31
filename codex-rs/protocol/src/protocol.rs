@@ -62,6 +62,7 @@ use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
 use serde::de::Error as _;
+use serde_json::Map;
 use serde_json::Value;
 use serde_with::serde_as;
 use strum_macros::Display;
@@ -2939,15 +2940,15 @@ impl<'de> Deserialize<'de> for SessionMetaLine {
 pub struct WorldStateItem {
     /// Full snapshots establish a new baseline; patches update the current baseline.
     pub full: bool,
-    pub state: Value,
+    pub state: Map<String, Value>,
 }
 
 impl WorldStateItem {
-    pub fn full(state: Value) -> Self {
+    pub fn full(state: Map<String, Value>) -> Self {
         Self { full: true, state }
     }
 
-    pub fn patch(state: Value) -> Self {
+    pub fn patch(state: Map<String, Value>) -> Self {
         Self { full: false, state }
     }
 }
@@ -4080,6 +4081,22 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
     use tempfile::TempDir;
+
+    #[test]
+    fn world_state_items_require_object_state() -> Result<()> {
+        let value = json!({
+            "full": true,
+            "state": {"environment": {"status": "ready"}},
+        });
+        let item = serde_json::from_value::<WorldStateItem>(value.clone())?;
+
+        assert_eq!(serde_json::to_value(item)?, value);
+        assert!(
+            serde_json::from_value::<WorldStateItem>(json!({"full": false, "state": []}))
+                .is_err()
+        );
+        Ok(())
+    }
 
     #[test]
     fn feature_thread_source_serializes_as_its_app_owned_label() -> Result<()> {
