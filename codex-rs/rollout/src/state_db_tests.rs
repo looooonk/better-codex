@@ -7,7 +7,7 @@ use chrono::NaiveDateTime;
 use chrono::Timelike;
 use chrono::Utc;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::RolloutLine;
+use codex_history::RolloutLine;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::UserMessageEvent;

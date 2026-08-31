@@ -9,7 +9,7 @@ use anyhow::Context;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_protocol::ThreadId;
-use codex_protocol::protocol::RolloutItem;
+use codex_history::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 pub use codex_state::LogEntry;
 use codex_state::ThreadMetadataBuilder;

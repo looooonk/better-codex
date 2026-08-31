@@ -300,7 +300,7 @@ async fn read_thread_from_rollout_path(
 
 pub(super) async fn load_history_items(
     path: &std::path::Path,
-) -> ThreadStoreResult<Vec<codex_protocol::protocol::RolloutItem>> {
+) -> ThreadStoreResult<Vec<codex_rollout::RolloutItem>> {
     let (items, _, _) = RolloutRecorder::load_rollout_items(path)
         .await
         .map_err(|err| ThreadStoreError::Internal {

@@ -3,8 +3,8 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
+use codex_rollout::RolloutItem;
+use codex_rollout::RolloutLine;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_rollout::ModelContextScan;

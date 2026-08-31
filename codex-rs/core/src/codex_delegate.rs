@@ -55,7 +55,7 @@ use crate::session::turn_context::TurnContext;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_protocol::error::CodexErr;
-use codex_protocol::protocol::InitialHistory;
+use codex_history::InitialHistory;
 use codex_protocol::protocol::MultiAgentVersion;
 
 #[cfg(test)]

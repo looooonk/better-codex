@@ -7,9 +7,9 @@ use std::time::SystemTime;
 
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::InitialHistory;
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
+use codex_history::InitialHistory;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;

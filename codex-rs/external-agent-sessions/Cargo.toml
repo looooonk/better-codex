@@ -14,6 +14,7 @@ workspace = true
 
 [dependencies]
 chrono = { workspace = true }
+codex-history = { workspace = true }
 codex-protocol = { workspace = true }
 codex-utils-output-truncation = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

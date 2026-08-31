@@ -10,7 +10,7 @@ use codex_protocol::ThreadId;
 use codex_protocol::items::TurnItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::GitInfo;
-use codex_protocol::protocol::RolloutItem;
+use codex_rollout::RolloutItem;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_protocol::protocol::UserMessageEvent;
 use codex_protocol::protocol::strip_user_message_prefix;
@@ -375,7 +375,7 @@ mod tests {
     use std::sync::Arc;
 
     use codex_protocol::items::UserMessageItem;
-    use codex_protocol::protocol::CompactedItem;
+    use codex_rollout::CompactedItem;
     use codex_protocol::protocol::ItemCompletedEvent;
     use codex_protocol::protocol::SessionMeta;
     use codex_protocol::protocol::SessionMetaLine;

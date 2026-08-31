@@ -2,7 +2,7 @@
 
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::RolloutItem;
+use codex_history::RolloutItem;
 use codex_secrets::redact_secrets;
 use regex::Regex;
 use serde_json::Value;

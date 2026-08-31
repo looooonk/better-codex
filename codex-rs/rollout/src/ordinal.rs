@@ -6,8 +6,8 @@ use std::io::Seek;
 use std::io::SeekFrom;
 use std::path::Path;
 
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::protocol::ThreadHistoryMode;
 
 use crate::reverse_jsonl_scanner::ReverseJsonlScanner;

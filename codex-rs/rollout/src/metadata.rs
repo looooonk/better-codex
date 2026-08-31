@@ -10,7 +10,7 @@ use chrono::Timelike;
 use chrono::Utc;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::AskForApproval;
-use codex_protocol::protocol::RolloutItem;
+use codex_history::RolloutItem;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;

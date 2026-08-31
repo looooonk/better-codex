@@ -17,6 +17,7 @@ workspace = true
 codex-analytics = { workspace = true }
 codex-core = { workspace = true }
 codex-extension-api = { workspace = true }
+codex-history = { workspace = true }
 codex-otel = { workspace = true }
 codex-protocol = { workspace = true }
 codex-state = { workspace = true }

@@ -428,15 +428,15 @@ use codex_protocol::protocol::ConversationTextParams;
 use codex_protocol::protocol::EventMsg;
 #[cfg(test)]
 use codex_protocol::protocol::GitInfo as CoreGitInfo;
-use codex_protocol::protocol::InitialHistory;
+use codex_rollout::InitialHistory;
 use codex_protocol::protocol::McpAuthStatus as CoreMcpAuthStatus;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RealtimeVoicesList;
-use codex_protocol::protocol::ResumedHistory;
+use codex_rollout::ResumedHistory;
 use codex_protocol::protocol::ReviewDelivery as CoreReviewDelivery;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::ReviewTarget as CoreReviewTarget;
-use codex_protocol::protocol::RolloutItem;
+use codex_rollout::RolloutItem;
 use codex_protocol::protocol::SessionConfiguredEvent;
 #[cfg(test)]
 use codex_protocol::protocol::SessionMetaLine;

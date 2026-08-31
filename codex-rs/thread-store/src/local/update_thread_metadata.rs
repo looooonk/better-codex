@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use chrono::Utc;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::GitInfo;
-use codex_protocol::protocol::RolloutItem;
+use codex_rollout::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode;

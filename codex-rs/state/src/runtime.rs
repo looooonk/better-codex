@@ -36,7 +36,7 @@ use crate::telemetry::DbTelemetry;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_protocol::ThreadId;
-use codex_protocol::protocol::RolloutItem;
+use codex_history::RolloutItem;
 use log::LevelFilter;
 use serde_json::Value;
 use sqlx::ConnectOptions;
