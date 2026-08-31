@@ -98,6 +98,15 @@ pub enum TryStartTurnIfIdleRejectionReason {
     Busy,
 }
 
+/// Explains why a durable queued submission was not admitted as a new turn.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StartQueuedTurnRejectionReason {
+    /// User/client-triggered mailbox work was already waiting and keeps priority.
+    PendingTriggerTurn,
+    /// Another turn or task is active, or the idle reservation was lost.
+    Busy,
+}
+
 /// Rejection returned when an extension asks to start automatic idle work but
 /// the thread is not eligible to run it.
 #[derive(Debug)]
@@ -333,6 +342,22 @@ impl CodexThread {
         items: Vec<ResponseItem>,
     ) -> Result<(), TryStartTurnIfIdleError> {
         self.codex.session.try_start_turn_if_idle(items).await
+    }
+
+    /// Starts a durable queued submission without steering or replacing active work.
+    ///
+    /// The caller supplies the stable turn and client-message IDs that were committed
+    /// with the queued submission before admission.
+    pub async fn start_queued_turn(
+        &self,
+        turn_id: String,
+        items: Vec<codex_protocol::user_input::UserInput>,
+        client_user_message_id: String,
+    ) -> Result<(), StartQueuedTurnRejectionReason> {
+        self.codex
+            .session
+            .start_queued_turn(turn_id, items, client_user_message_id)
+            .await
     }
 
     pub async fn set_app_server_client_info(
