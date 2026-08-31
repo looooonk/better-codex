@@ -117,9 +117,8 @@ async fn ignore_login_requirements_only_strips_managed_auth_policy() {
         ),
     )
     .expect("write requirements");
-    let loader_overrides = LoaderOverrides::with_managed_config_path_for_tests(
-        tmp.path().join("managed_config.toml"),
-    );
+    let loader_overrides =
+        LoaderOverrides::with_managed_config_path_for_tests(tmp.path().join("managed_config.toml"));
 
     let local_layers = load_config_layers_state(
         &TestFileSystem,

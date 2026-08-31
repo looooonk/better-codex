@@ -5,6 +5,7 @@ use crate::store::PluginStore;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::PluginAuthPolicy;
 use codex_app_server_protocol::PluginAvailability;
+use codex_app_server_protocol::PluginDisabledReason;
 use codex_app_server_protocol::PluginInstallPolicy;
 use codex_app_server_protocol::PluginInstallPolicySource;
 use codex_app_server_protocol::PluginInterface;
@@ -36,6 +37,7 @@ use url::Url;
 
 mod catalog_cache;
 mod remote_installed_plugin_sync;
+mod search;
 mod share;
 
 #[cfg(test)]
@@ -49,6 +51,9 @@ pub use remote_installed_plugin_sync::RemotePluginMaterialization;
 pub use remote_installed_plugin_sync::mark_remote_plugin_cache_mutation_in_flight;
 pub(crate) use remote_installed_plugin_sync::maybe_start_remote_installed_plugin_bundle_sync;
 pub use remote_installed_plugin_sync::sync_remote_installed_plugin_bundles_once;
+pub use search::RemotePluginSearchPage;
+pub use search::RemotePluginSearchRequest;
+pub use search::search_remote_plugins;
 pub use share::RemotePluginShareAccessPolicy;
 pub use share::RemotePluginShareDiscoverability;
 pub use share::RemotePluginSharePrincipal;
@@ -158,6 +163,8 @@ pub struct RemoteInstalledPlugin {
     pub install_policy_source: Option<PluginInstallPolicySource>,
     pub auth_policy: PluginAuthPolicy,
     pub availability: PluginAvailability,
+    pub disabled_reason: Option<PluginDisabledReason>,
+    pub eligible_plan_types: Option<Vec<String>>,
     pub interface: Option<PluginInterface>,
     pub keywords: Vec<String>,
 }
@@ -176,6 +183,8 @@ pub struct RemotePluginSummary {
     pub install_policy_source: Option<PluginInstallPolicySource>,
     pub auth_policy: PluginAuthPolicy,
     pub availability: PluginAvailability,
+    pub disabled_reason: Option<PluginDisabledReason>,
+    pub eligible_plan_types: Option<Vec<String>>,
     pub interface: Option<PluginInterface>,
     pub keywords: Vec<String>,
 }
@@ -328,6 +337,11 @@ pub enum RemotePluginCatalogError {
         #[source]
         source: serde_json::Error,
     },
+
+    #[error(
+        "remote plugin catalog response from {url} exceeds the maximum size of {max_bytes} bytes"
+    )]
+    ResponseTooLarge { url: String, max_bytes: usize },
 
     #[error("invalid remote plugin catalog base URL: {0}")]
     InvalidBaseUrl(#[source] url::ParseError),
@@ -575,6 +589,10 @@ struct RemotePluginDirectoryItem {
     authentication_policy: PluginAuthPolicy,
     #[serde(rename = "status", default)]
     availability: PluginAvailability,
+    #[serde(default)]
+    disabled_reason: Option<PluginDisabledReason>,
+    #[serde(default)]
+    eligible_plan_types: Option<Vec<String>>,
     release: RemotePluginReleaseResponse,
 }
 
@@ -1081,6 +1099,8 @@ pub fn group_remote_installed_plugins_by_marketplaces(
             install_policy_source: plugin.install_policy_source,
             auth_policy: plugin.auth_policy,
             availability: plugin.availability,
+            disabled_reason: plugin.disabled_reason,
+            eligible_plan_types: plugin.eligible_plan_types.clone(),
             interface: plugin.interface.clone(),
             keywords: plugin.keywords.clone(),
         };
@@ -1518,6 +1538,8 @@ fn build_remote_plugin_summary(
             .and_then(RemotePluginInstallPolicySource::into_protocol),
         auth_policy: plugin.authentication_policy,
         availability: plugin.availability,
+        disabled_reason: plugin.disabled_reason,
+        eligible_plan_types: plugin.eligible_plan_types.clone(),
         interface: remote_plugin_interface_to_info(plugin),
         keywords: plugin.release.keywords.clone(),
     })
@@ -1600,6 +1622,8 @@ fn remote_installed_plugin_to_cache_entry(
             .and_then(RemotePluginInstallPolicySource::into_protocol),
         auth_policy: plugin.authentication_policy,
         availability: plugin.availability,
+        disabled_reason: plugin.disabled_reason,
+        eligible_plan_types: plugin.eligible_plan_types.clone(),
         interface: remote_plugin_interface_to_info(plugin),
         keywords: plugin.release.keywords.clone(),
     })

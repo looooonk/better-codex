@@ -13550,6 +13550,15 @@
         ],
         "type": "object"
       },
+      "PluginDisabledReason": {
+        "enum": [
+          "disabled_by_admin",
+          "plan_not_eligible",
+          "required_app_unavailable",
+          "unknown"
+        ],
+        "type": "string"
+      },
       "PluginHookSummary": {
         "properties": {
           "eventName": {
@@ -13974,6 +13983,39 @@
         ],
         "title": "PluginReadResponse",
         "type": "object"
+      },
+      "PluginSearchResult": {
+        "properties": {
+          "marketplaceName": {
+            "type": "string"
+          },
+          "marketplacePath": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/AbsolutePathBuf"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "plugin": {
+            "$ref": "#/definitions/v2/PluginSummary"
+          }
+        },
+        "required": [
+          "marketplaceName",
+          "plugin"
+        ],
+        "type": "object"
+      },
+      "PluginSearchScope": {
+        "enum": [
+          "global",
+          "workspace",
+          "personal"
+        ],
+        "type": "string"
       },
       "PluginShareCheckoutParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -14482,6 +14524,29 @@
             ],
             "default": "AVAILABLE",
             "description": "Availability state for installing and using the plugin."
+          },
+          "disabledReason": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/PluginDisabledReason"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why the remote plugin is unavailable, when provided by plugin-service."
+          },
+          "eligiblePlanTypes": {
+            "default": null,
+            "description": "Raw plugin-service plan identifiers eligible to install the plugin.",
+            "items": {
+              "type": "string"
+            },
+            "type": [
+              "array",
+              "null"
+            ]
           },
           "enabled": {
             "type": "boolean"

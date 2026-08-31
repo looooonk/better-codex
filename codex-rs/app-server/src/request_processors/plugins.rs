@@ -28,6 +28,8 @@ use codex_plugin::PluginTelemetryMetadata;
 use codex_protocol::auth::AuthMode as DomainAuthMode;
 use codex_rmcp_client::perform_oauth_login_silent;
 
+mod search;
+
 #[derive(Clone)]
 pub(crate) struct PluginRequestProcessor {
     auth_manager: Arc<AuthManager>,
@@ -159,7 +161,7 @@ fn convert_configured_marketplace_plugin_to_plugin_summary(
         id: plugin.id,
         remote_plugin_id: None,
         version: None,
-        local_version: plugin.local_version,
+        local_version: plugin.installed_version.or(plugin.local_version),
         installed: plugin.installed,
         enabled: plugin.enabled,
         name: plugin.name,
@@ -169,6 +171,8 @@ fn convert_configured_marketplace_plugin_to_plugin_summary(
         install_policy_source: None,
         auth_policy: plugin.policy.authentication.into(),
         availability: PluginAvailability::Available,
+        disabled_reason: None,
+        eligible_plan_types: None,
         interface: plugin.interface.map(local_plugin_interface_to_info),
         keywords: plugin.keywords,
     }
@@ -1093,6 +1097,8 @@ impl PluginRequestProcessor {
                         install_policy_source: None,
                         auth_policy: outcome.plugin.policy.authentication.into(),
                         availability: PluginAvailability::Available,
+                        disabled_reason: None,
+                        eligible_plan_types: None,
                         interface: outcome.plugin.interface.map(local_plugin_interface_to_info),
                         keywords: outcome.plugin.keywords,
                     },
@@ -1474,8 +1480,11 @@ impl PluginRequestProcessor {
 
         self.on_effective_plugins_changed();
 
+        let plugin_data_root = plugins_manager
+            .plugin_data_root_for_source(&result.plugin_id, result.installed_path.as_path());
         let plugin_mcp_servers = load_plugin_mcp_servers(
             result.installed_path.as_path(),
+            plugin_data_root.as_path(),
             auth.as_ref().map(CodexAuth::auth_mode),
         )
         .await;
@@ -1651,8 +1660,13 @@ impl PluginRequestProcessor {
         self.analytics_events_client
             .track_plugin_installed(plugin_metadata);
 
+        let plugin_data_root = self
+            .thread_manager
+            .plugins_manager()
+            .plugin_data_root_for_source(&result.plugin_id, result.installed_path.as_path());
         let plugin_mcp_servers = load_plugin_mcp_servers(
             result.installed_path.as_path(),
+            plugin_data_root.as_path(),
             auth.as_ref().map(CodexAuth::auth_mode),
         )
         .await;
@@ -2182,6 +2196,8 @@ fn remote_plugin_summary_to_info(summary: RemoteCatalogPluginSummary) -> PluginS
         install_policy_source: summary.install_policy_source,
         auth_policy: summary.auth_policy,
         availability: summary.availability,
+        disabled_reason: summary.disabled_reason,
+        eligible_plan_types: summary.eligible_plan_types,
         interface: summary.interface,
         keywords: summary.keywords,
     }
@@ -2285,6 +2301,7 @@ fn remote_plugin_catalog_error_type(err: &RemotePluginCatalogError) -> &'static 
         RemotePluginCatalogError::Request { .. } => "remote_catalog_request",
         RemotePluginCatalogError::UnexpectedStatus { .. } => "remote_catalog_unexpected_status",
         RemotePluginCatalogError::Decode { .. } => "remote_catalog_decode",
+        RemotePluginCatalogError::ResponseTooLarge { .. } => "remote_catalog_response_too_large",
         RemotePluginCatalogError::InvalidBaseUrl(_) => "remote_catalog_invalid_base_url",
         RemotePluginCatalogError::InvalidBaseUrlPath => "remote_catalog_invalid_base_url_path",
         RemotePluginCatalogError::UnknownMarketplace { .. } => "remote_catalog_unknown_marketplace",
@@ -2366,6 +2383,7 @@ fn remote_plugin_catalog_error_to_jsonrpc(
         | RemotePluginCatalogError::Request { .. }
         | RemotePluginCatalogError::UnexpectedStatus { .. }
         | RemotePluginCatalogError::Decode { .. }
+        | RemotePluginCatalogError::ResponseTooLarge { .. }
         | RemotePluginCatalogError::InvalidBaseUrl(_)
         | RemotePluginCatalogError::InvalidBaseUrlPath
         | RemotePluginCatalogError::UnexpectedPluginId { .. }

@@ -12,6 +12,7 @@ use codex_app_server_protocol::HooksListParams;
 use codex_app_server_protocol::HooksListResponse;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::PluginAuthPolicy;
+use codex_app_server_protocol::PluginDisabledReason;
 use codex_app_server_protocol::PluginInstallPolicy;
 use codex_app_server_protocol::PluginInstallPolicySource;
 use codex_app_server_protocol::PluginInstalledParams;
@@ -501,6 +502,8 @@ async fn plugin_list_keeps_valid_marketplaces_when_another_marketplace_fails_to_
                 install_policy_source: None,
                 auth_policy: PluginAuthPolicy::OnInstall,
                 availability: codex_app_server_protocol::PluginAvailability::Available,
+                disabled_reason: None,
+                eligible_plan_types: None,
                 interface: None,
                 keywords: vec!["api-key".to_string(), "developer tools".to_string()],
             }],
@@ -799,6 +802,8 @@ async fn plugin_list_uses_alternate_discoverable_manifest_and_keeps_undiscoverab
                     install_policy_source: None,
                     auth_policy: PluginAuthPolicy::OnInstall,
                     availability: codex_app_server_protocol::PluginAvailability::Available,
+                    disabled_reason: None,
+                    eligible_plan_types: None,
                     interface: Some(codex_app_server_protocol::PluginInterface {
                         display_name: Some("Valid Plugin".to_string()),
                         short_description: None,
@@ -840,6 +845,8 @@ async fn plugin_list_uses_alternate_discoverable_manifest_and_keeps_undiscoverab
                     install_policy_source: None,
                     auth_policy: PluginAuthPolicy::OnInstall,
                     availability: codex_app_server_protocol::PluginAvailability::Available,
+                    disabled_reason: None,
+                    eligible_plan_types: None,
                     interface: None,
                     keywords: Vec::new(),
                 },
@@ -3571,7 +3578,7 @@ plugin_sharing = true
 }
 
 #[tokio::test]
-async fn plugin_list_marks_remote_plugin_disabled_by_admin() -> Result<()> {
+async fn plugin_list_preserves_remote_eligibility_metadata() -> Result<()> {
     let codex_home = TempDir::new()?;
     let server = MockServer::start().await;
     write_remote_plugin_catalog_config(
@@ -3593,9 +3600,11 @@ async fn plugin_list_marks_remote_plugin_disabled_by_admin() -> Result<()> {
       "id": "plugins~Plugin_00000000000000000000000000000000",
       "name": "linear",
       "scope": "GLOBAL",
-      "installation_policy": "AVAILABLE",
+      "installation_policy": "NOT_AVAILABLE",
       "authentication_policy": "ON_USE",
       "status": "DISABLED_BY_ADMIN",
+      "disabled_reason": "plan_not_eligible",
+      "eligible_plan_types": ["plus", "pro"],
       "release": {
         "display_name": "Linear",
         "description": "Track work in Linear",
@@ -3616,9 +3625,11 @@ async fn plugin_list_marks_remote_plugin_disabled_by_admin() -> Result<()> {
       "id": "plugins~Plugin_00000000000000000000000000000000",
       "name": "linear",
       "scope": "GLOBAL",
-      "installation_policy": "AVAILABLE",
+      "installation_policy": "NOT_AVAILABLE",
       "authentication_policy": "ON_USE",
       "status": "DISABLED_BY_ADMIN",
+      "disabled_reason": "plan_not_eligible",
+      "eligible_plan_types": ["plus", "pro"],
       "release": {
         "display_name": "Linear",
         "description": "Track work in Linear",
@@ -3703,8 +3714,18 @@ async fn plugin_list_marks_remote_plugin_disabled_by_admin() -> Result<()> {
     assert_eq!(plugin.installed, true);
     assert_eq!(plugin.enabled, true);
     assert_eq!(
-        plugin.availability,
-        codex_app_server_protocol::PluginAvailability::DisabledByAdmin
+        (
+            plugin.availability,
+            plugin.disabled_reason,
+            plugin.eligible_plan_types.clone(),
+            plugin.install_policy,
+        ),
+        (
+            codex_app_server_protocol::PluginAvailability::DisabledByAdmin,
+            Some(PluginDisabledReason::PlanNotEligible),
+            Some(vec!["plus".to_string(), "pro".to_string()]),
+            PluginInstallPolicy::NotAvailable,
+        )
     );
     Ok(())
 }

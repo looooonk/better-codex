@@ -550,6 +550,7 @@ async fn load_user_skills_root(root: &Path) -> SkillLoadOutcome {
             plugin_id: None,
             plugin_namespace: None,
             plugin_root: None,
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     )
@@ -1036,6 +1037,7 @@ interface:
             plugin_id: Some("twilio-developer-kit@test".to_string()),
             plugin_namespace: None,
             plugin_root: Some(plugin_root_abs.clone()),
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     )
@@ -1097,6 +1099,7 @@ interface:
             plugin_id: Some("twilio-developer-kit@test".to_string()),
             plugin_namespace: None,
             plugin_root: Some(plugin_root.abs()),
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     )
@@ -1273,6 +1276,7 @@ async fn loads_skills_via_symlinked_subdir_for_admin_scope() {
             plugin_id: None,
             plugin_namespace: None,
             plugin_root: None,
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     )
@@ -1359,6 +1363,7 @@ async fn system_scope_ignores_symlinked_subdir() {
             plugin_id: None,
             plugin_namespace: None,
             plugin_root: None,
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     )
@@ -1397,6 +1402,7 @@ async fn respects_max_scan_depth_for_user_scope() {
             plugin_id: None,
             plugin_namespace: None,
             plugin_root: None,
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     )
@@ -1508,6 +1514,7 @@ async fn namespaces_plugin_skills_using_provided_namespace() {
             plugin_id: Some("sample@test".to_string()),
             plugin_namespace: Some("sample".to_string()),
             plugin_root: Some(plugin_root.abs()),
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     )
@@ -1755,6 +1762,7 @@ async fn plugin_skill_name_length_limit_allows_max_qualified_name() {
             plugin_id: Some("sample@test".to_string()),
             plugin_namespace: Some(plugin_name.clone()),
             plugin_root: Some(plugin_root.abs()),
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     )
@@ -1804,6 +1812,7 @@ async fn plugin_skill_name_length_limit_rejects_overlong_qualified_name() {
             plugin_id: Some("sample@test".to_string()),
             plugin_namespace: Some(plugin_name.clone()),
             plugin_root: Some(plugin_root.abs()),
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     )
@@ -1816,6 +1825,74 @@ async fn plugin_skill_name_length_limit_rejects_overlong_qualified_name() {
         "expected qualified name length error, got: {:?}",
         outcome.errors
     );
+}
+
+#[tokio::test]
+async fn direct_child_discovery_ignores_nested_skills() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let plugin_root = root.path().join("plugin");
+    let skills_root = plugin_root.join("skills");
+    let direct = write_skill_at(&skills_root, "direct", "direct", "direct skill");
+    write_skill_at(&skills_root, "nested/too-deep", "too-deep", "nested skill");
+
+    let outcome = load_skills_from_roots(
+        [SkillRoot {
+            path: skills_root.abs(),
+            scope: SkillScope::User,
+            file_system: Arc::clone(&LOCAL_FS),
+            plugin_id: Some("plugin@test".to_string()),
+            plugin_namespace: Some("plugin".to_string()),
+            plugin_root: Some(plugin_root.abs()),
+            discovery_mode: SkillDiscoveryMode::DirectChildren,
+        }],
+        /*plugin_skill_snapshots*/ None,
+    )
+    .await;
+
+    assert!(outcome.errors.is_empty());
+    assert_eq!(
+        outcome.skills,
+        vec![SkillMetadata {
+            name: "plugin:direct".to_string(),
+            description: "direct skill".to_string(),
+            short_description: None,
+            interface: None,
+            dependencies: None,
+            policy: None,
+            path_to_skills_md: normalized(&direct),
+            scope: SkillScope::User,
+            plugin_id: Some("plugin@test".to_string()),
+        }]
+    );
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn direct_child_discovery_skips_skills_resolving_outside_plugin_root() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let plugin_root = root.path().join("plugin");
+    let skills_root = plugin_root.join("skills");
+    let outside_root = root.path().join("outside");
+    write_skill_at(&outside_root, "escaped", "escaped", "escaped skill");
+    fs::create_dir_all(&skills_root).expect("create skills root");
+    std::os::unix::fs::symlink(outside_root.join("escaped"), skills_root.join("escaped"))
+        .expect("create skill symlink");
+
+    let outcome = load_skills_from_roots(
+        [SkillRoot {
+            path: skills_root.abs(),
+            scope: SkillScope::User,
+            file_system: Arc::clone(&LOCAL_FS),
+            plugin_id: Some("plugin@test".to_string()),
+            plugin_namespace: Some("plugin".to_string()),
+            plugin_root: Some(plugin_root.abs()),
+            discovery_mode: SkillDiscoveryMode::DirectChildren,
+        }],
+        /*plugin_skill_snapshots*/ None,
+    )
+    .await;
+
+    assert!(outcome.skills.is_empty());
 }
 
 #[tokio::test]
@@ -2357,6 +2434,7 @@ async fn deduplicates_by_path_preferring_first_root() {
                 plugin_id: None,
                 plugin_namespace: None,
                 plugin_root: None,
+                discovery_mode: SkillDiscoveryMode::Recursive,
             },
             SkillRoot {
                 path: root.path().abs(),
@@ -2365,6 +2443,7 @@ async fn deduplicates_by_path_preferring_first_root() {
                 plugin_id: None,
                 plugin_namespace: None,
                 plugin_root: None,
+                discovery_mode: SkillDiscoveryMode::Recursive,
             },
         ],
         /*plugin_skill_snapshots*/ None,

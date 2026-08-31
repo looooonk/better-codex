@@ -26,6 +26,7 @@ use codex_skills_extension::provider::SkillProvider;
 use codex_skills_extension::provider::SkillReadRequest;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
+use codex_utils_plugins::SkillDiscoveryMode;
 use pretty_assertions::assert_eq;
 
 const SKILL_CONTENTS: &str =
@@ -211,6 +212,7 @@ async fn skill_loading_and_reads_use_the_supplied_executor_file_system() {
             plugin_id: None,
             plugin_namespace: None,
             plugin_root: None,
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     )

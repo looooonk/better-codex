@@ -5,6 +5,7 @@ use codex_exec_server::CapabilityRootDiscovery;
 use codex_exec_server::ExecutorFileSystem;
 use codex_protocol::protocol::Product;
 use codex_utils_path_uri::PathUri;
+use codex_utils_plugins::SkillDiscoveryMode;
 use futures::StreamExt;
 
 use crate::model::SkillDependencies;
@@ -152,6 +153,7 @@ pub async fn load_environment_skills_from_root(
         SkillDiscoveryOptions {
             directory_symlinks: DirectorySymlinkPolicy::Follow,
             hidden_directories: HiddenDirectoryPolicy::Include,
+            mode: SkillDiscoveryMode::Recursive,
         },
     )
     .await;

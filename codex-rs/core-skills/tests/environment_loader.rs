@@ -24,6 +24,7 @@ use codex_exec_server::WalkOptions;
 use codex_exec_server::WalkOutcome;
 use codex_exec_server::discover_capability_roots;
 use codex_utils_path_uri::PathUri;
+use codex_utils_plugins::SkillDiscoveryMode;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 use tokio::sync::Notify;
@@ -362,12 +363,17 @@ async fn reuses_walk_inventory_for_missing_skill_metadata() {
     let manifest_uri = PathUri::from_host_native_path(manifest_path).unwrap();
     expected_read_files.push(manifest_uri.clone());
     expected_read_files.sort_by_key(ToString::to_string);
+    let mut expected_metadata_files = vec![
+        manifest_uri,
+        PathUri::from_host_native_path(root.path().join("plugin.json")).unwrap(),
+    ];
+    expected_metadata_files.sort_by_key(ToString::to_string);
     assert_eq!(
         file_system.calls(),
         FileSystemCalls {
             walks: 1,
             read_files: expected_read_files,
-            metadata_files: vec![manifest_uri],
+            metadata_files: expected_metadata_files,
         }
     );
 }
@@ -471,6 +477,7 @@ async fn host_loading_reuses_walk_inventory_for_symlinked_skill_pack() {
             plugin_id: None,
             plugin_namespace: None,
             plugin_root: None,
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     );
