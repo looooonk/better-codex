@@ -81,10 +81,7 @@ impl CellActor {
             },
             event_rx,
             command_rx,
-            Observer {
-                mode: initial_observe_mode,
-                response_tx: initial_response_tx,
-            },
+            Observer::new(initial_observe_mode, initial_response_tx),
             task_failure_handler,
         );
         let initial_response =
@@ -102,7 +99,25 @@ struct CellContext {
 
 struct Observer {
     mode: ObserveMode,
+    yield_deadline: Option<tokio::time::Instant>,
     response_tx: oneshot::Sender<Result<CellEvent, CellError>>,
+}
+
+impl Observer {
+    fn new(
+        mode: ObserveMode,
+        response_tx: oneshot::Sender<Result<CellEvent, CellError>>,
+    ) -> Self {
+        let yield_deadline = match mode {
+            ObserveMode::YieldAfter(duration) => Some(tokio::time::Instant::now() + duration),
+            ObserveMode::PendingFrontier => None,
+        };
+        Self {
+            mode,
+            yield_deadline,
+            response_tx,
+        }
+    }
 }
 
 async fn run_cell<H: CellHost>(
@@ -129,14 +144,11 @@ async fn run_cell<H: CellHost>(
     let mut runtime_closed = false;
     let mut runtime_paused = false;
     let mut runtime_failure_reported = false;
-    let mut yield_timer: Option<std::pin::Pin<Box<tokio::time::Sleep>>> = None;
+    let mut yield_timer = observer.as_ref().and_then(observer_timer);
     let mut notification_tasks = JoinSet::new();
     let mut tool_tasks = JoinSet::new();
     let mut command_rx = Some(command_rx);
     loop {
-        let yield_deadline_elapsed = yield_timer
-            .as_ref()
-            .is_some_and(|yield_timer| yield_timer.deadline() <= tokio::time::Instant::now());
         tokio::select! {
             biased;
             _ = cancellation_token.cancelled(), if !termination => {
@@ -166,6 +178,24 @@ async fn run_cell<H: CellHost>(
                     );
                     break;
                 }
+            }
+            _ = async {
+                if let Some(yield_timer) = yield_timer.as_mut() {
+                    yield_timer.await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                yield_timer = None;
+                restore_undelivered_yield(
+                    send_observer_event(
+                        observer.take(),
+                        CellEvent::Yielded {
+                            content_items: std::mem::take(&mut content_items),
+                        },
+                    ),
+                    &mut content_items,
+                );
             }
             maybe_command = async {
                 match command_rx.as_mut() {
@@ -220,7 +250,7 @@ async fn run_cell<H: CellHost>(
                     }
                     continue;
                 }
-                observer = Some(Observer { mode, response_tx });
+                observer = Some(Observer::new(mode, response_tx));
                 yield_timer = observer.as_ref().and_then(observer_timer);
                 if runtime_paused && matches!(mode, ObserveMode::YieldAfter(_)) {
                     pending_frontier_ready = false;
@@ -233,31 +263,13 @@ async fn run_cell<H: CellHost>(
                     &runtime_control_tx,
                 );
             }
-            _ = async {
-                if let Some(yield_timer) = yield_timer.as_mut() {
-                    yield_timer.await;
-                } else {
-                    std::future::pending::<()>().await;
-                }
-            } => {
-                yield_timer = None;
-                restore_undelivered_yield(
-                    send_observer_event(
-                        observer.take(),
-                        CellEvent::Yielded {
-                            content_items: std::mem::take(&mut content_items),
-                        },
-                    ),
-                    &mut content_items,
-                );
-            }
             maybe_event = async {
                 if runtime_closed {
                     std::future::pending::<Option<RuntimeEvent>>().await
                 } else {
                     event_rx.recv().await
                 }
-            }, if !yield_deadline_elapsed => {
+            } => {
                 let Some(event) = maybe_event else {
                     runtime_closed = true;
                     if termination || cancellation_token.is_cancelled() {
@@ -328,9 +340,7 @@ async fn run_cell<H: CellHost>(
                     continue;
                 };
                 match event {
-                    RuntimeEvent::Started => {
-                        yield_timer = observer.as_ref().and_then(observer_timer);
-                    }
+                    RuntimeEvent::Started => {}
                     RuntimeEvent::Pending => {
                         runtime_paused = true;
                         if matches!(
@@ -565,10 +575,9 @@ fn finish_termination(
 }
 
 fn observer_timer(observer: &Observer) -> Option<std::pin::Pin<Box<tokio::time::Sleep>>> {
-    match observer.mode {
-        ObserveMode::YieldAfter(duration) => Some(Box::pin(tokio::time::sleep(duration))),
-        ObserveMode::PendingFrontier => None,
-    }
+    observer
+        .yield_deadline
+        .map(|deadline| Box::pin(tokio::time::sleep_until(deadline)))
 }
 
 fn resume_for_observation(
