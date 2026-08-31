@@ -4014,6 +4014,9 @@ dependencies = [
  "codex-utils-absolute-path",
  "codex-utils-path-uri",
  "include_dir",
+ "pretty_assertions",
+ "serde",
+ "serde_yaml",
  "thiserror 2.0.18",
 ]
 
