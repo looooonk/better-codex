@@ -7,7 +7,9 @@ use codex_code_mode_protocol::RuntimeResponse;
 use codex_code_mode_protocol::ToolDefinition;
 use codex_code_mode_protocol::WaitOutcome;
 use codex_code_mode_protocol::grpc as proto;
+use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
 use codex_protocol::ToolName;
+use prost::Message;
 use serde_json::Value as JsonValue;
 use tonic::Status;
 
@@ -91,7 +93,9 @@ fn json_field(value: Option<Vec<u8>>, field: &str) -> Result<Option<JsonValue>, 
         .transpose()
 }
 
-pub(super) fn execution_outcome(response: RuntimeResponse) -> proto::ExecutionOutcome {
+pub(super) fn execution_outcome(
+    response: RuntimeResponse,
+) -> Result<proto::ExecutionOutcome, Status> {
     let (cell_id, content_items, outcome) = match response {
         RuntimeResponse::Yielded {
             cell_id,
@@ -119,23 +123,49 @@ pub(super) fn execution_outcome(response: RuntimeResponse) -> proto::ExecutionOu
             proto::execution_outcome::Outcome::Completed(proto::ExecutionCompleted { error_text }),
         ),
     };
-    proto::ExecutionOutcome {
-        cell_id: cell_id.to_string(),
-        content_items: content_items.into_iter().map(content_item).collect(),
-        outcome: Some(outcome),
-    }
+    bounded_message(
+        proto::ExecutionOutcome {
+            cell_id: cell_id.to_string(),
+            content_items: content_items.into_iter().map(content_item).collect(),
+            outcome: Some(outcome),
+        },
+        "code-mode execution outcome",
+    )
 }
 
-pub(super) fn wait_response(outcome: WaitOutcome) -> proto::WaitResponse {
+pub(super) fn execute_event(response: RuntimeResponse) -> Result<proto::ExecuteEvent, Status> {
+    bounded_message(
+        proto::ExecuteEvent {
+            event: Some(proto::execute_event::Event::Outcome(execution_outcome(
+                response,
+            )?)),
+        },
+        "code-mode execution event",
+    )
+}
+
+pub(super) fn wait_response(outcome: WaitOutcome) -> Result<proto::WaitResponse, Status> {
     let state = match outcome {
         WaitOutcome::LiveCell(response) => {
-            proto::wait_response::State::LiveCell(execution_outcome(response))
+            proto::wait_response::State::LiveCell(execution_outcome(response)?)
         }
         WaitOutcome::MissingCell(response) => {
-            proto::wait_response::State::MissingCell(execution_outcome(response))
+            proto::wait_response::State::MissingCell(execution_outcome(response)?)
         }
     };
-    proto::WaitResponse { state: Some(state) }
+    bounded_message(
+        proto::WaitResponse { state: Some(state) },
+        "code-mode wait response",
+    )
+}
+
+fn bounded_message<T: Message>(message: T, label: &str) -> Result<T, Status> {
+    if message.encoded_len() > MAX_FRAME_BYTES {
+        return Err(Status::resource_exhausted(format!(
+            "{label} exceeds the {MAX_FRAME_BYTES}-byte gRPC message limit"
+        )));
+    }
+    Ok(message)
 }
 
 fn content_item(item: FunctionCallOutputContentItem) -> proto::ContentItem {

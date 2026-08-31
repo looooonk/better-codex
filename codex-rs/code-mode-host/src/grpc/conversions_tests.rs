@@ -2,7 +2,9 @@ use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::FunctionCallOutputContentItem;
 use codex_code_mode_protocol::ImageDetail;
 use codex_code_mode_protocol::RuntimeResponse;
+use codex_code_mode_protocol::WaitOutcome;
 use codex_code_mode_protocol::grpc as proto;
+use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
 use pretty_assertions::assert_eq;
 use tonic::Code;
 
@@ -78,7 +80,8 @@ fn maps_text_image_and_terminal_error_without_losing_details() {
             },
         ],
         error_text: Some("failed".to_string()),
-    });
+    })
+    .expect("bounded execution outcome");
 
     assert_eq!(
         outcome,
@@ -103,6 +106,36 @@ fn maps_text_image_and_terminal_error_without_losing_details() {
                 },
             )),
         }
+    );
+}
+
+#[test]
+fn rejects_oversized_text_and_image_outcomes_for_streams_and_unary_responses() {
+    let response = |item| RuntimeResponse::Result {
+        cell_id: CellId::new("cell".to_string()),
+        content_items: vec![item],
+        error_text: None,
+    };
+
+    let text = "x".repeat(MAX_FRAME_BYTES);
+    assert_eq!(
+        super::execute_event(response(FunctionCallOutputContentItem::InputText { text }))
+            .expect_err("oversized execution event")
+            .code(),
+        Code::ResourceExhausted
+    );
+
+    let image_url = format!("data:image/png;base64,{}", "A".repeat(MAX_FRAME_BYTES));
+    assert_eq!(
+        super::wait_response(WaitOutcome::LiveCell(response(
+            FunctionCallOutputContentItem::InputImage {
+                image_url,
+                detail: Some(ImageDetail::Low),
+            },
+        )))
+        .expect_err("oversized wait response")
+        .code(),
+        Code::ResourceExhausted
     );
 }
 

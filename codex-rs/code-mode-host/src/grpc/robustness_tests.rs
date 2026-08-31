@@ -12,6 +12,7 @@ use codex_protocol::ToolName;
 use futures::FutureExt;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
+use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 use tonic::Code;
@@ -21,6 +22,7 @@ use uuid::Uuid;
 
 use super::ExecutionAdmission;
 use super::GrpcCodeModeHost;
+use super::execution_stream;
 use super::tests::execute_events;
 use super::tests::execute_request;
 use super::tests::open_session;
@@ -235,6 +237,50 @@ async fn abandoning_execution_releases_its_reservation() {
         )
         .expect_err("abandoned execution must not admit a runtime cell");
     assert_eq!(error.code(), Code::Cancelled);
+}
+
+#[tokio::test]
+async fn outbound_stream_error_keeps_execution_admission_armed() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, _events) = open_session(&host).await;
+    let session = host.state.session(&session_id).expect("open session");
+    let execution_id = "execution-oversized-outcome".to_string();
+    session
+        .reserve_execution(&execution_id)
+        .expect("reserve execution");
+    session
+        .admit_execution(
+            execution_id.clone(),
+            "cell-oversized-outcome".to_string(),
+            host.state.cell_permit().expect("reserve cell permit"),
+        )
+        .expect("admit execution");
+    let (sender, receiver) = mpsc::channel(/*buffer*/ 1);
+    sender
+        .send(Err(Status::resource_exhausted("oversized outcome")))
+        .await
+        .expect("queue outbound error");
+    let mut stream = execution_stream(
+        receiver,
+        ExecutionAdmission {
+            session: Arc::clone(&session),
+            execution_id: Some(execution_id),
+        },
+    );
+
+    assert_eq!(
+        stream
+            .next()
+            .await
+            .expect("outbound error")
+            .expect_err("outbound result must fail")
+            .code(),
+        Code::ResourceExhausted
+    );
+    drop(stream);
+
+    assert!(session.state.lock().unwrap().cells.is_empty());
+    assert!(host.state.cell_permit().is_ok());
 }
 
 #[tokio::test]

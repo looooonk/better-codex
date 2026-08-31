@@ -40,7 +40,10 @@ message OpenSessionRequest {
 
 message SessionCellExecutionLimits {
   optional uint64 max_yield_time_ms = 1;
-  optional uint64 max_heap_size_bytes = 2;
+
+  // Reserved for wire compatibility. The v1 host rejects this field because
+  // the embedded runtime cannot enforce a per-session heap bound yet.
+  optional uint64 max_heap_size_bytes = 2 [deprecated = true];
 }
 
 message SessionEvent {

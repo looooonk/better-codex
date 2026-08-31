@@ -154,28 +154,16 @@ impl GrpcCodeModeHost {
                 biased;
                 _ = sender.closed() => {}
                 response = started.initial_response() => {
-                    let event = response.map(|response| proto::ExecuteEvent {
-                        event: Some(proto::execute_event::Event::Outcome(
-                            conversions::execution_outcome(response),
-                        )),
-                    }).map_err(Status::internal);
+                    let event = response
+                        .map_err(Status::internal)
+                        .and_then(conversions::execute_event);
                     let _ = sender.send(event).await;
                 }
                 _ = session.closed.cancelled() => {}
             }
         });
 
-        let stream = ReceiverStream::new(receiver).inspect(move |event| {
-            if matches!(
-                event,
-                Ok(proto::ExecuteEvent {
-                    event: Some(proto::execute_event::Event::Outcome(_)),
-                })
-            ) {
-                admission.disarm();
-            }
-        });
-        Ok(Response::new(Box::pin(stream)))
+        Ok(Response::new(execution_stream(receiver, admission)))
     }
 
     async fn wait_request(
@@ -203,7 +191,7 @@ impl GrpcCodeModeHost {
                 outcome.map_err(Status::failed_precondition)?
             }
         };
-        Ok(Response::new(conversions::wait_response(outcome)))
+        Ok(Response::new(conversions::wait_response(outcome)?))
     }
 
     async fn cancel_wait_request(
@@ -225,8 +213,24 @@ impl GrpcCodeModeHost {
         validation::identifier(&request.cell_id, "cell ID")?;
         let _permit = self.state.request_permit()?;
         let result = session.terminate(CellId::new(request.cell_id)).await?;
-        Ok(Response::new(conversions::wait_response(result)))
+        Ok(Response::new(conversions::wait_response(result)?))
     }
+}
+
+fn execution_stream(
+    receiver: mpsc::Receiver<Result<proto::ExecuteEvent, Status>>,
+    mut admission: ExecutionAdmission,
+) -> GrpcStream<proto::ExecuteEvent> {
+    Box::pin(ReceiverStream::new(receiver).inspect(move |event| {
+        if matches!(
+            event,
+            Ok(proto::ExecuteEvent {
+                event: Some(proto::execute_event::Event::Outcome(_)),
+            })
+        ) {
+            admission.disarm();
+        }
+    }))
 }
 
 impl Default for GrpcCodeModeHost {
