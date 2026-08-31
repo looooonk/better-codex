@@ -66,7 +66,7 @@ pub(super) async fn resume_thread(
         .await?
         .history_mode
     };
-    let rollout_path = match (params.rollout_path, params.history) {
+    let mut rollout_path = match (params.rollout_path, params.history) {
         (Some(rollout_path), _history) => rollout_path,
         (None, history) => {
             let thread = super::read_thread::read_thread(
@@ -85,6 +85,25 @@ pub(super) async fn resume_thread(
                 })?
         }
     };
+    if matches!(history_mode, ThreadHistoryMode::Paginated) {
+        let selected = if params.include_archived {
+            super::thread_rollout_resolver::resolve_current_including_archived(
+                store,
+                params.thread_id,
+            )
+            .await?
+        } else {
+            super::thread_rollout_resolver::resolve_current(store, params.thread_id).await?
+        };
+        rollout_path = selected
+            .ok_or_else(|| ThreadStoreError::InvalidRequest {
+                message: format!(
+                    "no selected paginated rollout found for thread {}",
+                    params.thread_id
+                ),
+            })?
+            .path;
+    }
     let cwd = params
         .metadata
         .cwd
@@ -355,3 +374,7 @@ async fn durable_write(recorder: &RolloutRecorder, write: RolloutWriteOp) -> Thr
         RolloutWriteOp::Flush => recorder.flush().await.map_err(thread_store_io_error),
     }
 }
+
+#[cfg(test)]
+#[path = "live_writer_tests.rs"]
+mod tests;
