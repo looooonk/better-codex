@@ -1512,6 +1512,23 @@ async fn find_thread_path_by_id_from_filenames(
     Ok(newest.map(|(_timestamp, _id, path)| path))
 }
 
+async fn find_thread_paths_by_id_from_filenames(
+    root: &Path,
+    thread_id: ThreadId,
+) -> io::Result<Vec<PathBuf>> {
+    let mut paths = Vec::new();
+    let _ = visit_rollout_filenames::<()>(root, |file_name, path| {
+        if file_name.thread_id() == thread_id {
+            paths.push(path);
+        }
+        ControlFlow::Continue(())
+    })
+    .await?;
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
+}
+
 async fn visit_rollout_filenames<T>(
     root: &Path,
     mut visitor: impl FnMut(RolloutFileName, PathBuf) -> ControlFlow<T>,
@@ -1589,6 +1606,30 @@ pub async fn find_archived_thread_path_by_id_str(
 ) -> io::Result<Option<PathBuf>> {
     find_thread_path_by_id_str_in_subdir(codex_home, ARCHIVED_SESSIONS_SUBDIR, id_str, state_db_ctx)
         .await
+}
+
+/// Locates every canonical active rollout owned by a logical thread ID.
+pub async fn find_thread_paths_by_id(
+    codex_home: &Path,
+    thread_id: ThreadId,
+) -> io::Result<Vec<PathBuf>> {
+    find_thread_paths_by_id_from_filenames(
+        codex_home.join(SESSIONS_SUBDIR).as_path(),
+        thread_id,
+    )
+    .await
+}
+
+/// Locates every canonical archived rollout owned by a logical thread ID.
+pub async fn find_archived_thread_paths_by_id(
+    codex_home: &Path,
+    thread_id: ThreadId,
+) -> io::Result<Vec<PathBuf>> {
+    find_thread_paths_by_id_from_filenames(
+        codex_home.join(ARCHIVED_SESSIONS_SUBDIR).as_path(),
+        thread_id,
+    )
+    .await
 }
 
 /// Locates one immutable rollout by its exact rollout ID.

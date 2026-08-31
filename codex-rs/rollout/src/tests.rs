@@ -19,8 +19,10 @@ use time::macros::format_description;
 use uuid::Uuid;
 
 use crate::INTERACTIVE_SESSION_SOURCES;
+use crate::find_archived_thread_paths_by_id;
 use crate::find_rollout_path_by_rollout_id;
 use crate::find_thread_path_by_id_str;
+use crate::find_thread_paths_by_id;
 use crate::list::Cursor;
 use crate::list::ThreadItem;
 use crate::list::ThreadSortKey;
@@ -195,13 +197,25 @@ async fn filesystem_lookup_distinguishes_thread_and_rollout_ids() {
         find_rollout_path_by_rollout_id(home, thread_id_from_uuid(thread_uuid))
             .await
             .unwrap(),
-        Some(original_path)
+        Some(original_path.clone())
     );
     assert_eq!(
         find_rollout_path_by_rollout_id(home, thread_id_from_uuid(replacement_uuid))
             .await
             .unwrap(),
-        Some(replacement_path)
+        Some(replacement_path.clone())
+    );
+    assert_eq!(
+        find_thread_paths_by_id(home, thread_id_from_uuid(thread_uuid))
+            .await
+            .unwrap(),
+        vec![replacement_path]
+    );
+    assert_eq!(
+        find_archived_thread_paths_by_id(home, thread_id_from_uuid(thread_uuid))
+            .await
+            .unwrap(),
+        vec![original_path, archived_replacement_path]
     );
 }
 
