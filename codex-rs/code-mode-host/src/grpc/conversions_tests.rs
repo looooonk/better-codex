@@ -65,7 +65,7 @@ fn rejects_missing_names_unknown_tool_kinds_and_invalid_json_schemas() {
 }
 
 #[test]
-fn maps_text_image_audio_and_terminal_error_without_losing_details() {
+fn maps_text_image_and_terminal_error_without_losing_details() {
     let outcome = execution_outcome(RuntimeResponse::Result {
         cell_id: CellId::new("cell".to_string()),
         content_items: vec![
@@ -75,9 +75,6 @@ fn maps_text_image_audio_and_terminal_error_without_losing_details() {
             FunctionCallOutputContentItem::InputImage {
                 image_url: "data:image/png;base64,YQ==".to_string(),
                 detail: Some(ImageDetail::Original),
-            },
-            FunctionCallOutputContentItem::InputAudio {
-                audio_url: "data:audio/wav;base64,YQ==".to_string(),
             },
         ],
         error_text: Some("failed".to_string()),
@@ -97,11 +94,6 @@ fn maps_text_image_audio_and_terminal_error_without_losing_details() {
                     item: Some(proto::content_item::Item::Image(proto::ImageContent {
                         image_url: "data:image/png;base64,YQ==".to_string(),
                         detail: Some(proto::ImageDetail::Original as i32),
-                    })),
-                },
-                proto::ContentItem {
-                    item: Some(proto::content_item::Item::Audio(proto::AudioContent {
-                        audio_url: "data:audio/wav;base64,YQ==".to_string(),
                     })),
                 },
             ],

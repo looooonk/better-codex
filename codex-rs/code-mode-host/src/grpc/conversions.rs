@@ -155,9 +155,6 @@ fn content_item(item: FunctionCallOutputContentItem) -> proto::ContentItem {
                 }),
             })
         }
-        FunctionCallOutputContentItem::InputAudio { audio_url } => {
-            proto::content_item::Item::Audio(proto::AudioContent { audio_url })
-        }
     };
     proto::ContentItem { item: Some(item) }
 }
