@@ -104,6 +104,9 @@ pub struct EnvironmentCapabilities {
     /// Whether `process/start` accepts instructions for launching an executor-local network proxy.
     #[serde(default)]
     pub network_proxy_launch: bool,
+    /// Whether this executor supports the `environmentConfig/read` request.
+    #[serde(default)]
+    pub environment_config_read: bool,
 }
 
 impl EnvironmentInfo {
@@ -116,6 +119,7 @@ impl EnvironmentInfo {
                 .and_then(|cwd| PathUri::from_host_native_path(cwd).ok()),
             capabilities: EnvironmentCapabilities {
                 network_proxy_launch: true,
+                environment_config_read: false,
             },
         }
     }
@@ -811,6 +815,22 @@ mod tests {
                 },
                 cwd: None,
                 capabilities: EnvironmentCapabilities::default(),
+            }
+        );
+    }
+
+    #[test]
+    fn environment_capabilities_accept_legacy_response_without_config_read() {
+        let capabilities: EnvironmentCapabilities = serde_json::from_value(serde_json::json!({
+            "networkProxyLaunch": true,
+        }))
+        .expect("legacy environment capabilities should deserialize");
+
+        assert_eq!(
+            capabilities,
+            EnvironmentCapabilities {
+                network_proxy_launch: true,
+                environment_config_read: false,
             }
         );
     }
