@@ -2301,6 +2301,7 @@ fn remote_plugin_catalog_error_type(err: &RemotePluginCatalogError) -> &'static 
         RemotePluginCatalogError::Request { .. } => "remote_catalog_request",
         RemotePluginCatalogError::UnexpectedStatus { .. } => "remote_catalog_unexpected_status",
         RemotePluginCatalogError::Decode { .. } => "remote_catalog_decode",
+        RemotePluginCatalogError::ResponseTooLarge { .. } => "remote_catalog_response_too_large",
         RemotePluginCatalogError::InvalidBaseUrl(_) => "remote_catalog_invalid_base_url",
         RemotePluginCatalogError::InvalidBaseUrlPath => "remote_catalog_invalid_base_url_path",
         RemotePluginCatalogError::UnknownMarketplace { .. } => "remote_catalog_unknown_marketplace",
@@ -2382,6 +2383,7 @@ fn remote_plugin_catalog_error_to_jsonrpc(
         | RemotePluginCatalogError::Request { .. }
         | RemotePluginCatalogError::UnexpectedStatus { .. }
         | RemotePluginCatalogError::Decode { .. }
+        | RemotePluginCatalogError::ResponseTooLarge { .. }
         | RemotePluginCatalogError::InvalidBaseUrl(_)
         | RemotePluginCatalogError::InvalidBaseUrlPath
         | RemotePluginCatalogError::UnexpectedPluginId { .. }

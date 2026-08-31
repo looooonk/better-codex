@@ -155,3 +155,45 @@ async fn search_remote_plugins_redacts_sensitive_parameters_from_transport_error
     assert_eq!(url, format!("http://{address}/backend-api/ps/plugins/search"));
     assert!(!source.to_string().contains("sensitive"));
 }
+
+#[tokio::test]
+async fn search_remote_plugins_rejects_oversized_responses() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/backend-api/ps/plugins/search"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(vec![b'x'; MAX_REMOTE_PLUGIN_SEARCH_RESPONSE_BYTES + 1]),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+    let config = RemotePluginServiceConfig {
+        chatgpt_base_url: format!("{}/backend-api", server.uri()),
+    };
+    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+
+    let error = search_remote_plugins(
+        &config,
+        Some(&auth),
+        RemotePluginSearchRequest {
+            query: "sensitive search term",
+            scope: None,
+            limit: 16,
+            page_token: Some("sensitive pagination token"),
+        },
+    )
+    .await
+    .expect_err("oversized plugin search response should be rejected");
+
+    assert!(
+        !error.to_string().contains("sensitive"),
+        "search parameters should stay out of errors"
+    );
+    assert!(matches!(
+        error,
+        RemotePluginCatalogError::ResponseTooLarge { url, max_bytes }
+            if url == format!("{}/backend-api/ps/plugins/search", server.uri())
+                && max_bytes == MAX_REMOTE_PLUGIN_SEARCH_RESPONSE_BYTES
+    ));
+}

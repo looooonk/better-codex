@@ -338,6 +338,11 @@ pub enum RemotePluginCatalogError {
         source: serde_json::Error,
     },
 
+    #[error(
+        "remote plugin catalog response from {url} exceeds the maximum size of {max_bytes} bytes"
+    )]
+    ResponseTooLarge { url: String, max_bytes: usize },
+
     #[error("invalid remote plugin catalog base URL: {0}")]
     InvalidBaseUrl(#[source] url::ParseError),
 
