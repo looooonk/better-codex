@@ -14,6 +14,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use crate::McpAuthStatusEntry;
+use crate::McpProtocolMode;
 use crate::codex_apps::prepare_openai_file_params_for_model;
 use crate::codex_apps_cache::CodexAppsToolsCache;
 use crate::codex_apps_cache::CodexAppsToolsCacheKey;
@@ -140,6 +141,7 @@ impl McpConnectionManager {
         tool_catalog_cache: McpToolCatalogCache,
         codex_apps_tools_cache_key: CodexAppsToolsCacheKey,
         prefix_mcp_tool_names: bool,
+        protocol_mode: McpProtocolMode,
         client_elicitation_capability: ElicitationCapability,
         supports_openai_form_elicitation: bool,
         tool_plugin_provenance: ToolPluginProvenance,
@@ -267,6 +269,7 @@ impl McpConnectionManager {
                 runtime_auth_provider,
                 client_elicitation_capability.clone(),
                 supports_openai_form_elicitation,
+                protocol_mode,
             );
             clients.insert(server_name.clone(), async_managed_client.clone());
             let tx_event = tx_event.clone();

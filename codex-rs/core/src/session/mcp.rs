@@ -469,6 +469,7 @@ impl Session {
             self.services.mcp_manager.tool_catalog_cache(),
             codex_apps_tools_cache_key(auth.as_ref()),
             mcp_config.prefix_mcp_tool_names,
+            mcp_config.protocol_mode,
             mcp_config.client_elicitation_capability.clone(),
             self.services
                 .supports_openai_form_elicitation
