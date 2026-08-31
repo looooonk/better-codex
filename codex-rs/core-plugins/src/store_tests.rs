@@ -411,7 +411,10 @@ fn agent_plugin_unsafe_version_uses_stable_cache_key() {
 
 #[cfg(unix)]
 #[test]
-fn agent_plugin_install_rejects_symlinked_skill_file() {
+fn agent_plugin_install_skips_symlinked_and_special_entries() {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
     let tmp = tempdir().unwrap();
     let plugin_root = tmp.path().join("agent-plugin");
     let skill_root = plugin_root.join("skills/greet");
@@ -424,16 +427,19 @@ fn agent_plugin_install_rejects_symlinked_skill_file() {
     let outside_skill = tmp.path().join("outside-SKILL.md");
     fs::write(&outside_skill, "---\nname: greet\n---\n").unwrap();
     std::os::unix::fs::symlink(&outside_skill, skill_root.join("SKILL.md")).unwrap();
+    let fifo_path = skill_root.join("events.pipe");
+    let fifo_path = CString::new(fifo_path.as_os_str().as_bytes()).expect("path without nul");
+    // SAFETY: `fifo_path` is a valid, nul-terminated path and `mkfifo` does not retain it.
+    assert_eq!(unsafe { libc::mkfifo(fifo_path.as_ptr(), 0o644) }, 0);
     let plugin_id = PluginId::new("agent-plugin".to_string(), "debug".to_string()).unwrap();
 
-    let err = PluginStore::new(tmp.path().to_path_buf())
+    let result = PluginStore::new(tmp.path().to_path_buf())
         .install(AbsolutePathBuf::try_from(plugin_root).unwrap(), plugin_id)
-        .expect_err("symlinked Agent Plugin skill should be rejected");
+        .expect("install should ignore unsupported nested entries");
 
-    assert!(
-        err.to_string()
-            .contains("plugin source contains unsupported symbolic link")
-    );
+    assert!(result.installed_path.join("plugin.json").is_file());
+    assert!(!result.installed_path.join("skills/greet/SKILL.md").exists());
+    assert!(!result.installed_path.join("skills/greet/events.pipe").exists());
 }
 
 #[test]
