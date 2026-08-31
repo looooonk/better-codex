@@ -322,9 +322,8 @@ impl CoreToolRuntime for McpHandler {
         }
 
         invocation
-            .session
-            .services
-            .thread_extension_data
+            .turn
+            .extension_data
             .get_or_init(NodeReplReviewEvidence::default)
             .record(cell_id, &invocation.call_id, items);
     }
@@ -649,9 +648,9 @@ mod tests {
 
         handler.on_tool_result_accepted(&invocation, &output);
 
-        let evidence = session
-            .services
-            .thread_extension_data
+        let evidence = invocation
+            .turn
+            .extension_data
             .get::<NodeReplReviewEvidence>()
             .expect("accepted result should create evidence");
         let snapshot = evidence.snapshot();
@@ -722,9 +721,9 @@ mod tests {
         );
 
         assert!(
-            session
-                .services
-                .thread_extension_data
+            code_mode_invocation
+                .turn
+                .extension_data
                 .get::<NodeReplReviewEvidence>()
                 .is_none()
         );
@@ -754,9 +753,9 @@ mod tests {
         );
 
         assert!(
-            session
-                .services
-                .thread_extension_data
+            invocation
+                .turn
+                .extension_data
                 .get::<NodeReplReviewEvidence>()
                 .is_none()
         );

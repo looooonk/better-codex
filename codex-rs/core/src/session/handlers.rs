@@ -537,8 +537,8 @@ pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32
         .collect::<Vec<_>>();
     sess.apply_rollout_reconstruction(turn_context.as_ref(), replay_items.as_slice())
         .await;
-    sess.services
-        .thread_extension_data
+    turn_context
+        .extension_data
         .remove::<NodeReplReviewEvidence>();
     sess.services
         .agent_control

@@ -3196,8 +3196,7 @@ async fn thread_rollback_drops_last_turn_from_history() {
         let mut state = sess.state.lock().await;
         state.set_reference_context_item(Some(tc.to_turn_context_item()));
     }
-    sess.services
-        .thread_extension_data
+    tc.extension_data
         .get_or_init(crate::context::NodeReplReviewEvidence::default)
         .record(
             "cell-1",
@@ -3221,8 +3220,7 @@ async fn thread_rollback_drops_last_turn_from_history() {
     assert_eq!(sess.previous_turn_settings().await, None);
     assert!(sess.reference_context_item().await.is_none());
     assert!(
-        sess.services
-            .thread_extension_data
+        tc.extension_data
             .get::<crate::context::NodeReplReviewEvidence>()
             .is_none()
     );
