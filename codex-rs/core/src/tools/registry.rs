@@ -66,6 +66,9 @@ pub(crate) trait CoreToolRuntime: ToolExecutor<ToolInvocation> {
         Box::pin(async { Vec::new() })
     }
 
+    /// Observes a successful tool result after all PostToolUse hooks accept it.
+    fn on_tool_result_accepted(&self, _invocation: &ToolInvocation, _result: &dyn ToolOutput) {}
+
     fn post_tool_use_payload(
         &self,
         invocation: &ToolInvocation,
@@ -296,6 +299,10 @@ impl CoreToolRuntime for ExposureOverride {
         result: &dyn ToolOutput,
     ) -> Option<PostToolUsePayload> {
         self.handler.post_tool_use_payload(invocation, result)
+    }
+
+    fn on_tool_result_accepted(&self, invocation: &ToolInvocation, result: &dyn ToolOutput) {
+        self.handler.on_tool_result_accepted(invocation, result);
     }
 
     fn with_updated_hook_input(

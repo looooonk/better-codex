@@ -216,7 +216,7 @@ pub enum Feature {
     DefaultModeRequestUserInput,
     /// Enable automatic review for approval prompts.
     GuardianApproval,
-    /// Enable Guardian V2 automatic approval reviews.
+    /// Enable inert Guardian V2 shadow-review evidence collection.
     GuardianV2,
     /// Enable persisted thread goals and automatic goal continuation.
     Goals,
