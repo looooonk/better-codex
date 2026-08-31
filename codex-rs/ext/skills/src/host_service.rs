@@ -22,7 +22,6 @@ use codex_core_skills::config_rules::skill_config_rules_from_stack;
 use codex_core_skills::loader::SkillRoot;
 use codex_core_skills::loader::load_skills_from_roots;
 use codex_skills::install_system_skills;
-use codex_skills::system_cache_root_dir;
 
 use crate::host_roots::resolve_skill_roots;
 
@@ -89,12 +88,8 @@ impl HostSkillsService {
             cache_by_cwd: RwLock::new(HashMap::new()),
             cache_by_config: RwLock::new(HashMap::new()),
         };
-        if !bundled_skills_enabled {
-            // The loader caches bundled skills under `skills/.system`. Clearing that directory is
-            // best-effort cleanup; root selection still enforces the config even if removal fails.
-            let _ = std::fs::remove_dir_all(system_cache_root_dir(&service.codex_home));
-        } else if let Err(err) = install_system_skills(&service.codex_home) {
-            tracing::error!("failed to install system skills: {err}");
+        if bundled_skills_enabled {
+            service.ensure_system_skills_installed();
         }
         service
     }
@@ -151,6 +146,9 @@ impl HostSkillsService {
         input: &HostSkillsLoadInput,
         fs: Option<Arc<dyn ExecutorFileSystem>>,
     ) -> Vec<SkillRoot> {
+        if input.bundled_skills_enabled {
+            self.ensure_system_skills_installed();
+        }
         let mut roots = resolve_skill_roots(
             fs,
             &input.config_layer_stack,
@@ -171,6 +169,10 @@ impl HostSkillsService {
         force_reload: bool,
         fs: Option<Arc<dyn ExecutorFileSystem>>,
     ) -> HostSkillsSnapshot {
+        let bundled_skills_enabled = bundled_skills_enabled_from_stack(&input.config_layer_stack);
+        if bundled_skills_enabled {
+            self.ensure_system_skills_installed();
+        }
         let use_cwd_cache = fs.is_some();
         if use_cwd_cache
             && !force_reload
@@ -187,7 +189,7 @@ impl HostSkillsService {
             self.extra_roots(),
         )
         .await;
-        if !bundled_skills_enabled_from_stack(&input.config_layer_stack) {
+        if !bundled_skills_enabled {
             roots.retain(|root| root.scope != SkillScope::System);
         }
         let skill_config_rules = skill_config_rules_from_stack(&input.config_layer_stack);
@@ -265,6 +267,12 @@ impl HostSkillsService {
         match self.extra_roots.read() {
             Ok(roots) => roots.clone(),
             Err(err) => err.into_inner().clone(),
+        }
+    }
+
+    fn ensure_system_skills_installed(&self) {
+        if let Err(err) = install_system_skills(&self.codex_home) {
+            tracing::error!("failed to install system skills: {err}");
         }
     }
 }

@@ -153,7 +153,7 @@ async fn skills_for_config_with_stack(
 }
 
 #[test]
-fn new_with_disabled_bundled_skills_removes_stale_cached_system_skills() {
+fn new_with_disabled_bundled_skills_preserves_shared_system_cache() {
     let codex_home = tempfile::tempdir().expect("tempdir");
     let stale_system_skill_dir = codex_home.path().join("skills/.system/stale-skill");
     fs::create_dir_all(&stale_system_skill_dir).expect("create stale system skill dir");
@@ -165,10 +165,7 @@ fn new_with_disabled_bundled_skills_removes_stale_cached_system_skills() {
         /*bundled_skills_enabled*/ false,
     );
 
-    assert!(
-        !codex_home.path().join("skills/.system").exists(),
-        "expected disabling system skills to remove stale cached bundled skills"
-    );
+    assert!(stale_system_skill_dir.join("SKILL.md").exists());
 }
 
 #[tokio::test]
@@ -512,15 +509,6 @@ async fn skills_for_config_excludes_bundled_skills_when_disabled_in_config() {
         codex_home.path().abs(),
         /*bundled_skills_enabled*/ false,
     );
-
-    // Recreate the cached bundled skill after startup cleanup so this assertion exercises
-    // root selection rather than relying on directory removal succeeding.
-    fs::create_dir_all(&bundled_skill_dir).expect("recreate bundled skill dir");
-    fs::write(
-        bundled_skill_dir.join("SKILL.md"),
-        "---\nname: bundled-skill\ndescription: from bundled root\n---\n\n# Body\n",
-    )
-    .expect("rewrite bundled skill");
 
     let outcome =
         skills_for_config_with_stack(&skills_service, &cwd, &config_layer_stack, &[]).await;
