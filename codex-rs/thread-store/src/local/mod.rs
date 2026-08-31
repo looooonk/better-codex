@@ -6,6 +6,7 @@ mod list_threads;
 mod live_writer;
 mod model_context;
 mod read_thread;
+mod rollout_lineage;
 mod rollout_moves;
 mod search_threads;
 mod thread_history;
