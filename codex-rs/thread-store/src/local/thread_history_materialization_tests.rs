@@ -145,8 +145,33 @@ ORDER BY rollout_ordinal
         .live_rollout_path(thread_id)
         .await
         .expect("rollout path");
-    let rollout_len = i64::try_from(fs::metadata(rollout_path).expect("rollout metadata").len())
+    let rollout_bytes = fs::read(rollout_path.as_path()).expect("read rollout");
+    let rollout_len = i64::try_from(rollout_bytes.len())
         .expect("rollout length");
+    let first_record_end = i64::try_from(
+        rollout_bytes
+            .split_inclusive(|byte| *byte == b'\n')
+            .next()
+            .expect("session metadata record")
+            .len(),
+    )
+    .expect("record offset");
+    let turn_position = sqlx::query_as::<_, (Option<i64>, Option<i64>, Option<i64>)>(
+        r#"
+SELECT rollout_byte_offset, rollout_end_ordinal, rollout_end_byte_offset
+FROM thread_turns
+WHERE thread_id = ? AND turn_id = ?
+        "#,
+    )
+    .bind(thread_id.to_string())
+    .bind("turn-1")
+    .fetch_one(&pool)
+    .await
+    .expect("read turn rollout position");
+    assert_eq!(
+        turn_position,
+        (Some(first_record_end), Some(4), Some(rollout_len))
+    );
     let projection_state = sqlx::query_as::<_, (i64, i64)>(
         r#"
 SELECT next_rollout_byte_offset, next_rollout_ordinal
