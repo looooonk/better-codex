@@ -410,3 +410,7 @@ pub(crate) fn request_metadata(
 pub(crate) fn model() -> &'static str {
     MODEL
 }
+
+#[cfg(test)]
+#[path = "sampler_tests.rs"]
+mod tests;
