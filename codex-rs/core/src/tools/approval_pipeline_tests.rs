@@ -156,6 +156,122 @@ impl codex_extension_api::ApprovalReviewContributor for RecordingApprovalAuthori
     }
 }
 
+struct NonReturningApprovalAuthority {
+    cancel_on_review: Option<CancellationToken>,
+}
+
+impl codex_extension_api::ApprovalReviewContributor for NonReturningApprovalAuthority {
+    fn review<'a>(
+        &'a self,
+        _session_store: &'a codex_extension_api::ExtensionData,
+        _thread_store: &'a codex_extension_api::ExtensionData,
+        _input: codex_extension_api::ApprovalReviewInput,
+    ) -> codex_extension_api::ExtensionFuture<'a, codex_extension_api::ApprovalReviewResult> {
+        let cancel_on_review = self.cancel_on_review.clone();
+        Box::pin(async move {
+            if let Some(cancellation_token) = cancel_on_review {
+                cancellation_token.cancel();
+            }
+            std::future::pending().await
+        })
+    }
+}
+
+async fn guardian_review_test_fixture(
+    authority: Arc<dyn codex_extension_api::ApprovalReviewContributor>,
+    cancellation_token: CancellationToken,
+) -> (
+    Arc<crate::session::session::Session>,
+    ApprovalAction,
+    ApprovalContext,
+) {
+    use crate::session::tests::make_session_and_context;
+    use codex_protocol::models::SandboxPermissions;
+    use codex_utils_path_uri::PathUri;
+
+    let (mut session, turn) = make_session_and_context().await;
+    let mut extensions = codex_extension_api::ExtensionRegistryBuilder::new();
+    extensions.approval_review_contributor(authority);
+    session.services.extensions = Arc::new(extensions.build());
+    let turn = Arc::new(turn);
+    let action = ApprovalAction::Shell {
+        id: "guardian-review-call".to_string(),
+        environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
+        command: vec!["echo".to_string(), "safe".to_string()],
+        hook_command: "echo safe".to_string(),
+        cwd: PathUri::from_abs_path(
+            &codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(
+                std::env::current_dir().expect("current directory"),
+            )
+            .expect("absolute current directory"),
+        ),
+        sandbox_permissions: SandboxPermissions::UseDefault,
+        additional_permissions: None,
+        justification: None,
+        proposed_execpolicy_amendment: None,
+        cache_keys: Vec::new(),
+    };
+    let context = ApprovalContext {
+        turn,
+        call_id: "guardian-review-call".to_string(),
+        tool_name: ToolName::plain("shell_command"),
+        approval_reason: None,
+        retry_reason: None,
+        network_approval_context: None,
+        required_by_strict: false,
+        attempt_id: "guardian-review-attempt".to_string(),
+        source: ToolCallSource::Direct,
+        cancellation_token,
+    };
+    (Arc::new(session), action, context)
+}
+
+#[tokio::test]
+async fn guardian_v2_host_deadline_bounds_non_returning_authority() {
+    let cancellation_token = CancellationToken::new();
+    let (session, action, context) = guardian_review_test_fixture(
+        Arc::new(NonReturningApprovalAuthority {
+            cancel_on_review: None,
+        }),
+        cancellation_token,
+    )
+    .await;
+
+    assert_eq!(
+        request_guardian_v2_approval_until(
+            &session,
+            &action,
+            &context,
+            Instant::now() + Duration::from_millis(10),
+        )
+        .await,
+        ApprovalReviewResult::ManualReview(ApprovalReviewFailure::Deadline)
+    );
+}
+
+#[tokio::test]
+async fn guardian_v2_host_cancellation_stops_non_returning_authority() {
+    let cancellation_token = CancellationToken::new();
+    let (session, action, context) = guardian_review_test_fixture(
+        Arc::new(NonReturningApprovalAuthority {
+            cancel_on_review: Some(cancellation_token.clone()),
+        }),
+        cancellation_token,
+    )
+    .await;
+
+    assert_eq!(
+        request_guardian_v2_approval_until(
+            &session,
+            &action,
+            &context,
+            Instant::now() + Duration::from_secs(1),
+        )
+        .await,
+        ApprovalReviewResult::Cancelled
+    );
+}
+
 #[tokio::test]
 async fn guardian_v2_allow_is_bound_to_the_exact_action_attempt() {
     use crate::config::Constrained;

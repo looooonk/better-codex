@@ -403,6 +403,21 @@ async fn request_guardian_v2_approval(
     action: &ApprovalAction,
     ctx: &ApprovalContext,
 ) -> ApprovalReviewResult {
+    request_guardian_v2_approval_until(
+        session,
+        action,
+        ctx,
+        Instant::now() + GUARDIAN_V2_REVIEW_TIMEOUT,
+    )
+    .await
+}
+
+async fn request_guardian_v2_approval_until(
+    session: &Arc<Session>,
+    action: &ApprovalAction,
+    ctx: &ApprovalContext,
+    deadline: Instant,
+) -> ApprovalReviewResult {
     let action = match action.approval_review_action() {
         Ok(action) => action,
         Err(error) => {
@@ -410,14 +425,13 @@ async fn request_guardian_v2_approval(
             return ApprovalReviewResult::ManualReview(ApprovalReviewFailure::InvalidInput);
         }
     };
-    let deadline = Instant::now() + GUARDIAN_V2_REVIEW_TIMEOUT;
     let history = session.clone_history().await.raw_items().to_vec();
     for _ in 0..MAX_REVIEWER_REROUTES {
         if ctx.cancellation_token.is_cancelled() {
             return ApprovalReviewResult::Cancelled;
         }
         let (evidence_revision, evidence, images) = approval_review_evidence(&ctx.turn, &ctx.source);
-        let result = session
+        let review = session
             .services
             .extensions
             .approval_review(
@@ -441,8 +455,16 @@ async fn request_guardian_v2_approval(
                         ctx.cancellation_token.clone(),
                     )),
                 },
-            )
-            .await;
+            );
+        let result = tokio::select! {
+            biased;
+            _ = ctx.cancellation_token.cancelled() => ApprovalReviewResult::Cancelled,
+            result = tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), review) => {
+                result.unwrap_or(ApprovalReviewResult::ManualReview(
+                    ApprovalReviewFailure::Deadline,
+                ))
+            }
+        };
         if !matches!(result, ApprovalReviewResult::Allow(_)) {
             return result;
         }
