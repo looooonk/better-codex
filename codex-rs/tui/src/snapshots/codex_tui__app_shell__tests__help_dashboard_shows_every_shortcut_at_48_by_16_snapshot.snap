@@ -10,7 +10,7 @@ expression: rendered
 │ Alt+↑ / ↓   Select m…│  ⌘← / →      Line ends
 │ ↵ / c       Copy item│  ⌘⌫          Delete s…
 │ e           Branch   │  ⌥/^ + ←→    Move word
-│ ^O          Copy rep…│  S/A + ↵     Newline
+│ ^O/⌥1-9     Copy rep…│  S/A + ↵     Newline
 │◆ DASHBOARD           │  Alt+M       Model
 │ ^1 … ^4     Open tab │  Alt+E       Effort
 │

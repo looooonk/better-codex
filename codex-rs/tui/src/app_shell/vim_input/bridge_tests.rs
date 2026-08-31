@@ -1,4 +1,4 @@
-use super::ARGUMENT_SLASH_COMMAND;
+use super::ARGUMENT_SLASH_COMMANDS;
 use super::NO_ARGUMENT_SLASH_COMMANDS;
 use super::script;
 use crate::app_shell::slash_commands::SLASH_COMMANDS;
@@ -11,7 +11,7 @@ fn generated_vim_bridge() {
 
 #[test]
 fn bridge_commands_match_the_local_command_registry() {
-    let mut bridge_with_arguments = vec![ARGUMENT_SLASH_COMMAND];
+    let mut bridge_with_arguments = ARGUMENT_SLASH_COMMANDS.to_vec();
     let mut bridge_without_arguments = NO_ARGUMENT_SLASH_COMMANDS.to_vec();
     let mut registry_with_arguments = SLASH_COMMANDS
         .iter()

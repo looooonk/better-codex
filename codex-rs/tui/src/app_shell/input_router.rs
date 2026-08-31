@@ -14,6 +14,7 @@ use super::elicitation_action_from_key;
 use super::is_composer_newline_key;
 use super::navigation::DashboardRoute;
 use super::shell_command::ShellCommand;
+use super::transcript_copy::response_ordinal_from_alt_key;
 use crate::key_hint;
 use crate::legacy_core::config::Config;
 use crate::text_input::text_input_action_from_key;
@@ -249,12 +250,54 @@ impl ShellState {
         .await
     }
 
+    #[cfg(test)]
+    pub(super) async fn handle_key_with_transcript_copy<S>(
+        &mut self,
+        key: KeyEvent,
+        config: &Config,
+        app_server: &mut S,
+        copy_fn: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
+    ) -> Result<bool>
+    where
+        S: AppShellBackend,
+    {
+        self.handle_key_with_composer_layout_and_transcript_copy(
+            key,
+            ComposerNavigationLayout::LogicalLines,
+            config,
+            app_server,
+            copy_fn,
+        )
+        .await
+    }
+
     async fn handle_key_with_composer_layout<S>(
         &mut self,
         key: KeyEvent,
         composer_navigation_layout: ComposerNavigationLayout,
         config: &Config,
         app_server: &mut S,
+    ) -> Result<bool>
+    where
+        S: AppShellBackend,
+    {
+        self.handle_key_with_composer_layout_and_transcript_copy(
+            key,
+            composer_navigation_layout,
+            config,
+            app_server,
+            crate::clipboard_copy::copy_to_clipboard,
+        )
+        .await
+    }
+
+    async fn handle_key_with_composer_layout_and_transcript_copy<S>(
+        &mut self,
+        key: KeyEvent,
+        composer_navigation_layout: ComposerNavigationLayout,
+        config: &Config,
+        app_server: &mut S,
+        copy_fn: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
     ) -> Result<bool>
     where
         S: AppShellBackend,
@@ -332,7 +375,11 @@ impl ShellState {
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('o')) {
-            self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+            self.copy_selected_transcript_with(copy_fn);
+            return Ok(false);
+        }
+        if let Some(ordinal) = response_ordinal_from_alt_key(key) {
+            self.copy_response_with(ordinal, copy_fn);
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('n')) {
