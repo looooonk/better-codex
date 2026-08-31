@@ -1125,7 +1125,6 @@ interface:
         }]
     );
 }
-
 #[cfg(unix)]
 fn symlink_dir(target: &Path, link: &Path) {
     std::os::unix::fs::symlink(target, link).unwrap();
@@ -2060,7 +2059,7 @@ async fn preserves_overlong_short_descriptions() {
     let codex_home = tempfile::tempdir().expect("tempdir");
     let skill_dir = codex_home.path().join("skills/demo");
     fs::create_dir_all(&skill_dir).unwrap();
-    let too_long = "x".repeat(MAX_SHORT_DESCRIPTION_LEN + 1);
+    let too_long = "x".repeat(MAX_DESCRIPTION_LEN + 1);
     let contents = format!(
         "---\nname: demo-skill\ndescription: long description\nmetadata:\n  short-description: {too_long}\n---\n\n# Body\n"
     );
