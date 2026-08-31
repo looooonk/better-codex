@@ -22,6 +22,7 @@ use super::rollout_file_name::RolloutFileName;
 use crate::protocol::EventMsg;
 use crate::state_db;
 use codex_file_search as file_search;
+use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
 use codex_protocol::items::TurnItem;
 use codex_history::RolloutItem;
@@ -1404,7 +1405,7 @@ async fn find_thread_path_by_id_str_in_subdir(
     if !root.exists() {
         return Ok(unverified_db_path);
     }
-    let (filename_match, filename_scan_error) = match find_rollout_path_by_id_from_filenames(
+    let (filename_match, filename_scan_error) = match find_thread_path_by_id_from_filenames(
         root.as_path(),
         id_str,
     )
@@ -1479,13 +1480,42 @@ async fn find_thread_path_by_id_str_in_subdir(
     Ok(found.or(unverified_db_path))
 }
 
-async fn find_rollout_path_by_id_from_filenames(
+async fn find_thread_path_by_id_from_filenames(
     root: &Path,
     id_str: &str,
 ) -> io::Result<Option<PathBuf>> {
-    let Ok(target) = Uuid::parse_str(id_str) else {
+    let Ok(target) = ThreadId::from_string(id_str) else {
         return Ok(None);
     };
+    let mut newest: Option<(OffsetDateTime, Uuid, PathBuf)> = None;
+    let _ = visit_rollout_filenames::<()>(root, |file_name, path| {
+        if file_name.thread_id() != target {
+            return ControlFlow::Continue(());
+        }
+        let Ok(rollout_id) = Uuid::parse_str(&file_name.rollout_id().to_string()) else {
+            return ControlFlow::Continue(());
+        };
+        let candidate = (file_name.timestamp(), rollout_id, path);
+        let replace = newest.as_ref().is_none_or(|(timestamp, id, path)| {
+            candidate.0 > *timestamp
+                || (candidate.0 == *timestamp
+                    && (candidate.1 > *id
+                        || (candidate.1 == *id
+                            && candidate.2.as_path() > path.as_path())))
+        });
+        if replace {
+            newest = Some(candidate);
+        }
+        ControlFlow::Continue(())
+    })
+    .await?;
+    Ok(newest.map(|(_timestamp, _id, path)| path))
+}
+
+async fn visit_rollout_filenames<T>(
+    root: &Path,
+    mut visitor: impl FnMut(RolloutFileName, PathBuf) -> ControlFlow<T>,
+) -> io::Result<Option<T>> {
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
         let mut read_dir = match tokio::fs::read_dir(dir.as_path()).await {
@@ -1506,22 +1536,43 @@ async fn find_rollout_path_by_id_from_filenames(
             let Some(rollout_file) = compression::RolloutFile::from_path(path) else {
                 continue;
             };
-            let Some((_ts, id)) =
-                parse_timestamp_uuid_from_filename(rollout_file.plain_file_name())
-            else {
+            let Some(file_name) = RolloutFileName::parse(rollout_file.plain_file_name()) else {
                 continue;
             };
-            if id == target {
-                return Ok(Some(rollout_file.into_path()));
+            if let ControlFlow::Break(found) = visitor(file_name, rollout_file.into_path()) {
+                return Ok(Some(found));
             }
         }
     }
     Ok(None)
 }
 
-/// Locate a recorded thread rollout file by its UUID string using the existing
-/// paginated listing implementation. Returns `Ok(Some(path))` if found, `Ok(None)` if not present
-/// or the id is invalid.
+async fn find_rollout_path_by_rollout_id_from_filenames(
+    root: &Path,
+    rollout_id: RolloutId,
+) -> io::Result<Option<PathBuf>> {
+    let mut newest: Option<(OffsetDateTime, PathBuf)> = None;
+    let _ = visit_rollout_filenames::<()>(root, |file_name, path| {
+        if file_name.rollout_id() != rollout_id {
+            return ControlFlow::Continue(());
+        }
+        let candidate = (file_name.timestamp(), path);
+        if newest.as_ref().is_none_or(|(timestamp, path)| {
+            candidate.0 > *timestamp
+                || (candidate.0 == *timestamp && candidate.1.as_path() > path.as_path())
+        }) {
+            newest = Some(candidate);
+        }
+        ControlFlow::Continue(())
+    })
+    .await?;
+    Ok(newest.map(|(_timestamp, path)| path))
+}
+
+/// Locates the newest active rollout owned by a thread ID.
+///
+/// SQLite remains authoritative when it has a verified selected path. Filesystem fallback chooses
+/// the newest canonical filename and uses the rollout ID and path as deterministic tie-breakers.
 pub async fn find_thread_path_by_id_str(
     codex_home: &Path,
     id_str: &str,
@@ -1530,7 +1581,7 @@ pub async fn find_thread_path_by_id_str(
     find_thread_path_by_id_str_in_subdir(codex_home, SESSIONS_SUBDIR, id_str, state_db_ctx).await
 }
 
-/// Locate an archived thread rollout file by its UUID string.
+/// Locates the newest archived rollout owned by a thread ID.
 pub async fn find_archived_thread_path_by_id_str(
     codex_home: &Path,
     id_str: &str,
@@ -1538,6 +1589,26 @@ pub async fn find_archived_thread_path_by_id_str(
 ) -> io::Result<Option<PathBuf>> {
     find_thread_path_by_id_str_in_subdir(codex_home, ARCHIVED_SESSIONS_SUBDIR, id_str, state_db_ctx)
         .await
+}
+
+/// Locates one immutable rollout by its exact rollout ID.
+///
+/// Active storage takes precedence over archived storage when both contain the same rollout ID.
+pub async fn find_rollout_path_by_rollout_id(
+    codex_home: &Path,
+    rollout_id: RolloutId,
+) -> io::Result<Option<PathBuf>> {
+    for subdir in [SESSIONS_SUBDIR, ARCHIVED_SESSIONS_SUBDIR] {
+        let path = find_rollout_path_by_rollout_id_from_filenames(
+            codex_home.join(subdir).as_path(),
+            rollout_id,
+        )
+        .await?;
+        if path.is_some() {
+            return Ok(path);
+        }
+    }
+    Ok(None)
 }
 
 /// Extract the `YYYY/MM/DD` directory components from a rollout filename.

@@ -19,6 +19,7 @@ use time::macros::format_description;
 use uuid::Uuid;
 
 use crate::INTERACTIVE_SESSION_SOURCES;
+use crate::find_rollout_path_by_rollout_id;
 use crate::find_thread_path_by_id_str;
 use crate::list::Cursor;
 use crate::list::ThreadItem;
@@ -127,6 +128,81 @@ async fn find_thread_path_falls_back_when_db_path_is_stale() {
         .expect("lookup should succeed");
     assert_eq!(found, Some(fs_rollout_path.clone()));
     assert_state_db_rollout_path(home, thread_id, Some(fs_rollout_path.as_path())).await;
+}
+
+#[tokio::test]
+async fn filesystem_lookup_distinguishes_thread_and_rollout_ids() {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path();
+    let thread_uuid = Uuid::from_u128(401);
+    let replacement_uuid = Uuid::from_u128(402);
+    let original_ts = "2025-01-03T13-00-00";
+    let replacement_ts = "2025-01-04T13-00-00";
+    write_session_file(
+        home,
+        original_ts,
+        thread_uuid,
+        /*num_records*/ 1,
+        Some(SessionSource::Cli),
+    )
+    .unwrap();
+    write_session_file(
+        home,
+        replacement_ts,
+        thread_uuid,
+        /*num_records*/ 1,
+        Some(SessionSource::Cli),
+    )
+    .unwrap();
+
+    let original_source = home.join(format!(
+        "sessions/2025/01/03/rollout-{original_ts}-{thread_uuid}.jsonl"
+    ));
+    let original_path = home.join(format!(
+        "archived_sessions/2025/01/03/rollout-{original_ts}-{thread_uuid}.jsonl"
+    ));
+    fs::create_dir_all(original_path.parent().expect("archive parent")).unwrap();
+    fs::rename(original_source, original_path.as_path()).unwrap();
+    let replacement_source = home.join(format!(
+        "sessions/2025/01/04/rollout-{replacement_ts}-{thread_uuid}.jsonl"
+    ));
+    let replacement_path = home.join(format!(
+        "sessions/2025/01/04/rollout-{replacement_ts}-{thread_uuid}_{replacement_uuid}.jsonl"
+    ));
+    fs::rename(replacement_source, replacement_path.as_path()).unwrap();
+    let archived_replacement_path = home.join(format!(
+        "archived_sessions/2025/01/04/rollout-{replacement_ts}-{thread_uuid}_{replacement_uuid}.jsonl"
+    ));
+    fs::create_dir_all(
+        archived_replacement_path
+            .parent()
+            .expect("archive parent"),
+    )
+    .unwrap();
+    fs::copy(
+        replacement_path.as_path(),
+        archived_replacement_path.as_path(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        find_thread_path_by_id_str(home, &thread_uuid.to_string(), /*state_db_ctx*/ None)
+            .await
+            .unwrap(),
+        Some(replacement_path.clone())
+    );
+    assert_eq!(
+        find_rollout_path_by_rollout_id(home, thread_id_from_uuid(thread_uuid))
+            .await
+            .unwrap(),
+        Some(original_path)
+    );
+    assert_eq!(
+        find_rollout_path_by_rollout_id(home, thread_id_from_uuid(replacement_uuid))
+            .await
+            .unwrap(),
+        Some(replacement_path)
+    );
 }
 
 #[tokio::test]
