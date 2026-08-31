@@ -44,8 +44,10 @@ mod peer;
 
 const MAX_IN_FLIGHT_REQUESTS: usize = 256;
 const MAX_ACTIVE_CELLS: usize = 128;
+const MAX_PENDING_DELEGATE_CALLS: usize = 256;
 const MAX_RECENT_REQUEST_IDS: usize = 4096;
 const MAX_RECENT_SESSION_IDS: usize = 4096;
+const OUTGOING_CHANNEL_CAPACITY: usize = 128;
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Runs one code-mode host connection over the process standard streams.
@@ -65,7 +67,8 @@ where
         return Ok(());
     }
 
-    let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<EncodedFrame>(/*max_capacity*/ 128);
+    let (outgoing_tx, mut outgoing_rx) =
+        mpsc::channel::<EncodedFrame>(OUTGOING_CHANNEL_CAPACITY);
     let peer = Arc::new(HostPeer::new(outgoing_tx));
     let state = Arc::new(HostState {
         sessions: Mutex::new(HashMap::new()),
