@@ -866,9 +866,12 @@ async fn cached_catalog_is_superseded_only_after_live_startup_revision_publishes
     release.notify_one();
     tokio::task::yield_now().await;
     assert!(
-        manager
-            .model_visible_tool_info(CODEX_APPS_MCP_SERVER_NAME, "cached_search")
+        tokio::time::timeout(
+            Duration::from_millis(10),
+            manager.model_visible_tool_info(CODEX_APPS_MCP_SERVER_NAME, "cached_search"),
+        )
             .await
+            .expect("dispatch lookup must not wait for startup publication")
             .is_none()
     );
     drop(old_revision);
@@ -2069,9 +2072,14 @@ async fn model_catalog_uses_live_tools_instead_of_shared_cached_tools() {
             .list_all_tools()
             .await
             .into_iter()
-            .map(|tool| tool.tool.name.to_string())
+            .map(|tool| {
+                (
+                    tool.tool.name.to_string(),
+                    tool_is_model_visible(&tool),
+                )
+            })
             .collect::<Vec<_>>(),
-        Vec::<String>::new()
+        vec![("search".to_string(), false)]
     );
     assert!(
         manager

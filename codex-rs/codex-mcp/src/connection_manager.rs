@@ -661,6 +661,9 @@ impl McpConnectionManager {
                 self.shared_tool_catalog(server_name)
             };
             let server_tools = async {
+                if catalog_override.is_some() {
+                    managed_client.reconnect_failed_startup().await;
+                }
                 match catalog_override {
                     Some(tools) => Some(managed_client.prepare_tools(filter_tools(
                         tools,
@@ -716,22 +719,27 @@ impl McpConnectionManager {
 
     /// Returns a model-visible tool from the current live connection.
     pub async fn model_visible_tool_info(&self, server: &str, tool: &str) -> Option<ToolInfo> {
-        let client = self.clients.get(server)?;
-        if !client.startup_complete.load(Ordering::Acquire) {
+        let target_client = self.clients.get(server)?;
+        if !target_client.startup_complete.load(Ordering::Acquire) {
             return None;
         }
-        let managed_client = client.client().await.ok()?;
-        let tools = if server == CODEX_APPS_MCP_SERVER_NAME {
-            self.codex_apps_tools_override()
-                .unwrap_or(managed_client.tools)
-        } else {
-            managed_client.tools
-        };
-        let tool = client
-            .prepare_tools(filter_tools(tools, &client.tool_filter))
+        let target_managed_client = target_client.client_if_ready()?;
+        normalize_tools_for_model_with_prefix(
+            target_client
+                .prepare_tools(filter_tools(
+                    target_managed_client.tools,
+                    &target_client.tool_filter,
+                ))
+                .into_iter()
+                .map(|tool| self.with_server_metadata(tool)),
+            self.prefix_mcp_tool_names,
+        )
             .into_iter()
-            .find(|tool_info| tool_info.tool.name == tool && tool_is_model_visible(tool_info))?;
-        Some(self.with_server_metadata(tool))
+            .find(|tool_info| {
+                tool_info.server_name == server
+                    && tool_info.tool.name == tool
+                    && tool_is_model_visible(tool_info)
+            })
     }
 
     /// Force-refresh codex apps tools by bypassing the in-process cache.
