@@ -196,6 +196,66 @@ async fn skills_for_config_reuses_cache_for_same_effective_config() {
 }
 
 #[tokio::test]
+async fn skills_for_config_refreshes_when_plugin_snapshot_identity_changes() {
+    let codex_home = tempfile::tempdir().expect("tempdir");
+    let cwd = tempfile::tempdir().expect("tempdir");
+    let skill_path = write_plugin_skill(
+        &codex_home,
+        "test",
+        "sample",
+        "sample-search",
+        "sample-search",
+        "original description",
+    );
+    let config_layer_stack = config_stack(&codex_home, "");
+    let plugin_root = plugin_skill_root_for_skill_path(&skill_path, "sample@test", "sample");
+    let skills_service = HostSkillsService::new(
+        codex_home.path().abs(),
+        /*bundled_skills_enabled*/ true,
+    );
+
+    let input = HostSkillsLoadInput::new(
+        cwd.path().abs(),
+        vec![plugin_root.clone()],
+        config_layer_stack.clone(),
+        bundled_skills_enabled_from_stack(&config_layer_stack),
+    )
+    .with_plugin_skill_snapshots(Some(PluginSkillSnapshots::for_plugin_load()));
+    let original = skills_service
+        .snapshot_for_config(&input, Some(Arc::clone(&LOCAL_FS)))
+        .await;
+
+    fs::write(
+        &skill_path,
+        "---\nname: sample-search\ndescription: updated description\n---\n\n# Body\n",
+    )
+    .expect("update plugin skill");
+    let refreshed_input = input
+        .clone()
+        .with_plugin_skill_snapshots(Some(PluginSkillSnapshots::for_plugin_load()));
+    let refreshed = skills_service
+        .snapshot_for_config(&refreshed_input, Some(Arc::clone(&LOCAL_FS)))
+        .await;
+
+    let original_description = original
+        .outcome()
+        .skills
+        .iter()
+        .find(|skill| skill.name == "sample:sample-search")
+        .map(|skill| skill.description.as_str());
+    let refreshed_description = refreshed
+        .outcome()
+        .skills
+        .iter()
+        .find(|skill| skill.name == "sample:sample-search")
+        .map(|skill| skill.description.as_str());
+    assert_eq!(
+        (original_description, refreshed_description),
+        (Some("original description"), Some("updated description"))
+    );
+}
+
+#[tokio::test]
 async fn set_extra_roots_replaces_runtime_roots_and_clears_cache() {
     let codex_home = tempfile::tempdir().expect("tempdir");
     let cwd = tempfile::tempdir().expect("tempdir");
@@ -431,6 +491,12 @@ async fn skills_for_cwd_loads_repo_and_user_roots_with_local_fs() {
         .collect::<HashSet<_>>();
     assert!(loaded_names.contains("user-skill"));
     assert!(loaded_names.contains("repo-skill"));
+    let other_file_system: Arc<dyn codex_exec_server::ExecutorFileSystem> =
+        Arc::new(codex_exec_server::LocalFileSystem::unsandboxed());
+    let other_snapshot = skills_service
+        .snapshot_for_config(&skills_input, Some(other_file_system))
+        .await;
+    assert!(!std::ptr::eq(snapshot.outcome(), other_snapshot.outcome()));
 }
 
 #[tokio::test]
