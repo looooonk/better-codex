@@ -39,6 +39,7 @@ use self::delegate::RemoteDelegate;
 use self::peer::HostPeer;
 
 mod delegate;
+mod grpc;
 mod peer;
 
 const MAX_IN_FLIGHT_REQUESTS: usize = 256;
