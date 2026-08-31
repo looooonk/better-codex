@@ -157,7 +157,24 @@ async fn locate_rollout_paths(
 
     for thread_id in thread_ids {
         let thread_id_str = thread_id.to_string();
-        let mut thread_paths = Vec::new();
+        let mut thread_paths = codex_rollout::find_thread_paths_by_id(
+            store.config.codex_home.as_path(),
+            *thread_id,
+        )
+        .await
+        .map_err(|err| ThreadStoreError::InvalidRequest {
+            message: format!("failed to locate thread id {thread_id}: {err}"),
+        })?;
+        thread_paths.extend(
+            codex_rollout::find_archived_thread_paths_by_id(
+                store.config.codex_home.as_path(),
+                *thread_id,
+            )
+            .await
+            .map_err(|err| ThreadStoreError::InvalidRequest {
+                message: format!("failed to locate archived thread id {thread_id}: {err}"),
+            })?,
+        );
         match find_thread_path_by_id_str(
             store.config.codex_home.as_path(),
             thread_id_str.as_str(),
@@ -165,7 +182,8 @@ async fn locate_rollout_paths(
         )
         .await
         {
-            Ok(Some(path)) => thread_paths.push(path),
+            Ok(Some(path)) if !thread_paths.contains(&path) => thread_paths.push(path),
+            Ok(Some(_)) => {}
             Ok(None) => {}
             Err(err) => {
                 return Err(ThreadStoreError::InvalidRequest {
@@ -188,6 +206,8 @@ async fn locate_rollout_paths(
                 });
             }
         }
+        thread_paths.sort();
+        thread_paths.dedup();
         if !thread_paths.is_empty() {
             found_thread_ids.push(*thread_id);
         }
@@ -211,6 +231,8 @@ fn stage_rollouts(
             ));
         }
     }
+    candidates.sort_by(|(left, _), (right, _)| left.cmp(right));
+    candidates.dedup_by(|(left, _), (right, _)| left == right);
     if candidates.is_empty() {
         return Ok(StagedRollouts {
             staging_dir: None,
@@ -538,7 +560,7 @@ mod tests {
         let rollout_path = ordinary_path.with_file_name(format!(
             "rollout-2025-01-03T12-00-00-{thread_id}_{rollout_id}.jsonl"
         ));
-        std::fs::rename(ordinary_path, rollout_path).expect("replacement rollout");
+        std::fs::copy(&ordinary_path, &rollout_path).expect("replacement rollout");
         let pool = codex_state::open_thread_history_db(home.path())
             .await
             .expect("open thread history db");
@@ -569,6 +591,9 @@ mod tests {
             .delete_thread(DeleteThreadParams { thread_id })
             .await
             .expect("delete thread");
+
+        assert!(!ordinary_path.exists());
+        assert!(!rollout_path.exists());
 
         let counts = sqlx::query_as::<_, (i64, i64, i64)>(
             r#"
