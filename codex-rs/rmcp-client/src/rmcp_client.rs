@@ -43,6 +43,7 @@ use rmcp::model::ReadResourceResult;
 use rmcp::model::RequestId;
 use rmcp::model::RequestMetaObject;
 use rmcp::model::RequestParamsMeta;
+use rmcp::model::ResultType;
 use rmcp::model::ServerPeerInfo;
 use rmcp::model::ServerResult;
 use rmcp::model::Tool;
@@ -753,7 +754,14 @@ impl RmcpClient {
                         .await_response()
                         .await?;
                     match result {
-                        ServerResult::CallToolResult(result) => Ok(result),
+                        ServerResult::CallToolResult(result)
+                            if !result
+                                .result_type
+                                .as_ref()
+                                .is_some_and(ResultType::is_input_required) =>
+                        {
+                            Ok(result)
+                        }
                         _ => Err(rmcp::service::ServiceError::UnexpectedResponse),
                     }
                 }
