@@ -1066,7 +1066,7 @@ async fn list_threads_db_disabled_does_not_skip_paginated_items() -> std::io::Re
 }
 
 #[tokio::test]
-async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Result<()> {
+async fn list_threads_db_enabled_omits_missing_selected_path() -> std::io::Result<()> {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
 
@@ -1092,7 +1092,7 @@ async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Resul
         .expect("valid datetime");
     let mut builder = codex_state::ThreadMetadataBuilder::new(
         thread_id,
-        stale_path,
+        stale_path.clone(),
         created_at,
         SessionSource::Cli,
     );
@@ -1126,18 +1126,18 @@ async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Resul
         .find_rollout_path_by_id(thread_id, Some(false))
         .await
         .expect("state db lookup should succeed");
-    assert_eq!(stored_path, None);
+    assert_eq!(stored_path, Some(stale_path));
     Ok(())
 }
 
 #[tokio::test]
-async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Result<()> {
+async fn list_threads_db_enabled_preserves_selected_rollout_path() -> std::io::Result<()> {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
 
     let uuid = Uuid::from_u128(9011);
     let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
-    let real_path = write_session_file(home.path(), "2025-01-03T13-00-00", uuid)?;
+    let _real_path = write_session_file(home.path(), "2025-01-03T13-00-00", uuid)?;
     let stale_path = home.path().join(format!(
         "sessions/2099/01/01/rollout-2099-01-01T00-00-00-{uuid}.jsonl"
     ));
@@ -1158,7 +1158,7 @@ async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Resul
         .expect("valid datetime");
     let mut builder = codex_state::ThreadMetadataBuilder::new(
         thread_id,
-        stale_path,
+        stale_path.clone(),
         created_at,
         SessionSource::Cli,
     );
@@ -1187,14 +1187,13 @@ async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Resul
         /*search_term*/ None,
     )
     .await?;
-    assert_eq!(page.items.len(), 1);
-    assert_eq!(page.items[0].path, real_path);
+    assert_eq!(page.items.len(), 0);
 
-    let repaired_path = runtime
+    let selected_path = runtime
         .find_rollout_path_by_id(thread_id, Some(false))
         .await
         .expect("state db lookup should succeed");
-    assert_eq!(repaired_path, Some(real_path));
+    assert_eq!(selected_path, Some(stale_path));
     Ok(())
 }
 

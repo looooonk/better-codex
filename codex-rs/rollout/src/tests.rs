@@ -127,7 +127,7 @@ async fn find_thread_path_falls_back_when_db_path_is_stale() {
         .await
         .expect("lookup should succeed");
     assert_eq!(found, Some(fs_rollout_path.clone()));
-    assert_state_db_rollout_path(home, thread_id, Some(fs_rollout_path.as_path())).await;
+    assert_state_db_rollout_path(home, thread_id, Some(stale_db_path.as_path())).await;
 }
 
 #[tokio::test]
@@ -282,7 +282,7 @@ async fn find_thread_path_falls_back_when_db_path_points_to_another_thread() {
         .await
         .expect("lookup should succeed");
     assert_eq!(found, Some(fs_rollout_path.clone()));
-    assert_state_db_rollout_path(home, thread_id, Some(fs_rollout_path.as_path())).await;
+    assert_state_db_rollout_path(home, thread_id, Some(stale_db_path.as_path())).await;
 }
 
 #[tokio::test]
