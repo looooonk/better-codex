@@ -18,11 +18,13 @@ use rmcp::model::ServerJsonRpcMessage;
 use rmcp::transport::common::http_header::HEADER_MCP_PROTOCOL_VERSION;
 use sse_stream::Sse;
 
+use super::HttpHeader;
 use super::NON_JSON_RESPONSE_BODY_PREVIEW_BYTES;
 use super::SseEventSizeLimit;
 use super::body_preview;
 use super::mcp_redirect_policy;
 use super::next_correlated_discovery_response;
+use super::protocol_headers;
 use crate::http_discovery::correlated_discovery_response;
 
 fn discovery_request(id: &str) -> ClientJsonRpcMessage {
@@ -214,5 +216,22 @@ fn legacy_sse_streams_remain_unlimited() {
             limit.failed,
         ),
         (0, 0, false, false, false)
+    );
+}
+
+#[test]
+fn protocol_headers_preserve_utf8_values() {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "x-plugin-name",
+        HeaderValue::from_str("café").expect("valid HTTP field value"),
+    );
+
+    assert_eq!(
+        protocol_headers(&headers),
+        vec![HttpHeader {
+            name: "x-plugin-name".to_string(),
+            value: "café".to_string(),
+        }]
     );
 }

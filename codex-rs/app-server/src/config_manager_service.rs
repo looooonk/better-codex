@@ -669,9 +669,9 @@ fn compute_override_metadata(
     effective: &TomlValue,
     segments: &[String],
 ) -> Option<OverriddenMetadata> {
-    let user_value = match layers.get_active_user_layer() {
-        Some(user_layer) => value_at_path(&user_layer.config, segments),
-        None => return None,
+    let user_value = {
+        let user_layer = layers.get_active_user_layer()?;
+        value_at_path(&user_layer.config, segments)
     };
     let effective_value = value_at_path(effective, segments);
 

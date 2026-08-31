@@ -56,6 +56,7 @@ where
                 plugin_id,
                 plugin_namespace,
                 plugin_root,
+                discovery_mode: root.discovery_mode,
             }),
             _ => None,
         };

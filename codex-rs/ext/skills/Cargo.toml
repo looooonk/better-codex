@@ -31,5 +31,6 @@ url = { workspace = true }
 
 [dev-dependencies]
 codex-utils-absolute-path = { workspace = true }
+codex-utils-plugins = { workspace = true }
 pretty_assertions = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

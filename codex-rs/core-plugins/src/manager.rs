@@ -10,7 +10,7 @@ use crate::loader::load_plugin_apps_from_manifest;
 use crate::loader::load_plugin_hooks;
 use crate::loader::load_plugin_hooks_from_layer_stack;
 use crate::loader::load_plugin_mcp_servers_from_manifest;
-use crate::loader::load_plugin_skills;
+use crate::loader::load_plugin_skills_with_discovery_mode;
 use crate::loader::load_plugins_from_layer_stack;
 use crate::loader::log_plugin_load_errors;
 use crate::loader::materialize_marketplace_plugin_source;
@@ -19,8 +19,10 @@ use crate::loader::refresh_curated_plugin_cache;
 use crate::loader::refresh_non_curated_plugin_cache_detailed;
 use crate::loader::refresh_non_curated_plugin_cache_force_reinstall_detailed;
 use crate::loader::remote_installed_plugins_to_config;
+use crate::manifest::PluginManifestFormat;
 use crate::manifest::PluginManifestInterface;
 use crate::manifest::load_plugin_manifest;
+use crate::manifest::load_plugin_manifest_with_format;
 use crate::marketplace::MarketplaceError;
 use crate::marketplace::MarketplaceInterface;
 use crate::marketplace::MarketplaceListError;
@@ -491,6 +493,15 @@ impl PluginsManager {
         }
     }
 
+    pub fn plugin_data_root_for_source(
+        &self,
+        plugin_id: &PluginId,
+        plugin_root: &Path,
+    ) -> AbsolutePathBuf {
+        self.store
+            .plugin_data_root_for_source(plugin_id, plugin_root)
+    }
+
     fn remote_global_catalog_active(&self, config: &PluginsConfigInput) -> bool {
         config.remote_plugin_enabled && self.auth_mode().is_some_and(AuthMode::uses_codex_backend)
     }
@@ -790,7 +801,13 @@ impl PluginsManager {
     ) -> PluginTelemetryMetadata {
         let mut metadata = self.telemetry_metadata_for_plugin_id(plugin_id);
         metadata.capability_summary = match self.store.active_plugin_root(plugin_id) {
-            Some(plugin_root) => plugin_capability_summary_from_root(plugin_id, &plugin_root).await,
+            Some(plugin_root) => {
+                let plugin_data_root = self
+                    .store
+                    .plugin_data_root_for_source(plugin_id, plugin_root.as_path());
+                plugin_capability_summary_from_root(plugin_id, &plugin_root, &plugin_data_root)
+                    .await
+            }
             None => None,
         };
         metadata
@@ -804,7 +821,13 @@ impl PluginsManager {
         let mut metadata =
             self.telemetry_metadata_for_plugin_id_with_remote_id(plugin_id, remote_plugin_id);
         metadata.capability_summary = match self.store.active_plugin_root(plugin_id) {
-            Some(plugin_root) => plugin_capability_summary_from_root(plugin_id, &plugin_root).await,
+            Some(plugin_root) => {
+                let plugin_data_root = self
+                    .store
+                    .plugin_data_root_for_source(plugin_id, plugin_root.as_path());
+                plugin_capability_summary_from_root(plugin_id, &plugin_root, &plugin_data_root)
+                    .await
+            }
             None => None,
         };
         metadata
@@ -1859,14 +1882,16 @@ impl PluginsManager {
                 "path does not exist or is not a directory".to_string(),
             ));
         }
-        let manifest =
+        let (manifest, manifest_format) =
             if codex_utils_plugins::find_plugin_manifest_path(source_path.as_path()).is_some() {
-                load_plugin_manifest(source_path.as_path())
+                load_plugin_manifest_with_format(source_path.as_path())
+                    .map(|loaded| (loaded.manifest, loaded.format))
             } else {
                 plugin
                     .manifest_fallback
                     .as_ref()
                     .and_then(|fallback| fallback.parse_for_plugin_root(source_path.as_path()))
+                    .map(|manifest| (manifest, PluginManifestFormat::Legacy))
             }
             .ok_or_else(|| {
                 MarketplaceError::InvalidPlugin("missing or invalid plugin.json".to_string())
@@ -1880,7 +1905,7 @@ impl PluginsManager {
             manifest.interface.clone(),
             marketplace_category,
         );
-        let resolved_skills = load_plugin_skills(
+        let resolved_skills = load_plugin_skills_with_discovery_mode(
             &source_path,
             &plugin_id,
             &manifest,
@@ -1889,9 +1914,12 @@ impl PluginsManager {
                 &config.config_layer_stack,
             ),
             /*plugin_skill_snapshots*/ None,
+            manifest_format.skill_discovery_mode(),
         )
         .await;
-        let plugin_data_root = self.store.plugin_data_root(&plugin_id);
+        let plugin_data_root = self
+            .store
+            .plugin_data_root_for_source(&plugin_id, source_path.as_path());
         let (hook_sources, _hook_load_warnings) =
             load_plugin_hooks(&source_path, &plugin_id, &plugin_data_root, &manifest.paths);
         let hooks = plugin_hook_declarations(&hook_sources)
@@ -1906,8 +1934,10 @@ impl PluginsManager {
             load_plugin_apps_from_manifest(source_path.as_path(), &manifest.paths).await;
         let mut mcp_servers = load_plugin_mcp_servers_from_manifest(
             source_path.as_path(),
+            plugin_data_root.as_path(),
             &manifest.paths,
             /*plugin_policy*/ None,
+            manifest_format,
         )
         .await;
         if auth_mode.is_some() {
