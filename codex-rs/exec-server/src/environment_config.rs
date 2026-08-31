@@ -11,6 +11,10 @@ use codex_file_system::ExecutorFileSystem;
 use codex_utils_home_dir::find_codex_home;
 use codex_utils_path_uri::PathUri;
 
+#[cfg(test)]
+#[path = "environment_config_tests.rs"]
+mod tests;
+
 const MAX_ENVIRONMENT_CONFIG_SELECTORS: usize = 64;
 const MAX_ENVIRONMENT_CONFIG_SELECTOR_COMPONENTS: usize = 32;
 const MAX_ENVIRONMENT_CONFIG_SELECTOR_BYTES: usize = 64 * 1024;
