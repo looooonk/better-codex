@@ -118,6 +118,7 @@ where
                     SkillListQuery {
                         turn_id: thread_store.level_id().to_string(),
                         executor_roots: Vec::new(),
+                        resolved_executor_roots: Vec::new(),
                         host_snapshot: None,
                         include_host_skills: false,
                         include_bundled_skills: config.bundled_skills_enabled,
@@ -156,6 +157,7 @@ where
                     SkillListQuery {
                         turn_id: input.turn_id.to_string(),
                         executor_roots: input.ready_selected_capability_roots.to_vec(),
+                        resolved_executor_roots: Vec::new(),
                         host_snapshot: None,
                         include_host_skills: false,
                         include_bundled_skills: config.bundled_skills_enabled,
@@ -246,6 +248,7 @@ where
             let query = SkillListQuery {
                 turn_id: input.turn_id.clone(),
                 executor_roots: Vec::new(),
+                resolved_executor_roots: Vec::new(),
                 host_snapshot: host_snapshot.clone(),
                 include_host_skills: !host_catalog_in_world_state,
                 include_bundled_skills: config.bundled_skills_enabled,
@@ -400,6 +403,8 @@ impl<C> SkillsExtension<C> {
                     authority: entry.authority.clone(),
                     package: entry.id.clone(),
                     resource: entry.main_prompt.clone(),
+                    resolved_executor_roots: Vec::new(),
+                    sandbox: None,
                     host_snapshot,
                     mcp_resources: session_store.get::<McpResourceClient>(),
                 },

@@ -63,16 +63,23 @@ impl ToolExecutor<ToolCall> for ReadTool {
             validate_handle("resource", &args.resource, MAX_HANDLE_BYTES)?;
 
             let catalog = self.context.catalog(&call.turn_id, args.authority).await;
-            let package_is_available = catalog.entries.iter().any(|entry| {
+            let Some(skill_entry) = catalog.entries.iter().find(|entry| {
                 entry.enabled && entry.authority == authority && entry.id.0 == args.package
-            });
-            if !package_is_available {
+            }) else {
                 return Err(FunctionCallError::RespondToModel(
                     "skill package is not available from the requested authority".to_string(),
                 ));
-            }
+            };
 
-            let requested_resource = SkillResourceId::new(args.resource);
+            let package = SkillPackageId(args.package);
+            let requested_resource = if args.resource == skill_entry.main_prompt.as_str() {
+                skill_entry.main_prompt.clone()
+            } else {
+                skill_entry
+                    .main_prompt
+                    .bind_environment_package_resource(&package, args.resource.clone())
+                    .unwrap_or_else(|| SkillResourceId::new(args.resource))
+            };
             let result = self
                 .context
                 .thread_state
@@ -80,8 +87,10 @@ impl ToolExecutor<ToolCall> for ReadTool {
                     &self.context.providers,
                     SkillReadRequest {
                         authority,
-                        package: SkillPackageId(args.package),
+                        package,
                         resource: requested_resource.clone(),
+                        resolved_executor_roots: Vec::new(),
+                        sandbox: None,
                         host_snapshot: None,
                         mcp_resources: self.context.mcp_resources.clone(),
                     },
