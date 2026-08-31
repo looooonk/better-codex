@@ -12,6 +12,7 @@ use codex_extension_api::ExtensionRegistryBuilder;
 use codex_extension_api::ThreadLifecycleContributor;
 use codex_extension_api::ThreadStartInput;
 use codex_protocol::protocol::GuardianAssessmentOutcome;
+use tokio::sync::Mutex;
 
 use crate::GuardianEvidenceEntry;
 use crate::GuardianReviewAction;
@@ -31,9 +32,42 @@ pub struct GuardianV2ThreadConfigInput<'a, C> {
     pub originator: &'a str,
 }
 
-enum GuardianV2ThreadState {
-    Ready(Arc<GuardianReviewClient>),
-    Unavailable,
+struct GuardianV2ThreadState {
+    config: LunaSamplerConfig,
+    client: Mutex<Option<Arc<GuardianReviewClient>>>,
+}
+
+impl GuardianV2ThreadState {
+    async fn new(config: LunaSamplerConfig) -> Self {
+        let client = match connect_client(config.clone()).await {
+            Ok(client) => Some(client),
+            Err(error) => {
+                tracing::warn!(%error, "Guardian V2 sampler is initially unavailable");
+                None
+            }
+        };
+        Self {
+            config,
+            client: Mutex::new(client),
+        }
+    }
+
+    async fn client(&self) -> Result<Arc<GuardianReviewClient>, crate::LunaSamplerError> {
+        let mut client = self.client.lock().await;
+        if let Some(client) = client.as_ref() {
+            return Ok(Arc::clone(client));
+        }
+        let connected = connect_client(self.config.clone()).await?;
+        *client = Some(Arc::clone(&connected));
+        Ok(connected)
+    }
+}
+
+async fn connect_client(
+    config: LunaSamplerConfig,
+) -> Result<Arc<GuardianReviewClient>, crate::LunaSamplerError> {
+    let sampler = LunaSampler::connect(config).await?;
+    Ok(Arc::new(GuardianReviewClient::new(Arc::new(sampler))))
 }
 
 struct GuardianV2Extension<C, F> {
@@ -69,15 +103,7 @@ where
             }) else {
                 return;
             };
-            let state = match LunaSampler::connect(config).await {
-                Ok(sampler) => GuardianV2ThreadState::Ready(Arc::new(GuardianReviewClient::new(
-                    Arc::new(sampler),
-                ))),
-                Err(error) => {
-                    tracing::warn!(%error, "Guardian V2 sampler is unavailable");
-                    GuardianV2ThreadState::Unavailable
-                }
-            };
+            let state = GuardianV2ThreadState::new(config).await;
             input.thread_store.insert(state);
         })
     }
@@ -101,10 +127,14 @@ where
             let Some(state) = thread_store.get::<GuardianV2ThreadState>() else {
                 return ApprovalReviewResult::ManualReview(ApprovalReviewFailure::NotInstalled);
             };
-            let GuardianV2ThreadState::Ready(client) = state.as_ref() else {
-                return ApprovalReviewResult::ManualReview(
-                    ApprovalReviewFailure::SamplerUnavailable,
-                );
+            let client = match state.client().await {
+                Ok(client) => client,
+                Err(error) => {
+                    tracing::warn!(%error, "Guardian V2 sampler remains unavailable");
+                    return ApprovalReviewResult::ManualReview(
+                        ApprovalReviewFailure::SamplerUnavailable,
+                    );
+                }
             };
             let ApprovalReviewInput {
                 binding,
@@ -195,3 +225,7 @@ where
     registry.thread_lifecycle_contributor(extension.clone());
     registry.approval_review_contributor(extension);
 }
+
+#[cfg(test)]
+#[path = "extension_tests.rs"]
+mod tests;

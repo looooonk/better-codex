@@ -13,6 +13,7 @@ use codex_api::ResponsesWsRequest;
 use codex_api::build_session_headers;
 use codex_http_client::HttpClientFactory;
 use codex_login::AgentIdentityAuthPolicy;
+use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::default_client::default_headers;
 use codex_model_provider::AgentIdentitySessionFallback;
@@ -26,6 +27,7 @@ use http::HeaderValue;
 use thiserror::Error;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
+use tokio::sync::watch;
 use tokio::time::Instant as TokioInstant;
 
 const MODEL: &str = "gpt-5.6-luna";
@@ -33,9 +35,11 @@ const MAX_OUTPUT_BYTES: usize = 4 * 1024;
 const INITIAL_WEBSOCKET_CONNECTIONS: usize = 2;
 const MAX_WEBSOCKET_CONNECTIONS: usize = 8;
 const MAX_WEBSOCKET_AGE: Duration = Duration::from_secs(55 * 60);
+const MAX_AUTH_CHANGE_CONNECT_RETRIES: usize = 3;
 const RESPONSES_WEBSOCKETS_BETA: &str = "responses_websockets=2026-02-06";
 
 /// Host-owned provider, authentication, and attribution for Luna connections.
+#[derive(Clone)]
 pub struct LunaSamplerConfig {
     /// Provider and credentials selected for the owning thread.
     pub provider: SharedModelProvider,
@@ -75,6 +79,12 @@ pub enum LunaSamplerError {
     /// The provider's WebSocket connect deadline elapsed.
     #[error("Luna Responses WebSocket connection timed out")]
     ConnectionTimeout,
+    /// Authentication changed while a connection or review was in flight.
+    #[error("Luna authentication changed during the review")]
+    AuthenticationChanged,
+    /// The selected first-party provider has no current authentication.
+    #[error("Luna authentication is unavailable")]
+    MissingAuthentication,
     /// The response did not contain an assistant text value.
     #[error("Luna response did not contain assistant output")]
     MissingOutput,
@@ -86,20 +96,75 @@ pub enum LunaSamplerError {
 struct PooledConnection {
     connection: ResponsesWebsocketConnection,
     connected_at: Instant,
+    auth_generation: Option<u64>,
 }
 
 struct ConnectionLease {
     connection: PooledConnection,
     idle_connections: Arc<Mutex<Vec<PooledConnection>>>,
+    auth_generation: AuthGeneration,
     _permit: OwnedSemaphorePermit,
 }
 
 impl ConnectionLease {
     fn reuse(self) {
-        self.idle_connections
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .push(self.connection);
+        if self.connection.auth_generation == self.auth_generation.current() {
+            self.idle_connections
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .push(self.connection);
+        }
+    }
+}
+
+#[derive(Clone)]
+struct AuthGeneration {
+    manager: Option<Arc<AuthManager>>,
+}
+
+impl AuthGeneration {
+    fn from_provider(provider: &SharedModelProvider) -> Self {
+        Self {
+            manager: provider.auth_manager(),
+        }
+    }
+
+    fn current(&self) -> Option<u64> {
+        self.manager.as_ref().map(|manager| {
+            let changes = manager.auth_change_receiver();
+            let revision = *changes.borrow();
+            revision
+        })
+    }
+
+    fn watch(&self) -> AuthGenerationWatch {
+        AuthGenerationWatch {
+            changes: self
+                .manager
+                .as_ref()
+                .map(|manager| manager.auth_change_receiver()),
+        }
+    }
+}
+
+struct AuthGenerationWatch {
+    changes: Option<watch::Receiver<u64>>,
+}
+
+impl AuthGenerationWatch {
+    fn current(&self) -> Option<u64> {
+        self.changes
+            .as_ref()
+            .map(|changes| *changes.borrow())
+    }
+
+    async fn changed(&mut self) {
+        match self.changes.as_mut() {
+            Some(changes) => {
+                let _ = changes.changed().await;
+            }
+            None => std::future::pending().await,
+        }
     }
 }
 
@@ -108,15 +173,18 @@ pub struct LunaSampler {
     config: LunaSamplerConfig,
     idle_connections: Arc<Mutex<Vec<PooledConnection>>>,
     capacity: Arc<Semaphore>,
+    auth_generation: AuthGeneration,
 }
 
 impl LunaSampler {
     /// Opens the initial WebSockets before any review is requested.
     pub async fn connect(config: LunaSamplerConfig) -> Result<Self, LunaSamplerError> {
+        let auth_generation = AuthGeneration::from_provider(&config.provider);
         let sampler = Self {
             config,
             idle_connections: Arc::new(Mutex::new(Vec::with_capacity(MAX_WEBSOCKET_CONNECTIONS))),
             capacity: Arc::new(Semaphore::new(MAX_WEBSOCKET_CONNECTIONS)),
+            auth_generation,
         };
         for index in 0..INITIAL_WEBSOCKET_CONNECTIONS {
             let connection = match sampler.open_connection().await {
@@ -134,6 +202,30 @@ impl LunaSampler {
     }
 
     async fn open_connection(&self) -> Result<PooledConnection, LunaSamplerError> {
+        for _ in 0..MAX_AUTH_CHANGE_CONNECT_RETRIES {
+            let auth_generation = self.auth_generation.current();
+            let connection = self.open_connection_for_generation(auth_generation).await?;
+            if auth_generation == self.auth_generation.current() {
+                return Ok(connection);
+            }
+        }
+        Err(LunaSamplerError::AuthenticationChanged)
+    }
+
+    async fn open_connection_for_generation(
+        &self,
+        auth_generation: Option<u64>,
+    ) -> Result<PooledConnection, LunaSamplerError> {
+        let provider_info = self.config.provider.info();
+        let requires_host_auth = provider_info.requires_openai_auth
+            && provider_info.env_key.is_none()
+            && provider_info.experimental_bearer_token.is_none()
+            && provider_info.auth.is_none()
+            && provider_info.aws.is_none();
+        let provider_auth = self.config.provider.auth().await;
+        if requires_host_auth && provider_auth.is_none() {
+            return Err(LunaSamplerError::MissingAuthentication);
+        }
         let provider = self
             .config
             .provider
@@ -168,20 +260,11 @@ impl LunaSampler {
             headers.insert("x-client-request-id", request_id);
         }
 
-        let provider_info = self.config.provider.info();
-        if self
-            .config
-            .provider
-            .auth()
-            .await
+        if provider_auth
             .as_ref()
             .is_some_and(CodexAuth::uses_codex_backend)
             && provider_info.is_openai()
-            && provider_info.requires_openai_auth
-            && provider_info.env_key.is_none()
-            && provider_info.experimental_bearer_token.is_none()
-            && provider_info.auth.is_none()
-            && provider_info.aws.is_none()
+            && requires_host_auth
         {
             let routing_hint = match self.config.service_tier.as_deref() {
                 Some(tier) => format!("model={MODEL};tier={tier}"),
@@ -208,6 +291,7 @@ impl LunaSampler {
         Ok(PooledConnection {
             connection,
             connected_at: Instant::now(),
+            auth_generation,
         })
     }
 
@@ -225,6 +309,7 @@ impl LunaSampler {
             match idle {
                 Some(connection)
                     if connection.connected_at.elapsed() < MAX_WEBSOCKET_AGE
+                        && connection.auth_generation == self.auth_generation.current()
                         && !connection.connection.is_closed().await =>
                 {
                     break connection;
@@ -236,6 +321,7 @@ impl LunaSampler {
         Ok(ConnectionLease {
             connection,
             idle_connections: Arc::clone(&self.idle_connections),
+            auth_generation: self.auth_generation.clone(),
             _permit: permit,
         })
     }
@@ -273,6 +359,10 @@ impl LunaSampler {
         let mut retried = false;
         'retry: loop {
             let lease = self.lease_connection().await?;
+            let mut auth_generation = self.auth_generation.watch();
+            if lease.connection.auth_generation != auth_generation.current() {
+                return Err(LunaSamplerError::AuthenticationChanged);
+            }
             let stream = lease
                 .connection
                 .connection
@@ -293,7 +383,16 @@ impl LunaSampler {
 
             let mut output = String::new();
             let mut deltas = String::new();
-            while let Some(event) = stream.rx_event.recv().await {
+            loop {
+                let event = tokio::select! {
+                    event = stream.rx_event.recv() => event,
+                    _ = auth_generation.changed() => {
+                        return Err(LunaSamplerError::AuthenticationChanged);
+                    }
+                };
+                let Some(event) = event else {
+                    return Err(LunaSamplerError::MissingOutput);
+                };
                 let event = match event {
                     Ok(event) => event,
                     Err(error) if !retried && is_retryable(&error) => {
@@ -316,6 +415,9 @@ impl LunaSampler {
                         }
                     }
                     ResponseEvent::Completed { .. } => {
+                        if lease.connection.auth_generation != auth_generation.current() {
+                            return Err(LunaSamplerError::AuthenticationChanged);
+                        }
                         lease.reuse();
                         if !output.is_empty() {
                             return Ok(output);
@@ -342,7 +444,6 @@ impl LunaSampler {
                     | ResponseEvent::ModelsEtag(_) => {}
                 }
             }
-            return Err(LunaSamplerError::MissingOutput);
         }
     }
 }

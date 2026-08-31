@@ -8,6 +8,9 @@ use codex_http_client::OutboundProxyPolicy;
 use codex_login::AgentIdentityAuthPolicy;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
+use codex_login::ExternalAuth;
+use codex_login::ExternalAuthFuture;
+use codex_login::ExternalAuthRefreshContext;
 use codex_model_provider::create_model_provider;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::models::ContentItem;
@@ -44,6 +47,19 @@ struct SamplerFixture {
     _servers: [WebSocketTestServer; 2],
 }
 
+#[derive(Clone)]
+struct StaticExternalAuth(CodexAuth);
+
+impl ExternalAuth for StaticExternalAuth {
+    fn resolve(&self) -> ExternalAuthFuture<'_, CodexAuth> {
+        Box::pin(std::future::ready(Ok(self.0.clone())))
+    }
+
+    fn refresh(&self, _context: ExternalAuthRefreshContext) -> ExternalAuthFuture<'_, CodexAuth> {
+        Box::pin(std::future::ready(Ok(self.0.clone())))
+    }
+}
+
 async fn proxy_websocket_servers(servers: &[&responses::WebSocketTestServer]) -> Result<String> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;
@@ -68,12 +84,20 @@ async fn proxy_websocket_servers(servers: &[&responses::WebSocketTestServer]) ->
 }
 
 fn sampler_config(base_url: String) -> LunaSamplerConfig {
+    sampler_config_with_auth_manager(
+        base_url,
+        AuthManager::from_auth_for_testing(CodexAuth::from_api_key("test-api-key")),
+    )
+}
+
+fn sampler_config_with_auth_manager(
+    base_url: String,
+    auth_manager: Arc<AuthManager>,
+) -> LunaSamplerConfig {
     LunaSamplerConfig {
         provider: create_model_provider(
             ModelProviderInfo::create_openai_provider(Some(base_url)),
-            Some(AuthManager::from_auth_for_testing(CodexAuth::from_api_key(
-                "test-api-key",
-            ))),
+            Some(auth_manager),
         ),
         http_client_factory: HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
         agent_identity_policy: AgentIdentityAuthPolicy::JwtOnly,
@@ -201,6 +225,94 @@ async fn sampler_reuses_a_drained_connection() -> Result<()> {
     assert_eq!(first, r#"{"score":0.25}"#);
     assert_eq!(second, r#"{"score":0.75}"#);
     assert_eq!(server.single_connection().len(), 2);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn account_switch_discards_authenticated_idle_connections() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let first_idle = responses::start_websocket_server(vec![vec![vec![]]]).await;
+    let second_idle = responses::start_websocket_server(vec![vec![vec![]]]).await;
+    let switched = responses::start_websocket_server(vec![vec![vec![
+        ev_output_text_delta(VALID_OUTCOME),
+        ev_completed("response-1"),
+    ]]])
+    .await;
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("account-a"));
+    let sampler = LunaSampler::connect(sampler_config_with_auth_manager(
+        proxy_websocket_servers(&[&first_idle, &second_idle, &switched]).await?,
+        Arc::clone(&auth_manager),
+    ))
+    .await?;
+
+    auth_manager
+        .set_external_auth(Arc::new(StaticExternalAuth(CodexAuth::from_api_key(
+            "account-b",
+        ))))
+        .await?;
+    let output = sampler
+        .sample(sample_request(Instant::now() + Duration::from_secs(2)))
+        .await?;
+
+    assert_eq!(output, VALID_OUTCOME);
+    assert_eq!(
+        first_idle.single_handshake().header("authorization").as_deref(),
+        Some("Bearer account-a")
+    );
+    assert_eq!(
+        second_idle
+            .single_handshake()
+            .header("authorization")
+            .as_deref(),
+        Some("Bearer account-a")
+    );
+    assert_eq!(
+        switched.single_handshake().header("authorization").as_deref(),
+        Some("Bearer account-b")
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn logout_fails_closed_and_later_auth_recovers() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let first_idle = responses::start_websocket_server(vec![vec![vec![]]]).await;
+    let second_idle = responses::start_websocket_server(vec![vec![vec![]]]).await;
+    let recovered = responses::start_websocket_server(vec![vec![vec![
+        ev_output_text_delta(VALID_OUTCOME),
+        ev_completed("response-1"),
+    ]]])
+    .await;
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("account-a"));
+    let sampler = LunaSampler::connect(sampler_config_with_auth_manager(
+        proxy_websocket_servers(&[&first_idle, &second_idle, &recovered]).await?,
+        Arc::clone(&auth_manager),
+    ))
+    .await?;
+
+    let _ = auth_manager.logout().await?;
+    let error = sampler
+        .sample(sample_request(Instant::now() + Duration::from_secs(2)))
+        .await
+        .expect_err("logout must not reuse an authenticated connection");
+    assert!(matches!(error, LunaSamplerError::MissingAuthentication));
+
+    auth_manager
+        .set_external_auth(Arc::new(StaticExternalAuth(CodexAuth::from_api_key(
+            "account-c",
+        ))))
+        .await?;
+    let output = sampler
+        .sample(sample_request(Instant::now() + Duration::from_secs(2)))
+        .await?;
+
+    assert_eq!(output, VALID_OUTCOME);
+    assert_eq!(
+        recovered.single_handshake().header("authorization").as_deref(),
+        Some("Bearer account-c")
+    );
     Ok(())
 }
 
