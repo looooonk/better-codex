@@ -31,6 +31,7 @@ use super::validation::MAX_TOOL_ERROR_BYTES;
 use super::validation::MAX_TOOL_FILTERS;
 use crate::MAX_ACTIVE_CELLS;
 use crate::MAX_IN_FLIGHT_REQUESTS;
+use crate::OUTGOING_CHANNEL_CAPACITY;
 
 fn assert_invalid<T>(result: Result<T, Status>) {
     match result {
@@ -373,4 +374,370 @@ async fn oversized_tool_invocation_does_not_consume_sequence_or_close_session() 
         .expect("valid tool invocation");
     assert_eq!(delivered.invocation_id, invocation_id.to_string());
     assert_eq!(delivered.sequence, 1);
+}
+
+#[tokio::test]
+async fn unmatched_subscription_failure_allows_recovery() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, _events) = open_session(&host).await;
+    let _unrelated = host
+        .subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
+            session_id: session_id.clone(),
+            tool_names: vec![proto::ToolName {
+                name: "other".to_string(),
+                namespace: None,
+            }],
+        }))
+        .await
+        .expect("subscribe unrelated tool stream")
+        .into_inner();
+    let (cell_id, mut execution) = execute_events(
+        &host,
+        execute_request(
+            &session_id,
+            "execution-unmatched",
+            "await new Promise(() => {});",
+        ),
+    )
+    .await;
+    execution.next().await.expect("execution outcome").unwrap();
+    let session = host.state.session(&session_id).expect("open session");
+    let cancellation = CancellationToken::new();
+    let (response, _receiver) = oneshot::channel();
+
+    session
+        .dispatch_tool(
+            invocation(&cell_id, "echo"),
+            "execution-unmatched".to_string(),
+            Uuid::new_v4(),
+            Some(b"{}".to_vec()),
+            response,
+            &cancellation,
+        )
+        .await
+        .expect_err("unmatched tool must fail dispatch");
+    assert!(!session.closed.is_cancelled());
+
+    let mut matching = host
+        .subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
+            session_id,
+            tool_names: vec![proto::ToolName {
+                name: "echo".to_string(),
+                namespace: None,
+            }],
+        }))
+        .await
+        .expect("subscribe matching tool stream")
+        .into_inner();
+    let (response, _receiver) = oneshot::channel();
+    let invocation_id = Uuid::new_v4();
+    session
+        .dispatch_tool(
+            invocation(&cell_id, "echo"),
+            "execution-unmatched".to_string(),
+            invocation_id,
+            Some(b"{}".to_vec()),
+            response,
+            &cancellation,
+        )
+        .await
+        .expect("dispatch after adding matching subscription");
+    let delivered = matching
+        .next()
+        .await
+        .expect("tool invocation")
+        .expect("valid tool invocation");
+    assert_eq!(delivered.invocation_id, invocation_id.to_string());
+    assert_eq!(delivered.sequence, 1);
+}
+
+#[tokio::test]
+async fn missing_selected_subscription_retries_alternate_match() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, _events) = open_session(&host).await;
+    let mut first = host
+        .subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
+            session_id: session_id.clone(),
+            tool_names: Vec::new(),
+        }))
+        .await
+        .expect("subscribe first tool stream")
+        .into_inner();
+    let mut second = host
+        .subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
+            session_id: session_id.clone(),
+            tool_names: Vec::new(),
+        }))
+        .await
+        .expect("subscribe second tool stream")
+        .into_inner();
+    let (cell_id, mut execution) = execute_events(
+        &host,
+        execute_request(
+            &session_id,
+            "execution-retry",
+            "await new Promise(() => {});",
+        ),
+    )
+    .await;
+    execution.next().await.expect("execution outcome").unwrap();
+    let session = host.state.session(&session_id).expect("open session");
+    let subscriptions = session
+        .state
+        .lock()
+        .unwrap()
+        .subscriptions
+        .iter()
+        .map(|subscription| (subscription.id, subscription.sender.clone()))
+        .collect::<Vec<_>>();
+    for (_, sender) in &subscriptions {
+        for _ in 0..OUTGOING_CHANNEL_CAPACITY {
+            sender
+                .try_send(Ok(proto::ToolCall::default()))
+                .expect("fill subscription queue");
+        }
+    }
+    let cancellation = CancellationToken::new();
+    let (response, _receiver) = oneshot::channel();
+    let invocation_id = Uuid::new_v4();
+    let dispatch = session.dispatch_tool(
+        invocation(&cell_id, "echo"),
+        "execution-retry".to_string(),
+        invocation_id,
+        /*input_json*/ None,
+        response,
+        &cancellation,
+    );
+    tokio::pin!(dispatch);
+    assert!(dispatch.as_mut().now_or_never().is_none());
+    session
+        .state
+        .lock()
+        .unwrap()
+        .subscriptions
+        .retain(|subscription| subscription.id != subscriptions[0].0);
+
+    first.next().await.expect("free first reservation").unwrap();
+    assert!(dispatch.as_mut().now_or_never().is_none());
+    second
+        .next()
+        .await
+        .expect("free surviving reservation")
+        .unwrap();
+    dispatch.await.expect("retry surviving subscription");
+
+    for _ in 1..OUTGOING_CHANNEL_CAPACITY {
+        second.next().await.expect("drain buffered call").unwrap();
+    }
+    assert_eq!(
+        second
+            .next()
+            .await
+            .expect("retried invocation")
+            .unwrap()
+            .invocation_id,
+        invocation_id.to_string()
+    );
+}
+
+#[tokio::test]
+async fn filtered_subscription_backpressure_is_independent() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, _events) = open_session(&host).await;
+    let mut slow = host
+        .subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
+            session_id: session_id.clone(),
+            tool_names: vec![proto::ToolName {
+                name: "slow".to_string(),
+                namespace: None,
+            }],
+        }))
+        .await
+        .expect("subscribe slow tool stream")
+        .into_inner();
+    let mut fast = host
+        .subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
+            session_id: session_id.clone(),
+            tool_names: vec![proto::ToolName {
+                name: "fast".to_string(),
+                namespace: None,
+            }],
+        }))
+        .await
+        .expect("subscribe fast tool stream")
+        .into_inner();
+    let (cell_id, mut execution) = execute_events(
+        &host,
+        execute_request(
+            &session_id,
+            "execution-backpressure",
+            "await new Promise(() => {});",
+        ),
+    )
+    .await;
+    execution.next().await.expect("execution outcome").unwrap();
+    let session = host.state.session(&session_id).expect("open session");
+    let cancellation = CancellationToken::new();
+    let mut responses = Vec::new();
+
+    for _ in 0..OUTGOING_CHANNEL_CAPACITY {
+        let (response, receiver) = oneshot::channel();
+        responses.push(receiver);
+        session
+            .dispatch_tool(
+                invocation(&cell_id, "slow"),
+                "execution-backpressure".to_string(),
+                Uuid::new_v4(),
+                /*input_json*/ None,
+                response,
+                &cancellation,
+            )
+            .await
+            .expect("fill slow subscription");
+    }
+
+    let blocked_session = Arc::clone(&session);
+    let blocked_cell = cell_id.clone();
+    let blocked_cancellation = cancellation.clone();
+    let (response, receiver) = oneshot::channel();
+    responses.push(receiver);
+    let blocked = tokio::spawn(async move {
+        blocked_session
+            .dispatch_tool(
+                invocation(&blocked_cell, "slow"),
+                "execution-backpressure".to_string(),
+                Uuid::new_v4(),
+                /*input_json*/ None,
+                response,
+                &blocked_cancellation,
+            )
+            .await
+    });
+    tokio::task::yield_now().await;
+    assert!(!blocked.is_finished());
+
+    let (response, receiver) = oneshot::channel();
+    responses.push(receiver);
+    let invocation_id = Uuid::new_v4();
+    tokio::time::timeout(
+        Duration::from_secs(/*secs*/ 1),
+        session.dispatch_tool(
+            invocation(&cell_id, "fast"),
+            "execution-backpressure".to_string(),
+            invocation_id,
+            /*input_json*/ None,
+            response,
+            &cancellation,
+        ),
+    )
+    .await
+    .expect("saturated subscription must not block another tool")
+    .expect("dispatch fast tool");
+    assert_eq!(
+        fast.next()
+            .await
+            .expect("fast invocation")
+            .expect("valid fast invocation")
+            .invocation_id,
+        invocation_id.to_string()
+    );
+
+    slow.next()
+        .await
+        .expect("slow invocation")
+        .expect("valid slow invocation");
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), blocked)
+        .await
+        .expect("draining the subscription should release its blocked invocation")
+        .expect("blocked dispatch task")
+        .expect("blocked dispatch result");
+}
+
+#[tokio::test]
+async fn dropping_subscription_with_unread_call_retires_session() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, _events) = open_session(&host).await;
+    let idle = host
+        .subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
+            session_id: session_id.clone(),
+            tool_names: Vec::new(),
+        }))
+        .await
+        .expect("subscribe idle tool stream")
+        .into_inner();
+    drop(idle);
+
+    let session = host.state.session(&session_id).expect("open session");
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 2), async {
+        while !session.state.lock().unwrap().subscriptions.is_empty() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("idle subscription should be removed without retiring its session");
+    assert!(!session.closed.is_cancelled());
+
+    let first = host
+        .subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
+            session_id: session_id.clone(),
+            tool_names: Vec::new(),
+        }))
+        .await
+        .expect("subscribe first tool stream")
+        .into_inner();
+    let mut second = host
+        .subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
+            session_id: session_id.clone(),
+            tool_names: Vec::new(),
+        }))
+        .await
+        .expect("subscribe second tool stream")
+        .into_inner();
+    let mut request = execute_request(
+        &session_id,
+        "execution-subscription-drop",
+        r#"await tools.echo({attempt: 1});"#,
+    );
+    request.yield_time_ms = Some(/*value*/ 10_000);
+    request.enabled_tools = vec![tool("echo")];
+    let (_cell_id, mut execution) = execute_events(&host, request).await;
+    let first_subscription_id = session.state.lock().unwrap().subscriptions[0].id;
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 2), async {
+        loop {
+            let owned = session
+                .state
+                .lock()
+                .unwrap()
+                .pending_invocations
+                .values()
+                .any(|invocation| invocation.subscription_id == first_subscription_id);
+            if owned {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("first subscription should own an unread tool call");
+    drop(first);
+
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 2), async {
+        while host.state.session(&session_id).is_ok() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("losing an unread call must retire its lease without leaving a sequence gap");
+    assert!(
+        tokio::time::timeout(Duration::from_secs(/*secs*/ 2), second.next())
+            .await
+            .expect("other subscriptions should close with their lease")
+            .is_none()
+    );
+    assert!(
+        tokio::time::timeout(Duration::from_secs(/*secs*/ 2), execution.next())
+            .await
+            .expect("execution should retire with its lease")
+            .is_none()
+    );
 }
