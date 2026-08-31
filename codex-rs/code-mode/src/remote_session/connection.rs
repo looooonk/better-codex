@@ -9,12 +9,14 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use codex_code_mode_protocol::CellId;
+use codex_code_mode_protocol::CodeModeSessionCellExecutionLimits;
 use codex_code_mode_protocol::CodeModeSessionDelegate;
 use codex_code_mode_protocol::ExecuteRequest;
 use codex_code_mode_protocol::StartedCell;
 use codex_code_mode_protocol::WaitOutcome;
 use codex_code_mode_protocol::WaitRequest;
 use codex_code_mode_protocol::host::CapabilitySet;
+use codex_code_mode_protocol::host::Capability;
 use codex_code_mode_protocol::host::ClientHello;
 use codex_code_mode_protocol::host::ClientToHost;
 use codex_code_mode_protocol::host::EncodedFrame;
@@ -23,6 +25,7 @@ use codex_code_mode_protocol::host::FramedWriter;
 use codex_code_mode_protocol::host::HostToClient;
 use codex_code_mode_protocol::host::ProtocolVersion;
 use codex_code_mode_protocol::host::RequestId;
+use codex_code_mode_protocol::host::SESSION_RESOURCE_LIMITS_CAPABILITY;
 use codex_code_mode_protocol::host::SupportedProtocolVersions;
 use tokio::io::AsyncBufReadExt;
 use tokio::io::BufReader;
@@ -88,6 +91,7 @@ pub(super) struct Connection {
     alive: Arc<AtomicBool>,
     failure: Arc<std::sync::Mutex<Option<String>>>,
     cancellation: CancellationToken,
+    capabilities: CapabilitySet,
 }
 
 struct CallerCancellation {
@@ -174,11 +178,14 @@ impl Connection {
         let mut reader = FramedReader::new(stdout);
         let mut writer = FramedWriter::new(stdin);
         let handshake = async {
+            let session_limits_capability = Capability::new(SESSION_RESOURCE_LIMITS_CAPABILITY)
+                .map_err(|err| err.to_string())?;
             let hello = ClientHello::new(
                 SupportedProtocolVersions::try_new([ProtocolVersion::V1])
                     .map_err(|err| err.to_string())?,
                 CapabilitySet::empty(),
-                CapabilitySet::empty(),
+                CapabilitySet::try_new([session_limits_capability])
+                    .map_err(|err| err.to_string())?,
             )
             .map_err(|err| err.to_string())?;
             writer
@@ -193,7 +200,7 @@ impl Connection {
                 Some(HostToClient::HostHello(hello))
                     if hello.selected_version() == ProtocolVersion::V1 =>
                 {
-                    Ok(())
+                    Ok(hello.capabilities().clone())
                 }
                 Some(HostToClient::HandshakeRejected { reason }) => {
                     Err(format!("code-mode host rejected the handshake: {reason:?}"))
@@ -213,10 +220,13 @@ impl Connection {
                 ));
             }
         };
-        if let Err(err) = handshake_result {
-            kill_and_reap(&mut child).await;
-            return Err(ConnectionError::Other(err));
-        }
+        let capabilities = match handshake_result {
+            Ok(capabilities) => capabilities,
+            Err(err) => {
+                kill_and_reap(&mut child).await;
+                return Err(ConnectionError::Other(err));
+            }
+        };
 
         let (command_tx, command_rx) = mpsc::channel(IPC_CHANNEL_CAPACITY);
         let (event_tx, event_rx) = mpsc::channel(IPC_CHANNEL_CAPACITY);
@@ -281,6 +291,7 @@ impl Connection {
             alive,
             failure,
             cancellation,
+            capabilities,
         })
     }
 
@@ -299,13 +310,25 @@ impl Connection {
         &self,
         session: RemoteSession,
         delegate: Arc<dyn CodeModeSessionDelegate>,
+        limits: CodeModeSessionCellExecutionLimits,
     ) -> Result<SessionCleanup, String> {
+        if limits != CodeModeSessionCellExecutionLimits::default()
+            && !self
+                .capabilities
+                .iter()
+                .any(|capability| capability.as_str() == SESSION_RESOURCE_LIMITS_CAPABILITY)
+        {
+            return Err(format!(
+                "code-mode host does not support session resource limits: missing `{SESSION_RESOURCE_LIMITS_CAPABILITY}` capability"
+            ));
+        }
         let cleanup = SessionCleanup::new();
         let cancellation = CallerCancellation::new();
         let (response_tx, response_rx) = oneshot::channel();
         self.send(DriverCommand::OpenSession {
             session,
             delegate,
+            limits,
             cleanup: cleanup.clone(),
             caller_cancellation: cancellation.token(),
             response_tx,

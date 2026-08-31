@@ -7,20 +7,24 @@ use std::time::Duration;
 
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::CodeModeNestedToolCall;
+use codex_code_mode_protocol::CodeModeSessionCellExecutionLimits;
 use codex_code_mode_protocol::CodeModeSessionDelegate;
 use codex_code_mode_protocol::ExecuteRequest;
 use codex_code_mode_protocol::NotificationFuture;
 use codex_code_mode_protocol::ToolInvocationFuture;
 use codex_code_mode_protocol::WaitRequest;
+use codex_code_mode_protocol::host::ClientToHost;
 use codex_code_mode_protocol::host::DelegateRequest;
 use codex_code_mode_protocol::host::DelegateRequestId;
 use codex_code_mode_protocol::host::HostResponse;
+use codex_code_mode_protocol::host::HostRequest;
 use codex_code_mode_protocol::host::HostToClient;
 use codex_code_mode_protocol::host::RequestId;
 use codex_code_mode_protocol::host::SessionId;
 use codex_code_mode_protocol::host::WireNestedToolCall;
 use codex_code_mode_protocol::host::WireResult;
 use codex_code_mode_protocol::host::WireRuntimeResponse;
+use codex_code_mode_protocol::host::WireSessionCellExecutionLimits;
 use codex_code_mode_protocol::host::WireWaitOutcome;
 use codex_protocol::ToolName;
 use pretty_assertions::assert_eq;
@@ -86,6 +90,7 @@ impl DriverHarness {
             .send(DriverCommand::OpenSession {
                 session: session.clone(),
                 delegate,
+                limits: Default::default(),
                 cleanup: cleanup.clone(),
                 caller_cancellation: CancellationToken::new(),
                 response_tx,
@@ -179,6 +184,59 @@ impl Drop for DriverHarness {
     fn drop(&mut self) {
         self.cancellation.cancel();
     }
+}
+
+#[tokio::test]
+async fn open_session_includes_nondefault_cell_execution_limits() {
+    let mut harness = DriverHarness::start();
+    let session = remote_session();
+    let (response_tx, _response_rx) = oneshot::channel();
+
+    harness
+        .command_tx
+        .send(DriverCommand::OpenSession {
+            session: session.clone(),
+            delegate: Arc::new(RecordingDelegate::default()),
+            limits: CodeModeSessionCellExecutionLimits {
+                max_yield_time_ms: Some(250),
+                max_heap_size_bytes: Some(16 * 1024 * 1024),
+            },
+            cleanup: SessionCleanup::new(),
+            caller_cancellation: CancellationToken::new(),
+            response_tx,
+        })
+        .await
+        .expect("limited session open command");
+    let frame = harness
+        .outgoing_rx
+        .recv()
+        .await
+        .expect("limited session open frame");
+    let (reader, writer) = tokio::io::duplex(/*max_buf_size*/ 4096);
+    let writer = tokio::spawn(async move {
+        codex_code_mode_protocol::host::FramedWriter::new(writer)
+            .write_frame(&frame)
+            .await
+            .expect("write session open frame");
+    });
+
+    assert_eq!(
+        codex_code_mode_protocol::host::FramedReader::new(reader)
+            .read::<ClientToHost>()
+            .await
+            .expect("read session open frame"),
+        Some(ClientToHost::Request {
+            id: RequestId::new(/*value*/ 1),
+            request: HostRequest::OpenSession {
+                session_id: session.id,
+                cell_execution_limits: Some(WireSessionCellExecutionLimits {
+                    max_yield_time_ms: Some(250),
+                    max_heap_size_bytes: Some(16 * 1024 * 1024),
+                }),
+            },
+        })
+    );
+    writer.await.expect("frame writer task");
 }
 
 #[derive(Default)]
@@ -338,6 +396,7 @@ async fn dropped_open_waiter_shuts_down_committed_session() {
         .send(DriverCommand::OpenSession {
             session: session.clone(),
             delegate: Arc::new(RecordingDelegate::default()),
+            limits: Default::default(),
             cleanup,
             caller_cancellation: CancellationToken::new(),
             response_tx: open_tx,

@@ -13,6 +13,7 @@ use super::WaitRequest;
 use super::WaitToPendingOutcome;
 use super::WaitToPendingRequest;
 use crate::CodeModeToolKind;
+use crate::CodeModeSessionCellExecutionLimits;
 use crate::ExecuteRequest;
 use crate::ExecuteToPendingOutcome;
 use crate::FunctionCallOutputContentItem;
@@ -22,6 +23,35 @@ use pretty_assertions::assert_eq;
 use serde_json::Value as JsonValue;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
+
+#[test]
+fn resolve_yield_timeout_applies_grace_before_session_limits() {
+    for (max_yield_time_ms, requested_yield_time_ms, expected_timeout) in [
+        (None, 0, Duration::ZERO),
+        (None, 9_999, Duration::from_millis(9_999)),
+        (None, 10_000, Duration::from_secs(11)),
+        (Some(0), 10_000, Duration::ZERO),
+        (Some(5_000), 9_999, Duration::from_secs(5)),
+        (Some(10_000), 10_000, Duration::from_secs(10)),
+        (Some(10_500), 10_000, Duration::from_millis(10_500)),
+        (Some(12_000), 10_000, Duration::from_secs(11)),
+        (Some(u64::MAX), u64::MAX, Duration::from_millis(u64::MAX)),
+    ] {
+        let session = InProcessCodeModeSession::with_delegate_and_limits(
+            Arc::new(ReleasableToolDelegate::default()),
+            CodeModeSessionCellExecutionLimits {
+                max_yield_time_ms,
+                max_heap_size_bytes: None,
+            },
+        );
+
+        assert_eq!(
+            session.resolve_yield_timeout(requested_yield_time_ms),
+            expected_timeout,
+            "requested {requested_yield_time_ms} ms with limit {max_yield_time_ms:?}"
+        );
+    }
+}
 
 #[derive(Default)]
 struct ReleasableToolDelegate {
