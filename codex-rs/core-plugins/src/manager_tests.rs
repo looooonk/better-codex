@@ -785,6 +785,8 @@ fn remote_installed_plugin_in_marketplace(
         install_policy_source: None,
         auth_policy: codex_app_server_protocol::PluginAuthPolicy::OnUse,
         availability: codex_app_server_protocol::PluginAvailability::Available,
+        disabled_reason: None,
+        eligible_plan_types: None,
         interface: None,
         keywords: Vec::new(),
     }

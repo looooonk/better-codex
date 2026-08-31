@@ -80,6 +80,8 @@ async fn search_remote_plugins_forwards_parameters_and_bounds_results() {
                 install_policy_source: None,
                 auth_policy: PluginAuthPolicy::OnUse,
                 availability: PluginAvailability::Available,
+                disabled_reason: None,
+                eligible_plan_types: None,
                 interface: None,
                 keywords: Vec::new(),
             }],

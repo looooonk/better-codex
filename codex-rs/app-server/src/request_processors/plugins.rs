@@ -171,6 +171,8 @@ fn convert_configured_marketplace_plugin_to_plugin_summary(
         install_policy_source: None,
         auth_policy: plugin.policy.authentication.into(),
         availability: PluginAvailability::Available,
+        disabled_reason: None,
+        eligible_plan_types: None,
         interface: plugin.interface.map(local_plugin_interface_to_info),
         keywords: plugin.keywords,
     }
@@ -1095,6 +1097,8 @@ impl PluginRequestProcessor {
                         install_policy_source: None,
                         auth_policy: outcome.plugin.policy.authentication.into(),
                         availability: PluginAvailability::Available,
+                        disabled_reason: None,
+                        eligible_plan_types: None,
                         interface: outcome.plugin.interface.map(local_plugin_interface_to_info),
                         keywords: outcome.plugin.keywords,
                     },
@@ -2184,6 +2188,8 @@ fn remote_plugin_summary_to_info(summary: RemoteCatalogPluginSummary) -> PluginS
         install_policy_source: summary.install_policy_source,
         auth_policy: summary.auth_policy,
         availability: summary.availability,
+        disabled_reason: summary.disabled_reason,
+        eligible_plan_types: summary.eligible_plan_types,
         interface: summary.interface,
         keywords: summary.keywords,
     }

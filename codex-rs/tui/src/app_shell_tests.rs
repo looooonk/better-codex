@@ -13159,6 +13159,8 @@ fn plugin_summary_fixture(id: &str, name: &str, installed: bool, enabled: bool) 
         install_policy_source: None,
         auth_policy: PluginAuthPolicy::OnUse,
         availability: PluginAvailability::Available,
+        disabled_reason: None,
+        eligible_plan_types: None,
         interface: Some(PluginInterface {
             display_name: Some(name.to_string()),
             short_description: None,

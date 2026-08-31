@@ -97,6 +97,53 @@ fn unknown_installation_policy_source_maps_to_none() {
 }
 
 #[test]
+fn eligibility_metadata_is_preserved_across_remote_summary_paths() {
+    let mut directory_plugin = directory_plugin("plugin-gmail", "gmail");
+    directory_plugin.installation_policy = PluginInstallPolicy::NotAvailable;
+    directory_plugin.availability = PluginAvailability::DisabledByAdmin;
+    directory_plugin.disabled_reason = Some(PluginDisabledReason::PlanNotEligible);
+    directory_plugin.eligible_plan_types = Some(vec!["plus".to_string(), "pro".to_string()]);
+    let installed_plugin = RemotePluginInstalledItem {
+        plugin: directory_plugin.clone(),
+        enabled: false,
+        disabled_skill_names: Vec::new(),
+    };
+
+    let directory_summary =
+        build_remote_plugin_summary(&directory_plugin, /*installed_plugin*/ None)
+            .expect("directory summary should be valid");
+    let installed_summary = remote_installed_plugin_to_cache_entry(&installed_plugin)
+        .expect("installed summary should be valid");
+
+    assert_eq!(
+        (
+            directory_summary.disabled_reason,
+            directory_summary.eligible_plan_types,
+            installed_summary.disabled_reason,
+            installed_summary.eligible_plan_types,
+        ),
+        (
+            Some(PluginDisabledReason::PlanNotEligible),
+            Some(vec!["plus".to_string(), "pro".to_string()]),
+            Some(PluginDisabledReason::PlanNotEligible),
+            Some(vec!["plus".to_string(), "pro".to_string()]),
+        )
+    );
+}
+
+#[test]
+fn unknown_disabled_reason_remains_forward_compatible() {
+    let plugin = directory_plugin("plugin-gmail", "gmail");
+    let mut plugin_json = serde_json::to_value(plugin).expect("plugin should serialize");
+    plugin_json["disabled_reason"] = serde_json::json!("future_disabled_reason");
+
+    let plugin: RemotePluginDirectoryItem =
+        serde_json::from_value(plugin_json).expect("unknown reason should deserialize");
+
+    assert_eq!(plugin.disabled_reason, Some(PluginDisabledReason::Unknown));
+}
+
+#[test]
 fn scheduled_task_metadata_distinguishes_unavailable_from_empty() {
     let release = serde_json::json!({
         "display_name": "Example",
@@ -128,6 +175,8 @@ fn directory_plugin(id: &str, name: &str) -> RemotePluginDirectoryItem {
         installation_policy_source: None,
         authentication_policy: PluginAuthPolicy::OnUse,
         availability: PluginAvailability::Available,
+        disabled_reason: None,
+        eligible_plan_types: None,
         release: RemotePluginReleaseResponse {
             version: None,
             display_name: name.to_string(),

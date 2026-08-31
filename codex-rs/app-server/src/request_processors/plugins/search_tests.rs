@@ -20,6 +20,8 @@ fn plugin(name: &str, keywords: &[&str]) -> PluginSummary {
         install_policy_source: None,
         auth_policy: PluginAuthPolicy::OnUse,
         availability: PluginAvailability::Available,
+        disabled_reason: None,
+        eligible_plan_types: None,
         interface: None,
         keywords: keywords
             .iter()
