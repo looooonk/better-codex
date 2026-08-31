@@ -4,9 +4,9 @@ use super::Client;
 use super::PathStyle;
 use super::RequestError;
 use anyhow::anyhow;
-use http::Method;
-use http::header::CONTENT_TYPE;
-use http::header::HeaderValue;
+use reqwest::Method;
+use reqwest::header::CONTENT_TYPE;
+use reqwest::header::HeaderValue;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -56,6 +56,7 @@ impl Client {
         validate_thread_id(thread_id)?;
         let url = self.thread_usage_url();
         let request = self
+            .http
             .request(Method::POST, &url)
             .headers(self.headers())
             .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
