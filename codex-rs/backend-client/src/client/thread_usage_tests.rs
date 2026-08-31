@@ -1,6 +1,4 @@
 use super::*;
-use codex_http_client::HttpClientFactory;
-use codex_http_client::OutboundProxyPolicy;
 use pretty_assertions::assert_eq;
 use serde_json::json;
 use wiremock::Mock;
@@ -12,13 +10,16 @@ use wiremock::matchers::path;
 
 #[test]
 fn thread_usage_contract_uses_expected_paths_and_payload() {
-    let factory = HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault);
     assert_eq!(
-        Client::new("https://example.test", factory.clone()).thread_usage_url(),
+        Client::new("https://example.test")
+            .expect("construct client")
+            .thread_usage_url(),
         "https://example.test/api/codex/usage/thread_usage/query"
     );
     assert_eq!(
-        Client::new("https://chatgpt.com/backend-api", factory).thread_usage_url(),
+        Client::new("https://chatgpt.com/backend-api")
+            .expect("construct client")
+            .thread_usage_url(),
         "https://chatgpt.com/backend-api/wham/usage/thread_usage/query"
     );
     assert_eq!(
@@ -58,10 +59,7 @@ async fn get_thread_usage_returns_requested_thread_totals() {
         .mount(&server)
         .await;
 
-    let client = Client::new(
-        server.uri(),
-        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-    );
+    let client = Client::new(server.uri()).expect("construct client");
     assert_eq!(
         client
             .get_thread_usage("thread-123")
@@ -102,10 +100,7 @@ async fn get_thread_usage_accepts_credits_without_usd_estimate() {
         .mount(&server)
         .await;
 
-    let client = Client::new(
-        server.uri(),
-        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-    );
+    let client = Client::new(server.uri()).expect("construct client");
     assert_eq!(
         client
             .get_thread_usage("thread-123")
@@ -134,10 +129,7 @@ async fn get_thread_usage_rejects_totals_for_another_thread() {
         .mount(&server)
         .await;
 
-    let client = Client::new(
-        server.uri(),
-        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-    );
+    let client = Client::new(server.uri()).expect("construct client");
     let error = client
         .get_thread_usage("thread-123")
         .await
@@ -153,10 +145,7 @@ async fn get_thread_usage_rejects_unbounded_inputs_without_a_request() {
         .expect(/*r*/ 0)
         .mount(&server)
         .await;
-    let client = Client::new(
-        server.uri(),
-        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-    );
+    let client = Client::new(server.uri()).expect("construct client");
 
     let error = client
         .get_thread_usage(&"x".repeat(MAX_THREAD_ID_BYTES + 1))
@@ -176,10 +165,7 @@ async fn get_thread_usage_rejects_an_oversized_response_body() {
         )
         .mount(&server)
         .await;
-    let client = Client::new(
-        server.uri(),
-        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-    );
+    let client = Client::new(server.uri()).expect("construct client");
 
     let error = client
         .get_thread_usage("thread-123")
@@ -213,10 +199,7 @@ async fn get_thread_usage_rejects_unbounded_breakdown_groups() {
         })))
         .mount(&server)
         .await;
-    let client = Client::new(
-        server.uri(),
-        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-    );
+    let client = Client::new(server.uri()).expect("construct client");
 
     let error = client
         .get_thread_usage("thread-123")
