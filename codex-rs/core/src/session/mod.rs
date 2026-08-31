@@ -2255,11 +2255,12 @@ impl Session {
     ) -> Option<crate::tools::approvals::ApprovalAction> {
         let mut active = self.active_turn.lock().await;
         let active = active.as_mut()?;
-        active
+        let action = active
             .turn_state
             .lock()
             .await
-            .pending_delegated_approval_action(approval_id)
+            .pending_delegated_approval_action(approval_id);
+        action
     }
 
     #[allow(clippy::too_many_arguments)]

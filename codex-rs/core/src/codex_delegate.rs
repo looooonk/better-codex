@@ -6,6 +6,7 @@ use async_channel::Sender;
 use codex_analytics::GuardianApprovalRequestSource;
 use codex_async_utils::OrCancelExt;
 use codex_extension_api::LoadedUserInstructions;
+use codex_features::Feature;
 use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
@@ -52,11 +53,18 @@ use crate::session::SUBMISSION_CHANNEL_CAPACITY;
 use crate::session::emit_subagent_session_started;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
+use crate::tools::approval_pipeline::ApprovalContext;
+use crate::tools::approval_pipeline::ensure_approval_grant_is_current;
+use crate::tools::approval_pipeline::request_approval;
+use crate::tools::approvals::ApprovalAction;
+use crate::tools::context::ToolCallSource;
+use crate::tools::sandboxing::ToolError;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_protocol::error::CodexErr;
 use codex_protocol::protocol::InitialHistory;
 use codex_protocol::protocol::MultiAgentVersion;
+use codex_tools::ToolName;
 
 #[cfg(test)]
 use crate::session::completed_session_loop_termination;
@@ -487,6 +495,94 @@ async fn forward_ops(
     }
 }
 
+async fn review_pending_delegated_action(
+    codex: &Codex,
+    parent_session: &Arc<Session>,
+    parent_ctx: &Arc<TurnContext>,
+    approval_id: &str,
+    retry_reason: Option<String>,
+    network_approval_context: Option<codex_protocol::approvals::NetworkApprovalContext>,
+    cancel_token: &CancellationToken,
+) -> Option<ReviewDecision> {
+    let action = codex
+        .session
+        .pending_delegated_approval_action(approval_id)
+        .await?;
+    let (call_id, attempt_id, tool_name) = match &action {
+        ApprovalAction::Shell { id, .. } => (id.clone(), approval_id.to_string(), "shell"),
+        ApprovalAction::ExecCommand { id, .. } => {
+            (id.clone(), approval_id.to_string(), "exec_command")
+        }
+        #[cfg(unix)]
+        ApprovalAction::Execve {
+            id, approval_id, source, ..
+        } => (
+            id.clone(),
+            approval_id.clone(),
+            match source {
+                codex_protocol::approvals::GuardianCommandSource::Shell => "shell",
+                codex_protocol::approvals::GuardianCommandSource::UnifiedExec => "exec_command",
+            },
+        ),
+        ApprovalAction::ApplyPatch { id, .. } => {
+            (id.clone(), approval_id.to_string(), "apply_patch")
+        }
+        ApprovalAction::RequestPermissions { id, .. } => {
+            (id.clone(), approval_id.to_string(), "request_permissions")
+        }
+    };
+    let review = request_approval(
+        parent_session,
+        action,
+        ApprovalContext {
+            turn: Arc::clone(parent_ctx),
+            call_id,
+            tool_name: ToolName::plain(tool_name),
+            approval_reason: None,
+            retry_reason,
+            network_approval_context,
+            required_by_strict: false,
+            attempt_id,
+            source: ToolCallSource::Direct,
+            cancellation_token: cancel_token.clone(),
+        },
+    );
+    tokio::pin!(review);
+    let result = tokio::select! {
+        biased;
+        _ = cancel_token.cancelled() => {
+            parent_session
+                .notify_approval(approval_id, ReviewDecision::Abort)
+                .await;
+            return Some(ReviewDecision::Abort);
+        }
+        result = &mut review => result,
+    };
+    let grant = match result {
+        Ok(grant) => grant,
+        Err(error) => return Some(delegated_approval_error_decision(error)),
+    };
+    if let Err(error) = ensure_approval_grant_is_current(
+        parent_session,
+        parent_ctx,
+        cancel_token,
+        &grant,
+    )
+    .await
+    {
+        return Some(delegated_approval_error_decision(error));
+    }
+    Some(grant.decision)
+}
+
+fn delegated_approval_error_decision(error: ToolError) -> ReviewDecision {
+    match error {
+        ToolError::Rejected(message) => ReviewDecision::denied_with_reason(message),
+        ToolError::Codex(CodexErr::TurnAborted) => ReviewDecision::Abort,
+        ToolError::Codex(error) => ReviewDecision::denied_with_reason(error.to_string()),
+    }
+}
+
 /// Handle an ExecApprovalRequest by consulting the parent session and replying.
 async fn handle_exec_approval(
     codex: &Codex,
@@ -497,6 +593,38 @@ async fn handle_exec_approval(
     cancel_token: &CancellationToken,
 ) {
     let approval_id_for_op = event.effective_approval_id();
+    if let Some(decision) = review_pending_delegated_action(
+        codex,
+        parent_session,
+        parent_ctx,
+        &approval_id_for_op,
+        event.reason.clone(),
+        event.network_approval_context.clone(),
+        cancel_token,
+    )
+    .await
+    {
+        let _ = codex
+            .submit(Op::ExecApproval {
+                id: approval_id_for_op,
+                turn_id: Some(turn_id),
+                decision,
+            })
+            .await;
+        return;
+    }
+    if parent_ctx.config.features.enabled(Feature::GuardianV2) {
+        let _ = codex
+            .submit(Op::ExecApproval {
+                id: approval_id_for_op,
+                turn_id: Some(turn_id),
+                decision: ReviewDecision::denied_with_reason(
+                    "delegated action lost its typed approval context",
+                ),
+            })
+            .await;
+        return;
+    }
     let ExecApprovalRequestEvent {
         call_id,
         approval_id,
@@ -581,6 +709,36 @@ async fn handle_patch_approval(
     event: ApplyPatchApprovalRequestEvent,
     cancel_token: &CancellationToken,
 ) {
+    if let Some(decision) = review_pending_delegated_action(
+        codex,
+        parent_session,
+        parent_ctx,
+        &event.call_id,
+        event.reason.clone(),
+        /*network_approval_context*/ None,
+        cancel_token,
+    )
+    .await
+    {
+        let _ = codex
+            .submit(Op::PatchApproval {
+                id: event.call_id,
+                decision,
+            })
+            .await;
+        return;
+    }
+    if parent_ctx.config.features.enabled(Feature::GuardianV2) {
+        let _ = codex
+            .submit(Op::PatchApproval {
+                id: event.call_id,
+                decision: ReviewDecision::denied_with_reason(
+                    "delegated action lost its typed approval context",
+                ),
+            })
+            .await;
+        return;
+    }
     let ApplyPatchApprovalRequestEvent {
         call_id,
         changes,
