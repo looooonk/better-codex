@@ -12,6 +12,8 @@ use super::thread_rollout_resolver;
 use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
 
+const MAX_ROLLOUT_LINEAGE_SEGMENTS: usize = 128;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct RolloutLineageSegment {
     pub(super) rollout_id: RolloutId,
@@ -59,6 +61,12 @@ impl LocalThreadStore {
         let mut end = None;
 
         loop {
+            if segments.len() == MAX_ROLLOUT_LINEAGE_SEGMENTS {
+                return Err(malformed_lineage(
+                    requested_thread_id,
+                    "lineage exceeds 128 rollout segments",
+                ));
+            }
             let coordination_id = next_rollout_id.unwrap_or(requested_thread_id);
             let _writer_guard = match representation {
                 LineageRepresentation::Existing => None,

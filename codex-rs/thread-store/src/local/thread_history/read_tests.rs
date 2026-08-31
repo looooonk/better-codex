@@ -1,6 +1,7 @@
 use chrono::Utc;
 use codex_app_server_protocol::CodexErrorInfo;
 use codex_protocol::ThreadId;
+use codex_protocol::protocol::HistoryPosition;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use pretty_assertions::assert_eq;
@@ -326,6 +327,113 @@ async fn selected_rollout_id_drives_history_queries_and_logical_cursors() {
 }
 
 #[tokio::test]
+async fn list_history_pages_across_selected_rollout_lineage() {
+    let (home, store, thread_id) = store_with_mode(ThreadHistoryMode::Paginated).await;
+    let state_db = store.state_db().await.expect("state runtime");
+    let root_path = state_db
+        .get_thread(thread_id)
+        .await
+        .expect("read metadata")
+        .expect("thread metadata")
+        .rollout_path;
+    let rollout_id = ThreadId::new();
+    let uuid = Uuid::parse_str(&thread_id.to_string()).expect("thread UUID");
+    let temporary_path = write_session_file_with_history_mode(
+        home.path(),
+        "2025-01-03T14-00-00",
+        uuid,
+        ThreadHistoryMode::Paginated,
+    )
+    .expect("replacement rollout");
+    let selected_path = temporary_path.with_file_name(format!(
+        "rollout-2025-01-03T14-00-00-{thread_id}_{rollout_id}.jsonl"
+    ));
+    std::fs::rename(temporary_path, selected_path.as_path()).expect("rename replacement");
+    set_history_base(
+        selected_path.as_path(),
+        HistoryPosition {
+            thread_id,
+            end_ordinal_exclusive: 15,
+            end_byte_offset: std::fs::metadata(root_path)
+                .expect("root metadata")
+                .len(),
+        },
+    );
+    let mut metadata = state_db
+        .get_thread(thread_id)
+        .await
+        .expect("read metadata")
+        .expect("thread metadata");
+    metadata.rollout_path = selected_path;
+    state_db
+        .upsert_thread(&metadata)
+        .await
+        .expect("select replacement");
+    let db = history_db(&store).await;
+    insert_turn(
+        db,
+        thread_id,
+        "root-turn",
+        10,
+        "completed",
+        /*error_json*/ None,
+        Some("root-item"),
+        /*final_agent_item_id*/ None,
+    )
+    .await;
+    insert_item(db, thread_id, "root-turn", "root-item", 11).await;
+    insert_turn(
+        db,
+        rollout_id,
+        "head-turn",
+        20,
+        "completed",
+        /*error_json*/ None,
+        Some("head-item"),
+        /*final_agent_item_id*/ None,
+    )
+    .await;
+    insert_item(db, rollout_id, "head-turn", "head-item", 21).await;
+
+    let first_page = store
+        .list_turns(turn_params(
+            thread_id,
+            /*cursor*/ None,
+            /*page_size*/ 1,
+            SortDirection::Asc,
+            StoredTurnItemsView::Summary,
+        ))
+        .await
+        .expect("first lineage page");
+    assert_eq!(turn_ids(&first_page), vec!["root-turn"]);
+    assert_eq!(first_page.turns[0].items[0].item_id, "root-item");
+    let second_page = store
+        .list_turns(turn_params(
+            thread_id,
+            first_page.next_cursor,
+            /*page_size*/ 1,
+            SortDirection::Asc,
+            StoredTurnItemsView::Summary,
+        ))
+        .await
+        .expect("second lineage page");
+    assert_eq!(turn_ids(&second_page), vec!["head-turn"]);
+    assert_eq!(second_page.turns[0].items[0].item_id, "head-item");
+
+    let items = store
+        .list_items(item_params(
+            thread_id,
+            /*turn_id*/ None,
+            /*cursor*/ None,
+            /*page_size*/ 10,
+            SortDirection::Asc,
+        ))
+        .await
+        .expect("lineage items");
+    assert_eq!(item_ids(&items), vec!["root-item", "head-item"]);
+}
+
+#[tokio::test]
 async fn list_history_keeps_legacy_threads_unsupported() {
     let (_home, store, thread_id) = store_with_mode(ThreadHistoryMode::Legacy).await;
 
@@ -516,6 +624,23 @@ fn item_params(
         page_size,
         sort_direction,
     }
+}
+
+fn set_history_base(path: &std::path::Path, history_base: HistoryPosition) {
+    let contents = std::fs::read_to_string(path).expect("read rollout");
+    let mut lines = contents.lines();
+    let mut head: serde_json::Value =
+        serde_json::from_str(lines.next().expect("session metadata")).expect("parse metadata");
+    head["ordinal"] = serde_json::json!(history_base.end_ordinal_exclusive);
+    head["payload"]["history_base"] =
+        serde_json::to_value(history_base).expect("serialize history base");
+    let mut updated = serde_json::to_string(&head).expect("serialize metadata");
+    for line in lines {
+        updated.push('\n');
+        updated.push_str(line);
+    }
+    updated.push('\n');
+    std::fs::write(path, updated).expect("write history base");
 }
 
 fn expected_item(turn_id: &str, item_id: &str, rollout_ordinal: u64) -> StoredThreadItem {

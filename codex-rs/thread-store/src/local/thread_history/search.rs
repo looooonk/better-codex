@@ -10,12 +10,15 @@ use pulldown_cmark::Parser;
 use pulldown_cmark::TagEnd;
 use serde::Deserialize;
 use serde::Serialize;
+use sqlx::QueryBuilder;
 use sqlx::Row;
+use sqlx::Sqlite;
 
 use super::super::LocalThreadStore;
 use super::read::CursorScope;
+use super::read::prepare_lineage_for_paginated_reads;
+use super::read::push_lineage_filter;
 use super::read::serialize_cursor;
-use super::read::validate_thread_for_paginated_reads;
 use super::MAX_THREAD_HISTORY_INPUT_BYTES;
 use super::MAX_THREAD_OCCURRENCE_PAGE_SIZE;
 use super::thread_history_error;
@@ -55,7 +58,7 @@ pub(in crate::local) async fn search_thread_occurrences(
     params: SearchThreadOccurrencesParams,
 ) -> ThreadStoreResult<ThreadOccurrenceSearchPage> {
     validate_search_request(&params)?;
-    let resolved = validate_thread_for_paginated_reads(
+    let lineage = prepare_lineage_for_paginated_reads(
         store,
         params.thread_id,
         /*include_archived*/ true,
@@ -64,7 +67,7 @@ pub(in crate::local) async fn search_thread_occurrences(
     .await?;
     let cursor = parse_cursor(
         params.cursor.as_deref(),
-        resolved.thread_id,
+        params.thread_id,
         &params.search_term,
     )?;
     let next_rollout_ordinal = cursor
@@ -72,7 +75,7 @@ pub(in crate::local) async fn search_thread_occurrences(
         .map_or(0, |cursor| cursor.next_rollout_ordinal);
     let matcher = LiteralMatcher::new(params.search_term.as_str());
     let pool = store.thread_history_db().await?;
-    let mut rows = sqlx::query(
+    let mut query = QueryBuilder::<Sqlite>::new(
         r#"
 SELECT turn_id, item_id, rollout_ordinal, item_json, turn_rollout_ordinal
 FROM (
@@ -86,9 +89,20 @@ FROM (
     JOIN thread_turns AS turns
       ON turns.thread_id = items.thread_id
      AND turns.turn_id = items.turn_id
-    WHERE items.thread_id = ?
-      AND items.item_type = 'userMessage'
-      AND items.rollout_ordinal >= ?
+    WHERE
+        "#,
+    );
+    push_lineage_filter(
+        &mut query,
+        &lineage,
+        "items.thread_id",
+        "items.rollout_ordinal",
+    )?;
+    query
+        .push(" AND items.item_type = 'userMessage' AND items.rollout_ordinal >= ")
+        .push_bind(next_rollout_ordinal)
+        .push(
+            r#"
 
     UNION ALL
 
@@ -103,18 +117,25 @@ FROM (
       ON items.thread_id = turns.thread_id
      AND items.turn_id = turns.turn_id
      AND items.item_id = turns.final_agent_item_id
-    WHERE turns.thread_id = ?
-      AND turns.final_agent_item_id IS NOT NULL
-      AND items.rollout_ordinal >= ?
+    WHERE
+            "#,
+        );
+    push_lineage_filter(
+        &mut query,
+        &lineage,
+        "turns.thread_id",
+        "items.rollout_ordinal",
+    )?;
+    query
+        .push(" AND turns.final_agent_item_id IS NOT NULL AND items.rollout_ordinal >= ")
+        .push_bind(next_rollout_ordinal)
+        .push(
+            r#"
 )
 ORDER BY rollout_ordinal ASC
         "#,
-    )
-    .bind(resolved.rollout_id.to_string())
-    .bind(next_rollout_ordinal)
-    .bind(resolved.rollout_id.to_string())
-    .bind(next_rollout_ordinal)
-    .fetch(pool);
+        );
+    let mut rows = query.build().fetch(pool);
 
     let mut items = Vec::with_capacity(params.page_size);
     while let Some(row) = rows.try_next().await.map_err(thread_history_error)? {
@@ -136,7 +157,7 @@ ORDER BY rollout_ordinal ASC
             .saturating_add(1)
             .saturating_sub(items.len());
         let turn_cursor = serialize_cursor(
-            resolved.thread_id,
+            params.thread_id,
             &CursorScope::Turns,
             row.turn_rollout_ordinal,
             /*include_anchor*/ true,
@@ -154,7 +175,7 @@ ORDER BY rollout_ordinal ASC
                 return Ok(ThreadOccurrenceSearchPage {
                     items,
                     next_cursor: Some(serialize_cursor_for_search(SearchCursor {
-                        thread_id: resolved.thread_id,
+                        thread_id: params.thread_id,
                         search_term: params.search_term,
                         next_rollout_ordinal: row.rollout_ordinal,
                         next_occurrence_index: occurrence_index,
