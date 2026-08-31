@@ -15,6 +15,7 @@ use crate::environment_selection::ThreadEnvironments;
 use crate::exec_policy::ExecPolicyManager;
 use crate::guardian::GuardianRejection;
 use crate::guardian::GuardianRejectionCircuitBreaker;
+use crate::mcp_tool_exposure::McpHandlerCache;
 use crate::mcp::McpManager;
 use crate::session::McpRuntimeSnapshot;
 use crate::tools::code_mode::CodeModeService;
@@ -102,6 +103,7 @@ pub(crate) struct SessionServices {
     /// Session-scoped model client shared across turns.
     pub(crate) model_client: ModelClient,
     pub(crate) code_mode_service: CodeModeService,
+    pub(crate) mcp_handler_cache: McpHandlerCache,
     pub(crate) tool_search_handler_cache: ToolSearchHandlerCache,
     pub(crate) turn_environments: Arc<ThreadEnvironments>,
 }

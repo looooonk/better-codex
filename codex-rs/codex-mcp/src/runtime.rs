@@ -46,6 +46,10 @@ impl McpRuntime {
         connections
     }
 
+    pub async fn wait_for_server_startup(&self, server_name: &str) {
+        let _ = self.snapshot().wait_for_server_startup(server_name).await;
+    }
+
     pub async fn shutdown(&self) {
         self.snapshot().shutdown().await;
     }

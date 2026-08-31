@@ -378,20 +378,28 @@ fn codex_apps_tools_cache_publishes_newest_shared_snapshot() {
     let newer_tools = vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "newer")];
     let older_tools = vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "older")];
 
-    let published_tools =
-        cache_context_2.publish_if_newest_accepted(newer_ticket, &server_info, newer_tools);
+    let published = cache_context_2.publish_if_newest_accepted_with_status(
+        newer_ticket,
+        &server_info,
+        newer_tools,
+    );
+    assert!(published.published);
     assert_eq!(
-        model_tool_names(&published_tools),
+        model_tool_names(&published.tools),
         model_tool_names(
             &cache_context_1
                 .current_tools()
                 .expect("new snapshot should publish")
         )
     );
-    let current_tools =
-        cache_context_1.publish_if_newest_accepted(older_ticket, &server_info, older_tools);
+    let stale = cache_context_1.publish_if_newest_accepted_with_status(
+        older_ticket,
+        &server_info,
+        older_tools,
+    );
 
-    assert_eq!(current_tools[0].callable_name, "newer");
+    assert!(!stale.published);
+    assert_eq!(stale.tools[0].callable_name, "newer");
     assert_eq!(
         cache_context_2.current_tools().expect("shared snapshot")[0].callable_name,
         "newer"

@@ -37,7 +37,6 @@ use rmcp::service::RoleClient;
 use rmcp::service::RxJsonRpcMessage;
 use rmcp::service::TxJsonRpcMessage;
 use rmcp::transport::Transport;
-use serde_json::from_slice;
 use serde_json::to_vec;
 use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
@@ -46,6 +45,7 @@ use tracing::debug;
 use tracing::info;
 use tracing::warn;
 
+use crate::incoming_jsonrpc::StdioProtocolState;
 use crate::local_stdio_transport::MAX_MCP_STDIO_LINE_BYTES;
 use crate::protocol_mode::McpProtocolMode;
 
@@ -180,8 +180,8 @@ pub(super) struct ExecutorProcessTransport {
     /// Human-readable program name used only in diagnostics.
     program_name: String,
 
-    /// Compatibility policy for outbound stdio message limits.
-    protocol_mode: McpProtocolMode,
+    /// Requested and negotiated protocol state for framing compatibility.
+    protocol_state: StdioProtocolState,
 
     /// Buffered child stdout bytes that have not yet formed a complete
     /// newline-delimited JSON-RPC message.
@@ -222,7 +222,7 @@ impl ExecutorProcessTransport {
             stdin_write_semaphore: Arc::new(Semaphore::new(1)),
             events,
             program_name,
-            protocol_mode,
+            protocol_state: StdioProtocolState::new(protocol_mode),
             stdout: LineBuffer::default(),
             stderr: LineBuffer::new(MAX_MCP_STDERR_LINE_BYTES),
             closed: false,
@@ -249,7 +249,7 @@ impl Transport<RoleClient> for ExecutorProcessTransport {
     ) -> impl Future<Output = std::result::Result<(), Self::Error>> + Send + 'static {
         let process = Arc::clone(&self.process);
         let stdin_write_semaphore = Arc::clone(&self.stdin_write_semaphore);
-        let protocol_mode = self.protocol_mode;
+        let protocol_state = self.protocol_state.clone();
         async move {
             let _stdin_write_permit = stdin_write_semaphore
                 .acquire()
@@ -258,7 +258,8 @@ impl Transport<RoleClient> for ExecutorProcessTransport {
             // rmcp hands us a structured JSON-RPC message. Stdio transport on
             // the wire is JSON plus one newline delimiter.
             let mut bytes = to_vec(&item).map_err(io::Error::other)?;
-            if protocol_mode == McpProtocolMode::V20260728 && bytes.len() > MAX_MCP_STDIO_LINE_BYTES
+            if protocol_state.enforce_modern_bounds()
+                && bytes.len() > MAX_MCP_STDIO_LINE_BYTES
             {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -469,7 +470,7 @@ impl ExecutorProcessTransport {
                 None => return None,
             };
             let line = Self::trim_trailing_carriage_return(line);
-            match from_slice::<RxJsonRpcMessage<RoleClient>>(&line) {
+            match self.protocol_state.deserialize(&line) {
                 Ok(message) => return Some(message),
                 Err(error) => {
                     debug!(

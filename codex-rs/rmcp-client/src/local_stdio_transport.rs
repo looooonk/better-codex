@@ -23,6 +23,9 @@ use tokio::sync::Mutex;
 use tracing::debug;
 use tracing::warn;
 
+use crate::incoming_jsonrpc::StdioProtocolState;
+use crate::protocol_mode::McpProtocolMode;
+
 /// Match the existing executor stdio transport and the production MCP limit.
 pub(crate) const MAX_MCP_STDIO_LINE_BYTES: usize = 8 * 1024 * 1024;
 
@@ -32,12 +35,14 @@ pub(super) struct LocalStdioTransport {
     stdout: BufReader<ChildStdout>,
     pending_line: Vec<u8>,
     program_name: String,
+    protocol_state: StdioProtocolState,
 }
 
 impl LocalStdioTransport {
     pub(super) fn spawn(
         mut command: Command,
         program_name: String,
+        protocol_mode: McpProtocolMode,
     ) -> io::Result<(Self, Option<ChildStderr>)> {
         command
             .stdin(Stdio::piped())
@@ -61,6 +66,7 @@ impl LocalStdioTransport {
                 stdout: BufReader::new(stdout),
                 pending_line: Vec::new(),
                 program_name,
+                protocol_state: StdioProtocolState::new(protocol_mode),
             },
             stderr,
         ))
@@ -116,7 +122,7 @@ impl LocalStdioTransport {
     fn decode_pending_message(&mut self) -> Option<RxJsonRpcMessage<RoleClient>> {
         let line = std::mem::take(&mut self.pending_line);
         let line = line.strip_suffix(b"\r").unwrap_or(&line);
-        match serde_json::from_slice(line) {
+        match self.protocol_state.deserialize(line) {
             Ok(message) => Some(message),
             Err(error) => {
                 debug!(
@@ -141,9 +147,12 @@ impl Transport<RoleClient> for LocalStdioTransport {
         item: TxJsonRpcMessage<RoleClient>,
     ) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
         let stdin = Arc::clone(&self.stdin);
+        let protocol_state = self.protocol_state.clone();
         async move {
             let mut message = serde_json::to_vec(&item).map_err(io::Error::other)?;
-            if message.len() > MAX_MCP_STDIO_LINE_BYTES {
+            if protocol_state.enforce_modern_bounds()
+                && message.len() > MAX_MCP_STDIO_LINE_BYTES
+            {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("MCP stdio message exceeds {MAX_MCP_STDIO_LINE_BYTES} bytes"),

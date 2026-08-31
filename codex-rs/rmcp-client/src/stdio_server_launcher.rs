@@ -295,8 +295,11 @@ impl LocalStdioServerLauncher {
                 )
             }
             McpProtocolMode::V20260728 => {
-                let (transport, stderr) =
-                    LocalStdioTransport::spawn(command, program_name.clone())?;
+                let (transport, stderr) = LocalStdioTransport::spawn(
+                    command,
+                    program_name.clone(),
+                    protocol_mode,
+                )?;
                 let process_id = transport.id();
                 (
                     StdioServerTransportInner::LocalModern(transport),

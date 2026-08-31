@@ -87,6 +87,26 @@ fn cache_reuses_sanitized_newest_catalog_and_honors_server_opt_out() {
 }
 
 #[test]
+fn cache_shares_optional_startup_deadline_until_catalog_publication() {
+    let cache = McpToolCatalogCache::default();
+    let runtime_context = McpRuntimeContext::new(
+        Arc::new(EnvironmentManager::without_environments()),
+        PathBuf::from("/workspace"),
+    );
+    let config = config(serde_json::json!({ "command": "docs-mcp" }));
+    let first = context(&cache, &config, &runtime_context);
+    let second = context(&cache, &config, &runtime_context);
+    let first_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
+    let later_deadline = first_deadline + std::time::Duration::from_secs(5);
+
+    assert_eq!(first.optional_startup_deadline(first_deadline), first_deadline);
+    assert_eq!(second.optional_startup_deadline(later_deadline), first_deadline);
+
+    first.publish_if_newest(first.begin_fetch(), &[tool("ready")]);
+    assert_eq!(second.optional_startup_deadline(later_deadline), later_deadline);
+}
+
+#[test]
 fn cache_bypasses_http_and_remote_sourced_environment_variables() {
     let cache = McpToolCatalogCache::default();
     let runtime_context = McpRuntimeContext::new(

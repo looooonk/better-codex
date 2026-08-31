@@ -134,6 +134,24 @@ fn prompt_options(
     }
 }
 
+fn approval_route(approval_mode: AppToolApproval) -> McpApprovalRouteSnapshot {
+    McpApprovalRouteSnapshot {
+        catalog_revision: 0,
+        approval_policy: AskForApproval::OnRequest,
+        policy_revision: 0,
+        never_revision: 0,
+        approvals_reviewer: ApprovalsReviewer::User,
+        reviewer_revision: 0,
+        approval_mode,
+    }
+}
+
+fn approval_decision(
+    resolution: Option<McpToolApprovalResolution>,
+) -> Option<McpToolApprovalDecision> {
+    resolution.map(|resolution| resolution.decision)
+}
+
 #[tokio::test]
 async fn execute_mcp_tool_call_records_replayable_correlation() -> anyhow::Result<()> {
     let temp = tempdir()?;
@@ -174,6 +192,8 @@ async fn execute_mcp_tool_call_records_replayable_correlation() -> anyhow::Resul
         /*rewritten_arguments*/ None,
         /*metadata*/ None,
         /*request_meta*/ None,
+        /*binding*/ None,
+        /*approval_application*/ None,
     )
     .await;
     assert!(
@@ -198,6 +218,7 @@ async fn mcp_dispatch_rejects_a_tool_missing_from_the_live_catalog() {
     let handled = handle_mcp_tool_call(
         session,
         &step_context,
+        /*binding*/ None,
         "call-missing".to_string(),
         "docs".to_string(),
         "forged".to_string(),
@@ -869,6 +890,7 @@ fn codex_apps_tool_question_without_elicitation_omits_always_allow() {
         server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
         connector_id: Some("calendar".to_string()),
         tool_name: "run_action".to_string(),
+        approval_route: approval_route(AppToolApproval::Auto),
     };
     let persistent_key = session_key.clone();
     let question = build_mcp_tool_approval_question(
@@ -939,17 +961,22 @@ fn custom_servers_support_session_and_persistent_approval() {
         server: "custom_server".to_string(),
         connector_id: None,
         tool_name: "run_action".to_string(),
+        approval_route: approval_route(AppToolApproval::Auto),
     };
 
     assert_eq!(
-        session_mcp_tool_approval_key(&invocation, /*metadata*/ None, AppToolApproval::Auto),
+        session_mcp_tool_approval_key(
+            &invocation,
+            /*metadata*/ None,
+            approval_route(AppToolApproval::Auto)
+        ),
         Some(expected.clone())
     );
     assert_eq!(
         persistent_mcp_tool_approval_key(
             &invocation,
             /*metadata*/ None,
-            AppToolApproval::Auto
+            approval_route(AppToolApproval::Auto)
         ),
         Some(expected)
     );
@@ -973,14 +1000,23 @@ fn codex_apps_connectors_support_persistent_approval() {
         server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
         connector_id: Some("calendar".to_string()),
         tool_name: "calendar/list_events".to_string(),
+        approval_route: approval_route(AppToolApproval::Auto),
     };
 
     assert_eq!(
-        session_mcp_tool_approval_key(&invocation, Some(&metadata), AppToolApproval::Auto),
+        session_mcp_tool_approval_key(
+            &invocation,
+            Some(&metadata),
+            approval_route(AppToolApproval::Auto)
+        ),
         Some(expected.clone())
     );
     assert_eq!(
-        persistent_mcp_tool_approval_key(&invocation, Some(&metadata), AppToolApproval::Auto),
+        persistent_mcp_tool_approval_key(
+            &invocation,
+            Some(&metadata),
+            approval_route(AppToolApproval::Auto)
+        ),
         Some(expected)
     );
 }
@@ -2339,6 +2375,7 @@ async fn maybe_persist_mcp_tool_approval_reloads_session_config() {
         server: CODEX_APPS_MCP_SERVER_NAME.to_string(),
         connector_id: Some("calendar".to_string()),
         tool_name: "calendar/list_events".to_string(),
+        approval_route: approval_route(AppToolApproval::Auto),
     };
 
     maybe_persist_mcp_tool_approval(&session, &turn_context, key.clone()).await;
@@ -2389,6 +2426,7 @@ async fn maybe_persist_mcp_tool_approval_reloads_session_config_for_custom_serve
         server: "docs".to_string(),
         connector_id: None,
         tool_name: "search".to_string(),
+        approval_route: approval_route(AppToolApproval::Auto),
     };
 
     maybe_persist_mcp_tool_approval(&session, &turn_context, key.clone()).await;
@@ -2444,6 +2482,7 @@ enabled = true
         server: "sample".to_string(),
         connector_id: None,
         tool_name: "search".to_string(),
+        approval_route: approval_route(AppToolApproval::Auto),
     };
 
     maybe_persist_mcp_tool_approval(&session, &turn_context, key.clone()).await;
@@ -2499,6 +2538,7 @@ async fn maybe_persist_mcp_tool_approval_writes_project_config_for_project_serve
         server: "docs".to_string(),
         connector_id: None,
         tool_name: "search".to_string(),
+        approval_route: approval_route(AppToolApproval::Auto),
     };
 
     maybe_persist_mcp_tool_approval(&session, &turn_context, key.clone()).await;
@@ -2520,6 +2560,123 @@ async fn maybe_persist_mcp_tool_approval_writes_project_config_for_project_serve
     );
     assert!(contents.contains("[mcp_servers.docs.tools.search]"));
     assert_eq!(mcp_tool_approval_is_remembered(&session, &key).await, true);
+}
+
+#[tokio::test]
+async fn remembered_mcp_approval_does_not_cross_catalog_revisions() {
+    let (session, _turn_context) = make_session_and_context().await;
+    let invocation = McpInvocation {
+        server: "docs".to_string(),
+        tool: "search".to_string(),
+        arguments: None,
+    };
+    let v1_route = approval_route(AppToolApproval::Auto);
+    let v1_key = session_mcp_tool_approval_key(&invocation, /*metadata*/ None, v1_route)
+        .expect("docs/search supports session approval");
+    remember_mcp_tool_approval(&session, v1_key.clone()).await;
+
+    let v2_route = McpApprovalRouteSnapshot {
+        catalog_revision: v1_route.catalog_revision + 1,
+        ..v1_route
+    };
+    let v2_key = session_mcp_tool_approval_key(&invocation, /*metadata*/ None, v2_route)
+        .expect("docs/search supports session approval");
+
+    assert_eq!(mcp_tool_approval_is_remembered(&session, &v1_key).await, true);
+    assert_eq!(mcp_tool_approval_is_remembered(&session, &v2_key).await, false);
+}
+
+#[tokio::test]
+async fn policy_change_while_mcp_prompt_is_open_prevents_delayed_execution() {
+    let (session, turn_context) = make_session_and_context().await;
+    let turn_context = Arc::new(turn_context);
+    let step_context = StepContext::for_test(Arc::clone(&turn_context));
+    let invocation = McpInvocation {
+        server: "docs".to_string(),
+        tool: "search".to_string(),
+        arguments: None,
+    };
+    let route = McpApprovalRouteSnapshot::capture(
+        turn_context.as_ref(),
+        step_context.mcp.manager(),
+        &invocation.server,
+        /*metadata*/ None,
+        AppToolApproval::Auto,
+    )
+    .await
+    .expect("stable approval route");
+    let key = session_mcp_tool_approval_key(&invocation, /*metadata*/ None, route)
+        .expect("docs/search supports session approval");
+    turn_context
+        .approval_policy
+        .set(AskForApproval::Never)
+        .expect("test setup should allow updating approval policy");
+
+    let error = apply_mcp_tool_approval_application(
+        &session,
+        turn_context.as_ref(),
+        step_context.mcp.manager(),
+        &invocation,
+        /*metadata*/ None,
+        Some(McpToolApprovalApplication {
+            decision: McpToolApprovalDecision::AcceptForSession,
+            approval_route: route,
+            session_approval_key: Some(key.clone()),
+            persistent_approval_key: None,
+        }),
+    )
+    .await
+    .expect_err("changed policy must invalidate delayed approval");
+
+    assert!(error.to_string().contains("approval route changed"));
+    assert_eq!(mcp_tool_approval_is_remembered(&session, &key).await, false);
+}
+
+#[tokio::test]
+async fn reviewer_change_while_mcp_prompt_is_open_prevents_delayed_execution() {
+    let (session, turn_context) = make_session_and_context().await;
+    let turn_context = Arc::new(turn_context);
+    let step_context = StepContext::for_test(Arc::clone(&turn_context));
+    let invocation = McpInvocation {
+        server: "docs".to_string(),
+        tool: "search".to_string(),
+        arguments: None,
+    };
+    let route = McpApprovalRouteSnapshot::capture(
+        turn_context.as_ref(),
+        step_context.mcp.manager(),
+        &invocation.server,
+        /*metadata*/ None,
+        AppToolApproval::Auto,
+    )
+    .await
+    .expect("stable approval route");
+    let key = session_mcp_tool_approval_key(&invocation, /*metadata*/ None, route)
+        .expect("docs/search supports session approval");
+    let next_reviewer = match turn_context.approvals_reviewer.snapshot().0 {
+        ApprovalsReviewer::User => ApprovalsReviewer::AutoReview,
+        ApprovalsReviewer::AutoReview => ApprovalsReviewer::User,
+    };
+    turn_context.approvals_reviewer.replace(next_reviewer);
+
+    let error = apply_mcp_tool_approval_application(
+        &session,
+        turn_context.as_ref(),
+        step_context.mcp.manager(),
+        &invocation,
+        /*metadata*/ None,
+        Some(McpToolApprovalApplication {
+            decision: McpToolApprovalDecision::AcceptForSession,
+            approval_route: route,
+            session_approval_key: Some(key.clone()),
+            persistent_approval_key: None,
+        }),
+    )
+    .await
+    .expect_err("changed reviewer must invalidate delayed approval");
+
+    assert!(error.to_string().contains("approval route changed"));
+    assert_eq!(mcp_tool_approval_is_remembered(&session, &key).await, false);
 }
 
 #[tokio::test]
@@ -2563,7 +2720,7 @@ async fn approve_mode_skips_when_annotations_do_not_require_approval() {
     )
     .await;
 
-    assert_eq!(decision, None);
+    assert_eq!(approval_decision(decision), None);
 }
 
 #[tokio::test]
@@ -2589,6 +2746,9 @@ async fn guardian_mode_skips_auto_when_annotations_do_not_require_approval() {
     let mut config = (*turn_context.config).clone();
     config.model_provider.base_url = Some(format!("{}/v1", server.uri()));
     config.approvals_reviewer = ApprovalsReviewer::AutoReview;
+    turn_context
+        .approvals_reviewer
+        .replace(ApprovalsReviewer::AutoReview);
     let config = Arc::new(config);
     let models_manager = models_manager_with_provider(
         config.codex_home.to_path_buf(),
@@ -2640,7 +2800,7 @@ async fn guardian_mode_skips_auto_when_annotations_do_not_require_approval() {
     )
     .await;
 
-    assert_eq!(decision, None);
+    assert_eq!(approval_decision(decision), None);
 }
 
 #[tokio::test]
@@ -2700,7 +2860,10 @@ async fn permission_request_hook_allows_mcp_tool_call() {
     )
     .await;
 
-    assert_eq!(decision, Some(McpToolApprovalDecision::Accept));
+    assert_eq!(
+        approval_decision(decision),
+        Some(McpToolApprovalDecision::Accept)
+    );
     let log = std::fs::read_to_string(log_path).expect("read MCP permission hook log");
     let inputs = log
         .lines()
@@ -2762,7 +2925,10 @@ async fn permission_request_hook_uses_hook_tool_name_without_metadata() {
     )
     .await;
 
-    assert_eq!(decision, Some(McpToolApprovalDecision::Accept));
+    assert_eq!(
+        approval_decision(decision),
+        Some(McpToolApprovalDecision::Accept)
+    );
     let log = std::fs::read_to_string(log_path).expect("read MCP permission hook log");
     let inputs = log
         .lines()
@@ -2828,8 +2994,12 @@ async fn permission_request_hook_runs_after_remembered_mcp_approval() {
         openai_file_input_optional_fields: None,
     };
     let remembered_key =
-        session_mcp_tool_approval_key(&invocation, Some(&metadata), AppToolApproval::Auto)
-            .expect("memory MCP tool should support session approval");
+        session_mcp_tool_approval_key(
+            &invocation,
+            Some(&metadata),
+            approval_route(AppToolApproval::Auto),
+        )
+        .expect("memory MCP tool should support session approval");
     remember_mcp_tool_approval(&session, remembered_key).await;
 
     let session = Arc::new(session);
@@ -2845,7 +3015,10 @@ async fn permission_request_hook_runs_after_remembered_mcp_approval() {
     )
     .await;
 
-    assert_eq!(decision, Some(McpToolApprovalDecision::Accept));
+    assert_eq!(
+        approval_decision(decision),
+        Some(McpToolApprovalDecision::Accept)
+    );
     assert!(
         !log_path.exists(),
         "remembered approval should skip PermissionRequest hooks"
@@ -2882,6 +3055,9 @@ async fn guardian_mode_mcp_denial_returns_rationale_message() {
     let mut config = (*turn_context.config).clone();
     config.model_provider.base_url = Some(format!("{}/v1", server.uri()));
     config.approvals_reviewer = ApprovalsReviewer::AutoReview;
+    turn_context
+        .approvals_reviewer
+        .replace(ApprovalsReviewer::AutoReview);
     let config = Arc::new(config);
     let models_manager = models_manager_with_provider(
         config.codex_home.to_path_buf(),
@@ -2931,7 +3107,7 @@ async fn guardian_mode_mcp_denial_returns_rationale_message() {
 
     let Some(McpToolApprovalDecision::Decline {
         message: Some(message),
-    }) = decision
+    }) = approval_decision(decision)
     else {
         panic!("guardian-denied MCP approval should carry a rejection message");
     };
@@ -3049,7 +3225,7 @@ async fn full_access_mode_skips_mcp_tool_approval_for_all_approval_modes() {
         )
         .await;
 
-        assert_eq!(decision, None);
+        assert_eq!(approval_decision(decision), None);
     }
 }
 
@@ -3113,6 +3289,9 @@ async fn approve_mode_skips_guardian_in_every_permission_mode() {
         config.chatgpt_base_url = server.uri();
         config.model_provider.base_url = Some(format!("{}/v1", server.uri()));
         config.approvals_reviewer = ApprovalsReviewer::User;
+        turn_context
+            .approvals_reviewer
+            .replace(ApprovalsReviewer::User);
         let config = Arc::new(config);
         let models_manager = models_manager_with_provider(
             config.codex_home.to_path_buf(),
@@ -3139,6 +3318,6 @@ async fn approve_mode_skips_guardian_in_every_permission_mode() {
         )
         .await;
 
-        assert_eq!(decision, None);
+        assert_eq!(approval_decision(decision), None);
     }
 }

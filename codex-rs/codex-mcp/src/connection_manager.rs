@@ -9,6 +9,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
+use std::sync::OnceLock;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
@@ -18,7 +21,10 @@ use crate::McpProtocolMode;
 use crate::codex_apps::prepare_openai_file_params_for_model;
 use crate::codex_apps_cache::CodexAppsToolsCache;
 use crate::codex_apps_cache::CodexAppsToolsCacheKey;
+use crate::codex_apps_cache::CodexAppsToolsCacheContext;
+use crate::codex_apps_cache::CodexAppsToolsFetchTicket;
 use crate::codex_apps_cache::CodexAppsToolsFetchSource;
+use crate::codex_apps_cache::CodexAppsToolsSnapshot;
 use crate::elicitation::ElicitationRequestManager;
 use crate::elicitation::ElicitationRequestRouter;
 use crate::elicitation::ElicitationReviewerHandle;
@@ -37,6 +43,7 @@ use crate::runtime::emit_duration;
 use crate::server::EffectiveMcpServer;
 use crate::server::McpServerMetadata;
 use crate::tool_catalog_cache::McpToolCatalogCache;
+use crate::tool_catalog_cache::McpToolCatalogSnapshot;
 use crate::tools::ToolInfo;
 use crate::tools::filter_tools;
 use crate::tools::normalize_tools_for_model_with_prefix;
@@ -66,6 +73,7 @@ use codex_protocol::protocol::McpStartupUpdateEvent;
 use codex_rmcp_client::ElicitationResponse;
 use codex_rmcp_client::McpAuthState;
 use codex_rmcp_client::McpLoginRequirement;
+use futures::future::join_all;
 use rmcp::model::ElicitationCapability;
 use rmcp::model::ListResourceTemplatesResult;
 use rmcp::model::ListResourcesResult;
@@ -76,6 +84,8 @@ use rmcp::model::RequestId;
 use rmcp::model::Resource;
 use rmcp::model::ResourceTemplate;
 use serde_json::Value as JsonValue;
+use tokio::sync::OwnedRwLockReadGuard;
+use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
@@ -88,6 +98,9 @@ use tracing::warn;
 const MCP_UI_META_KEY: &str = "ui";
 const MCP_UI_VISIBILITY_META_KEY: &str = "visibility";
 const MCP_UI_MODEL_VISIBILITY: &str = "model";
+
+#[path = "catalog_startup.rs"]
+mod catalog_startup;
 
 /// Returns whether a tool may be included in model-facing tool declarations.
 ///
@@ -118,11 +131,71 @@ pub struct McpConnectionManager {
     clients: HashMap<String, AsyncManagedClient>,
     server_metadata: HashMap<String, McpServerMetadata>,
     required_servers: Vec<String>,
+    optional_startup_deadline: OnceLock<tokio::time::Instant>,
+    tool_catalog_revision: Arc<RwLock<u64>>,
+    codex_apps_catalog: StdMutex<CodexAppsLocalCatalog>,
+    shared_tool_catalogs: StdMutex<HashMap<String, SharedToolCatalog>>,
+    next_codex_apps_refresh_generation: AtomicU64,
     tool_plugin_provenance: Arc<ToolPluginProvenance>,
     prefix_mcp_tool_names: bool,
     elicitation_requests: ElicitationRequestManager,
     startup_cancellation_token: CancellationToken,
 }
+
+pub(crate) struct PreparedMcpToolCall {
+    client: Arc<codex_rmcp_client::RmcpClient>,
+    server: String,
+    tool: String,
+    timeout: Option<Duration>,
+}
+
+impl PreparedMcpToolCall {
+    pub(crate) async fn call(
+        self,
+        arguments: Option<serde_json::Value>,
+        meta: Option<serde_json::Value>,
+    ) -> Result<CallToolResult> {
+        let result: rmcp::model::CallToolResult = self
+            .client
+            .call_tool(self.tool.clone(), arguments, meta, self.timeout)
+            .await
+            .with_context(|| {
+                format!("tool call failed for `{}/{}`", self.server, self.tool)
+            })?;
+
+        let content = result
+            .content
+            .into_iter()
+            .map(|content| {
+                serde_json::to_value(content)
+                    .unwrap_or_else(|_| serde_json::Value::String("<content>".to_string()))
+            })
+            .collect();
+
+        Ok(CallToolResult {
+            content,
+            structured_content: result.structured_content,
+            is_error: result.is_error,
+            meta: result.meta.and_then(|meta| serde_json::to_value(meta).ok()),
+        })
+    }
+}
+
+#[derive(Default)]
+struct CodexAppsLocalCatalog {
+    tools: Option<Vec<ToolInfo>>,
+    shared_generation: Option<u64>,
+    last_refresh_generation: u64,
+    using_shared_fallback: bool,
+}
+
+struct SharedToolCatalog {
+    generation: u64,
+    tools: Option<Vec<ToolInfo>>,
+}
+
+#[derive(Clone, Copy)]
+struct CodexAppsLocalRefreshTicket(u64);
 
 impl McpConnectionManager {
     #[allow(clippy::too_many_arguments)]
@@ -169,6 +242,7 @@ impl McpConnectionManager {
             elicitation_router,
         );
         let tool_plugin_provenance = Arc::new(tool_plugin_provenance);
+        let tool_catalog_revision = Arc::new(RwLock::new(0));
         let startup_submit_id = submit_id.clone();
         let static_chatgpt_auth_provider = auth
             .filter(|auth| auth.uses_codex_backend())
@@ -265,6 +339,7 @@ impl McpConnectionManager {
                 codex_apps_tools_cache_context,
                 tool_catalog_cache_context,
                 Arc::clone(&tool_plugin_provenance),
+                Arc::clone(&tool_catalog_revision),
                 runtime_context.clone(),
                 resolved_environment,
                 runtime_auth_provider,
@@ -319,6 +394,11 @@ impl McpConnectionManager {
             clients,
             server_metadata,
             required_servers,
+            optional_startup_deadline: OnceLock::new(),
+            tool_catalog_revision,
+            codex_apps_catalog: StdMutex::new(CodexAppsLocalCatalog::default()),
+            shared_tool_catalogs: StdMutex::new(HashMap::new()),
+            next_codex_apps_refresh_generation: AtomicU64::new(0),
             tool_plugin_provenance,
             prefix_mcp_tool_names,
             elicitation_requests: elicitation_requests.clone(),
@@ -404,6 +484,11 @@ impl McpConnectionManager {
             clients: HashMap::new(),
             server_metadata: HashMap::new(),
             required_servers: Vec::new(),
+            optional_startup_deadline: OnceLock::new(),
+            tool_catalog_revision: Arc::new(RwLock::new(0)),
+            codex_apps_catalog: StdMutex::new(CodexAppsLocalCatalog::default()),
+            shared_tool_catalogs: StdMutex::new(HashMap::new()),
+            next_codex_apps_refresh_generation: AtomicU64::new(0),
             tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
             prefix_mcp_tool_names,
             elicitation_requests: ElicitationRequestManager::new(
@@ -419,6 +504,26 @@ impl McpConnectionManager {
 
     pub fn has_servers(&self) -> bool {
         !self.clients.is_empty()
+    }
+
+    pub async fn catalog_revision(&self) -> u64 {
+        self.sync_shared_catalogs().await;
+        *self.tool_catalog_revision.read().await
+    }
+
+    pub(crate) async fn lock_catalog_revision(
+        &self,
+        expected: u64,
+    ) -> Result<OwnedRwLockReadGuard<u64>> {
+        self.sync_shared_catalogs().await;
+        let revision = Arc::clone(&self.tool_catalog_revision).read_owned().await;
+        if *revision != expected {
+            return Err(anyhow!(
+                "MCP tool catalog changed from revision {expected} to {}",
+                *revision
+            ));
+        }
+        Ok(revision)
     }
 
     pub(crate) fn contains_server(&self, server_name: &str) -> bool {
@@ -530,43 +635,74 @@ impl McpConnectionManager {
         }
     }
 
+    pub async fn wait_for_server_startup(&self, server_name: &str) -> bool {
+        let Some(async_managed_client) = self.clients.get(server_name) else {
+            return false;
+        };
+        async_managed_client.client().await.is_ok()
+    }
+
     /// Returns all tools with model-visible names normalized.
     #[instrument(level = "trace", skip_all, fields(mcp_server_count = self.clients.len()))]
     pub async fn list_all_tools(&self) -> Vec<ToolInfo> {
+        self.sync_shared_catalogs().await;
         let mut tools = Vec::new();
         let mut available_server_count = 0;
         let mut unavailable_server_count = 0;
-        for (server_name, managed_client) in &self.clients {
-            managed_client.reconnect_failed_startup().await;
+        catalog_startup::wait_for_catalog_startup(self).await;
+        let server_results = join_all(self.clients.iter().map(|(server_name, managed_client)| async move {
             let has_cached_tools = managed_client.has_cached_tools();
             let startup_complete = managed_client
                 .startup_complete
                 .load(std::sync::atomic::Ordering::Acquire);
-            let Some(server_tools) = managed_client
-                .listed_tools()
+            let catalog_override = if server_name == CODEX_APPS_MCP_SERVER_NAME {
+                self.codex_apps_tools_override()
+            } else {
+                self.shared_tool_catalog(server_name)
+            };
+            let server_tools = async {
+                match catalog_override {
+                    Some(tools) => Some(managed_client.prepare_tools(filter_tools(
+                        tools,
+                        &managed_client.tool_filter,
+                    ))),
+                    None => managed_client.listed_tools_after_startup_wait().await,
+                }
+            }
                 .instrument(trace_span!(
                     "list_tools_for_server",
                     server_name = %server_name,
                     has_cached_tools,
                     startup_complete
                 ))
-                .await
-            else {
-                unavailable_server_count += 1;
-                trace!(
-                    server_name = %server_name,
-                    has_cached_tools,
-                    startup_complete,
-                    "MCP server tools unavailable while building tool list"
-                );
-                continue;
-            };
-            available_server_count += 1;
-            tools.extend(
-                server_tools
-                    .into_iter()
-                    .map(|tool| self.with_server_metadata(tool)),
-            );
+                .await;
+            match server_tools {
+                Some(server_tools) => Some(
+                    server_tools
+                        .into_iter()
+                        .map(|tool| self.with_server_metadata(tool))
+                        .collect::<Vec<_>>(),
+                ),
+                None => {
+                    trace!(
+                        server_name = %server_name,
+                        has_cached_tools,
+                        startup_complete,
+                        "MCP server tools unavailable while building tool list"
+                    );
+                    None
+                }
+            }
+        }))
+        .await;
+        for server_tools in server_results {
+            match server_tools {
+                Some(server_tools) => {
+                    available_server_count += 1;
+                    tools.extend(server_tools);
+                }
+                None => unavailable_server_count += 1,
+            }
         }
         let tools = normalize_tools_for_model_with_prefix(tools, self.prefix_mcp_tool_names);
         trace!(
@@ -581,9 +717,18 @@ impl McpConnectionManager {
     /// Returns a model-visible tool from the current live connection.
     pub async fn model_visible_tool_info(&self, server: &str, tool: &str) -> Option<ToolInfo> {
         let client = self.clients.get(server)?;
+        if !client.startup_complete.load(Ordering::Acquire) {
+            return None;
+        }
         let managed_client = client.client().await.ok()?;
+        let tools = if server == CODEX_APPS_MCP_SERVER_NAME {
+            self.codex_apps_tools_override()
+                .unwrap_or(managed_client.tools)
+        } else {
+            managed_client.tools
+        };
         let tool = client
-            .prepare_tools(managed_client.tools)
+            .prepare_tools(filter_tools(tools, &client.tool_filter))
             .into_iter()
             .find(|tool_info| tool_info.tool.name == tool && tool_is_model_visible(tool_info))?;
         Some(self.with_server_metadata(tool))
@@ -596,6 +741,7 @@ impl McpConnectionManager {
     /// the caller. On failure, existing shared cache contents remain unchanged.
     pub async fn hard_refresh_codex_apps_tools_cache(&self) -> Result<Vec<ToolInfo>> {
         let refresh_start = Instant::now();
+        let local_fetch_ticket = self.begin_codex_apps_refresh();
         let managed_client = self
             .clients
             .get(CODEX_APPS_MCP_SERVER_NAME)
@@ -609,7 +755,7 @@ impl McpConnectionManager {
             .codex_apps_tools_cache_context
             .as_ref()
             .map(|cache_context| cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh));
-        let tools = list_tools_for_client_uncached(
+        let client_tools = list_tools_for_client_uncached(
             CODEX_APPS_MCP_SERVER_NAME,
             /*is_codex_apps_mcp_server*/ true,
             /*codex_apps_refresh_trigger*/ "explicit",
@@ -622,16 +768,15 @@ impl McpConnectionManager {
             format!("failed to refresh tools for MCP server '{CODEX_APPS_MCP_SERVER_NAME}'")
         })?;
 
-        let tools =
-            match (
+        let tools = self
+            .publish_codex_apps_catalog(
+                local_fetch_ticket,
                 managed_client.codex_apps_tools_cache_context.as_ref(),
                 fetch_ticket,
-            ) {
-                (Some(cache_context), Some(fetch_ticket)) => cache_context
-                    .publish_if_newest_accepted(fetch_ticket, &managed_client.server_info, tools),
-                (None, None) => tools,
-                _ => unreachable!("Codex Apps fetch ticket requires cache context"),
-            };
+                &managed_client.server_info,
+                client_tools,
+            )
+            .await;
         emit_duration(
             MCP_TOOLS_LIST_DURATION_METRIC,
             list_start.elapsed(),
@@ -650,6 +795,169 @@ impl McpConnectionManager {
             &[("path", "legacy"), ("trigger", "explicit")],
         );
         Ok(tools)
+    }
+
+    fn codex_apps_tools_override(&self) -> Option<Vec<ToolInfo>> {
+        self.codex_apps_catalog
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .tools
+            .clone()
+    }
+
+    fn shared_tool_catalog(&self, server_name: &str) -> Option<Vec<ToolInfo>> {
+        self.shared_tool_catalogs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(server_name)
+            .and_then(|catalog| catalog.tools.clone())
+    }
+
+    fn begin_codex_apps_refresh(&self) -> CodexAppsLocalRefreshTicket {
+        CodexAppsLocalRefreshTicket(
+            self.next_codex_apps_refresh_generation
+                .fetch_add(1, Ordering::Relaxed)
+                + 1,
+        )
+    }
+
+    async fn sync_shared_catalogs(&self) {
+        let mut shared_updates = Vec::new();
+        for (server_name, client) in &self.clients {
+            if server_name == CODEX_APPS_MCP_SERVER_NAME {
+                continue;
+            }
+            let Some(cache_context) = client.tool_catalog_cache_context.as_ref() else {
+                continue;
+            };
+            let live = client.startup_complete.load(Ordering::Acquire)
+                && client.client().await.is_ok();
+            let snapshot = (!live).then(|| cache_context.catalog_snapshot());
+            shared_updates.push((server_name.clone(), live, snapshot));
+        }
+        self.sync_shared_tool_catalogs(shared_updates).await;
+
+        let Some(client) = self.clients.get(CODEX_APPS_MCP_SERVER_NAME) else {
+            return;
+        };
+        let Some(cache_context) = client.codex_apps_tools_cache_context.as_ref() else {
+            return;
+        };
+        if client.startup_complete.load(Ordering::Acquire) && client.client().await.is_ok() {
+            let mut local = self
+                .codex_apps_catalog
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if local.using_shared_fallback {
+                local.tools = None;
+                local.shared_generation = None;
+                local.using_shared_fallback = false;
+            }
+            return;
+        }
+        let Some(snapshot) = cache_context.current_snapshot() else {
+            return;
+        };
+        let mut catalog_revision = self.tool_catalog_revision.write().await;
+        let mut local = self
+            .codex_apps_catalog
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if local.shared_generation == Some(snapshot.generation) {
+            return;
+        }
+        local.tools = Some(snapshot.tools);
+        local.shared_generation = Some(snapshot.generation);
+        local.using_shared_fallback = true;
+        *catalog_revision += 1;
+    }
+
+    async fn sync_shared_tool_catalogs(
+        &self,
+        updates: Vec<(String, bool, Option<McpToolCatalogSnapshot>)>,
+    ) {
+        if updates.is_empty() {
+            return;
+        }
+        let mut catalog_revision = self.tool_catalog_revision.write().await;
+        let mut local = self
+            .shared_tool_catalogs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut catalog_changed = false;
+        for (server_name, live, snapshot) in updates {
+            if live {
+                catalog_changed |= local
+                    .remove(&server_name)
+                    .is_some_and(|catalog| catalog.tools.is_some());
+                continue;
+            }
+            let Some(snapshot) = snapshot else {
+                continue;
+            };
+            if local
+                .get(&server_name)
+                .is_some_and(|catalog| {
+                    catalog.generation == snapshot.generation
+                        && catalog.tools.is_some() == snapshot.tools.is_some()
+                })
+            {
+                continue;
+            }
+            catalog_changed |= local.contains_key(&server_name) || snapshot.tools.is_some();
+            local.insert(
+                server_name,
+                SharedToolCatalog {
+                    generation: snapshot.generation,
+                    tools: snapshot.tools,
+                },
+            );
+        }
+        if catalog_changed {
+            *catalog_revision += 1;
+        }
+    }
+
+    async fn publish_codex_apps_catalog(
+        &self,
+        local_fetch_ticket: CodexAppsLocalRefreshTicket,
+        cache_context: Option<&CodexAppsToolsCacheContext>,
+        fetch_ticket: Option<CodexAppsToolsFetchTicket>,
+        server_info: &McpServerInfo,
+        client_tools: Vec<ToolInfo>,
+    ) -> Vec<ToolInfo> {
+        let mut catalog_revision = self.tool_catalog_revision.write().await;
+        let snapshot = match (cache_context, fetch_ticket) {
+            (Some(cache_context), Some(fetch_ticket)) => {
+                let result = cache_context.publish_if_newest_accepted_with_status(
+                    fetch_ticket,
+                    server_info,
+                    client_tools,
+                );
+                CodexAppsToolsSnapshot {
+                    generation: result.generation,
+                    tools: result.tools,
+                }
+            }
+            (None, None) => CodexAppsToolsSnapshot {
+                generation: 0,
+                tools: client_tools,
+            },
+            _ => unreachable!("Codex Apps fetch ticket requires cache context"),
+        };
+        let mut local = self
+            .codex_apps_catalog
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if local_fetch_ticket.0 <= local.last_refresh_generation {
+            return local.tools.clone().unwrap_or(snapshot.tools);
+        }
+        local.last_refresh_generation = local_fetch_ticket.0;
+        local.shared_generation = cache_context.is_some().then_some(snapshot.generation);
+        local.tools = Some(snapshot.tools.clone());
+        local.using_shared_fallback = false;
+        *catalog_revision += 1;
+        snapshot.tools
     }
 
     /// Returns resources from servers selected by `include_server`. Each key
@@ -768,33 +1076,28 @@ impl McpConnectionManager {
         arguments: Option<serde_json::Value>,
         meta: Option<serde_json::Value>,
     ) -> Result<CallToolResult> {
+        self.prepare_tool_call(server, tool)
+            .await?
+            .call(arguments, meta)
+            .await
+    }
+
+    pub(crate) async fn prepare_tool_call(
+        &self,
+        server: &str,
+        tool: &str,
+    ) -> Result<PreparedMcpToolCall> {
         let client = self.client_by_name(server).await?;
         if !client.tool_filter.allows(tool) {
             return Err(anyhow!(
                 "tool '{tool}' is disabled for MCP server '{server}'"
             ));
         }
-
-        let result: rmcp::model::CallToolResult = client
-            .client
-            .call_tool(tool.to_string(), arguments, meta, client.tool_timeout)
-            .await
-            .with_context(|| format!("tool call failed for `{server}/{tool}`"))?;
-
-        let content = result
-            .content
-            .into_iter()
-            .map(|content| {
-                serde_json::to_value(content)
-                    .unwrap_or_else(|_| serde_json::Value::String("<content>".to_string()))
-            })
-            .collect();
-
-        Ok(CallToolResult {
-            content,
-            structured_content: result.structured_content,
-            is_error: result.is_error,
-            meta: result.meta.and_then(|meta| serde_json::to_value(meta).ok()),
+        Ok(PreparedMcpToolCall {
+            client: client.client,
+            server: server.to_string(),
+            tool: tool.to_string(),
+            timeout: client.tool_timeout,
         })
     }
 

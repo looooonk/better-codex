@@ -102,6 +102,10 @@ impl ToolRouter {
             .unwrap_or(false)
     }
 
+    pub(crate) fn tool_runtime(&self, call: &ToolCall) -> Option<Arc<dyn CoreToolRuntime>> {
+        self.registry.tool(&call.tool_name)
+    }
+
     pub fn tool_waits_for_runtime_cancellation(&self, call: &ToolCall) -> bool {
         self.registry
             .waits_for_runtime_cancellation(&call.tool_name)

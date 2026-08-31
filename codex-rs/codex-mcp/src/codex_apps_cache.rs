@@ -81,10 +81,16 @@ impl CodexAppsToolsCacheContext {
     }
 
     pub(crate) fn current_tools(&self) -> Option<Vec<ToolInfo>> {
-        self.entry
-            .current_tools
-            .load_full()
-            .map(|tools| tools.as_ref().clone())
+        self.current_snapshot().map(|snapshot| snapshot.tools)
+    }
+
+    pub(crate) fn current_snapshot(&self) -> Option<CodexAppsToolsSnapshot> {
+        let generation = lock_unpoisoned(&self.entry.last_accepted_generation);
+        let tools = self.entry.current_tools.load_full()?;
+        Some(CodexAppsToolsSnapshot {
+            generation: *generation,
+            tools: tools.as_ref().clone(),
+        })
     }
 
     pub(crate) fn has_current_tools(&self) -> bool {
@@ -111,6 +117,16 @@ impl CodexAppsToolsCacheContext {
         server_info: &McpServerInfo,
         tools: Vec<ToolInfo>,
     ) -> Vec<ToolInfo> {
+        self.publish_if_newest_accepted_with_status(ticket, server_info, tools)
+            .tools
+    }
+
+    pub(crate) fn publish_if_newest_accepted_with_status(
+        &self,
+        ticket: CodexAppsToolsFetchTicket,
+        server_info: &McpServerInfo,
+        tools: Vec<ToolInfo>,
+    ) -> CodexAppsToolsPublishResult {
         let publish_start = Instant::now();
         let mut last_accepted_generation = lock_unpoisoned(&self.entry.last_accepted_generation);
         if ticket.generation <= *last_accepted_generation {
@@ -119,7 +135,16 @@ impl CodexAppsToolsCacheContext {
                 publish_start.elapsed(),
                 &[("source", ticket.source.as_str()), ("result", "stale")],
             );
-            return self.current_tools().unwrap_or(tools);
+            return CodexAppsToolsPublishResult {
+                generation: *last_accepted_generation,
+                tools: self
+                    .entry
+                    .current_tools
+                    .load_full()
+                    .map(|tools| tools.as_ref().clone())
+                    .unwrap_or(tools),
+                published: false,
+            };
         }
 
         *last_accepted_generation = ticket.generation;
@@ -132,7 +157,11 @@ impl CodexAppsToolsCacheContext {
             publish_start.elapsed(),
             &[("source", ticket.source.as_str()), ("result", "published")],
         );
-        tools
+        CodexAppsToolsPublishResult {
+            generation: ticket.generation,
+            tools,
+            published: true,
+        }
     }
 
     #[cfg(test)]
@@ -178,6 +207,17 @@ impl CodexAppsToolsFetchSource {
 pub(crate) struct CodexAppsToolsFetchTicket {
     generation: u64,
     source: CodexAppsToolsFetchSource,
+}
+
+pub(crate) struct CodexAppsToolsPublishResult {
+    pub(crate) generation: u64,
+    pub(crate) tools: Vec<ToolInfo>,
+    pub(crate) published: bool,
+}
+
+pub(crate) struct CodexAppsToolsSnapshot {
+    pub(crate) generation: u64,
+    pub(crate) tools: Vec<ToolInfo>,
 }
 
 struct CodexAppsToolsCacheEntry {

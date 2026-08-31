@@ -54,6 +54,8 @@ use crate::http_discovery::correlated_discovery_response;
 use crate::http_discovery::mcp_redirect_policy;
 use crate::http_response_limits::MAX_MCP_HTTP_RESPONSE_BYTES;
 use crate::http_response_limits::SseEventSizeLimit;
+use crate::incoming_jsonrpc::deserialize_incoming_jsonrpc_message;
+use crate::incoming_jsonrpc::normalize_sse_jsonrpc_message;
 
 const EVENT_STREAM_MIME_TYPE: &str = "text/event-stream";
 const JSON_MIME_TYPE: &str = "application/json";
@@ -273,12 +275,14 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
                         next_correlated_discovery_response(&message, &mut event_stream).await?;
                     return Ok(StreamableHttpPostResponse::Json(response, session_id));
                 }
+                let event_stream = normalize_sse_stream(event_stream, uses_modern_protocol);
                 Ok(StreamableHttpPostResponse::Sse(event_stream, session_id))
             }
             Some(content_type) if content_type.starts_with(JSON_MIME_TYPE) => {
                 let body = collect_body(&mut body_stream, maximum_response_bytes).await?;
-                let response_message: ServerJsonRpcMessage =
-                    serde_json::from_slice(&body).map_err(StreamableHttpError::Deserialize)?;
+                let response_message =
+                    deserialize_incoming_jsonrpc_message(&body, uses_modern_protocol)
+                        .map_err(StreamableHttpError::Deserialize)?;
                 let response_message = correlated_discovery_response(
                     &message,
                     response_message,
@@ -451,7 +455,10 @@ impl StreamableHttpClient for StreamableHttpClientAdapter {
             .and_then(|value| value.to_str().ok())
             == Some(ProtocolVersion::V_2026_07_28.as_str());
         let maximum_response_bytes = uses_modern_protocol.then_some(MAX_MCP_HTTP_RESPONSE_BYTES);
-        Ok(sse_stream_from_body(body_stream, maximum_response_bytes))
+        Ok(normalize_sse_stream(
+            sse_stream_from_body(body_stream, maximum_response_bytes),
+            uses_modern_protocol,
+        ))
     }
 }
 
@@ -478,6 +485,25 @@ fn body_preview(body: impl Into<String>) -> String {
         ));
     }
     body_preview
+}
+
+fn normalize_sse_stream(
+    stream: BoxStream<'static, std::result::Result<Sse, sse_stream::Error>>,
+    modern_session: bool,
+) -> BoxStream<'static, std::result::Result<Sse, sse_stream::Error>> {
+    stream
+        .map(move |event| {
+            let mut event = event?;
+            if let Some(payload) = event.data.as_deref() {
+                match normalize_sse_jsonrpc_message(payload, modern_session) {
+                    Ok(Some(normalized)) => event.data = Some(normalized),
+                    Ok(None) => {}
+                    Err(error) => return Err(sse_stream::Error::Body(Box::new(error))),
+                }
+            }
+            Ok(event)
+        })
+        .boxed()
 }
 
 async fn next_correlated_discovery_response(

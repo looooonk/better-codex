@@ -14,6 +14,7 @@ use crate::rmcp_client::StartupOutcomeError;
 use crate::server::EffectiveMcpServer;
 use crate::server::McpServerMetadata;
 use crate::server::McpServerOrigin;
+use crate::tool_catalog_cache::McpToolCatalogCacheContext;
 use crate::tools::ToolFilter;
 use crate::tools::ToolInfo;
 use crate::tools::filter_tools;
@@ -143,6 +144,71 @@ async fn create_ready_async_managed_client(tools: Vec<ToolInfo>) -> AsyncManaged
     }
 }
 
+fn create_failed_cache_observer(
+    server_name: &str,
+    codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
+    tool_catalog_cache_context: Option<McpToolCatalogCacheContext>,
+) -> AsyncManagedClient {
+    AsyncManagedClient {
+        client: futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Err(
+            StartupOutcomeError::Failed {
+                error: "pending shared-cache observer".to_string(),
+                is_authentication_required: false,
+            },
+        ))
+        .boxed()
+        .shared(),
+        is_codex_apps_mcp_server: server_name == CODEX_APPS_MCP_SERVER_NAME,
+        cached_server_info: None,
+        codex_apps_tools_cache_context,
+        tool_catalog_cache_context,
+        tool_filter: ToolFilter::default(),
+        startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+        startup_reconnect: None,
+        tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
+        cancel_token: CancellationToken::new(),
+    }
+}
+
+fn create_transitioning_async_managed_client(
+    server_name: &str,
+    live_client: ManagedClient,
+    codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
+    catalog_revision: Arc<tokio::sync::RwLock<u64>>,
+    release: Arc<tokio::sync::Notify>,
+) -> AsyncManagedClient {
+    let startup_complete = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let startup_complete_for_future = Arc::clone(&startup_complete);
+    let catalog_revision_for_future = Arc::clone(&catalog_revision);
+    let client = async move {
+        release.notified().await;
+        let mut catalog_revision = catalog_revision_for_future.write().await;
+        *catalog_revision += 1;
+        startup_complete_for_future.store(true, std::sync::atomic::Ordering::Release);
+        Ok::<ManagedClient, StartupOutcomeError>(live_client)
+    }
+    .boxed()
+    .shared();
+    if codex_apps_tools_cache_context.is_some() {
+        let startup_task = client.clone();
+        tokio::spawn(async move {
+            let _ = startup_task.await;
+        });
+    }
+    AsyncManagedClient {
+        client,
+        is_codex_apps_mcp_server: server_name == CODEX_APPS_MCP_SERVER_NAME,
+        cached_server_info: None,
+        codex_apps_tools_cache_context,
+        tool_catalog_cache_context: None,
+        tool_filter: ToolFilter::default(),
+        startup_complete,
+        startup_reconnect: None,
+        tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
+        cancel_token: CancellationToken::new(),
+    }
+}
+
 fn create_test_manager_with_failed_apps_startup(
     cached_tools: Vec<ToolInfo>,
     reconnect_factory: Arc<dyn Fn() -> ManagedClientFuture + Send + Sync>,
@@ -167,6 +233,7 @@ fn create_test_manager_with_failed_apps_startup(
         &permission_profile,
         /*prefix_mcp_tool_names*/ true,
     );
+    let catalog_revision = Arc::clone(&manager.tool_catalog_revision);
     manager.clients.insert(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
@@ -177,7 +244,10 @@ fn create_test_manager_with_failed_apps_startup(
             tool_catalog_cache_context: None,
             tool_filter: ToolFilter::default(),
             startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
-            startup_reconnect: Some(Arc::new(CodexAppsStartupReconnect::new(reconnect_factory))),
+            startup_reconnect: Some(Arc::new(CodexAppsStartupReconnect::new(
+                reconnect_factory,
+                Arc::clone(&catalog_revision),
+            ))),
             tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
             cancel_token: CancellationToken::new(),
         },
@@ -736,6 +806,593 @@ async fn list_all_tools_uses_shared_codex_apps_cache_while_client_is_pending() {
 }
 
 #[tokio::test]
+async fn cached_catalog_is_superseded_only_after_live_startup_revision_publishes() {
+    let codex_home = tempdir().expect("tempdir");
+    let cache_context = create_codex_apps_tools_cache_context(
+        codex_home.path().to_path_buf(),
+        Some("startup-account"),
+        Some("startup-user"),
+    );
+    cache_context.store_current_tools_for_test(vec![create_test_tool(
+        CODEX_APPS_MCP_SERVER_NAME,
+        "cached_search",
+    )]);
+    let live_client = create_test_managed_client(vec![create_test_tool(
+        CODEX_APPS_MCP_SERVER_NAME,
+        "live_search",
+    )])
+    .await;
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let mut manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    let release = Arc::new(tokio::sync::Notify::new());
+    manager.clients.insert(
+        CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        create_transitioning_async_managed_client(
+            CODEX_APPS_MCP_SERVER_NAME,
+            live_client,
+            Some(cache_context),
+            Arc::clone(&manager.tool_catalog_revision),
+            Arc::clone(&release),
+        ),
+    );
+    let manager = Arc::new(manager);
+
+    assert_eq!(manager.catalog_revision().await, 1);
+    assert_eq!(
+        manager
+            .list_all_tools()
+            .await
+            .into_iter()
+            .map(|tool| tool.callable_name)
+            .collect::<Vec<_>>(),
+        vec!["cached_search"]
+    );
+    let cached_binding = crate::binding::McpBinding::capture(Arc::clone(&manager)).await;
+    assert!(
+        cached_binding
+            .tool(CODEX_APPS_MCP_SERVER_NAME, "cached_search")
+            .is_some()
+    );
+
+    let old_revision = manager
+        .lock_catalog_revision(/*expected*/ 1)
+        .await
+        .expect("initial revision");
+    release.notify_one();
+    tokio::task::yield_now().await;
+    assert!(
+        manager
+            .model_visible_tool_info(CODEX_APPS_MCP_SERVER_NAME, "cached_search")
+            .await
+            .is_none()
+    );
+    drop(old_revision);
+
+    assert!(
+        manager
+            .wait_for_server_startup(CODEX_APPS_MCP_SERVER_NAME)
+            .await
+    );
+    assert_eq!(manager.catalog_revision().await, 2);
+    assert!(
+        manager
+            .lock_catalog_revision(/*expected*/ 1)
+            .await
+            .is_err()
+    );
+    assert!(!cached_binding.is_current().await);
+    assert!(
+        cached_binding
+            .call_tool(
+                CODEX_APPS_MCP_SERVER_NAME,
+                "cached_search",
+                /*arguments*/ None,
+                /*meta*/ None,
+            )
+            .await
+            .is_err()
+    );
+    let preparation_ran = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let preparation_ran_for_call = Arc::clone(&preparation_ran);
+    assert!(
+        cached_binding
+            .call_tool_with_preparation(
+                CODEX_APPS_MCP_SERVER_NAME,
+                "cached_search",
+                move || async move {
+                    preparation_ran_for_call.store(true, std::sync::atomic::Ordering::SeqCst);
+                    Ok((None, None))
+                },
+            )
+            .await
+            .is_err()
+    );
+    assert!(!preparation_ran.load(std::sync::atomic::Ordering::SeqCst));
+    let live_binding = crate::binding::McpBinding::capture(Arc::clone(&manager)).await;
+    assert!(
+        live_binding
+            .tool(CODEX_APPS_MCP_SERVER_NAME, "cached_search")
+            .is_none()
+    );
+    assert!(
+        live_binding
+            .tool(CODEX_APPS_MCP_SERVER_NAME, "live_search")
+            .is_some()
+    );
+    assert_eq!(
+        manager
+            .list_all_tools()
+            .await
+            .into_iter()
+            .map(|tool| tool.callable_name)
+            .collect::<Vec<_>>(),
+        vec!["live_search"]
+    );
+
+    let preparation_started = Arc::new(tokio::sync::Notify::new());
+    let preparation_started_wait = preparation_started.notified();
+    let release_preparation = Arc::new(tokio::sync::Notify::new());
+    let call = tokio::spawn({
+        let preparation_started = Arc::clone(&preparation_started);
+        let release_preparation = Arc::clone(&release_preparation);
+        async move {
+            live_binding
+                .call_tool_with_preparation(
+                    CODEX_APPS_MCP_SERVER_NAME,
+                    "live_search",
+                    move || async move {
+                        preparation_started.notify_one();
+                        release_preparation.notified().await;
+                        Err(anyhow!("stop after preparation"))
+                    },
+                )
+                .await
+        }
+    });
+    preparation_started_wait.await;
+    let catalog_writer = tokio::time::timeout(
+        Duration::from_secs(1),
+        manager.tool_catalog_revision.write(),
+    )
+    .await
+    .expect("catalog writer must not wait for call preparation");
+    drop(catalog_writer);
+    release_preparation.notify_one();
+    assert!(call.await.expect("tool call task").is_err());
+}
+
+#[tokio::test]
+async fn hard_refresh_publication_bumps_only_for_the_accepted_cache_generation() {
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let manager = Arc::new(McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    ));
+    let codex_home = tempdir().expect("tempdir");
+    let cache_context = create_codex_apps_tools_cache_context(
+        codex_home.path().to_path_buf(),
+        Some("refresh-account"),
+        Some("refresh-user"),
+    );
+    let older = cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
+    let newer = cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
+    let older_local = manager.begin_codex_apps_refresh();
+    let newer_local = manager.begin_codex_apps_refresh();
+    let old_revision = manager
+        .lock_catalog_revision(/*expected*/ 0)
+        .await
+        .expect("initial revision");
+    let publication = tokio::spawn({
+        let manager = Arc::clone(&manager);
+        let cache_context = cache_context.clone();
+        async move {
+            manager
+                .publish_codex_apps_catalog(
+                    newer_local,
+                    Some(&cache_context),
+                    Some(newer),
+                    &create_test_server_info("Codex Apps"),
+                    vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "newer")],
+                )
+                .await
+        }
+    });
+    tokio::task::yield_now().await;
+    assert!(!publication.is_finished());
+    drop(old_revision);
+
+    let published = publication.await.expect("catalog publication");
+    assert_eq!(published[0].callable_name, "newer");
+    assert_eq!(manager.catalog_revision().await, 1);
+    assert!(
+        manager
+            .lock_catalog_revision(/*expected*/ 0)
+            .await
+            .is_err()
+    );
+
+    let stale = manager
+        .publish_codex_apps_catalog(
+            older_local,
+            Some(&cache_context),
+            Some(older),
+            &create_test_server_info("Codex Apps"),
+            vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "older")],
+        )
+        .await;
+    assert_eq!(stale[0].callable_name, "newer");
+    assert_eq!(manager.catalog_revision().await, 1);
+    assert_eq!(
+        manager
+            .codex_apps_tools_override()
+            .expect("accepted manager override")[0]
+            .callable_name,
+        "newer"
+    );
+}
+
+#[tokio::test]
+async fn local_refresh_generation_rejects_slower_uncached_result() {
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    let older = manager.begin_codex_apps_refresh();
+    let newer = manager.begin_codex_apps_refresh();
+
+    let published = manager
+        .publish_codex_apps_catalog(
+            newer,
+            /*cache_context*/ None,
+            /*fetch_ticket*/ None,
+            &create_test_server_info("Codex Apps"),
+            vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "newer")],
+        )
+        .await;
+    assert_eq!(published[0].callable_name, "newer");
+    assert_eq!(manager.catalog_revision().await, 1);
+
+    let stale = manager
+        .publish_codex_apps_catalog(
+            older,
+            /*cache_context*/ None,
+            /*fetch_ticket*/ None,
+            &create_test_server_info("Codex Apps"),
+            vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "older")],
+        )
+        .await;
+    assert_eq!(stale[0].callable_name, "newer");
+    assert_eq!(manager.catalog_revision().await, 1);
+}
+
+#[tokio::test]
+async fn losing_shared_refresh_adopts_the_newer_catalog_locally() {
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    let codex_home = tempdir().expect("tempdir");
+    let cache_context = create_codex_apps_tools_cache_context(
+        codex_home.path().to_path_buf(),
+        Some("shared-refresh-account"),
+        Some("shared-refresh-user"),
+    );
+    let losing_shared_ticket =
+        cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
+    let winning_shared_ticket =
+        cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
+    cache_context.publish_if_newest_accepted(
+        winning_shared_ticket,
+        &create_test_server_info("Codex Apps"),
+        vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "newer")],
+    );
+
+    let adopted = manager
+        .publish_codex_apps_catalog(
+            manager.begin_codex_apps_refresh(),
+            Some(&cache_context),
+            Some(losing_shared_ticket),
+            &create_test_server_info("Codex Apps"),
+            vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "older")],
+        )
+        .await;
+
+    assert_eq!(adopted[0].callable_name, "newer");
+    assert_eq!(manager.catalog_revision().await, 1);
+    assert_eq!(
+        manager
+            .codex_apps_tools_override()
+            .expect("locally adopted catalog")[0]
+            .callable_name,
+        "newer"
+    );
+}
+
+#[tokio::test]
+async fn shared_catalog_generation_invalidates_another_managers_binding() {
+    let codex_home = tempdir().expect("tempdir");
+    let cache = CodexAppsToolsCache::default();
+    let cache_context = cache.context(
+        codex_home.path().to_path_buf(),
+        CodexAppsToolsCacheKey {
+            account_id: Some("shared-account".to_string()),
+            chatgpt_user_id: Some("shared-user".to_string()),
+            is_workspace_account: false,
+        },
+    );
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let mut observing_manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    observing_manager.clients.insert(
+        CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        create_failed_cache_observer(
+            CODEX_APPS_MCP_SERVER_NAME,
+            Some(cache_context.clone()),
+            /*tool_catalog_cache_context*/ None,
+        ),
+    );
+    let observing_manager = Arc::new(observing_manager);
+    let first_binding = crate::binding::McpBinding::capture(Arc::clone(&observing_manager)).await;
+    assert!(
+        first_binding
+            .tool(CODEX_APPS_MCP_SERVER_NAME, "v1_tool")
+            .is_none()
+    );
+
+    let publishing_manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    let shared_ticket = cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
+    publishing_manager
+        .publish_codex_apps_catalog(
+            publishing_manager.begin_codex_apps_refresh(),
+            Some(&cache_context),
+            Some(shared_ticket),
+            &create_test_server_info("Codex Apps"),
+            vec![create_test_tool(
+                CODEX_APPS_MCP_SERVER_NAME,
+                "v1_tool",
+            )],
+        )
+        .await;
+
+    assert!(!first_binding.is_current().await);
+    let next_binding = crate::binding::McpBinding::capture(observing_manager).await;
+    assert!(
+        next_binding
+            .tool(CODEX_APPS_MCP_SERVER_NAME, "v1_tool")
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn shared_stdio_catalog_generation_invalidates_a_pending_managers_binding() {
+    let cache = McpToolCatalogCache::default();
+    let runtime_context = McpRuntimeContext::new(
+        Arc::new(EnvironmentManager::without_environments()),
+        PathBuf::from("/workspace"),
+    );
+    let config = serde_json::from_value::<McpServerConfig>(serde_json::json!({
+        "command": "docs-mcp",
+    }))
+    .expect("MCP config");
+    let cache_context = cache
+        .context(
+            "docs",
+            &config,
+            &runtime_context,
+            /*resolved_environment*/ None,
+            &ElicitationCapability::default(),
+            /*supports_openai_form_elicitation*/ false,
+        )
+        .expect("cache context");
+    cache_context.publish_if_newest(
+        cache_context.begin_fetch(),
+        &[create_test_tool("docs", "v1_tool")],
+    );
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let mut manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    manager.clients.insert(
+        "docs".to_string(),
+        create_failed_cache_observer(
+            "docs",
+            /*codex_apps_tools_cache_context*/ None,
+            Some(cache_context.clone()),
+        ),
+    );
+    let manager = Arc::new(manager);
+    let first_binding = crate::binding::McpBinding::capture(Arc::clone(&manager)).await;
+    assert!(first_binding.tool("docs", "v1_tool").is_some());
+
+    cache_context.publish_if_newest(
+        cache_context.begin_fetch(),
+        &[create_test_tool("docs", "v2_tool")],
+    );
+
+    assert!(!first_binding.is_current().await);
+    let next_binding = crate::binding::McpBinding::capture(manager).await;
+    assert!(next_binding.tool("docs", "v1_tool").is_none());
+    assert!(next_binding.tool("docs", "v2_tool").is_some());
+}
+
+#[tokio::test]
+async fn first_shared_stdio_catalog_adoption_advances_local_revision() {
+    let cache = McpToolCatalogCache::default();
+    let runtime_context = McpRuntimeContext::new(
+        Arc::new(EnvironmentManager::without_environments()),
+        PathBuf::from("/workspace"),
+    );
+    let config = serde_json::from_value::<McpServerConfig>(serde_json::json!({
+        "command": "docs-mcp",
+    }))
+    .expect("MCP config");
+    let cache_context = cache
+        .context(
+            "docs",
+            &config,
+            &runtime_context,
+            /*resolved_environment*/ None,
+            &ElicitationCapability::default(),
+            /*supports_openai_form_elicitation*/ false,
+        )
+        .expect("cache context");
+    cache_context.publish_if_newest(
+        cache_context.begin_fetch(),
+        &[create_test_tool("docs", "first_tool")],
+    );
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let mut manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    manager.clients.insert(
+        "docs".to_string(),
+        create_failed_cache_observer(
+            "docs",
+            /*codex_apps_tools_cache_context*/ None,
+            Some(cache_context),
+        ),
+    );
+
+    assert_eq!(manager.catalog_revision().await, 1);
+    assert_eq!(
+        manager
+            .shared_tool_catalog("docs")
+            .expect("adopted shared catalog")[0]
+            .callable_name,
+        "first_tool"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn optional_catalogs_share_one_grace_and_publish_live_revision_later() {
+    let first_client =
+        create_test_managed_client(vec![create_test_tool("first", "search")]).await;
+    let second_client =
+        create_test_managed_client(vec![create_test_tool("second", "lookup")]).await;
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let mut manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    let first_release = Arc::new(tokio::sync::Notify::new());
+    let second_release = Arc::new(tokio::sync::Notify::new());
+    manager.clients.insert(
+        "first".to_string(),
+        create_transitioning_async_managed_client(
+            "first",
+            first_client,
+            /*codex_apps_tools_cache_context*/ None,
+            Arc::clone(&manager.tool_catalog_revision),
+            Arc::clone(&first_release),
+        ),
+    );
+    manager.clients.insert(
+        "second".to_string(),
+        create_transitioning_async_managed_client(
+            "second",
+            second_client,
+            /*codex_apps_tools_cache_context*/ None,
+            Arc::clone(&manager.tool_catalog_revision),
+            second_release,
+        ),
+    );
+
+    let started_at = tokio::time::Instant::now();
+    assert!(manager.list_all_tools().await.is_empty());
+    assert_eq!(started_at.elapsed(), Duration::from_secs(1));
+
+    first_release.notify_one();
+    assert!(manager.wait_for_server_startup("first").await);
+    assert_eq!(manager.catalog_revision().await, 1);
+    let started_at = tokio::time::Instant::now();
+    assert_eq!(
+        manager
+            .list_all_tools()
+            .await
+            .into_iter()
+            .map(|tool| tool.callable_name)
+            .collect::<Vec<_>>(),
+        vec!["search"]
+    );
+    assert_eq!(started_at.elapsed(), Duration::ZERO);
+}
+
+#[tokio::test(start_paused = true)]
+async fn required_catalog_waits_past_optional_grace() {
+    let live_client =
+        create_test_managed_client(vec![create_test_tool("required", "search")]).await;
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let mut manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    manager.required_servers.push("required".to_string());
+    let release = Arc::new(tokio::sync::Notify::new());
+    manager.clients.insert(
+        "required".to_string(),
+        create_transitioning_async_managed_client(
+            "required",
+            live_client,
+            /*codex_apps_tools_cache_context*/ None,
+            Arc::clone(&manager.tool_catalog_revision),
+            Arc::clone(&release),
+        ),
+    );
+    let manager = Arc::new(manager);
+    let list_task = tokio::spawn({
+        let manager = Arc::clone(&manager);
+        async move { manager.list_all_tools().await }
+    });
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_secs(1)).await;
+    tokio::task::yield_now().await;
+    assert!(!list_task.is_finished());
+
+    release.notify_one();
+    assert_eq!(
+        list_task
+            .await
+            .expect("required catalog task")
+            .into_iter()
+            .map(|tool| tool.callable_name)
+            .collect::<Vec<_>>(),
+        vec!["search"]
+    );
+    assert_eq!(manager.catalog_revision().await, 1);
+}
+
+#[tokio::test]
 async fn list_available_server_infos_uses_cache_while_client_is_pending() {
     let pending_client = futures::future::pending::<Result<ManagedClient, StartupOutcomeError>>()
         .boxed()
@@ -1106,6 +1763,14 @@ async fn list_all_tools_reconnects_failed_codex_apps_startup_and_reuses_client()
     let tools = manager.list_all_tools().await;
     assert!(tools.is_empty());
     reconnect_finished_wait.await;
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while manager.catalog_revision().await < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("reconnect catalog publication");
+    assert_eq!(manager.catalog_revision().await, 2);
 
     let tools = manager.list_all_tools().await;
     assert_eq!(
@@ -1177,6 +1842,7 @@ async fn later_tool_list_retries_after_failed_reconnect_and_keeps_cached_tools()
     );
     first_reconnect_finished.await;
     assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(manager.catalog_revision().await, 1);
 
     let tools = manager.list_all_tools().await;
     assert_eq!(
@@ -1200,6 +1866,7 @@ async fn later_tool_list_retries_after_failed_reconnect_and_keeps_cached_tools()
     );
     second_reconnect_finished.await;
     assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
+    assert_eq!(manager.catalog_revision().await, 1);
 
     tokio::time::advance(CODEX_APPS_RECONNECT_INITIAL_BACKOFF).await;
     let tools = manager.list_all_tools().await;
@@ -1224,6 +1891,14 @@ async fn later_tool_list_retries_after_failed_reconnect_and_keeps_cached_tools()
     );
     third_reconnect_finished.await;
     assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 3);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while manager.catalog_revision().await < 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("successful retry catalog publication");
+    assert_eq!(manager.catalog_revision().await, 2);
 
     let tools = manager.list_all_tools().await;
     assert_eq!(
@@ -1345,7 +2020,7 @@ async fn list_all_tools_adds_server_metadata_to_tools() {
 }
 
 #[tokio::test]
-async fn model_visible_tool_info_uses_live_tools_instead_of_cached_tools() {
+async fn model_catalog_uses_live_tools_instead_of_shared_cached_tools() {
     let server_name = CODEX_APPS_MCP_SERVER_NAME;
     let cached_tool = create_test_tool(server_name, "search");
     let mut live_tool = create_test_tool(server_name, "search");
@@ -1396,7 +2071,7 @@ async fn model_visible_tool_info_uses_live_tools_instead_of_cached_tools() {
             .into_iter()
             .map(|tool| tool.tool.name.to_string())
             .collect::<Vec<_>>(),
-        vec!["search"]
+        Vec::<String>::new()
     );
     assert!(
         manager

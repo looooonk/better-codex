@@ -1,12 +1,18 @@
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::sync::MutexGuard;
+use std::sync::Weak;
 
 use codex_connectors::AppToolPolicyEvaluator;
 use codex_connectors::AppToolPolicyInput;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
+use codex_mcp::McpBinding;
 use codex_mcp::ToolInfo as McpToolInfo;
 use codex_mcp::tool_is_model_visible;
 use codex_tools::ToolExposure;
+use codex_tools::ToolName;
 use tracing::instrument;
 use tracing::warn;
 
@@ -16,6 +22,58 @@ use crate::tools::handlers::McpHandler;
 use crate::tools::registry::CoreToolRuntime;
 use crate::tools::registry::override_tool_exposure;
 
+#[derive(Default)]
+pub(crate) struct McpHandlerCache {
+    cached: Mutex<Option<CachedMcpHandlers>>,
+}
+
+struct CachedMcpHandlers {
+    binding: Weak<McpBinding>,
+    handlers: HashMap<ToolName, Arc<McpHandler>>,
+}
+
+struct BoundMcpHandlerCache<'a> {
+    binding: &'a Arc<McpBinding>,
+    cached: MutexGuard<'a, Option<CachedMcpHandlers>>,
+}
+
+impl McpHandlerCache {
+    fn bind<'a>(&'a self, binding: &'a Arc<McpBinding>) -> BoundMcpHandlerCache<'a> {
+        let mut cached = self
+            .cached
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let replacement = Arc::downgrade(binding);
+        if cached
+            .as_ref()
+            .is_some_and(|cached| Weak::ptr_eq(&cached.binding, &replacement))
+        {
+            return BoundMcpHandlerCache { binding, cached };
+        }
+        *cached = Some(CachedMcpHandlers {
+            binding: replacement,
+            handlers: HashMap::new(),
+        });
+        BoundMcpHandlerCache { binding, cached }
+    }
+}
+
+impl BoundMcpHandlerCache<'_> {
+    fn get_or_build(
+        &mut self,
+        tool: McpToolInfo,
+    ) -> Result<Arc<McpHandler>, serde_json::Error> {
+        let tool_name = tool.canonical_tool_name();
+        let cached = self.cached.as_mut().expect("cache was bound");
+        if let Some(handler) = cached.handlers.get(&tool_name) {
+            return Ok(Arc::clone(handler));
+        }
+        let handler = Arc::new(McpHandler::new_bound(tool, Arc::clone(self.binding))?);
+        cached.handlers.insert(tool_name, Arc::clone(&handler));
+        Ok(handler)
+    }
+}
+
 #[instrument(level = "trace", skip_all)]
 pub(crate) fn build_mcp_tool_runtimes(
     all_mcp_tools: &[McpToolInfo],
@@ -23,15 +81,7 @@ pub(crate) fn build_mcp_tool_runtimes(
     config: &Config,
     search_tool_enabled: bool,
 ) -> Vec<Arc<dyn CoreToolRuntime>> {
-    let mut exposed_tools = filter_non_codex_apps_mcp_tools_only(all_mcp_tools);
-    if let Some(connectors) = connectors {
-        exposed_tools.extend(filter_codex_apps_mcp_tools(
-            all_mcp_tools,
-            connectors,
-            config,
-        ));
-    }
-
+    let exposed_tools = exposed_mcp_tools(all_mcp_tools, connectors, config);
     let exposure = if search_tool_enabled {
         ToolExposure::Deferred
     } else {
@@ -53,6 +103,56 @@ pub(crate) fn build_mcp_tool_runtimes(
             }
         })
         .collect()
+}
+
+#[instrument(level = "trace", skip_all)]
+pub(crate) fn build_bound_mcp_tool_runtimes(
+    binding: Arc<McpBinding>,
+    connectors: Option<&[connectors::AppInfo]>,
+    config: &Config,
+    search_tool_enabled: bool,
+    cache: &McpHandlerCache,
+) -> Vec<Arc<dyn CoreToolRuntime>> {
+    let exposed_tools = exposed_mcp_tools(binding.tools(), connectors, config);
+    let exposure = if search_tool_enabled {
+        ToolExposure::Deferred
+    } else {
+        ToolExposure::Direct
+    };
+    let mut cache = cache.bind(&binding);
+
+    exposed_tools
+        .into_iter()
+        .filter_map(|tool| {
+            let tool_name = tool.canonical_tool_name();
+            match cache.get_or_build(tool) {
+                Ok(handler) => {
+                    let handler: Arc<dyn CoreToolRuntime> = handler;
+                    Some(override_tool_exposure(handler, exposure))
+                }
+                Err(err) => {
+                    warn!("Skipping MCP tool `{tool_name}`: failed to build tool spec: {err}");
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+fn exposed_mcp_tools(
+    all_mcp_tools: &[McpToolInfo],
+    connectors: Option<&[connectors::AppInfo]>,
+    config: &Config,
+) -> Vec<McpToolInfo> {
+    let mut tools = filter_non_codex_apps_mcp_tools_only(all_mcp_tools);
+    if let Some(connectors) = connectors {
+        tools.extend(filter_codex_apps_mcp_tools(
+            all_mcp_tools,
+            connectors,
+            config,
+        ));
+    }
+    tools
 }
 
 fn filter_non_codex_apps_mcp_tools_only(mcp_tools: &[McpToolInfo]) -> Vec<McpToolInfo> {

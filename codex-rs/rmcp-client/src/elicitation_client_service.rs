@@ -26,10 +26,12 @@ use crate::rmcp_client::Elicitation;
 use crate::rmcp_client::ElicitationPauseState;
 use crate::rmcp_client::ElicitationResponse;
 use crate::rmcp_client::SendElicitation;
+use crate::serialized_size::serialized_size_exceeds;
 
 const MCP_PROGRESS_TOKEN_META_KEY: &str = "progressToken";
 const MCP_ELICITATION_CREATE_METHOD: &str = "elicitation/create";
 const OPENAI_FORM_METHOD: &str = "openai/form";
+const MAX_MCP_MRTR_ELICITATION_FIELD_BYTES: usize = 4 * 1024;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -75,13 +77,21 @@ impl ElicitationClientService {
         &self,
         request: Elicitation,
         context: RequestContext<RoleClient>,
+        enforce_modern_bounds: bool,
     ) -> Result<ElicitationResponse, rmcp::ErrorData> {
         let RequestContext { id, meta, .. } = context;
         let request = restore_context_meta(request, meta);
+        if enforce_modern_bounds {
+            validate_elicitation_request_bounds(&request)?;
+        }
         let _pause = self.pause_state.enter();
-        (self.send_elicitation)(id, request)
+        let response = (self.send_elicitation)(id, request)
             .await
-            .map_err(|err| rmcp::ErrorData::internal_error(err.to_string(), None))
+            .map_err(|err| rmcp::ErrorData::internal_error(err.to_string(), None))?;
+        if enforce_modern_bounds {
+            validate_elicitation_response_bounds(&response)?;
+        }
+        Ok(response)
     }
 }
 
@@ -102,7 +112,11 @@ impl Service<RoleClient> for ElicitationClientService {
                     .peer_info()
                     .is_some_and(|info| info.protocol_version >= ProtocolVersion::V_2026_07_28);
                 let response = self
-                    .create_elicitation(Elicitation::Mcp(request.params), context)
+                    .create_elicitation(
+                        Elicitation::Mcp(request.params),
+                        context,
+                        modern_session,
+                    )
                     .await?;
                 if modern_session {
                     Ok(ClientResult::ElicitResult(typed_elicitation_result(
@@ -122,7 +136,11 @@ impl Service<RoleClient> for ElicitationClientService {
                     .peer_info()
                     .is_some_and(|info| info.protocol_version >= ProtocolVersion::V_2026_07_28);
                 let response = self
-                    .create_elicitation(custom_mcp_elicitation(request)?, context)
+                    .create_elicitation(
+                        custom_mcp_elicitation(request)?,
+                        context,
+                        modern_session,
+                    )
                     .await?;
                 if modern_session {
                     Ok(ClientResult::ElicitResult(typed_elicitation_result(
@@ -138,7 +156,11 @@ impl Service<RoleClient> for ElicitationClientService {
                 if request.method == OPENAI_FORM_METHOD && self.supports_openai_form =>
             {
                 let response = self
-                    .create_elicitation(openai_form_elicitation(request)?, context)
+                    .create_elicitation(
+                        openai_form_elicitation(request)?,
+                        context,
+                        /*enforce_modern_bounds*/ false,
+                    )
                     .await?;
                 Ok(ClientResult::CustomResult(elicitation_response_result(
                     response,
@@ -273,6 +295,42 @@ fn typed_elicitation_result(
     Ok(result)
 }
 
+fn validate_elicitation_request_bounds(request: &Elicitation) -> Result<(), rmcp::ErrorData> {
+    if let Some(meta) = request.meta() {
+        validate_serialized_field_size("elicitation request _meta", meta)?;
+    }
+    Ok(())
+}
+
+fn validate_elicitation_response_bounds(
+    response: &ElicitationResponse,
+) -> Result<(), rmcp::ErrorData> {
+    if let Some(content) = response.content.as_ref() {
+        validate_serialized_field_size("elicitation response content", content)?;
+    }
+    if let Some(meta) = response.meta.as_ref() {
+        validate_serialized_field_size("elicitation response _meta", meta)?;
+    }
+    Ok(())
+}
+
+fn validate_serialized_field_size(
+    field: &str,
+    value: &impl Serialize,
+) -> Result<(), rmcp::ErrorData> {
+    if serialized_size_exceeds(value, MAX_MCP_MRTR_ELICITATION_FIELD_BYTES)
+        .map_err(|error| rmcp::ErrorData::invalid_params(error.to_string(), None))?
+    {
+        return Err(rmcp::ErrorData::invalid_params(
+            format!(
+                "MCP {field} exceeds {MAX_MCP_MRTR_ELICITATION_FIELD_BYTES} bytes"
+            ),
+            None,
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use pretty_assertions::assert_eq;
@@ -367,6 +425,54 @@ mod tests {
                 "_meta": { "persist": "always" },
             })
         );
+    }
+
+    #[test]
+    fn modern_elicitation_request_metadata_is_bounded() {
+        let at_limit = form_request(Some(meta(json!({
+            "v": "x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 8),
+        }))));
+        validate_elicitation_request_bounds(&Elicitation::Mcp(at_limit))
+            .expect("metadata at the serialized limit must be accepted");
+
+        let oversized = form_request(Some(meta(json!({
+            "v": "x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 7),
+        }))));
+        let error = validate_elicitation_request_bounds(&Elicitation::Mcp(oversized))
+            .expect_err("oversized metadata must be rejected");
+        assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
+    }
+
+    #[test]
+    fn modern_elicitation_response_fields_are_bounded() {
+        validate_elicitation_response_bounds(&ElicitationResponse {
+            action: ElicitationAction::Accept,
+            content: Some(json!(
+                "x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 2)
+            )),
+            meta: Some(json!({})),
+        })
+        .expect("content at the serialized limit must be accepted");
+
+        let error = validate_elicitation_response_bounds(&ElicitationResponse {
+            action: ElicitationAction::Accept,
+            content: Some(json!(
+                "x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 1)
+            )),
+            meta: Some(json!({})),
+        })
+        .expect_err("oversized content must be rejected");
+        assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
+
+        let error = validate_elicitation_response_bounds(&ElicitationResponse {
+            action: ElicitationAction::Accept,
+            content: Some(json!({})),
+            meta: Some(json!({
+                "v": "x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 7),
+            })),
+        })
+        .expect_err("oversized response metadata must be rejected");
+        assert_eq!(error.code, rmcp::model::ErrorCode::INVALID_PARAMS);
     }
 
     fn form_request(meta: Option<RequestMetaObject>) -> ElicitRequestParams {

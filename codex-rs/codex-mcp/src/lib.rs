@@ -1,4 +1,5 @@
 pub use codex_rmcp_client::McpProtocolMode;
+pub use binding::McpBinding;
 pub use connection_manager::McpConnectionManager;
 pub use connection_manager::tool_is_model_visible;
 pub use elicitation::ElicitationLifecycle;
@@ -80,6 +81,7 @@ pub use mcp::mcp_permission_prompt_is_auto_approved;
 pub use mcp::qualified_mcp_tool_name_prefix;
 
 pub(crate) mod auth_elicitation;
+mod binding;
 mod catalog;
 pub(crate) mod codex_apps;
 pub(crate) mod codex_apps_cache;
