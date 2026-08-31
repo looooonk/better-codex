@@ -24,11 +24,13 @@ use codex_api::RealtimeWebsocketWriter;
 use codex_api::map_api_error;
 use codex_config::config_toml::RealtimeWsMode;
 use codex_config::config_toml::RealtimeWsVersion;
+use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_login::default_client::default_headers;
 use codex_login::read_openai_api_key_from_env;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::auth::AuthMode;
+use codex_protocol::config_types::ForcedLoginMethod;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::models::MessagePhase;
@@ -756,12 +758,13 @@ async fn prepare_realtime_start(
     sess: &Arc<Session>,
     params: ConversationStartParams,
 ) -> CodexResult<PreparedRealtimeConversationStart> {
-    let provider = sess.provider().await;
     let auth_manager = sess
         .services
         .model_client
         .auth_manager()
         .unwrap_or_else(|| Arc::clone(&sess.services.auth_manager));
+    ensure_realtime_api_login_allowed(&auth_manager)?;
+    let provider = sess.provider().await;
     let auth = auth_manager.auth().await;
     let config = sess.get_config().await;
     let transport = params
@@ -830,6 +833,17 @@ async fn prepare_realtime_start(
         session_config,
         transport,
     })
+}
+
+fn ensure_realtime_api_login_allowed(auth_manager: &AuthManager) -> CodexResult<()> {
+    if auth_manager.is_login_method_allowed(ForcedLoginMethod::Api) {
+        Ok(())
+    } else {
+        Err(CodexErr::InvalidRequest(
+            "realtime conversation requires API key login, which is disabled by authentication policy"
+                .to_string(),
+        ))
+    }
 }
 
 fn validate_avas_webrtc_start(
