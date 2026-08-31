@@ -10,6 +10,7 @@ use codex_utils_path_uri::PathUri;
 use codex_utils_plugins::AGENT_PLUGIN_SCHEMA_PREFIX;
 use codex_utils_plugins::AGENT_PLUGIN_SCHEMA_URI;
 use codex_utils_plugins::SUPPORTED_AGENT_PLUGIN_SCHEMA_URIS;
+use codex_utils_plugins::is_valid_agent_plugin_name;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
@@ -214,22 +215,4 @@ fn apply_codex_agent_plugin_extension(
         resolved.interface = extension.interface;
     }
     Ok(())
-}
-
-fn is_valid_agent_plugin_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 64
-        && !name.contains("--")
-        && !name.contains("..")
-        && name
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || b".-".contains(&byte))
-        && name
-            .as_bytes()
-            .first()
-            .is_some_and(u8::is_ascii_alphanumeric)
-        && name
-            .as_bytes()
-            .last()
-            .is_some_and(u8::is_ascii_alphanumeric)
 }

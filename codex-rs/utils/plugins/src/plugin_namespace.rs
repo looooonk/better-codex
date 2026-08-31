@@ -70,6 +70,41 @@ struct RawPluginManifestName {
     name: String,
 }
 
+#[derive(serde::Deserialize)]
+struct RawAgentPluginManifestIdentity {
+    #[serde(rename = "$schema")]
+    schema: String,
+    name: String,
+}
+
+pub fn is_valid_agent_plugin_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 64
+        && !name.contains("--")
+        && !name.contains("..")
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || b".-".contains(&byte))
+        && name
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && name
+            .as_bytes()
+            .last()
+            .is_some_and(u8::is_ascii_alphanumeric)
+}
+
+fn agent_plugin_manifest_name(contents: &str) -> Option<String> {
+    let manifest = serde_json::from_str::<RawAgentPluginManifestIdentity>(contents).ok()?;
+    if !SUPPORTED_AGENT_PLUGIN_SCHEMA_URIS.contains(&manifest.schema.as_str())
+        || !is_valid_agent_plugin_name(&manifest.name)
+    {
+        return None;
+    }
+    Some(manifest.name)
+}
+
 /// Returns the plugin manifest `name` defined directly below `plugin_root`.
 pub async fn plugin_namespace_for_root_uri(
     fs: &dyn ExecutorFileSystem,
@@ -78,13 +113,19 @@ pub async fn plugin_namespace_for_root_uri(
     let agent_manifest_path = plugin_root
         .join(AGENT_PLUGIN_MANIFEST_RELATIVE_PATH)
         .ok()?;
-    if let Ok(metadata) = fs.get_metadata(&agent_manifest_path, /*sandbox*/ None).await
-        && metadata.is_file
-        && let Ok(contents) = fs.read_file_text(&agent_manifest_path, /*sandbox*/ None).await
-        && agent_plugin_schema_status(&contents) == AgentPluginSchemaStatus::Supported
-    {
-        let RawPluginManifestName { name } = serde_json::from_str(&contents).ok()?;
-        return Some(name);
+    if let Ok(metadata) = fs.get_metadata(&agent_manifest_path, /*sandbox*/ None).await {
+        if metadata.is_symlink || !metadata.is_file {
+            return None;
+        }
+        if let Ok(contents) = fs.read_file_text(&agent_manifest_path, /*sandbox*/ None).await {
+            match agent_plugin_schema_status(&contents) {
+                AgentPluginSchemaStatus::Supported => {
+                    return agent_plugin_manifest_name(&contents);
+                }
+                AgentPluginSchemaStatus::Unsupported => return None,
+                AgentPluginSchemaStatus::Unrelated => {}
+            }
+        }
     }
 
     let mut manifest_path = None;
@@ -140,6 +181,7 @@ mod tests {
     use super::AGENT_PLUGIN_MANIFEST_RELATIVE_PATH;
     use super::AGENT_PLUGIN_SCHEMA_URI;
     use super::find_plugin_manifest_path;
+    use super::is_valid_agent_plugin_name;
     use super::plugin_namespace_for_skill_path;
     use codex_exec_server::LOCAL_FS;
     use codex_utils_absolute_path::test_support::PathBufExt;
@@ -222,6 +264,48 @@ mod tests {
         );
     }
 
+    #[test]
+    fn agent_plugin_names_follow_portable_manifest_rules() {
+        assert!(is_valid_agent_plugin_name("a"));
+        assert!(is_valid_agent_plugin_name(&"a".repeat(64)));
+        for invalid in [
+            "",
+            "UPPER",
+            "-leading",
+            "trailing-",
+            ".leading",
+            "trailing.",
+            "double--hyphen",
+            "double..dot",
+        ] {
+            assert!(!is_valid_agent_plugin_name(invalid), "{invalid}");
+        }
+        assert!(!is_valid_agent_plugin_name(&"a".repeat(65)));
+    }
+
+    #[tokio::test]
+    async fn invalid_agent_plugin_identity_does_not_supply_namespace() {
+        let tmp = tempdir().expect("tempdir");
+        let plugin_root = tmp.path().join("plugins/portable");
+        let skill_path = plugin_root.join("skills/search/SKILL.md");
+        fs::create_dir_all(skill_path.parent().expect("parent")).expect("mkdir");
+        for manifest in [
+            format!(r#"{{"$schema":"{AGENT_PLUGIN_SCHEMA_URI}","name":"UPPER"}}"#),
+            format!(r#"{{"$schema":"{AGENT_PLUGIN_SCHEMA_URI}","name":7}}"#),
+            format!(r#"{{"$schema":"{AGENT_PLUGIN_SCHEMA_URI}"}}"#),
+        ] {
+            fs::write(
+                plugin_root.join(AGENT_PLUGIN_MANIFEST_RELATIVE_PATH),
+                manifest,
+            )
+            .expect("write manifest");
+            assert_eq!(
+                plugin_namespace_for_skill_path(LOCAL_FS.as_ref(), &skill_path.abs()).await,
+                None
+            );
+        }
+    }
+
     #[tokio::test]
     async fn unsupported_agent_plugin_schema_does_not_supply_namespace() {
         let tmp = tempdir().expect("tempdir");
@@ -233,6 +317,35 @@ mod tests {
             r#"{"$schema":"https://agent-plugins.org/schemas/2.0.0/plugin.schema.json","name":"future"}"#,
         )
         .expect("write manifest");
+
+        assert_eq!(
+            plugin_namespace_for_skill_path(LOCAL_FS.as_ref(), &skill_path.abs()).await,
+            None
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn executor_rejects_symlinked_root_manifest() {
+        let tmp = tempdir().expect("tempdir");
+        let plugin_root = tmp.path().join("plugins/sample");
+        let skill_path = plugin_root.join("skills/search/SKILL.md");
+        let manifest_target = tmp.path().join("manifest.json");
+        let legacy_path = plugin_root.join(".codex-plugin/plugin.json");
+        fs::create_dir_all(skill_path.parent().expect("parent")).expect("mkdir skill");
+        fs::write(
+            &manifest_target,
+            format!(r#"{{"$schema":"{AGENT_PLUGIN_SCHEMA_URI}","name":"sample"}}"#),
+        )
+        .expect("write manifest target");
+        std::os::unix::fs::symlink(
+            &manifest_target,
+            plugin_root.join(AGENT_PLUGIN_MANIFEST_RELATIVE_PATH),
+        )
+        .expect("root manifest symlink");
+        fs::create_dir_all(legacy_path.parent().expect("legacy parent"))
+            .expect("mkdir legacy parent");
+        fs::write(&legacy_path, r#"{"name":"legacy"}"#).expect("write legacy manifest");
 
         assert_eq!(
             plugin_namespace_for_skill_path(LOCAL_FS.as_ref(), &skill_path.abs()).await,

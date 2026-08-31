@@ -15,6 +15,7 @@ pub use plugin_namespace::AgentPluginSchemaStatus;
 pub use plugin_namespace::SUPPORTED_AGENT_PLUGIN_SCHEMA_URIS;
 pub use plugin_namespace::agent_plugin_schema_status;
 pub use plugin_namespace::find_plugin_manifest_path;
+pub use plugin_namespace::is_valid_agent_plugin_name;
 pub use plugin_namespace::plugin_namespace_for_root_uri;
 pub use plugin_namespace::plugin_namespace_for_skill_path;
 pub use plugin_namespace::plugin_namespace_for_skill_uri;
