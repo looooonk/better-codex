@@ -1222,12 +1222,7 @@ impl UnifiedExecProcessManager {
             tool_name: ToolName::plain("exec_command"),
         };
         orchestrator
-            .run(
-                &mut runtime,
-                &req,
-                &tool_ctx,
-                &context.turn,
-            )
+            .run(&mut runtime, &req, &tool_ctx, &context.turn)
             .await
             .map(|result| (result.output, result.deferred_network_approval))
             .map_err(|err| match err {

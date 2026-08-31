@@ -178,7 +178,11 @@ impl Approvable<ShellRequest> for ShellRuntime {
         })
     }
 
-    fn approval_action(&self, req: &ShellRequest, call_id: &str) -> std::io::Result<ApprovalAction> {
+    fn approval_action(
+        &self,
+        req: &ShellRequest,
+        call_id: &str,
+    ) -> std::io::Result<ApprovalAction> {
         Ok(ApprovalAction::Shell {
             id: call_id.to_string(),
             environment_id: req.turn_environment.environment_id.clone(),
