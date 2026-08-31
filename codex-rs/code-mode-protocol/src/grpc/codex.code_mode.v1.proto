@@ -229,10 +229,12 @@ enum ToolKind {
 }
 
 message ContentItem {
+  reserved 3;
+  reserved "audio";
+
   oneof item {
     TextContent text = 1;
     ImageContent image = 2;
-    AudioContent audio = 3;
   }
 }
 
@@ -243,10 +245,6 @@ message TextContent {
 message ImageContent {
   string image_url = 1;
   optional ImageDetail detail = 2;
-}
-
-message AudioContent {
-  string audio_url = 1;
 }
 
 enum ImageDetail {
