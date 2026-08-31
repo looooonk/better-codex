@@ -81,6 +81,14 @@ pub async fn materialize_rollout_for_reference(
 ) -> std::io::Result<std::path::PathBuf> {
     compression::materialize_rollout_for_append(path).await
 }
+
+/// Returns the paginated record ordinals adjacent to a logical JSONL byte boundary.
+pub async fn rollout_ordinals_at_boundary(
+    path: &std::path::Path,
+    end_byte_offset: u64,
+) -> std::io::Result<(u64, Option<u64>)> {
+    compression::rollout_ordinals_at_boundary(path, end_byte_offset).await
+}
 pub use config::Config;
 pub use config::RolloutConfig;
 pub use config::RolloutConfigView;
