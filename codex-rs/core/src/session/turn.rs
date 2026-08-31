@@ -254,6 +254,7 @@ pub(crate) async fn run_turn(
     // 2. After auto-compact, when model/tool continuation needs to resume before any steer.
 
     let mut next_step_context = Some(first_step_context);
+    let mut sampling_started = false;
     loop {
         // Note that pending_input would be something like a message the user
         // submitted through the UI while the model was running. Though the UI
@@ -268,7 +269,11 @@ pub(crate) async fn run_turn(
             &sess,
             &turn_context,
             &pending_input,
-            PersistContext::Standard,
+            if sampling_started {
+                PersistContext::Standard
+            } else {
+                PersistContext::TurnStart
+            },
         )
         .await?
         {
@@ -288,6 +293,7 @@ pub(crate) async fn run_turn(
             Some(step_context) => step_context,
             None => sess.capture_step_context(Arc::clone(&turn_context)).await,
         };
+        sampling_started = true;
         let sampling_request_result: CodexResult<_> = async {
             super::time_reminder::maybe_record_current_time_reminder(
                 sess.as_ref(),

@@ -4157,6 +4157,38 @@ async fn turn_start_persistence_failure_stops_before_sampling() {
     assert!(matches!(error, CodexErr::Io(_)));
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn idle_turn_persistence_failure_stops_before_sampling() -> anyhow::Result<()> {
+    let server = start_mock_server().await;
+    let test = test_codex().build(&server).await?;
+    let session = &test.codex.codex.session;
+    session
+        .live_thread()
+        .expect("live thread")
+        .discard()
+        .await
+        .expect("discard live writer");
+
+    session
+        .try_start_turn_if_idle(vec![user_message("queued idle input")])
+        .await
+        .expect("idle turn should start");
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let response_requests = server
+        .received_requests()
+        .await
+        .expect("mock server requests")
+        .into_iter()
+        .filter(|request| request.url.path().ends_with("/responses"))
+        .count();
+    assert_eq!(response_requests, 0);
+    Ok(())
+}
+
 async fn attach_thread_persistence(session: &mut Session) -> PathBuf {
     let config = session.get_config().await;
     let live_thread = LiveThread::create(
