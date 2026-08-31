@@ -80,9 +80,18 @@ async fn delete_threads_impl(
     let mut ordered_thread_ids = thread_ids.to_vec();
     ordered_thread_ids.sort_by_key(ToString::to_string);
     ordered_thread_ids.dedup();
+    let mut lifecycle_guards = Vec::with_capacity(ordered_thread_ids.len());
+    for thread_id in &ordered_thread_ids {
+        lifecycle_guards.push(store.live_writer_locks.lock_lifecycle(*thread_id).await);
+    }
     let mut live_writer_guards = Vec::with_capacity(ordered_thread_ids.len());
-    for thread_id in ordered_thread_ids {
-        live_writer_guards.push(store.live_writer_locks.lock(thread_id).await);
+    for thread_id in &ordered_thread_ids {
+        live_writer_guards.push(store.live_writer_locks.lock(*thread_id).await);
+        store.ensure_live_recorder_absent(*thread_id).await?;
+    }
+    let mut writer_locks = Vec::with_capacity(ordered_thread_ids.len());
+    for thread_id in &ordered_thread_ids {
+        writer_locks.push(store.writer_lock_coordinator.acquire(*thread_id)?);
     }
 
     let state_db = store.state_db().await;
@@ -130,12 +139,6 @@ async fn delete_threads_impl(
     }
     staged.commit();
 
-    {
-        let mut live_recorders = store.live_recorders.lock().await;
-        for thread_id in thread_ids {
-            live_recorders.remove(thread_id);
-        }
-    }
     for thread_id in thread_ids {
         if let Err(err) =
             remove_thread_name_entries(store.config.codex_home.as_path(), *thread_id).await

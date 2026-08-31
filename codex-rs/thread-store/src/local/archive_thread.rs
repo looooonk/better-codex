@@ -15,6 +15,10 @@ pub(super) async fn archive_thread(
     params: ArchiveThreadParams,
 ) -> ThreadStoreResult<()> {
     let thread_id = params.thread_id;
+    let _lifecycle_guard = store.live_writer_locks.lock_lifecycle(thread_id).await;
+    let _live_writer_guard = store.live_writer_locks.lock(thread_id).await;
+    store.ensure_live_recorder_absent(thread_id).await?;
+    let _writer_lock = store.writer_lock_coordinator.acquire(thread_id)?;
     let state_db_ctx = store.state_db().await;
     let rollout_path = find_thread_path_by_id_str(
         store.config.codex_home.as_path(),
