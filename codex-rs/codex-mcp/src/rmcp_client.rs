@@ -926,7 +926,8 @@ async fn start_server_task(
     )
     .await
     .map_err(StartupOutcomeError::from)?;
-    let server_info = mcp_server_info_from_implementation(initialize_result.server_info);
+    let server_info =
+        mcp_server_info_from_implementation(&server_name, initialize_result.server_info);
     let tools = match (codex_apps_tools_cache_context.as_ref(), fetch_ticket) {
         (Some(cache_context), Some(fetch_ticket)) => {
             cache_context.publish_if_newest_accepted(fetch_ticket, &server_info, tools)
@@ -984,7 +985,11 @@ fn mcp_initialize_request_params(
     .with_protocol_version(ProtocolVersion::V_2025_06_18)
 }
 
-fn mcp_server_info_from_implementation(server_info: Implementation) -> McpServerInfo {
+fn mcp_server_info_from_implementation(
+    server_name: &str,
+    server_info: Option<Implementation>,
+) -> McpServerInfo {
+    let server_info = server_info.unwrap_or_else(|| Implementation::new(server_name, ""));
     McpServerInfo {
         name: server_info.name,
         title: server_info.title,
@@ -1107,7 +1112,7 @@ mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
     use rmcp::model::JsonObject;
-    use rmcp::model::Meta;
+    use rmcp::model::MetaObject;
     use rmcp::transport::auth::AuthError;
 
     #[test]
@@ -1118,6 +1123,21 @@ mod tests {
         let error = StartupOutcomeError::from(error);
 
         assert!(error.is_authentication_required());
+    }
+
+    #[test]
+    fn missing_server_implementation_uses_configured_server_name() {
+        assert_eq!(
+            mcp_server_info_from_implementation("configured-server", /*server_info*/ None),
+            McpServerInfo {
+                name: "configured-server".to_string(),
+                title: None,
+                version: String::new(),
+                description: None,
+                icons: None,
+                website_url: None,
+            }
+        );
     }
 
     #[test]
@@ -1147,7 +1167,7 @@ mod tests {
             "test tool",
             Arc::new(JsonObject::default()),
         )
-        .with_meta(Meta(
+        .with_meta(MetaObject(
             serde_json::json!({
                 "connector_id": "connector_gmail",
                 "connector_name": "Gmail",
