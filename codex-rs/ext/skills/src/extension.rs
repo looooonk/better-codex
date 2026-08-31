@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use codex_core_skills::ExplicitSkillPromptBudget;
@@ -6,7 +7,10 @@ use codex_core_skills::SkillInstructions;
 use codex_core_skills::default_skill_metadata_budget;
 use codex_core_skills::injection::HostSkillsCatalogInWorldState;
 use codex_core_skills::injection::InjectedHostSkillPrompts;
+use codex_exec_server::ExecutorCapabilityDiscoverySnapshot;
+use codex_exec_server::FileSystemSandboxContext;
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
+use codex_exec_server::ResolvedSelectedCapabilityRoot;
 use codex_extension_api::ConfigContributor;
 use codex_extension_api::ContextContributor;
 use codex_extension_api::ContextualUserFragment;
@@ -208,12 +212,63 @@ where
         session_store: &ExtensionData,
         thread_store: &ExtensionData,
     ) -> Vec<Arc<dyn ToolExecutor<ToolCall>>> {
+        self.build_skill_tools(
+            session_store,
+            thread_store,
+            /*executor_query*/ None,
+            /*sandbox_contexts*/ None,
+        )
+    }
+
+    fn tools_for_step(
+        &self,
+        session_store: &ExtensionData,
+        thread_store: &ExtensionData,
+        step_store: &ExtensionData,
+    ) -> Vec<Arc<dyn ToolExecutor<ToolCall>>> {
+        let resolved_executor_roots = step_store
+            .get::<Vec<ResolvedSelectedCapabilityRoot>>()
+            .map(|roots| roots.as_slice().to_vec())
+            .unwrap_or_default();
+        let executor_query = (!resolved_executor_roots.is_empty()).then(|| SkillListQuery {
+            turn_id: step_store.level_id().to_string(),
+            executor_roots: resolved_executor_roots
+                .iter()
+                .map(|root| root.selected_root().clone())
+                .collect(),
+            resolved_executor_roots,
+            host_snapshot: None,
+            include_host_skills: false,
+            include_bundled_skills: false,
+            include_orchestrator_skills: false,
+            mcp_resources: None,
+            executor_capability_discovery: step_store
+                .get::<ExecutorCapabilityDiscoverySnapshot>()
+                .map(|discovery| discovery.as_ref().clone()),
+        });
+        self.build_skill_tools(
+            session_store,
+            thread_store,
+            executor_query,
+            step_store.get::<HashMap<String, FileSystemSandboxContext>>(),
+        )
+    }
+}
+
+impl<C> SkillsExtension<C> {
+    fn build_skill_tools(
+        &self,
+        session_store: &ExtensionData,
+        thread_store: &ExtensionData,
+        executor_query: Option<SkillListQuery>,
+        sandbox_contexts: Option<Arc<HashMap<String, FileSystemSandboxContext>>>,
+    ) -> Vec<Arc<dyn ToolExecutor<ToolCall>>> {
         let Some(thread_state) = thread_store.get::<SkillsThreadState>() else {
             return Vec::new();
         };
-        if !self.providers.has_orchestrator_provider()
-            || !thread_state.orchestrator_skills_enabled()
-        {
+        let orchestrator_available = self.providers.has_orchestrator_provider()
+            && thread_state.orchestrator_skills_enabled();
+        if !orchestrator_available && executor_query.is_none() {
             return Vec::new();
         }
 
@@ -221,6 +276,9 @@ where
             self.providers.clone(),
             session_store.get::<McpResourceClient>(),
             thread_state,
+            orchestrator_available,
+            executor_query,
+            sandbox_contexts,
         )
     }
 }

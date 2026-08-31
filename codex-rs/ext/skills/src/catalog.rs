@@ -229,6 +229,10 @@ impl SkillCatalogEntry {
         self
     }
 
+    pub(crate) fn is_model_visible(&self) -> bool {
+        self.enabled && self.prompt_visible
+    }
+
     pub(crate) fn rendered_path(&self) -> &str {
         self.display_path
             .as_deref()

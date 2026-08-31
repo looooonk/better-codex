@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -10,6 +11,7 @@ use codex_core_skills::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
 use codex_core_skills::SKILLS_INTRO_WITH_ABSOLUTE_PATHS;
 use codex_core_skills::SkillLoadOutcome;
 use codex_core_skills::injection::HostSkillsCatalogInWorldState;
+use codex_exec_server::EnvironmentManager;
 use codex_extension_api::ConversationHistory;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionEventSink;
@@ -598,6 +600,174 @@ async fn skills_list_truncates_catalog_descriptions_in_tool_output() -> TestResu
 
     assert_eq!(rendered_description, "x".repeat(1_021) + "...");
     assert_ne!(rendered_description, description);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn step_tools_list_and_read_exact_executor_authority() -> TestResult {
+    let hidden = test_entry(
+        SkillSourceKind::Executor,
+        "root-a",
+        "skill://root-a/explicit-only",
+        "skill://root-a/explicit-only/SKILL.md",
+    )
+    .hidden_from_prompt();
+    let mut entries = (0..21)
+        .map(|index| {
+            test_entry(
+                SkillSourceKind::Executor,
+                "root-a",
+                &format!("skill://root-a/visible-{index}"),
+                &format!("skill://root-a/visible-{index}/SKILL.md"),
+            )
+        })
+        .collect::<Vec<_>>();
+    entries.push(hidden);
+    let providers = SkillProviders::new().with_executor_provider(Arc::new(StaticSkillProvider {
+        catalog: SkillCatalog {
+            entries,
+            warnings: Vec::new(),
+        },
+        read_requests: Arc::new(Mutex::new(Vec::new())),
+        list_calls: None,
+        fail_first_list: false,
+        read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
+    }));
+    let mut builder = ExtensionRegistryBuilder::new();
+    install_with_providers(&mut builder, providers, skills_extension_config);
+    let registry = builder.build();
+    let session_store = ExtensionData::new("session");
+    let thread_store = ExtensionData::new("thread");
+    let config = default_config();
+    registry.thread_lifecycle_contributors()[0]
+        .on_thread_start(ThreadStartInput {
+            config: &config,
+            session_source: &SessionSource::Cli,
+            persistent_thread_state_available: true,
+            environments: &[],
+            session_store: &session_store,
+            thread_store: &thread_store,
+        })
+        .await;
+
+    let selected_root = SelectedCapabilityRoot {
+        id: "root-a".to_string(),
+        location: CapabilityRootLocation::Environment {
+            environment_id: "local".to_string(),
+            path: PathUri::parse("file:///skills/root-a")?,
+        },
+    };
+    let environment_manager = EnvironmentManager::default_for_tests();
+    let local = environment_manager
+        .get_environment("local")
+        .ok_or("local environment should exist")?;
+    let resolved = environment_manager
+        .resolve_selected_capability_roots(
+            std::slice::from_ref(&selected_root),
+            &HashMap::from([("local".to_string(), Some(local))]),
+        )
+        .await;
+    let step_store = ExtensionData::new("turn-1");
+    step_store.insert(resolved);
+    let tools = registry.tool_contributors()[0].tools_for_step(
+        &session_store,
+        &thread_store,
+        &step_store,
+    );
+    let list_tool = tools
+        .iter()
+        .find(|tool| tool.tool_name().name == "list")
+        .ok_or("skills.list tool should be registered")?;
+    let list_payload = ToolPayload::Function {
+        arguments: serde_json::json!({"authority": {"kind": "executor"}}).to_string(),
+    };
+    let list_output = list_tool
+        .handle(ToolCall {
+            turn_id: "turn-1".to_string(),
+            call_id: "call-list".to_string(),
+            tool_name: list_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload: list_payload.clone(),
+        })
+        .await?;
+    let list_response = list_output
+        .post_tool_use_response("call-list", &list_payload)
+        .ok_or("skills.list should expose structured output")?;
+    assert_eq!(list_response["skills"].as_array().map(Vec::len), Some(20));
+    assert_eq!(
+        list_response["skills"][0]["authority"],
+        serde_json::json!({"kind": "executor", "id": "root-a"})
+    );
+    let next_cursor = list_response["next_cursor"]
+        .as_str()
+        .ok_or("skills.list should paginate")?;
+    let next_payload = ToolPayload::Function {
+        arguments: serde_json::json!({
+            "authority": {"kind": "executor"},
+            "cursor": next_cursor
+        })
+        .to_string(),
+    };
+    let next_output = list_tool
+        .handle(ToolCall {
+            turn_id: "turn-1".to_string(),
+            call_id: "call-list-next".to_string(),
+            tool_name: list_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload: next_payload.clone(),
+        })
+        .await?;
+    let next_response = next_output
+        .post_tool_use_response("call-list-next", &next_payload)
+        .ok_or("skills.list next page should expose structured output")?;
+    assert_eq!(next_response["skills"].as_array().map(Vec::len), Some(1));
+    assert_eq!(next_response["next_cursor"], serde_json::Value::Null);
+
+    let read_tool = tools
+        .iter()
+        .find(|tool| tool.tool_name().name == "read")
+        .ok_or("skills.read tool should be registered")?;
+    let read_payload = ToolPayload::Function {
+        arguments: serde_json::json!({
+            "authority": {"kind": "executor", "id": "root-a"},
+            "package": "skill://root-a/explicit-only",
+            "resource": "skill://root-a/explicit-only/SKILL.md"
+        })
+        .to_string(),
+    };
+    let read_output = read_tool
+        .handle(ToolCall {
+            turn_id: "turn-1".to_string(),
+            call_id: "call-read".to_string(),
+            tool_name: read_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload: read_payload.clone(),
+        })
+        .await?;
+    let read_response = read_output
+        .post_tool_use_response("call-read", &read_payload)
+        .ok_or("skills.read should expose structured output")?;
+    assert_eq!(
+        read_response,
+        serde_json::json!({
+            "resource": "skill://root-a/explicit-only/SKILL.md",
+            "contents": DEFAULT_PROVIDER_SKILL_CONTENTS,
+            "next_cursor": null
+        })
+    );
 
     Ok(())
 }
