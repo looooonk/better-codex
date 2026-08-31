@@ -97,6 +97,12 @@ struct ApprovalResolution {
     pending_cache: Vec<ApprovalCacheKey>,
 }
 
+#[derive(Debug)]
+pub(crate) struct ApprovalGrant {
+    pub(crate) decision: ReviewDecision,
+    route: ApprovalRouteSnapshot,
+}
+
 #[derive(Clone, Copy)]
 enum ApprovalCacheMode {
     Use,
@@ -107,7 +113,7 @@ pub(crate) async fn request_approval(
     session: &Arc<Session>,
     action: ApprovalAction,
     ctx: ApprovalContext,
-) -> Result<ReviewDecision, ToolError> {
+) -> Result<ApprovalGrant, ToolError> {
     if ctx.cancellation_token.is_cancelled() {
         return Err(ToolError::Codex(CodexErr::TurnAborted));
     }
@@ -122,6 +128,7 @@ pub(crate) async fn request_approval(
                 source: ApprovalResolutionSource::Hook,
                 pending_cache: Vec::new(),
             },
+            None,
         );
     }
 
@@ -160,6 +167,7 @@ pub(crate) async fn request_approval(
                         source: ApprovalResolutionSource::Hook,
                         pending_cache: Vec::new(),
                     },
+                    Some(current),
                 )
             } else {
                 resolve_with_live_reviewer(session, &action, &ctx, initial.policy.never_revision)
@@ -173,6 +181,7 @@ pub(crate) async fn request_approval(
                 source: ApprovalResolutionSource::Hook,
                 pending_cache: Vec::new(),
             },
+            None,
         ),
         None => {
             resolve_with_live_reviewer(session, &action, &ctx, initial.policy.never_revision).await
@@ -191,7 +200,7 @@ async fn resolve_with_live_reviewer(
     action: &ApprovalAction,
     ctx: &ApprovalContext,
     never_revision: u64,
-) -> Result<ReviewDecision, ToolError> {
+) -> Result<ApprovalGrant, ToolError> {
     for _ in 0..MAX_REVIEWER_REROUTES {
         let Some(before) = route_snapshot(session, &ctx.turn).await else {
             return reject_settings_churn(ctx);
@@ -204,6 +213,7 @@ async fn resolve_with_live_reviewer(
                     source: ApprovalResolutionSource::Hook,
                     pending_cache: Vec::new(),
                 },
+                None,
             );
         }
 
@@ -213,7 +223,7 @@ async fn resolve_with_live_reviewer(
             request_user_approval(session, action, ctx, before, ApprovalCacheMode::Use).await
         };
         if !decision_grants_action(&resolution.decision) {
-            return finish_resolution(ctx, resolution);
+            return finish_resolution(ctx, resolution, None);
         }
 
         let Some(after) = route_snapshot(session, &ctx.turn).await else {
@@ -227,6 +237,7 @@ async fn resolve_with_live_reviewer(
                     source: ApprovalResolutionSource::Hook,
                     pending_cache: Vec::new(),
                 },
+                None,
             );
         }
         if before != after {
@@ -236,7 +247,7 @@ async fn resolve_with_live_reviewer(
         if !commit_pending_cache(session, &ctx.turn, &resolution.pending_cache, after).await {
             continue;
         }
-        return finish_resolution(ctx, resolution);
+        return finish_resolution(ctx, resolution, Some(after));
     }
 
     reject_settings_churn(ctx)
@@ -800,7 +811,7 @@ fn routed_cache_key(
     }
 }
 
-fn reject_settings_churn(ctx: &ApprovalContext) -> Result<ReviewDecision, ToolError> {
+fn reject_settings_churn(ctx: &ApprovalContext) -> Result<ApprovalGrant, ToolError> {
     finish_resolution(
         ctx,
         ApprovalResolution {
@@ -808,6 +819,7 @@ fn reject_settings_churn(ctx: &ApprovalContext) -> Result<ReviewDecision, ToolEr
             source: ApprovalResolutionSource::Hook,
             pending_cache: Vec::new(),
         },
+        None,
     )
 }
 
@@ -840,7 +852,8 @@ fn decision_grants_action(decision: &ReviewDecision) -> bool {
 fn finish_resolution(
     ctx: &ApprovalContext,
     resolution: ApprovalResolution,
-) -> Result<ReviewDecision, ToolError> {
+    approved_route: Option<ApprovalRouteSnapshot>,
+) -> Result<ApprovalGrant, ToolError> {
     if ctx.cancellation_token.is_cancelled() {
         return Err(ToolError::Codex(CodexErr::TurnAborted));
     }
@@ -856,7 +869,30 @@ fn finish_resolution(
         &resolution.decision,
         telemetry_source,
     );
-    normalize_decision(resolution.decision, resolution.source)
+    let decision = normalize_decision(resolution.decision, resolution.source)?;
+    let Some(route) = approved_route else {
+        return Err(ToolError::Rejected(
+            APPROVAL_SETTINGS_CHURN_REJECTION.to_string(),
+        ));
+    };
+    Ok(ApprovalGrant { decision, route })
+}
+
+pub(crate) async fn ensure_approval_grant_is_current(
+    session: &Session,
+    turn: &TurnContext,
+    cancellation_token: &CancellationToken,
+    grant: &ApprovalGrant,
+) -> Result<(), ToolError> {
+    if cancellation_token.is_cancelled() {
+        return Err(ToolError::Codex(CodexErr::TurnAborted));
+    }
+    if route_snapshot(session, turn).await != Some(grant.route) {
+        return Err(ToolError::Rejected(
+            "approval settings changed before the action could run".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 fn normalize_decision(

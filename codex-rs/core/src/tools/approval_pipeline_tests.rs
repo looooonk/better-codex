@@ -287,6 +287,72 @@ async fn guardian_review_test_fixture(
     (Arc::new(session), action, context)
 }
 
+async fn allowed_guardian_grant_fixture() -> (
+    Arc<crate::session::session::Session>,
+    Arc<crate::session::turn_context::TurnContext>,
+    ApprovalGrant,
+) {
+    use crate::config::Constrained;
+
+    let (session, action, context) = guardian_review_test_fixture(
+        Arc::new(RecordingApprovalAuthority {
+            bindings: Arc::new(StdMutex::new(Vec::new())),
+        }),
+        CancellationToken::new(),
+    )
+    .await;
+    context
+        .turn
+        .approval_policy
+        .replace(Constrained::allow_any(AskForApproval::OnRequest));
+    context
+        .turn
+        .approvals_reviewer
+        .replace(ApprovalsReviewer::AutoReview);
+    let turn = Arc::clone(&context.turn);
+    let grant = request_approval(&session, action, context)
+        .await
+        .expect("Guardian review should allow the action");
+    (session, turn, grant)
+}
+
+#[tokio::test]
+async fn approval_grant_revalidates_reviewer_strict_and_policy_revisions() {
+    use crate::config::Constrained;
+    use crate::state::ActiveTurn;
+
+    let (session, turn, grant) = allowed_guardian_grant_fixture().await;
+    turn.approvals_reviewer.replace(ApprovalsReviewer::User);
+    assert!(
+        ensure_approval_grant_is_current(&session, &turn, &CancellationToken::new(), &grant)
+            .await
+            .is_err()
+    );
+
+    let (session, turn, grant) = allowed_guardian_grant_fixture().await;
+    let active_turn = ActiveTurn::default();
+    active_turn
+        .turn_state
+        .lock()
+        .await
+        .enable_strict_auto_review();
+    *session.active_turn.lock().await = Some(active_turn);
+    assert!(
+        ensure_approval_grant_is_current(&session, &turn, &CancellationToken::new(), &grant)
+            .await
+            .is_err()
+    );
+
+    let (session, turn, grant) = allowed_guardian_grant_fixture().await;
+    turn.approval_policy
+        .replace(Constrained::allow_any(AskForApproval::UnlessTrusted));
+    assert!(
+        ensure_approval_grant_is_current(&session, &turn, &CancellationToken::new(), &grant)
+            .await
+            .is_err()
+    );
+}
+
 #[tokio::test]
 async fn live_never_policy_blocks_new_action_after_strict_review() {
     use crate::config::Constrained;
@@ -320,7 +386,8 @@ async fn live_never_policy_blocks_new_action_after_strict_review() {
     assert_eq!(
         request_approval(&session, action.clone(), context.clone())
             .await
-            .expect("strict OnRequest review should allow the action"),
+            .expect("strict OnRequest review should allow the action")
+            .decision,
         ReviewDecision::Approved
     );
     bindings.lock().expect("binding lock").clear();
@@ -527,7 +594,7 @@ async fn guardian_v2_allow_is_bound_to_the_exact_action_attempt() {
     .await
     .expect("review should allow the action");
 
-    assert_eq!(decision, ReviewDecision::Approved);
+    assert_eq!(decision.decision, ReviewDecision::Approved);
     assert_eq!(
         bindings.lock().expect("binding lock").as_slice(),
         [codex_extension_api::ApprovalReviewBinding {

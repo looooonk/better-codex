@@ -8,6 +8,7 @@ use crate::sandboxing::ExecRequest;
 use crate::sandboxing::SandboxPermissions;
 use crate::shell::ShellType;
 use crate::tools::approval_pipeline::ApprovalContext;
+use crate::tools::approval_pipeline::ensure_approval_grant_is_current;
 use crate::tools::approval_pipeline::request_approval;
 use crate::tools::approvals::ApprovalAction;
 use crate::tools::context::ToolCallSource;
@@ -481,9 +482,20 @@ impl CoreShellActionProvider {
                 },
             ))
             .await;
+        let result = match result {
+            Ok(grant) => ensure_approval_grant_is_current(
+                &session,
+                &self.turn,
+                &self.cancellation_token,
+                &grant,
+            )
+            .await
+            .map(|()| grant),
+            Err(error) => Err(error),
+        };
         Ok(match result {
-            Ok(decision) => PromptDecision {
-                decision,
+            Ok(grant) => PromptDecision {
+                decision: grant.decision,
                 rejection_message: None,
             },
             Err(ToolError::Rejected(message)) => PromptDecision {

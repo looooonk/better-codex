@@ -2449,7 +2449,19 @@ impl Session {
             ) {
                 return None;
             }
-            if turn_context.approval_policy.decision_snapshot().revision
+            let grant_is_current = match &decision {
+                Ok(grant) => crate::tools::ensure_approval_grant_is_current(
+                    self,
+                    turn_context,
+                    &cancellation_token,
+                    grant,
+                )
+                .await
+                .is_ok(),
+                Err(_) => false,
+            };
+            if !grant_is_current
+                || turn_context.approval_policy.decision_snapshot().revision
                 != policy_before.revision
                 || turn_context.approvals_reviewer.snapshot() != reviewer_before
                 || self.strict_auto_review_enabled_for_turn().await != strict_before
@@ -2461,7 +2473,10 @@ impl Session {
                 });
             }
             let response = RequestPermissionsResponse {
-                permissions: if matches!(&decision, Ok(ReviewDecision::Approved)) {
+                permissions: if matches!(
+                    &decision,
+                    Ok(grant) if grant.decision == ReviewDecision::Approved
+                ) {
                     requested_permissions.clone()
                 } else {
                     RequestPermissionProfile::default()
