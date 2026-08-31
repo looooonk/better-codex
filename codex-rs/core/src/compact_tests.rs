@@ -296,6 +296,7 @@ fn build_compacted_history_preserves_user_message_passthrough_metadata() {
             internal_chat_message_metadata_passthrough: Some(
                 InternalChatMessageMetadataPassthrough {
                     turn_id: Some("turn-1".to_string()),
+                    ..Default::default()
                 },
             ),
         }],

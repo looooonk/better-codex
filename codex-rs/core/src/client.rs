@@ -206,7 +206,6 @@ struct ModelClientState {
     enable_request_compression: bool,
     include_timing_metrics: bool,
     beta_features_header: Option<String>,
-    item_ids_enabled: bool,
     concurrent_reasoning_summaries_enabled: bool,
     include_attestation: bool,
     attestation_provider: Option<Arc<dyn AttestationProvider>>,
@@ -420,7 +419,6 @@ impl ModelClient {
         enable_request_compression: bool,
         include_timing_metrics: bool,
         beta_features_header: Option<String>,
-        item_ids_enabled: bool,
         concurrent_reasoning_summaries_enabled: bool,
         attestation_provider: Option<Arc<dyn AttestationProvider>>,
         http_client_factory: HttpClientFactory,
@@ -444,7 +442,6 @@ impl ModelClient {
                 enable_request_compression,
                 include_timing_metrics,
                 beta_features_header,
-                item_ids_enabled,
                 concurrent_reasoning_summaries_enabled,
                 include_attestation,
                 attestation_provider,
@@ -582,7 +579,7 @@ impl ModelClient {
             text,
             ..
         } = request;
-        self.prepare_response_items_for_request(&mut input, /*store*/ false);
+        self.prepare_response_items_for_request(&mut input);
         let payload = ApiCompactionInput {
             model: &model,
             input: &input,
@@ -907,19 +904,11 @@ impl ModelClient {
         Ok(request)
     }
 
-    fn prepare_response_items_for_request(&self, input: &mut [ResponseItem], store: bool) {
-        for item in input.iter_mut() {
+    fn prepare_response_items_for_request(&self, input: &mut [ResponseItem]) {
+        for item in input {
             if item.id().is_some_and(|id| !id.is_prefixed()) {
                 item.set_id(/*new_id*/ None);
             }
-        }
-
-        if self.state.item_ids_enabled || store {
-            return;
-        }
-
-        for item in input {
-            item.set_id(/*new_id*/ None);
         }
     }
 
@@ -1443,9 +1432,8 @@ impl ModelClientSession {
                 service_tier.clone(),
                 responses_metadata,
             )?;
-            let store = request.store;
             self.client
-                .prepare_response_items_for_request(&mut request.input, store);
+                .prepare_response_items_for_request(&mut request.input);
             let request_session_telemetry =
                 session_telemetry_for_request(session_telemetry, &request);
             let inference_trace_attempt = inference_trace.start_attempt();
@@ -1626,9 +1614,8 @@ impl ModelClientSession {
             };
             stamp_ws_stream_request_start_ms(&mut ws_request);
             let ResponsesWsRequest::ResponseCreate(ws_payload) = &mut ws_request;
-            let store = ws_payload.store;
             self.client
-                .prepare_response_items_for_request(&mut ws_payload.input, store);
+                .prepare_response_items_for_request(&mut ws_payload.input);
             if previous_response_id_from_untraced_warmup {
                 // The transport can reuse an untraced warmup response id and omit the
                 // already-sent input, but rollout replay needs the logical model-visible
