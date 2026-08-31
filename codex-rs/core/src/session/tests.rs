@@ -4,6 +4,7 @@ use crate::agents_md_manager::AgentsMdManager;
 use crate::codex_thread::TryStartTurnIfIdleRejectionReason;
 use crate::config::ConfigBuilder;
 use crate::config::ConfigOverrides;
+use crate::config::ThreadStoreConfig;
 use crate::config::test_config;
 use crate::context::ContextualUserFragment;
 use crate::context::TurnAborted;
@@ -4186,6 +4187,45 @@ async fn idle_turn_persistence_failure_stops_before_sampling() -> anyhow::Result
         .filter(|request| request.url.path().ends_with("/responses"))
         .count();
     assert_eq!(response_requests, 0);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rejected_idle_turn_append_stops_before_sampling_when_persist_succeeds()
+-> anyhow::Result<()> {
+    let server = start_mock_server().await;
+    let store_id = format!("failed-append-{}", Uuid::new_v4());
+    let store = codex_thread_store::InMemoryThreadStore::for_id(store_id.clone());
+    store
+        .fail_appends_for_testing("canonical append rejected")
+        .await;
+    let mut builder = test_codex().with_config(move |config| {
+        config.experimental_thread_store = ThreadStoreConfig::InMemory { id: store_id };
+    });
+    let test = builder.build(&server).await?;
+
+    test.codex
+        .codex
+        .session
+        .try_start_turn_if_idle(vec![user_message("queued idle input")])
+        .await
+        .expect("idle turn should start");
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let response_requests = server
+        .received_requests()
+        .await
+        .expect("mock server requests")
+        .into_iter()
+        .filter(|request| request.url.path().ends_with("/responses"))
+        .count();
+    assert_eq!(response_requests, 0);
+    let calls = store.calls().await;
+    assert!(calls.append_items > 0);
+    assert!(calls.persist_thread > 0);
     Ok(())
 }
 

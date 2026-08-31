@@ -72,7 +72,7 @@ mod tests {
         )
         .await
         .expect("create live thread");
-        store.fail_appends_with("append rejected").await;
+        store.fail_appends_for_testing("append rejected").await;
 
         let append_error = live_thread
             .append_items(&[RolloutItem::ResponseItem(ResponseItem::Message {
@@ -99,12 +99,17 @@ mod tests {
             persist_error.to_string(),
             "thread-store internal error: canonical thread append failed before turn start: thread-store internal error: append rejected"
         );
+        let retry_error = live_thread
+            .persist_with_context(PersistContext::TurnStart)
+            .await
+            .expect_err("an unrecoverable rejected append must keep the thread fail-closed");
+        assert_eq!(retry_error.to_string(), persist_error.to_string());
         assert_eq!(
             store.calls().await,
             InMemoryThreadStoreCalls {
                 create_thread: 1,
                 append_items: 1,
-                persist_thread: 1,
+                persist_thread: 2,
                 ..Default::default()
             }
         );
@@ -443,7 +448,6 @@ pub struct InMemoryThreadStore {
 #[derive(Default)]
 struct InMemoryThreadStoreState {
     calls: InMemoryThreadStoreCalls,
-    #[cfg(test)]
     append_failure: Option<String>,
     created_threads: HashMap<ThreadId, CreateThreadParams>,
     histories: HashMap<ThreadId, Vec<RolloutItem>>,
@@ -473,9 +477,10 @@ impl InMemoryThreadStore {
         self.state.lock().await.calls.clone()
     }
 
-    #[cfg(test)]
-    async fn fail_appends_with(&self, message: &str) {
-        self.state.lock().await.append_failure = Some(message.to_string());
+    /// Configures this test/debug store to reject canonical appends.
+    #[doc(hidden)]
+    pub async fn fail_appends_for_testing(&self, message: impl Into<String>) {
+        self.state.lock().await.append_failure = Some(message.into());
     }
 
     async fn create_thread(&self, params: CreateThreadParams) -> ThreadStoreResult<()> {
@@ -546,7 +551,6 @@ impl InMemoryThreadStore {
             return Ok(());
         }
         state.calls.append_items += 1;
-        #[cfg(test)]
         if let Some(message) = state.append_failure.clone() {
             return Err(ThreadStoreError::Internal { message });
         }

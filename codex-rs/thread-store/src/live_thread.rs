@@ -38,6 +38,7 @@ pub struct LiveThread {
     history_mode: ThreadHistoryMode,
     thread_store: Arc<dyn ThreadStore>,
     metadata_sync: Arc<Mutex<ThreadMetadataSync>>,
+    // A rejected batch cannot be reconstructed, so clones share a sticky fail-closed latch.
     canonical_append_failure: Arc<Mutex<Option<String>>>,
     persistence_telemetry: RolloutPersistenceTelemetry,
 }
