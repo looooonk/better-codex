@@ -13,8 +13,6 @@ use codex_utils_plugins::PluginSkillRoot;
 pub use codex_core_skills::SkillError;
 pub use codex_core_skills::SkillLoadOutcome;
 pub use codex_core_skills::SkillRenderReport;
-pub use codex_core_skills::SkillsLoadInput;
-pub use codex_core_skills::SkillsService;
 pub use codex_core_skills::build_available_skills;
 pub use codex_core_skills::build_skill_name_counts;
 pub use codex_core_skills::config_rules;
@@ -30,16 +28,18 @@ pub use codex_core_skills::model;
 pub use codex_core_skills::remote;
 pub use codex_core_skills::render;
 pub use codex_core_skills::render::SkillRenderSideEffects;
-pub use codex_core_skills::service;
 pub use codex_core_skills::system;
 pub use codex_skills::SkillMetadata;
 pub use codex_skills::SkillPolicy;
+pub use codex_skills_extension::HostSkillsLoadInput;
+pub use codex_skills_extension::HostSkillsService;
+pub use codex_skills_extension::bundled_skills_enabled_from_stack;
 
 pub(crate) fn skills_load_input_from_config(
     config: &Config,
     effective_skill_roots: Vec<PluginSkillRoot>,
-) -> SkillsLoadInput {
-    SkillsLoadInput::new(
+) -> HostSkillsLoadInput {
+    HostSkillsLoadInput::new(
         config.cwd.clone(),
         effective_skill_roots,
         config.config_layer_stack.clone(),

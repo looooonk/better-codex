@@ -40,8 +40,6 @@ use codex_config::RequirementsLayerEntry;
 use codex_config::compose_requirements;
 use codex_config::types::McpServerTransportConfig;
 use codex_core_skills::PluginSkillSnapshots;
-use codex_core_skills::SkillsLoadInput;
-use codex_core_skills::SkillsService;
 use codex_login::CodexAuth;
 use codex_plugin::AppDeclaration;
 use codex_plugin::PluginId;
@@ -49,6 +47,8 @@ use codex_protocol::auth::AuthMode;
 use codex_protocol::protocol::HookEventName;
 use codex_protocol::protocol::Product;
 use codex_skills::SkillConfigRules;
+use codex_skills_extension::HostSkillsLoadInput;
+use codex_skills_extension::HostSkillsService;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::test_support::PathBufExt;
 use codex_utils_plugins::SkillDiscoveryMode;
@@ -2527,14 +2527,17 @@ async fn skills_service_reuses_skills_parsed_during_plugin_load() {
     let plugin_skill_snapshots = manager.plugin_skill_snapshots_for_config(&config);
     write_file(&skill_path, "---\nname: search\ndescription: second\n---\n");
 
-    let skills_input = SkillsLoadInput::new(
+    let skills_input = HostSkillsLoadInput::new(
         codex_home_abs.clone(),
         plugin_outcome.effective_plugin_skill_roots(),
         config.config_layer_stack.clone(),
         /*bundled_skills_enabled*/ false,
     )
     .with_plugin_skill_snapshots(plugin_skill_snapshots);
-    let skills_service = SkillsService::new(codex_home_abs, /*bundled_skills_enabled*/ false);
+    let skills_service = HostSkillsService::new(
+        codex_home_abs,
+        /*bundled_skills_enabled*/ false,
+    );
     let cached = skills_service
         .snapshot_for_config(&skills_input, /*fs*/ None)
         .await;

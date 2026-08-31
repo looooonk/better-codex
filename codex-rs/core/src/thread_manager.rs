@@ -1,4 +1,4 @@
-use crate::SkillsService;
+use crate::HostSkillsService;
 use crate::agent::AgentControl;
 use crate::attestation::AttestationProvider;
 use crate::codex_thread::CodexThread;
@@ -244,7 +244,7 @@ pub(crate) struct ThreadManagerState {
     auth_manager: Arc<AuthManager>,
     models_manager: SharedModelsManager,
     environment_manager: Arc<EnvironmentManager>,
-    skills_service: Arc<SkillsService>,
+    skills_service: Arc<HostSkillsService>,
     plugins_manager: Arc<PluginsManager>,
     mcp_manager: Arc<McpManager>,
     code_mode_session_provider: Arc<dyn CodeModeSessionProvider>,
@@ -330,7 +330,7 @@ impl ThreadManager {
             Arc::clone(&plugins_manager),
             Arc::clone(&extensions),
         ));
-        let skills_service = Arc::new(SkillsService::new_with_restriction_product(
+        let skills_service = Arc::new(HostSkillsService::new_with_restriction_product(
             codex_home,
             config.bundled_skills_enabled(),
             restriction_product,
@@ -438,7 +438,7 @@ impl ThreadManager {
             auth_manager.get_api_auth_mode(),
         ));
         let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
-        let skills_service = Arc::new(SkillsService::new_with_restriction_product(
+        let skills_service = Arc::new(HostSkillsService::new_with_restriction_product(
             skills_codex_home,
             /*bundled_skills_enabled*/ true,
             restriction_product,
@@ -492,7 +492,7 @@ impl ThreadManager {
         self.state.auth_manager.clone()
     }
 
-    pub fn skills_service(&self) -> Arc<SkillsService> {
+    pub fn skills_service(&self) -> Arc<HostSkillsService> {
         self.state.skills_service.clone()
     }
 

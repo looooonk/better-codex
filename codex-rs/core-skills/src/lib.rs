@@ -7,7 +7,6 @@ pub mod model;
 pub mod remote;
 pub mod render;
 mod root_loader;
-pub mod service;
 mod skill_instructions;
 pub mod system;
 
@@ -30,8 +29,6 @@ pub use render::build_available_skills;
 pub use render::default_skill_metadata_budget;
 pub use render::render_available_skills_body;
 pub use root_loader::PluginSkillSnapshots;
-pub use service::SkillsLoadInput;
-pub use service::SkillsService;
 pub use skill_instructions::ExplicitSkillPromptBudget;
 pub use skill_instructions::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
 pub use skill_instructions::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
