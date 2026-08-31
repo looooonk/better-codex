@@ -489,7 +489,7 @@ fn protocol_headers(headers: &HeaderMap) -> Vec<HttpHeader> {
         .filter_map(|(name, value)| {
             Some(HttpHeader {
                 name: name.as_str().to_string(),
-                value: value.to_str().ok()?.to_string(),
+                value: std::str::from_utf8(value.as_bytes()).ok()?.to_string(),
             })
         })
         .collect()
@@ -564,3 +564,7 @@ fn sse_stream_from_body(
     }))
     .boxed()
 }
+
+#[cfg(test)]
+#[path = "http_client_adapter_tests.rs"]
+mod tests;

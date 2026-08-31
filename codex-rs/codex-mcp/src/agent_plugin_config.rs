@@ -103,8 +103,8 @@ pub fn parse_agent_plugin_mcp_config(
 
 fn normalize_agent_plugin_mcp_server(
     value: JsonValue,
-    _plugin_root: &Path,
-    _plugin_data_root: &Path,
+    plugin_root: &Path,
+    plugin_data_root: &Path,
 ) -> Result<McpServerConfig, String> {
     let object = value
         .as_object()
@@ -118,12 +118,19 @@ fn normalize_agent_plugin_mcp_server(
         serde_json::from_value::<AgentPluginMcpServer>(value).map_err(|err| err.to_string())?;
     let normalized = match server {
         AgentPluginMcpServer::Stdio {
-            command: _,
-            args: _,
-            env: _,
-            cwd: _,
+            command,
+            args,
+            env,
+            cwd,
             ..
-        } => return Err("Agent Plugins stdio transport is not yet supported".to_string()),
+        } => super::agent_plugin_paths::normalize_agent_plugin_stdio_server(
+            command,
+            args,
+            env,
+            cwd,
+            plugin_root,
+            plugin_data_root,
+        )?,
         AgentPluginMcpServer::StreamableHttp { url, headers, .. } => {
             normalize_agent_plugin_http_server(url, headers)?
         }
