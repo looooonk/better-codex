@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -11,20 +12,37 @@ use codex_model_provider::create_model_provider;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
+use codex_protocol::protocol::GuardianAssessmentAction;
+use codex_protocol::protocol::GuardianAssessmentOutcome;
+use codex_protocol::protocol::GuardianRiskLevel;
+use codex_protocol::protocol::GuardianUserAuthorization;
 use codex_protocol::protocol::SessionSource;
 use core_test_support::responses;
 use core_test_support::responses::WebSocketConnectionConfig;
+use core_test_support::responses::WebSocketTestServer;
 use core_test_support::responses::ev_assistant_message;
 use core_test_support::responses::ev_completed;
 use core_test_support::responses::ev_output_text_delta;
 use core_test_support::skip_if_no_network;
 use pretty_assertions::assert_eq;
+use serde_json::Value;
 use serde_json::json;
 use tokio::net::TcpListener;
 use tokio::net::TcpStream;
 use tokio::time::Instant;
 
 use super::*;
+use crate::request::GuardianReviewAction;
+use crate::request::GuardianReviewRequest;
+use crate::review::GuardianReviewClient;
+use crate::review::GuardianReviewOutcome;
+
+const VALID_OUTCOME: &str = r#"{"score":0.25,"risk_level":"low","user_authorization":"high","outcome":"allow","rationale":"safe"}"#;
+
+struct SamplerFixture {
+    sampler: Arc<LunaSampler>,
+    _servers: [WebSocketTestServer; 2],
+}
 
 async fn proxy_websocket_servers(servers: &[&responses::WebSocketTestServer]) -> Result<String> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
@@ -98,6 +116,43 @@ fn sample_request(deadline: Instant) -> LunaSamplingRequest {
     }
 }
 
+fn review_request() -> GuardianReviewRequest {
+    GuardianReviewRequest {
+        action: GuardianReviewAction {
+            review_id: "review-1".to_string(),
+            turn_id: "turn-1".to_string(),
+            action_id: "action-1".to_string(),
+            action: GuardianAssessmentAction::McpToolCall {
+                server: "node_repl".to_string(),
+                tool_name: "js".to_string(),
+                connector_id: None,
+                connector_name: None,
+                tool_title: None,
+            },
+            request_payload: json!({"script": "return 1"}),
+        },
+        history: Vec::new(),
+        evidence: Vec::new(),
+        images: Vec::new(),
+    }
+}
+
+async fn sampler_with_events(events: Vec<Value>) -> Result<SamplerFixture> {
+    let scripted_requests = vec![vec![events]];
+    let idle_server = responses::start_websocket_server(scripted_requests.clone()).await;
+    let server = responses::start_websocket_server(scripted_requests).await;
+    let sampler = Arc::new(
+        LunaSampler::connect(sampler_config(
+            proxy_websocket_servers(&[&idle_server, &server]).await?,
+        ))
+        .await?,
+    );
+    Ok(SamplerFixture {
+        sampler,
+        _servers: [idle_server, server],
+    })
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn sampler_reuses_a_drained_connection() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -141,6 +196,59 @@ async fn sampler_reuses_a_drained_connection() -> Result<()> {
     assert_eq!(first, r#"{"score":0.25}"#);
     assert_eq!(second, r#"{"score":0.75}"#);
     assert_eq!(server.single_connection().len(), 2);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn valid_multi_delta_outcome_is_parsed_after_completion() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let fixture = sampler_with_events(vec![
+        ev_output_text_delta(r#"{"score":0.25,"risk_level":"low","#),
+        ev_output_text_delta(
+            r#"user_authorization":"high","outcome":"allow","rationale":"safe"}"#,
+        ),
+        ev_completed("response-1"),
+    ])
+    .await?;
+    let reviewer = GuardianReviewClient::new(Arc::clone(&fixture.sampler))
+        .with_review_timeout(Duration::from_secs(2));
+
+    let outcome = reviewer.review(review_request()).await?;
+
+    assert_eq!(
+        outcome,
+        GuardianReviewOutcome {
+            score: 0.25,
+            risk_level: GuardianRiskLevel::Low,
+            user_authorization: GuardianUserAuthorization::High,
+            outcome: GuardianAssessmentOutcome::Allow,
+            rationale: "safe".to_string(),
+        }
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn valid_json_prefix_with_trailing_data_requires_manual_review() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let fixture = sampler_with_events(vec![
+        ev_output_text_delta(VALID_OUTCOME),
+        ev_output_text_delta(" trailing data"),
+        ev_completed("response-1"),
+    ])
+    .await?;
+    let reviewer = GuardianReviewClient::new(Arc::clone(&fixture.sampler))
+        .with_review_timeout(Duration::from_secs(2));
+
+    let error = reviewer
+        .review(review_request())
+        .await
+        .expect_err("trailing data must invalidate the complete response");
+
+    assert!(matches!(error, crate::request::GuardianReviewError::InvalidOutput));
+    assert!(error.requires_manual_review());
     Ok(())
 }
 
@@ -242,11 +350,55 @@ async fn retryable_stream_error_does_not_reset_the_deadline() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn oversized_single_delta_is_rejected_before_append() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let oversized = "x".repeat(MAX_OUTPUT_BYTES + 1);
+    let fixture = sampler_with_events(vec![
+        ev_output_text_delta(&oversized),
+        ev_completed("response-1"),
+    ])
+    .await?;
+
+    let error = fixture
+        .sampler
+        .sample(sample_request(Instant::now() + Duration::from_secs(2)))
+        .await
+        .expect_err("oversized delta should be rejected");
+
+    assert!(matches!(error, LunaSamplerError::OutputTooLarge));
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn oversized_single_output_item_is_rejected_before_append() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let oversized = "x".repeat(MAX_OUTPUT_BYTES + 1);
+    let fixture = sampler_with_events(vec![
+        ev_assistant_message("response-1", &oversized),
+        ev_completed("response-1"),
+    ])
+    .await?;
+
+    let error = fixture
+        .sampler
+        .sample(sample_request(Instant::now() + Duration::from_secs(2)))
+        .await
+        .expect_err("oversized output item should be rejected");
+
+    assert!(matches!(error, LunaSamplerError::OutputTooLarge));
+    Ok(())
+}
+
 #[test]
 fn output_limit_is_strictly_four_kibibytes() {
-    assert!(ensure_output_bound(&"x".repeat(MAX_OUTPUT_BYTES)).is_ok());
+    let mut output = String::new();
+    assert!(append_bounded_output(&mut output, &"x".repeat(MAX_OUTPUT_BYTES)).is_ok());
     assert!(matches!(
-        ensure_output_bound(&"x".repeat(MAX_OUTPUT_BYTES + 1)),
+        append_bounded_output(&mut output, "x"),
         Err(LunaSamplerError::OutputTooLarge)
     ));
+    assert_eq!(output.len(), MAX_OUTPUT_BYTES);
 }

@@ -23,7 +23,6 @@ use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::SessionSource;
 use http::HeaderValue;
-use serde_json::Value;
 use thiserror::Error;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
@@ -246,7 +245,7 @@ impl LunaSampler {
         request: LunaSamplingRequest,
     ) -> Result<String, LunaSamplerError> {
         let deadline = request.deadline;
-        tokio::time::timeout_at(deadline, self.sample_before_deadline(request.request, deadline))
+        tokio::time::timeout_at(deadline, self.sample_before_deadline(request.request))
             .await
             .map_err(|_| LunaSamplerError::Deadline)?
     }
@@ -270,7 +269,6 @@ impl LunaSampler {
     async fn sample_before_deadline(
         &self,
         request: ResponsesApiRequest,
-        deadline: TokioInstant,
     ) -> Result<String, LunaSamplerError> {
         let mut retried = false;
         'retry: loop {
@@ -306,20 +304,14 @@ impl LunaSampler {
                 };
                 match event {
                     ResponseEvent::OutputTextDelta(delta) => {
-                        deltas.push_str(&delta);
-                        ensure_output_bound(&deltas)?;
-                        if serde_json::from_str::<serde_json::Map<String, Value>>(&deltas).is_ok() {
-                            drain_and_maybe_reuse(stream.rx_event, lease, deadline);
-                            return Ok(deltas);
-                        }
+                        append_bounded_output(&mut deltas, &delta)?;
                     }
                     ResponseEvent::OutputItemDone(ResponseItem::Message {
                         role, content, ..
                     }) if role == "assistant" => {
                         for item in content {
                             if let ContentItem::OutputText { text } = item {
-                                output.push_str(&text);
-                                ensure_output_bound(&output)?;
+                                append_bounded_output(&mut output, &text)?;
                             }
                         }
                     }
@@ -355,36 +347,12 @@ impl LunaSampler {
     }
 }
 
-fn drain_and_maybe_reuse(
-    mut events: tokio::sync::mpsc::Receiver<Result<ResponseEvent, ApiError>>,
-    lease: ConnectionLease,
-    deadline: TokioInstant,
-) {
-    tokio::spawn(async move {
-        let completed = tokio::time::timeout_at(deadline, async move {
-            while let Some(event) = events.recv().await {
-                match event {
-                    Ok(ResponseEvent::Completed { .. }) => return true,
-                    Err(_) => return false,
-                    Ok(_) => {}
-                }
-            }
-            false
-        })
-        .await
-        .unwrap_or(false);
-        if completed {
-            lease.reuse();
-        }
-    });
-}
-
-fn ensure_output_bound(output: &str) -> Result<(), LunaSamplerError> {
-    if output.len() > MAX_OUTPUT_BYTES {
-        Err(LunaSamplerError::OutputTooLarge)
-    } else {
-        Ok(())
+fn append_bounded_output(output: &mut String, chunk: &str) -> Result<(), LunaSamplerError> {
+    if chunk.len() > MAX_OUTPUT_BYTES.saturating_sub(output.len()) {
+        return Err(LunaSamplerError::OutputTooLarge);
     }
+    output.push_str(chunk);
+    Ok(())
 }
 
 fn is_retryable(error: &ApiError) -> bool {
