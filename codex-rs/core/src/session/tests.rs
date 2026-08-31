@@ -1702,6 +1702,7 @@ async fn reconstruct_history_uses_replacement_history_verbatim() {
         phase: None,
         internal_chat_message_metadata_passthrough: Some(InternalChatMessageMetadataPassthrough {
             turn_id: Some("compact-turn".to_string()),
+            ..Default::default()
         }),
     };
     let replacement_history = vec![
@@ -1757,23 +1758,32 @@ async fn record_initial_history_reconstructs_resumed_transcript() {
 }
 
 #[tokio::test]
-async fn record_conversation_items_stamps_missing_turn_id_and_preserves_existing_turn_id() {
+async fn record_conversation_items_stamps_history_metadata_and_preserves_existing_values() {
     let (session, turn_context) = make_session_and_context().await;
     let fresh_item = user_message("fresh");
-    let mut existing_item = assistant_message("existing");
+    let mut existing_item = user_message("existing");
     existing_item.set_turn_id_if_missing("older-turn");
+    existing_item.set_create_time_if_missing(serde_json::Number::from(123));
 
     session
         .record_conversation_items(&turn_context, &[fresh_item.clone(), existing_item.clone()])
         .await;
 
-    let mut expected_fresh_item = fresh_item;
-    expected_fresh_item.set_turn_id_if_missing(&turn_context.sub_id);
-    let expected_items = vec![expected_fresh_item, existing_item];
-    assert_eq!(
-        session.clone_history().await.raw_items(),
-        expected_items.as_slice()
-    );
+    let recorded = session.clone_history().await;
+    let [recorded_fresh, recorded_existing] = recorded.raw_items() else {
+        panic!("expected two recorded items");
+    };
+    assert_eq!(recorded_fresh.turn_id(), Some(turn_context.sub_id.as_str()));
+    let ResponseItem::Message {
+        internal_chat_message_metadata_passthrough: Some(fresh_metadata),
+        ..
+    } = recorded_fresh
+    else {
+        panic!("expected stamped user message metadata");
+    };
+    assert!(fresh_metadata.create_time.is_some());
+    existing_item.set_id(recorded_existing.id().cloned());
+    assert_eq!(recorded_existing, &existing_item);
 }
 
 #[tokio::test]
@@ -1825,17 +1835,24 @@ async fn record_inter_agent_communication_sets_turn_id_in_rollout_and_resume() {
         "child done".to_string(),
         /*trigger_turn*/ false,
     );
-    let mut expected_item = communication.to_model_input_item();
-    expected_item.set_turn_id_if_missing(&turn_context.sub_id);
-
     session
         .record_inter_agent_communication(&turn_context, communication)
         .await;
 
-    assert_eq!(
-        session.clone_history().await.raw_items(),
-        std::slice::from_ref(&expected_item)
-    );
+    let live_history = session.clone_history().await;
+    let [expected_item] = live_history.raw_items() else {
+        panic!("expected one inter-agent message");
+    };
+    assert_eq!(expected_item.turn_id(), Some(turn_context.sub_id.as_str()));
+    let ResponseItem::AgentMessage {
+        internal_chat_message_metadata_passthrough: Some(metadata),
+        ..
+    } = expected_item
+    else {
+        panic!("expected inter-agent message metadata");
+    };
+    assert!(metadata.create_time.is_some());
+    let expected_item = expected_item.clone();
 
     session.flush_rollout().await.expect("rollout should flush");
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)

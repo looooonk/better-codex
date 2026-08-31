@@ -1203,6 +1203,7 @@ fn record_items_truncates_function_call_output_content() {
         },
         internal_chat_message_metadata_passthrough: Some(InternalChatMessageMetadataPassthrough {
             turn_id: Some("turn-1".to_string()),
+            ..Default::default()
         }),
     };
 

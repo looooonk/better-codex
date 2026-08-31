@@ -1136,21 +1136,35 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         .expect("child thread should be registered");
     assert_ne!(child_thread_id, parent_thread_id);
     let history = child_thread.codex.session.clone_history().await;
+    let history_items = history.raw_items();
     let mut expected_final_answer =
         assistant_message("parent final answer", Some(MessagePhase::FinalAnswer));
     expected_final_answer.set_turn_id_if_missing(&turn_context.sub_id);
+    expected_final_answer.set_id(history_items[1].id().cloned());
+    let child_hint_metadata = match &history_items[2] {
+        ResponseItem::Message {
+            internal_chat_message_metadata_passthrough: Some(metadata),
+            ..
+        } => {
+            assert!(metadata.create_time.is_some());
+            metadata.clone()
+        }
+        _ => panic!("expected child hint message"),
+    };
+    let mut expected_child_hint = ResponseItem::Message {
+        id: None,
+        role: "developer".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "Child subagent guidance.".to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: Some(child_hint_metadata),
+    };
+    expected_child_hint.set_id(history_items[2].id().cloned());
     let expected_history = [
         expected_parent_seed,
         expected_final_answer,
-        ResponseItem::Message {
-            id: None,
-            role: "developer".to_string(),
-            content: vec![ContentItem::InputText {
-                text: "Child subagent guidance.".to_string(),
-            }],
-            phase: None,
-            internal_chat_message_metadata_passthrough: None,
-        },
+        expected_child_hint,
     ];
     assert_eq!(
         history.raw_items(),

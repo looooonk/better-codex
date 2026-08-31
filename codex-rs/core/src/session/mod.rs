@@ -2815,6 +2815,13 @@ impl Session {
         // Most response items get their passthrough turn ID at the durable history boundary.
         for item in items.to_mut() {
             item.set_turn_id_if_missing(&turn_context.sub_id);
+            let create_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default();
+            item.set_create_time_if_missing(
+                serde_json::Number::from_f64(create_time.as_secs_f64())
+                    .unwrap_or_else(|| serde_json::Number::from(create_time.as_secs())),
+            );
         }
         Self::assign_missing_response_item_ids(items)
     }
@@ -2963,9 +2970,8 @@ impl Session {
     pub(crate) async fn record_inter_agent_communication(
         &self,
         turn_context: &TurnContext,
-        mut communication: InterAgentCommunication,
+        communication: InterAgentCommunication,
     ) {
-        communication.set_turn_id_if_missing(&turn_context.sub_id);
         let response_item = communication.to_model_input_item();
         let items = self.prepare_conversation_items_for_history(
             turn_context,
