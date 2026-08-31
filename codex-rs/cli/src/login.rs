@@ -127,11 +127,11 @@ pub async fn run_login_with_chatgpt(cli_config_overrides: CliConfigOverrides) ->
     let _login_log_guard = init_login_file_logging(&config);
     tracing::info!("starting browser login flow");
 
-    let result = match login_policy::chatgpt_server_options(&auth_config, CLIENT_ID.to_string()).await
-    {
-        Ok(options) => login_with_chatgpt(options).await,
-        Err(err) => Err(err),
-    };
+    let result =
+        match login_policy::chatgpt_server_options(&auth_config, CLIENT_ID.to_string()).await {
+            Ok(options) => login_with_chatgpt(options).await,
+            Err(err) => Err(err),
+        };
     match result {
         Ok(_) => {
             eprintln!("{LOGIN_SUCCESS_MESSAGE}");

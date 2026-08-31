@@ -22,8 +22,7 @@ fn auth_config(managed_auth_policy: ManagedAuthPolicy) -> AuthConfig {
 fn reflects_effective_managed_login_methods() {
     let unrestricted = auth_config(ManagedAuthPolicy::default());
     let chatgpt_only = auth_config(
-        ManagedAuthPolicy::default()
-            .restrict_login_methods_to([ForcedLoginMethod::Chatgpt]),
+        ManagedAuthPolicy::default().restrict_login_methods_to([ForcedLoginMethod::Chatgpt]),
     );
     let api_only = auth_config(
         ManagedAuthPolicy::default().restrict_login_methods_to([ForcedLoginMethod::Api]),

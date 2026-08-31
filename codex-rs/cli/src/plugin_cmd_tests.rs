@@ -13,10 +13,7 @@ async fn managed_deny_all_auth_policy_reports_no_stored_auth_mode() -> anyhow::R
         "cli_auth_credentials_store = \"file\"\n",
     )?;
     let requirements_path = codex_home.path().join("requirements.toml");
-    std::fs::write(
-        &requirements_path,
-        "allowed_login_methods = []\n",
-    )?;
+    std::fs::write(&requirements_path, "allowed_login_methods = []\n")?;
     let mut loader_overrides = LoaderOverrides::without_managed_config_for_tests();
     loader_overrides.system_requirements_path = Some(requirements_path);
     let config = ConfigBuilder::default()

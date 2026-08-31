@@ -53,14 +53,11 @@ fn stored_auth(auth_config: &AuthConfig) -> anyhow::Result<Option<codex_login::A
 }
 
 #[tokio::test]
-async fn disallowed_managed_device_login_preserves_auth_and_makes_no_request()
--> anyhow::Result<()> {
+async fn disallowed_managed_device_login_preserves_auth_and_makes_no_request() -> anyhow::Result<()>
+{
     let codex_home = TempDir::new()?;
-    let auth_config = managed_auth_config(
-        &codex_home,
-        r#"allowed_login_methods = ["api"]"#,
-    )
-    .await?;
+    let auth_config =
+        managed_auth_config(&codex_home, r#"allowed_login_methods = ["api"]"#).await?;
     login_with_api_key(
         &auth_config.codex_home,
         "sk-existing",
@@ -70,13 +67,10 @@ async fn disallowed_managed_device_login_preserves_auth_and_makes_no_request()
     let expected_auth = stored_auth(&auth_config)?;
     let server = MockServer::start().await;
 
-    let err = run_managed_device_code_login(
-        &auth_config,
-        Some(server.uri()),
-        CLIENT_ID.to_string(),
-    )
-    .await
-    .expect_err("managed API-only policy should reject device login");
+    let err =
+        run_managed_device_code_login(&auth_config, Some(server.uri()), CLIENT_ID.to_string())
+            .await
+            .expect_err("managed API-only policy should reject device login");
 
     assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
     assert_eq!(stored_auth(&auth_config)?, expected_auth);
@@ -91,11 +85,8 @@ async fn disallowed_managed_device_login_preserves_auth_and_makes_no_request()
 #[tokio::test]
 async fn disallowed_managed_persistence_paths_write_no_auth() -> anyhow::Result<()> {
     let api_only_home = TempDir::new()?;
-    let api_only = managed_auth_config(
-        &api_only_home,
-        r#"allowed_login_methods = ["api"]"#,
-    )
-    .await?;
+    let api_only =
+        managed_auth_config(&api_only_home, r#"allowed_login_methods = ["api"]"#).await?;
     let access_token_error = persist_access_token(&api_only, "not-a-token")
         .await
         .expect_err("API-only policy should reject access-token login");
@@ -105,11 +96,8 @@ async fn disallowed_managed_persistence_paths_write_no_auth() -> anyhow::Result<
     );
 
     let chatgpt_only_home = TempDir::new()?;
-    let chatgpt_only = managed_auth_config(
-        &chatgpt_only_home,
-        r#"allowed_login_methods = ["chatgpt"]"#,
-    )
-    .await?;
+    let chatgpt_only =
+        managed_auth_config(&chatgpt_only_home, r#"allowed_login_methods = ["chatgpt"]"#).await?;
     let api_key_error = persist_api_key(&chatgpt_only, "sk-disallowed")
         .expect_err("ChatGPT-only policy should reject API-key login");
     assert_eq!(
@@ -161,13 +149,10 @@ async fn managed_workspace_mismatch_does_not_persist_device_login() -> anyhow::R
         .mount(&server)
         .await;
 
-    let err = run_managed_device_code_login(
-        &auth_config,
-        Some(server.uri()),
-        CLIENT_ID.to_string(),
-    )
-    .await
-    .expect_err("device login should reject a workspace outside the managed allowlist");
+    let err =
+        run_managed_device_code_login(&auth_config, Some(server.uri()), CLIENT_ID.to_string())
+            .await
+            .expect_err("device login should reject a workspace outside the managed allowlist");
 
     assert_eq!(err.kind(), std::io::ErrorKind::PermissionDenied);
     assert_eq!(stored_auth(&auth_config)?, None);

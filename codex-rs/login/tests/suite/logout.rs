@@ -2,14 +2,15 @@ use anyhow::Context;
 use anyhow::Result;
 use base64::Engine;
 use codex_config::types::AuthCredentialsStoreMode;
-use codex_login::AuthDotJson;
 use codex_login::AuthConfig;
+use codex_login::AuthDotJson;
 use codex_login::AuthKeyringBackendKind;
 use codex_login::AuthManager;
 use codex_login::CLIENT_ID;
 use codex_login::CLIENT_ID_OVERRIDE_ENV_VAR;
 use codex_login::CODEX_ACCESS_TOKEN_ENV_VAR;
 use codex_login::REVOKE_TOKEN_URL_OVERRIDE_ENV_VAR;
+use codex_login::load_auth_dot_json;
 use codex_login::logout_with_revoke;
 use codex_login::save_auth;
 use codex_login::token_data::IdTokenInfo;
@@ -245,7 +246,8 @@ async fn auth_manager_logout_with_revoke_uses_cached_auth() -> Result<()> {
 
 #[serial_test::serial(auth_env)]
 #[tokio::test]
-async fn stored_only_manager_revokes_configured_file_auth_instead_of_ephemeral_auth() -> Result<()> {
+async fn stored_only_manager_revokes_configured_file_auth_instead_of_ephemeral_auth() -> Result<()>
+{
     skip_if_no_network!(Ok(()));
 
     let server = MockServer::start().await;
@@ -261,9 +263,10 @@ async fn stored_only_manager_revokes_configured_file_auth_instead_of_ephemeral_a
     );
 
     let codex_home = TempDir::new()?;
+    let ephemeral_auth = chatgpt_auth_with_refresh_token("ephemeral-refresh-token");
     save_auth(
         codex_home.path(),
-        &chatgpt_auth_with_refresh_token("ephemeral-refresh-token"),
+        &ephemeral_auth,
         AuthCredentialsStoreMode::Ephemeral,
         AuthKeyringBackendKind::default(),
     )?;
@@ -290,6 +293,14 @@ async fn stored_only_manager_revokes_configured_file_auth_instead_of_ephemeral_a
     assert!(removed);
     assert!(manager.auth_cached().is_none());
     assert!(!codex_home.path().join("auth.json").exists());
+    assert_eq!(
+        load_auth_dot_json(
+            codex_home.path(),
+            AuthCredentialsStoreMode::Ephemeral,
+            AuthKeyringBackendKind::default(),
+        )?,
+        Some(ephemeral_auth)
+    );
     let requests = server
         .received_requests()
         .await
