@@ -1,3 +1,4 @@
+use super::login_method_availability::LoginMethodAvailability;
 use super::modal_view;
 use crate::LoginStatus;
 use crate::app_server_session::AppServerSession;
@@ -13,7 +14,6 @@ use codex_app_server_protocol::LoginAccountParams;
 use codex_app_server_protocol::LoginAccountResponse;
 use codex_app_server_protocol::ServerNotification;
 use codex_config::types::TuiAppTheme;
-use codex_protocol::config_types::ForcedLoginMethod;
 use color_eyre::Result;
 use color_eyre::eyre::WrapErr;
 use crossterm::event::KeyCode;
@@ -69,7 +69,7 @@ enum LoginMode {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct LoginOnboardingState {
-    forced_login_method: Option<ForcedLoginMethod>,
+    login_methods: LoginMethodAvailability,
     app_theme: TuiAppTheme,
     selected: usize,
     mode: LoginMode,
@@ -79,9 +79,9 @@ struct LoginOnboardingState {
 }
 
 impl LoginOnboardingState {
-    fn new(forced_login_method: Option<ForcedLoginMethod>, app_theme: TuiAppTheme) -> Self {
+    fn new(login_methods: LoginMethodAvailability, app_theme: TuiAppTheme) -> Self {
         Self {
-            forced_login_method,
+            login_methods,
             app_theme,
             selected: 0,
             mode: LoginMode::Select,
@@ -92,17 +92,15 @@ impl LoginOnboardingState {
     }
 
     fn choices(&self) -> Vec<LoginSelection> {
-        match self.forced_login_method {
-            Some(ForcedLoginMethod::Chatgpt) => {
-                vec![LoginSelection::ChatGptDeviceCode, LoginSelection::Exit]
-            }
-            Some(ForcedLoginMethod::Api) => vec![LoginSelection::ApiKey, LoginSelection::Exit],
-            None => vec![
-                LoginSelection::ChatGptDeviceCode,
-                LoginSelection::ApiKey,
-                LoginSelection::Exit,
-            ],
+        let mut choices = Vec::new();
+        if self.login_methods.allows_chatgpt() {
+            choices.push(LoginSelection::ChatGptDeviceCode);
         }
+        if self.login_methods.allows_api() {
+            choices.push(LoginSelection::ApiKey);
+        }
+        choices.push(LoginSelection::Exit);
+        choices
     }
 
     fn selected(&self) -> LoginSelection {
@@ -210,7 +208,12 @@ pub(crate) async fn run_login_onboarding(
         .wrap_err("failed to enter login setup screen")?;
     tui.frame_requester().schedule_frame();
 
-    let mut state = LoginOnboardingState::new(config.forced_login_method, config.tui_app_theme);
+    let login_methods = if app_server.uses_remote_workspace() {
+        LoginMethodAvailability::connected_workspace()
+    } else {
+        LoginMethodAvailability::from_auth_config(&config.auth_config())
+    };
+    let mut state = LoginOnboardingState::new(login_methods, config.tui_app_theme);
     let mut clipboard_lease: Option<ClipboardLease> = None;
     let mut tui_events = tui.event_stream();
 
