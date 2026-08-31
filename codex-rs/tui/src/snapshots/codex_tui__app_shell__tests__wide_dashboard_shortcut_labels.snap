@@ -6,7 +6,7 @@ expression: rendered(80)
  Alt+Up / Down    Select messages      │  Cmd+Left / Right  Line start / end
  Enter or c       Copy selected item   │  Cmd+Backspace    Delete to line start
  e                Branch from prompt   │  Opt/Ctrl + Left/Right  Move by word
- Ctrl+O           Copy latest response │  Shift/Alt + Enter  Insert newline
+ Ctrl+O / Alt+1-9  Copy response       │  Shift/Alt + Enter  Insert newline
                                        │  Alt+M            Select model
 ◆ DASHBOARD                            │  Alt+E            Select effort
  Ctrl+1 … Ctrl+4  Open a tab           │

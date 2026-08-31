@@ -146,6 +146,7 @@ mod terminal_output;
 mod text_selection;
 mod tool_output;
 mod tool_output_view;
+mod transcript_copy;
 mod transcript_render;
 mod transcript_selection;
 mod transcript_view;
@@ -1436,6 +1437,10 @@ impl ShellState {
                 self.clear_visible_transcript();
                 LocalSlashCommandOutcome::Continue
             }
+            LocalSlashCommand::Copy(request) => {
+                self.copy_response_request_with(request, crate::clipboard_copy::copy_to_clipboard);
+                LocalSlashCommandOutcome::Continue
+            }
             LocalSlashCommand::Exit => LocalSlashCommandOutcome::Exit,
             LocalSlashCommand::Goal(command) => {
                 self.run_goal_slash_command(command, app_server).await;
@@ -1580,53 +1585,6 @@ impl ShellState {
             }
             Err(err) => self.push_error(format!("failed to update goal: {err}")),
         }
-    }
-
-    fn copy_selected_transcript_with(
-        &mut self,
-        copy_fn: impl FnOnce(&str) -> Result<Option<ClipboardLease>, String>,
-    ) {
-        let Some((kind, text)) = self.transcript_copy_text() else {
-            self.push_error("No assistant transcript item to copy");
-            return;
-        };
-        let kind = kind.label();
-        let text = text.to_string();
-        match copy_fn(&text) {
-            Ok(lease) => {
-                self.clipboard_lease = lease;
-                self.push_status(format!("copied {kind} transcript item"));
-            }
-            Err(error) => {
-                self.push_error(format!("Copy failed: {error}"));
-            }
-        }
-    }
-
-    fn selected_transcript_copy_text(&self) -> Option<(TranscriptKind, &str)> {
-        let selected = self.transcript_selection?;
-        self.transcript.get(selected).map(|line| {
-            (
-                line.kind,
-                line.full_text.as_deref().unwrap_or(line.text.as_str()),
-            )
-        })
-    }
-
-    fn selected_transcript_is_output(&self) -> bool {
-        self.transcript_selection
-            .and_then(|selected| self.transcript.get(selected))
-            .is_some_and(|line| line.kind == TranscriptKind::Output)
-    }
-
-    fn transcript_copy_text(&self) -> Option<(TranscriptKind, &str)> {
-        self.selected_transcript_copy_text().or_else(|| {
-            self.transcript
-                .iter()
-                .rev()
-                .find(|line| line.kind == TranscriptKind::Assistant)
-                .map(|line| (line.kind, line.text.as_str()))
-        })
     }
 
     fn submit_prompt<S>(&mut self, app_server: &S, prompt: String)

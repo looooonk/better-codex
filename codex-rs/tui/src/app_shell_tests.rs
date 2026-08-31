@@ -5627,53 +5627,6 @@ async fn alt_arrow_selection_starts_on_a_user_message() {
 }
 
 #[test]
-fn copies_selected_transcript_item() {
-    let mut shell = ShellState::snapshot_fixture();
-    shell.transcript_selection = Some(1);
-    let mut copied = None;
-
-    shell.copy_selected_transcript_with(|text| {
-        copied = Some(text.to_string());
-        Ok(None)
-    });
-
-    assert_eq!(
-        copied,
-        Some("Create a divergent standalone TUI.".to_string())
-    );
-    assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Status,
-            "copied you transcript item"
-        ))
-    );
-}
-
-#[test]
-fn copies_latest_assistant_without_selection() {
-    let mut shell = ShellState::snapshot_fixture();
-    let mut copied = None;
-
-    shell.copy_selected_transcript_with(|text| {
-        copied = Some(text.to_string());
-        Ok(None)
-    });
-
-    assert_eq!(
-        copied,
-        Some("Started a fullscreen app shell backed by app-server turns.".to_string())
-    );
-    assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Status,
-            "copied codex transcript item"
-        ))
-    );
-}
-
-#[test]
 fn thread_goal_notifications_update_dashboard_state() {
     let mut shell = ShellState::snapshot_fixture();
     let goal = test_thread_goal(

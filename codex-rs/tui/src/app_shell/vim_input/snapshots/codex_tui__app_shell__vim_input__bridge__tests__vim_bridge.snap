@@ -41,7 +41,7 @@ function! s:RefreshSlashCommandHighlight() abort
   let l:command_prefix = strcharpart(l:remaining, 0, 8)
   let l:boundary = match(l:command_prefix, s:RustWhitespaceAtom)
   let l:command = l:boundary < 0 ? l:command_prefix : strpart(l:command_prefix, 0, l:boundary)
-  let l:valid = l:command ==# '/goal'
+  let l:valid = index(['/copy', '/goal'], l:command) >= 0
   if !l:valid && index(['/clear', '/exit', '/login', '/logout', '/vim'], l:command) >= 0
     let l:tail = strpart(l:remaining, strlen(l:command))
     let l:valid = matchend(l:tail, '^' . s:RustWhitespaceAtom . '*') == strlen(l:tail)

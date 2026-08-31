@@ -216,8 +216,8 @@ fn conversation_shortcuts(shell: &ShellState, detail: LabelDetail) -> Vec<Shortc
     shortcuts.extend([
         Shortcut::new("e", detail.select("Branch", "Branch from prompt")),
         Shortcut::new(
-            detail.select("^O", "Ctrl+O"),
-            detail.select("Copy reply", "Copy latest response"),
+            detail.select("^O/⌥1-9", "Ctrl+O / Alt+1-9"),
+            detail.select("Copy reply", "Copy response"),
         ),
     ]);
     shortcuts
