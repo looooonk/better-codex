@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use sqlx::Row;
+use sqlx::SqlitePool;
 use sqlx::migrate::Migration;
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::SqlitePoolOptions;
@@ -25,6 +26,37 @@ fn migrator_through(version: i64) -> Migrator {
         create_schemas: STATE_MIGRATOR.create_schemas.clone(),
         no_tx: STATE_MIGRATOR.no_tx,
     }
+}
+
+async fn insert_migration_thread(pool: &SqlitePool, id: &str, recency_at_ms: i64) {
+    let recency_at = recency_at_ms / 1000;
+    sqlx::query(
+        r#"
+INSERT INTO threads (
+    id, rollout_path, created_at, updated_at, created_at_ms, updated_at_ms,
+    recency_at, recency_at_ms, source, model_provider, cwd, title, preview,
+    sandbox_policy, approval_mode
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(id)
+    .bind(format!("/tmp/{id}.jsonl"))
+    .bind(recency_at)
+    .bind(recency_at)
+    .bind(recency_at_ms)
+    .bind(recency_at_ms)
+    .bind(recency_at)
+    .bind(recency_at_ms)
+    .bind("cli")
+    .bind("openai")
+    .bind("/tmp")
+    .bind("")
+    .bind("visible")
+    .bind("read-only")
+    .bind("on-request")
+    .execute(pool)
+    .await
+    .expect("migration fixture thread should insert");
 }
 
 #[tokio::test]
@@ -196,6 +228,162 @@ async fn repairs_recency_migration_that_was_applied_as_version_38() {
         .map(|migration| (migration.version, migration.checksum.to_vec()))
         .collect::<Vec<_>>();
     assert_eq!(applied, expected);
+}
+
+#[tokio::test]
+async fn legacy_pinning_and_section_membership_remain_independent() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory database should open");
+    migrator_through(/*version*/ 43)
+        .run(&pool)
+        .await
+        .expect("legacy pin migration should apply");
+    insert_migration_thread(
+        &pool,
+        "00000000-0000-0000-0000-000000000041",
+        /*recency_at_ms*/ 1_700_000_041_000,
+    )
+    .await;
+    sqlx::query("UPDATE threads SET is_pinned = 1 WHERE id = ?")
+        .bind("00000000-0000-0000-0000-000000000041")
+        .execute(&pool)
+        .await
+        .expect("legacy pin should update");
+
+    migrator_through(/*version*/ 45)
+        .run(&pool)
+        .await
+        .expect("section migration should apply");
+    insert_migration_thread(
+        &pool,
+        "00000000-0000-0000-0000-000000000042",
+        /*recency_at_ms*/ 1_700_000_042_000,
+    )
+    .await;
+    sqlx::query("UPDATE threads SET thread_section_id = ? WHERE id = ?")
+        .bind(crate::PINNED_THREAD_SECTION_ID)
+        .bind("00000000-0000-0000-0000-000000000042")
+        .execute(&pool)
+        .await
+        .expect("section membership should update");
+
+    STATE_MIGRATOR
+        .run(&pool)
+        .await
+        .expect("remaining migrations should apply");
+    let rows = sqlx::query_as::<_, (String, i64, Option<String>, Option<i64>, Option<i64>)>(
+        "SELECT id, is_pinned, thread_section_id, section_position, section_entered_at_ms FROM threads ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("pin and section state should load");
+    assert_eq!(
+        rows,
+        vec![
+            (
+                "00000000-0000-0000-0000-000000000041".to_string(),
+                1,
+                None,
+                None,
+                None,
+            ),
+            (
+                "00000000-0000-0000-0000-000000000042".to_string(),
+                0,
+                Some(crate::PINNED_THREAD_SECTION_ID.to_string()),
+                Some(1_000_000),
+                Some(1_700_000_042_000),
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn section_order_migration_backfills_stable_ranks_and_usable_index() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory database should open");
+    migrator_through(/*version*/ 45)
+        .run(&pool)
+        .await
+        .expect("pre-order migrations should apply");
+    for (id, recency_at_ms) in [
+        ("00000000-0000-0000-0000-000000000051", 2_000),
+        ("00000000-0000-0000-0000-000000000052", 2_000),
+        ("00000000-0000-0000-0000-000000000053", 1_000),
+    ] {
+        insert_migration_thread(&pool, id, recency_at_ms).await;
+        sqlx::query("UPDATE threads SET thread_section_id = ? WHERE id = ?")
+            .bind(crate::PINNED_THREAD_SECTION_ID)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .expect("section membership should update");
+    }
+    insert_migration_thread(
+        &pool,
+        "00000000-0000-0000-0000-000000000054",
+        /*recency_at_ms*/ 3_000,
+    )
+    .await;
+
+    migrator_through(/*version*/ 46)
+        .run(&pool)
+        .await
+        .expect("section order migration should apply");
+    let sectioned = sqlx::query_as::<_, (String, i64, i64)>(
+        "SELECT id, section_position, section_entered_at_ms FROM threads WHERE thread_section_id = ? ORDER BY section_position",
+    )
+    .bind(crate::PINNED_THREAD_SECTION_ID)
+    .fetch_all(&pool)
+    .await
+    .expect("backfilled section order should load");
+    assert_eq!(
+        sectioned,
+        vec![
+            (
+                "00000000-0000-0000-0000-000000000052".to_string(),
+                1_000_000,
+                2_000,
+            ),
+            (
+                "00000000-0000-0000-0000-000000000051".to_string(),
+                2_000_000,
+                2_000,
+            ),
+            (
+                "00000000-0000-0000-0000-000000000053".to_string(),
+                3_000_000,
+                1_000,
+            ),
+        ]
+    );
+    assert_eq!(
+        sqlx::query_as::<_, (Option<i64>, Option<i64>)>(
+            "SELECT section_position, section_entered_at_ms FROM threads WHERE id = ?",
+        )
+        .bind("00000000-0000-0000-0000-000000000054")
+        .fetch_one(&pool)
+        .await
+        .expect("unsectioned order should load"),
+        (None, None)
+    );
+    let query_plan = sqlx::query(
+        "EXPLAIN QUERY PLAN SELECT id FROM threads WHERE archived = 0 AND thread_section_id = ? AND preview <> '' ORDER BY section_position ASC, id ASC LIMIT 10",
+    )
+    .bind(crate::PINNED_THREAD_SECTION_ID)
+    .fetch_all(&pool)
+    .await
+    .expect("section order query plan should load");
+    assert!(query_plan.iter().any(|row| {
+        row.get::<String, _>("detail")
+            .contains("idx_threads_section_position")
+    }));
 }
 
 #[tokio::test]
