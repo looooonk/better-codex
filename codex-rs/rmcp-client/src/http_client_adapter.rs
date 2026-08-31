@@ -464,7 +464,7 @@ impl StreamableHttpClientAdapter {
 }
 
 fn body_preview(body: impl Into<String>) -> String {
-    let mut body_preview = body.into();
+    let mut body_preview = redact_secrets(body.into());
     let body_len = body_preview.len();
     if body_len > NON_JSON_RESPONSE_BODY_PREVIEW_BYTES {
         let mut boundary = NON_JSON_RESPONSE_BODY_PREVIEW_BYTES;
@@ -477,7 +477,7 @@ fn body_preview(body: impl Into<String>) -> String {
             body_len.saturating_sub(boundary)
         ));
     }
-    redact_secrets(body_preview)
+    body_preview
 }
 
 async fn next_correlated_discovery_response(

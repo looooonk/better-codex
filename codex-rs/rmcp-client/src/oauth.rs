@@ -832,6 +832,8 @@ mod tests {
     use keyring::Error as KeyringError;
     use pretty_assertions::assert_eq;
     use std::sync::Arc;
+    #[path = "callback_tests.rs"]
+    mod callback_tests;
     #[path = "persistor_tests.rs"]
     mod persistor_tests;
 

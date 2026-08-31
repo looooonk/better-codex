@@ -18,6 +18,7 @@ use rmcp::model::ServerJsonRpcMessage;
 use rmcp::transport::common::http_header::HEADER_MCP_PROTOCOL_VERSION;
 use sse_stream::Sse;
 
+use super::NON_JSON_RESPONSE_BODY_PREVIEW_BYTES;
 use super::SseEventSizeLimit;
 use super::body_preview;
 use super::mcp_redirect_policy;
@@ -151,6 +152,17 @@ fn server_body_previews_redact_credentials() {
         preview,
         "authorization: Bearer [REDACTED_SECRET]\napi_key=[REDACTED_SECRET]"
     );
+}
+
+#[test]
+fn server_body_previews_redact_credentials_crossing_the_truncation_boundary() {
+    let label = "\napi_key=";
+    let prefix = "x".repeat(NON_JSON_RESPONSE_BODY_PREVIEW_BYTES - label.len() - 4);
+    let preview = body_preview(format!("{prefix}{label}boundarysecretvalue"));
+
+    assert!(preview.contains(label));
+    assert!(!preview.contains("boun"));
+    assert!(preview.contains("truncated"));
 }
 
 #[test]
