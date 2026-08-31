@@ -23,6 +23,7 @@ use crate::agent::control::AgentExecutionGuard;
 use crate::session::TurnInputQueue;
 use crate::session::turn_context::TurnContext;
 use crate::tasks::AnySessionTask;
+use crate::tools::approvals::ApprovalAction;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::TokenUsage;
@@ -87,6 +88,7 @@ pub(crate) struct RunningTask {
 #[derive(Default)]
 pub(crate) struct TurnState {
     pending_approvals: HashMap<String, oneshot::Sender<ReviewDecision>>,
+    pending_delegated_approval_actions: HashMap<String, ApprovalAction>,
     pending_request_permissions: HashMap<String, PendingRequestPermissions>,
     used_request_permission_ids: HashSet<String>,
     pending_user_input: HashMap<String, oneshot::Sender<RequestUserInputResponse>>,
@@ -127,11 +129,28 @@ impl TurnState {
         &mut self,
         key: &str,
     ) -> Option<oneshot::Sender<ReviewDecision>> {
+        self.pending_delegated_approval_actions.remove(key);
         self.pending_approvals.remove(key)
+    }
+
+    pub(crate) fn insert_pending_delegated_approval_action(
+        &mut self,
+        key: String,
+        action: ApprovalAction,
+    ) -> Option<ApprovalAction> {
+        self.pending_delegated_approval_actions.insert(key, action)
+    }
+
+    pub(crate) fn pending_delegated_approval_action(
+        &self,
+        key: &str,
+    ) -> Option<ApprovalAction> {
+        self.pending_delegated_approval_actions.get(key).cloned()
     }
 
     pub(crate) fn clear_pending_waiters(&mut self) {
         self.pending_approvals.clear();
+        self.pending_delegated_approval_actions.clear();
         self.pending_request_permissions.clear();
         self.pending_user_input.clear();
         self.pending_elicitations.clear();

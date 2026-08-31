@@ -635,6 +635,7 @@ async fn request_user_approval(
                 .clone()
                 .or_else(|| ctx.approval_reason.clone())
                 .or_else(|| justification.clone());
+            register_delegated_approval_action(session, action, ctx, &ctx.call_id).await;
             let decision = session
                 .request_command_approval(
                     &ctx.turn,
@@ -666,6 +667,7 @@ async fn request_user_approval(
             let command = std::iter::once(program.clone())
                 .chain(argv.iter().cloned())
                 .collect();
+            register_delegated_approval_action(session, action, ctx, approval_id).await;
             let decision = session
                 .request_command_approval(
                     &ctx.turn,
@@ -703,6 +705,7 @@ async fn request_user_approval(
                     pending_cache: Vec::new(),
                 };
             }
+            register_delegated_approval_action(session, action, ctx, &ctx.call_id).await;
             let decision = session
                 .request_patch_approval(
                     &ctx.turn,
@@ -753,6 +756,22 @@ async fn request_user_approval(
         decision,
         source: ApprovalResolutionSource::User,
         pending_cache,
+    }
+}
+
+async fn register_delegated_approval_action(
+    session: &Session,
+    action: &ApprovalAction,
+    ctx: &ApprovalContext,
+    approval_id: &str,
+) {
+    if ctx.turn.session_source.is_non_root_agent() {
+        session
+            .register_pending_delegated_approval_action(
+                approval_id.to_string(),
+                action.clone(),
+            )
+            .await;
     }
 }
 

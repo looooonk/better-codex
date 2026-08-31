@@ -2220,6 +2220,48 @@ impl Session {
     /// Note that if `available_decisions` is `None`, then the other fields will
     /// be used to derive the available decisions via
     /// [ExecApprovalRequestEvent::default_available_decisions].
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
+    pub(crate) async fn register_pending_delegated_approval_action(
+        &self,
+        approval_id: String,
+        action: crate::tools::approvals::ApprovalAction,
+    ) {
+        let previous = {
+            let mut active = self.active_turn.lock().await;
+            match active.as_mut() {
+                Some(active) => active
+                    .turn_state
+                    .lock()
+                    .await
+                    .insert_pending_delegated_approval_action(approval_id.clone(), action),
+                None => None,
+            }
+        };
+        if previous.is_some() {
+            warn!("Overwriting delegated approval action for approval_id: {approval_id}");
+        }
+    }
+
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state reads must remain atomic"
+    )]
+    pub(crate) async fn pending_delegated_approval_action(
+        &self,
+        approval_id: &str,
+    ) -> Option<crate::tools::approvals::ApprovalAction> {
+        let mut active = self.active_turn.lock().await;
+        let active = active.as_mut()?;
+        active
+            .turn_state
+            .lock()
+            .await
+            .pending_delegated_approval_action(approval_id)
+    }
+
     #[allow(clippy::too_many_arguments)]
     #[expect(
         clippy::await_holding_invalid_type,
