@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::MutexGuard;
 use std::sync::Weak;
 
 use codex_connectors::AppToolPolicyEvaluator;
@@ -31,8 +32,13 @@ struct CachedMcpHandlers {
     handlers: HashMap<ToolName, Arc<McpHandler>>,
 }
 
+struct BoundMcpHandlerCache<'a> {
+    binding: &'a Arc<McpBinding>,
+    cached: MutexGuard<'a, Option<CachedMcpHandlers>>,
+}
+
 impl McpHandlerCache {
-    fn rebind(&self, binding: &Arc<McpBinding>) {
+    fn bind<'a>(&'a self, binding: &'a Arc<McpBinding>) -> BoundMcpHandlerCache<'a> {
         let mut cached = self
             .cached
             .lock()
@@ -42,30 +48,27 @@ impl McpHandlerCache {
             .as_ref()
             .is_some_and(|cached| Weak::ptr_eq(&cached.binding, &replacement))
         {
-            return;
+            return BoundMcpHandlerCache { binding, cached };
         }
         *cached = Some(CachedMcpHandlers {
             binding: replacement,
             handlers: HashMap::new(),
         });
+        BoundMcpHandlerCache { binding, cached }
     }
+}
 
+impl BoundMcpHandlerCache<'_> {
     fn get_or_build(
-        &self,
-        binding: &Arc<McpBinding>,
+        &mut self,
         tool: McpToolInfo,
     ) -> Result<Arc<McpHandler>, serde_json::Error> {
         let tool_name = tool.canonical_tool_name();
-        self.rebind(binding);
-        let mut cached = self
-            .cached
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let cached = cached.as_mut().expect("cache was rebound");
+        let cached = self.cached.as_mut().expect("cache was bound");
         if let Some(handler) = cached.handlers.get(&tool_name) {
             return Ok(Arc::clone(handler));
         }
-        let handler = Arc::new(McpHandler::new_bound(tool, Arc::clone(binding))?);
+        let handler = Arc::new(McpHandler::new_bound(tool, Arc::clone(self.binding))?);
         cached.handlers.insert(tool_name, Arc::clone(&handler));
         Ok(handler)
     }
@@ -110,19 +113,19 @@ pub(crate) fn build_bound_mcp_tool_runtimes(
     search_tool_enabled: bool,
     cache: &McpHandlerCache,
 ) -> Vec<Arc<dyn CoreToolRuntime>> {
-    cache.rebind(&binding);
     let exposed_tools = exposed_mcp_tools(binding.tools(), connectors, config);
     let exposure = if search_tool_enabled {
         ToolExposure::Deferred
     } else {
         ToolExposure::Direct
     };
+    let mut cache = cache.bind(&binding);
 
     exposed_tools
         .into_iter()
         .filter_map(|tool| {
             let tool_name = tool.canonical_tool_name();
-            match cache.get_or_build(&binding, tool) {
+            match cache.get_or_build(tool) {
                 Ok(handler) => {
                     let handler: Arc<dyn CoreToolRuntime> = handler;
                     Some(override_tool_exposure(handler, exposure))

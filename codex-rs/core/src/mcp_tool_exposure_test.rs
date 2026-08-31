@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::Barrier;
 
 use codex_config::Constrained;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
@@ -93,6 +94,15 @@ fn expected_runtimes(
         .iter()
         .map(|tool| (tool.canonical_tool_name(), exposure))
         .collect()
+}
+
+async fn empty_binding() -> Arc<McpBinding> {
+    let manager = Arc::new(McpConnectionManager::new_uninitialized_with_permission_profile(
+        &Constrained::allow_any(AskForApproval::OnRequest),
+        &PermissionProfile::default(),
+        /*prefix_mcp_tool_names*/ true,
+    ));
+    McpBinding::capture(manager).await
 }
 
 fn runtimes_by_name(runtimes: &[Arc<dyn CoreToolRuntime>]) -> HashMap<ToolName, ToolExposure> {
@@ -307,17 +317,8 @@ async fn defers_apps_and_non_app_mcp_tools() {
 
 #[tokio::test]
 async fn handler_cache_reuses_only_the_current_binding() {
-    async fn binding() -> Arc<McpBinding> {
-        let manager = Arc::new(McpConnectionManager::new_uninitialized_with_permission_profile(
-            &Constrained::allow_any(AskForApproval::OnRequest),
-            &PermissionProfile::default(),
-            /*prefix_mcp_tool_names*/ true,
-        ));
-        McpBinding::capture(manager).await
-    }
-
     let cache = McpHandlerCache::default();
-    let first_binding = binding().await;
+    let first_binding = empty_binding().await;
     let tool = make_mcp_tool(
         "rmcp",
         "tool",
@@ -328,13 +329,15 @@ async fn handler_cache_reuses_only_the_current_binding() {
     );
     let tool_name = tool.canonical_tool_name();
     let first = cache
-        .get_or_build(&first_binding, tool.clone())
+        .bind(&first_binding)
+        .get_or_build(tool.clone())
         .expect("handler should build");
     let first_weak = Arc::downgrade(&first);
     drop(first);
 
     let reused = cache
-        .get_or_build(&first_binding, tool.clone())
+        .bind(&first_binding)
+        .get_or_build(tool.clone())
         .expect("handler should be reused");
     assert!(Arc::ptr_eq(
         &first_weak.upgrade().expect("cache should retain the handler"),
@@ -342,9 +345,10 @@ async fn handler_cache_reuses_only_the_current_binding() {
     ));
     drop(reused);
 
-    let replacement_binding = binding().await;
+    let replacement_binding = empty_binding().await;
     let replacement = cache
-        .get_or_build(&replacement_binding, tool)
+        .bind(&replacement_binding)
+        .get_or_build(tool)
         .expect("replacement handler should build");
     assert!(first_weak.upgrade().is_none());
     assert_eq!(replacement.tool_name(), tool_name);
@@ -352,20 +356,11 @@ async fn handler_cache_reuses_only_the_current_binding() {
 
 #[tokio::test]
 async fn empty_binding_clears_handlers_from_the_previous_catalog() {
-    async fn binding() -> Arc<McpBinding> {
-        let manager = Arc::new(McpConnectionManager::new_uninitialized_with_permission_profile(
-            &Constrained::allow_any(AskForApproval::OnRequest),
-            &PermissionProfile::default(),
-            /*prefix_mcp_tool_names*/ true,
-        ));
-        McpBinding::capture(manager).await
-    }
-
     let cache = McpHandlerCache::default();
-    let previous_binding = binding().await;
+    let previous_binding = empty_binding().await;
     let previous = cache
+        .bind(&previous_binding)
         .get_or_build(
-            &previous_binding,
             make_mcp_tool(
                 "rmcp",
                 "tool",
@@ -378,7 +373,7 @@ async fn empty_binding_clears_handlers_from_the_previous_catalog() {
         .expect("handler should build");
     let previous = Arc::downgrade(&previous);
 
-    let empty_binding = binding().await;
+    let empty_binding = empty_binding().await;
     assert!(
         build_bound_mcp_tool_runtimes(
             empty_binding,
@@ -390,4 +385,55 @@ async fn empty_binding_clears_handlers_from_the_previous_catalog() {
         .is_empty()
     );
     assert!(previous.upgrade().is_none());
+}
+
+#[tokio::test]
+async fn concurrent_bindings_never_share_a_cached_handler() {
+    let cache = Arc::new(McpHandlerCache::default());
+    let first_binding = empty_binding().await;
+    let second_binding = empty_binding().await;
+    let tool = make_mcp_tool(
+        "rmcp",
+        "tool",
+        "mcp__rmcp",
+        "tool",
+        /*connector_id*/ None,
+        /*connector_name*/ None,
+    );
+
+    for _ in 0..32 {
+        let start = Arc::new(Barrier::new(3));
+        let first_start = Arc::clone(&start);
+        let first_cache = Arc::clone(&cache);
+        let first_binding = Arc::clone(&first_binding);
+        let first_tool = tool.clone();
+        let second_start = Arc::clone(&start);
+        let second_cache = Arc::clone(&cache);
+        let second_binding = Arc::clone(&second_binding);
+        let second_tool = tool.clone();
+
+        let (first, second) = std::thread::scope(|scope| {
+            let first = scope.spawn(move || {
+                first_start.wait();
+                first_cache
+                    .bind(&first_binding)
+                    .get_or_build(first_tool)
+                    .expect("first handler should build")
+            });
+            let second = scope.spawn(move || {
+                second_start.wait();
+                second_cache
+                    .bind(&second_binding)
+                    .get_or_build(second_tool)
+                    .expect("second handler should build")
+            });
+            start.wait();
+            (
+                first.join().expect("first cache thread"),
+                second.join().expect("second cache thread"),
+            )
+        });
+
+        assert!(!Arc::ptr_eq(&first, &second));
+    }
 }
