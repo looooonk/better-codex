@@ -165,9 +165,11 @@ pub(crate) struct SkillRootSnapshot {
     pub(crate) skill_discovery_path_by_path: Arc<HashMap<AbsolutePathBuf, AbsolutePathBuf>>,
     pub(crate) errors: Vec<SkillError>,
     pub(crate) file_system: Arc<dyn ExecutorFileSystem>,
+    pub(crate) is_agent_plugin: bool,
 }
 
 pub(crate) async fn load_skill_root(root: SkillRoot) -> SkillRootSnapshot {
+    let is_agent_plugin = root.discovery_mode == SkillDiscoveryMode::DirectChildren;
     let canonical_root =
         canonicalize_for_skill_identity(root.file_system.as_ref(), &root.path).await;
     let mut outcome = SkillLoadOutcome::default();
@@ -178,6 +180,7 @@ pub(crate) async fn load_skill_root(root: SkillRoot) -> SkillRootSnapshot {
         skill_discovery_path_by_path: outcome.skill_discovery_path_by_path,
         errors: outcome.errors,
         file_system: root.file_system,
+        is_agent_plugin,
     }
 }
 

@@ -1,12 +1,14 @@
 mod discovery;
 mod environment;
 mod host;
+mod host_merge;
 mod metadata;
 mod namespace;
 
 pub(crate) use environment::load_environment_skills_from_discovery;
 pub(crate) use environment::load_environment_skills_from_root;
 pub(crate) use host::HostSkillRoot;
+pub(crate) use host_merge::load_and_merge_host_skill_roots;
 
 pub(super) const SKILLS_FILENAME: &str = "SKILL.md";
 pub(super) const SKILLS_METADATA_DIR: &str = "agents";
@@ -22,3 +24,4 @@ pub(super) const MAX_DEPENDENCY_COMMAND_LEN: usize = MAX_DESCRIPTION_LEN;
 pub(super) const MAX_DEPENDENCY_URL_LEN: usize = MAX_DESCRIPTION_LEN;
 pub(super) const MAX_SCAN_DEPTH: usize = 6;
 pub(super) const MAX_SKILLS_DIRS_PER_ROOT: usize = 2000;
+pub(super) const MAX_CONCURRENT_ROOT_SCANS: usize = 8;

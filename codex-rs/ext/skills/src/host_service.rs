@@ -7,12 +7,14 @@ use std::sync::Weak;
 
 use codex_config::ConfigLayerStack;
 use codex_exec_server::ExecutorFileSystem;
+use codex_exec_server::LOCAL_FS;
 use codex_protocol::protocol::Product;
 use codex_protocol::protocol::SkillScope;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_plugins::PluginSkillRoot;
 use codex_utils_plugins::SkillDiscoveryMode;
 use tokio::sync::OnceCell;
+use tokio::sync::Semaphore;
 use tracing::info;
 use tracing::instrument;
 use tracing::warn;
@@ -27,8 +29,15 @@ use codex_core_skills::config_rules::skill_config_rules_from_stack;
 use codex_core_skills::loader::SkillRoot;
 use codex_core_skills::loader::load_skills_from_roots;
 use codex_skills::install_system_skills;
+use codex_skills::LoadedSkills;
+use codex_skills::SkillLoadFuture;
+use codex_skills::SkillRootLoadRequest;
+use codex_skills::SkillRootLoader;
 
 use crate::host_roots::resolve_skill_roots;
+use crate::loader::HostSkillRoot;
+use crate::loader::MAX_CONCURRENT_ROOT_SCANS;
+use crate::loader::load_and_merge_host_skill_roots;
 
 #[derive(Debug, Clone)]
 pub struct HostSkillsLoadInput {
@@ -72,6 +81,7 @@ pub struct HostSkillsService {
     codex_home: AbsolutePathBuf,
     restriction_product: Option<Product>,
     extra_roots: RwLock<Vec<AbsolutePathBuf>>,
+    root_scan_slots: Semaphore,
     cache_by_cwd: RwLock<HashMap<AbsolutePathBuf, HostSkillsSnapshot>>,
     cache_by_config: RwLock<HashMap<ConfigSkillsCacheKey, Arc<OnceCell<HostSkillsSnapshot>>>>,
 }
@@ -90,6 +100,7 @@ impl HostSkillsService {
             codex_home,
             restriction_product,
             extra_roots: RwLock::new(Vec::new()),
+            root_scan_slots: Semaphore::new(MAX_CONCURRENT_ROOT_SCANS),
             cache_by_cwd: RwLock::new(HashMap::new()),
             cache_by_config: RwLock::new(HashMap::new()),
         };
@@ -342,6 +353,32 @@ impl HostSkillsService {
         if let Err(err) = install_system_skills(&self.codex_home) {
             tracing::error!("failed to install system skills: {err}");
         }
+    }
+}
+
+impl SkillRootLoader<PluginSkillRoot> for HostSkillsService {
+    fn load_roots(
+        &self,
+        request: SkillRootLoadRequest<PluginSkillRoot>,
+    ) -> SkillLoadFuture<'_, LoadedSkills> {
+        Box::pin(async move {
+            let roots = request
+                .roots
+                .into_iter()
+                .map(|root| HostSkillRoot::plugin(root, Arc::clone(&LOCAL_FS)))
+                .collect();
+            let outcome = load_and_merge_host_skill_roots(
+                roots,
+                &self.root_scan_slots,
+                request.restriction_product,
+                request.snapshots.as_ref(),
+            )
+            .await;
+            LoadedSkills {
+                skills: outcome.skills,
+                errors: outcome.errors,
+            }
+        })
     }
 }
 

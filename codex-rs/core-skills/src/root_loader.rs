@@ -124,6 +124,7 @@ fn merge_skill_root_snapshots(snapshots: Vec<SkillRootSnapshot>) -> SkillLoadOut
     let mut skill_roots = Vec::new();
     let mut skill_root_by_path = HashMap::new();
     let mut skill_discovery_path_by_path = HashMap::new();
+    let mut agent_plugin_skill_paths = HashSet::new();
     let mut file_systems_by_skill_path = HashMap::new();
 
     for snapshot in snapshots {
@@ -133,11 +134,13 @@ fn merge_skill_root_snapshots(snapshots: Vec<SkillRootSnapshot>) -> SkillLoadOut
             skill_discovery_path_by_path: snapshot_discovery_paths,
             errors,
             file_system,
+            is_agent_plugin,
         } = snapshot;
         if !skills.is_empty() && !skill_roots.contains(&root) {
             skill_roots.push(root.clone());
         }
         for skill in &skills {
+            let first_owner = !skill_root_by_path.contains_key(&skill.path_to_skills_md);
             skill_root_by_path
                 .entry(skill.path_to_skills_md.clone())
                 .or_insert_with(|| root.clone());
@@ -148,6 +151,9 @@ fn merge_skill_root_snapshots(snapshots: Vec<SkillRootSnapshot>) -> SkillLoadOut
                 skill_discovery_path_by_path
                     .entry(skill.path_to_skills_md.clone())
                     .or_insert_with(|| discovery_path.clone());
+            }
+            if first_owner && is_agent_plugin {
+                agent_plugin_skill_paths.insert(skill.path_to_skills_md.clone());
             }
         }
         outcome.skills.extend(skills);
@@ -165,12 +171,14 @@ fn merge_skill_root_snapshots(snapshots: Vec<SkillRootSnapshot>) -> SkillLoadOut
         .collect::<HashSet<_>>();
     skill_root_by_path.retain(|path, _| retained_skill_paths.contains(path));
     skill_discovery_path_by_path.retain(|path, _| retained_skill_paths.contains(path));
+    agent_plugin_skill_paths.retain(|path| retained_skill_paths.contains(path));
     let used_roots = skill_root_by_path.values().cloned().collect::<HashSet<_>>();
     skill_roots.retain(|root| used_roots.contains(root));
     file_systems_by_skill_path.retain(|path, _| retained_skill_paths.contains(path));
     outcome.skill_roots = skill_roots;
     outcome.skill_root_by_path = Arc::new(skill_root_by_path);
     outcome.skill_discovery_path_by_path = Arc::new(skill_discovery_path_by_path);
+    outcome.agent_plugin_skill_paths = agent_plugin_skill_paths;
     outcome.file_systems_by_skill_path = SkillFileSystemsByPath::new(file_systems_by_skill_path);
 
     outcome.skills.sort_by(|a, b| {
