@@ -2,9 +2,11 @@ use std::fmt;
 use std::sync::Arc;
 
 use codex_mcp::McpConfig;
+use codex_mcp::McpBinding;
 use codex_mcp::McpConnectionManager;
 use codex_mcp::McpRuntimeContext;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
+use tokio::sync::Mutex;
 
 /// MCP config, plugin availability, exact environment bindings, and manager for one request.
 pub struct McpRuntimeSnapshot {
@@ -13,6 +15,7 @@ pub struct McpRuntimeSnapshot {
     manager: Arc<McpConnectionManager>,
     runtime_context: McpRuntimeContext,
     ready_selected_capability_roots: Vec<SelectedCapabilityRoot>,
+    binding: Mutex<Option<Arc<McpBinding>>>,
 }
 
 impl McpRuntimeSnapshot {
@@ -29,6 +32,7 @@ impl McpRuntimeSnapshot {
             manager,
             runtime_context,
             ready_selected_capability_roots,
+            binding: Mutex::new(None),
         }
     }
 
@@ -46,6 +50,19 @@ impl McpRuntimeSnapshot {
 
     pub(crate) fn manager_arc(&self) -> Arc<McpConnectionManager> {
         Arc::clone(&self.manager)
+    }
+
+    pub(crate) async fn binding(&self) -> Arc<McpBinding> {
+        let mut cached = self.binding.lock().await;
+        let revision = self.manager.catalog_revision().await;
+        if let Some(binding) = cached.as_ref()
+            && binding.catalog_revision() == revision
+        {
+            return Arc::clone(binding);
+        }
+        let binding = McpBinding::capture(Arc::clone(&self.manager)).await;
+        *cached = Some(Arc::clone(&binding));
+        binding
     }
 
     pub fn runtime_context(&self) -> &McpRuntimeContext {
@@ -110,3 +127,7 @@ impl fmt::Debug for McpRuntimeSnapshot {
             .finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+#[path = "mcp_runtime_tests.rs"]
+mod tests;

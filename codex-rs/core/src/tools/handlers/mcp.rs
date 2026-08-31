@@ -16,6 +16,7 @@ use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolTelemetryTags;
+use codex_mcp::McpBinding;
 use codex_mcp::ToolInfo;
 use codex_tools::ResponsesApiNamespace;
 use codex_tools::ResponsesApiNamespaceTool;
@@ -34,12 +35,31 @@ const MCP_TOOL_NAME_DELIMITER: &str = "__";
 pub struct McpHandler {
     tool_info: ToolInfo,
     spec: ToolSpec,
+    binding: Option<Arc<McpBinding>>,
 }
 
 impl McpHandler {
     pub fn new(tool_info: ToolInfo) -> Result<Self, serde_json::Error> {
+        Self::new_with_binding(tool_info, /*binding*/ None)
+    }
+
+    pub(crate) fn new_bound(
+        tool_info: ToolInfo,
+        binding: Arc<McpBinding>,
+    ) -> Result<Self, serde_json::Error> {
+        Self::new_with_binding(tool_info, Some(binding))
+    }
+
+    fn new_with_binding(
+        tool_info: ToolInfo,
+        binding: Option<Arc<McpBinding>>,
+    ) -> Result<Self, serde_json::Error> {
         let spec = create_tool_spec(&tool_info)?;
-        Ok(Self { tool_info, spec })
+        Ok(Self {
+            tool_info,
+            spec,
+            binding,
+        })
     }
 
     fn hook_tool_name(&self) -> HookToolName {
@@ -143,10 +163,16 @@ impl McpHandler {
         };
 
         let started = Instant::now();
+        let execution_binding = if self.binding.is_some() {
+            Some(step_context.mcp.binding().await)
+        } else {
+            None
+        };
         // TODO(sayan): Use StepContext for MCP file arguments when MCP follows dynamic environments.
         let result = handle_mcp_tool_call(
             Arc::clone(&session),
             &step_context,
+            execution_binding,
             call_id.clone(),
             self.tool_info.server_name.clone(),
             self.tool_info.tool.name.to_string(),
@@ -169,11 +195,17 @@ impl CoreToolRuntime for McpHandler {
     fn wait_until_ready<'a>(&'a self, session: &'a Arc<Session>) -> Option<BoxFuture<'a, ()>> {
         Some(Box::pin(async move {
             session.refresh_mcp_if_dirty().await;
-            session
-                .services
-                .mcp_runtime
-                .wait_for_server_startup(&self.tool_info.server_name)
-                .await;
+            if let Some(binding) = self.binding.as_ref() {
+                let _ = binding
+                    .wait_for_server_startup(&self.tool_info.server_name)
+                    .await;
+            } else {
+                session
+                    .services
+                    .mcp_runtime
+                    .wait_for_server_startup(&self.tool_info.server_name)
+                    .await;
+            }
         }))
     }
 

@@ -174,6 +174,8 @@ async fn execute_mcp_tool_call_records_replayable_correlation() -> anyhow::Resul
         /*rewritten_arguments*/ None,
         /*metadata*/ None,
         /*request_meta*/ None,
+        /*binding*/ None,
+        /*approval_application*/ None,
     )
     .await;
     assert!(
@@ -198,6 +200,7 @@ async fn mcp_dispatch_rejects_a_tool_missing_from_the_live_catalog() {
     let handled = handle_mcp_tool_call(
         session,
         &step_context,
+        /*binding*/ None,
         "call-missing".to_string(),
         "docs".to_string(),
         "forged".to_string(),

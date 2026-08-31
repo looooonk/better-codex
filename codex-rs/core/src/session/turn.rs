@@ -31,7 +31,7 @@ use crate::injection::ToolMentionKind;
 use crate::injection::app_id_from_path;
 use crate::injection::tool_kind_for_path;
 use crate::mcp_skill_dependencies::maybe_prompt_and_install_mcp_dependencies;
-use crate::mcp_tool_exposure::build_mcp_tool_runtimes;
+use crate::mcp_tool_exposure::build_bound_mcp_tool_runtimes;
 use crate::mentions::build_connector_slug_counts;
 use crate::mentions::build_skill_name_counts;
 use crate::mentions::collect_explicit_app_ids;
@@ -1326,10 +1326,11 @@ pub(crate) async fn built_tools(
     cancellation_token: &CancellationToken,
 ) -> CodexResult<Arc<ToolRouter>> {
     let turn_context = step_context.turn.as_ref();
-    let all_mcp_tools = step_context
-        .mcp_tools()
+    let mcp_binding = step_context
+        .mcp_binding()
         .or_cancel(cancellation_token)
         .await?;
+    let all_mcp_tools = mcp_binding.tools();
     let loaded_plugins = sess
         .services
         .plugins_manager
@@ -1432,11 +1433,12 @@ pub(crate) async fn built_tools(
             .instrument(trace_span!("built_tools.load_discoverable_tools"))
             .await
         };
-    let mcp_tool_runtimes = build_mcp_tool_runtimes(
-        all_mcp_tools,
+    let mcp_tool_runtimes = build_bound_mcp_tool_runtimes(
+        Arc::clone(mcp_binding),
         connectors.as_deref(),
         &turn_context.config,
         search_tool_enabled(turn_context),
+        &sess.services.mcp_handler_cache,
     );
     Ok(Arc::new(ToolRouter::from_context(
         step_context,

@@ -1,8 +1,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use codex_config::Constrained;
 use codex_mcp::CODEX_APPS_MCP_SERVER_NAME;
+use codex_mcp::McpBinding;
+use codex_mcp::McpConnectionManager;
 use codex_mcp::ToolInfo;
+use codex_protocol::models::PermissionProfile;
+use codex_protocol::protocol::AskForApproval;
 use codex_tools::ToolExposure;
 use codex_tools::ToolName;
 use pretty_assertions::assert_eq;
@@ -298,4 +303,49 @@ async fn defers_apps_and_non_app_mcp_tools() {
         runtimes_by_name(&runtimes),
         expected_runtimes(&mcp_tools, ToolExposure::Deferred)
     );
+}
+
+#[tokio::test]
+async fn handler_cache_reuses_only_the_current_binding() {
+    async fn binding() -> Arc<McpBinding> {
+        let manager = Arc::new(McpConnectionManager::new_uninitialized_with_permission_profile(
+            &Constrained::allow_any(AskForApproval::OnRequest),
+            &PermissionProfile::default(),
+            /*prefix_mcp_tool_names*/ true,
+        ));
+        McpBinding::capture(manager).await
+    }
+
+    let cache = McpHandlerCache::default();
+    let first_binding = binding().await;
+    let tool = make_mcp_tool(
+        "rmcp",
+        "tool",
+        "mcp__rmcp",
+        "tool",
+        /*connector_id*/ None,
+        /*connector_name*/ None,
+    );
+    let tool_name = tool.canonical_tool_name();
+    let first = cache
+        .get_or_build(&first_binding, tool.clone())
+        .expect("handler should build");
+    let first_weak = Arc::downgrade(&first);
+    drop(first);
+
+    let reused = cache
+        .get_or_build(&first_binding, tool.clone())
+        .expect("handler should be reused");
+    assert!(Arc::ptr_eq(
+        &first_weak.upgrade().expect("cache should retain the handler"),
+        &reused,
+    ));
+    drop(reused);
+
+    let replacement_binding = binding().await;
+    let replacement = cache
+        .get_or_build(&replacement_binding, tool)
+        .expect("replacement handler should build");
+    assert!(first_weak.upgrade().is_none());
+    assert_eq!(replacement.tool_name(), tool_name);
 }
