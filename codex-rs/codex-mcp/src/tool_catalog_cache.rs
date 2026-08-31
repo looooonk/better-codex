@@ -117,11 +117,26 @@ impl McpToolCatalogCacheContext {
     }
 
     pub(crate) fn current_tools(&self) -> Option<Vec<ToolInfo>> {
-        lock_unpoisoned(&self.entry.state)
+        self.current_snapshot().and_then(|snapshot| snapshot.tools)
+    }
+
+    pub(crate) fn current_snapshot(&self) -> Option<McpToolCatalogSnapshot> {
+        let snapshot = self.catalog_snapshot();
+        snapshot.tools.as_ref()?;
+        Some(snapshot)
+    }
+
+    pub(crate) fn catalog_snapshot(&self) -> McpToolCatalogSnapshot {
+        let state = lock_unpoisoned(&self.entry.state);
+        let tools = state
             .snapshot
             .as_ref()
             .filter(|snapshot| snapshot.published_at.elapsed() <= TOOL_CATALOG_CACHE_TTL)
-            .map(|snapshot| snapshot.tools.clone())
+            .map(|snapshot| snapshot.tools.clone());
+        McpToolCatalogSnapshot {
+            generation: state.last_accepted_generation,
+            tools,
+        }
     }
 
     pub(crate) fn begin_fetch(&self) -> McpToolCatalogFetchTicket {
@@ -135,9 +150,18 @@ impl McpToolCatalogCacheContext {
     }
 
     pub(crate) fn disable(&self) {
+        let generation = self
+            .entry
+            .next_fetch_generation
+            .fetch_add(1, Ordering::Relaxed)
+            + 1;
         let mut state = lock_unpoisoned(&self.entry.state);
+        if generation <= state.last_accepted_generation {
+            return;
+        }
         state.disabled_by_server = true;
         state.snapshot = None;
+        state.last_accepted_generation = generation;
     }
 
     pub(crate) fn publish_if_newest(&self, ticket: McpToolCatalogFetchTicket, tools: &[ToolInfo]) {
@@ -161,6 +185,11 @@ impl McpToolCatalogCacheContext {
             published_at: Instant::now(),
         });
     }
+}
+
+pub(crate) struct McpToolCatalogSnapshot {
+    pub(crate) generation: u64,
+    pub(crate) tools: Option<Vec<ToolInfo>>,
 }
 
 fn lock_unpoisoned<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {

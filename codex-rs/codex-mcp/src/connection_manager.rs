@@ -9,8 +9,9 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
-use std::sync::RwLock as StdRwLock;
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 use std::time::Instant;
@@ -23,6 +24,7 @@ use crate::codex_apps_cache::CodexAppsToolsCacheKey;
 use crate::codex_apps_cache::CodexAppsToolsCacheContext;
 use crate::codex_apps_cache::CodexAppsToolsFetchTicket;
 use crate::codex_apps_cache::CodexAppsToolsFetchSource;
+use crate::codex_apps_cache::CodexAppsToolsSnapshot;
 use crate::elicitation::ElicitationRequestManager;
 use crate::elicitation::ElicitationRequestRouter;
 use crate::elicitation::ElicitationReviewerHandle;
@@ -41,6 +43,7 @@ use crate::runtime::emit_duration;
 use crate::server::EffectiveMcpServer;
 use crate::server::McpServerMetadata;
 use crate::tool_catalog_cache::McpToolCatalogCache;
+use crate::tool_catalog_cache::McpToolCatalogSnapshot;
 use crate::tools::ToolInfo;
 use crate::tools::filter_tools;
 use crate::tools::normalize_tools_for_model_with_prefix;
@@ -130,12 +133,30 @@ pub struct McpConnectionManager {
     required_servers: Vec<String>,
     optional_startup_deadline: OnceLock<tokio::time::Instant>,
     tool_catalog_revision: Arc<RwLock<u64>>,
-    codex_apps_tools_override: StdRwLock<Option<Vec<ToolInfo>>>,
+    codex_apps_catalog: StdMutex<CodexAppsLocalCatalog>,
+    shared_tool_catalogs: StdMutex<HashMap<String, SharedToolCatalog>>,
+    next_codex_apps_refresh_generation: AtomicU64,
     tool_plugin_provenance: Arc<ToolPluginProvenance>,
     prefix_mcp_tool_names: bool,
     elicitation_requests: ElicitationRequestManager,
     startup_cancellation_token: CancellationToken,
 }
+
+#[derive(Default)]
+struct CodexAppsLocalCatalog {
+    tools: Option<Vec<ToolInfo>>,
+    shared_generation: Option<u64>,
+    last_refresh_generation: u64,
+    using_shared_fallback: bool,
+}
+
+struct SharedToolCatalog {
+    generation: u64,
+    tools: Option<Vec<ToolInfo>>,
+}
+
+#[derive(Clone, Copy)]
+struct CodexAppsLocalRefreshTicket(u64);
 
 impl McpConnectionManager {
     #[allow(clippy::too_many_arguments)]
@@ -336,7 +357,9 @@ impl McpConnectionManager {
             required_servers,
             optional_startup_deadline: OnceLock::new(),
             tool_catalog_revision,
-            codex_apps_tools_override: StdRwLock::new(None),
+            codex_apps_catalog: StdMutex::new(CodexAppsLocalCatalog::default()),
+            shared_tool_catalogs: StdMutex::new(HashMap::new()),
+            next_codex_apps_refresh_generation: AtomicU64::new(0),
             tool_plugin_provenance,
             prefix_mcp_tool_names,
             elicitation_requests: elicitation_requests.clone(),
@@ -424,7 +447,9 @@ impl McpConnectionManager {
             required_servers: Vec::new(),
             optional_startup_deadline: OnceLock::new(),
             tool_catalog_revision: Arc::new(RwLock::new(0)),
-            codex_apps_tools_override: StdRwLock::new(None),
+            codex_apps_catalog: StdMutex::new(CodexAppsLocalCatalog::default()),
+            shared_tool_catalogs: StdMutex::new(HashMap::new()),
+            next_codex_apps_refresh_generation: AtomicU64::new(0),
             tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
             prefix_mcp_tool_names,
             elicitation_requests: ElicitationRequestManager::new(
@@ -443,6 +468,7 @@ impl McpConnectionManager {
     }
 
     pub async fn catalog_revision(&self) -> u64 {
+        self.sync_shared_catalogs().await;
         *self.tool_catalog_revision.read().await
     }
 
@@ -450,6 +476,7 @@ impl McpConnectionManager {
         &self,
         expected: u64,
     ) -> Result<OwnedRwLockReadGuard<u64>> {
+        self.sync_shared_catalogs().await;
         let revision = Arc::clone(&self.tool_catalog_revision).read_owned().await;
         if *revision != expected {
             return Err(anyhow!(
@@ -579,6 +606,7 @@ impl McpConnectionManager {
     /// Returns all tools with model-visible names normalized.
     #[instrument(level = "trace", skip_all, fields(mcp_server_count = self.clients.len()))]
     pub async fn list_all_tools(&self) -> Vec<ToolInfo> {
+        self.sync_shared_catalogs().await;
         let mut tools = Vec::new();
         let mut available_server_count = 0;
         let mut unavailable_server_count = 0;
@@ -591,7 +619,7 @@ impl McpConnectionManager {
             let catalog_override = if server_name == CODEX_APPS_MCP_SERVER_NAME {
                 self.codex_apps_tools_override()
             } else {
-                None
+                self.shared_tool_catalog(server_name)
             };
             let server_tools = async {
                 match catalog_override {
@@ -674,6 +702,7 @@ impl McpConnectionManager {
     /// the caller. On failure, existing shared cache contents remain unchanged.
     pub async fn hard_refresh_codex_apps_tools_cache(&self) -> Result<Vec<ToolInfo>> {
         let refresh_start = Instant::now();
+        let local_fetch_ticket = self.begin_codex_apps_refresh();
         let managed_client = self
             .clients
             .get(CODEX_APPS_MCP_SERVER_NAME)
@@ -702,6 +731,7 @@ impl McpConnectionManager {
 
         let tools = self
             .publish_codex_apps_catalog(
+                local_fetch_ticket,
                 managed_client.codex_apps_tools_cache_context.as_ref(),
                 fetch_ticket,
                 &managed_client.server_info,
@@ -729,40 +759,167 @@ impl McpConnectionManager {
     }
 
     fn codex_apps_tools_override(&self) -> Option<Vec<ToolInfo>> {
-        self.codex_apps_tools_override
-            .read()
+        self.codex_apps_catalog
+            .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .tools
             .clone()
+    }
+
+    fn shared_tool_catalog(&self, server_name: &str) -> Option<Vec<ToolInfo>> {
+        self.shared_tool_catalogs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(server_name)
+            .and_then(|catalog| catalog.tools.clone())
+    }
+
+    fn begin_codex_apps_refresh(&self) -> CodexAppsLocalRefreshTicket {
+        CodexAppsLocalRefreshTicket(
+            self.next_codex_apps_refresh_generation
+                .fetch_add(1, Ordering::Relaxed)
+                + 1,
+        )
+    }
+
+    async fn sync_shared_catalogs(&self) {
+        let mut shared_updates = Vec::new();
+        for (server_name, client) in &self.clients {
+            if server_name == CODEX_APPS_MCP_SERVER_NAME {
+                continue;
+            }
+            let Some(cache_context) = client.tool_catalog_cache_context.as_ref() else {
+                continue;
+            };
+            let live = client.startup_complete.load(Ordering::Acquire)
+                && client.client().await.is_ok();
+            let snapshot = (!live).then(|| cache_context.catalog_snapshot());
+            shared_updates.push((server_name.clone(), live, snapshot));
+        }
+        self.sync_shared_tool_catalogs(shared_updates).await;
+
+        let Some(client) = self.clients.get(CODEX_APPS_MCP_SERVER_NAME) else {
+            return;
+        };
+        let Some(cache_context) = client.codex_apps_tools_cache_context.as_ref() else {
+            return;
+        };
+        if client.startup_complete.load(Ordering::Acquire) && client.client().await.is_ok() {
+            let mut local = self
+                .codex_apps_catalog
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if local.using_shared_fallback {
+                local.tools = None;
+                local.shared_generation = None;
+                local.using_shared_fallback = false;
+            }
+            return;
+        }
+        let Some(snapshot) = cache_context.current_snapshot() else {
+            return;
+        };
+        let mut catalog_revision = self.tool_catalog_revision.write().await;
+        let mut local = self
+            .codex_apps_catalog
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if local.shared_generation == Some(snapshot.generation) {
+            return;
+        }
+        let replaced_catalog = local.shared_generation.is_some();
+        local.tools = Some(snapshot.tools);
+        local.shared_generation = Some(snapshot.generation);
+        local.using_shared_fallback = true;
+        if replaced_catalog {
+            *catalog_revision += 1;
+        }
+    }
+
+    async fn sync_shared_tool_catalogs(
+        &self,
+        updates: Vec<(String, bool, Option<McpToolCatalogSnapshot>)>,
+    ) {
+        if updates.is_empty() {
+            return;
+        }
+        let mut catalog_revision = self.tool_catalog_revision.write().await;
+        let mut local = self
+            .shared_tool_catalogs
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut replaced_catalog = false;
+        for (server_name, live, snapshot) in updates {
+            if live {
+                local.remove(&server_name);
+                continue;
+            }
+            let Some(snapshot) = snapshot else {
+                continue;
+            };
+            if local
+                .get(&server_name)
+                .is_some_and(|catalog| {
+                    catalog.generation == snapshot.generation
+                        && catalog.tools.is_some() == snapshot.tools.is_some()
+                })
+            {
+                continue;
+            }
+            replaced_catalog |= local.contains_key(&server_name);
+            local.insert(
+                server_name,
+                SharedToolCatalog {
+                    generation: snapshot.generation,
+                    tools: snapshot.tools,
+                },
+            );
+        }
+        if replaced_catalog {
+            *catalog_revision += 1;
+        }
     }
 
     async fn publish_codex_apps_catalog(
         &self,
+        local_fetch_ticket: CodexAppsLocalRefreshTicket,
         cache_context: Option<&CodexAppsToolsCacheContext>,
         fetch_ticket: Option<CodexAppsToolsFetchTicket>,
         server_info: &McpServerInfo,
         client_tools: Vec<ToolInfo>,
     ) -> Vec<ToolInfo> {
         let mut catalog_revision = self.tool_catalog_revision.write().await;
-        let (tools, published) = match (cache_context, fetch_ticket) {
+        let snapshot = match (cache_context, fetch_ticket) {
             (Some(cache_context), Some(fetch_ticket)) => {
                 let result = cache_context.publish_if_newest_accepted_with_status(
                     fetch_ticket,
                     server_info,
                     client_tools,
                 );
-                (result.tools, result.published)
+                CodexAppsToolsSnapshot {
+                    generation: result.generation,
+                    tools: result.tools,
+                }
             }
-            (None, None) => (client_tools, true),
+            (None, None) => CodexAppsToolsSnapshot {
+                generation: 0,
+                tools: client_tools,
+            },
             _ => unreachable!("Codex Apps fetch ticket requires cache context"),
         };
-        if published {
-            *self
-                .codex_apps_tools_override
-                .write()
-                .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(tools.clone());
-            *catalog_revision += 1;
+        let mut local = self
+            .codex_apps_catalog
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if local_fetch_ticket.0 <= local.last_refresh_generation {
+            return local.tools.clone().unwrap_or(snapshot.tools);
         }
-        tools
+        local.last_refresh_generation = local_fetch_ticket.0;
+        local.shared_generation = cache_context.is_some().then_some(snapshot.generation);
+        local.tools = Some(snapshot.tools.clone());
+        local.using_shared_fallback = false;
+        *catalog_revision += 1;
+        snapshot.tools
     }
 
     /// Returns resources from servers selected by `include_server`. Each key

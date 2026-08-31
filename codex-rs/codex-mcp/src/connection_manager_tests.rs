@@ -925,6 +925,8 @@ async fn hard_refresh_publication_bumps_only_for_the_accepted_cache_generation()
     );
     let older = cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
     let newer = cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
+    let older_local = manager.begin_codex_apps_refresh();
+    let newer_local = manager.begin_codex_apps_refresh();
     let old_revision = manager
         .lock_catalog_revision(/*expected*/ 0)
         .await
@@ -935,6 +937,7 @@ async fn hard_refresh_publication_bumps_only_for_the_accepted_cache_generation()
         async move {
             manager
                 .publish_codex_apps_catalog(
+                    newer_local,
                     Some(&cache_context),
                     Some(newer),
                     &create_test_server_info("Codex Apps"),
@@ -959,6 +962,7 @@ async fn hard_refresh_publication_bumps_only_for_the_accepted_cache_generation()
 
     let stale = manager
         .publish_codex_apps_catalog(
+            older_local,
             Some(&cache_context),
             Some(older),
             &create_test_server_info("Codex Apps"),
@@ -974,6 +978,244 @@ async fn hard_refresh_publication_bumps_only_for_the_accepted_cache_generation()
             .callable_name,
         "newer"
     );
+}
+
+#[tokio::test]
+async fn local_refresh_generation_rejects_slower_uncached_result() {
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    let older = manager.begin_codex_apps_refresh();
+    let newer = manager.begin_codex_apps_refresh();
+
+    let published = manager
+        .publish_codex_apps_catalog(
+            newer,
+            /*cache_context*/ None,
+            /*fetch_ticket*/ None,
+            &create_test_server_info("Codex Apps"),
+            vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "newer")],
+        )
+        .await;
+    assert_eq!(published[0].callable_name, "newer");
+    assert_eq!(manager.catalog_revision().await, 1);
+
+    let stale = manager
+        .publish_codex_apps_catalog(
+            older,
+            /*cache_context*/ None,
+            /*fetch_ticket*/ None,
+            &create_test_server_info("Codex Apps"),
+            vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "older")],
+        )
+        .await;
+    assert_eq!(stale[0].callable_name, "newer");
+    assert_eq!(manager.catalog_revision().await, 1);
+}
+
+#[tokio::test]
+async fn losing_shared_refresh_adopts_the_newer_catalog_locally() {
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    let codex_home = tempdir().expect("tempdir");
+    let cache_context = create_codex_apps_tools_cache_context(
+        codex_home.path().to_path_buf(),
+        Some("shared-refresh-account"),
+        Some("shared-refresh-user"),
+    );
+    let losing_shared_ticket =
+        cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
+    let winning_shared_ticket =
+        cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
+    cache_context.publish_if_newest_accepted(
+        winning_shared_ticket,
+        &create_test_server_info("Codex Apps"),
+        vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "newer")],
+    );
+
+    let adopted = manager
+        .publish_codex_apps_catalog(
+            manager.begin_codex_apps_refresh(),
+            Some(&cache_context),
+            Some(losing_shared_ticket),
+            &create_test_server_info("Codex Apps"),
+            vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "older")],
+        )
+        .await;
+
+    assert_eq!(adopted[0].callable_name, "newer");
+    assert_eq!(manager.catalog_revision().await, 1);
+    assert_eq!(
+        manager
+            .codex_apps_tools_override()
+            .expect("locally adopted catalog")[0]
+            .callable_name,
+        "newer"
+    );
+}
+
+#[tokio::test]
+async fn shared_catalog_generation_invalidates_another_managers_binding() {
+    let codex_home = tempdir().expect("tempdir");
+    let cache = CodexAppsToolsCache::default();
+    let cache_context = cache.context(
+        codex_home.path().to_path_buf(),
+        CodexAppsToolsCacheKey {
+            account_id: Some("shared-account".to_string()),
+            chatgpt_user_id: Some("shared-user".to_string()),
+            is_workspace_account: false,
+        },
+    );
+    cache_context.store_current_tools_for_test(vec![create_test_tool(
+        CODEX_APPS_MCP_SERVER_NAME,
+        "v1_tool",
+    )]);
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let mut observing_manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    observing_manager.clients.insert(
+        CODEX_APPS_MCP_SERVER_NAME.to_string(),
+        AsyncManagedClient {
+            client: futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Err(
+                StartupOutcomeError::Failed {
+                    error: "pending shared-cache observer".to_string(),
+                    is_authentication_required: false,
+                },
+            ))
+            .boxed()
+            .shared(),
+            is_codex_apps_mcp_server: true,
+            cached_server_info: None,
+            codex_apps_tools_cache_context: Some(cache_context.clone()),
+            tool_catalog_cache_context: None,
+            tool_filter: ToolFilter::default(),
+            startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            startup_reconnect: None,
+            tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
+            cancel_token: CancellationToken::new(),
+        },
+    );
+    let observing_manager = Arc::new(observing_manager);
+    let first_binding = crate::binding::McpBinding::capture(Arc::clone(&observing_manager)).await;
+    assert!(
+        first_binding
+            .tool(CODEX_APPS_MCP_SERVER_NAME, "v1_tool")
+            .is_some()
+    );
+
+    let publishing_manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    let shared_ticket = cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
+    publishing_manager
+        .publish_codex_apps_catalog(
+            publishing_manager.begin_codex_apps_refresh(),
+            Some(&cache_context),
+            Some(shared_ticket),
+            &create_test_server_info("Codex Apps"),
+            vec![create_test_tool(
+                CODEX_APPS_MCP_SERVER_NAME,
+                "v2_tool",
+            )],
+        )
+        .await;
+
+    assert!(!first_binding.is_current().await);
+    let next_binding = crate::binding::McpBinding::capture(observing_manager).await;
+    assert!(
+        next_binding
+            .tool(CODEX_APPS_MCP_SERVER_NAME, "v1_tool")
+            .is_none()
+    );
+    assert!(
+        next_binding
+            .tool(CODEX_APPS_MCP_SERVER_NAME, "v2_tool")
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn shared_stdio_catalog_generation_invalidates_a_pending_managers_binding() {
+    let cache = McpToolCatalogCache::default();
+    let runtime_context = McpRuntimeContext::new(
+        Arc::new(EnvironmentManager::without_environments()),
+        PathBuf::from("/workspace"),
+    );
+    let config = serde_json::from_value::<McpServerConfig>(serde_json::json!({
+        "command": "docs-mcp",
+    }))
+    .expect("MCP config");
+    let cache_context = cache
+        .context(
+            "docs",
+            &config,
+            &runtime_context,
+            /*resolved_environment*/ None,
+            &ElicitationCapability::default(),
+            /*supports_openai_form_elicitation*/ false,
+        )
+        .expect("cache context");
+    cache_context.publish_if_newest(
+        cache_context.begin_fetch(),
+        &[create_test_tool("docs", "v1_tool")],
+    );
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let mut manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    manager.clients.insert(
+        "docs".to_string(),
+        AsyncManagedClient {
+            client: futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Err(
+                StartupOutcomeError::Failed {
+                    error: "pending cache observer".to_string(),
+                    is_authentication_required: false,
+                },
+            ))
+            .boxed()
+            .shared(),
+            is_codex_apps_mcp_server: false,
+            cached_server_info: None,
+            codex_apps_tools_cache_context: None,
+            tool_catalog_cache_context: Some(cache_context.clone()),
+            tool_filter: ToolFilter::default(),
+            startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+            startup_reconnect: None,
+            tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
+            cancel_token: CancellationToken::new(),
+        },
+    );
+    let manager = Arc::new(manager);
+    let first_binding = crate::binding::McpBinding::capture(Arc::clone(&manager)).await;
+    assert!(first_binding.tool("docs", "v1_tool").is_some());
+
+    cache_context.publish_if_newest(
+        cache_context.begin_fetch(),
+        &[create_test_tool("docs", "v2_tool")],
+    );
+
+    assert!(!first_binding.is_current().await);
+    let next_binding = crate::binding::McpBinding::capture(manager).await;
+    assert!(next_binding.tool("docs", "v1_tool").is_none());
+    assert!(next_binding.tool("docs", "v2_tool").is_some());
 }
 
 #[tokio::test(start_paused = true)]
