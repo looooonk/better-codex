@@ -2,6 +2,8 @@ pub mod catalog;
 mod config;
 mod extension;
 mod fragments;
+// Host loading is staged before its crate-internal runtime caller in this PR stack.
+#[allow(dead_code)]
 mod loader;
 pub mod provider;
 mod render;
