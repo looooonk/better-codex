@@ -2245,7 +2245,7 @@ impl Session {
         let effective_approval_id = approval_id.clone().unwrap_or_else(|| call_id.clone());
         // Add the tx_approve callback to the map before sending the request.
         let (tx_approve, rx_approve) = oneshot::channel();
-        let inserted = {
+        let prev_entry = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
@@ -2607,7 +2607,7 @@ impl Session {
     ) -> Option<RequestPermissionsResponse> {
         let _elicitation = self.services.elicitations.register();
         let (tx_response, rx_response) = oneshot::channel();
-        let prev_entry = {
+        let inserted = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
@@ -2621,11 +2621,12 @@ impl Session {
                             response_constraint,
                         },
                     )
+                    .is_ok()
                 }
-                None => None,
+                None => false,
             }
         };
-        if inserted.is_err() {
+        if !inserted {
             warn!("Rejecting reused pending request_permissions call_id: {call_id}");
             return Some(RequestPermissionsResponse {
                 permissions: RequestPermissionProfile::default(),
