@@ -28,7 +28,6 @@ pub use codex_core_skills::model;
 pub use codex_core_skills::remote;
 pub use codex_core_skills::render;
 pub use codex_core_skills::render::SkillRenderSideEffects;
-pub use codex_core_skills::system;
 pub use codex_skills::SkillMetadata;
 pub use codex_skills::SkillPolicy;
 pub use codex_skills_extension::HostSkillsLoadInput;

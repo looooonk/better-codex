@@ -21,9 +21,10 @@ use codex_core_skills::config_rules::resolve_disabled_skill_paths;
 use codex_core_skills::config_rules::skill_config_rules_from_stack;
 use codex_core_skills::loader::SkillRoot;
 use codex_core_skills::loader::load_skills_from_roots;
-use codex_core_skills::loader::skill_roots;
 use codex_skills::install_system_skills;
 use codex_skills::system_cache_root_dir;
+
+use crate::host_roots::resolve_skill_roots;
 
 #[derive(Debug, Clone)]
 pub struct HostSkillsLoadInput {
@@ -150,7 +151,7 @@ impl HostSkillsService {
         input: &HostSkillsLoadInput,
         fs: Option<Arc<dyn ExecutorFileSystem>>,
     ) -> Vec<SkillRoot> {
-        let mut roots = skill_roots(
+        let mut roots = resolve_skill_roots(
             fs,
             &input.config_layer_stack,
             &input.cwd,
@@ -178,7 +179,7 @@ impl HostSkillsService {
             return snapshot;
         }
 
-        let mut roots = skill_roots(
+        let mut roots = resolve_skill_roots(
             fs.clone(),
             &input.config_layer_stack,
             &input.cwd,
