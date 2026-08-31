@@ -109,6 +109,7 @@ mod input_router;
 mod integrations;
 mod interactive_requests;
 mod local_app_theme;
+mod login_method_availability;
 mod mcp_management;
 mod modal_view;
 mod navigation;
@@ -184,6 +185,7 @@ use integrations::McpInventorySummary;
 use integrations::PluginInventorySummary;
 use interactive_requests::InteractiveRequestRemoval;
 use interactive_requests::PendingInteractiveRequest;
+use login_method_availability::LoginMethodAvailability;
 use mcp_management::McpManagementState;
 use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
@@ -1450,7 +1452,12 @@ impl ShellState {
                 if account_change_blocked {
                     self.push_status("finish active work before logging in");
                 } else {
-                    self.open_account_auth(config.forced_login_method);
+                    let login_methods = if app_server.uses_remote_workspace() {
+                        LoginMethodAvailability::connected_workspace()
+                    } else {
+                        LoginMethodAvailability::from_auth_config(&config.auth_config())
+                    };
+                    self.open_account_auth(login_methods);
                 }
                 LocalSlashCommandOutcome::Continue
             }

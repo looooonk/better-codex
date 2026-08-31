@@ -6,11 +6,13 @@ use codex_config::types::ApprovalsReviewer;
 use codex_core::CodexThread;
 use codex_core::config::Constrained;
 use codex_core::sandboxing::SandboxPermissions;
+use codex_exec_server::RemoveOptions;
 use codex_features::Feature;
 use codex_protocol::approvals::NetworkApprovalProtocol;
 use codex_protocol::approvals::NetworkPolicyAmendment;
 use codex_protocol::approvals::NetworkPolicyRuleAction;
 use codex_protocol::models::BUILT_IN_PERMISSION_PROFILE_WORKSPACE;
+use codex_protocol::models::NetworkPermissions;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
@@ -26,6 +28,9 @@ use codex_protocol::protocol::GranularApprovalConfig;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::SandboxPolicy;
+use codex_protocol::request_permissions::PermissionGrantScope;
+use codex_protocol::request_permissions::RequestPermissionProfile;
+use codex_protocol::request_permissions::RequestPermissionsResponse;
 use codex_protocol::user_input::UserInput;
 use core_test_support::managed_network_requirements_loader;
 use core_test_support::responses::ev_apply_patch_custom_tool_call;
@@ -36,9 +41,13 @@ use core_test_support::responses::ev_function_call_with_namespace;
 use core_test_support::responses::ev_response_created;
 use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::mount_sse_once_match;
+use core_test_support::responses::mount_sse_sequence;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::skip_if_no_network;
+use core_test_support::skip_if_wine_exec;
+use core_test_support::streaming_sse::StreamingSseChunk;
+use core_test_support::streaming_sse::start_streaming_sse_server;
 use core_test_support::test_codex::TestCodex;
 use core_test_support::test_codex::local_selections;
 use core_test_support::test_codex::test_codex;
@@ -62,6 +71,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tempfile::TempDir;
 use test_case::test_case;
+use tokio::sync::oneshot;
 use wiremock::Mock;
 use wiremock::MockServer;
 use wiremock::Request;
@@ -313,6 +323,14 @@ fn shell_apply_patch_command(patch: &str) -> String {
     }
     script.push_str("PATCH\n");
     script
+}
+
+fn write_marker_command(path: &std::path::Path, content: &str) -> Result<String> {
+    let script = format!(
+        "from pathlib import Path; Path({:?}).write_text({content:?}, encoding='utf-8')",
+        path.display().to_string(),
+    );
+    shlex::try_join(["python3", "-c", script.as_str()]).map_err(Into::into)
 }
 
 fn shell_event(
@@ -656,6 +674,23 @@ async fn submit_turn(
     approval_policy: AskForApproval,
     sandbox_policy: SandboxPolicy,
 ) -> Result<()> {
+    submit_turn_with_reviewer(
+        test,
+        prompt,
+        approval_policy,
+        ApprovalsReviewer::User,
+        sandbox_policy,
+    )
+    .await
+}
+
+async fn submit_turn_with_reviewer(
+    test: &TestCodex,
+    prompt: &str,
+    approval_policy: AskForApproval,
+    approvals_reviewer: ApprovalsReviewer,
+    sandbox_policy: SandboxPolicy,
+) -> Result<()> {
     let session_model = test.session_configured.model.clone();
 
     test.codex
@@ -668,9 +703,12 @@ async fn submit_turn(
             responsesapi_client_metadata: None,
             additional_context: Default::default(),
             thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
-                environments: Some(local_selections(test.config.cwd.clone())),
+                environments: Some(codex_protocol::protocol::TurnEnvironmentSelections::new(
+                    test.config.cwd.clone(),
+                    vec![test.executor_environment().selection().clone()],
+                )),
                 approval_policy: Some(approval_policy),
-                approvals_reviewer: Some(ApprovalsReviewer::User),
+                approvals_reviewer: Some(approvals_reviewer),
                 sandbox_policy: Some(sandbox_policy),
                 collaboration_mode: Some(codex_protocol::config_types::CollaborationMode {
                     mode: codex_protocol::config_types::ModeKind::Default,
@@ -1315,6 +1353,42 @@ fn scenarios() -> Vec<ScenarioSpec> {
             },
         },
         ScenarioSpec {
+            name: "read_only_on_request_timeout_blocks_execution",
+            approval_policy: OnRequest,
+            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            action: ActionKind::RunCommand {
+                command: "sh -c 'printf not-run'",
+            },
+            sandbox_permissions: SandboxPermissions::RequireEscalated,
+            features: vec![],
+            model_override: None,
+            outcome: Outcome::ExecApproval {
+                decision: ReviewDecision::TimedOut,
+                expected_reason: None,
+            },
+            expectation: Expectation::CommandFailure {
+                output_contains: "approval request timed out",
+            },
+        },
+        ScenarioSpec {
+            name: "read_only_on_request_abort_stops_turn",
+            approval_policy: OnRequest,
+            sandbox_policy: SandboxPolicy::new_read_only_policy(),
+            action: ActionKind::RunCommand {
+                command: "sh -c 'printf not-run'",
+            },
+            sandbox_permissions: SandboxPermissions::RequireEscalated,
+            features: vec![],
+            model_override: None,
+            outcome: Outcome::ExecApproval {
+                decision: ReviewDecision::Abort,
+                expected_reason: None,
+            },
+            expectation: Expectation::CommandFailure {
+                output_contains: "turn aborted before output",
+            },
+        },
+        ScenarioSpec {
             name: "read_only_on_request_network_escalates_when_approved",
             approval_policy: OnRequest,
             sandbox_policy: SandboxPolicy::new_read_only_policy(),
@@ -1869,7 +1943,21 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
             fs::write(rules_dir.join("default.rules"), policy_src).expect("write policy");
         });
     }
-    let test = builder.build(&server).await?;
+    let use_auto_env = matches!(
+        &scenario.outcome,
+        Outcome::ExecApproval {
+            decision: ReviewDecision::TimedOut | ReviewDecision::Abort,
+            ..
+        }
+    );
+    if use_auto_env {
+        skip_if_wine_exec!(Ok(()), "approval prompts require host-native paths");
+    }
+    let test = if use_auto_env {
+        builder.build_with_auto_env(&server).await?
+    } else {
+        builder.build(&server).await?
+    };
 
     let call_id = scenario.name;
     let (event, expected_command) = scenario
@@ -1933,7 +2021,14 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
                     decision: decision.clone(),
                 })
                 .await?;
-            wait_for_completion(&test).await;
+            if matches!(decision, ReviewDecision::Abort) {
+                wait_for_event(&test.codex, |event| {
+                    matches!(event, EventMsg::TurnAborted(_))
+                })
+                .await;
+            } else {
+                wait_for_completion(&test).await;
+            }
         }
         Outcome::ExecApprovalWithAmendment {
             decision,
@@ -1992,6 +2087,36 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
         }
     }
 
+    if matches!(
+        &scenario.outcome,
+        Outcome::ExecApproval {
+            decision: ReviewDecision::Abort,
+            ..
+        }
+    ) {
+        assert!(results_mock.requests().is_empty());
+        submit_turn(
+            &test,
+            "continue after the aborted approval",
+            scenario.approval_policy,
+            scenario.sandbox_policy.clone(),
+        )
+        .await?;
+        wait_for_completion(&test).await;
+        let request = results_mock.single_request();
+        let output = request.function_call_output(call_id);
+        assert_eq!(
+            output,
+            json!({
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": "aborted",
+            }),
+            "resumed request should balance the aborted approval"
+        );
+        return Ok(());
+    }
+
     let output_request = results_mock.single_request();
     let output_item = if matches!(scenario.action, ActionKind::ApplyPatchFreeform { .. }) {
         output_request.custom_tool_call_output(call_id)
@@ -2004,6 +2129,521 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
         scenario.name, result.exit_code, result.stdout
     );
     scenario.expectation.verify(&test, &result)?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn current_turn_policy_update_routes_sandbox_retry_to_guardian() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    skip_if_wine_exec!(Ok(()), "approval prompts require host-native paths");
+
+    let server = start_mock_server().await;
+    let sandbox_policy = SandboxPolicy::WorkspaceWrite {
+        writable_roots: vec![],
+        network_access: false,
+        exclude_tmpdir_env_var: true,
+        exclude_slash_tmp: true,
+    };
+    let sandbox_policy_for_config = sandbox_policy.clone();
+    let mut builder = test_codex().with_config(move |config| {
+        config.permissions.approval_policy = Constrained::allow_any(AskForApproval::UnlessTrusted);
+        config
+            .set_legacy_sandbox_policy(sandbox_policy_for_config)
+            .expect("set sandbox policy");
+    });
+    let test = builder.build_with_auto_env(&server).await?;
+
+    let selected_cwd = &test.executor_environment().selection().cwd;
+    let started = selected_cwd.join("live-policy-started")?;
+    let release = selected_cwd.join("live-policy-release")?;
+    let outside = selected_cwd
+        .parent()
+        .context("test cwd should have a parent")?
+        .join(&format!(
+            "live-policy-outside-{}",
+            test.session_configured.thread_id
+        ))?;
+    let outside_path = outside.inferred_native_path_string();
+    let outside_arg = shlex::try_join([outside_path.as_str()])?;
+    let command = format!(
+        "touch live-policy-started; while [ ! -f live-policy-release ]; do sleep 0.05; done; touch {outside_arg}"
+    );
+    let call_id = "live-policy-sandbox-retry";
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-live-policy-1"),
+                shell_event(
+                    call_id,
+                    &command,
+                    /*timeout_ms*/ 30_000,
+                    SandboxPermissions::UseDefault,
+                )?,
+                ev_completed("resp-live-policy-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-live-policy-2"),
+                ev_assistant_message(
+                    "msg-live-policy-guardian",
+                    &json!({
+                        "risk_level": "low",
+                        "user_authorization": "high",
+                        "outcome": "allow",
+                        "rationale": "The test retry is safe.",
+                    })
+                    .to_string(),
+                ),
+                ev_completed("resp-live-policy-2"),
+            ]),
+            sse(vec![
+                ev_assistant_message("msg-live-policy", "done"),
+                ev_completed("resp-live-policy-3"),
+            ]),
+        ],
+    )
+    .await;
+
+    submit_turn_with_reviewer(
+        &test,
+        "apply a live approval policy update",
+        AskForApproval::UnlessTrusted,
+        ApprovalsReviewer::AutoReview,
+        sandbox_policy,
+    )
+    .await?;
+    let approval = expect_exec_approval(&test, &command).await;
+    test.codex
+        .submit(Op::ExecApproval {
+            id: approval.effective_approval_id(),
+            turn_id: None,
+            decision: ReviewDecision::Approved,
+        })
+        .await?;
+
+    let executor_fs = test.fs();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while executor_fs
+            .read_file(&started, /*sandbox*/ None)
+            .await
+            .is_err()
+        {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .context("sandboxed attempt did not start")?;
+    core_test_support::submit_thread_settings(
+        &test.codex,
+        codex_protocol::protocol::ThreadSettingsOverrides {
+            approval_policy: Some(AskForApproval::Granular(GranularApprovalConfig {
+                sandbox_approval: true,
+                rules: true,
+                skill_approval: true,
+                request_permissions: true,
+                mcp_elicitations: true,
+            })),
+            ..Default::default()
+        },
+    )
+    .await?;
+    executor_fs
+        .write_file(&release, Vec::new(), /*sandbox*/ None)
+        .await?;
+
+    wait_for_completion(&test).await;
+    assert_eq!(responses.requests().len(), 3);
+    executor_fs.read_file(&outside, /*sandbox*/ None).await?;
+    executor_fs
+        .remove(
+            &outside,
+            RemoveOptions {
+                recursive: false,
+                force: true,
+            },
+            /*sandbox*/ None,
+        )
+        .await?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_never_policy_revokes_pending_user_approval_without_caching_it() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let marker_dir = tempfile::tempdir()?;
+    let marker = marker_dir.path().join("live-never-pending-user");
+    let _ = fs::remove_file(&marker);
+    let command = write_marker_command(&marker, "executed")?;
+    let first_call_id = "live-never-pending-user-1";
+    let second_call_id = "live-never-pending-user-2";
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-live-never-user-1"),
+                shell_event(
+                    first_call_id,
+                    &command,
+                    /*timeout_ms*/ 5_000,
+                    SandboxPermissions::RequireEscalated,
+                )?,
+                ev_completed("resp-live-never-user-1"),
+            ]),
+            sse(vec![
+                ev_assistant_message("msg-live-never-user-1", "policy prevented execution"),
+                ev_completed("resp-live-never-user-2"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-live-never-user-3"),
+                shell_event(
+                    second_call_id,
+                    &command,
+                    /*timeout_ms*/ 5_000,
+                    SandboxPermissions::RequireEscalated,
+                )?,
+                ev_completed("resp-live-never-user-3"),
+            ]),
+            sse(vec![
+                ev_assistant_message("msg-live-never-user-2", "second request denied"),
+                ev_completed("resp-live-never-user-4"),
+            ]),
+        ],
+    )
+    .await;
+    let mut builder = test_codex().with_config(|config| {
+        config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+        config
+            .set_legacy_sandbox_policy(SandboxPolicy::new_read_only_policy())
+            .expect("set sandbox policy");
+    });
+    let test = builder.build(&server).await?;
+
+    submit_turn(
+        &test,
+        "wait for the live policy before executing",
+        AskForApproval::OnRequest,
+        SandboxPolicy::new_read_only_policy(),
+    )
+    .await?;
+    let first_approval = expect_exec_approval(&test, &command).await;
+    core_test_support::submit_thread_settings(
+        &test.codex,
+        codex_protocol::protocol::ThreadSettingsOverrides {
+            approval_policy: Some(AskForApproval::Never),
+            ..Default::default()
+        },
+    )
+    .await?;
+    test.codex
+        .submit(Op::ExecApproval {
+            id: first_approval.effective_approval_id(),
+            turn_id: None,
+            decision: ReviewDecision::ApprovedForSession,
+        })
+        .await?;
+    wait_for_completion(&test).await;
+    assert!(!marker.exists(), "revoked approval must not execute");
+
+    submit_turn(
+        &test,
+        "retry after restoring the approval policy",
+        AskForApproval::OnRequest,
+        SandboxPolicy::new_read_only_policy(),
+    )
+    .await?;
+    let second_approval = expect_exec_approval(&test, &command).await;
+    test.codex
+        .submit(Op::ExecApproval {
+            id: second_approval.effective_approval_id(),
+            turn_id: None,
+            decision: ReviewDecision::denied(),
+        })
+        .await?;
+    wait_for_completion(&test).await;
+    assert_eq!(responses.requests().len(), 4);
+    assert!(!marker.exists(), "denied retry must not execute");
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_reviewer_change_reroutes_pending_user_approval_to_guardian() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let marker_dir = tempfile::tempdir()?;
+    let marker = marker_dir.path().join("live-reviewer-reroute");
+    let _ = fs::remove_file(&marker);
+    let command = write_marker_command(&marker, "guardian-approved")?;
+    let call_id = "live-reviewer-reroute-call";
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-live-reviewer-1"),
+                shell_event(
+                    call_id,
+                    &command,
+                    /*timeout_ms*/ 5_000,
+                    SandboxPermissions::RequireEscalated,
+                )?,
+                ev_completed("resp-live-reviewer-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-live-reviewer-2"),
+                ev_assistant_message(
+                    "msg-live-reviewer-guardian",
+                    &json!({
+                        "risk_level": "low",
+                        "user_authorization": "high",
+                        "outcome": "allow",
+                        "rationale": "The test marker write is safe.",
+                    })
+                    .to_string(),
+                ),
+                ev_completed("resp-live-reviewer-2"),
+            ]),
+            sse(vec![
+                ev_assistant_message("msg-live-reviewer", "done"),
+                ev_completed("resp-live-reviewer-3"),
+            ]),
+        ],
+    )
+    .await;
+    let mut builder = test_codex().with_config(|config| {
+        config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+        config
+            .set_legacy_sandbox_policy(SandboxPolicy::new_read_only_policy())
+            .expect("set sandbox policy");
+        config.approvals_reviewer = ApprovalsReviewer::User;
+    });
+    let test = builder.build(&server).await?;
+
+    submit_turn_with_reviewer(
+        &test,
+        "honor the current reviewer before executing",
+        AskForApproval::OnRequest,
+        ApprovalsReviewer::User,
+        SandboxPolicy::new_read_only_policy(),
+    )
+    .await?;
+    let approval = expect_exec_approval(&test, &command).await;
+    core_test_support::submit_thread_settings(
+        &test.codex,
+        codex_protocol::protocol::ThreadSettingsOverrides {
+            approvals_reviewer: Some(ApprovalsReviewer::AutoReview),
+            ..Default::default()
+        },
+    )
+    .await?;
+    test.codex
+        .submit(Op::ExecApproval {
+            id: approval.effective_approval_id(),
+            turn_id: None,
+            decision: ReviewDecision::Approved,
+        })
+        .await?;
+
+    wait_for_completion(&test).await;
+    assert_eq!(responses.requests().len(), 3);
+    assert_eq!(fs::read_to_string(&marker)?, "guardian-approved");
+    fs::remove_file(marker)?;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_never_policy_revokes_pending_guardian_approval() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let marker_dir = tempfile::tempdir()?;
+    let marker = marker_dir.path().join("live-never-pending-guardian");
+    let command = write_marker_command(&marker, "executed")?;
+    let call_id = "live-never-pending-guardian-call";
+    let (release_tx, release_rx) = oneshot::channel();
+    let chunk = |events| StreamingSseChunk {
+        gate: None,
+        body: sse(events),
+    };
+    let (server, _completions) = start_streaming_sse_server(vec![
+        vec![chunk(vec![
+            ev_response_created("resp-live-never-guardian-1"),
+            shell_event(
+                call_id,
+                &command,
+                /*timeout_ms*/ 5_000,
+                SandboxPermissions::RequireEscalated,
+            )?,
+            ev_completed("resp-live-never-guardian-1"),
+        ])],
+        vec![
+            chunk(vec![ev_response_created("resp-live-never-guardian-2")]),
+            StreamingSseChunk {
+                gate: Some(release_rx),
+                body: sse(vec![
+                    ev_assistant_message(
+                        "msg-live-never-guardian-review",
+                        &json!({
+                            "risk_level": "low",
+                            "user_authorization": "high",
+                            "outcome": "allow",
+                            "rationale": "The test marker write is safe.",
+                        })
+                        .to_string(),
+                    ),
+                    ev_completed("resp-live-never-guardian-2"),
+                ]),
+            },
+        ],
+        vec![chunk(vec![
+            ev_assistant_message("msg-live-never-guardian", "policy prevented execution"),
+            ev_completed("resp-live-never-guardian-3"),
+        ])],
+    ])
+    .await;
+    let test = test_codex()
+        .with_config(|config| {
+            config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+            config
+                .set_legacy_sandbox_policy(SandboxPolicy::new_read_only_policy())
+                .expect("set sandbox policy");
+            config.approvals_reviewer = ApprovalsReviewer::AutoReview;
+        })
+        .build_with_streaming_server(&server)
+        .await?;
+
+    submit_turn_with_reviewer(
+        &test,
+        "honor a policy update while Guardian is reviewing",
+        AskForApproval::OnRequest,
+        ApprovalsReviewer::AutoReview,
+        SandboxPolicy::new_read_only_policy(),
+    )
+    .await?;
+    server.wait_for_request_count(2).await;
+    core_test_support::submit_thread_settings(
+        &test.codex,
+        codex_protocol::protocol::ThreadSettingsOverrides {
+            approval_policy: Some(AskForApproval::Never),
+            ..Default::default()
+        },
+    )
+    .await?;
+    release_tx
+        .send(())
+        .map_err(|()| anyhow::anyhow!("Guardian stream closed before barrier release"))?;
+
+    wait_for_completion(&test).await;
+    assert!(
+        !marker.exists(),
+        "revoked Guardian approval must not execute"
+    );
+    assert_eq!(server.requests().await.len(), 3);
+    server.shutdown().await;
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn strict_mode_activating_while_skip_waits_routes_action_to_guardian() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+    skip_if_wine_exec!(Ok(()), "request_permissions requires a host-native cwd");
+
+    let server = start_mock_server().await;
+    let marker_dir = tempfile::tempdir()?;
+    let marker = marker_dir.path().join("strict-queued-skip");
+    let _ = fs::remove_file(&marker);
+    let command = write_marker_command(&marker, "strict-reviewed")?;
+    let permission_call_id = "strict-queued-permission";
+    let command_call_id = "strict-queued-command";
+    let permission_args = serde_json::to_string(&json!({
+        "reason": "Enable strict review before the queued action",
+        "permissions": RequestPermissionProfile {
+            network: Some(NetworkPermissions { enabled: Some(true) }),
+            ..Default::default()
+        },
+    }))?;
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-strict-queued-1"),
+                ev_function_call(permission_call_id, "request_permissions", &permission_args),
+                shell_event(
+                    command_call_id,
+                    &command,
+                    /*timeout_ms*/ 5_000,
+                    SandboxPermissions::UseDefault,
+                )?,
+                ev_completed("resp-strict-queued-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-strict-queued-2"),
+                ev_assistant_message(
+                    "msg-strict-queued-guardian",
+                    &json!({
+                        "risk_level": "low",
+                        "user_authorization": "high",
+                        "outcome": "allow",
+                        "rationale": "The queued marker write is safe.",
+                    })
+                    .to_string(),
+                ),
+                ev_completed("resp-strict-queued-2"),
+            ]),
+            sse(vec![
+                ev_assistant_message("msg-strict-queued", "done"),
+                ev_completed("resp-strict-queued-3"),
+            ]),
+        ],
+    )
+    .await;
+    let mut builder = test_codex().with_config(|config| {
+        config.permissions.approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+        config
+            .set_legacy_sandbox_policy(SandboxPolicy::DangerFullAccess)
+            .expect("set sandbox policy");
+        config
+            .features
+            .enable(Feature::RequestPermissionsTool)
+            .expect("enable request permissions");
+    });
+    let test = builder.build_with_auto_env(&server).await?;
+
+    submit_turn_with_reviewer(
+        &test,
+        "grant strict review while the action waits for admission",
+        AskForApproval::OnRequest,
+        ApprovalsReviewer::User,
+        SandboxPolicy::DangerFullAccess,
+    )
+    .await?;
+    let event = wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::RequestPermissions(_))
+    })
+    .await;
+    let EventMsg::RequestPermissions(request) = event else {
+        panic!("expected request permissions event")
+    };
+    test.codex
+        .submit(Op::RequestPermissionsResponse {
+            id: permission_call_id.to_string(),
+            response: RequestPermissionsResponse {
+                permissions: request.permissions,
+                scope: PermissionGrantScope::Turn,
+                strict_auto_review: true,
+            },
+        })
+        .await?;
+
+    wait_for_completion(&test).await;
+    assert_eq!(responses.requests().len(), 3);
+    assert_eq!(fs::read_to_string(&marker)?, "strict-reviewed");
+    fs::remove_file(marker)?;
 
     Ok(())
 }

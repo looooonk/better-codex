@@ -139,6 +139,7 @@ pub struct TurnContext {
     pub(crate) multi_agent_version: MultiAgentVersion,
     pub(crate) personality: Option<Personality>,
     pub(crate) approval_policy: LiveApprovalPolicy,
+    pub(crate) approvals_reviewer: LiveApprovalsReviewer,
     pub(crate) permission_profile: PermissionProfile,
     pub(crate) network: Option<NetworkProxy>,
     pub(crate) windows_sandbox_level: WindowsSandboxLevel,
@@ -161,11 +162,6 @@ enum TurnMultiAgentRuntime {
 }
 
 impl TurnContext {
-    pub(crate) fn item_ids_enabled(&self) -> bool {
-        self.config.features.enabled(Feature::ItemIds)
-            || matches!(self.history_mode, ThreadHistoryMode::Paginated)
-    }
-
     pub(crate) fn permission_profile(&self) -> PermissionProfile {
         self.permission_profile.clone()
     }
@@ -292,6 +288,7 @@ impl TurnContext {
             multi_agent_version: self.multi_agent_version,
             personality: self.personality,
             approval_policy: self.approval_policy.clone(),
+            approvals_reviewer: self.approvals_reviewer.clone(),
             permission_profile: self.permission_profile.clone(),
             network: self.network.clone(),
             windows_sandbox_level: self.windows_sandbox_level,
@@ -566,6 +563,9 @@ impl Session {
             multi_agent_version,
             personality: session_configuration.personality,
             approval_policy: LiveApprovalPolicy::new(session_configuration.approval_policy.clone()),
+            approvals_reviewer: LiveApprovalsReviewer::new(
+                session_configuration.approvals_reviewer,
+            ),
             permission_profile,
             network,
             windows_sandbox_level: session_configuration.windows_sandbox_level,

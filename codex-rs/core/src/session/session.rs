@@ -522,13 +522,7 @@ impl Session {
             session_configuration.thread_source.as_ref(),
             Some(ThreadSource::Subagent)
         );
-        if (config.features.enabled(Feature::ItemIds)
-            || matches!(
-                session_configuration.history_mode,
-                ThreadHistoryMode::Paginated
-            ))
-            && let InitialHistory::Forked(items) = &mut initial_history
-        {
+        if let InitialHistory::Forked(items) = &mut initial_history {
             Self::assign_missing_rollout_response_item_ids(items);
         }
         let multi_agent_version = multi_agent_version.map(OnceLock::from).unwrap_or_default();
@@ -1136,11 +1130,6 @@ impl Session {
                     config.features.enabled(Feature::EnableRequestCompression),
                     config.features.enabled(Feature::RuntimeMetrics),
                     Self::build_model_client_beta_features_header(config.as_ref()),
-                    /*item_ids_enabled*/ config.features.enabled(Feature::ItemIds)
-                        || matches!(
-                            session_configuration.history_mode,
-                            ThreadHistoryMode::Paginated
-                        ),
                     /*concurrent_reasoning_summaries_enabled*/ config
                         .features
                         .enabled(Feature::ConcurrentReasoningSummaries),
@@ -1243,6 +1232,7 @@ impl Session {
                 sess.services.mcp_manager.tool_catalog_cache(),
                 codex_apps_tools_cache_key(auth),
                 config.prefix_mcp_tool_names(),
+                mcp_projection.config.protocol_mode,
                 mcp_projection
                     .config
                     .client_elicitation_capability

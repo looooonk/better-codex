@@ -206,7 +206,7 @@ pub(crate) mod context_window;
 mod handlers;
 mod inject;
 mod input_queue;
-mod live_approval_policy;
+pub(crate) mod live_approval_policy;
 mod mcp;
 mod mcp_runtime;
 pub(crate) mod multi_agents;
@@ -231,6 +231,7 @@ pub(crate) use self::input_queue::InputQueueActivity;
 pub(crate) use self::input_queue::TurnInput;
 pub(crate) use self::input_queue::TurnInputQueue;
 use self::live_approval_policy::LiveApprovalPolicy;
+use self::live_approval_policy::LiveApprovalsReviewer;
 pub use self::mcp_runtime::McpRuntimeSnapshot;
 use self::review::spawn_review_thread;
 use self::session::AppServerClientMetadata;
@@ -1396,9 +1397,7 @@ impl Session {
             }
             InitialHistory::Forked(mut rollout_items) => {
                 let turn_context = self.new_default_turn().await;
-                if turn_context.item_ids_enabled() {
-                    Self::assign_missing_rollout_response_item_ids(&mut rollout_items);
-                }
+                Self::assign_missing_rollout_response_item_ids(&mut rollout_items);
                 self.apply_rollout_reconstruction(&turn_context, &rollout_items)
                     .await;
 
@@ -1534,7 +1533,13 @@ impl Session {
         updates: SessionSettingsUpdate,
     ) -> ConstraintResult<()> {
         let notify_config_contributors = !self.services.extensions.config_contributors().is_empty();
-        let (previous_config, new_config, permission_profile_changed, updated_approval_policy) = {
+        let (
+            previous_config,
+            new_config,
+            permission_profile_changed,
+            updated_approval_policy,
+            updated_approvals_reviewer,
+        ) = {
             let mut state = self.state.lock().await;
             let updated = match state.session_configuration.apply(&updates) {
                 Ok(updated) => updated,
@@ -1555,6 +1560,9 @@ impl Session {
             let updated_approval_policy = (state.session_configuration.approval_policy
                 != updated.approval_policy)
                 .then(|| updated.approval_policy.clone());
+            let updated_approvals_reviewer = (state.session_configuration.approvals_reviewer
+                != updated.approvals_reviewer)
+                .then_some(updated.approvals_reviewer);
             if updates.environments.is_some() {
                 self.services
                     .turn_environments
@@ -1566,10 +1574,11 @@ impl Session {
                 new_config,
                 permission_profile_changed,
                 updated_approval_policy,
+                updated_approvals_reviewer,
             )
         };
         self.emit_config_changed_contributors(previous_config.as_ref(), new_config.as_ref());
-        if let Some(approval_policy) = updated_approval_policy {
+        if updated_approval_policy.is_some() || updated_approvals_reviewer.is_some() {
             let active_turn_context = self
                 .active_turn
                 .lock()
@@ -1578,10 +1587,17 @@ impl Session {
                 .and_then(|turn| turn.task.as_ref())
                 .map(|task| Arc::clone(&task.turn_context));
             if let Some(turn_context) = active_turn_context {
-                turn_context
-                    .approval_policy
-                    .replace(approval_policy.clone());
+                if let Some(approval_policy) = updated_approval_policy.as_ref() {
+                    turn_context
+                        .approval_policy
+                        .replace(approval_policy.clone());
+                }
+                if let Some(approvals_reviewer) = updated_approvals_reviewer {
+                    turn_context.approvals_reviewer.replace(approvals_reviewer);
+                }
             }
+        }
+        if let Some(approval_policy) = updated_approval_policy {
             self.services
                 .latest_mcp_runtime()
                 .manager()
@@ -2817,12 +2833,15 @@ impl Session {
         // Most response items get their passthrough turn ID at the durable history boundary.
         for item in items.to_mut() {
             item.set_turn_id_if_missing(&turn_context.sub_id);
+            let create_time = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default();
+            item.set_create_time_if_missing(
+                serde_json::Number::from_f64(create_time.as_secs_f64())
+                    .unwrap_or_else(|| serde_json::Number::from(create_time.as_secs())),
+            );
         }
-        if turn_context.item_ids_enabled() {
-            Self::assign_missing_response_item_ids(items)
-        } else {
-            items
-        }
+        Self::assign_missing_response_item_ids(items)
     }
 
     fn assign_missing_response_item_ids(items: Cow<'_, [ResponseItem]>) -> Cow<'_, [ResponseItem]> {
@@ -2969,9 +2988,8 @@ impl Session {
     pub(crate) async fn record_inter_agent_communication(
         &self,
         turn_context: &TurnContext,
-        mut communication: InterAgentCommunication,
+        communication: InterAgentCommunication,
     ) {
-        communication.set_turn_id_if_missing(&turn_context.sub_id);
         let response_item = communication.to_model_input_item();
         let items = self.prepare_conversation_items_for_history(
             turn_context,
@@ -3069,17 +3087,12 @@ impl Session {
 
     pub(crate) async fn replace_compacted_history(
         &self,
-        turn_context: &TurnContext,
         items: Vec<ResponseItem>,
         reference_context_item: Option<TurnContextItem>,
         world_state_baseline: Option<Arc<WorldState>>,
         compacted_item: CompactedItem,
     ) {
-        let items = if turn_context.item_ids_enabled() {
-            Self::assign_missing_response_item_ids(Cow::Owned(items)).into_owned()
-        } else {
-            items
-        };
+        let items = Self::assign_missing_response_item_ids(Cow::Owned(items)).into_owned();
         let compacted_item = CompactedItem {
             replacement_history: Some(items.clone()),
             ..compacted_item
@@ -3595,7 +3608,6 @@ impl Session {
         context_items.extend(preserved_turn_items);
         let turn_context_item = turn_context.to_turn_context_item();
         self.replace_compacted_history(
-            turn_context,
             context_items,
             Some(turn_context_item),
             Some(world_state),

@@ -1867,6 +1867,7 @@ fn parse_mcp_tool_approval_elicitation_response(
         }
         ElicitationAction::Decline => McpToolApprovalDecision::Decline { message: None },
         ElicitationAction::Cancel => McpToolApprovalDecision::Cancel,
+        _ => McpToolApprovalDecision::Cancel,
     }
 }
 

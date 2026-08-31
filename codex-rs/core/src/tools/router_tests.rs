@@ -382,8 +382,13 @@ async fn extension_tool_executors_are_model_visible_and_dispatchable() -> anyhow
     session
         .record_conversation_items(&turn, std::slice::from_ref(&history_item))
         .await;
-    let mut expected_history_item = history_item.clone();
-    expected_history_item.set_turn_id_if_missing(&turn.sub_id);
+    let expected_history_item = session
+        .clone_history()
+        .await
+        .raw_items()
+        .first()
+        .cloned()
+        .expect("history item");
 
     let router = ToolRouter::from_context(
         step_context.as_ref(),

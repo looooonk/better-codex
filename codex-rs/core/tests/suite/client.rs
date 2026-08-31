@@ -1459,7 +1459,6 @@ async fn send_provider_auth_request(server: &MockServer, auth: ModelProviderAuth
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
-        /*item_ids_enabled*/ config.features.enabled(Feature::ItemIds),
         /*concurrent_reasoning_summaries_enabled*/
         config
             .features
@@ -3188,7 +3187,6 @@ async fn azure_responses_request_includes_store_and_prefixed_item_ids() {
         /*enable_request_compression*/ false,
         /*include_timing_metrics*/ false,
         /*beta_features_header*/ None,
-        /*item_ids_enabled*/ false,
         /*concurrent_reasoning_summaries_enabled*/ false,
         /*attestation_provider*/ None,
         config.http_client_factory(),

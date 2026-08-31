@@ -2385,6 +2385,14 @@ async fn guardian_review_surfaces_responses_api_errors_in_rejection_reason() -> 
             && rejection_message.contains(error_message),
         "rejection message should include guardian rationale: {rejection_message}"
     );
+    assert!(
+        !session
+            .services
+            .guardian_rejections
+            .lock()
+            .await
+            .contains_key("review-shell-guardian-error")
+    );
 
     Ok(())
 }

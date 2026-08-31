@@ -6,9 +6,11 @@ simple sequence for any ToolRuntime: approval → select sandbox → attempt →
 retry with an escalated sandbox strategy on denial (no re‑approval thanks to
 caching).
 */
-use super::approvals::ApprovalReviewer;
-use super::approvals::resolve_tool_apporval;
 use crate::network_policy_decision::network_approval_context_from_payload;
+use crate::tools::approval_pipeline::ApprovalContext;
+use crate::tools::approval_pipeline::POLICY_CHANGED_REJECTION;
+use crate::tools::approval_pipeline::request_approval;
+use crate::tools::approval_pipeline::routes_to_guardian;
 use crate::tools::flat_tool_name;
 use crate::tools::network_approval::ActiveNetworkApproval;
 use crate::tools::network_approval::DeferredNetworkApproval;
@@ -16,7 +18,6 @@ use crate::tools::network_approval::NetworkApprovalMode;
 use crate::tools::network_approval::begin_network_approval;
 use crate::tools::network_approval::finish_deferred_network_approval;
 use crate::tools::network_approval::finish_immediate_network_approval;
-use crate::tools::sandboxing::ApprovalCtx;
 use crate::tools::sandboxing::ExecApprovalRequirement;
 use crate::tools::sandboxing::SandboxAttempt;
 use crate::tools::sandboxing::SandboxOverride;
@@ -35,6 +36,7 @@ use codex_protocol::protocol::ReviewDecision;
 use codex_sandboxing::SandboxManager;
 use codex_sandboxing::SandboxType;
 use codex_utils_path_uri::PathUri;
+use std::sync::Arc;
 use std::time::Instant;
 
 pub(crate) struct ToolOrchestrator {
@@ -139,7 +141,6 @@ impl ToolOrchestrator {
         req: &Rq,
         tool_ctx: &ToolCtx,
         turn_ctx: &crate::session::turn_context::TurnContext,
-        approval_policy: AskForApproval,
     ) -> Result<OrchestratorRunResult<Out>, ToolError>
     where
         T: ToolRuntime<Rq, Out>,
@@ -147,9 +148,11 @@ impl ToolOrchestrator {
         let otel = turn_ctx.session_telemetry.clone();
         let otel_tn = flat_tool_name(&tool_ctx.tool_name).into_owned();
         let otel_ci = &tool_ctx.call_id;
-        let strict_auto_review = tool_ctx.session.strict_auto_review_enabled_for_turn().await;
+        let approval_policy = turn_ctx.approval_policy.value();
         // 1) Approval
         let mut already_approved = false;
+        let mut approval_never_revision = None;
+        let mut approved_under_strict = false;
 
         let workspace_roots = tool.workspace_roots(req);
         let permission_profile = turn_ctx.config.permissions.permission_profile();
@@ -167,25 +170,26 @@ impl ToolOrchestrator {
         });
         match &requirement {
             ExecApprovalRequirement::Skip { .. } => {
-                if strict_auto_review {
-                    let approval_ctx = ApprovalCtx {
-                        session: &tool_ctx.session,
-                        turn: &tool_ctx.turn,
-                        call_id: &tool_ctx.call_id,
+                if tool_ctx.session.strict_auto_review_enabled_for_turn().await {
+                    approval_never_revision =
+                        Some(turn_ctx.approval_policy.decision_snapshot().never_revision);
+                    let action = tool
+                        .approval_action(req, &tool_ctx.call_id)
+                        .map_err(|err| {
+                            ToolError::Rejected(format!("could not prepare approval action: {err}"))
+                        })?;
+                    let approval_ctx = ApprovalContext {
+                        turn: Arc::clone(&tool_ctx.turn),
+                        call_id: tool_ctx.call_id.clone(),
+                        tool_name: tool_ctx.tool_name.clone(),
+                        approval_reason: None,
                         retry_reason: None,
                         network_approval_context: None,
+                        required_by_strict: true,
                     };
-                    resolve_tool_apporval(
-                        tool,
-                        req,
-                        tool_ctx.call_id.as_str(),
-                        approval_ctx,
-                        tool_ctx,
-                        ApprovalReviewer::Guardian,
-                        &otel,
-                    )
-                    .await?;
+                    request_approval(&tool_ctx.session, action, approval_ctx).await?;
                     already_approved = true;
+                    approved_under_strict = true;
                 } else {
                     otel.tool_decision(
                         &otel_tn,
@@ -199,27 +203,23 @@ impl ToolOrchestrator {
                 return Err(ToolError::Rejected(reason.clone()));
             }
             ExecApprovalRequirement::NeedsApproval { reason, .. } => {
-                let approval_ctx = ApprovalCtx {
-                    session: &tool_ctx.session,
-                    turn: &tool_ctx.turn,
-                    call_id: &tool_ctx.call_id,
-                    retry_reason: reason.clone(),
+                approval_never_revision =
+                    Some(turn_ctx.approval_policy.decision_snapshot().never_revision);
+                let action = tool
+                    .approval_action(req, &tool_ctx.call_id)
+                    .map_err(|err| {
+                        ToolError::Rejected(format!("could not prepare approval action: {err}"))
+                    })?;
+                let approval_ctx = ApprovalContext {
+                    turn: Arc::clone(&tool_ctx.turn),
+                    call_id: tool_ctx.call_id.clone(),
+                    tool_name: tool_ctx.tool_name.clone(),
+                    approval_reason: reason.clone(),
+                    retry_reason: None,
                     network_approval_context: None,
+                    required_by_strict: false,
                 };
-                resolve_tool_apporval(
-                    tool,
-                    req,
-                    tool_ctx.call_id.as_str(),
-                    approval_ctx,
-                    tool_ctx,
-                    if strict_auto_review {
-                        ApprovalReviewer::Guardian
-                    } else {
-                        ApprovalReviewer::for_turn(turn_ctx)
-                    },
-                    &otel,
-                )
-                .await?;
+                request_approval(&tool_ctx.session, action, approval_ctx).await?;
                 already_approved = true;
             }
         }
@@ -280,6 +280,8 @@ impl ToolOrchestrator {
             network_proxy: None,
         };
 
+        ensure_approval_is_current(turn_ctx, approval_never_revision, approved_under_strict)?;
+
         let initial_attempt_start = Instant::now();
         let (first_result, first_deferred_network_approval) = Self::run_attempt(
             tool,
@@ -337,6 +339,9 @@ impl ToolOrchestrator {
                 }
                 let unsandboxed_allowed =
                     unsandboxed_execution_allowed(&file_system_sandbox_policy);
+                let retry_policy = turn_ctx.approval_policy.decision_snapshot();
+                let approval_policy = retry_policy.value;
+                let guardian_review = routes_to_guardian(&tool_ctx.session, turn_ctx).await;
                 // Under `Never` or `OnRequest`, do not retry without sandbox;
                 // surface a concise sandbox denial that preserves the
                 // original output.
@@ -390,33 +395,31 @@ impl ToolOrchestrator {
 
                 // Strict auto-review approval covers the sandboxed attempt only;
                 // retrying without the sandbox requires a fresh guardian review.
-                let bypass_retry_approval = !strict_auto_review
+                let retry_never_revision = retry_policy.never_revision;
+                let bypass_retry_approval = !guardian_review
                     && tool.should_bypass_approval(approval_policy, already_approved)
                     && network_approval_context.is_none();
                 if !bypass_retry_approval {
-                    let approval_ctx = ApprovalCtx {
-                        session: &tool_ctx.session,
-                        turn: &tool_ctx.turn,
-                        call_id: &tool_ctx.call_id,
+                    let approval_reason = match &requirement {
+                        ExecApprovalRequirement::NeedsApproval { reason, .. } => reason.clone(),
+                        ExecApprovalRequirement::Skip { .. }
+                        | ExecApprovalRequirement::Forbidden { .. } => None,
+                    };
+                    let action = tool
+                        .approval_action(req, &tool_ctx.call_id)
+                        .map_err(|err| {
+                            ToolError::Rejected(format!("could not prepare approval action: {err}"))
+                        })?;
+                    let approval_ctx = ApprovalContext {
+                        turn: Arc::clone(&tool_ctx.turn),
+                        call_id: tool_ctx.call_id.clone(),
+                        tool_name: tool_ctx.tool_name.clone(),
+                        approval_reason,
                         retry_reason: Some(retry_reason),
                         network_approval_context: network_approval_context.clone(),
+                        required_by_strict: false,
                     };
-
-                    let permission_request_run_id = format!("{}:retry", tool_ctx.call_id);
-                    resolve_tool_apporval(
-                        tool,
-                        req,
-                        &permission_request_run_id,
-                        approval_ctx,
-                        tool_ctx,
-                        if strict_auto_review {
-                            ApprovalReviewer::Guardian
-                        } else {
-                            ApprovalReviewer::for_turn(turn_ctx)
-                        },
-                        &otel,
-                    )
-                    .await?;
+                    request_approval(&tool_ctx.session, action, approval_ctx).await?;
                 }
 
                 let retry_sandbox_requested = !unsandboxed_allowed
@@ -461,6 +464,12 @@ impl ToolOrchestrator {
                     network_denial_cancellation_token: None,
                     network_proxy: None,
                 };
+
+                ensure_approval_is_current(
+                    turn_ctx,
+                    Some(retry_never_revision),
+                    /*approved_under_strict*/ false,
+                )?;
 
                 // Second attempt.
                 let escalated_attempt_start = Instant::now();
@@ -510,6 +519,22 @@ impl ToolOrchestrator {
             }
         }
     }
+}
+
+fn ensure_approval_is_current(
+    turn: &crate::session::turn_context::TurnContext,
+    never_revision: Option<u64>,
+    approved_under_strict: bool,
+) -> Result<(), ToolError> {
+    let Some(never_revision) = never_revision else {
+        return Ok(());
+    };
+    if !approved_under_strict
+        && turn.approval_policy.decision_snapshot().never_revision != never_revision
+    {
+        return Err(ToolError::Rejected(POLICY_CHANGED_REJECTION.to_string()));
+    }
+    Ok(())
 }
 
 fn sandbox_outcome_from_tool_error(err: &ToolError) -> Option<&'static str> {

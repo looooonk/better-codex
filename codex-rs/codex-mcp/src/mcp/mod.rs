@@ -43,6 +43,7 @@ use rmcp::model::ReadResourceResult;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
+use crate::McpProtocolMode;
 use crate::ResolvedMcpCatalog;
 use crate::codex_apps_cache::CodexAppsToolsCache;
 use crate::codex_apps_cache::codex_apps_tools_cache_key;
@@ -144,6 +145,8 @@ pub struct McpConfig {
     /// Whether model-visible MCP tool namespaces should keep the legacy
     /// `mcp__` prefix.
     pub prefix_mcp_tool_names: bool,
+    /// Protocol compatibility policy captured when this MCP configuration is created.
+    pub protocol_mode: McpProtocolMode,
     /// Client-side elicitation capabilities advertised during MCP initialization.
     pub client_elicitation_capability: ElicitationCapability,
     /// Resolved MCP registrations keyed by logical server name.
@@ -337,6 +340,7 @@ pub async fn read_mcp_resource(
         tool_catalog_cache,
         codex_apps_tools_cache_key(auth),
         config.prefix_mcp_tool_names,
+        config.protocol_mode,
         config.client_elicitation_capability.clone(),
         /*supports_openai_form_elicitation*/ false,
         tool_plugin_provenance(config),
@@ -418,6 +422,7 @@ pub async fn collect_mcp_server_status_snapshot_with_detail(
         tool_catalog_cache,
         codex_apps_tools_cache_key(auth),
         config.prefix_mcp_tool_names,
+        config.protocol_mode,
         config.client_elicitation_capability.clone(),
         /*supports_openai_form_elicitation*/ false,
         tool_plugin_provenance,

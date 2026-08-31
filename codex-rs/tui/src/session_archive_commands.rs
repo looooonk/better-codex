@@ -19,7 +19,6 @@ use codex_app_server_protocol::Thread as AppServerThread;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadSortKey;
 use codex_arg0::Arg0DispatchPaths;
-use codex_cloud_config::cloud_config_bundle_loader_for_storage;
 use codex_config::CloudConfigBundleLoader;
 use codex_config::ConfigLoadOptions;
 use codex_config::LoaderOverrides;
@@ -326,14 +325,11 @@ async fn start_app_server_for_archive_command(
     )
     .await
     .wrap_err("failed to load config.toml")?;
-    let cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-        app_server_target.auth_config_for_cloud_loader(bootstrap_auth_config(
-            codex_home.as_path(),
-            &bootstrap_config,
-        )?),
-        /*enable_codex_api_key_env*/ false,
-    )
-    .await;
+    let cloud_config_bundle = app_server_target
+        .cloud_config_bundle_loader(|| {
+            bootstrap_auth_config(codex_home.as_path(), &bootstrap_config)
+        })
+        .await?;
     let config_toml = &bootstrap_config.config_toml;
 
     let model_provider = if cli.oss {
