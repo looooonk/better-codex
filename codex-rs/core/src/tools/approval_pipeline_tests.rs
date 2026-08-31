@@ -189,7 +189,10 @@ async fn guardian_review_test_fixture(
     use codex_protocol::models::SandboxPermissions;
     use codex_utils_path_uri::PathUri;
 
-    let (mut session, turn) = make_session_and_context().await;
+    let (mut session, mut turn) = make_session_and_context().await;
+    let mut config = turn.config.as_ref().clone();
+    config.features.enable(Feature::GuardianV2);
+    turn.config = Arc::new(config);
     let mut extensions = codex_extension_api::ExtensionRegistryBuilder::new();
     extensions.approval_review_contributor(authority);
     session.services.extensions = Arc::new(extensions.build());
@@ -224,6 +227,61 @@ async fn guardian_review_test_fixture(
         cancellation_token,
     };
     (Arc::new(session), action, context)
+}
+
+#[tokio::test]
+async fn live_never_policy_blocks_new_action_after_strict_review() {
+    use crate::config::Constrained;
+    use crate::state::ActiveTurn;
+
+    let bindings = Arc::new(StdMutex::new(Vec::new()));
+    let (session, action, mut context) = guardian_review_test_fixture(
+        Arc::new(RecordingApprovalAuthority {
+            bindings: Arc::clone(&bindings),
+        }),
+        CancellationToken::new(),
+    )
+    .await;
+    context.required_by_strict = true;
+    context
+        .turn
+        .approval_policy
+        .replace(Constrained::allow_any(AskForApproval::OnRequest));
+    context
+        .turn
+        .approvals_reviewer
+        .replace(ApprovalsReviewer::User);
+    let active_turn = ActiveTurn::default();
+    active_turn
+        .turn_state
+        .lock()
+        .await
+        .enable_strict_auto_review();
+    *session.active_turn.lock().await = Some(active_turn);
+
+    assert_eq!(
+        request_approval(&session, action.clone(), context.clone())
+            .await
+            .expect("strict OnRequest review should allow the action"),
+        ReviewDecision::Approved
+    );
+    bindings.lock().expect("binding lock").clear();
+
+    context
+        .turn
+        .approval_policy
+        .replace(Constrained::allow_any(AskForApproval::Never));
+    context.call_id = "guardian-blocked-call".to_string();
+    context.attempt_id = "guardian-blocked-attempt".to_string();
+    let error = request_approval(&session, action, context)
+        .await
+        .expect_err("live Never must block a newly started action");
+
+    let ToolError::Rejected(message) = error else {
+        panic!("live Never should reject the action: {error:?}")
+    };
+    assert_eq!(message, POLICY_CHANGED_REJECTION);
+    assert!(bindings.lock().expect("binding lock").is_empty());
 }
 
 #[tokio::test]

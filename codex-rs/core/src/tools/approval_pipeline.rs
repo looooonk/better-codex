@@ -112,7 +112,7 @@ pub(crate) async fn request_approval(
     let Some(initial) = route_snapshot(session, &ctx.turn).await else {
         return reject_settings_churn(&ctx);
     };
-    if policy_blocks_request(&ctx, initial) {
+    if policy_blocks_request(initial) {
         return finish_resolution(
             &ctx,
             ApprovalResolution {
@@ -194,7 +194,7 @@ async fn resolve_with_live_reviewer(
         let Some(before) = route_snapshot(session, &ctx.turn).await else {
             return reject_settings_churn(ctx);
         };
-        if before.policy.never_revision != never_revision || policy_blocks_request(ctx, before) {
+        if before.policy.never_revision != never_revision || policy_blocks_request(before) {
             return finish_resolution(
                 ctx,
                 ApprovalResolution {
@@ -277,8 +277,8 @@ where
     None
 }
 
-fn policy_blocks_request(ctx: &ApprovalContext, route: ApprovalRouteSnapshot) -> bool {
-    route.policy.value == AskForApproval::Never && !(ctx.required_by_strict && route.strict)
+fn policy_blocks_request(route: ApprovalRouteSnapshot) -> bool {
+    route.policy.value == AskForApproval::Never
 }
 
 async fn request_guardian_approval(
