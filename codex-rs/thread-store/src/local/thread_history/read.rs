@@ -1,3 +1,4 @@
+use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::ThreadHistoryMode;
 use serde::Deserialize;
@@ -7,6 +8,8 @@ use sqlx::Row;
 use sqlx::Sqlite;
 
 use super::super::LocalThreadStore;
+use super::super::thread_rollout_resolver;
+use super::super::thread_rollout_resolver::ResolvedThreadRollout;
 use super::thread_history_error;
 use crate::ItemPage;
 use crate::ListItemsParams;
@@ -62,7 +65,7 @@ pub(in crate::local) async fn list_turns(
     store: &LocalThreadStore,
     params: ListTurnsParams,
 ) -> ThreadStoreResult<TurnPage> {
-    validate_thread_for_paginated_reads(
+    let resolved = validate_thread_for_paginated_reads(
         store,
         params.thread_id,
         params.include_archived,
@@ -70,7 +73,7 @@ pub(in crate::local) async fn list_turns(
     )
     .await?;
     let scope = CursorScope::Turns;
-    let cursor = parse_cursor(params.cursor.as_deref(), params.thread_id, &scope)?;
+    let cursor = parse_cursor(params.cursor.as_deref(), resolved.thread_id, &scope)?;
     let pool = store.thread_history_db().await?;
     let limit = page_limit(params.page_size)?;
     let mut query = QueryBuilder::<Sqlite>::new(
@@ -89,7 +92,7 @@ FROM thread_turns
 WHERE thread_id =
         "#,
     );
-    query.push_bind(params.thread_id.to_string());
+    query.push_bind(resolved.rollout_id.to_string());
     push_pagination_clause(&mut query, params.sort_direction, cursor.as_ref(), limit);
     let rows = query
         .build()
@@ -104,7 +107,7 @@ WHERE thread_id =
     turns.truncate(params.page_size);
 
     let (next_cursor, backwards_cursor) = page_cursors(
-        params.thread_id,
+        resolved.thread_id,
         &scope,
         turns.first().map(|turn| turn.rollout_ordinal),
         turns.last().map(|turn| turn.rollout_ordinal),
@@ -115,7 +118,7 @@ WHERE thread_id =
         let items = match params.items_view {
             StoredTurnItemsView::NotLoaded => Vec::new(),
             StoredTurnItemsView::Summary => {
-                load_summary_items(pool, params.thread_id, &turn).await?
+                load_summary_items(pool, resolved.rollout_id, &turn).await?
             }
         };
         stored_turns.push(StoredTurn {
@@ -141,7 +144,7 @@ pub(in crate::local) async fn list_items(
     store: &LocalThreadStore,
     params: ListItemsParams,
 ) -> ThreadStoreResult<ItemPage> {
-    validate_thread_for_paginated_reads(
+    let resolved = validate_thread_for_paginated_reads(
         store,
         params.thread_id,
         params.include_archived,
@@ -149,7 +152,7 @@ pub(in crate::local) async fn list_items(
     )
     .await?;
     let scope = CursorScope::Items;
-    let cursor = parse_cursor(params.cursor.as_deref(), params.thread_id, &scope)?;
+    let cursor = parse_cursor(params.cursor.as_deref(), resolved.thread_id, &scope)?;
     let pool = store.thread_history_db().await?;
     let limit = page_limit(params.page_size)?;
     let mut query = QueryBuilder::<Sqlite>::new(
@@ -159,7 +162,7 @@ FROM thread_items
 WHERE thread_id =
         "#,
     );
-    query.push_bind(params.thread_id.to_string());
+    query.push_bind(resolved.rollout_id.to_string());
     if let Some(turn_id) = params.turn_id.as_deref() {
         query.push(" AND turn_id = ").push_bind(turn_id);
     }
@@ -176,7 +179,7 @@ WHERE thread_id =
     let has_more = item_rows.len() > params.page_size;
     item_rows.truncate(params.page_size);
     let (next_cursor, backwards_cursor) = page_cursors(
-        params.thread_id,
+        resolved.thread_id,
         &scope,
         item_rows.first().map(|row| row.rollout_ordinal),
         item_rows.last().map(|row| row.rollout_ordinal),
@@ -196,7 +199,7 @@ pub(super) async fn validate_thread_for_paginated_reads(
     thread_id: ThreadId,
     include_archived: bool,
     operation: &'static str,
-) -> ThreadStoreResult<()> {
+) -> ThreadStoreResult<ResolvedThreadRollout> {
     let Some(state_db) = store.state_db().await else {
         return Err(ThreadStoreError::Unsupported { operation });
     };
@@ -215,10 +218,17 @@ pub(super) async fn validate_thread_for_paginated_reads(
             message: format!("thread {thread_id} is archived"),
         });
     }
-    match metadata.history_mode {
-        ThreadHistoryMode::Legacy => Err(ThreadStoreError::Unsupported { operation }),
-        ThreadHistoryMode::Paginated => Ok(()),
+    if metadata.history_mode == ThreadHistoryMode::Legacy {
+        return Err(ThreadStoreError::Unsupported { operation });
     }
+    let resolved = if include_archived {
+        thread_rollout_resolver::resolve_current_including_archived(store, thread_id).await?
+    } else {
+        thread_rollout_resolver::resolve_current(store, thread_id).await?
+    };
+    resolved.ok_or_else(|| ThreadStoreError::InvalidRequest {
+        message: format!("no selected rollout found for thread {thread_id}"),
+    })
 }
 
 fn page_limit(page_size: usize) -> ThreadStoreResult<i64> {
@@ -360,7 +370,7 @@ fn stored_turn_row(row: sqlx::sqlite::SqliteRow) -> ThreadStoreResult<StoredTurn
 
 async fn load_summary_items(
     pool: &sqlx::SqlitePool,
-    thread_id: ThreadId,
+    rollout_id: RolloutId,
     turn: &StoredTurnRow,
 ) -> ThreadStoreResult<Vec<StoredThreadItem>> {
     let rows = sqlx::query(
@@ -373,7 +383,7 @@ WHERE thread_id = ?
 ORDER BY rollout_ordinal ASC
         "#,
     )
-    .bind(thread_id.to_string())
+    .bind(rollout_id.to_string())
     .bind(turn.turn_id.as_str())
     .bind(turn.first_user_item_id.as_deref())
     .bind(turn.final_agent_item_id.as_deref())

@@ -58,7 +58,7 @@ pub(in crate::local) async fn search_thread_occurrences(
             message: "thread/searchOccurrences requires page_size greater than zero".to_string(),
         });
     }
-    validate_thread_for_paginated_reads(
+    let resolved = validate_thread_for_paginated_reads(
         store,
         params.thread_id,
         /*include_archived*/ true,
@@ -67,7 +67,7 @@ pub(in crate::local) async fn search_thread_occurrences(
     .await?;
     let cursor = parse_cursor(
         params.cursor.as_deref(),
-        params.thread_id,
+        resolved.thread_id,
         &params.search_term,
     )?;
     let next_rollout_ordinal = cursor
@@ -113,9 +113,9 @@ FROM (
 ORDER BY rollout_ordinal ASC
         "#,
     )
-    .bind(params.thread_id.to_string())
+    .bind(resolved.rollout_id.to_string())
     .bind(next_rollout_ordinal)
-    .bind(params.thread_id.to_string())
+    .bind(resolved.rollout_id.to_string())
     .bind(next_rollout_ordinal)
     .fetch(pool);
 
@@ -139,7 +139,7 @@ ORDER BY rollout_ordinal ASC
             .saturating_add(1)
             .saturating_sub(items.len());
         let turn_cursor = serialize_cursor(
-            params.thread_id,
+            resolved.thread_id,
             &CursorScope::Turns,
             row.turn_rollout_ordinal,
             /*include_anchor*/ true,
@@ -157,7 +157,7 @@ ORDER BY rollout_ordinal ASC
                 return Ok(ThreadOccurrenceSearchPage {
                     items,
                     next_cursor: Some(serialize_cursor_for_search(SearchCursor {
-                        thread_id: params.thread_id,
+                        thread_id: resolved.thread_id,
                         search_term: params.search_term,
                         next_rollout_ordinal: row.rollout_ordinal,
                         next_occurrence_index: occurrence_index,

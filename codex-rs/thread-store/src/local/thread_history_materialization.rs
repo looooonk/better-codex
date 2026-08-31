@@ -4,7 +4,7 @@ use std::path::Path;
 use chrono::DateTime;
 use codex_app_server_protocol::ThreadHistoryChangeSet;
 use codex_app_server_protocol::project_rollout_line;
-use codex_protocol::ThreadId;
+use codex_protocol::RolloutId;
 use codex_rollout::RolloutLine;
 use serde_json::Value;
 use tokio::io::AsyncReadExt;
@@ -17,10 +17,10 @@ use crate::ThreadStoreResult;
 
 pub(super) async fn materialize_to_sqlite(
     store: &LocalThreadStore,
-    thread_id: ThreadId,
+    rollout_id: RolloutId,
     rollout_path: &Path,
 ) -> ThreadStoreResult<()> {
-    let start_offset = super::thread_history::next_rollout_byte_offset(store, thread_id).await?;
+    let start_offset = super::thread_history::next_rollout_byte_offset(store, rollout_id).await?;
     let (lines, next_offset) = read_complete_rollout_lines(rollout_path, start_offset).await?;
     if lines.is_empty() && start_offset == next_offset {
         return Ok(());
@@ -49,7 +49,7 @@ pub(super) async fn materialize_to_sqlite(
         .collect::<ThreadStoreResult<Vec<_>>>()?;
     super::thread_history::apply_projection(
         store,
-        thread_id,
+        rollout_id,
         start_offset,
         next_offset,
         projections,

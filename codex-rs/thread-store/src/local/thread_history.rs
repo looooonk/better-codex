@@ -1,7 +1,7 @@
 use codex_app_server_protocol::ThreadHistoryChangeSet;
 use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::TurnStatus;
-use codex_protocol::ThreadId;
+use codex_protocol::RolloutId;
 use codex_protocol::models::MessagePhase;
 
 use super::LocalThreadStore;
@@ -17,7 +17,7 @@ pub(super) use search::search_thread_occurrences;
 
 pub(super) async fn next_rollout_byte_offset(
     store: &LocalThreadStore,
-    thread_id: ThreadId,
+    rollout_id: RolloutId,
 ) -> ThreadStoreResult<u64> {
     let db_path = codex_state::thread_history_db_path(store.config.sqlite_home.as_path());
     if !tokio::fs::try_exists(db_path.as_path())
@@ -31,19 +31,19 @@ pub(super) async fn next_rollout_byte_offset(
     let offset = sqlx::query_scalar::<_, i64>(
         "SELECT next_rollout_byte_offset FROM thread_history_projection_state WHERE thread_id = ?",
     )
-    .bind(thread_id.to_string())
+    .bind(rollout_id.to_string())
     .fetch_optional(pool)
     .await
     .map_err(thread_history_error)?
     .unwrap_or(0);
     u64::try_from(offset).map_err(|_| ThreadStoreError::Internal {
-        message: format!("thread history projection for {thread_id} has a negative byte offset"),
+        message: format!("rollout history projection for {rollout_id} has a negative byte offset"),
     })
 }
 
 pub(super) async fn apply_projection(
     store: &LocalThreadStore,
-    thread_id: ThreadId,
+    rollout_id: RolloutId,
     start_offset: u64,
     next_offset: u64,
     projections: Vec<(Option<u64>, i64, ThreadHistoryChangeSet)>,
@@ -56,7 +56,7 @@ pub(super) async fn apply_projection(
         .begin_with("BEGIN IMMEDIATE")
         .await
         .map_err(thread_history_error)?;
-    let thread_id = thread_id.to_string();
+    let rollout_id = rollout_id.to_string();
     let projection_state = sqlx::query_as::<_, (i64, i64)>(
         r#"
 SELECT next_rollout_byte_offset, next_rollout_ordinal
@@ -64,7 +64,7 @@ FROM thread_history_projection_state
 WHERE thread_id = ?
         "#,
     )
-    .bind(thread_id.as_str())
+    .bind(rollout_id.as_str())
     .fetch_optional(&mut *transaction)
     .await
     .map_err(thread_history_error)?;
@@ -72,26 +72,28 @@ WHERE thread_id = ?
     let start_offset = sqlite_integer(start_offset, "rollout byte offset")?;
     if expected_offset != start_offset {
         return Err(ThreadStoreError::Internal {
-            message: format!("thread history projection for {thread_id} is behind durable rollout"),
+            message: format!(
+                "rollout history projection for {rollout_id} is behind durable rollout"
+            ),
         });
     }
 
     for (ordinal, created_at_ms, changes) in projections {
         let ordinal = ordinal
             .ok_or_else(|| ThreadStoreError::Internal {
-                message: format!("paginated rollout line for {thread_id} is missing an ordinal"),
+                message: format!("paginated rollout line for {rollout_id} is missing an ordinal"),
             })
             .and_then(|ordinal| sqlite_integer(ordinal, "rollout ordinal"))?;
         if ordinal != next_ordinal {
             return Err(ThreadStoreError::Internal {
                 message: format!(
-                    "thread history projection for {thread_id} expected ordinal {next_ordinal}, got {ordinal}"
+                    "rollout history projection for {rollout_id} expected ordinal {next_ordinal}, got {ordinal}"
                 ),
             });
         }
         apply_change_set(
             &mut transaction,
-            thread_id.as_str(),
+            rollout_id.as_str(),
             ordinal,
             created_at_ms,
             changes,
@@ -116,7 +118,7 @@ ON CONFLICT(thread_id) DO UPDATE SET
     next_rollout_ordinal = excluded.next_rollout_ordinal
         "#,
     )
-    .bind(thread_id.as_str())
+    .bind(rollout_id.as_str())
     .bind(sqlite_integer(next_offset, "rollout byte offset")?)
     .bind(next_ordinal)
     .execute(&mut *transaction)
@@ -127,7 +129,7 @@ ON CONFLICT(thread_id) DO UPDATE SET
 
 pub(super) async fn delete_thread(
     store: &LocalThreadStore,
-    thread_id: ThreadId,
+    rollout_id: RolloutId,
 ) -> ThreadStoreResult<()> {
     let db_path = codex_state::thread_history_db_path(store.config.sqlite_home.as_path());
     if !tokio::fs::try_exists(db_path.as_path())
@@ -142,19 +144,19 @@ pub(super) async fn delete_thread(
         .begin_with("BEGIN IMMEDIATE")
         .await
         .map_err(thread_history_delete_error)?;
-    let thread_id = thread_id.to_string();
+    let rollout_id = rollout_id.to_string();
     sqlx::query("DELETE FROM thread_items WHERE thread_id = ?")
-        .bind(thread_id.as_str())
+        .bind(rollout_id.as_str())
         .execute(&mut *transaction)
         .await
         .map_err(thread_history_delete_error)?;
     sqlx::query("DELETE FROM thread_turns WHERE thread_id = ?")
-        .bind(thread_id.as_str())
+        .bind(rollout_id.as_str())
         .execute(&mut *transaction)
         .await
         .map_err(thread_history_delete_error)?;
     sqlx::query("DELETE FROM thread_history_projection_state WHERE thread_id = ?")
-        .bind(thread_id.as_str())
+        .bind(rollout_id.as_str())
         .execute(&mut *transaction)
         .await
         .map_err(thread_history_delete_error)?;

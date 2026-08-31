@@ -5,9 +5,12 @@ use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
+use uuid::Uuid;
 
 use super::*;
+use crate::SearchThreadOccurrencesParams;
 use crate::local::test_support::test_config;
+use crate::local::test_support::write_session_file_with_history_mode;
 
 #[tokio::test]
 async fn list_turns_pages_projected_rows_and_applies_item_views() {
@@ -212,6 +215,117 @@ async fn list_items_pages_whole_thread_and_per_turn_rows() {
 }
 
 #[tokio::test]
+async fn selected_rollout_id_drives_history_queries_and_logical_cursors() {
+    let (home, store, thread_id) = store_with_mode(ThreadHistoryMode::Paginated).await;
+    let rollout_id = ThreadId::new();
+    let uuid = Uuid::parse_str(&thread_id.to_string()).expect("thread UUID");
+    let temporary_path = write_session_file_with_history_mode(
+        home.path(),
+        "2025-01-03T13-00-00",
+        uuid,
+        ThreadHistoryMode::Paginated,
+    )
+    .expect("replacement rollout");
+    let selected_path = temporary_path.with_file_name(format!(
+        "rollout-2025-01-03T13-00-00-{thread_id}_{rollout_id}.jsonl"
+    ));
+    std::fs::rename(temporary_path, &selected_path).expect("select replacement rollout");
+    let state_db = store.state_db().await.expect("state runtime");
+    let mut metadata = state_db
+        .get_thread(thread_id)
+        .await
+        .expect("read metadata")
+        .expect("thread metadata");
+    metadata.rollout_path = selected_path;
+    state_db
+        .upsert_thread(&metadata)
+        .await
+        .expect("persist selected rollout");
+    let db = history_db(&store).await;
+    insert_turn(
+        db,
+        thread_id,
+        "old-turn",
+        1,
+        "completed",
+        /*error_json*/ None,
+        Some("old-item"),
+        /*final_agent_item_id*/ None,
+    )
+    .await;
+    insert_item(db, thread_id, "old-turn", "old-item", 2).await;
+    insert_turn(
+        db,
+        rollout_id,
+        "new-turn",
+        1,
+        "completed",
+        /*error_json*/ None,
+        Some("new-item"),
+        /*final_agent_item_id*/ None,
+    )
+    .await;
+    insert_item(db, rollout_id, "new-turn", "new-item", 2).await;
+    sqlx::query(
+        "UPDATE thread_items SET item_json = ?, item_type = 'userMessage' WHERE thread_id = ? AND item_id = ?",
+    )
+        .bind(r#"{"type":"userMessage","id":"new-item","content":[{"type":"text","text":"selected needle"}]}"#)
+        .bind(rollout_id.to_string())
+        .bind("new-item")
+        .execute(db)
+        .await
+        .expect("update searchable selected item");
+
+    let page = store
+        .list_items(item_params(
+            thread_id,
+            /*turn_id*/ None,
+            /*cursor*/ None,
+            /*page_size*/ 1,
+            SortDirection::Asc,
+        ))
+        .await
+        .expect("selected rollout page");
+
+    assert_eq!(item_ids(&page), vec!["new-item"]);
+    let cursor: serde_json::Value = serde_json::from_str(
+        page.backwards_cursor
+            .as_deref()
+            .expect("backwards logical cursor"),
+    )
+    .expect("parse logical cursor");
+    assert_eq!(cursor["threadId"], thread_id.to_string());
+
+    let turns = store
+        .list_turns(turn_params(
+            thread_id,
+            /*cursor*/ None,
+            /*page_size*/ 2,
+            SortDirection::Asc,
+            StoredTurnItemsView::Summary,
+        ))
+        .await
+        .expect("selected rollout turns");
+    assert_eq!(turn_ids(&turns), vec!["new-turn"]);
+    assert_eq!(turns.turns[0].items[0].item_id, "new-item");
+
+    let occurrences = store
+        .search_thread_occurrences(SearchThreadOccurrencesParams {
+            thread_id,
+            search_term: "needle".to_string(),
+            cursor: None,
+            page_size: 2,
+        })
+        .await
+        .expect("search selected rollout");
+    assert_eq!(occurrences.items[0].item_id, "new-item");
+    let turn_cursor: serde_json::Value =
+        serde_json::from_str(occurrences.items[0].turn_cursor.as_str())
+            .expect("parse logical turn cursor");
+    assert_eq!(turn_cursor["threadId"], thread_id.to_string());
+}
+
+#[tokio::test]
 async fn list_history_keeps_legacy_threads_unsupported() {
     let (_home, store, thread_id) = store_with_mode(ThreadHistoryMode::Legacy).await;
 
@@ -253,7 +367,15 @@ async fn list_history_keeps_legacy_threads_unsupported() {
 async fn store_with_mode(history_mode: ThreadHistoryMode) -> (TempDir, LocalThreadStore, ThreadId) {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
-    let thread_id = ThreadId::default();
+    let uuid = Uuid::new_v4();
+    let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
+    let rollout_path = write_session_file_with_history_mode(
+        home.path(),
+        "2025-01-03T12-00-00",
+        uuid,
+        history_mode,
+    )
+    .expect("rollout fixture");
     let runtime = codex_state::StateRuntime::init(
         config.sqlite_home.clone(),
         config.default_model_provider_id.clone(),
@@ -262,7 +384,7 @@ async fn store_with_mode(history_mode: ThreadHistoryMode) -> (TempDir, LocalThre
     .expect("state runtime");
     let mut builder = codex_state::ThreadMetadataBuilder::new(
         thread_id,
-        home.path().join("missing-rollout.jsonl"),
+        rollout_path,
         Utc::now(),
         SessionSource::Cli,
     );

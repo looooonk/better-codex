@@ -93,9 +93,17 @@ async fn delete_threads_impl(
         return Err(ThreadStoreError::ThreadNotFound { thread_id });
     }
 
+    let mut projection_ids = thread_ids.to_vec();
+    projection_ids.extend(
+        rollout_paths
+            .iter()
+            .filter_map(|(path, _)| codex_rollout::rollout_id_from_path(path.as_path())),
+    );
+    projection_ids.sort_by_key(ToString::to_string);
+    projection_ids.dedup();
     let mut staged = stage_rollouts(store, rollout_paths)?;
-    for thread_id in thread_ids {
-        if let Err(err) = super::thread_history::delete_thread(store, *thread_id).await {
+    for rollout_id in projection_ids {
+        if let Err(err) = super::thread_history::delete_thread(store, rollout_id).await {
             return match staged.restore() {
                 Ok(()) => Err(err),
                 Err(restore_err) => Err(ThreadStoreError::Internal {
@@ -518,35 +526,41 @@ mod tests {
         let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
         let uuid = Uuid::from_u128(306);
         let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
-        write_session_file_with_history_mode(
+        let rollout_id = ThreadId::from_string(&Uuid::from_u128(309).to_string())
+            .expect("valid rollout id");
+        let ordinary_path = write_session_file_with_history_mode(
             home.path(),
             "2025-01-03T12-00-00",
             uuid,
             ThreadHistoryMode::Paginated,
         )
         .expect("session file");
+        let rollout_path = ordinary_path.with_file_name(format!(
+            "rollout-2025-01-03T12-00-00-{thread_id}_{rollout_id}.jsonl"
+        ));
+        std::fs::rename(ordinary_path, rollout_path).expect("replacement rollout");
         let pool = codex_state::open_thread_history_db(home.path())
             .await
             .expect("open thread history db");
-        let thread_id_string = thread_id.to_string();
+        let rollout_id_string = rollout_id.to_string();
         sqlx::query(
             "INSERT INTO thread_turns (thread_id, turn_id, rollout_ordinal, status) VALUES (?, 'turn-1', 1, 'completed')",
         )
-        .bind(thread_id_string.as_str())
+        .bind(rollout_id_string.as_str())
         .execute(&pool)
         .await
         .expect("insert turn");
         sqlx::query(
             "INSERT INTO thread_items (thread_id, turn_id, item_id, rollout_ordinal, created_at_ms, item_json) VALUES (?, 'turn-1', 'item-1', 2, 1, '{}')",
         )
-        .bind(thread_id_string.as_str())
+        .bind(rollout_id_string.as_str())
         .execute(&pool)
         .await
         .expect("insert item");
         sqlx::query(
             "INSERT INTO thread_history_projection_state (thread_id, next_rollout_byte_offset, next_rollout_ordinal) VALUES (?, 3, 3)",
         )
-        .bind(thread_id_string.as_str())
+        .bind(rollout_id_string.as_str())
         .execute(&pool)
         .await
         .expect("insert projection state");
@@ -564,9 +578,9 @@ SELECT
     (SELECT COUNT(*) FROM thread_history_projection_state WHERE thread_id = ?)
             "#,
         )
-        .bind(thread_id_string.as_str())
-        .bind(thread_id_string.as_str())
-        .bind(thread_id_string.as_str())
+        .bind(rollout_id_string.as_str())
+        .bind(rollout_id_string.as_str())
+        .bind(rollout_id_string.as_str())
         .fetch_one(&pool)
         .await
         .expect("read remaining history rows");
