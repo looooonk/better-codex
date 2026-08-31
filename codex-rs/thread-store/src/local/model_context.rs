@@ -15,6 +15,7 @@ use serde_json::Value;
 
 use super::LocalThreadStore;
 use super::read_thread;
+use super::thread_rollout_resolver;
 use crate::LoadThreadHistoryParams;
 use crate::StoredModelContext;
 use crate::ThreadStoreError;
@@ -37,8 +38,13 @@ pub(super) async fn load_latest_model_context(
     store: &LocalThreadStore,
     params: LoadThreadHistoryParams,
 ) -> ThreadStoreResult<StoredModelContext> {
-    let path = read_thread::resolve_rollout_path(store, params.thread_id, params.include_archived)
-        .await?
+    let resolved = if params.include_archived {
+        thread_rollout_resolver::resolve_current_including_archived(store, params.thread_id).await?
+    } else {
+        thread_rollout_resolver::resolve_current(store, params.thread_id).await?
+    };
+    let path = resolved
+        .map(|resolved| resolved.path)
         .ok_or_else(|| ThreadStoreError::InvalidRequest {
             message: format!("no rollout found for thread id {}", params.thread_id),
         })?;

@@ -1,5 +1,6 @@
 use std::path::PathBuf;
 
+use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
 use codex_rollout::RolloutItem;
 use codex_protocol::protocol::ThreadHistoryMode;
@@ -32,7 +33,7 @@ pub(super) async fn create_thread(
     store.ensure_live_recorder_absent(thread_id).await?;
     let recorder = create_thread::create_thread(store, params).await?;
     store
-        .insert_live_recorder(thread_id, recorder, history_mode)
+        .insert_live_recorder(thread_id, recorder, thread_id, history_mode)
         .await
 }
 
@@ -98,13 +99,19 @@ pub(super) async fn resume_thread(
         model_provider_id: params.metadata.model_provider.clone(),
         generate_memories: matches!(params.metadata.memory_mode, ThreadMemoryMode::Enabled),
     };
+    let rollout_id = super::thread_rollout_resolver::rollout_id_for_thread_path(
+        rollout_path.as_path(),
+        params.thread_id,
+        history_mode,
+    )
+    .await?;
     let recorder = RolloutRecorder::new(&config, RolloutRecorderParams::resume(rollout_path))
         .await
         .map_err(|err| ThreadStoreError::Internal {
             message: format!("failed to resume local thread recorder: {err}"),
         })?;
     store
-        .insert_live_recorder(params.thread_id, recorder, history_mode)
+        .insert_live_recorder(params.thread_id, recorder, rollout_id, history_mode)
         .await
 }
 
@@ -198,6 +205,21 @@ pub(super) async fn rollout_path(
         .recorder
         .rollout_path()
         .to_path_buf())
+}
+
+pub(super) async fn rollout_identity(
+    store: &LocalThreadStore,
+    thread_id: ThreadId,
+) -> ThreadStoreResult<(PathBuf, RolloutId, ThreadHistoryMode)> {
+    let live_recorders = store.live_recorders.lock().await;
+    let entry = live_recorders
+        .get(&thread_id)
+        .ok_or(ThreadStoreError::ThreadNotFound { thread_id })?;
+    Ok((
+        entry.recorder.rollout_path().to_path_buf(),
+        entry.rollout_id,
+        entry.history_mode,
+    ))
 }
 
 async fn sync_materialized_rollout_path(
