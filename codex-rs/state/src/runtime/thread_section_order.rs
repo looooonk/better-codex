@@ -5,6 +5,7 @@ use codex_protocol::ThreadId;
 use sqlx::QueryBuilder;
 use sqlx::Sqlite;
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 const SECTION_POSITION_GAP: i64 = 1_000_000;
 
@@ -22,11 +23,24 @@ pub enum ThreadSectionMove<'a> {
 }
 
 impl StateRuntime {
-    /// Read persisted section ordering for multiple threads in one SQLite query.
+    /// Read persisted section ordering for a bounded set of unique thread IDs.
     pub async fn get_thread_section_ordering(
         &self,
         thread_ids: &[ThreadId],
     ) -> anyhow::Result<HashMap<ThreadId, (Option<i64>, Option<DateTime<Utc>>)>> {
+        if thread_ids.len() > crate::MAX_THREAD_SECTION_ORDERING_IDS {
+            anyhow::bail!(
+                "thread section ordering batch exceeds limit of {}; got {}",
+                crate::MAX_THREAD_SECTION_ORDERING_IDS,
+                thread_ids.len()
+            );
+        }
+        let mut unique_thread_ids = HashSet::with_capacity(thread_ids.len());
+        for thread_id in thread_ids {
+            if !unique_thread_ids.insert(*thread_id) {
+                anyhow::bail!("duplicate thread id in section ordering batch: {thread_id}");
+            }
+        }
         if thread_ids.is_empty() {
             return Ok(HashMap::new());
         }

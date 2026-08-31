@@ -1,6 +1,7 @@
 use super::*;
 use crate::PINNED_THREAD_SECTION_ID;
 use crate::PINNED_THREAD_SECTION_NAME;
+use crate::MAX_THREAD_SECTIONS_PAGE_SIZE;
 use crate::SortDirection;
 use crate::SortKey;
 use crate::ThreadFilterOptions;
@@ -71,6 +72,35 @@ async fn sections_list_with_persisted_appearance_and_stable_pagination() {
             next_cursor: None,
         }
     );
+}
+
+#[tokio::test]
+async fn section_list_enforces_public_page_size_bounds() {
+    let codex_home = unique_temp_dir();
+    let runtime = StateRuntime::init(codex_home, "test-provider".to_string())
+        .await
+        .expect("state db should initialize");
+    assert_eq!(
+        runtime
+            .list_thread_sections(/*cursor*/ None, MAX_THREAD_SECTIONS_PAGE_SIZE)
+            .await
+            .expect("maximum section page should load")
+            .sections
+            .len(),
+        1
+    );
+    for limit in [0, MAX_THREAD_SECTIONS_PAGE_SIZE + 1] {
+        assert_eq!(
+            runtime
+                .list_thread_sections(/*cursor*/ None, limit)
+                .await
+                .expect_err("out-of-range section page must fail")
+                .to_string(),
+            format!(
+                "thread section page size must be between 1 and {MAX_THREAD_SECTIONS_PAGE_SIZE}; got {limit}"
+            )
+        );
+    }
 }
 
 #[tokio::test]

@@ -106,6 +106,12 @@ pub const PINNED_THREAD_SECTION_ID: &str = "01984de2-8f74-7c91-a3b2-5c5e937cf318
 /// User-facing name of the built-in pinned thread section.
 pub const PINNED_THREAD_SECTION_NAME: &str = "Pinned";
 
+/// Largest page accepted by the public thread-section listing API.
+pub const MAX_THREAD_SECTIONS_PAGE_SIZE: usize = 100;
+
+/// Largest thread-ordering batch kept below SQLite's historical variable limit.
+pub const MAX_THREAD_SECTION_ORDERING_IDS: usize = 500;
+
 /// Environment variable for overriding the SQLite state database home directory.
 pub const SQLITE_HOME_ENV: &str = "CODEX_SQLITE_HOME";
 

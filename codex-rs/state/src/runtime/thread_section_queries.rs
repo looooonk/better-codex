@@ -16,12 +16,20 @@ impl StateRuntime {
     }
 
     /// List independently persisted sections in stable, cursor-paginated identifier order.
+    ///
+    /// `limit` must be between one and [`crate::MAX_THREAD_SECTIONS_PAGE_SIZE`].
     pub async fn list_thread_sections(
         &self,
         cursor: Option<&str>,
         limit: usize,
     ) -> anyhow::Result<crate::ThreadSectionsPage> {
-        let page_size = limit.max(1);
+        if !(1..=crate::MAX_THREAD_SECTIONS_PAGE_SIZE).contains(&limit) {
+            anyhow::bail!(
+                "thread section page size must be between 1 and {}; got {limit}",
+                crate::MAX_THREAD_SECTIONS_PAGE_SIZE
+            );
+        }
+        let page_size = limit;
         let fetch_limit = i64::try_from(page_size.saturating_add(1))?;
         let rows = sqlx::query_as::<_, (String, String, Option<String>)>(
             r#"

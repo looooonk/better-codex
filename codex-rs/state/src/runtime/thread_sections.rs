@@ -78,7 +78,7 @@ impl StateRuntime {
 
         let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
         sqlx::query(
-            "UPDATE threads SET section_position = NULL, section_entered_at_ms = NULL WHERE thread_section_id = ?",
+            "UPDATE threads SET thread_section_id = NULL, section_position = NULL, section_entered_at_ms = NULL WHERE thread_section_id = ?",
         )
         .bind(id)
         .execute(&mut *tx)
