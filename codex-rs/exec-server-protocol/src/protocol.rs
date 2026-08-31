@@ -119,7 +119,7 @@ impl EnvironmentInfo {
                 .and_then(|cwd| PathUri::from_host_native_path(cwd).ok()),
             capabilities: EnvironmentCapabilities {
                 network_proxy_launch: true,
-                environment_config_read: false,
+                environment_config_read: true,
             },
         }
     }
