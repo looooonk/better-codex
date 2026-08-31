@@ -16,6 +16,7 @@ use crate::LoadThreadHistoryParams;
 use crate::ReadThreadByRolloutPathParams;
 use crate::ReadThreadParams;
 use crate::ResumeThreadParams;
+use crate::RevertThreadParams;
 use crate::SearchThreadOccurrencesParams;
 use crate::SearchThreadsParams;
 use crate::StoredModelContext;
@@ -112,6 +113,15 @@ pub trait ThreadStore: Any + Send + Sync {
         Box::pin(async {
             Err(ThreadStoreError::Unsupported {
                 operation: "load_latest_model_context",
+            })
+        })
+    }
+
+    /// Selects a new immutable rollout head that excludes the requested turn and its suffix.
+    fn revert_thread(&self, _params: RevertThreadParams) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async {
+            Err(ThreadStoreError::Unsupported {
+                operation: "revert_thread",
             })
         })
     }

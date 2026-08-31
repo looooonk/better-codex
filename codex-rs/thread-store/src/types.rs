@@ -175,6 +175,15 @@ pub struct StoredModelContext {
     pub items: Vec<RolloutItem>,
 }
 
+/// Parameters for reverting a paginated thread's durable history.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RevertThreadParams {
+    /// Stable logical thread to revert.
+    pub thread_id: ThreadId,
+    /// First turn excluded from the retained history.
+    pub before_turn_id: String,
+}
+
 /// Parameters for reading a thread summary and optionally its replay history.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReadThreadParams {

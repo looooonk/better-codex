@@ -6,6 +6,7 @@ mod list_threads;
 mod live_writer;
 mod model_context;
 mod read_thread;
+mod revert_thread;
 mod rollout_lineage;
 mod rollout_moves;
 mod search_threads;
@@ -47,6 +48,7 @@ use crate::LoadThreadHistoryParams;
 use crate::ReadThreadByRolloutPathParams;
 use crate::ReadThreadParams;
 use crate::ResumeThreadParams;
+use crate::RevertThreadParams;
 use crate::SearchThreadOccurrencesParams;
 use crate::SearchThreadsParams;
 use crate::StoredModelContext;
@@ -381,6 +383,10 @@ impl ThreadStore for LocalThreadStore {
         params: LoadThreadHistoryParams,
     ) -> ThreadStoreFuture<'_, StoredModelContext> {
         Box::pin(model_context::load_latest_model_context(self, params))
+    }
+
+    fn revert_thread(&self, params: RevertThreadParams) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move { revert_thread::revert(self, params).await })
     }
 
     fn read_thread(&self, params: ReadThreadParams) -> ThreadStoreFuture<'_, StoredThread> {

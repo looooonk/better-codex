@@ -38,6 +38,7 @@ pub use types::LoadThreadHistoryParams;
 pub use types::ReadThreadByRolloutPathParams;
 pub use types::ReadThreadParams;
 pub use types::ResumeThreadParams;
+pub use types::RevertThreadParams;
 pub use types::SearchTextRange;
 pub use types::SearchThreadOccurrencesParams;
 pub use types::SearchThreadsParams;
