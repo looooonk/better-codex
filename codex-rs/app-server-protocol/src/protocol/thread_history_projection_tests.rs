@@ -13,6 +13,7 @@ use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
+use codex_protocol::security_risk::SecurityRiskScore;
 use codex_protocol::user_input::UserInput;
 use pretty_assertions::assert_eq;
 
@@ -160,9 +161,14 @@ fn ignores_legacy_abort_without_turn_id_and_context_only_records() {
         previous_window_id: None,
         window_id: None,
     }));
+    let security_risk = project(RolloutItem::SecurityRiskScore(
+        SecurityRiskScore::new("review-1", "turn-1", "action-1", /*score*/ 0.92)
+            .expect("valid security risk score"),
+    ));
 
     assert!(aborted.is_empty());
     assert!(compacted.is_empty());
+    assert!(security_risk.is_empty());
 }
 
 #[test]

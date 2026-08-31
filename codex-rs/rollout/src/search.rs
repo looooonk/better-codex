@@ -53,10 +53,14 @@ pub async fn search_rollout_matches(
     let Some(plain_matches) =
         ripgrep_rollout_paths(rg_command, root.as_path(), json_search_term.as_str()).await?
     else {
-        return scan_rollout_matches(root.as_path(), json_search_term.as_str(), search_term).await;
+        return scan_rollout_matches(root.as_path(), search_term).await;
     };
-    let mut matches: RolloutSearchMatches =
-        plain_matches.into_iter().map(|path| (path, None)).collect();
+    let mut matches = HashMap::new();
+    for path in plain_matches {
+        if let Some(snippet) = first_rollout_content_match_snippet(&path, search_term).await? {
+            matches.insert(path, Some(snippet));
+        }
+    }
     matches.extend(scan_compressed_rollout_matches(root.as_path(), search_term).await?);
     Ok(matches)
 }
@@ -116,12 +120,10 @@ async fn ripgrep_rollout_paths(
 
 async fn scan_rollout_matches(
     root: &Path,
-    json_search_term: &str,
     search_term: &str,
 ) -> io::Result<RolloutSearchMatches> {
     let mut matches = HashMap::new();
     let mut dirs = vec![root.to_path_buf()];
-    let json_search_term = case_insensitive_literal_regex(json_search_term)?;
 
     while let Some(dir) = dirs.pop() {
         let mut entries = match tokio::fs::read_dir(dir).await {
@@ -153,23 +155,15 @@ async fn scan_rollout_matches(
                 }
                 continue;
             }
-            if rollout_contains(rollout_file.path(), &json_search_term).await? {
-                matches.insert(rollout_file.into_path(), None);
+            if let Some(snippet) =
+                first_rollout_content_match_snippet(rollout_file.path(), search_term).await?
+            {
+                matches.insert(rollout_file.into_path(), Some(snippet));
             }
         }
     }
 
     Ok(matches)
-}
-
-async fn rollout_contains(path: &Path, search_term: &Regex) -> io::Result<bool> {
-    let mut lines = compression::open_rollout_line_reader(path).await?;
-    while let Some(line) = lines.next_line().await? {
-        if search_term.is_match(line.as_str()) {
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 pub async fn first_rollout_content_match_snippet(
