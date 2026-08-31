@@ -24,6 +24,7 @@ use codex_exec_server::WalkOptions;
 use codex_exec_server::WalkOutcome;
 use codex_exec_server::discover_capability_roots;
 use codex_utils_path_uri::PathUri;
+use codex_utils_plugins::SkillDiscoveryMode;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 use tokio::sync::Notify;
@@ -471,6 +472,7 @@ async fn host_loading_reuses_walk_inventory_for_symlinked_skill_pack() {
             plugin_id: None,
             plugin_namespace: None,
             plugin_root: None,
+            discovery_mode: SkillDiscoveryMode::Recursive,
         }],
         /*plugin_skill_snapshots*/ None,
     );

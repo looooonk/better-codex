@@ -2,10 +2,13 @@ use crate::app_mcp_routing::apply_app_mcp_routing_policy;
 use crate::app_mcp_routing::apps_route_available;
 use crate::is_openai_curated_marketplace_name;
 use crate::manifest::PluginManifest;
+use crate::manifest::PluginManifestFormat;
 use crate::manifest::PluginManifestHooks;
 use crate::manifest::PluginManifestMcpServers;
 use crate::manifest::PluginManifestPaths;
 use crate::manifest::load_plugin_manifest;
+use crate::manifest::load_plugin_manifest_with_format;
+use crate::manifest::is_agent_plugin_manifest;
 use crate::marketplace::MarketplacePluginSource;
 use crate::marketplace::find_marketplace_plugin;
 use crate::marketplace::list_marketplaces_with_home;
@@ -44,6 +47,7 @@ use codex_protocol::auth::AuthMode;
 use codex_protocol::protocol::Product;
 use codex_protocol::protocol::SkillScope;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_plugins::SkillDiscoveryMode;
 use codex_utils_plugins::find_plugin_manifest_path;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -765,6 +769,7 @@ async fn load_plugin(
         root,
         enabled: plugin.enabled,
         skill_roots: Vec::new(),
+        skill_discovery_mode: SkillDiscoveryMode::Recursive,
         disabled_skill_paths: HashSet::new(),
         has_enabled_skills: false,
         mcp_servers: HashMap::new(),
@@ -797,10 +802,15 @@ async fn load_plugin(
         return loaded_plugin;
     }
 
-    let Some(manifest) = load_plugin_manifest(plugin_root.as_path()) else {
+    let Some(loaded_manifest) = load_plugin_manifest_with_format(plugin_root.as_path()) else {
         loaded_plugin.error = Some("missing or invalid plugin.json".to_string());
         return loaded_plugin;
     };
+    loaded_plugin.skill_discovery_mode = match loaded_manifest.format {
+        PluginManifestFormat::Legacy => SkillDiscoveryMode::Recursive,
+        PluginManifestFormat::AgentPlugin => SkillDiscoveryMode::DirectChildren,
+    };
+    let manifest = loaded_manifest.manifest;
 
     let manifest_paths = &manifest.paths;
     loaded_plugin.plugin_namespace = Some(manifest.name.clone());
@@ -936,6 +946,11 @@ pub(crate) async fn load_plugin_skill_inventory(
     restriction_product: Option<Product>,
     plugin_skill_snapshots: Option<&PluginSkillSnapshots>,
 ) -> PluginSkillInventory {
+    let discovery_mode = if is_agent_plugin_manifest(plugin_root.as_path()) {
+        SkillDiscoveryMode::DirectChildren
+    } else {
+        SkillDiscoveryMode::Recursive
+    };
     let roots = plugin_skill_roots(plugin_root, &manifest.paths)
         .into_iter()
         .map(|path| SkillRoot {
@@ -945,6 +960,7 @@ pub(crate) async fn load_plugin_skill_inventory(
             plugin_id: Some(plugin_id.as_key()),
             plugin_namespace: Some(manifest.name.clone()),
             plugin_root: Some(plugin_root.clone()),
+            discovery_mode,
         })
         .collect::<Vec<_>>();
     let outcome = load_skills_from_roots(roots, plugin_skill_snapshots).await;

@@ -3,6 +3,7 @@ use std::collections::HashSet;
 
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_plugins::PluginSkillRoot;
+use codex_utils_plugins::SkillDiscoveryMode;
 
 use crate::AppConnectorId;
 use crate::AppDeclaration;
@@ -22,6 +23,7 @@ pub struct LoadedPlugin<M> {
     pub root: AbsolutePathBuf,
     pub enabled: bool,
     pub skill_roots: Vec<AbsolutePathBuf>,
+    pub skill_discovery_mode: SkillDiscoveryMode,
     pub disabled_skill_paths: HashSet<AbsolutePathBuf>,
     pub has_enabled_skills: bool,
     pub mcp_servers: HashMap<String, M>,
@@ -137,6 +139,7 @@ impl<M: Clone> PluginLoadOutcome<M> {
                         plugin_id: plugin.config_name.clone(),
                         plugin_namespace: plugin_namespace.clone(),
                         plugin_root: plugin.root.clone(),
+                        discovery_mode: plugin.skill_discovery_mode,
                     });
                 }
             }
@@ -233,6 +236,7 @@ mod tests {
             root: test_path(config_name),
             enabled: true,
             skill_roots,
+            skill_discovery_mode: SkillDiscoveryMode::Recursive,
             disabled_skill_paths: HashSet::new(),
             has_enabled_skills: true,
             mcp_servers: HashMap::new(),
@@ -258,6 +262,7 @@ mod tests {
                 plugin_id: "zeta@test".to_string(),
                 plugin_namespace: "zeta".to_string(),
                 plugin_root: test_path("zeta@test"),
+                discovery_mode: SkillDiscoveryMode::Recursive,
             }]
         );
     }
