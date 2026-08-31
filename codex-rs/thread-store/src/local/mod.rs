@@ -15,6 +15,7 @@ mod thread_rollout_resolver;
 mod unarchive_thread;
 mod update_thread_metadata;
 mod update_thread_metadata_git;
+mod writer_lock;
 
 #[cfg(test)]
 mod test_support;
