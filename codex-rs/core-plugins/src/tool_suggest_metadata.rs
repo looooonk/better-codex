@@ -221,15 +221,14 @@ async fn load_plugin_metadata(
         discovery_mode,
     )
     .await;
-    let mut mcp_server_names =
-        load_plugin_mcp_servers(
-            plugin_root.as_path(),
-            plugin_root.as_path(),
-            /*auth_mode*/ None,
-        )
-        .await
-        .into_keys()
-        .collect::<Vec<_>>();
+    let mut mcp_server_names = load_plugin_mcp_servers(
+        plugin_root.as_path(),
+        plugin_root.as_path(),
+        /*auth_mode*/ None,
+    )
+    .await
+    .into_keys()
+    .collect::<Vec<_>>();
     mcp_server_names.sort_unstable();
     mcp_server_names.dedup();
     let app_declarations = load_plugin_apps(plugin_root.as_path()).await;

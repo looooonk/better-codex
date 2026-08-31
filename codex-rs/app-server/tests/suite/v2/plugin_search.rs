@@ -94,7 +94,10 @@ async fn plugin_search_routes_bounded_remote_queries_and_filters_shared_results(
         response
             .data
             .iter()
-            .map(|result| (result.marketplace_name.as_str(), result.plugin.name.as_str()))
+            .map(|result| (
+                result.marketplace_name.as_str(),
+                result.plugin.name.as_str()
+            ))
             .collect::<Vec<_>>(),
         vec![
             ("openai-curated-remote", "global-linear"),

@@ -6,9 +6,9 @@ use crate::manifest::PluginManifestFormat;
 use crate::manifest::PluginManifestHooks;
 use crate::manifest::PluginManifestMcpServers;
 use crate::manifest::PluginManifestPaths;
+use crate::manifest::is_agent_plugin_manifest;
 use crate::manifest::load_plugin_manifest;
 use crate::manifest::load_plugin_manifest_with_format;
-use crate::manifest::is_agent_plugin_manifest;
 use crate::marketplace::MarketplacePluginSource;
 use crate::marketplace::find_marketplace_plugin;
 use crate::marketplace::list_marketplaces_with_home;
@@ -1350,14 +1350,13 @@ pub(crate) async fn load_plugin_mcp_servers_from_manifest(
         }
         Some(PluginManifestMcpServers::Path(_)) | None => {
             for mcp_config_path in plugin_mcp_config_paths(plugin_root, manifest_paths) {
-                let plugin_mcp =
-                    load_mcp_servers_from_file(
-                        plugin_root,
-                        plugin_data_root,
-                        &mcp_config_path,
-                        manifest_format,
-                    )
-                    .await;
+                let plugin_mcp = load_mcp_servers_from_file(
+                    plugin_root,
+                    plugin_data_root,
+                    &mcp_config_path,
+                    manifest_format,
+                )
+                .await;
                 for (name, mut config) in plugin_mcp.mcp_servers {
                     if let Some(policy) = plugin_policy.and_then(|policy| policy.get(&name)) {
                         apply_plugin_mcp_server_policy(&mut config, policy);

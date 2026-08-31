@@ -152,7 +152,10 @@ async fn search_remote_plugins_redacts_sensitive_parameters_from_transport_error
     let RemotePluginCatalogError::Request { url, source } = error else {
         panic!("expected transport request error");
     };
-    assert_eq!(url, format!("http://{address}/backend-api/ps/plugins/search"));
+    assert_eq!(
+        url,
+        format!("http://{address}/backend-api/ps/plugins/search")
+    );
     assert!(!source.to_string().contains("sensitive"));
 }
 
@@ -161,10 +164,11 @@ async fn search_remote_plugins_rejects_oversized_responses() {
     let server = MockServer::start().await;
     Mock::given(method("GET"))
         .and(path("/backend-api/ps/plugins/search"))
-        .respond_with(
-            ResponseTemplate::new(200)
-                .set_body_bytes(vec![b'x'; MAX_REMOTE_PLUGIN_SEARCH_RESPONSE_BYTES + 1]),
-        )
+        .respond_with(ResponseTemplate::new(200).set_body_bytes(vec![
+            b'x';
+            MAX_REMOTE_PLUGIN_SEARCH_RESPONSE_BYTES
+                + 1
+        ]))
         .expect(1)
         .mount(&server)
         .await;

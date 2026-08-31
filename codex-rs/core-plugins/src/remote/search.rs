@@ -65,12 +65,10 @@ pub async fn search_remote_plugins(
     )
     .await
     .map_err(|error| match error {
-        RemotePluginCatalogError::Request { url, source } => {
-            RemotePluginCatalogError::Request {
-                url,
-                source: source.without_url(),
-            }
-        }
+        RemotePluginCatalogError::Request { url, source } => RemotePluginCatalogError::Request {
+            url,
+            source: source.without_url(),
+        },
         other => other,
     })?;
     let plugins = response
@@ -91,13 +89,14 @@ async fn send_and_decode_bounded<T: for<'de> Deserialize<'de>>(
     url: &str,
     max_bytes: usize,
 ) -> Result<T, RemotePluginCatalogError> {
-    let mut response = request
-        .send()
-        .await
-        .map_err(|source| RemotePluginCatalogError::Request {
-            url: url.to_string(),
-            source,
-        })?;
+    let mut response =
+        request
+            .send()
+            .await
+            .map_err(|source| RemotePluginCatalogError::Request {
+                url: url.to_string(),
+                source,
+            })?;
     if response
         .content_length()
         .is_some_and(|content_length| content_length > max_bytes as u64)

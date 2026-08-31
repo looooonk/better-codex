@@ -560,7 +560,10 @@ async fn load_skills_under_root(
             let path_uri = match fs.canonicalize(&skill.path, /*sandbox*/ None).await {
                 Ok(path) => path,
                 Err(err) if skill_root.discovery_mode == SkillDiscoveryMode::DirectChildren => {
-                    error!("failed to resolve Agent Plugin skill path {}: {err}", skill.path);
+                    error!(
+                        "failed to resolve Agent Plugin skill path {}: {err}",
+                        skill.path
+                    );
                     return None;
                 }
                 Err(_) => skill.path.clone(),
@@ -588,11 +591,17 @@ async fn load_skills_under_root(
                 match fs.get_metadata(&path_uri, /*sandbox*/ None).await {
                     Ok(metadata) if metadata.is_file => {}
                     Ok(_) => {
-                        error!("Agent Plugin skill path {} is not a regular file", path.display());
+                        error!(
+                            "Agent Plugin skill path {} is not a regular file",
+                            path.display()
+                        );
                         return None;
                     }
                     Err(err) => {
-                        error!("failed to inspect Agent Plugin skill path {}: {err}", path.display());
+                        error!(
+                            "failed to inspect Agent Plugin skill path {}: {err}",
+                            path.display()
+                        );
                         return None;
                     }
                 }

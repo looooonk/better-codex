@@ -10,9 +10,7 @@ enum TestEntryType {
     Directory,
 }
 
-fn unpack_test_entries(
-    entries: &[(&str, TestEntryType)],
-) -> Result<(), PluginBundleUnpackError> {
+fn unpack_test_entries(entries: &[(&str, TestEntryType)]) -> Result<(), PluginBundleUnpackError> {
     let mut builder = tar::Builder::new(Vec::new());
     for (path, entry_type) in entries {
         let mut header = Header::new_gnu();
@@ -172,8 +170,8 @@ fn archive_entry_count_is_bounded_before_extraction() {
 #[test]
 fn archive_path_depth_is_bounded() {
     let destination = Path::new("destination");
-    let allowed = std::iter::repeat_n("component", MAX_PLUGIN_BUNDLE_PATH_COMPONENTS)
-        .collect::<PathBuf>();
+    let allowed =
+        std::iter::repeat_n("component", MAX_PLUGIN_BUNDLE_PATH_COMPONENTS).collect::<PathBuf>();
     enforce_packed_archive_path(&allowed).expect("pack path depth limit should be allowed");
     assert_eq!(
         checked_tar_output_path(destination, &allowed).expect("path depth limit should be allowed"),

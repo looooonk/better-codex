@@ -1,8 +1,8 @@
 use super::*;
 use codex_config::McpServerTransportConfig;
+use codex_utils_path_uri::LegacyAppPathString;
 use pretty_assertions::assert_eq;
 use std::collections::HashMap;
-use codex_utils_path_uri::LegacyAppPathString;
 use tempfile::tempdir;
 
 #[test]
@@ -40,12 +40,7 @@ fn agent_plugin_http_config_accepts_meta_and_filters_client_headers() {
         panic!("expected streamable HTTP transport");
     };
     assert_eq!(
-        (
-            url,
-            bearer_token_env_var,
-            http_headers,
-            env_http_headers,
-        ),
+        (url, bearer_token_env_var, http_headers, env_http_headers,),
         (
             &"https://example.com/mcp".to_string(),
             &None,
@@ -88,8 +83,7 @@ fn agent_plugin_http_config_keeps_valid_siblings() {
             },
             PluginMcpServerParseError {
                 name: "legacy".to_string(),
-                message: "Agent Plugins legacy SSE transport is not supported by Codex"
-                    .to_string(),
+                message: "Agent Plugins legacy SSE transport is not supported by Codex".to_string(),
             },
         ]
     );

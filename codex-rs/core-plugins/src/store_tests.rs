@@ -439,7 +439,12 @@ fn agent_plugin_install_skips_symlinked_and_special_entries() {
 
     assert!(result.installed_path.join("plugin.json").is_file());
     assert!(!result.installed_path.join("skills/greet/SKILL.md").exists());
-    assert!(!result.installed_path.join("skills/greet/events.pipe").exists());
+    assert!(
+        !result
+            .installed_path
+            .join("skills/greet/events.pipe")
+            .exists()
+    );
 }
 
 #[test]

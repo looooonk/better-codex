@@ -61,12 +61,12 @@ fn maps_portable_metadata_and_fixed_components() {
     );
     let interface = manifest.interface.expect("portable interface");
     assert_eq!(interface.display_name.as_deref(), Some("demo-plugin"));
-    assert_eq!(interface.short_description.as_deref(), Some("Portable demo"));
-    assert_eq!(interface.long_description.as_deref(), Some("Portable demo"));
     assert_eq!(
-        interface.developer_name.as_deref(),
-        Some("Portable Author")
+        interface.short_description.as_deref(),
+        Some("Portable demo")
     );
+    assert_eq!(interface.long_description.as_deref(), Some("Portable demo"));
+    assert_eq!(interface.developer_name.as_deref(), Some("Portable Author"));
     assert_eq!(
         interface.website_url.as_deref(),
         Some("https://example.com/plugin")

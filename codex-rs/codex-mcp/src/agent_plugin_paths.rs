@@ -226,23 +226,40 @@ fn resolve_existing_path_prefix(path: &Path) -> Result<PathBuf, String> {
                 if std::fs::symlink_metadata(&existing)
                     .is_ok_and(|metadata| metadata.file_type().is_symlink())
                 {
-                    return Err(format!("failed to resolve symlinked path `{}`", path.display()));
+                    return Err(format!(
+                        "failed to resolve symlinked path `{}`",
+                        path.display()
+                    ));
                 }
                 let Some(component) = existing.components().next_back() else {
-                    return Err(format!("failed to resolve path `{}`: {err}", path.display()));
+                    return Err(format!(
+                        "failed to resolve path `{}`: {err}",
+                        path.display()
+                    ));
                 };
                 if matches!(
                     component,
                     std::path::Component::Prefix(_) | std::path::Component::RootDir
                 ) {
-                    return Err(format!("failed to resolve path `{}`: {err}", path.display()));
+                    return Err(format!(
+                        "failed to resolve path `{}`: {err}",
+                        path.display()
+                    ));
                 }
                 missing_components.push(component.as_os_str().to_os_string());
                 if !existing.pop() {
-                    return Err(format!("failed to resolve path `{}`: {err}", path.display()));
+                    return Err(format!(
+                        "failed to resolve path `{}`: {err}",
+                        path.display()
+                    ));
                 }
             }
-            Err(err) => return Err(format!("failed to resolve path `{}`: {err}", path.display())),
+            Err(err) => {
+                return Err(format!(
+                    "failed to resolve path `{}`: {err}",
+                    path.display()
+                ));
+            }
         }
     }
 }

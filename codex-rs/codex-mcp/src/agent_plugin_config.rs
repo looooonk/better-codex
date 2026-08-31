@@ -9,8 +9,7 @@ use std::collections::HashSet;
 use std::path::Path;
 use url::Host;
 
-const AGENT_PLUGIN_MCP_SCHEMA_URI: &str =
-    "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
+const AGENT_PLUGIN_MCP_SCHEMA_URI: &str = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
 const CLIENT_OWNED_HTTP_HEADERS: &[&str] = &[
     "accept",
     "authorization",
@@ -79,7 +78,9 @@ pub fn parse_agent_plugin_mcp_config(
     contents: &str,
 ) -> Result<PluginMcpConfigParseOutcome, serde_json::Error> {
     let AgentPluginMcpFile {
-        schema, mcp_servers, ..
+        schema,
+        mcp_servers,
+        ..
     } = serde_json::from_str(contents)?;
     if schema != AGENT_PLUGIN_MCP_SCHEMA_URI {
         return Err(plugin_mcp_json_error(format!(

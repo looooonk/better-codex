@@ -110,14 +110,18 @@ pub async fn plugin_namespace_for_root_uri(
     fs: &dyn ExecutorFileSystem,
     plugin_root: &PathUri,
 ) -> Option<String> {
-    let agent_manifest_path = plugin_root
-        .join(AGENT_PLUGIN_MANIFEST_RELATIVE_PATH)
-        .ok()?;
-    if let Ok(metadata) = fs.get_metadata(&agent_manifest_path, /*sandbox*/ None).await {
+    let agent_manifest_path = plugin_root.join(AGENT_PLUGIN_MANIFEST_RELATIVE_PATH).ok()?;
+    if let Ok(metadata) = fs
+        .get_metadata(&agent_manifest_path, /*sandbox*/ None)
+        .await
+    {
         if metadata.is_symlink || !metadata.is_file {
             return None;
         }
-        if let Ok(contents) = fs.read_file_text(&agent_manifest_path, /*sandbox*/ None).await {
+        if let Ok(contents) = fs
+            .read_file_text(&agent_manifest_path, /*sandbox*/ None)
+            .await
+        {
             match agent_plugin_schema_status(&contents) {
                 AgentPluginSchemaStatus::Supported => {
                     return agent_plugin_manifest_name(&contents);

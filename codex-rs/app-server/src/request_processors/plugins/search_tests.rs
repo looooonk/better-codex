@@ -34,7 +34,10 @@ fn plugin(name: &str, keywords: &[&str]) -> PluginSummary {
 fn search_text_normalization_and_match_ranking_are_stable() {
     let plugin = plugin("Issue-Tracker", &["project management", "tickets"]);
 
-    assert_eq!(normalize_search_text("  Issue_tracker!!! "), "issue tracker");
+    assert_eq!(
+        normalize_search_text("  Issue_tracker!!! "),
+        "issue tracker"
+    );
     assert_eq!(plugin_search_match_rank(&plugin, "issue tracker"), Some(1));
     assert_eq!(plugin_search_match_rank(&plugin, "issue"), Some(2));
     assert_eq!(plugin_search_match_rank(&plugin, "tracker"), Some(3));

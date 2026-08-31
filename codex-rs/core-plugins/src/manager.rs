@@ -19,8 +19,8 @@ use crate::loader::refresh_curated_plugin_cache;
 use crate::loader::refresh_non_curated_plugin_cache_detailed;
 use crate::loader::refresh_non_curated_plugin_cache_force_reinstall_detailed;
 use crate::loader::remote_installed_plugins_to_config;
-use crate::manifest::PluginManifestInterface;
 use crate::manifest::PluginManifestFormat;
+use crate::manifest::PluginManifestInterface;
 use crate::manifest::load_plugin_manifest;
 use crate::manifest::load_plugin_manifest_with_format;
 use crate::marketplace::MarketplaceError;
@@ -805,7 +805,8 @@ impl PluginsManager {
                 let plugin_data_root = self
                     .store
                     .plugin_data_root_for_source(plugin_id, plugin_root.as_path());
-                plugin_capability_summary_from_root(plugin_id, &plugin_root, &plugin_data_root).await
+                plugin_capability_summary_from_root(plugin_id, &plugin_root, &plugin_data_root)
+                    .await
             }
             None => None,
         };
@@ -824,7 +825,8 @@ impl PluginsManager {
                 let plugin_data_root = self
                     .store
                     .plugin_data_root_for_source(plugin_id, plugin_root.as_path());
-                plugin_capability_summary_from_root(plugin_id, &plugin_root, &plugin_data_root).await
+                plugin_capability_summary_from_root(plugin_id, &plugin_root, &plugin_data_root)
+                    .await
             }
             None => None,
         };

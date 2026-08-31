@@ -74,7 +74,10 @@ async fn plugin_search_uses_local_catalogs_for_api_key_auth() -> Result<()> {
         response
             .data
             .iter()
-            .map(|result| (result.plugin.name.as_str(), result.marketplace_path.as_ref()))
+            .map(|result| (
+                result.plugin.name.as_str(),
+                result.marketplace_path.as_ref()
+            ))
             .collect::<Vec<_>>(),
         vec![("calendar-local", Some(&marketplace_path))]
     );
@@ -185,7 +188,10 @@ async fn plugin_search_adds_local_results_only_to_the_first_remote_page() -> Res
         later_page
             .data
             .iter()
-            .map(|result| (result.plugin.name.as_str(), result.marketplace_path.as_ref()))
+            .map(|result| (
+                result.plugin.name.as_str(),
+                result.marketplace_path.as_ref()
+            ))
             .collect::<Vec<_>>(),
         vec![("calendar-later", None)]
     );
@@ -207,7 +213,9 @@ async fn plugin_search_deduplicates_remote_matches_and_retains_installed_state()
     let shared_plugin_path = repo_root.path().join("plugins/local-planner");
     std::fs::create_dir_all(codex_home.path().join(".tmp"))?;
     std::fs::write(
-        codex_home.path().join(".tmp/plugin-share-local-paths-v1.json"),
+        codex_home
+            .path()
+            .join(".tmp/plugin-share-local-paths-v1.json"),
         serde_json::to_string(&json!({
             "localPluginPathsByRemotePluginId": {
                 "remote-shared": shared_plugin_path,
