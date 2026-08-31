@@ -69,6 +69,7 @@ pub use list::read_thread_item_from_rollout;
 pub use list::rollout_date_parts;
 pub use metadata::builder_from_items;
 pub use metadata::rollout_id_from_path;
+pub use metadata::thread_id_from_rollout_path;
 pub use model_context::ModelContextScan;
 pub use model_context::ModelContextScanProgress;
 pub use persistence_metrics::RolloutPersistenceBatchMeasurement;

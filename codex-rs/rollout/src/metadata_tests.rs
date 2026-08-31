@@ -231,6 +231,10 @@ fn builder_from_items_uses_thread_id_from_replacement_filename() {
         rollout_id_from_path(path.as_path()),
         Some(ThreadId::from_string(&rollout_uuid.to_string()).expect("rollout id"))
     );
+    assert_eq!(
+        thread_id_from_rollout_path(path.as_path()),
+        Some(ThreadId::from_string(&thread_uuid.to_string()).expect("thread id"))
+    );
 }
 
 #[tokio::test]

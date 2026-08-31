@@ -79,6 +79,18 @@ pub(super) fn matching_rollout_file_name(
             ),
         });
     };
+    if let Some(file_thread_id) = codex_rollout::thread_id_from_rollout_path(rollout_path) {
+        return if file_thread_id == thread_id {
+            Ok(file_name)
+        } else {
+            Err(ThreadStoreError::InvalidRequest {
+                message: format!(
+                    "rollout path `{}` does not match thread id {thread_id}",
+                    display_path.display()
+                ),
+            })
+        };
+    }
     let required_plain_suffix = format!("{thread_id}.jsonl");
     let required_compressed_suffix = format!("{required_plain_suffix}.zst");
     let file_name_str = file_name.to_string_lossy();
@@ -301,6 +313,9 @@ pub(super) fn git_info_from_parts(
 }
 
 fn thread_id_from_rollout_path(path: &Path) -> Option<ThreadId> {
+    if let Some(thread_id) = codex_rollout::thread_id_from_rollout_path(path) {
+        return Some(thread_id);
+    }
     let file_name = path.file_name()?.to_str()?;
     let file_name = file_name.strip_suffix(".zst").unwrap_or(file_name);
     let stem = file_name.strip_suffix(".jsonl")?;
@@ -343,6 +358,36 @@ mod tests {
             Some(
                 compressed_path.with_file_name(format!("rollout-2025-01-03T12-00-00-{uuid}.jsonl"))
             )
+        );
+    }
+
+    #[test]
+    fn replacement_rollout_file_name_matches_logical_thread() {
+        let thread_id = ThreadId::new();
+        let rollout_id = ThreadId::new();
+        let file_name = format!(
+            "rollout-2026-08-11T18-42-07-{thread_id}_{rollout_id}.jsonl.zst"
+        );
+        let path = PathBuf::from(file_name.as_str());
+
+        assert_eq!(
+            matching_rollout_file_name(path.as_path(), thread_id, path.as_path())
+                .expect("matching logical thread"),
+            OsStr::new(file_name.as_str())
+        );
+        assert!(matching_rollout_file_name(path.as_path(), rollout_id, path.as_path()).is_err());
+    }
+
+    #[test]
+    fn noncanonical_legacy_rollout_file_name_remains_accepted() {
+        let thread_id = ThreadId::new();
+        let file_name = format!("legacy-prefix-{thread_id}.jsonl");
+        let path = PathBuf::from(file_name.as_str());
+
+        assert_eq!(
+            matching_rollout_file_name(path.as_path(), thread_id, path.as_path())
+                .expect("matching legacy thread"),
+            OsStr::new(file_name.as_str())
         );
     }
 }

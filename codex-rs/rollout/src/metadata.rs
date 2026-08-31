@@ -8,6 +8,7 @@ use chrono::NaiveDateTime;
 use chrono::Timelike;
 use chrono::Utc;
 use codex_protocol::RolloutId;
+use codex_protocol::ThreadId;
 use codex_protocol::protocol::AskForApproval;
 use codex_history::RolloutItem;
 use codex_protocol::protocol::SandboxPolicy;
@@ -96,6 +97,12 @@ pub fn builder_from_items(
 pub fn rollout_id_from_path(rollout_path: &Path) -> Option<RolloutId> {
     let file_name = rollout_path.file_name()?.to_str()?;
     Some(RolloutFileName::parse(file_name)?.rollout_id())
+}
+
+/// Returns the logical thread ID encoded in a canonical rollout filename.
+pub fn thread_id_from_rollout_path(rollout_path: &Path) -> Option<ThreadId> {
+    let file_name = rollout_path.file_name()?.to_str()?;
+    Some(RolloutFileName::parse(file_name)?.thread_id())
 }
 
 pub async fn extract_metadata_from_rollout(
