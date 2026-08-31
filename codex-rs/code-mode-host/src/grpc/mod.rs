@@ -1,6 +1,7 @@
 mod conversions;
 mod delegate;
 mod events;
+mod principal;
 mod routing;
 mod session;
 mod validation;
@@ -14,6 +15,8 @@ use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::WaitRequest;
 use codex_code_mode_protocol::grpc as proto;
 use codex_code_mode_protocol::grpc::code_mode_host_server::CodeModeHost;
+use codex_code_mode_protocol::grpc::code_mode_host_server::CodeModeHostServer;
+use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
 use futures::Stream;
 use futures::StreamExt;
 use tokio::sync::mpsc;
@@ -25,6 +28,8 @@ use tonic::Status;
 use self::session::GrpcHostState;
 use self::session::GrpcSession;
 use self::waits::WaitRegistration;
+use self::principal::GrpcPrincipal;
+use self::principal::PrincipalPolicy;
 
 type GrpcStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send + 'static>>;
 type GrpcFuture<'a, T> = Pin<Box<dyn Future<Output = Result<Response<T>, Status>> + Send + 'a>>;
@@ -33,49 +38,67 @@ type GrpcFuture<'a, T> = Pin<Box<dyn Future<Output = Result<Response<T>, Status>
 #[derive(Clone)]
 pub struct GrpcCodeModeHost {
     state: Arc<GrpcHostState>,
+    principal_policy: PrincipalPolicy,
 }
 
 impl GrpcCodeModeHost {
-    /// Creates a host with independent session, execution, and callback limits.
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self {
             state: Arc::new(GrpcHostState::new()),
+            principal_policy: PrincipalPolicy::InProcess,
+        }
+    }
+
+    fn loopback_tcp() -> Self {
+        Self {
+            state: Arc::new(GrpcHostState::new()),
+            principal_policy: PrincipalPolicy::LoopbackTcp,
         }
     }
 
     async fn open_session_request(
         &self,
         request: proto::OpenSessionRequest,
+        principal: GrpcPrincipal,
     ) -> Result<Response<GrpcStream<proto::SessionEvent>>, Status> {
         let _permit = self.state.request_permit()?;
         let limits = conversions::session_limits(request.cell_execution_limits)?;
-        Ok(Response::new(self.state.open_session(limits)?))
+        Ok(Response::new(self.state.open_session(limits, principal)?))
     }
 
     async fn close_session_request(
         &self,
         request: proto::CloseSessionRequest,
+        principal: GrpcPrincipal,
     ) -> Result<Response<proto::CloseSessionResponse>, Status> {
         let _permit = self.state.control_permit()?;
-        self.state.close_session(&request.session_id).await?;
+        self.state
+            .close_session(&request.session_id, principal)
+            .await?;
         Ok(Response::new(proto::CloseSessionResponse {}))
     }
 
     async fn subscribe_request(
         &self,
         request: proto::SubscribeToToolCallsRequest,
+        principal: GrpcPrincipal,
     ) -> Result<Response<GrpcStream<proto::ToolCall>>, Status> {
         let _permit = self.state.request_permit()?;
-        let session = self.state.session(&request.session_id)?;
+        let session = self
+            .state
+            .session_for_principal(&request.session_id, principal)?;
         Ok(Response::new(session.subscribe(request.tool_names)?))
     }
 
     async fn complete_tool_request(
         &self,
         request: proto::CompleteToolCallRequest,
+        principal: GrpcPrincipal,
     ) -> Result<Response<proto::CompleteToolCallResponse>, Status> {
         let _permit = self.state.control_permit()?;
-        let session = self.state.session(&request.session_id)?;
+        let session = self
+            .state
+            .session_for_principal(&request.session_id, principal)?;
         let invocation_id = validation::uuid(&request.invocation_id, "tool invocation ID")?;
         let result = match request.outcome {
             Some(proto::complete_tool_call_request::Outcome::Succeeded(result)) => Ok(
@@ -104,9 +127,11 @@ impl GrpcCodeModeHost {
     async fn acknowledge_notification_request(
         &self,
         request: proto::AcknowledgeNotificationRequest,
+        principal: GrpcPrincipal,
     ) -> Result<Response<proto::AcknowledgeNotificationResponse>, Status> {
         let _permit = self.state.control_permit()?;
-        self.state.session(&request.session_id)?;
+        self.state
+            .session_for_principal(&request.session_id, principal)?;
         validation::uuid(&request.notification_id, "notification ID")?;
         Ok(Response::new(proto::AcknowledgeNotificationResponse {}))
     }
@@ -114,8 +139,11 @@ impl GrpcCodeModeHost {
     async fn execute_request(
         &self,
         request: proto::ExecuteRequest,
+        principal: GrpcPrincipal,
     ) -> Result<Response<GrpcStream<proto::ExecuteEvent>>, Status> {
-        let session = self.state.session(&request.session_id)?;
+        let session = self
+            .state
+            .session_for_principal(&request.session_id, principal)?;
         validation::identifier(&request.execution_id, "execution ID")?;
         let request_permit = self.state.request_permit()?;
         let execution_id = request.execution_id.clone();
@@ -169,8 +197,11 @@ impl GrpcCodeModeHost {
     async fn wait_request(
         &self,
         request: proto::WaitRequest,
+        principal: GrpcPrincipal,
     ) -> Result<Response<proto::WaitResponse>, Status> {
-        let session = self.state.session(&request.session_id)?;
+        let session = self
+            .state
+            .session_for_principal(&request.session_id, principal)?;
         validation::identifier(&request.cell_id, "cell ID")?;
         validation::identifier(&request.wait_id, "wait ID")?;
         let _permit = self.state.request_permit()?;
@@ -197,9 +228,12 @@ impl GrpcCodeModeHost {
     async fn cancel_wait_request(
         &self,
         request: proto::CancelWaitRequest,
+        principal: GrpcPrincipal,
     ) -> Result<Response<proto::CancelWaitResponse>, Status> {
         let _permit = self.state.control_permit()?;
-        let session = self.state.session(&request.session_id)?;
+        let session = self
+            .state
+            .session_for_principal(&request.session_id, principal)?;
         validation::identifier(&request.wait_id, "wait ID")?;
         session.cancel_wait(&request.wait_id).await?;
         Ok(Response::new(proto::CancelWaitResponse {}))
@@ -208,8 +242,11 @@ impl GrpcCodeModeHost {
     async fn terminate_request(
         &self,
         request: proto::TerminateRequest,
+        principal: GrpcPrincipal,
     ) -> Result<Response<proto::WaitResponse>, Status> {
-        let session = self.state.session(&request.session_id)?;
+        let session = self
+            .state
+            .session_for_principal(&request.session_id, principal)?;
         validation::identifier(&request.cell_id, "cell ID")?;
         let _permit = self.state.request_permit()?;
         let result = session.terminate(CellId::new(request.cell_id)).await?;
@@ -233,10 +270,11 @@ fn execution_stream(
     }))
 }
 
-impl Default for GrpcCodeModeHost {
-    fn default() -> Self {
-        Self::new()
-    }
+/// Builds the only routable gRPC service, restricted to one loopback TCP caller per session.
+pub fn loopback_grpc_service() -> CodeModeHostServer<GrpcCodeModeHost> {
+    CodeModeHostServer::new(GrpcCodeModeHost::loopback_tcp())
+        .max_decoding_message_size(MAX_FRAME_BYTES)
+        .max_encoding_message_size(MAX_FRAME_BYTES)
 }
 
 impl CodeModeHost for GrpcCodeModeHost {
@@ -252,7 +290,11 @@ impl CodeModeHost for GrpcCodeModeHost {
         'a: 'async_trait,
         Self: 'async_trait,
     {
-        Box::pin(self.open_session_request(request.into_inner()))
+        let principal = self.principal_policy.principal(&request);
+        Box::pin(async move {
+            self.open_session_request(request.into_inner(), principal?)
+                .await
+        })
     }
 
     fn close_session<'a, 'async_trait>(
@@ -263,7 +305,11 @@ impl CodeModeHost for GrpcCodeModeHost {
         'a: 'async_trait,
         Self: 'async_trait,
     {
-        Box::pin(self.close_session_request(request.into_inner()))
+        let principal = self.principal_policy.principal(&request);
+        Box::pin(async move {
+            self.close_session_request(request.into_inner(), principal?)
+                .await
+        })
     }
 
     fn subscribe_to_tool_calls<'a, 'async_trait>(
@@ -274,7 +320,11 @@ impl CodeModeHost for GrpcCodeModeHost {
         'a: 'async_trait,
         Self: 'async_trait,
     {
-        Box::pin(self.subscribe_request(request.into_inner()))
+        let principal = self.principal_policy.principal(&request);
+        Box::pin(async move {
+            self.subscribe_request(request.into_inner(), principal?)
+                .await
+        })
     }
 
     fn complete_tool_call<'a, 'async_trait>(
@@ -285,7 +335,11 @@ impl CodeModeHost for GrpcCodeModeHost {
         'a: 'async_trait,
         Self: 'async_trait,
     {
-        Box::pin(self.complete_tool_request(request.into_inner()))
+        let principal = self.principal_policy.principal(&request);
+        Box::pin(async move {
+            self.complete_tool_request(request.into_inner(), principal?)
+                .await
+        })
     }
 
     fn acknowledge_notification<'a, 'async_trait>(
@@ -296,7 +350,11 @@ impl CodeModeHost for GrpcCodeModeHost {
         'a: 'async_trait,
         Self: 'async_trait,
     {
-        Box::pin(self.acknowledge_notification_request(request.into_inner()))
+        let principal = self.principal_policy.principal(&request);
+        Box::pin(async move {
+            self.acknowledge_notification_request(request.into_inner(), principal?)
+                .await
+        })
     }
 
     fn execute<'a, 'async_trait>(
@@ -307,7 +365,8 @@ impl CodeModeHost for GrpcCodeModeHost {
         'a: 'async_trait,
         Self: 'async_trait,
     {
-        Box::pin(self.execute_request(request.into_inner()))
+        let principal = self.principal_policy.principal(&request);
+        Box::pin(async move { self.execute_request(request.into_inner(), principal?).await })
     }
 
     fn wait<'a, 'async_trait>(
@@ -318,7 +377,8 @@ impl CodeModeHost for GrpcCodeModeHost {
         'a: 'async_trait,
         Self: 'async_trait,
     {
-        Box::pin(self.wait_request(request.into_inner()))
+        let principal = self.principal_policy.principal(&request);
+        Box::pin(async move { self.wait_request(request.into_inner(), principal?).await })
     }
 
     fn cancel_wait<'a, 'async_trait>(
@@ -329,7 +389,11 @@ impl CodeModeHost for GrpcCodeModeHost {
         'a: 'async_trait,
         Self: 'async_trait,
     {
-        Box::pin(self.cancel_wait_request(request.into_inner()))
+        let principal = self.principal_policy.principal(&request);
+        Box::pin(async move {
+            self.cancel_wait_request(request.into_inner(), principal?)
+                .await
+        })
     }
 
     fn terminate<'a, 'async_trait>(
@@ -340,7 +404,11 @@ impl CodeModeHost for GrpcCodeModeHost {
         'a: 'async_trait,
         Self: 'async_trait,
     {
-        Box::pin(self.terminate_request(request.into_inner()))
+        let principal = self.principal_policy.principal(&request);
+        Box::pin(async move {
+            self.terminate_request(request.into_inner(), principal?)
+                .await
+        })
     }
 }
 
@@ -370,3 +438,7 @@ mod tests;
 #[cfg(test)]
 #[path = "robustness_tests.rs"]
 mod robustness_tests;
+
+#[cfg(test)]
+#[path = "transport_tests.rs"]
+mod transport_tests;

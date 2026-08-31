@@ -41,6 +41,7 @@ use self::delegate::RemoteDelegate;
 use self::peer::HostPeer;
 
 pub use self::grpc::GrpcCodeModeHost;
+pub use self::grpc::loopback_grpc_service;
 
 mod delegate;
 mod grpc;

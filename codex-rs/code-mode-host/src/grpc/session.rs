@@ -28,6 +28,7 @@ use uuid::Uuid;
 use super::GrpcStream;
 use super::delegate::GrpcDelegate;
 use super::events::EventSender;
+use super::principal::GrpcPrincipal;
 use super::validation;
 use super::waits::ActiveWait;
 use crate::HostLimits;
@@ -46,6 +47,7 @@ pub(super) struct GrpcHostState {
 
 pub(super) struct GrpcSession {
     pub(super) id: Uuid,
+    principal: GrpcPrincipal,
     pub(super) runtime: Arc<InProcessCodeModeSession>,
     pub(super) closed: CancellationToken,
     pub(super) state: Mutex<SessionState>,
@@ -105,6 +107,7 @@ impl GrpcHostState {
     pub(super) fn open_session(
         self: &Arc<Self>,
         limits: CodeModeSessionCellExecutionLimits,
+        principal: GrpcPrincipal,
     ) -> Result<GrpcStream<proto::SessionEvent>, Status> {
         let id = Uuid::new_v4();
         let (events, receiver) = mpsc::channel(OUTGOING_CHANNEL_CAPACITY);
@@ -112,6 +115,7 @@ impl GrpcHostState {
         let event_sender = EventSender::new(events.clone(), closed.clone());
         let session = GrpcSession::new(
             id,
+            principal,
             event_sender,
             closed,
             Arc::clone(&self.delegate_permits),
@@ -149,6 +153,28 @@ impl GrpcHostState {
         Ok(Box::pin(ReceiverStream::new(receiver)))
     }
 
+    pub(super) fn session_for_principal(
+        &self,
+        id: &str,
+        principal: GrpcPrincipal,
+    ) -> Result<Arc<GrpcSession>, Status> {
+        let session_id = validation::uuid(id, "session ID")?;
+        let session = self
+            .sessions
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(&session_id)
+            .cloned()
+            .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))?;
+        if session.principal != principal {
+            return Err(Status::permission_denied(
+                "code-mode session belongs to another caller",
+            ));
+        }
+        Ok(session)
+    }
+
+    #[cfg(test)]
     pub(super) fn session(&self, id: &str) -> Result<Arc<GrpcSession>, Status> {
         let session_id = validation::uuid(id, "session ID")?;
         self.sessions
@@ -159,14 +185,24 @@ impl GrpcHostState {
             .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))
     }
 
-    pub(super) async fn close_session(&self, id: &str) -> Result<(), Status> {
+    pub(super) async fn close_session(
+        &self,
+        id: &str,
+        principal: GrpcPrincipal,
+    ) -> Result<(), Status> {
         let session_id = validation::uuid(id, "session ID")?;
-        let session = self
-            .sessions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .remove(&session_id)
-            .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))?;
+        let session = {
+            let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+            let session = sessions
+                .get(&session_id)
+                .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))?;
+            if session.principal != principal {
+                return Err(Status::permission_denied(
+                    "code-mode session belongs to another caller",
+                ));
+            }
+            sessions.remove(&session_id).expect("session was checked above")
+        };
         session.shutdown().await
     }
 
@@ -211,6 +247,7 @@ impl GrpcHostState {
 impl GrpcSession {
     fn new(
         id: Uuid,
+        principal: GrpcPrincipal,
         events: EventSender,
         closed: CancellationToken,
         delegate_permits: Arc<Semaphore>,
@@ -227,6 +264,7 @@ impl GrpcSession {
             });
             Self {
                 id,
+                principal,
                 runtime: Arc::new(
                     InProcessCodeModeSession::with_delegate_and_task_failure_handler(
                         delegate,
