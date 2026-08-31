@@ -190,6 +190,20 @@ fn validate_search_request(params: &SearchThreadOccurrencesParams) -> ThreadStor
             message: "thread/searchOccurrences requires search_term".to_string(),
         });
     }
+    let max_cursor = serde_json::to_string(&SearchCursor {
+        thread_id: params.thread_id,
+        search_term: params.search_term.clone(),
+        next_rollout_ordinal: i64::MAX,
+        next_occurrence_index: usize::MAX,
+    })
+    .map_err(thread_history_error)?;
+    if max_cursor.len() > MAX_THREAD_HISTORY_INPUT_BYTES {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!(
+                "thread/searchOccurrences search_term cannot produce a cursor larger than {MAX_THREAD_HISTORY_INPUT_BYTES} bytes"
+            ),
+        });
+    }
     if params.page_size == 0 {
         return Err(ThreadStoreError::InvalidRequest {
             message: "thread/searchOccurrences requires page_size greater than zero".to_string(),
@@ -260,7 +274,15 @@ fn parse_cursor(
 }
 
 fn serialize_cursor_for_search(cursor: SearchCursor) -> ThreadStoreResult<String> {
-    serde_json::to_string(&cursor).map_err(thread_history_error)
+    let cursor = serde_json::to_string(&cursor).map_err(thread_history_error)?;
+    if cursor.len() > MAX_THREAD_HISTORY_INPUT_BYTES {
+        return Err(ThreadStoreError::Internal {
+            message: format!(
+                "thread/searchOccurrences cursor exceeds {MAX_THREAD_HISTORY_INPUT_BYTES} byte limit"
+            ),
+        });
+    }
+    Ok(cursor)
 }
 
 fn invalid_cursor(cursor: &str) -> ThreadStoreError {

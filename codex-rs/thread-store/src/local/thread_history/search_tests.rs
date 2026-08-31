@@ -16,6 +16,23 @@ fn occurrence_search_inputs_are_bounded() {
         "invalid thread-store request: thread/searchOccurrences search_term cannot exceed 65536 bytes"
     );
 
+    params.search_term = "x".repeat(MAX_THREAD_HISTORY_INPUT_BYTES);
+    let error = validate_search_request(&params).expect_err("reject oversized cursor projection");
+    assert_eq!(
+        error.to_string(),
+        "invalid thread-store request: thread/searchOccurrences search_term cannot produce a cursor larger than 65536 bytes"
+    );
+
+    params.search_term = "x".repeat(MAX_THREAD_HISTORY_INPUT_BYTES - 256);
+    validate_search_request(&params).expect("accept bounded cursor projection");
+
+    params.search_term = "\0".repeat(MAX_THREAD_HISTORY_INPUT_BYTES / 5);
+    let error = validate_search_request(&params).expect_err("reject escaped cursor projection");
+    assert_eq!(
+        error.to_string(),
+        "invalid thread-store request: thread/searchOccurrences search_term cannot produce a cursor larger than 65536 bytes"
+    );
+
     params.search_term = "needle".to_string();
     params.page_size = MAX_THREAD_OCCURRENCE_PAGE_SIZE + 1;
     let error = validate_search_request(&params).expect_err("reject oversized page");

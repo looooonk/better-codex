@@ -132,7 +132,7 @@ async fn read_complete_rollout_lines(
         }
     })?;
     let mut lines = Vec::new();
-    for line in text.lines().filter(|line| !line.is_empty()) {
+    for line in text.lines() {
         let parsed = serde_json::from_str::<Value>(line).and_then(|mut value| {
             codex_rollout::redact_persisted_json(&mut value);
             serde_json::from_value::<RolloutLine>(value)

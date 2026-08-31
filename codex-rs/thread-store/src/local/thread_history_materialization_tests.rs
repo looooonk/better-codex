@@ -617,6 +617,7 @@ SELECT
 #[tokio::test]
 async fn catch_up_rejects_invalid_complete_suffixes_without_advancing_state() {
     let cases = [
+        ("blank JSONL record", "\n".to_string()),
         (
             "missing ordinal",
             format!(
