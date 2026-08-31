@@ -228,7 +228,7 @@ fn request_pressure_drops_images_before_text_evidence() {
         .map(|index| GuardianEvidenceEntry {
             kind: "tool_output".to_string(),
             provenance: Some(format!("entry-{index}")),
-            text: "e".repeat(650),
+            text: "e".repeat(1_100),
         })
         .collect();
     request.images = vec![

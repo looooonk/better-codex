@@ -68,9 +68,10 @@ impl GuardianReviewImage {
         {
             return Err(GuardianReviewError::InvalidImage);
         }
+        let encoded_bytes = payload.len();
         Ok(Self {
             data_url,
-            encoded_bytes: payload.len(),
+            encoded_bytes,
         })
     }
 }

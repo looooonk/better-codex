@@ -323,7 +323,7 @@ async fn valid_multi_delta_outcome_is_parsed_after_completion() -> Result<()> {
     let fixture = sampler_with_events(vec![
         ev_output_text_delta(r#"{"score":0.25,"risk_level":"low","#),
         ev_output_text_delta(
-            r#"user_authorization":"high","outcome":"allow","rationale":"safe"}"#,
+            r#""user_authorization":"high","outcome":"allow","rationale":"safe"}"#,
         ),
         ev_completed("response-1"),
     ])

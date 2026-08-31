@@ -53,10 +53,10 @@ use crate::session::SUBMISSION_CHANNEL_CAPACITY;
 use crate::session::emit_subagent_session_started;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use crate::tools::approval_pipeline::ApprovalContext;
-use crate::tools::approval_pipeline::ensure_approval_grant_is_current;
-use crate::tools::approval_pipeline::request_approval;
-use crate::tools::approvals::ApprovalAction;
+use crate::tools::ApprovalAction;
+use crate::tools::ApprovalContext;
+use crate::tools::ensure_approval_grant_is_current;
+use crate::tools::request_approval;
 use crate::tools::context::ToolCallSource;
 use crate::tools::sandboxing::ToolError;
 use codex_login::AuthManager;
@@ -81,7 +81,7 @@ struct PendingMcpInvocation {
 /// Approval requests are handled via `parent_session` and are not surfaced.
 /// The returned `ops_tx` allows the caller to submit additional `Op`s to the sub-agent.
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn run_codex_thread_interactive(
+pub(crate) fn run_codex_thread_interactive(
     config: Config,
     auth_manager: Arc<AuthManager>,
     models_manager: SharedModelsManager,
@@ -90,7 +90,8 @@ pub(crate) async fn run_codex_thread_interactive(
     cancel_token: CancellationToken,
     subagent_source: SubAgentSource,
     initial_history: Option<InitialHistory>,
-) -> Result<Codex, CodexErr> {
+) -> futures::future::BoxFuture<'static, Result<Codex, CodexErr>> {
+    Box::pin(async move {
     let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
     let (tx_ops, rx_ops) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
     let conversation_history = initial_history.unwrap_or(InitialHistory::New);
@@ -188,12 +189,13 @@ pub(crate) async fn run_codex_thread_interactive(
         forward_ops(codex_for_ops, rx_ops, cancel_token_ops).await;
     });
 
-    Ok(Codex {
-        tx_sub: tx_ops,
-        rx_event: rx_sub,
-        agent_status: codex.agent_status.clone(),
-        session: Arc::clone(&codex.session),
-        session_loop_termination: codex.session_loop_termination.clone(),
+        Ok(Codex {
+            tx_sub: tx_ops,
+            rx_event: rx_sub,
+            agent_status: codex.agent_status.clone(),
+            session: Arc::clone(&codex.session),
+            session_loop_termination: codex.session_loop_termination.clone(),
+        })
     })
 }
 

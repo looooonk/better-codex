@@ -2227,7 +2227,7 @@ impl Session {
     pub(crate) async fn register_pending_delegated_approval_action(
         &self,
         approval_id: String,
-        action: crate::tools::approvals::ApprovalAction,
+        action: crate::tools::ApprovalAction,
     ) {
         let previous = {
             let mut active = self.active_turn.lock().await;
@@ -2252,7 +2252,7 @@ impl Session {
     pub(crate) async fn pending_delegated_approval_action(
         &self,
         approval_id: &str,
-    ) -> Option<crate::tools::approvals::ApprovalAction> {
+    ) -> Option<crate::tools::ApprovalAction> {
         let mut active = self.active_turn.lock().await;
         let active = active.as_mut()?;
         let action = active

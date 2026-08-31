@@ -201,7 +201,6 @@ impl McpHandler {
 impl CoreToolRuntime for McpHandler {
     fn wait_until_ready<'a>(&'a self, session: &'a Arc<Session>) -> Option<BoxFuture<'a, ()>> {
         Some(Box::pin(async move {
-            session.refresh_mcp_if_dirty().await;
             if let Some(binding) = self.binding.as_ref() {
                 let _ = binding
                     .wait_for_server_startup(&self.tool_info.server_name)

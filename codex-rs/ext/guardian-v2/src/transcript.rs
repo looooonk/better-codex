@@ -13,6 +13,7 @@ use crate::evidence::GuardianEvidenceEntry;
 
 pub(crate) const MAX_EVIDENCE_ENTRIES: usize = 40;
 const MAX_EVIDENCE_ENTRY_TOKENS: usize = 1_000;
+const TRUNCATION_MARKER_TOKENS: usize = 16;
 const MANUAL_APPROVAL_DEVELOPER_PREFIX: &str =
     "The user has manually approved a specific action that was previously `Rejected`.";
 
@@ -135,7 +136,9 @@ fn transcript_entry(item: &ResponseItem) -> Option<GuardianEvidenceEntry> {
 pub(crate) fn bounded_redacted_text(text: String) -> String {
     truncate_text(
         &redact_secrets(text),
-        TruncationPolicy::Tokens(MAX_EVIDENCE_ENTRY_TOKENS),
+        TruncationPolicy::Tokens(
+            MAX_EVIDENCE_ENTRY_TOKENS.saturating_sub(TRUNCATION_MARKER_TOKENS),
+        ),
     )
 }
 
