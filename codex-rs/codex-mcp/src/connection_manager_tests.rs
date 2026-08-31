@@ -14,6 +14,7 @@ use crate::rmcp_client::StartupOutcomeError;
 use crate::server::EffectiveMcpServer;
 use crate::server::McpServerMetadata;
 use crate::server::McpServerOrigin;
+use crate::tool_catalog_cache::McpToolCatalogCacheContext;
 use crate::tools::ToolFilter;
 use crate::tools::ToolInfo;
 use crate::tools::filter_tools;
@@ -135,6 +136,32 @@ async fn create_ready_async_managed_client(tools: Vec<ToolInfo>) -> AsyncManaged
         cached_server_info: None,
         codex_apps_tools_cache_context: None,
         tool_catalog_cache_context: None,
+        tool_filter: ToolFilter::default(),
+        startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
+        startup_reconnect: None,
+        tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
+        cancel_token: CancellationToken::new(),
+    }
+}
+
+fn create_failed_cache_observer(
+    server_name: &str,
+    codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
+    tool_catalog_cache_context: Option<McpToolCatalogCacheContext>,
+) -> AsyncManagedClient {
+    AsyncManagedClient {
+        client: futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Err(
+            StartupOutcomeError::Failed {
+                error: "pending shared-cache observer".to_string(),
+                is_authentication_required: false,
+            },
+        ))
+        .boxed()
+        .shared(),
+        is_codex_apps_mcp_server: server_name == CODEX_APPS_MCP_SERVER_NAME,
+        cached_server_info: None,
+        codex_apps_tools_cache_context,
+        tool_catalog_cache_context,
         tool_filter: ToolFilter::default(),
         startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
         startup_reconnect: None,
@@ -815,7 +842,7 @@ async fn cached_catalog_is_superseded_only_after_live_startup_revision_publishes
     );
     let manager = Arc::new(manager);
 
-    assert_eq!(manager.catalog_revision().await, 0);
+    assert_eq!(manager.catalog_revision().await, 1);
     assert_eq!(
         manager
             .list_all_tools()
@@ -833,7 +860,7 @@ async fn cached_catalog_is_superseded_only_after_live_startup_revision_publishes
     );
 
     let old_revision = manager
-        .lock_catalog_revision(/*expected*/ 0)
+        .lock_catalog_revision(/*expected*/ 1)
         .await
         .expect("initial revision");
     release.notify_one();
@@ -851,10 +878,10 @@ async fn cached_catalog_is_superseded_only_after_live_startup_revision_publishes
             .wait_for_server_startup(CODEX_APPS_MCP_SERVER_NAME)
             .await
     );
-    assert_eq!(manager.catalog_revision().await, 1);
+    assert_eq!(manager.catalog_revision().await, 2);
     assert!(
         manager
-            .lock_catalog_revision(/*expected*/ 0)
+            .lock_catalog_revision(/*expected*/ 1)
             .await
             .is_err()
     );
@@ -1106,10 +1133,6 @@ async fn shared_catalog_generation_invalidates_another_managers_binding() {
             is_workspace_account: false,
         },
     );
-    cache_context.store_current_tools_for_test(vec![create_test_tool(
-        CODEX_APPS_MCP_SERVER_NAME,
-        "v1_tool",
-    )]);
     let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
     let permission_profile = Constrained::allow_any(PermissionProfile::default());
     let mut observing_manager = McpConnectionManager::new_uninitialized(
@@ -1119,32 +1142,18 @@ async fn shared_catalog_generation_invalidates_another_managers_binding() {
     );
     observing_manager.clients.insert(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
-        AsyncManagedClient {
-            client: futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Err(
-                StartupOutcomeError::Failed {
-                    error: "pending shared-cache observer".to_string(),
-                    is_authentication_required: false,
-                },
-            ))
-            .boxed()
-            .shared(),
-            is_codex_apps_mcp_server: true,
-            cached_server_info: None,
-            codex_apps_tools_cache_context: Some(cache_context.clone()),
-            tool_catalog_cache_context: None,
-            tool_filter: ToolFilter::default(),
-            startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
-            startup_reconnect: None,
-            tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
-            cancel_token: CancellationToken::new(),
-        },
+        create_failed_cache_observer(
+            CODEX_APPS_MCP_SERVER_NAME,
+            Some(cache_context.clone()),
+            /*tool_catalog_cache_context*/ None,
+        ),
     );
     let observing_manager = Arc::new(observing_manager);
     let first_binding = crate::binding::McpBinding::capture(Arc::clone(&observing_manager)).await;
     assert!(
         first_binding
             .tool(CODEX_APPS_MCP_SERVER_NAME, "v1_tool")
-            .is_some()
+            .is_none()
     );
 
     let publishing_manager = McpConnectionManager::new_uninitialized(
@@ -1161,7 +1170,7 @@ async fn shared_catalog_generation_invalidates_another_managers_binding() {
             &create_test_server_info("Codex Apps"),
             vec![create_test_tool(
                 CODEX_APPS_MCP_SERVER_NAME,
-                "v2_tool",
+                "v1_tool",
             )],
         )
         .await;
@@ -1171,11 +1180,6 @@ async fn shared_catalog_generation_invalidates_another_managers_binding() {
     assert!(
         next_binding
             .tool(CODEX_APPS_MCP_SERVER_NAME, "v1_tool")
-            .is_none()
-    );
-    assert!(
-        next_binding
-            .tool(CODEX_APPS_MCP_SERVER_NAME, "v2_tool")
             .is_some()
     );
 }
@@ -1214,25 +1218,11 @@ async fn shared_stdio_catalog_generation_invalidates_a_pending_managers_binding(
     );
     manager.clients.insert(
         "docs".to_string(),
-        AsyncManagedClient {
-            client: futures::future::ready::<Result<ManagedClient, StartupOutcomeError>>(Err(
-                StartupOutcomeError::Failed {
-                    error: "pending cache observer".to_string(),
-                    is_authentication_required: false,
-                },
-            ))
-            .boxed()
-            .shared(),
-            is_codex_apps_mcp_server: false,
-            cached_server_info: None,
-            codex_apps_tools_cache_context: None,
-            tool_catalog_cache_context: Some(cache_context.clone()),
-            tool_filter: ToolFilter::default(),
-            startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
-            startup_reconnect: None,
-            tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
-            cancel_token: CancellationToken::new(),
-        },
+        create_failed_cache_observer(
+            "docs",
+            /*codex_apps_tools_cache_context*/ None,
+            Some(cache_context.clone()),
+        ),
     );
     let manager = Arc::new(manager);
     let first_binding = crate::binding::McpBinding::capture(Arc::clone(&manager)).await;
@@ -1247,6 +1237,57 @@ async fn shared_stdio_catalog_generation_invalidates_a_pending_managers_binding(
     let next_binding = crate::binding::McpBinding::capture(manager).await;
     assert!(next_binding.tool("docs", "v1_tool").is_none());
     assert!(next_binding.tool("docs", "v2_tool").is_some());
+}
+
+#[tokio::test]
+async fn first_shared_stdio_catalog_adoption_advances_local_revision() {
+    let cache = McpToolCatalogCache::default();
+    let runtime_context = McpRuntimeContext::new(
+        Arc::new(EnvironmentManager::without_environments()),
+        PathBuf::from("/workspace"),
+    );
+    let config = serde_json::from_value::<McpServerConfig>(serde_json::json!({
+        "command": "docs-mcp",
+    }))
+    .expect("MCP config");
+    let cache_context = cache
+        .context(
+            "docs",
+            &config,
+            &runtime_context,
+            /*resolved_environment*/ None,
+            &ElicitationCapability::default(),
+            /*supports_openai_form_elicitation*/ false,
+        )
+        .expect("cache context");
+    cache_context.publish_if_newest(
+        cache_context.begin_fetch(),
+        &[create_test_tool("docs", "first_tool")],
+    );
+    let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
+    let permission_profile = Constrained::allow_any(PermissionProfile::default());
+    let mut manager = McpConnectionManager::new_uninitialized(
+        &approval_policy,
+        &permission_profile,
+        /*prefix_mcp_tool_names*/ true,
+    );
+    manager.clients.insert(
+        "docs".to_string(),
+        create_failed_cache_observer(
+            "docs",
+            /*codex_apps_tools_cache_context*/ None,
+            Some(cache_context),
+        ),
+    );
+
+    assert_eq!(manager.catalog_revision().await, 1);
+    assert_eq!(
+        manager
+            .shared_tool_catalog("docs")
+            .expect("adopted shared catalog")[0]
+            .callable_name,
+        "first_tool"
+    );
 }
 
 #[tokio::test(start_paused = true)]
@@ -1723,13 +1764,13 @@ async fn list_all_tools_reconnects_failed_codex_apps_startup_and_reuses_client()
     assert!(tools.is_empty());
     reconnect_finished_wait.await;
     tokio::time::timeout(Duration::from_secs(1), async {
-        while manager.catalog_revision().await == 0 {
+        while manager.catalog_revision().await < 2 {
             tokio::task::yield_now().await;
         }
     })
     .await
     .expect("reconnect catalog publication");
-    assert_eq!(manager.catalog_revision().await, 1);
+    assert_eq!(manager.catalog_revision().await, 2);
 
     let tools = manager.list_all_tools().await;
     assert_eq!(
@@ -1801,7 +1842,7 @@ async fn later_tool_list_retries_after_failed_reconnect_and_keeps_cached_tools()
     );
     first_reconnect_finished.await;
     assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 1);
-    assert_eq!(manager.catalog_revision().await, 0);
+    assert_eq!(manager.catalog_revision().await, 1);
 
     let tools = manager.list_all_tools().await;
     assert_eq!(
@@ -1825,7 +1866,7 @@ async fn later_tool_list_retries_after_failed_reconnect_and_keeps_cached_tools()
     );
     second_reconnect_finished.await;
     assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
-    assert_eq!(manager.catalog_revision().await, 0);
+    assert_eq!(manager.catalog_revision().await, 1);
 
     tokio::time::advance(CODEX_APPS_RECONNECT_INITIAL_BACKOFF).await;
     let tools = manager.list_all_tools().await;
@@ -1851,13 +1892,13 @@ async fn later_tool_list_retries_after_failed_reconnect_and_keeps_cached_tools()
     third_reconnect_finished.await;
     assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 3);
     tokio::time::timeout(Duration::from_secs(1), async {
-        while manager.catalog_revision().await == 0 {
+        while manager.catalog_revision().await < 2 {
             tokio::task::yield_now().await;
         }
     })
     .await
     .expect("successful retry catalog publication");
-    assert_eq!(manager.catalog_revision().await, 1);
+    assert_eq!(manager.catalog_revision().await, 2);
 
     let tools = manager.list_all_tools().await;
     assert_eq!(

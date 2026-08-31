@@ -866,13 +866,10 @@ impl McpConnectionManager {
         if local.shared_generation == Some(snapshot.generation) {
             return;
         }
-        let replaced_catalog = local.shared_generation.is_some();
         local.tools = Some(snapshot.tools);
         local.shared_generation = Some(snapshot.generation);
         local.using_shared_fallback = true;
-        if replaced_catalog {
-            *catalog_revision += 1;
-        }
+        *catalog_revision += 1;
     }
 
     async fn sync_shared_tool_catalogs(
@@ -887,10 +884,12 @@ impl McpConnectionManager {
             .shared_tool_catalogs
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let mut replaced_catalog = false;
+        let mut catalog_changed = false;
         for (server_name, live, snapshot) in updates {
             if live {
-                local.remove(&server_name);
+                catalog_changed |= local
+                    .remove(&server_name)
+                    .is_some_and(|catalog| catalog.tools.is_some());
                 continue;
             }
             let Some(snapshot) = snapshot else {
@@ -905,7 +904,7 @@ impl McpConnectionManager {
             {
                 continue;
             }
-            replaced_catalog |= local.contains_key(&server_name);
+            catalog_changed |= local.contains_key(&server_name) || snapshot.tools.is_some();
             local.insert(
                 server_name,
                 SharedToolCatalog {
@@ -914,7 +913,7 @@ impl McpConnectionManager {
                 },
             );
         }
-        if replaced_catalog {
+        if catalog_changed {
             *catalog_revision += 1;
         }
     }
