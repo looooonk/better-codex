@@ -198,7 +198,11 @@ pub(crate) async fn run_turn(
     track_turn_resolved_config_analytics(&sess, &turn_context, &input).await;
 
     let prepared_history = sess.clone_history().await;
-    let turn_items = prepared_history.raw_items()[turn_items_start..].to_vec();
+    let turn_items = prepared_history
+        .raw_items()
+        .skip(turn_items_start)
+        .cloned()
+        .collect();
     drop(prepared_history);
     let initial_context_injection = InitialContextInjection::AfterSummary {
         step_context: Arc::clone(&first_step_context),
@@ -2618,8 +2622,10 @@ async fn try_run_sampling_request(
     outcome
 }
 
-pub(crate) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -> Option<String> {
-    for item in responses.iter().rev() {
+pub(crate) fn get_last_assistant_message_from_turn<'a>(
+    responses: impl DoubleEndedIterator<Item = &'a ResponseItem>,
+) -> Option<String> {
+    for item in responses.rev() {
         if let Some(message) = last_assistant_message_from_item(item, /*plan_mode*/ false) {
             return Some(message);
         }

@@ -27,6 +27,8 @@ use codex_analytics::CompactionStatus;
 use codex_analytics::CompactionStrategy;
 use codex_analytics::CompactionTrigger;
 use codex_analytics::now_unix_seconds;
+use codex_history::CompactedItem;
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
@@ -35,7 +37,6 @@ use codex_protocol::models::ContentItem;
 use codex_protocol::models::InternalChatMessageMetadataPassthrough;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
-use codex_history::CompactedItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::RawResponseCompletedEvent;
 use codex_protocol::protocol::TurnContextItem;
@@ -387,10 +388,11 @@ async fn run_compact_task_inner_impl(
     }
 
     let history_snapshot = sess.clone_history().await;
-    let history_items = history_snapshot.raw_items();
-    let summary_suffix = get_last_assistant_message_from_turn(history_items).unwrap_or_default();
+    let history_items = history_snapshot.annotated_items();
+    let summary_suffix =
+        get_last_assistant_message_from_turn(history_snapshot.raw_items()).unwrap_or_default();
     let summary_text = format!("{SUMMARY_PREFIX}\n{summary_suffix}");
-    let user_messages = collect_user_messages(history_items);
+    let user_messages = collect_annotated_user_messages(history_items);
 
     let mut new_history = build_compacted_history(Vec::new(), &user_messages, &summary_text);
     if let Some(summary_item) = new_history.last_mut() {
@@ -564,34 +566,42 @@ pub(crate) struct CompactedUserMessage {
     internal_chat_message_metadata_passthrough: Option<InternalChatMessageMetadataPassthrough>,
 }
 
+#[cfg(test)]
 pub(crate) fn collect_user_messages(items: &[ResponseItem]) -> Vec<CompactedUserMessage> {
+    items.iter().filter_map(compacted_user_message).collect()
+}
+
+pub(crate) fn collect_annotated_user_messages(
+    items: &[ResponseItemEnvelope],
+) -> Vec<CompactedUserMessage> {
     items
         .iter()
-        .filter_map(|item| match crate::event_mapping::parse_turn_item(item) {
-            Some(TurnItem::UserMessage(user)) => {
-                if is_summary_message(&user.message()) {
-                    None
-                } else {
-                    Some(CompactedUserMessage {
-                        id: if crate::context::is_explicit_user_message(item) {
-                            item.id().cloned()
-                        } else {
-                            None
-                        },
-                        message: user.message(),
-                        internal_chat_message_metadata_passthrough: match item {
-                            ResponseItem::Message {
-                                internal_chat_message_metadata_passthrough,
-                                ..
-                            } => internal_chat_message_metadata_passthrough.clone(),
-                            _ => None,
-                        },
-                    })
-                }
-            }
-            _ => None,
-        })
+        .filter_map(|envelope| compacted_user_message(&envelope.item))
         .collect()
+}
+
+fn compacted_user_message(item: &ResponseItem) -> Option<CompactedUserMessage> {
+    let Some(TurnItem::UserMessage(user)) = crate::event_mapping::parse_turn_item(item) else {
+        return None;
+    };
+    if is_summary_message(&user.message()) {
+        return None;
+    }
+    Some(CompactedUserMessage {
+        id: if crate::context::is_explicit_user_message(item) {
+            item.id().cloned()
+        } else {
+            None
+        },
+        message: user.message(),
+        internal_chat_message_metadata_passthrough: match item {
+            ResponseItem::Message {
+                internal_chat_message_metadata_passthrough,
+                ..
+            } => internal_chat_message_metadata_passthrough.clone(),
+            _ => None,
+        },
+    })
 }
 
 pub(crate) fn is_summary_message(message: &str) -> bool {

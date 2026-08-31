@@ -381,7 +381,7 @@ pub(crate) fn trim_function_call_history_to_fit_context_window(
     };
     let mut rewritten_outputs = 0usize;
     let mut estimated_deleted_tokens = 0i64;
-    let item_count = history.raw_items().len();
+    let item_count = history.annotated_items().len();
 
     for index in (0..item_count).rev() {
         let Some(estimated_tokens_before) =
@@ -393,17 +393,17 @@ pub(crate) fn trim_function_call_history_to_fit_context_window(
             break;
         }
         let Some(rewritten_item) = history
-            .raw_items()
+            .annotated_items()
             .get(index)
-            .and_then(rewritten_output_for_context_window)
+            .and_then(|envelope| rewritten_output_for_context_window(&envelope.item))
         else {
             // The incoming user prompt is part of pre-turn compaction history, so tool outputs
             // that can be trimmed may no longer be the final items in the request.
             continue;
         };
-        let mut items = history.raw_items().to_vec();
-        items[index] = rewritten_item;
-        history.replace(items);
+        let mut items = history.annotated_items().to_vec();
+        items[index].item = rewritten_item;
+        history.replace_annotated(items);
         let estimated_tokens_after = history
             .estimate_token_count_with_base_instructions(base_instructions)
             .unwrap_or_default();

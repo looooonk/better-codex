@@ -307,30 +307,30 @@ impl WorldState {
 
     /// Uses an exact retained fragment as authoritative while requiring sections with retained
     /// matchers to restore themselves whenever that fragment has fallen out of history.
-    pub(crate) fn render_history_diff(
+    pub(crate) fn render_history_diff<'a>(
         &self,
         previous: Option<&WorldStateSnapshot>,
-        items: &[ResponseItem],
+        items: impl IntoIterator<Item = &'a ResponseItem> + Clone,
     ) -> Vec<Box<dyn ContextualUserFragment>> {
         self.sections
             .iter()
             .filter_map(|(id, section)| {
                 if section.has_retained_fragment_matcher()
-                    && has_retained_fragment(items, section.as_ref())
+                    && has_retained_fragment(items.clone(), section.as_ref())
                 {
                     return None;
                 }
 
                 let previous = if section.has_retained_fragment_matcher()
                     && previous.is_some_and(|previous| previous.sections.contains_key(*id))
-                    && !has_legacy_fragment(items, section.as_ref())
+                    && !has_legacy_fragment(items.clone(), section.as_ref())
                 {
                     PreviousSectionState::Absent
                 } else if let Some(previous) =
                     previous.and_then(|previous| previous.sections.get(*id))
                 {
                     PreviousSectionState::Known(previous)
-                } else if has_legacy_fragment(items, section.as_ref()) {
+                } else if has_legacy_fragment(items.clone(), section.as_ref()) {
                     PreviousSectionState::Unknown
                 } else {
                     PreviousSectionState::Absent
@@ -351,8 +351,11 @@ impl WorldState {
     }
 }
 
-fn has_retained_fragment(items: &[ResponseItem], section: &dyn ErasedWorldStateSection) -> bool {
-    items.iter().any(|item| {
+fn has_retained_fragment<'a>(
+    items: impl IntoIterator<Item = &'a ResponseItem>,
+    section: &dyn ErasedWorldStateSection,
+) -> bool {
+    items.into_iter().any(|item| {
         matches!(
             item,
             ResponseItem::Message { role, content, .. }
@@ -367,8 +370,11 @@ fn has_retained_fragment(items: &[ResponseItem], section: &dyn ErasedWorldStateS
     })
 }
 
-fn has_legacy_fragment(items: &[ResponseItem], section: &dyn ErasedWorldStateSection) -> bool {
-    items.iter().any(|item| {
+fn has_legacy_fragment<'a>(
+    items: impl IntoIterator<Item = &'a ResponseItem>,
+    section: &dyn ErasedWorldStateSection,
+) -> bool {
+    items.into_iter().any(|item| {
         matches!(
             item,
             ResponseItem::Message { role, content, .. }

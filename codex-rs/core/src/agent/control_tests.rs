@@ -231,8 +231,10 @@ async fn persisted_originator(thread: &CodexThread) -> String {
         .expect("session metadata should be persisted")
 }
 
-fn has_subagent_notification(history_items: &[ResponseItem]) -> bool {
-    history_items.iter().any(|item| {
+fn has_subagent_notification<'a>(
+    history_items: impl IntoIterator<Item = &'a ResponseItem>,
+) -> bool {
+    history_items.into_iter().any(|item| {
         let ResponseItem::Message { role, content, .. } = item else {
             return false;
         };
@@ -249,8 +251,11 @@ fn has_subagent_notification(history_items: &[ResponseItem]) -> bool {
 }
 
 /// Returns true when any message item contains `needle` in a text span.
-fn history_contains_text(history_items: &[ResponseItem], needle: &str) -> bool {
-    history_items.iter().any(|item| {
+fn history_contains_text<'a>(
+    history_items: impl IntoIterator<Item = &'a ResponseItem>,
+    needle: &str,
+) -> bool {
+    history_items.into_iter().any(|item| {
         let ResponseItem::Message { content, .. } = item else {
             return false;
         };
@@ -263,11 +268,11 @@ fn history_contains_text(history_items: &[ResponseItem], needle: &str) -> bool {
     })
 }
 
-fn history_contains_assistant_inter_agent_communication(
-    history_items: &[ResponseItem],
+fn history_contains_assistant_inter_agent_communication<'a>(
+    history_items: impl IntoIterator<Item = &'a ResponseItem>,
     expected: &InterAgentCommunication,
 ) -> bool {
-    history_items.iter().any(|item| {
+    history_items.into_iter().any(|item| {
         let ResponseItem::Message { role, content, .. } = item else {
             return false;
         };
@@ -291,14 +296,8 @@ fn history_contains_assistant_inter_agent_communication(
 async fn wait_for_subagent_notification(parent_thread: &Arc<CodexThread>) -> bool {
     let wait = async {
         loop {
-            let history_items = parent_thread
-                .codex
-                .session
-                .clone_history()
-                .await
-                .raw_items()
-                .to_vec();
-            if has_subagent_notification(&history_items) {
+            let history = parent_thread.codex.session.clone_history().await;
+            if has_subagent_notification(history.raw_items()) {
                 return true;
             }
             sleep(Duration::from_millis(25)).await;
@@ -630,15 +629,9 @@ async fn send_inter_agent_communication_without_turn_queues_message_without_trig
     .await
     .expect("inter-agent communication should stay pending");
 
-    let history_items = thread
-        .codex
-        .session
-        .clone_history()
-        .await
-        .raw_items()
-        .to_vec();
+    let history = thread.codex.session.clone_history().await;
     assert!(!history_contains_assistant_inter_agent_communication(
-        &history_items,
+        history.raw_items(),
         &communication
     ));
 }
@@ -1042,7 +1035,7 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         .clone_history()
         .await
         .raw_items()
-        .first()
+        .next()
         .cloned()
         .expect("parent seed should be recorded");
     let turn_context = parent_thread.codex.session.new_default_turn().await;
@@ -1141,7 +1134,7 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         .expect("child thread should be registered");
     assert_ne!(child_thread_id, parent_thread_id);
     let history = child_thread.codex.session.clone_history().await;
-    let history_items = history.raw_items();
+    let history_items = history.raw_items().cloned().collect::<Vec<_>>();
     let mut expected_final_answer =
         assistant_message("parent final answer", Some(MessagePhase::FinalAnswer));
     expected_final_answer.set_turn_id_if_missing(&turn_context.sub_id);
@@ -1172,8 +1165,8 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         expected_child_hint,
     ];
     assert_eq!(
-        history.raw_items(),
-        &expected_history,
+        history_items,
+        expected_history,
         "full-history forked child history should replace parent usage hints with the child subagent hint while filtering non-final assistant/tool chatter"
     );
     assert_eq!(
@@ -2174,15 +2167,9 @@ async fn multi_agent_v2_completion_ignores_dead_direct_parent() {
             })
     );
 
-    let root_history_items = root_thread
-        .codex
-        .session
-        .clone_history()
-        .await
-        .raw_items()
-        .to_vec();
+    let root_history = root_thread.codex.session.clone_history().await;
     assert!(!history_contains_assistant_inter_agent_communication(
-        &root_history_items,
+        root_history.raw_items(),
         &InterAgentCommunication::new(
             tester_path,
             AgentPath::root(),
@@ -2191,7 +2178,7 @@ async fn multi_agent_v2_completion_ignores_dead_direct_parent() {
             /*trigger_turn*/ true,
         )
     ));
-    assert!(!has_subagent_notification(&root_history_items));
+    assert!(!has_subagent_notification(root_history.raw_items()));
 }
 
 #[tokio::test]
@@ -2279,15 +2266,9 @@ async fn multi_agent_v2_completion_queues_message_for_direct_parent() {
     .await
     .expect("completion watcher should queue a direct-parent message");
 
-    let root_history_items = root_thread
-        .codex
-        .session
-        .clone_history()
-        .await
-        .raw_items()
-        .to_vec();
+    let root_history = root_thread.codex.session.clone_history().await;
     assert!(!history_contains_assistant_inter_agent_communication(
-        &root_history_items,
+        root_history.raw_items(),
         &InterAgentCommunication::new(
             tester_path,
             AgentPath::root(),
@@ -2319,22 +2300,16 @@ async fn completion_watcher_notifies_parent_when_child_is_missing() {
 
     assert_eq!(wait_for_subagent_notification(&parent_thread).await, true);
 
-    let history_items = parent_thread
-        .codex
-        .session
-        .clone_history()
-        .await
-        .raw_items()
-        .to_vec();
+    let history = parent_thread.codex.session.clone_history().await;
     assert_eq!(
         history_contains_text(
-            &history_items,
+            history.raw_items(),
             &format!("\"agent_path\":\"{child_thread_id}\"")
         ),
         true
     );
     assert_eq!(
-        history_contains_text(&history_items, "\"status\":\"not_found\""),
+        history_contains_text(history.raw_items(), "\"status\":\"not_found\""),
         true
     );
 }

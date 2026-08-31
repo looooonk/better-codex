@@ -1,4 +1,5 @@
 use super::*;
+use codex_history::ResponseItemEnvelope;
 use crate::session::tests::build_world_state_from_turn_context;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
@@ -108,6 +109,18 @@ fn collect_user_messages_extracts_user_text_only() {
     ];
 
     let collected = collect_user_messages(&items);
+
+    assert_eq!(vec![compacted_user_message("first")], collected);
+}
+
+#[test]
+fn collect_annotated_user_messages_extracts_user_text_only() {
+    let items = vec![
+        ResponseItemEnvelope::new(user_message("first")),
+        ResponseItemEnvelope::new(ResponseItem::Other),
+    ];
+
+    let collected = collect_annotated_user_messages(&items);
 
     assert_eq!(vec![compacted_user_message("first")], collected);
 }

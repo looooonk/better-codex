@@ -386,7 +386,7 @@ async fn extension_tool_executors_are_model_visible_and_dispatchable() -> anyhow
         .clone_history()
         .await
         .raw_items()
-        .first()
+        .next()
         .cloned()
         .expect("history item");
 
