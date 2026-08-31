@@ -2769,7 +2769,8 @@ impl Session {
         match entry {
             Some(entry) => {
                 // TODO(anp): Migrate request_permissions to support paths from foreign environments.
-                let requested_permissions = entry.requested_permissions.clone();
+                let response_matches_request =
+                    response.permissions == entry.requested_permissions;
                 let response = match entry.environment.cwd.to_abs_path() {
                     Ok(native_environment_cwd) => Self::normalize_request_permissions_response(
                         entry.requested_permissions,
@@ -2792,7 +2793,7 @@ impl Session {
                 let response = match entry.response_constraint {
                     RequestPermissionsResponseConstraint::UserSelected => response,
                     RequestPermissionsResponseConstraint::OneShotExact
-                        if response.permissions == requested_permissions =>
+                        if response_matches_request =>
                     {
                         RequestPermissionsResponse {
                             permissions: response.permissions,

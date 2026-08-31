@@ -718,10 +718,7 @@ async fn request_user_approval(
                 )
                 .await;
             let decision = match response {
-                Some(response)
-                    if !response.permissions.is_empty()
-                        && response.permissions == *permissions =>
-                {
+                Some(response) if !response.permissions.is_empty() => {
                     ReviewDecision::Approved
                 }
                 Some(_) => ReviewDecision::denied(),

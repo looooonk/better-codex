@@ -387,6 +387,10 @@ async fn request_permissions_manual_fallback_is_one_shot_and_exact() {
     use crate::state::ActiveTurn;
     use codex_protocol::models::FileSystemPermissions;
     use codex_protocol::models::NetworkPermissions;
+    use codex_protocol::permissions::FileSystemAccessMode;
+    use codex_protocol::permissions::FileSystemPath;
+    use codex_protocol::permissions::FileSystemSandboxEntry;
+    use codex_protocol::permissions::FileSystemSpecialPath;
     use codex_protocol::request_permissions::PermissionGrantScope;
     use codex_protocol::request_permissions::RequestPermissionProfile;
     use codex_protocol::request_permissions::RequestPermissionsResponse;
@@ -430,6 +434,45 @@ async fn request_permissions_manual_fallback_is_one_shot_and_exact() {
 
     #[allow(deprecated)]
     let cwd = turn.cwd.clone();
+    let project_root_permissions = RequestPermissionProfile {
+        file_system: Some(FileSystemPermissions {
+            entries: vec![FileSystemSandboxEntry {
+                path: FileSystemPath::Special {
+                    value: FileSystemSpecialPath::project_roots(/*subpath*/ None),
+                },
+                access: FileSystemAccessMode::Write,
+            }],
+            glob_scan_max_depth: None,
+        }),
+        ..RequestPermissionProfile::default()
+    };
+    assert_eq!(
+        complete_permission_review(
+            &session,
+            &turn,
+            &events,
+            "permissions-materialized-path",
+            project_root_permissions.clone(),
+            RequestPermissionsResponse {
+                permissions: project_root_permissions,
+                scope: PermissionGrantScope::Session,
+                strict_auto_review: false,
+            },
+        )
+        .await,
+        Some(RequestPermissionsResponse {
+            permissions: RequestPermissionProfile {
+                file_system: Some(FileSystemPermissions::from_read_write_roots(
+                    /*read*/ None,
+                    Some(vec![cwd.clone()]),
+                )),
+                ..RequestPermissionProfile::default()
+            },
+            scope: PermissionGrantScope::Turn,
+            strict_auto_review: false,
+        })
+    );
+
     let requested_permissions = RequestPermissionProfile {
         network: network_permissions.network.clone(),
         file_system: Some(FileSystemPermissions::from_read_write_roots(
