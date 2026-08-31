@@ -82,7 +82,7 @@ pub struct GuardianReviewAction {
     pub request_payload: Value,
 }
 
-/// Complete bounded inputs for one shadow Guardian review.
+/// Complete bounded inputs for one Guardian review.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GuardianReviewRequest {
     pub action: GuardianReviewAction,

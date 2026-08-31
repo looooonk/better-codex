@@ -4,12 +4,13 @@ use std::sync::Arc;
 
 use codex_context_fragments::ContextualUserFragment;
 use codex_protocol::items::TurnItem;
-use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_tools::ToolCall;
 use codex_tools::ToolExecutor;
 
 use crate::ExtensionData;
+use crate::ApprovalReviewInput;
+use crate::ApprovalReviewResult;
 
 mod context;
 mod mcp;
@@ -294,14 +295,14 @@ pub trait ToolLifecycleContributor: Send + Sync {
     }
 }
 
-/// Extension contribution that can claim rendered approval-review prompts.
+/// Extension contribution that authoritatively reviews one correlated action.
 pub trait ApprovalReviewContributor: Send + Sync {
-    fn contribute<'a>(
+    fn review<'a>(
         &'a self,
         session_store: &'a ExtensionData,
         thread_store: &'a ExtensionData,
-        prompt: &'a str,
-    ) -> ExtensionFuture<'a, Option<ReviewDecision>>;
+        input: ApprovalReviewInput,
+    ) -> ExtensionFuture<'a, ApprovalReviewResult>;
 }
 
 /// Ordered post-processing contribution for one parsed turn item.

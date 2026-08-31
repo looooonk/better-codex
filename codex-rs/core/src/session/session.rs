@@ -1058,6 +1058,7 @@ impl Session {
                 contributor.on_thread_start(codex_extension_api::ThreadStartInput {
                     config: config.as_ref(),
                     session_source: &session_configuration.session_source,
+                    originator: &session_configuration.originator,
                     persistent_thread_state_available: state_db_ctx.is_some(),
                     environments: session_configuration.environment_selections(),
                     session_store: &session_extension_data,

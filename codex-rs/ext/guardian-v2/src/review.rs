@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant as StdInstant;
 
 use codex_protocol::protocol::GuardianAssessmentOutcome;
 use codex_protocol::protocol::GuardianRiskLevel;
@@ -30,7 +31,7 @@ pub struct GuardianReviewOutcome {
     pub rationale: String,
 }
 
-/// Explicit shadow-review client. It is not installed as an execution contributor.
+/// Bounded review client used by the authoritative approval contributor.
 pub struct GuardianReviewClient {
     sampler: Arc<LunaSampler>,
     review_timeout: Duration,
@@ -49,12 +50,22 @@ impl GuardianReviewClient {
         self
     }
 
-    /// Runs a non-authoritative review under one end-to-end deadline.
+    /// Runs a review under the client's default end-to-end deadline.
     pub async fn review(
         &self,
         request: GuardianReviewRequest,
     ) -> Result<GuardianReviewOutcome, GuardianReviewError> {
-        let deadline = Instant::now() + self.review_timeout;
+        self.review_before(request, StdInstant::now() + self.review_timeout)
+            .await
+    }
+
+    /// Runs a review under one host-owned end-to-end deadline.
+    pub async fn review_before(
+        &self,
+        request: GuardianReviewRequest,
+        deadline: StdInstant,
+    ) -> Result<GuardianReviewOutcome, GuardianReviewError> {
+        let deadline = Instant::from_std(deadline);
         tokio::time::timeout_at(deadline, async {
             let attribution = SamplingAttribution {
                 client_metadata: self.sampler.client_metadata(&request.action.turn_id),

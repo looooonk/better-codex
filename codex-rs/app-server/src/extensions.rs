@@ -17,6 +17,8 @@ use codex_extension_api::ExtensionRegistry;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_goal_extension::GoalService;
 use codex_login::AuthManager;
+use codex_login::AgentIdentityAuthPolicy;
+use codex_model_provider::create_model_provider;
 use codex_protocol::ThreadId;
 use codex_protocol::error::CodexErr;
 use codex_protocol::protocol::Event;
@@ -72,6 +74,36 @@ where
         );
     }
     codex_guardian::install(&mut builder, guardian_agent_spawner);
+    codex_guardian_v2::install(&mut builder, {
+        let auth_manager = Arc::clone(&auth_manager);
+        move |input| {
+            input
+                .config
+                .features
+                .enabled(codex_features::Feature::GuardianV2)
+                .then(|| codex_guardian_v2::LunaSamplerConfig {
+                    provider: create_model_provider(
+                        input.config.model_provider.clone(),
+                        Some(Arc::clone(&auth_manager)),
+                    ),
+                    http_client_factory: input.config.http_client_factory(),
+                    agent_identity_policy: if input
+                        .config
+                        .features
+                        .enabled(codex_features::Feature::UseAgentIdentity)
+                    {
+                        AgentIdentityAuthPolicy::ChatGptAuth
+                    } else {
+                        AgentIdentityAuthPolicy::JwtOnly
+                    },
+                    session_source: input.session_source.clone(),
+                    session_id: input.session_id.to_string(),
+                    thread_id: input.thread_id.to_string(),
+                    originator: Some(input.originator.to_string()),
+                    service_tier: input.config.service_tier.clone(),
+                })
+        }
+    });
     codex_memories_extension::install(&mut builder, codex_otel::global());
     codex_mcp_extension::install(&mut builder);
     codex_mcp_extension::install_executor_plugins(&mut builder, environment_manager);

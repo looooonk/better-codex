@@ -4,6 +4,13 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use codex_extension_api::ApprovalReviewContributor;
+use codex_extension_api::ApprovalReviewAction;
+use codex_extension_api::ApprovalReviewBinding;
+use codex_extension_api::ApprovalReviewCancellation;
+use codex_extension_api::ApprovalReviewFailure;
+use codex_extension_api::ApprovalReviewInput;
+use codex_extension_api::ApprovalReviewOutcome;
+use codex_extension_api::ApprovalReviewResult;
 use codex_extension_api::ConfigContributor;
 use codex_extension_api::ContextContributor;
 use codex_extension_api::ContextualUserFragment;
@@ -30,7 +37,8 @@ use codex_protocol::items::HookPromptItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::ReviewDecision;
+use codex_protocol::protocol::GuardianRiskLevel;
+use codex_protocol::protocol::GuardianUserAuthorization;
 use codex_protocol::protocol::WarningEvent;
 use pretty_assertions::assert_eq;
 
@@ -133,16 +141,63 @@ impl TurnItemContributor for AllContributors {
 }
 
 impl ApprovalReviewContributor for AllContributors {
-    fn contribute<'a>(
+    fn review<'a>(
         &'a self,
         _session_store: &'a ExtensionData,
         _thread_store: &'a ExtensionData,
-        _prompt: &'a str,
-    ) -> ExtensionFuture<'a, Option<ReviewDecision>> {
+        _input: ApprovalReviewInput,
+    ) -> ExtensionFuture<'a, ApprovalReviewResult> {
         Box::pin(async move {
             let _self = self;
-            Some(ReviewDecision::ApprovedForSession)
+            ApprovalReviewResult::Allow(review_outcome())
         })
+    }
+}
+
+struct TestCancellation;
+
+impl ApprovalReviewCancellation for TestCancellation {
+    fn is_cancelled(&self) -> bool {
+        false
+    }
+
+    fn cancelled(&self) -> ExtensionFuture<'_, ()> {
+        Box::pin(std::future::pending())
+    }
+}
+
+fn review_outcome() -> ApprovalReviewOutcome {
+    ApprovalReviewOutcome {
+        risk_level: GuardianRiskLevel::Low,
+        user_authorization: GuardianUserAuthorization::High,
+        rationale: "allowed".to_string(),
+    }
+}
+
+fn review_input() -> ApprovalReviewInput {
+    let cwd = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(
+        std::env::current_dir().expect("current directory"),
+    )
+    .expect("current directory should be absolute");
+    ApprovalReviewInput {
+        binding: ApprovalReviewBinding {
+            thread_id: "thread".to_string(),
+            turn_id: "turn".to_string(),
+            action_id: "action".to_string(),
+            attempt_id: "attempt".to_string(),
+            source: codex_extension_api::ToolCallSource::Direct,
+            evidence_revision: 0,
+        },
+        action: ApprovalReviewAction::ApplyPatch {
+            cwd,
+            files: Vec::new(),
+            patch: String::new(),
+        },
+        history: Vec::new(),
+        evidence: Vec::new(),
+        images: Vec::new(),
+        deadline: std::time::Instant::now() + std::time::Duration::from_secs(1),
+        cancellation: Arc::new(TestCancellation),
     }
 }
 
@@ -178,10 +233,10 @@ async fn build_round_trips_every_contributor_category() {
             .approval_review(
                 &ExtensionData::new("session"),
                 &ExtensionData::new("thread"),
-                "review this",
+                review_input(),
             )
             .await,
-        Some(ReviewDecision::ApprovedForSession)
+        ApprovalReviewResult::Allow(review_outcome())
     );
 }
 
@@ -313,22 +368,22 @@ struct ApprovalCall {
     contributor: &'static str,
     session_id: String,
     thread_id: String,
-    prompt: String,
+    action_id: String,
 }
 
 struct RecordingApprovalContributor {
     name: &'static str,
-    decision: Option<ReviewDecision>,
+    decision: ApprovalReviewResult,
     calls: Arc<Mutex<Vec<ApprovalCall>>>,
 }
 
 impl ApprovalReviewContributor for RecordingApprovalContributor {
-    fn contribute<'a>(
+    fn review<'a>(
         &'a self,
         session_store: &'a ExtensionData,
         thread_store: &'a ExtensionData,
-        prompt: &'a str,
-    ) -> ExtensionFuture<'a, Option<ReviewDecision>> {
+        input: ApprovalReviewInput,
+    ) -> ExtensionFuture<'a, ApprovalReviewResult> {
         Box::pin(async move {
             self.calls
                 .lock()
@@ -337,7 +392,7 @@ impl ApprovalReviewContributor for RecordingApprovalContributor {
                     contributor: self.name,
                     session_id: session_store.level_id().to_string(),
                     thread_id: thread_store.level_id().to_string(),
-                    prompt: prompt.to_string(),
+                    action_id: input.binding.action_id,
                 });
             self.decision.clone()
         })
@@ -345,17 +400,13 @@ impl ApprovalReviewContributor for RecordingApprovalContributor {
 }
 
 #[tokio::test]
-async fn approval_review_returns_first_claim_and_short_circuits() {
+async fn approval_review_requires_exactly_one_authority() {
     let calls = Arc::new(Mutex::new(Vec::new()));
     let mut builder = ExtensionRegistryBuilder::<()>::new();
-    for (name, decision) in [
-        ("first", None),
-        ("second", Some(ReviewDecision::Approved)),
-        ("third", Some(ReviewDecision::denied())),
-    ] {
+    for name in ["first", "second"] {
         builder.approval_review_contributor(Arc::new(RecordingApprovalContributor {
             name,
-            decision,
+            decision: ApprovalReviewResult::Allow(review_outcome()),
             calls: Arc::clone(&calls),
         }));
     }
@@ -365,28 +416,15 @@ async fn approval_review_returns_first_claim_and_short_circuits() {
         .approval_review(
             &ExtensionData::new("session-1"),
             &ExtensionData::new("thread-1"),
-            "allow command?",
+            review_input(),
         )
         .await;
 
-    assert_eq!(decision, Some(ReviewDecision::Approved));
     assert_eq!(
-        calls.lock().expect("approval calls lock").as_slice(),
-        [
-            ApprovalCall {
-                contributor: "first",
-                session_id: "session-1".to_string(),
-                thread_id: "thread-1".to_string(),
-                prompt: "allow command?".to_string(),
-            },
-            ApprovalCall {
-                contributor: "second",
-                session_id: "session-1".to_string(),
-                thread_id: "thread-1".to_string(),
-                prompt: "allow command?".to_string(),
-            },
-        ]
+        decision,
+        ApprovalReviewResult::ManualReview(ApprovalReviewFailure::MultipleAuthorities)
     );
+    assert!(calls.lock().expect("approval calls lock").is_empty());
 }
 
 #[derive(Default)]
@@ -432,7 +470,7 @@ fn custom_event_sink_survives_registry_build() {
 }
 
 #[tokio::test]
-async fn empty_registry_does_not_claim_approval_review() {
+async fn empty_registry_requires_manual_approval_review() {
     let registry = empty_extension_registry::<()>();
 
     assert_eq!(
@@ -440,10 +478,10 @@ async fn empty_registry_does_not_claim_approval_review() {
             .approval_review(
                 &ExtensionData::new("session"),
                 &ExtensionData::new("thread"),
-                "unclaimed",
+                review_input(),
             )
             .await,
-        None
+        ApprovalReviewResult::ManualReview(ApprovalReviewFailure::NotInstalled)
     );
 }
 

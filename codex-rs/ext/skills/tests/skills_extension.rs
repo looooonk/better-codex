@@ -84,6 +84,7 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
         .on_thread_start(ThreadStartInput {
             config: &config,
             session_source: &session_source,
+            originator: "test",
             persistent_thread_state_available: true,
             environments: &[],
             session_store: &session_store,
@@ -238,6 +239,7 @@ async fn selected_skill_prompts_have_individual_and_aggregate_bounds() -> TestRe
         .on_thread_start(ThreadStartInput {
             config: &config,
             session_source: &session_source,
+            originator: "test",
             persistent_thread_state_available: true,
             environments: &[],
             session_store: &session_store,
@@ -321,6 +323,7 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
         .on_thread_start(ThreadStartInput {
             config: &config,
             session_source: &session_source,
+            originator: "test",
             persistent_thread_state_available: true,
             environments: &[],
             session_store: &session_store,
@@ -510,6 +513,7 @@ async fn default_context_truncates_catalog_descriptions() -> TestResult {
         .on_thread_start(ThreadStartInput {
             config: &config,
             session_source: &session_source,
+            originator: "test",
             persistent_thread_state_available: true,
             environments: &[],
             session_store: &session_store,
@@ -561,6 +565,7 @@ async fn skills_list_truncates_catalog_descriptions_in_tool_output() -> TestResu
         .on_thread_start(ThreadStartInput {
             config: &config,
             session_source: &session_source,
+            originator: "test",
             persistent_thread_state_available: true,
             environments: &[],
             session_store: &session_store,
@@ -634,6 +639,7 @@ async fn orchestrator_catalog_snapshot_caches_failure() -> TestResult {
         .on_thread_start(ThreadStartInput {
             config: &config,
             session_source: &session_source,
+            originator: "test",
             persistent_thread_state_available: true,
             environments: &[],
             session_store: &session_store,
@@ -725,6 +731,7 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
         .on_thread_start(ThreadStartInput {
             config: &config,
             session_source: &session_source,
+            originator: "test",
             persistent_thread_state_available: true,
             environments: &[],
             session_store: &session_store,
@@ -818,6 +825,7 @@ async fn prompt_hidden_skill_can_still_be_invoked() -> TestResult {
         .on_thread_start(ThreadStartInput {
             config: &config,
             session_source: &session_source,
+            originator: "test",
             persistent_thread_state_available: true,
             environments: &[],
             session_store: &session_store,

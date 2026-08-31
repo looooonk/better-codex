@@ -1,3 +1,4 @@
+mod approval_review;
 mod capabilities;
 mod contributors;
 mod registry;
@@ -81,3 +82,12 @@ pub use user_instructions::LoadedUserInstructions;
 pub use user_instructions::USER_INSTRUCTIONS_MAX_BYTES;
 pub use user_instructions::UserInstructions;
 pub use user_instructions::UserInstructionsProvider;
+pub use approval_review::ApprovalReviewAction;
+pub use approval_review::ApprovalReviewBinding;
+pub use approval_review::ApprovalReviewCancellation;
+pub use approval_review::ApprovalReviewEvidence;
+pub use approval_review::ApprovalReviewFailure;
+pub use approval_review::ApprovalReviewImage;
+pub use approval_review::ApprovalReviewInput;
+pub use approval_review::ApprovalReviewOutcome;
+pub use approval_review::ApprovalReviewResult;

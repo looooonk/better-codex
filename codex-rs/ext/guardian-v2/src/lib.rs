@@ -1,12 +1,13 @@
-use codex_extension_api::ExtensionRegistryBuilder;
-
 mod evidence;
+mod extension;
 mod request;
 mod review;
 mod sampler;
 mod transcript;
 
 pub use evidence::GuardianEvidenceEntry;
+pub use extension::GuardianV2ThreadConfigInput;
+pub use extension::install;
 pub use request::GuardianReviewAction;
 pub use request::GuardianReviewError;
 pub use request::GuardianReviewImage;
@@ -16,6 +17,3 @@ pub use review::GuardianReviewOutcome;
 pub use sampler::LunaSampler;
 pub use sampler::LunaSamplerConfig;
 pub use sampler::LunaSamplerError;
-
-/// Installs the Guardian V2 extension without registering contributors yet.
-pub fn install<C: Sync>(_registry: &mut ExtensionRegistryBuilder<C>) {}
