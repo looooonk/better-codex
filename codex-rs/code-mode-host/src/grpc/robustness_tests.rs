@@ -8,6 +8,7 @@ use codex_code_mode_protocol::grpc as proto;
 use codex_code_mode_protocol::grpc::code_mode_host_server::CodeModeHost;
 use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
 use codex_protocol::ToolName;
+use futures::FutureExt;
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
 use tokio::sync::oneshot;
@@ -185,6 +186,51 @@ async fn abandoning_execution_releases_its_reservation() {
 }
 
 #[tokio::test]
+async fn dropping_unread_buffered_execution_outcome_retires_cell() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, mut events) = open_session(&host).await;
+    let execution = host
+        .execute(Request::new(execute_request(
+            &session_id,
+            "execution-abandoned",
+            "await new Promise(() => {});",
+        )))
+        .await
+        .expect("start execution")
+        .into_inner();
+    let _reserved_permits = (0..MAX_IN_FLIGHT_REQUESTS - 1)
+        .map(|_| host.state.request_permit().expect("reserve request permit"))
+        .collect::<Vec<_>>();
+    let _execution_permit = tokio::time::timeout(Duration::from_secs(/*secs*/ 2), async {
+        loop {
+            if let Ok(permit) = host.state.request_permit() {
+                return permit;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("execution outcome should be buffered before dropping its unread stream");
+
+    drop(execution);
+
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(/*secs*/ 2), events.next())
+            .await
+            .expect("abandoned cell should close")
+            .expect("cell closed event")
+            .expect("session event"),
+        proto::SessionEvent {
+            event: Some(proto::session_event::Event::CellClosed(proto::CellClosed {
+                execution_id: "execution-abandoned".to_string(),
+                cell_id: "1".to_string(),
+                final_tool_call_sequence: 0,
+            })),
+        }
+    );
+}
+
+#[tokio::test]
 async fn dropping_session_event_stream_closes_its_lease() {
     let host = GrpcCodeModeHost::new();
     let (session_id, lease) = open_session(&host).await;
@@ -195,6 +241,50 @@ async fn dropping_session_event_stream_closes_its_lease() {
     tokio::time::timeout(Duration::from_secs(/*secs*/ 2), session.closed.cancelled())
         .await
         .expect("dropping the event stream must close its session lease");
+}
+
+#[tokio::test]
+async fn dropping_lease_after_host_drop_closes_session() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, lease) = open_session(&host).await;
+    let session = host.state.session(&session_id).expect("open session");
+
+    drop(host);
+    drop(lease);
+
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 2), session.closed.cancelled())
+        .await
+        .expect("dropping a lease must close its session after the host disappears");
+}
+
+#[tokio::test]
+async fn session_closure_cancels_pending_termination() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, _events) = open_session(&host).await;
+    let (cell_id, mut execution) = execute_events(
+        &host,
+        execute_request(
+            &session_id,
+            "execution-termination",
+            "await new Promise(() => {});",
+        ),
+    )
+    .await;
+    execution.next().await.expect("execution outcome").unwrap();
+    let session = host.state.session(&session_id).expect("open session");
+    let termination = host.terminate(Request::new(proto::TerminateRequest {
+        session_id,
+        cell_id,
+    }));
+    tokio::pin!(termination);
+    assert!(termination.as_mut().now_or_never().is_none());
+
+    session.closed.cancel();
+    let error = termination
+        .await
+        .expect_err("closed sessions must bound termination");
+
+    assert_eq!(error.code(), Code::Cancelled);
 }
 
 #[tokio::test]
