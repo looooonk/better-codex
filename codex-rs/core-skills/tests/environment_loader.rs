@@ -363,12 +363,17 @@ async fn reuses_walk_inventory_for_missing_skill_metadata() {
     let manifest_uri = PathUri::from_host_native_path(manifest_path).unwrap();
     expected_read_files.push(manifest_uri.clone());
     expected_read_files.sort_by_key(ToString::to_string);
+    let mut expected_metadata_files = vec![
+        manifest_uri,
+        PathUri::from_host_native_path(root.path().join("plugin.json")).unwrap(),
+    ];
+    expected_metadata_files.sort_by_key(ToString::to_string);
     assert_eq!(
         file_system.calls(),
         FileSystemCalls {
             walks: 1,
             read_files: expected_read_files,
-            metadata_files: vec![manifest_uri],
+            metadata_files: expected_metadata_files,
         }
     );
 }

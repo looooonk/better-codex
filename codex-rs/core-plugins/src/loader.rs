@@ -807,10 +807,8 @@ async fn load_plugin(
         loaded_plugin.error = Some("missing or invalid plugin.json".to_string());
         return loaded_plugin;
     };
-    loaded_plugin.skill_discovery_mode = match loaded_manifest.format {
-        PluginManifestFormat::Legacy => SkillDiscoveryMode::Recursive,
-        PluginManifestFormat::AgentPlugin => SkillDiscoveryMode::DirectChildren,
-    };
+    let manifest_format = loaded_manifest.format;
+    loaded_plugin.skill_discovery_mode = manifest_format.skill_discovery_mode();
     let manifest = loaded_manifest.manifest;
     let plugin_data_root =
         store.plugin_data_root_for_source(&loaded_plugin_id, plugin_root.as_path());
@@ -826,13 +824,14 @@ async fn load_plugin(
             loaded_plugin.manifest_name = Some(manifest.display_name().to_string());
             loaded_plugin.manifest_description = manifest.description.clone();
             loaded_plugin.skill_roots = plugin_skill_roots(&plugin_root, manifest_paths);
-            let resolved_skills = load_plugin_skills(
+            let resolved_skills = load_plugin_skills_with_discovery_mode(
                 &plugin_root,
                 &loaded_plugin_id,
                 &manifest,
                 *restriction_product,
                 skill_config_rules,
                 *plugin_skill_snapshots,
+                loaded_plugin.skill_discovery_mode,
             )
             .await;
             let has_enabled_skills = resolved_skills.has_enabled_skills();
@@ -843,6 +842,7 @@ async fn load_plugin(
                 plugin_data_root.as_path(),
                 manifest_paths,
                 Some(&plugin.mcp_servers),
+                manifest_format,
             )
             .await;
             loaded_plugin.apps = load_plugin_apps(plugin_root.as_path()).await;
@@ -932,12 +932,39 @@ pub async fn load_plugin_skills(
     skill_config_rules: &SkillConfigRules,
     plugin_skill_snapshots: Option<&PluginSkillSnapshots>,
 ) -> ResolvedPluginSkills {
+    let discovery_mode = if is_agent_plugin_manifest(plugin_root.as_path()) {
+        SkillDiscoveryMode::DirectChildren
+    } else {
+        SkillDiscoveryMode::Recursive
+    };
+    load_plugin_skills_with_discovery_mode(
+        plugin_root,
+        plugin_id,
+        manifest,
+        restriction_product,
+        skill_config_rules,
+        plugin_skill_snapshots,
+        discovery_mode,
+    )
+    .await
+}
+
+pub(crate) async fn load_plugin_skills_with_discovery_mode(
+    plugin_root: &AbsolutePathBuf,
+    plugin_id: &PluginId,
+    manifest: &PluginManifest,
+    restriction_product: Option<Product>,
+    skill_config_rules: &SkillConfigRules,
+    plugin_skill_snapshots: Option<&PluginSkillSnapshots>,
+    discovery_mode: SkillDiscoveryMode,
+) -> ResolvedPluginSkills {
     load_plugin_skill_inventory(
         plugin_root,
         plugin_id,
         manifest,
         restriction_product,
         plugin_skill_snapshots,
+        discovery_mode,
     )
     .await
     .resolve(skill_config_rules)
@@ -949,12 +976,8 @@ pub(crate) async fn load_plugin_skill_inventory(
     manifest: &PluginManifest,
     restriction_product: Option<Product>,
     plugin_skill_snapshots: Option<&PluginSkillSnapshots>,
+    discovery_mode: SkillDiscoveryMode,
 ) -> PluginSkillInventory {
-    let discovery_mode = if is_agent_plugin_manifest(plugin_root.as_path()) {
-        SkillDiscoveryMode::DirectChildren
-    } else {
-        SkillDiscoveryMode::Recursive
-    };
     let roots = plugin_skill_roots(plugin_root, &manifest.paths)
         .into_iter()
         .map(|path| SkillRoot {
@@ -1225,7 +1248,9 @@ pub async fn plugin_capability_summary_from_root(
     plugin_root: &AbsolutePathBuf,
     plugin_data_root: &AbsolutePathBuf,
 ) -> Option<PluginCapabilitySummary> {
-    let manifest = load_plugin_manifest(plugin_root.as_path())?;
+    let loaded_manifest = load_plugin_manifest_with_format(plugin_root.as_path())?;
+    let manifest_format = loaded_manifest.format;
+    let manifest = loaded_manifest.manifest;
 
     let manifest_paths = &manifest.paths;
     let has_skills = !plugin_skill_roots(plugin_root, manifest_paths).is_empty();
@@ -1234,6 +1259,7 @@ pub async fn plugin_capability_summary_from_root(
         plugin_data_root.as_path(),
         manifest_paths,
         /*plugin_policy*/ None,
+        manifest_format,
     )
     .await
     .into_keys()
@@ -1282,15 +1308,18 @@ async fn load_declared_plugin_mcp_servers(
     plugin_root: &Path,
     plugin_data_root: &Path,
 ) -> HashMap<String, McpServerConfig> {
-    let Some(manifest) = load_plugin_manifest(plugin_root) else {
+    let Some(loaded_manifest) = load_plugin_manifest_with_format(plugin_root) else {
         return HashMap::new();
     };
+    let manifest_format = loaded_manifest.format;
+    let manifest = loaded_manifest.manifest;
 
     load_plugin_mcp_servers_from_manifest(
         plugin_root,
         plugin_data_root,
         &manifest.paths,
         /*plugin_policy*/ None,
+        manifest_format,
     )
     .await
 }
@@ -1300,6 +1329,7 @@ pub(crate) async fn load_plugin_mcp_servers_from_manifest(
     plugin_data_root: &Path,
     manifest_paths: &PluginManifestPaths,
     plugin_policy: Option<&HashMap<String, PluginMcpServerConfig>>,
+    manifest_format: PluginManifestFormat,
 ) -> HashMap<String, McpServerConfig> {
     let mut mcp_servers = HashMap::new();
     match &manifest_paths.mcp_servers {
@@ -1321,8 +1351,13 @@ pub(crate) async fn load_plugin_mcp_servers_from_manifest(
         Some(PluginManifestMcpServers::Path(_)) | None => {
             for mcp_config_path in plugin_mcp_config_paths(plugin_root, manifest_paths) {
                 let plugin_mcp =
-                    load_mcp_servers_from_file(plugin_root, plugin_data_root, &mcp_config_path)
-                        .await;
+                    load_mcp_servers_from_file(
+                        plugin_root,
+                        plugin_data_root,
+                        &mcp_config_path,
+                        manifest_format,
+                    )
+                    .await;
                 for (name, mut config) in plugin_mcp.mcp_servers {
                     if let Some(policy) = plugin_policy.and_then(|policy| policy.get(&name)) {
                         apply_plugin_mcp_server_policy(&mut config, policy);
@@ -1347,14 +1382,16 @@ async fn load_mcp_servers_from_file(
     plugin_root: &Path,
     plugin_data_root: &Path,
     mcp_config_path: &AbsolutePathBuf,
+    manifest_format: PluginManifestFormat,
 ) -> PluginMcpDiscovery {
     let Ok(contents) = tokio::fs::read_to_string(mcp_config_path.as_path()).await else {
         return PluginMcpDiscovery::default();
     };
-    let parsed = match if is_agent_plugin_manifest(plugin_root) {
-        parse_agent_plugin_mcp_config(plugin_root, plugin_data_root, &contents)
-    } else {
-        parse_plugin_mcp_config(plugin_root, &contents)
+    let parsed = match match manifest_format {
+        PluginManifestFormat::Legacy => parse_plugin_mcp_config(plugin_root, &contents),
+        PluginManifestFormat::AgentPlugin => {
+            parse_agent_plugin_mcp_config(plugin_root, plugin_data_root, &contents)
+        }
     } {
         Ok(parsed) => parsed,
         Err(err) => {

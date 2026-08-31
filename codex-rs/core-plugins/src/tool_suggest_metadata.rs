@@ -20,7 +20,7 @@ use crate::loader::load_plugin_mcp_servers;
 use crate::loader::load_plugin_skill_inventory;
 use crate::manager::ConfiguredMarketplacePlugin;
 use crate::manager::remote_plugin_install_required_description;
-use crate::manifest::load_plugin_manifest;
+use crate::manifest::load_plugin_manifest_with_format;
 use crate::marketplace::MarketplaceError;
 use crate::marketplace::MarketplacePluginSource;
 
@@ -208,14 +208,17 @@ async fn load_plugin_metadata(
     if !plugin_root.as_path().is_dir() {
         return Err("path does not exist or is not a directory".to_string());
     }
-    let manifest = load_plugin_manifest(plugin_root.as_path())
+    let loaded_manifest = load_plugin_manifest_with_format(plugin_root.as_path())
         .ok_or_else(|| "missing or invalid plugin.json".to_string())?;
+    let discovery_mode = loaded_manifest.format.skill_discovery_mode();
+    let manifest = loaded_manifest.manifest;
     let skill_inventory = load_plugin_skill_inventory(
         plugin_root,
         &plugin_id,
         &manifest,
         restriction_product,
         /*plugin_skill_snapshots*/ None,
+        discovery_mode,
     )
     .await;
     let mut mcp_server_names =

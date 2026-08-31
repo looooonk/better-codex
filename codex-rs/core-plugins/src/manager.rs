@@ -10,7 +10,7 @@ use crate::loader::load_plugin_apps_from_manifest;
 use crate::loader::load_plugin_hooks;
 use crate::loader::load_plugin_hooks_from_layer_stack;
 use crate::loader::load_plugin_mcp_servers_from_manifest;
-use crate::loader::load_plugin_skills;
+use crate::loader::load_plugin_skills_with_discovery_mode;
 use crate::loader::load_plugins_from_layer_stack;
 use crate::loader::log_plugin_load_errors;
 use crate::loader::materialize_marketplace_plugin_source;
@@ -20,7 +20,9 @@ use crate::loader::refresh_non_curated_plugin_cache_detailed;
 use crate::loader::refresh_non_curated_plugin_cache_force_reinstall_detailed;
 use crate::loader::remote_installed_plugins_to_config;
 use crate::manifest::PluginManifestInterface;
+use crate::manifest::PluginManifestFormat;
 use crate::manifest::load_plugin_manifest;
+use crate::manifest::load_plugin_manifest_with_format;
 use crate::marketplace::MarketplaceError;
 use crate::marketplace::MarketplaceInterface;
 use crate::marketplace::MarketplaceListError;
@@ -1878,14 +1880,16 @@ impl PluginsManager {
                 "path does not exist or is not a directory".to_string(),
             ));
         }
-        let manifest =
+        let (manifest, manifest_format) =
             if codex_utils_plugins::find_plugin_manifest_path(source_path.as_path()).is_some() {
-                load_plugin_manifest(source_path.as_path())
+                load_plugin_manifest_with_format(source_path.as_path())
+                    .map(|loaded| (loaded.manifest, loaded.format))
             } else {
                 plugin
                     .manifest_fallback
                     .as_ref()
                     .and_then(|fallback| fallback.parse_for_plugin_root(source_path.as_path()))
+                    .map(|manifest| (manifest, PluginManifestFormat::Legacy))
             }
             .ok_or_else(|| {
                 MarketplaceError::InvalidPlugin("missing or invalid plugin.json".to_string())
@@ -1899,7 +1903,7 @@ impl PluginsManager {
             manifest.interface.clone(),
             marketplace_category,
         );
-        let resolved_skills = load_plugin_skills(
+        let resolved_skills = load_plugin_skills_with_discovery_mode(
             &source_path,
             &plugin_id,
             &manifest,
@@ -1908,6 +1912,7 @@ impl PluginsManager {
                 &config.config_layer_stack,
             ),
             /*plugin_skill_snapshots*/ None,
+            manifest_format.skill_discovery_mode(),
         )
         .await;
         let plugin_data_root = self
@@ -1930,6 +1935,7 @@ impl PluginsManager {
             plugin_data_root.as_path(),
             &manifest.paths,
             /*plugin_policy*/ None,
+            manifest_format,
         )
         .await;
         if auth_mode.is_some() {
