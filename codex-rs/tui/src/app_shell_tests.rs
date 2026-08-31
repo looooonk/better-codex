@@ -5626,6 +5626,85 @@ async fn alt_arrow_selection_starts_on_a_user_message() {
     }
 }
 
+#[tokio::test]
+async fn response_copy_shortcuts_route_requested_ordinals() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.push_assistant("older response");
+    shell.push_user("follow-up");
+    shell.push_assistant("latest response");
+
+    for (digit, expected, status) in [
+        ('1', "latest response", "copied latest Codex response"),
+        ('2', "older response", "copied 2nd latest Codex response"),
+    ] {
+        let mut copied = None;
+        shell
+            .handle_key_with_transcript_copy(
+                KeyEvent::new(KeyCode::Char(digit), KeyModifiers::ALT),
+                &config,
+                &mut backend,
+                |text| {
+                    copied = Some(text.to_string());
+                    Ok(None)
+                },
+            )
+            .await
+            .expect("response copy shortcut should be routed");
+
+        assert_eq!(
+            (copied.as_deref(), shell.transcript.back()),
+            (
+                Some(expected),
+                Some(&TranscriptLine::new(TranscriptKind::Status, status))
+            )
+        );
+    }
+}
+
+#[tokio::test]
+async fn control_o_routes_selection_then_falls_back_to_latest_response() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.push_assistant("older response");
+    shell.push_user("selected prompt");
+    shell.push_assistant("latest response");
+
+    for (selection, expected, status) in [
+        (Some(1), "selected prompt", "copied you transcript item"),
+        (None, "latest response", "copied latest Codex response"),
+    ] {
+        shell.transcript_selection = selection;
+        let mut copied = None;
+        shell
+            .handle_key_with_transcript_copy(
+                KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
+                &config,
+                &mut backend,
+                |text| {
+                    copied = Some(text.to_string());
+                    Ok(None)
+                },
+            )
+            .await
+            .expect("Ctrl+O should be routed");
+
+        assert_eq!(
+            (copied.as_deref(), shell.transcript.back()),
+            (
+                Some(expected),
+                Some(&TranscriptLine::new(TranscriptKind::Status, status))
+            )
+        );
+    }
+}
+
 #[test]
 fn thread_goal_notifications_update_dashboard_state() {
     let mut shell = ShellState::snapshot_fixture();

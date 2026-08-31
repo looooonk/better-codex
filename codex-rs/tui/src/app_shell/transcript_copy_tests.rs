@@ -56,6 +56,45 @@ fn reports_when_requested_response_is_unavailable() {
 }
 
 #[test]
+fn reports_when_latest_response_is_unavailable() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+
+    shell.copy_response_request_with(
+        CopyResponseRequest::Response(ResponseOrdinal::LATEST),
+        |_| panic!("clipboard should not be called"),
+    );
+
+    assert_eq!(
+        shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Error,
+            "No Codex response to copy"
+        ))
+    );
+}
+
+#[test]
+fn reports_clipboard_failure_for_requested_response() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.push_assistant("response");
+
+    shell.copy_response_with(ResponseOrdinal::LATEST, |text| {
+        assert_eq!(text, "response");
+        Err("clipboard offline".to_string())
+    });
+
+    assert_eq!(
+        shell.transcript.back(),
+        Some(&TranscriptLine::new(
+            TranscriptKind::Error,
+            "Copy failed: clipboard offline"
+        ))
+    );
+}
+
+#[test]
 fn invalid_copy_request_reports_usage() {
     let mut shell = ShellState::snapshot_fixture();
 

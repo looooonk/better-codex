@@ -250,12 +250,54 @@ impl ShellState {
         .await
     }
 
+    #[cfg(test)]
+    pub(super) async fn handle_key_with_transcript_copy<S>(
+        &mut self,
+        key: KeyEvent,
+        config: &Config,
+        app_server: &mut S,
+        copy_fn: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
+    ) -> Result<bool>
+    where
+        S: AppShellBackend,
+    {
+        self.handle_key_with_composer_layout_and_transcript_copy(
+            key,
+            ComposerNavigationLayout::LogicalLines,
+            config,
+            app_server,
+            copy_fn,
+        )
+        .await
+    }
+
     async fn handle_key_with_composer_layout<S>(
         &mut self,
         key: KeyEvent,
         composer_navigation_layout: ComposerNavigationLayout,
         config: &Config,
         app_server: &mut S,
+    ) -> Result<bool>
+    where
+        S: AppShellBackend,
+    {
+        self.handle_key_with_composer_layout_and_transcript_copy(
+            key,
+            composer_navigation_layout,
+            config,
+            app_server,
+            crate::clipboard_copy::copy_to_clipboard,
+        )
+        .await
+    }
+
+    async fn handle_key_with_composer_layout_and_transcript_copy<S>(
+        &mut self,
+        key: KeyEvent,
+        composer_navigation_layout: ComposerNavigationLayout,
+        config: &Config,
+        app_server: &mut S,
+        copy_fn: impl FnOnce(&str) -> Result<Option<crate::clipboard_copy::ClipboardLease>, String>,
     ) -> Result<bool>
     where
         S: AppShellBackend,
@@ -333,11 +375,11 @@ impl ShellState {
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('o')) {
-            self.copy_selected_transcript_with(crate::clipboard_copy::copy_to_clipboard);
+            self.copy_selected_transcript_with(copy_fn);
             return Ok(false);
         }
         if let Some(ordinal) = response_ordinal_from_alt_key(key) {
-            self.copy_response_with(ordinal, crate::clipboard_copy::copy_to_clipboard);
+            self.copy_response_with(ordinal, copy_fn);
             return Ok(false);
         }
         if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('n')) {
