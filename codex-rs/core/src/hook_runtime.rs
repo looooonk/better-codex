@@ -36,6 +36,7 @@ use codex_protocol::protocol::HookStartedEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::WarningEvent;
+use codex_thread_store::PersistContext;
 use codex_thread_store::ReadThreadParams;
 use serde_json::Value;
 use tracing::instrument;
@@ -577,7 +578,10 @@ pub(crate) async fn record_pending_input(
     turn_context: &Arc<TurnContext>,
     pending_input: TurnInput,
     additional_contexts: Vec<String>,
-) {
+    persist_context: PersistContext,
+) -> std::io::Result<()> {
+    let should_materialize = persist_context == PersistContext::TurnStart
+        || matches!(&pending_input, TurnInput::UserInput { .. });
     match pending_input {
         TurnInput::UserInput { content, client_id } => {
             sess.record_user_prompt_and_emit_turn_item(
@@ -597,6 +601,19 @@ pub(crate) async fn record_pending_input(
         }
     }
     record_additional_contexts(sess, turn_context, additional_contexts).await;
+    if should_materialize {
+        match persist_context {
+            PersistContext::Standard => {
+                sess.ensure_rollout_materialized(PersistContext::Standard)
+                    .await;
+            }
+            PersistContext::TurnStart => {
+                sess.try_ensure_rollout_materialized(PersistContext::TurnStart)
+                    .await?;
+            }
+        }
+    }
+    Ok(())
 }
 
 async fn run_context_injecting_hook<Fut, Outcome>(

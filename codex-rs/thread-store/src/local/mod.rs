@@ -37,6 +37,7 @@ use crate::ListItemsParams;
 use crate::ListThreadsParams;
 use crate::ListTurnsParams;
 use crate::LoadThreadHistoryParams;
+use crate::PersistContext;
 use crate::ReadThreadByRolloutPathParams;
 use crate::ReadThreadParams;
 use crate::ResumeThreadParams;
@@ -313,7 +314,11 @@ impl ThreadStore for LocalThreadStore {
         Box::pin(async move { live_writer::append_items(self, params).await })
     }
 
-    fn persist_thread(&self, thread_id: ThreadId) -> ThreadStoreFuture<'_, ()> {
+    fn persist_thread(
+        &self,
+        thread_id: ThreadId,
+        _context: PersistContext,
+    ) -> ThreadStoreFuture<'_, ()> {
         Box::pin(async move { live_writer::persist_thread(self, thread_id).await })
     }
 
@@ -464,7 +469,7 @@ mod tests {
             .await
             .expect("append live item");
         store
-            .persist_thread(thread_id)
+            .persist_thread(thread_id, PersistContext::Standard)
             .await
             .expect("persist live thread");
         store
@@ -609,7 +614,10 @@ mod tests {
         )
         .await
         .expect("create live thread with inherited context");
-        live_thread.persist().await.expect("persist thread");
+        live_thread
+            .persist(PersistContext::Standard)
+            .await
+            .expect("persist thread");
         let inherited_metadata = runtime
             .get_thread(thread_id)
             .await
@@ -1023,7 +1031,7 @@ mod tests {
             .await
             .expect("append initial item");
         first_store
-            .persist_thread(thread_id)
+            .persist_thread(thread_id, PersistContext::Standard)
             .await
             .expect("persist initial thread");
         first_store

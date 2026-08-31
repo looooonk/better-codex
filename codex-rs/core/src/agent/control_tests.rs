@@ -44,6 +44,7 @@ use codex_thread_store::ArchiveThreadParams;
 use codex_thread_store::InMemoryThreadStore;
 use codex_thread_store::LocalThreadStore;
 use codex_thread_store::LocalThreadStoreConfig;
+use codex_thread_store::PersistContext;
 use codex_thread_store::ThreadStore;
 use codex_utils_path_uri::PathUri;
 use pretty_assertions::assert_eq;
@@ -312,7 +313,11 @@ async fn persist_thread_for_tree_resume(thread: &Arc<CodexThread>, message: &str
     thread
         .inject_user_message_without_turn(message.to_string())
         .await;
-    thread.codex.session.ensure_rollout_materialized().await;
+    thread
+        .codex
+        .session
+        .ensure_rollout_materialized(PersistContext::Standard)
+        .await;
     thread
         .codex
         .session
@@ -1099,7 +1104,7 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
     parent_thread
         .codex
         .session
-        .ensure_rollout_materialized()
+        .ensure_rollout_materialized(PersistContext::Standard)
         .await;
     parent_thread
         .codex
@@ -1313,7 +1318,7 @@ async fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history() {
     parent_thread
         .codex
         .session
-        .ensure_rollout_materialized()
+        .ensure_rollout_materialized(PersistContext::Standard)
         .await;
     parent_thread
         .codex
@@ -1500,7 +1505,7 @@ async fn spawn_agent_fork_last_n_turns_keeps_only_recent_turns() {
     parent_thread
         .codex
         .session
-        .ensure_rollout_materialized()
+        .ensure_rollout_materialized(PersistContext::Standard)
         .await;
     parent_thread
         .codex
@@ -1640,7 +1645,7 @@ async fn spawn_agent_fork_last_n_turns_drops_parent_startup_prefix_when_under_li
     parent_thread
         .codex
         .session
-        .ensure_rollout_materialized()
+        .ensure_rollout_materialized(PersistContext::Standard)
         .await;
     parent_thread
         .codex
@@ -1759,7 +1764,7 @@ async fn spawn_agent_fork_last_n_turns_strips_parent_usage_hints() {
     parent_thread
         .codex
         .session
-        .ensure_rollout_materialized()
+        .ensure_rollout_materialized(PersistContext::Standard)
         .await;
     parent_thread
         .codex
@@ -2554,7 +2559,7 @@ async fn resume_thread_subagent_restores_stored_metadata() {
     child_thread
         .codex
         .session
-        .ensure_rollout_materialized()
+        .ensure_rollout_materialized(PersistContext::Standard)
         .await;
     child_thread
         .codex

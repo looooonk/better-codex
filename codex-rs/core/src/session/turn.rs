@@ -112,6 +112,7 @@ use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
 use codex_tools::ToolName;
 use codex_tools::filter_request_plugin_install_discoverable_tools_for_client;
+use codex_thread_store::PersistContext;
 use codex_utils_stream_parser::AssistantTextChunk;
 use codex_utils_stream_parser::AssistantTextStreamParser;
 use codex_utils_stream_parser::ProposedPlanSegment;
@@ -179,15 +180,19 @@ pub(crate) async fn run_turn(
         return Ok(None);
     }
     let mut can_drain_pending_input = input.is_empty();
-    if run_hooks_and_record_inputs(&sess, &turn_context, &input).await {
+    if run_hooks_and_record_inputs(&sess, &turn_context, &input, PersistContext::TurnStart).await? {
         return Ok(None);
     }
 
     sess.merge_connector_selection(explicitly_enabled_connectors.clone())
         .await;
-    for response_item in injection_items {
-        sess.record_conversation_items(&turn_context, std::slice::from_ref(&response_item))
+    for response_item in &injection_items {
+        sess.record_conversation_items(&turn_context, std::slice::from_ref(response_item))
             .await;
+    }
+    if !injection_items.is_empty() {
+        sess.try_ensure_rollout_materialized(PersistContext::Standard)
+            .await?;
     }
 
     track_turn_resolved_config_analytics(&sess, &turn_context, &input).await;
@@ -255,7 +260,14 @@ pub(crate) async fn run_turn(
             Vec::new()
         };
 
-        if run_hooks_and_record_inputs(&sess, &turn_context, &pending_input).await {
+        if run_hooks_and_record_inputs(
+            &sess,
+            &turn_context,
+            &pending_input,
+            PersistContext::Standard,
+        )
+        .await?
+        {
             break;
         }
 
@@ -527,11 +539,12 @@ async fn turn_diff_display_roots(turn_context: &TurnContext) -> Vec<(String, Pat
 }
 
 #[instrument(level = "trace", skip_all)]
-async fn run_hooks_and_record_inputs(
+pub(super) async fn run_hooks_and_record_inputs(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     input: &[TurnInput],
-) -> bool {
+    persist_context: PersistContext,
+) -> CodexResult<bool> {
     let mut blocked_input = false;
     let mut accepted_user_input = false;
     for input_item in input {
@@ -548,11 +561,12 @@ async fn run_hooks_and_record_inputs(
                 turn_context,
                 input_item.clone(),
                 hook_outcome.additional_contexts,
+                persist_context,
             )
-            .await;
+            .await?;
         }
     }
-    blocked_input && !accepted_user_input
+    Ok(blocked_input && !accepted_user_input)
 }
 
 #[instrument(level = "trace", skip_all)]

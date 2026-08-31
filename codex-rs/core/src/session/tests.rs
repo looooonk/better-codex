@@ -4109,6 +4109,38 @@ async fn wait_for_thread_rollback_failed(rx: &async_channel::Receiver<Event>) ->
     }
 }
 
+#[tokio::test]
+async fn turn_start_persistence_failure_stops_before_sampling() {
+    let (mut session, turn_context) = make_session_and_context().await;
+    attach_thread_persistence(&mut session).await;
+    session
+        .live_thread()
+        .expect("live thread")
+        .discard()
+        .await
+        .expect("discard live writer");
+    let session = Arc::new(session);
+    let turn_context = Arc::new(turn_context);
+    let input = vec![TurnInput::UserInput {
+        content: vec![UserInput::Text {
+            text: "durable before sampling".to_string(),
+            text_elements: Vec::new(),
+        }],
+        client_id: None,
+    }];
+
+    let error = super::turn::run_hooks_and_record_inputs(
+        &session,
+        &turn_context,
+        &input,
+        PersistContext::TurnStart,
+    )
+    .await
+    .expect_err("turn-start persistence failure should stop the turn");
+
+    assert!(matches!(error, CodexErr::Io(_)));
+}
+
 async fn attach_thread_persistence(session: &mut Session) -> PathBuf {
     let config = session.get_config().await;
     let live_thread = LiveThread::create(
@@ -4143,7 +4175,9 @@ async fn attach_thread_persistence(session: &mut Session) -> PathBuf {
     .await
     .expect("create thread persistence");
     session.services.live_thread = Some(live_thread);
-    session.ensure_rollout_materialized().await;
+    session
+        .ensure_rollout_materialized(PersistContext::Standard)
+        .await;
     session
         .flush_rollout()
         .await
@@ -8989,7 +9023,9 @@ async fn record_context_updates_and_set_reference_context_item_persists_baseline
         serde_json::to_value(Some(turn_context.to_turn_context_item()))
             .expect("serialize expected context item")
     );
-    session.ensure_rollout_materialized().await;
+    session
+        .ensure_rollout_materialized(PersistContext::Standard)
+        .await;
     session.flush_rollout().await.expect("rollout should flush");
 
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
@@ -9027,7 +9063,9 @@ async fn record_context_updates_and_set_reference_context_item_persists_split_fi
     session
         .record_context_updates_and_set_reference_context_item(&step_context)
         .await;
-    session.ensure_rollout_materialized().await;
+    session
+        .ensure_rollout_materialized(PersistContext::Standard)
+        .await;
     session.flush_rollout().await.expect("rollout should flush");
 
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
@@ -9114,7 +9152,9 @@ async fn record_context_updates_and_set_reference_context_item_persists_full_rei
     session
         .record_context_updates_and_set_reference_context_item(&step_context)
         .await;
-    session.ensure_rollout_materialized().await;
+    session
+        .ensure_rollout_materialized(PersistContext::Standard)
+        .await;
     session.flush_rollout().await.expect("rollout should flush");
 
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
