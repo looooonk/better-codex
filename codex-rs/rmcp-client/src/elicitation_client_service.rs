@@ -26,6 +26,7 @@ use crate::rmcp_client::Elicitation;
 use crate::rmcp_client::ElicitationPauseState;
 use crate::rmcp_client::ElicitationResponse;
 use crate::rmcp_client::SendElicitation;
+use crate::serialized_size::serialized_size_exceeds;
 
 const MCP_PROGRESS_TOKEN_META_KEY: &str = "progressToken";
 const MCP_ELICITATION_CREATE_METHOD: &str = "elicitation/create";
@@ -317,10 +318,9 @@ fn validate_serialized_field_size(
     field: &str,
     value: &impl Serialize,
 ) -> Result<(), rmcp::ErrorData> {
-    let size = serde_json::to_vec(value)
+    if serialized_size_exceeds(value, MAX_MCP_MRTR_ELICITATION_FIELD_BYTES)
         .map_err(|error| rmcp::ErrorData::invalid_params(error.to_string(), None))?
-        .len();
-    if size > MAX_MCP_MRTR_ELICITATION_FIELD_BYTES {
+    {
         return Err(rmcp::ErrorData::invalid_params(
             format!(
                 "MCP {field} exceeds {MAX_MCP_MRTR_ELICITATION_FIELD_BYTES} bytes"

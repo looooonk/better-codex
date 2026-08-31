@@ -14,6 +14,7 @@ mod perform_oauth_login;
 mod program_resolver;
 mod protocol_mode;
 mod rmcp_client;
+mod serialized_size;
 mod startup_error;
 mod stdio_server_launcher;
 mod utils;

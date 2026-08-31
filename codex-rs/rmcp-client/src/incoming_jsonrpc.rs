@@ -15,6 +15,7 @@ use serde::de::Error as _;
 use serde_json::Value;
 
 use crate::protocol_mode::McpProtocolMode;
+use crate::serialized_size::serialized_size_exceeds;
 
 const MAX_MCP_MRTR_FIELD_BYTES: usize = 4 * 1024;
 const STDIO_PROTOCOL_UNKNOWN: u8 = 0;
@@ -166,8 +167,7 @@ fn validate_input_required_fields(message: &Value) -> serde_json::Result<()> {
         let Some(value) = message.pointer(pointer) else {
             continue;
         };
-        let size = serde_json::to_vec(value)?.len();
-        if size > MAX_MCP_MRTR_FIELD_BYTES {
+        if serialized_size_exceeds(value, MAX_MCP_MRTR_FIELD_BYTES)? {
             return Err(serde_json::Error::custom(format!(
                 "MCP input_required {name} exceeds {MAX_MCP_MRTR_FIELD_BYTES} bytes"
             )));
