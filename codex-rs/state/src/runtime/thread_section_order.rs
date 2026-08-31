@@ -128,11 +128,13 @@ impl StateRuntime {
             section_move_position(&mut tx, section, &thread_id, before_thread_id.as_deref())
                 .await?;
         if current_section.as_deref() == Some(section) {
-            sqlx::query("UPDATE threads SET section_position = ? WHERE id = ?")
-                .bind(position)
-                .bind(&thread_id)
-                .execute(&mut *tx)
-                .await?;
+            sqlx::query(
+                "UPDATE threads SET section_position = ?, section_entered_at_ms = COALESCE(section_entered_at_ms, recency_at_ms) WHERE id = ?",
+            )
+            .bind(position)
+            .bind(&thread_id)
+            .execute(&mut *tx)
+            .await?;
         } else {
             sqlx::query(
                 "UPDATE threads SET thread_section_id = ?, section_position = ?, section_entered_at_ms = ? WHERE id = ?",
@@ -146,6 +148,42 @@ impl StateRuntime {
         }
         tx.commit().await?;
         Ok(true)
+    }
+
+    pub(super) async fn repair_thread_section_ordering(
+        &self,
+        section: &str,
+    ) -> anyhow::Result<()> {
+        let needs_repair = sqlx::query_scalar::<_, i64>(
+            "SELECT 1 FROM threads WHERE thread_section_id = ? AND (section_position IS NULL OR section_entered_at_ms IS NULL) LIMIT 1",
+        )
+        .bind(section)
+        .fetch_optional(self.pool.as_ref())
+        .await?
+        .is_some();
+        if !needs_repair {
+            return Ok(());
+        }
+
+        let mut tx = self.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let needs_repair = sqlx::query_scalar::<_, i64>(
+            "SELECT 1 FROM threads WHERE thread_section_id = ? AND (section_position IS NULL OR section_entered_at_ms IS NULL) LIMIT 1",
+        )
+        .bind(section)
+        .fetch_optional(&mut *tx)
+        .await?
+        .is_some();
+        if needs_repair {
+            renumber_section_positions(&mut tx, section, /*excluded_thread_id*/ None).await?;
+            sqlx::query(
+                "UPDATE threads SET section_entered_at_ms = COALESCE(section_entered_at_ms, recency_at_ms) WHERE thread_section_id = ?",
+            )
+            .bind(section)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        Ok(())
     }
 }
 
@@ -222,7 +260,12 @@ UPDATE threads
 SET section_position = ranked.position
 FROM (
     SELECT id,
-           ROW_NUMBER() OVER (ORDER BY section_position ASC, id ASC) * ? AS position
+           ROW_NUMBER() OVER (
+               ORDER BY section_position IS NULL,
+                        section_position ASC,
+                        recency_at_ms DESC,
+                        id DESC
+           ) * ? AS position
     FROM threads
     WHERE thread_section_id = ? AND (? IS NULL OR id <> ?)
 ) AS ranked

@@ -460,6 +460,14 @@ ON CONFLICT(child_thread_id) DO NOTHING
         filters: ThreadFilterOptions<'_>,
         relation_filter: Option<crate::ThreadRelationFilter>,
     ) -> anyhow::Result<crate::ThreadsPage> {
+        if filters.sort_key == SortKey::SectionPosition {
+            let ThreadSectionFilter::Section(section_id) = filters.section else {
+                anyhow::bail!(
+                    "section position sorting requires ThreadSectionFilter::Section(section_id)"
+                );
+            };
+            self.repair_thread_section_ordering(section_id).await?;
+        }
         let limit = page_size.saturating_add(1);
 
         let mut builder = QueryBuilder::<Sqlite>::new("");
@@ -507,6 +515,9 @@ ON CONFLICT(child_thread_id) DO NOTHING
         model_providers: Option<&[String]>,
         archived_only: bool,
     ) -> anyhow::Result<Vec<ThreadId>> {
+        if sort_key == crate::SortKey::SectionPosition {
+            anyhow::bail!("section position sorting requires a section filter");
+        }
         let mut builder = QueryBuilder::<Sqlite>::new("SELECT threads.id FROM threads");
         push_thread_filters(
             &mut builder,
@@ -557,6 +568,7 @@ ON CONFLICT(child_thread_id) DO NOTHING
         &self,
         metadata: &crate::ThreadMetadata,
     ) -> anyhow::Result<bool> {
+        validate_thread_section_metadata(metadata)?;
         let updated_at = self.allocate_thread_updated_at(metadata.updated_at)?;
         let recency_at = self.allocate_thread_recency_at(metadata.recency_at)?;
         let preview = metadata_preview(metadata);
@@ -829,6 +841,7 @@ WHERE id = ?
         metadata: &crate::ThreadMetadata,
         creation_memory_mode: Option<&str>,
     ) -> anyhow::Result<()> {
+        validate_thread_section_metadata(metadata)?;
         let updated_at = self.allocate_thread_updated_at(metadata.updated_at)?;
         let insert_recency_at = self.allocate_thread_recency_at(metadata.recency_at)?;
         let preview = metadata_preview(metadata);
@@ -1545,6 +1558,20 @@ fn metadata_preview(metadata: &crate::ThreadMetadata) -> &str {
         .as_deref()
         .or(metadata.first_user_message.as_deref())
         .unwrap_or_default()
+}
+
+fn validate_thread_section_metadata(metadata: &crate::ThreadMetadata) -> anyhow::Result<()> {
+    match (
+        metadata.section.as_ref(),
+        metadata.section_position,
+        metadata.section_entered_at,
+    ) {
+        (None, None, None) | (Some(_), Some(_), Some(_)) => Ok(()),
+        _ => anyhow::bail!(
+            "thread {} has incomplete section ordering metadata: section, section_position, and section_entered_at must all be set or all be absent",
+            metadata.id
+        ),
+    }
 }
 
 #[cfg(test)]

@@ -196,3 +196,205 @@ async fn section_metadata_filters_and_orders_threads_without_reconciliation_loss
         vec![unsectioned]
     );
 }
+
+#[tokio::test]
+async fn section_position_sort_rejects_missing_section_context() {
+    let codex_home = unique_temp_dir();
+    let runtime = StateRuntime::init(codex_home, "test-provider".to_string())
+        .await
+        .expect("state db should initialize");
+    for section in [ThreadSectionFilter::All, ThreadSectionFilter::Unsectioned] {
+        let error = runtime
+            .list_threads(
+                /*page_size*/ 10,
+                ThreadFilterOptions {
+                    archived_only: false,
+                    allowed_sources: &[],
+                    model_providers: None,
+                    cwd_filters: None,
+                    section,
+                    anchor: None,
+                    sort_key: SortKey::SectionPosition,
+                    sort_direction: SortDirection::Asc,
+                    search_term: None,
+                },
+            )
+            .await
+            .expect_err("section ordering without a specific section must fail");
+        assert_eq!(
+            error.to_string(),
+            "section position sorting requires ThreadSectionFilter::Section(section_id)"
+        );
+    }
+    let error = runtime
+        .list_thread_ids(
+            /*limit*/ 10,
+            /*anchor*/ None,
+            SortKey::SectionPosition,
+            &[],
+            /*model_providers*/ None,
+            /*archived_only*/ false,
+        )
+        .await
+        .expect_err("id listing without a section filter must fail");
+    assert_eq!(
+        error.to_string(),
+        "section position sorting requires a section filter"
+    );
+}
+
+#[tokio::test]
+async fn public_thread_writes_reject_incomplete_section_ordering_metadata() {
+    let codex_home = unique_temp_dir();
+    let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        .await
+        .expect("state db should initialize");
+    let mut missing_order = test_thread_metadata(&codex_home, ThreadId::new(), codex_home.clone());
+    missing_order.section = Some(ThreadSection {
+        id: PINNED_THREAD_SECTION_ID.to_string(),
+        name: PINNED_THREAD_SECTION_NAME.to_string(),
+        appearance: None,
+    });
+    let expected = format!(
+        "thread {} has incomplete section ordering metadata: section, section_position, and section_entered_at must all be set or all be absent",
+        missing_order.id
+    );
+    assert_eq!(
+        runtime
+            .upsert_thread(&missing_order)
+            .await
+            .expect_err("incomplete section upsert must fail")
+            .to_string(),
+        expected
+    );
+
+    let mut orphaned_order = test_thread_metadata(&codex_home, ThreadId::new(), codex_home.clone());
+    orphaned_order.section_position = Some(1_000_000);
+    let expected = format!(
+        "thread {} has incomplete section ordering metadata: section, section_position, and section_entered_at must all be set or all be absent",
+        orphaned_order.id
+    );
+    assert_eq!(
+        runtime
+            .insert_thread_if_absent(&orphaned_order)
+            .await
+            .expect_err("orphaned section order insert must fail")
+            .to_string(),
+        expected
+    );
+}
+
+#[tokio::test]
+async fn section_position_listing_repairs_only_the_requested_legacy_section() {
+    let codex_home = unique_temp_dir();
+    let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+        .await
+        .expect("state db should initialize");
+    let first_section = runtime
+        .create_thread_section("First", /*appearance*/ None)
+        .await
+        .expect("first section should create");
+    let other_section = runtime
+        .create_thread_section("Other", /*appearance*/ None)
+        .await
+        .expect("other section should create");
+    let positioned = ThreadId::new();
+    let legacy = ThreadId::new();
+    let other_legacy = ThreadId::new();
+    let mut positioned_metadata =
+        test_thread_metadata(&codex_home, positioned, codex_home.clone());
+    positioned_metadata.section = Some(first_section.clone());
+    positioned_metadata.section_position = Some(1_000_000);
+    positioned_metadata.section_entered_at = Some(positioned_metadata.recency_at);
+    runtime
+        .upsert_thread(&positioned_metadata)
+        .await
+        .expect("positioned thread should insert");
+    for (thread_id, section_id) in [
+        (legacy, first_section.id.as_str()),
+        (other_legacy, other_section.id.as_str()),
+    ] {
+        runtime
+            .upsert_thread(&test_thread_metadata(
+                &codex_home,
+                thread_id,
+                codex_home.clone(),
+            ))
+            .await
+            .expect("legacy thread should insert unsectioned");
+        sqlx::query("UPDATE threads SET thread_section_id = ? WHERE id = ?")
+            .bind(section_id)
+            .bind(thread_id.to_string())
+            .execute(runtime.pool.as_ref())
+            .await
+            .expect("legacy partial section state should insert");
+    }
+
+    let filters = |anchor| ThreadFilterOptions {
+        archived_only: false,
+        allowed_sources: &[],
+        model_providers: None,
+        cwd_filters: None,
+        section: ThreadSectionFilter::Section(&first_section.id),
+        anchor,
+        sort_key: SortKey::SectionPosition,
+        sort_direction: SortDirection::Asc,
+        search_term: None,
+    };
+    let first_page = runtime
+        .list_threads(/*page_size*/ 1, filters(/*anchor*/ None))
+        .await
+        .expect("first repaired page should load");
+    let second_page = runtime
+        .list_threads(
+            /*page_size*/ 1,
+            filters(first_page.next_anchor.as_ref()),
+        )
+        .await
+        .expect("second repaired page should load");
+    assert_eq!(
+        (
+            first_page.items[0].id,
+            second_page.items[0].id,
+            second_page.next_anchor,
+        ),
+        (positioned, legacy, None)
+    );
+    assert!(
+        [
+            first_page.items[0].section_position,
+            second_page.items[0].section_position,
+        ]
+        .into_iter()
+        .all(|position| position.is_some())
+    );
+    assert_eq!(
+        runtime
+            .get_thread_section_ordering(&[other_legacy])
+            .await
+            .expect("other section ordering should load")[&other_legacy],
+        (None, None),
+        "repair must not alter another section"
+    );
+
+    let repaired_other = runtime
+        .list_threads(
+            /*page_size*/ 1,
+            ThreadFilterOptions {
+                archived_only: false,
+                allowed_sources: &[],
+                model_providers: None,
+                cwd_filters: None,
+                section: ThreadSectionFilter::Section(&other_section.id),
+                anchor: None,
+                sort_key: SortKey::SectionPosition,
+                sort_direction: SortDirection::Asc,
+                search_term: None,
+            },
+        )
+        .await
+        .expect("other section should repair on demand");
+    assert_eq!(repaired_other.items[0].id, other_legacy);
+    assert!(repaired_other.items[0].section_position.is_some());
+    assert!(repaired_other.items[0].section_entered_at.is_some());
+}
