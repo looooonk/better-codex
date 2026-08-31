@@ -39,7 +39,6 @@ use codex_config::RequirementSource;
 use codex_config::RequirementsLayerEntry;
 use codex_config::compose_requirements;
 use codex_config::types::McpServerTransportConfig;
-use codex_core_skills::PluginSkillSnapshots;
 use codex_login::CodexAuth;
 use codex_plugin::AppDeclaration;
 use codex_plugin::PluginId;
@@ -2569,7 +2568,7 @@ fn loaded_plugins_cache_invalidation_rejects_stale_load_completion() {
         stale_generation,
         cache_key.clone(),
         Vec::new(),
-        PluginSkillSnapshots::for_plugin_load(),
+        crate::skill_snapshots::new_plugin_skill_snapshots(),
     );
 
     assert_eq!(manager.cached_loaded_plugins(&cache_key), None);

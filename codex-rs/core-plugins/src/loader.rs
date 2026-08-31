@@ -27,7 +27,6 @@ use codex_config::types::PluginConfig;
 use codex_config::types::PluginMcpServerConfig;
 use codex_connectors::parse_plugin_app_config;
 use codex_connectors::parse_plugin_app_config_value;
-use codex_core_skills::PluginSkillSnapshots;
 use codex_core_skills::config_rules::resolve_disabled_skill_paths;
 use codex_core_skills::config_rules::skill_config_rules_from_stack;
 use codex_core_skills::loader::SkillRoot;
@@ -47,8 +46,10 @@ use codex_protocol::protocol::Product;
 use codex_protocol::protocol::SkillScope;
 use codex_skills::SkillConfigRules;
 use codex_skills::SkillMetadata;
+use codex_skills::SkillRootSnapshots;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_plugins::SkillDiscoveryMode;
+use codex_utils_plugins::PluginSkillRoot;
 use codex_utils_plugins::find_plugin_manifest_path;
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
@@ -79,7 +80,7 @@ enum PluginLoadScope<'a> {
     AllCapabilities {
         restriction_product: Option<Product>,
         skill_config_rules: &'a SkillConfigRules,
-        plugin_skill_snapshots: Option<&'a PluginSkillSnapshots>,
+        plugin_skill_snapshots: Option<&'a SkillRootSnapshots<PluginSkillRoot>>,
     },
     HooksOnly,
 }
@@ -120,7 +121,7 @@ pub(crate) async fn load_plugins_from_layer_stack(
     config_layer_stack: &ConfigLayerStack,
     extra_plugins: HashMap<String, PluginConfig>,
     store: &PluginStore,
-    plugin_skill_snapshots: Option<&PluginSkillSnapshots>,
+    plugin_skill_snapshots: Option<&SkillRootSnapshots<PluginSkillRoot>>,
     restriction_product: Option<Product>,
     remote_global_catalog_active: bool,
 ) -> Vec<LoadedPlugin<McpServerConfig>> {
@@ -930,7 +931,7 @@ pub async fn load_plugin_skills(
     manifest: &PluginManifest,
     restriction_product: Option<Product>,
     skill_config_rules: &SkillConfigRules,
-    plugin_skill_snapshots: Option<&PluginSkillSnapshots>,
+    plugin_skill_snapshots: Option<&SkillRootSnapshots<PluginSkillRoot>>,
 ) -> ResolvedPluginSkills {
     let discovery_mode = if is_agent_plugin_manifest(plugin_root.as_path()) {
         SkillDiscoveryMode::DirectChildren
@@ -955,7 +956,7 @@ pub(crate) async fn load_plugin_skills_with_discovery_mode(
     manifest: &PluginManifest,
     restriction_product: Option<Product>,
     skill_config_rules: &SkillConfigRules,
-    plugin_skill_snapshots: Option<&PluginSkillSnapshots>,
+    plugin_skill_snapshots: Option<&SkillRootSnapshots<PluginSkillRoot>>,
     discovery_mode: SkillDiscoveryMode,
 ) -> ResolvedPluginSkills {
     load_plugin_skill_inventory(
@@ -975,7 +976,7 @@ pub(crate) async fn load_plugin_skill_inventory(
     plugin_id: &PluginId,
     manifest: &PluginManifest,
     restriction_product: Option<Product>,
-    plugin_skill_snapshots: Option<&PluginSkillSnapshots>,
+    plugin_skill_snapshots: Option<&SkillRootSnapshots<PluginSkillRoot>>,
     discovery_mode: SkillDiscoveryMode,
 ) -> PluginSkillInventory {
     let roots = plugin_skill_roots(plugin_root, &manifest.paths)

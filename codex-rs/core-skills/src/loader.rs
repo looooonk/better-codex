@@ -17,6 +17,7 @@ use codex_exec_server::ExecutorFileSystem;
 use codex_protocol::protocol::Product;
 use codex_protocol::protocol::SkillScope;
 use codex_skills::ParsedSkillFrontmatter;
+use codex_skills::SkillRootSnapshots;
 use codex_skills::SkillInterfaceAssetPolicy;
 use codex_skills::SkillInterfaceFile;
 use codex_skills::SkillParseError;
@@ -26,6 +27,7 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
 use codex_utils_path_uri::PathUri;
 use codex_utils_plugins::SkillDiscoveryMode;
+use codex_utils_plugins::PluginSkillRoot;
 use discovery::DirectorySymlinkPolicy;
 use discovery::DiscoveredSkill;
 use discovery::HiddenDirectoryPolicy;
@@ -147,7 +149,7 @@ pub struct SkillRoot {
 
 pub async fn load_skills_from_roots<I>(
     roots: I,
-    plugin_skill_snapshots: Option<&crate::PluginSkillSnapshots>,
+    plugin_skill_snapshots: Option<&SkillRootSnapshots<PluginSkillRoot>>,
 ) -> SkillLoadOutcome
 where
     I: IntoIterator<Item = SkillRoot> + Send,

@@ -5,18 +5,49 @@ use codex_config::ConfigLayerSource;
 use codex_config::ConfigLayerStack;
 use codex_config::ConfigRequirementsToml;
 use codex_exec_server::LOCAL_FS;
+use codex_skills::LoadedSkillRoot;
+use codex_skills::SkillRootSnapshotCache;
+use codex_skills::SkillRootSnapshots;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::test_support::PathBufExt;
 use codex_utils_absolute_path::test_support::PathExt;
 use codex_utils_plugins::PluginSkillRoot;
 use codex_utils_plugins::SkillDiscoveryMode;
 use pretty_assertions::assert_eq;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::Mutex;
 use tempfile::TempDir;
+
+#[derive(Default)]
+struct TestSkillRootSnapshotCache {
+    snapshots: Mutex<HashMap<PluginSkillRoot, LoadedSkillRoot>>,
+}
+
+impl SkillRootSnapshotCache<PluginSkillRoot> for TestSkillRootSnapshotCache {
+    fn get(&self, root: &PluginSkillRoot) -> Option<LoadedSkillRoot> {
+        self.snapshots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(root)
+            .cloned()
+    }
+
+    fn insert(&self, root: PluginSkillRoot, snapshot: LoadedSkillRoot) {
+        self.snapshots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(root, snapshot);
+    }
+}
+
+fn plugin_skill_snapshots() -> SkillRootSnapshots<PluginSkillRoot> {
+    SkillRootSnapshots::new(Arc::new(TestSkillRootSnapshotCache::default()))
+}
 
 fn write_user_skill(codex_home: &TempDir, dir: &str, name: &str, description: &str) {
     let skill_dir = codex_home.path().join("skills").join(dir);
@@ -220,7 +251,7 @@ async fn skills_for_config_refreshes_when_plugin_snapshot_identity_changes() {
         config_layer_stack.clone(),
         bundled_skills_enabled_from_stack(&config_layer_stack),
     )
-    .with_plugin_skill_snapshots(Some(PluginSkillSnapshots::for_plugin_load()));
+    .with_plugin_skill_snapshots(Some(plugin_skill_snapshots()));
     let original = skills_service
         .snapshot_for_config(&input, Some(Arc::clone(&LOCAL_FS)))
         .await;
@@ -232,7 +263,7 @@ async fn skills_for_config_refreshes_when_plugin_snapshot_identity_changes() {
     .expect("update plugin skill");
     let refreshed_input = input
         .clone()
-        .with_plugin_skill_snapshots(Some(PluginSkillSnapshots::for_plugin_load()));
+        .with_plugin_skill_snapshots(Some(plugin_skill_snapshots()));
     let refreshed = skills_service
         .snapshot_for_config(&refreshed_input, Some(Arc::clone(&LOCAL_FS)))
         .await;

@@ -1,11 +1,9 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
-use std::fmt;
-use std::hash::Hash;
-use std::hash::Hasher;
 use std::sync::Arc;
-use std::sync::Mutex;
 
+use codex_skills::LoadedSkillRoot;
+use codex_skills::SkillRootSnapshots;
 use codex_utils_plugins::PluginSkillRoot;
 
 use crate::SkillLoadOutcome;
@@ -14,54 +12,16 @@ use crate::loader::SkillRootSnapshot;
 use crate::loader::load_skill_root;
 use crate::model::SkillFileSystemsByPath;
 
-/// Parsed plugin skill-root snapshots produced by one plugin load.
-///
-/// Clones share the same snapshots. The plugins manager stores them with the corresponding loaded
-/// plugins and passes a clone to skill loading as an optional preload.
-#[derive(Clone)]
-pub struct PluginSkillSnapshots {
-    snapshots_by_root: Arc<Mutex<HashMap<PluginSkillRoot, SkillRootSnapshot>>>,
-}
-
-impl PluginSkillSnapshots {
-    /// Creates an empty snapshot collection for a plugin load to populate.
-    pub fn for_plugin_load() -> Self {
-        Self {
-            snapshots_by_root: Arc::new(Mutex::new(HashMap::new())),
-        }
-    }
-}
-
-impl PartialEq for PluginSkillSnapshots {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.snapshots_by_root, &other.snapshots_by_root)
-    }
-}
-
-impl Eq for PluginSkillSnapshots {}
-
-impl Hash for PluginSkillSnapshots {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        Arc::as_ptr(&self.snapshots_by_root).hash(state);
-    }
-}
-
-impl fmt::Debug for PluginSkillSnapshots {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PluginSkillSnapshots")
-            .finish_non_exhaustive()
-    }
-}
-
 pub(crate) async fn load_and_merge_skill_roots<I>(
     roots: I,
-    plugin_skill_snapshots: Option<&PluginSkillSnapshots>,
+    plugin_skill_snapshots: Option<&SkillRootSnapshots<PluginSkillRoot>>,
 ) -> SkillLoadOutcome
 where
     I: IntoIterator<Item = SkillRoot>,
 {
     let mut root_snapshots = Vec::new();
     for root in roots {
+        let file_system = Arc::clone(&root.file_system);
         let cache_key = match (
             root.plugin_id.clone(),
             root.plugin_namespace.clone(),
@@ -77,26 +37,34 @@ where
             _ => None,
         };
         let cached_snapshot = cache_key.as_ref().and_then(|cache_key| {
-            let plugin_skill_snapshots = plugin_skill_snapshots?;
-            plugin_skill_snapshots
-                .snapshots_by_root
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .get(cache_key)
-                .cloned()
+            plugin_skill_snapshots?.get(cache_key)
         });
         let snapshot = match cached_snapshot {
-            Some(snapshot) => snapshot,
+            Some(snapshot) => SkillRootSnapshot {
+                root: snapshot.root,
+                skills: snapshot.skills,
+                skill_discovery_path_by_path: snapshot.skill_discovery_path_by_path,
+                errors: snapshot.errors,
+                file_system,
+                is_agent_plugin: snapshot.is_agent_plugin,
+            },
             None => {
                 let snapshot = load_skill_root(root).await;
                 if let Some(plugin_skill_snapshots) = plugin_skill_snapshots
                     && let Some(cache_key) = cache_key
                 {
-                    plugin_skill_snapshots
-                        .snapshots_by_root
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .insert(cache_key, snapshot.clone());
+                    plugin_skill_snapshots.insert(
+                        cache_key,
+                        LoadedSkillRoot {
+                            root: snapshot.root.clone(),
+                            skills: snapshot.skills.clone(),
+                            skill_discovery_path_by_path: Arc::clone(
+                                &snapshot.skill_discovery_path_by_path,
+                            ),
+                            errors: snapshot.errors.clone(),
+                            is_agent_plugin: snapshot.is_agent_plugin,
+                        },
+                    );
                 }
                 snapshot
             }

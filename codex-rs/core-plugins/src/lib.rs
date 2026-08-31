@@ -17,6 +17,7 @@ pub mod remote_bundle;
 pub mod remote_legacy;
 pub mod startup_sync;
 pub mod store;
+mod skill_snapshots;
 #[cfg(test)]
 mod test_support;
 pub mod toggles;

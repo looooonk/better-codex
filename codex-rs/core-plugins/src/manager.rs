@@ -52,6 +52,7 @@ use crate::remote::RemotePluginMaterialization;
 use crate::remote::RemotePluginServiceConfig;
 use crate::remote_legacy::RemotePluginFetchError;
 use crate::remote_legacy::RemotePluginMutationError;
+use crate::skill_snapshots::new_plugin_skill_snapshots;
 use crate::startup_sync::curated_plugins_api_marketplace_path;
 use crate::startup_sync::curated_plugins_repo_path;
 use crate::startup_sync::read_curated_plugins_sha;
@@ -68,7 +69,6 @@ use codex_config::set_user_plugin_enabled;
 use codex_config::types::PluginConfig;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_config::types::ToolSuggestDiscoverableType;
-use codex_core_skills::PluginSkillSnapshots;
 use codex_core_skills::config_rules::skill_config_rules_from_stack;
 use codex_hooks::plugin_hook_declarations;
 use codex_login::AuthManager;
@@ -85,6 +85,7 @@ use codex_protocol::protocol::HookEventName;
 use codex_protocol::protocol::Product;
 use codex_skills::SkillConfigRules;
 use codex_skills::SkillMetadata;
+use codex_skills::SkillRootSnapshots;
 use codex_tools::DiscoverablePluginInfo;
 use codex_tools::DiscoverableTool;
 use codex_tools::filter_request_plugin_install_discoverable_tools_for_client;
@@ -392,7 +393,7 @@ pub struct PluginsManager {
 struct LoadedPluginsCacheEntry {
     key: PluginLoadCacheKey,
     plugins: Vec<LoadedPlugin>,
-    plugin_skill_snapshots: PluginSkillSnapshots,
+    plugin_skill_snapshots: SkillRootSnapshots<PluginSkillRoot>,
 }
 
 #[derive(Default)]
@@ -533,7 +534,7 @@ impl PluginsManager {
     pub fn plugin_skill_snapshots_for_config(
         &self,
         config: &PluginsConfigInput,
-    ) -> Option<PluginSkillSnapshots> {
+    ) -> Option<SkillRootSnapshots<PluginSkillRoot>> {
         if !config.plugins_enabled {
             return None;
         }
@@ -588,7 +589,7 @@ impl PluginsManager {
             return self.resolve_loaded_plugins_for_auth(plugins);
         }
         let cache_generation = self.loaded_plugins_cache_generation();
-        let plugin_skill_snapshots = PluginSkillSnapshots::for_plugin_load();
+        let plugin_skill_snapshots = new_plugin_skill_snapshots();
         let plugins = load_plugins_from_layer_stack(
             &config.config_layer_stack,
             self.remote_installed_plugin_configs(),
@@ -737,7 +738,7 @@ impl PluginsManager {
         generation: u64,
         key: PluginLoadCacheKey,
         plugins: Vec<LoadedPlugin>,
-        plugin_skill_snapshots: PluginSkillSnapshots,
+        plugin_skill_snapshots: SkillRootSnapshots<PluginSkillRoot>,
     ) {
         let mut cache = match self.loaded_plugins_cache.write() {
             Ok(cache) => cache,
