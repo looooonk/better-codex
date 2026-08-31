@@ -9,6 +9,7 @@ use codex_core::config::Config;
 use codex_core::config::ConfigBuilder;
 use codex_core::config::ConfigOverrides;
 use codex_exec_server::LOCAL_FS;
+use codex_features::Feature;
 use codex_features::feature_for_key;
 use codex_login::AuthManager;
 use codex_login::default_client::set_default_client_residency_requirement;
@@ -356,6 +357,9 @@ pub(crate) fn apply_runtime_feature_enablement(
         let Some(feature) = feature_for_key(name) else {
             continue;
         };
+        if feature == Feature::GuardianV2 {
+            continue;
+        }
         if let Err(err) = config.features.set_enabled(feature, *enabled) {
             warn!(
                 feature = name,

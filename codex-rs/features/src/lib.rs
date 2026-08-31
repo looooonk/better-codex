@@ -484,6 +484,10 @@ impl Features {
                 "image_detail_original" | "resize_all_images" | "item_ids" => {
                     continue;
                 }
+                "guardianv2" => {
+                    // Keep V2 internal until every effectful approval family shares its live route.
+                    continue;
+                }
                 "plugin_hooks" => {
                     continue;
                 }
