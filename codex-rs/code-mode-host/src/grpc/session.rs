@@ -20,7 +20,6 @@ use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tonic::Status;
 use uuid::Uuid;
@@ -28,6 +27,8 @@ use uuid::Uuid;
 use super::GrpcStream;
 use super::delegate::GrpcDelegate;
 use super::events::EventSender;
+use super::events::MAX_HOST_EVENT_BYTES;
+use super::events::MAX_SESSION_EVENT_BYTES;
 use super::principal::GrpcPrincipal;
 use super::validation;
 use super::waits::ActiveWait;
@@ -43,6 +44,7 @@ pub(super) struct GrpcHostState {
     limits: HostLimits,
     delegate_permits: Arc<Semaphore>,
     control_permits: Arc<Semaphore>,
+    event_byte_permits: Arc<Semaphore>,
 }
 
 pub(super) struct GrpcSession {
@@ -103,6 +105,7 @@ impl GrpcHostState {
             limits: HostLimits::new(),
             delegate_permits: Arc::new(Semaphore::new(MAX_PENDING_DELEGATE_CALLS)),
             control_permits: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
+            event_byte_permits: Arc::new(Semaphore::new(MAX_HOST_EVENT_BYTES)),
         }
     }
 
@@ -114,7 +117,12 @@ impl GrpcHostState {
         let id = Uuid::new_v4();
         let (events, receiver) = mpsc::channel(OUTGOING_CHANNEL_CAPACITY);
         let closed = CancellationToken::new();
-        let event_sender = EventSender::new(events.clone(), closed.clone());
+        let event_sender = EventSender::new(
+            events.clone(),
+            closed.clone(),
+            Arc::new(Semaphore::new(MAX_SESSION_EVENT_BYTES)),
+            Arc::clone(&self.event_byte_permits),
+        );
         let session = GrpcSession::new(
             id,
             principal,
@@ -123,13 +131,14 @@ impl GrpcHostState {
             Arc::clone(&self.delegate_permits),
             limits,
         );
-        events
-            .try_send(Ok(proto::SessionEvent {
-                event: Some(proto::session_event::Event::Opened(proto::SessionOpened {
+        session
+            .send_event_now(
+                proto::session_event::Event::Opened(proto::SessionOpened {
                     session_id: id.to_string(),
-                })),
-            }))
-            .map_err(|_| Status::internal("failed to publish the opened code-mode session"))?;
+                }),
+                /*cell_permit*/ None,
+            )
+            .map_err(Status::internal)?;
         let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
         if sessions.len() >= MAX_IN_FLIGHT_REQUESTS {
             return Err(Status::resource_exhausted(
@@ -152,7 +161,7 @@ impl GrpcHostState {
             }
         });
 
-        Ok(Box::pin(ReceiverStream::new(receiver)))
+        Ok(super::events::event_stream(receiver))
     }
 
     pub(super) fn session_for_principal(
