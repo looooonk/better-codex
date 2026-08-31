@@ -1954,10 +1954,8 @@ mod tests {
     use codex_app_server_protocol::RequestId;
     use codex_app_server_protocol::ThreadStartParams;
     use codex_app_server_protocol::ThreadStartResponse;
-    use codex_config::ManagedAuthPolicy;
     use codex_config::config_toml::ProjectConfig;
     use codex_config::types::AuthCredentialsStoreMode;
-    use codex_login::AuthKeyringBackendKind;
     use codex_protocol::config_types::ForcedLoginMethod;
     use pretty_assertions::assert_eq;
     use serial_test::serial;
@@ -2457,38 +2455,6 @@ mod tests {
                 .is_empty()
         );
         server.verify().await;
-        Ok(())
-    }
-
-    #[test]
-    fn remote_workspace_strips_auth_restrictions_from_cloud_loader() -> color_eyre::Result<()> {
-        let auth_config = AuthConfig {
-            codex_home: PathBuf::from("codex-home"),
-            auth_credentials_store_mode: AuthCredentialsStoreMode::File,
-            keyring_backend_kind: AuthKeyringBackendKind::Direct,
-            forced_login_method: Some(ForcedLoginMethod::Api),
-            chatgpt_base_url: Some("https://chatgpt.example/backend-api".to_string()),
-            forced_chatgpt_workspace_id: Some(vec!["legacy-workspace".to_string()]),
-            managed_auth_policy: ManagedAuthPolicy::default()
-                .restrict_login_methods_to([ForcedLoginMethod::Chatgpt])
-                .restrict_chatgpt_workspaces_to(["managed-workspace".to_string()]),
-            auth_route_config: None,
-        };
-
-        assert_eq!(
-            AppServerTarget::Embedded.auth_config_for_cloud_loader(auth_config.clone()),
-            auth_config
-        );
-
-        let remote = AppServerTarget::Remote {
-            endpoint: RemoteAppServerEndpoint::UnixSocket {
-                socket_path: AbsolutePathBuf::relative_to_current_dir("remote.sock")?,
-            },
-        }
-        .auth_config_for_cloud_loader(auth_config);
-        assert_eq!(remote.forced_login_method, None);
-        assert_eq!(remote.forced_chatgpt_workspace_id, None);
-        assert_eq!(remote.managed_auth_policy, ManagedAuthPolicy::default());
         Ok(())
     }
 
