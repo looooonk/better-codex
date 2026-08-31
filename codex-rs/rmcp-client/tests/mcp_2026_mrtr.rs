@@ -64,14 +64,20 @@ fn rpc_result(body: &Value, result: Value) -> ResponseTemplate {
 }
 
 fn input_required(body: &Value) -> ResponseTemplate {
-    rpc_result(
-        body,
-        json!({
+    ResponseTemplate::new(200).set_body_json(input_required_message(body))
+}
+
+fn input_required_message(body: &Value) -> Value {
+    json!({
+        "jsonrpc": "2.0",
+        "id": body["id"],
+        "result": {
             "resultType": "input_required",
             "inputRequests": {
                 "confirmation": {
                     "method": "elicitation/create",
                     "params": {
+                        "_meta": {"prompt": "round-one"},
                         "mode": "form",
                         "message": "Confirm the MCP request.",
                         "requestedSchema": {
@@ -83,8 +89,9 @@ fn input_required(body: &Value) -> ResponseTemplate {
                 },
             },
             "requestState": "opaque-state",
-        }),
-    )
+            "_meta": {"trace": "round-one"},
+        },
+    })
 }
 
 async fn create_client(
@@ -118,11 +125,17 @@ async fn create_client(
             Box::new(move |request_id, request| {
                 let elicitations = Arc::clone(&elicitations);
                 async move {
-                    let Elicitation::Mcp(ElicitRequestParams::FormElicitationParams { .. }) =
-                        request
+                    let Elicitation::Mcp(ElicitRequestParams::FormElicitationParams {
+                        meta,
+                        ..
+                    }) = request
                     else {
                         anyhow::bail!("expected a standard form elicitation");
                     };
+                    assert_eq!(
+                        meta.map(|meta| Value::Object(meta.0.0)),
+                        Some(json!({"prompt": "round-one"}))
+                    );
                     elicitations
                         .lock()
                         .map_err(|_| anyhow::anyhow!("elicitation lock poisoned"))?
@@ -130,7 +143,7 @@ async fn create_client(
                     Ok(ElicitationResponse {
                         action: ElicitationAction::Accept,
                         content: Some(json!({"confirmed": true})),
-                        meta: None,
+                        meta: Some(json!({"review": "accepted"})),
                     })
                 }
                 .boxed()
@@ -167,6 +180,10 @@ async fn modern_tool_input_required_drives_a_second_round() -> anyhow::Result<()
                             assert_eq!(
                                 body.pointer("/params/inputResponses/confirmation/content"),
                                 Some(&json!({"confirmed": true}))
+                            );
+                            assert_eq!(
+                                body.pointer("/params/inputResponses/confirmation/_meta"),
+                                Some(&json!({"review": "accepted"}))
                             );
                             rpc_result(
                                 &body,
@@ -207,6 +224,147 @@ async fn modern_tool_input_required_drives_a_second_round() -> anyhow::Result<()
         vec!["confirmation"]
     );
     assert_eq!(calls.lock().expect("calls lock").len(), 2);
+    let calls = calls.lock().expect("calls lock");
+    assert_ne!(calls[0]["id"], calls[1]["id"]);
+    client.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn modern_sse_tool_input_required_preserves_elicitation_meta() -> anyhow::Result<()> {
+    let server = MockServer::start().await;
+    let attempts = Arc::new(Mutex::new(0usize));
+    let recorded = Arc::clone(&attempts);
+    Mock::given(method("POST"))
+        .and(path("/mcp"))
+        .respond_with(move |request: &Request| {
+            let body: Value = request.body_json().expect("valid JSON-RPC request");
+            match body["method"].as_str() {
+                Some("server/discover") => modern_discovery(&body),
+                Some("tools/call") => {
+                    let attempt = {
+                        let mut attempts = recorded.lock().expect("attempt lock");
+                        *attempts += 1;
+                        *attempts
+                    };
+                    match attempt {
+                        1 => {
+                            let response = input_required_message(&body);
+                            ResponseTemplate::new(200).set_body_raw(
+                                format!("event: message\ndata: {response}\n\n"),
+                                "text/event-stream; charset=utf-8",
+                            )
+                        }
+                        2 => rpc_result(
+                            &body,
+                            json!({
+                                "resultType": "complete",
+                                "content": [{"type": "text", "text": "completed"}],
+                            }),
+                        ),
+                        other => panic!("unexpected tools/call attempt {other}"),
+                    }
+                }
+                other => panic!("unexpected modern MCP method {other:?}"),
+            }
+        })
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let elicitations = Arc::new(Mutex::new(Vec::new()));
+    let (client, peer) = create_client(&server, Arc::clone(&elicitations)).await?;
+    assert_eq!(peer.protocol_version, ProtocolVersion::V_2026_07_28);
+    let result = client
+        .call_tool(
+            "confirm".to_string(),
+            Some(json!({})),
+            /*meta*/ None,
+            Some(Duration::from_secs(5)),
+        )
+        .await?;
+
+    assert_eq!(
+        result.content[0].as_text().map(|text| text.text.as_str()),
+        Some("completed")
+    );
+    assert_eq!(
+        *elicitations.lock().expect("elicitation lock"),
+        vec!["confirmation"]
+    );
+    assert_eq!(*attempts.lock().expect("attempt lock"), 2);
+    client.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn modern_resource_input_required_drives_a_second_round() -> anyhow::Result<()> {
+    let server = MockServer::start().await;
+    let calls = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let recorded = Arc::clone(&calls);
+    Mock::given(method("POST"))
+        .and(path("/mcp"))
+        .respond_with(move |request: &Request| {
+            let body: Value = request.body_json().expect("valid JSON-RPC request");
+            match body["method"].as_str() {
+                Some("server/discover") => modern_discovery(&body),
+                Some("resources/read") => {
+                    let attempt = {
+                        let mut calls = recorded.lock().expect("calls lock");
+                        calls.push(body.clone());
+                        calls.len()
+                    };
+                    match attempt {
+                        1 => input_required(&body),
+                        2 => rpc_result(
+                            &body,
+                            json!({
+                                "resultType": "complete",
+                                "contents": [{
+                                    "uri": "memo://modern",
+                                    "mimeType": "text/plain",
+                                    "text": "completed",
+                                }],
+                            }),
+                        ),
+                        other => panic!("unexpected resources/read attempt {other}"),
+                    }
+                }
+                other => panic!("unexpected modern MCP method {other:?}"),
+            }
+        })
+        .expect(3)
+        .mount(&server)
+        .await;
+
+    let elicitations = Arc::new(Mutex::new(Vec::new()));
+    let (client, peer) = create_client(&server, Arc::clone(&elicitations)).await?;
+    assert_eq!(peer.protocol_version, ProtocolVersion::V_2026_07_28);
+    let result = client
+        .read_resource(
+            ReadResourceRequestParams::new("memo://modern"),
+            Some(Duration::from_secs(5)),
+        )
+        .await?;
+
+    assert_eq!(
+        serde_json::to_value(result).expect("serialize resource result"),
+        json!({
+            "resultType": "complete",
+            "contents": [{
+                "uri": "memo://modern",
+                "mimeType": "text/plain",
+                "text": "completed",
+            }],
+        })
+    );
+    assert_eq!(
+        *elicitations.lock().expect("elicitation lock"),
+        vec!["confirmation"]
+    );
+    let calls = calls.lock().expect("calls lock");
+    assert_eq!(calls.len(), 2);
+    assert_ne!(calls[0]["id"], calls[1]["id"]);
     client.shutdown().await;
     Ok(())
 }
@@ -244,6 +402,47 @@ async fn requested_modern_legacy_peer_rejects_resource_input_required() -> anyho
         )
         .await
         .expect_err("legacy peers must not enter the modern multi-round flow");
+
+    assert!(elicitations.lock().expect("elicitation lock").is_empty());
+    client.shutdown().await;
+    Ok(())
+}
+
+#[tokio::test]
+async fn requested_modern_legacy_peer_rejects_tool_input_required() -> anyhow::Result<()> {
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/mcp"))
+        .respond_with(|request: &Request| {
+            let body: Value = request.body_json().expect("valid JSON-RPC request");
+            match body["method"].as_str() {
+                Some("server/discover") => ResponseTemplate::new(200).set_body_json(json!({
+                    "jsonrpc": "2.0",
+                    "id": body["id"],
+                    "error": {"code": -32601, "message": "method not found"},
+                })),
+                Some("initialize") => legacy_initialize(&body),
+                Some("notifications/initialized") => ResponseTemplate::new(202),
+                Some("tools/call") => input_required(&body),
+                other => panic!("unexpected legacy MCP method {other:?}"),
+            }
+        })
+        .expect(4)
+        .mount(&server)
+        .await;
+
+    let elicitations = Arc::new(Mutex::new(Vec::new()));
+    let (client, peer) = create_client(&server, Arc::clone(&elicitations)).await?;
+    assert_eq!(peer.protocol_version, ProtocolVersion::V_2025_06_18);
+    client
+        .call_tool(
+            "confirm".to_string(),
+            Some(json!({})),
+            /*meta*/ None,
+            Some(Duration::from_secs(5)),
+        )
+        .await
+        .expect_err("legacy peers must not enter the modern multi-round tool flow");
 
     assert!(elicitations.lock().expect("elicitation lock").is_empty());
     client.shutdown().await;

@@ -37,7 +37,6 @@ use rmcp::service::RoleClient;
 use rmcp::service::RxJsonRpcMessage;
 use rmcp::service::TxJsonRpcMessage;
 use rmcp::transport::Transport;
-use serde_json::from_slice;
 use serde_json::to_vec;
 use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
@@ -46,6 +45,7 @@ use tracing::debug;
 use tracing::info;
 use tracing::warn;
 
+use crate::incoming_jsonrpc::deserialize_incoming_jsonrpc_message;
 use crate::local_stdio_transport::MAX_MCP_STDIO_LINE_BYTES;
 use crate::protocol_mode::McpProtocolMode;
 
@@ -469,7 +469,8 @@ impl ExecutorProcessTransport {
                 None => return None,
             };
             let line = Self::trim_trailing_carriage_return(line);
-            match from_slice::<RxJsonRpcMessage<RoleClient>>(&line) {
+            let modern_session = self.protocol_mode == McpProtocolMode::V20260728;
+            match deserialize_incoming_jsonrpc_message(&line, modern_session) {
                 Ok(message) => return Some(message),
                 Err(error) => {
                     debug!(
