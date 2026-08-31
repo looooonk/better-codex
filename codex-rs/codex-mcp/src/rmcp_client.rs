@@ -557,6 +557,17 @@ impl AsyncManagedClient {
         self.client.clone().await
     }
 
+    pub(crate) fn client_if_ready(&self) -> Option<ManagedClient> {
+        if let Some(client) = self
+            .startup_reconnect
+            .as_ref()
+            .and_then(|reconnect| reconnect.current_client())
+        {
+            return Some(client);
+        }
+        self.client.clone().now_or_never()?.ok()
+    }
+
     pub(crate) async fn reconnect_failed_startup(&self) {
         let Some(startup_reconnect) = self.startup_reconnect.as_ref() else {
             return;
