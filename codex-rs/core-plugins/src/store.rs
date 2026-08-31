@@ -4,11 +4,15 @@ use crate::manifest::parse_plugin_manifest;
 use codex_plugin::PluginId;
 use codex_plugin::validate_plugin_segment;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_plugins::AgentPluginSchemaStatus;
+use codex_utils_plugins::agent_plugin_schema_status;
 use codex_utils_plugins::find_plugin_manifest_path;
 use semver::Version;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+use sha2::Digest;
+use sha2::Sha256;
 use std::cmp::Ordering;
 use std::fs;
 use std::io;
@@ -19,8 +23,10 @@ use std::path::PathBuf;
 pub const DEFAULT_PLUGIN_VERSION: &str = "local";
 pub const PLUGINS_CACHE_DIR: &str = "plugins/cache";
 pub const PLUGINS_DATA_DIR: &str = "plugins/data";
+const AGENT_PLUGINS_DATA_DIR: &str = "agent-plugins";
 const REMOTE_PLUGIN_INSTALL_METADATA_FILE: &str = ".codex-remote-plugin-install.json";
 const REMOTE_PLUGIN_INSTALL_METADATA_SCHEMA_VERSION: u8 = 1;
+const DEFAULT_AGENT_PLUGIN_VERSION: &str = "1.0.0";
 
 #[derive(Debug, Deserialize, Serialize)]
 struct RemotePluginInstallMetadata {
@@ -93,6 +99,16 @@ impl PluginStore {
             "{}-{}",
             plugin_id.plugin_name, plugin_id.marketplace_name
         ))
+    }
+
+    pub(crate) fn agent_plugin_data_root(&self, plugin_id: &PluginId) -> AbsolutePathBuf {
+        let mut digest = Sha256::new();
+        digest.update(plugin_id.marketplace_name.as_bytes());
+        digest.update([0]);
+        digest.update(plugin_id.plugin_name.as_bytes());
+        self.data_root
+            .join(AGENT_PLUGINS_DATA_DIR)
+            .join(hex_prefix(&digest.finalize(), /*count*/ 32))
     }
 
     pub fn active_plugin_version(&self, plugin_id: &PluginId) -> Option<String> {
@@ -409,10 +425,36 @@ fn plugin_version_for_install_manifest(
     source_path: &Path,
     manifest: InstallManifest<'_>,
 ) -> Result<String, PluginStoreError> {
-    let plugin_version = plugin_manifest_version_for_source(source_path, manifest)?
-        .unwrap_or_else(|| DEFAULT_PLUGIN_VERSION.to_string());
-    validate_plugin_version_segment(&plugin_version).map_err(PluginStoreError::Invalid)?;
-    Ok(plugin_version)
+    let (plugin_version, is_agent_plugin) =
+        plugin_manifest_version_for_source(source_path, manifest)?;
+    let plugin_version = plugin_version.unwrap_or_else(|| {
+        if is_agent_plugin {
+            DEFAULT_AGENT_PLUGIN_VERSION.to_string()
+        } else {
+            DEFAULT_PLUGIN_VERSION.to_string()
+        }
+    });
+    match validate_plugin_version_segment(&plugin_version) {
+        Ok(()) => Ok(plugin_version),
+        Err(_) if is_agent_plugin => {
+            let digest = Sha256::digest(plugin_version.as_bytes());
+            Ok(format!(
+                "agent-plugins-{}",
+                hex_prefix(&digest, /*count*/ 12)
+            ))
+        }
+        Err(message) => Err(PluginStoreError::Invalid(message)),
+    }
+}
+
+fn hex_prefix(bytes: &[u8], count: usize) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut output = String::with_capacity(count.saturating_mul(2));
+    for byte in bytes.iter().take(count) {
+        output.push(HEX[usize::from(byte >> 4)] as char);
+        output.push(HEX[usize::from(byte & 0x0f)] as char);
+    }
+    output
 }
 
 pub fn validate_plugin_version_segment(plugin_version: &str) -> Result<(), String> {
@@ -460,7 +502,7 @@ struct RawPluginManifestVersion {
 fn plugin_manifest_version_for_source(
     source_path: &Path,
     manifest: InstallManifest<'_>,
-) -> Result<Option<String>, PluginStoreError> {
+) -> Result<(Option<String>, bool), PluginStoreError> {
     let contents = match manifest {
         InstallManifest::OnDisk => {
             let manifest_path = find_plugin_manifest_path(source_path)
@@ -470,10 +512,12 @@ fn plugin_manifest_version_for_source(
         }
         InstallManifest::Fallback(contents) => contents.to_string(),
     };
+    let is_agent_plugin =
+        agent_plugin_schema_status(&contents) == AgentPluginSchemaStatus::Supported;
     let manifest: RawPluginManifestVersion = serde_json::from_str(&contents)
         .map_err(|err| PluginStoreError::Invalid(format!("failed to parse plugin.json: {err}")))?;
     let Some(version) = manifest.version else {
-        return Ok(None);
+        return Ok((None, is_agent_plugin));
     };
     let Some(version) = version.as_str() else {
         return Err(PluginStoreError::Invalid(
@@ -481,12 +525,15 @@ fn plugin_manifest_version_for_source(
         ));
     };
     let version = version.trim();
+    if is_agent_plugin {
+        return Ok(((!version.is_empty()).then(|| version.to_string()), true));
+    }
     if version.is_empty() {
         return Err(PluginStoreError::Invalid(
             "invalid plugin version in plugin.json: must not be blank".to_string(),
         ));
     }
-    Ok(Some(version.to_string()))
+    Ok((Some(version.to_string()), false))
 }
 
 fn plugin_name_for_source(
@@ -675,6 +722,16 @@ fn copy_dir_recursive(source: &Path, target: &Path) -> Result<(), PluginStoreErr
         } else if file_type.is_file() {
             fs::copy(&source_path, &target_path)
                 .map_err(|err| PluginStoreError::io("failed to copy plugin file", err))?;
+        } else if file_type.is_symlink() {
+            return Err(PluginStoreError::Invalid(format!(
+                "plugin source contains unsupported symbolic link: {}",
+                source_path.display()
+            )));
+        } else {
+            return Err(PluginStoreError::Invalid(format!(
+                "plugin source contains unsupported file type: {}",
+                source_path.display()
+            )));
         }
     }
 
