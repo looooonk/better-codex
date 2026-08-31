@@ -13,6 +13,7 @@ use codex_code_mode_protocol::ExecuteRequest;
 use codex_code_mode_protocol::NotificationFuture;
 use codex_code_mode_protocol::ToolInvocationFuture;
 use codex_code_mode_protocol::WaitRequest;
+use codex_code_mode_protocol::host::CapabilitySet;
 use codex_code_mode_protocol::host::ClientToHost;
 use codex_code_mode_protocol::host::DelegateRequest;
 use codex_code_mode_protocol::host::DelegateRequestId;
@@ -32,6 +33,8 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
+use super::super::Connection;
+use super::super::DEFAULT_HOST_WAIT_TRANSPORT_TIMEOUT;
 use super::ConnectionDriver;
 use super::DriverCommand;
 use super::DriverEvent;
@@ -46,6 +49,7 @@ struct DriverHarness {
     outgoing_rx: mpsc::Receiver<codex_code_mode_protocol::host::EncodedFrame>,
     cancellation: CancellationToken,
     alive: Arc<AtomicBool>,
+    failure: Arc<StdMutex<Option<String>>>,
     driver_task: tokio::task::JoinHandle<()>,
 }
 
@@ -56,6 +60,7 @@ impl DriverHarness {
         let (outgoing_tx, outgoing_rx) = mpsc::channel(/*max_capacity*/ 16);
         let cancellation = CancellationToken::new();
         let alive = Arc::new(AtomicBool::new(true));
+        let failure = Arc::new(StdMutex::new(None));
         let (driver, execute_claim_tx) = ConnectionDriver::new(
             command_rx,
             event_rx,
@@ -63,7 +68,7 @@ impl DriverHarness {
             outgoing_tx,
             DriverLifecycle {
                 alive: Arc::clone(&alive),
-                failure: Arc::new(StdMutex::new(None)),
+                failure: Arc::clone(&failure),
                 cancellation: cancellation.clone(),
             },
         );
@@ -75,6 +80,7 @@ impl DriverHarness {
             outgoing_rx,
             cancellation,
             alive,
+            failure,
             driver_task,
         }
     }
@@ -1024,6 +1030,90 @@ async fn remote_wait_accepts_durations_longer_than_five_minutes() {
             }
         ))
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn queued_remote_wait_times_out_and_invalidates_the_connection() {
+    let mut harness = DriverHarness::start();
+    let session = remote_session();
+    harness
+        .open(session.clone(), Arc::new(RecordingDelegate::default()))
+        .await;
+    let _started = harness
+        .start_cell(session.clone(), /*request_id*/ 2, "1")
+        .await;
+    let connection = Connection {
+        command_tx: harness.command_tx.clone(),
+        execute_claim_tx: harness.execute_claim_tx.clone(),
+        alive: Arc::clone(&harness.alive),
+        failure: Arc::clone(&harness.failure),
+        cancellation: harness.cancellation.clone(),
+        capabilities: CapabilitySet::empty(),
+    };
+    let response = tokio::spawn(async move {
+        let result = connection
+            .wait(
+                session,
+                WaitRequest {
+                    cell_id: CellId::new("1".to_string()),
+                    yield_time_ms: 1,
+                },
+            )
+            .await;
+        (connection, result)
+    });
+    while harness.outgoing_rx.is_empty() {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::advance(DEFAULT_HOST_WAIT_TRANSPORT_TIMEOUT + Duration::from_secs(2)).await;
+
+    let (connection, result) = response.await.expect("wait task");
+    assert_eq!(
+        result,
+        Err("code-mode host timed out waiting for wait response".to_string())
+    );
+    assert!(!harness.alive.load(Ordering::Acquire));
+    assert!(harness.cancellation.is_cancelled());
+    drop(connection);
+}
+
+#[tokio::test(start_paused = true)]
+async fn queued_remote_termination_times_out_and_invalidates_the_connection() {
+    let mut harness = DriverHarness::start();
+    let session = remote_session();
+    harness
+        .open(session.clone(), Arc::new(RecordingDelegate::default()))
+        .await;
+    let _started = harness
+        .start_cell(session.clone(), /*request_id*/ 2, "1")
+        .await;
+    let connection = Connection {
+        command_tx: harness.command_tx.clone(),
+        execute_claim_tx: harness.execute_claim_tx.clone(),
+        alive: Arc::clone(&harness.alive),
+        failure: Arc::clone(&harness.failure),
+        cancellation: harness.cancellation.clone(),
+        capabilities: CapabilitySet::empty(),
+    };
+    let response = tokio::spawn(async move {
+        let result = connection
+            .terminate(session, CellId::new("1".to_string()))
+            .await;
+        (connection, result)
+    });
+    while harness.outgoing_rx.is_empty() {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::advance(DEFAULT_HOST_WAIT_TRANSPORT_TIMEOUT + Duration::from_secs(1)).await;
+
+    let (connection, result) = response.await.expect("termination task");
+    assert_eq!(
+        result,
+        Err("code-mode host timed out waiting for terminate response".to_string())
+    );
+    assert!(!harness.alive.load(Ordering::Acquire));
+    assert!(harness.cancellation.is_cancelled());
+    drop(connection);
 }
 
 #[tokio::test]

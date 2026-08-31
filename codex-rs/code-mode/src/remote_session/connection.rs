@@ -1,4 +1,5 @@
 use std::fmt;
+use std::future::Future;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
@@ -51,6 +52,7 @@ mod reader;
 
 const IPC_CHANNEL_CAPACITY: usize = 128;
 const HOST_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
+const DEFAULT_HOST_WAIT_TRANSPORT_TIMEOUT: Duration = Duration::from_secs(60);
 
 pub(super) enum ConnectionError {
     Spawn {
@@ -373,16 +375,22 @@ impl Connection {
         session: RemoteSession,
         request: WaitRequest,
     ) -> Result<WaitOutcome, String> {
+        let runtime_timeout =
+            Duration::from_millis(request.yield_time_ms).saturating_add(Duration::from_secs(1));
         let cancellation = CallerCancellation::new();
         let (response_tx, response_rx) = oneshot::channel();
-        self.send(DriverCommand::Wait {
-            session,
-            request,
-            caller_cancellation: cancellation.token(),
-            response_tx,
-        })
-        .await?;
-        let result = self.receive(response_rx).await;
+        let result = self
+            .with_transport_deadline(runtime_timeout, "wait", async {
+                self.send(DriverCommand::Wait {
+                    session,
+                    request,
+                    caller_cancellation: cancellation.token(),
+                    response_tx,
+                })
+                .await?;
+                self.receive(response_rx).await
+            })
+            .await;
         cancellation.disarm();
         result
     }
@@ -393,13 +401,16 @@ impl Connection {
         cell_id: CellId,
     ) -> Result<WaitOutcome, String> {
         let (response_tx, response_rx) = oneshot::channel();
-        self.send(DriverCommand::Terminate {
-            session,
-            cell_id,
-            response_tx,
+        self.with_transport_deadline(Duration::ZERO, "terminate", async {
+            self.send(DriverCommand::Terminate {
+                session,
+                cell_id,
+                response_tx,
+            })
+            .await?;
+            self.receive(response_rx).await
         })
-        .await?;
-        self.receive(response_rx).await
+        .await
     }
 
     pub(super) async fn shutdown_session(&self, session: RemoteSession) -> Result<(), String> {
@@ -410,6 +421,26 @@ impl Connection {
         })
         .await?;
         self.receive(response_rx).await
+    }
+
+    async fn with_transport_deadline<T>(
+        &self,
+        runtime_timeout: Duration,
+        request_type: &str,
+        request: impl Future<Output = Result<T, String>>,
+    ) -> Result<T, String> {
+        let deadline = runtime_timeout.saturating_add(DEFAULT_HOST_WAIT_TRANSPORT_TIMEOUT);
+        match tokio::time::timeout(deadline, request).await {
+            Ok(result) => result,
+            Err(_) => {
+                warn!(request_type, "code-mode host request exceeded its deadline");
+                let reason =
+                    format!("code-mode host timed out waiting for {request_type} response");
+                mark_connection_dead(&self.alive, &self.failure, reason.clone());
+                self.cancellation.cancel();
+                Err(reason)
+            }
+        }
     }
 
     async fn send(&self, command: DriverCommand) -> Result<(), String> {
