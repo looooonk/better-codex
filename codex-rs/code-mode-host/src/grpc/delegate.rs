@@ -95,6 +95,12 @@ impl CodeModeSessionDelegate for GrpcDelegate {
                 .execution_id(cell_id.as_str(), &cancellation)
                 .await?;
             let notification_id = Uuid::new_v4();
+            let (acknowledgement, receiver) = oneshot::channel();
+            session.register_notification(notification_id, acknowledgement)?;
+            let mut pending = PendingNotification {
+                session: Arc::clone(&session),
+                id: Some(notification_id),
+            };
             session
                 .send_event(
                     proto::session_event::Event::Notification(proto::Notification {
@@ -106,7 +112,25 @@ impl CodeModeSessionDelegate for GrpcDelegate {
                     }),
                     &cancellation,
                 )
-                .await
+                .await?;
+            let result = tokio::select! {
+                biased;
+                result = receiver => result.map_err(|_| {
+                    "code-mode session closed before acknowledging notification".to_string()
+                }),
+                _ = cancellation.cancelled() => {
+                    pending.cancel();
+                    Err("code mode notification was cancelled".to_string())
+                }
+                _ = session.closed.cancelled() => {
+                    pending.cancel();
+                    Err("code-mode session closed before acknowledging notification".to_string())
+                }
+            };
+            if result.is_ok() {
+                pending.id = None;
+            }
+            result
         })
     }
 
@@ -127,5 +151,24 @@ impl Drop for PendingToolCall {
         if let Some(id) = self.id.take() {
             self.session.cancel_invocation(id);
         }
+    }
+}
+
+struct PendingNotification {
+    session: Arc<GrpcSession>,
+    id: Option<Uuid>,
+}
+
+impl PendingNotification {
+    fn cancel(&mut self) {
+        if let Some(id) = self.id.take() {
+            self.session.cancel_notification(id);
+        }
+    }
+}
+
+impl Drop for PendingNotification {
+    fn drop(&mut self) {
+        self.cancel();
     }
 }

@@ -286,7 +286,7 @@ async fn cancellation_before_wait_admission_is_preserved() {
 }
 
 #[tokio::test]
-async fn notifications_do_not_delay_cell_completion() {
+async fn notification_acknowledgement_releases_cell_completion() {
     let host = GrpcCodeModeHost::new();
     let (session_id, mut session_events) = open_session(&host).await;
     let mut request = execute_request(
@@ -304,6 +304,13 @@ async fn notifications_do_not_delay_cell_completion() {
     assert_eq!(notification.cell_id, cell_id);
     assert_eq!(notification.call_id, "outer-call");
     assert_eq!(notification.text, "pending");
+    assert!(execution.next().now_or_never().is_none());
+    host.acknowledge_notification(Request::new(proto::AcknowledgeNotificationRequest {
+        session_id: session_id.clone(),
+        notification_id: notification.notification_id.clone(),
+    }))
+    .await
+    .expect("acknowledge notification");
     assert!(matches!(
         execution.next().await.unwrap().unwrap().event,
         Some(proto::execute_event::Event::Outcome(
@@ -323,10 +330,71 @@ async fn notifications_do_not_delay_cell_completion() {
             })),
         }
     );
-    host.acknowledge_notification(Request::new(proto::AcknowledgeNotificationRequest {
-        session_id,
-        notification_id: notification.notification_id,
-    }))
-    .await
-    .expect("legacy notification acknowledgments remain accepted");
+    let duplicate = host
+        .acknowledge_notification(Request::new(proto::AcknowledgeNotificationRequest {
+            session_id,
+            notification_id: notification.notification_id,
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(duplicate.code(), Code::AlreadyExists);
+}
+
+#[tokio::test]
+async fn terminating_a_cell_cancels_its_pending_notification() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, mut session_events) = open_session(&host).await;
+    let mut request = execute_request(
+        &session_id,
+        "execution-cancel-notify",
+        r#"notify("pending"); await new Promise(() => {});"#,
+    );
+    request.yield_time_ms = Some(60_000);
+    let (cell_id, mut execution) = execute_events(&host, request).await;
+    let event = session_events.next().await.unwrap().unwrap();
+    let Some(proto::session_event::Event::Notification(notification)) = event.event else {
+        panic!("expected pending notification");
+    };
+    let terminate = tokio::spawn({
+        let host = host.clone();
+        let session_id = session_id.clone();
+        let cell_id = cell_id.clone();
+        async move {
+            host.terminate(Request::new(proto::TerminateRequest {
+                session_id,
+                cell_id,
+            }))
+            .await
+        }
+    });
+
+    assert_eq!(
+        session_events.next().await.unwrap().unwrap(),
+        proto::SessionEvent {
+            event: Some(proto::session_event::Event::NotificationCancelled(
+                proto::NotificationCancelled {
+                    notification_id: notification.notification_id.clone(),
+                },
+            )),
+        },
+    );
+    terminate.await.unwrap().unwrap();
+    let outcome = execution.next().await.unwrap().unwrap();
+    assert!(matches!(
+        outcome.event,
+        Some(proto::execute_event::Event::Outcome(
+            proto::ExecutionOutcome {
+                outcome: Some(proto::execution_outcome::Outcome::Terminated(_)),
+                ..
+            }
+        ))
+    ));
+    let late_acknowledgement = host
+        .acknowledge_notification(Request::new(proto::AcknowledgeNotificationRequest {
+            session_id,
+            notification_id: notification.notification_id,
+        }))
+        .await
+        .unwrap_err();
+    assert_eq!(late_acknowledgement.code(), Code::AlreadyExists);
 }

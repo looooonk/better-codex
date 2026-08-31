@@ -164,6 +164,25 @@ async fn rejects_values_beyond_every_grpc_metadata_cap() {
 }
 
 #[tokio::test]
+async fn unknown_notification_acknowledgements_are_rejected() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, _events) = open_session(&host).await;
+
+    assert_eq!(
+        host.acknowledge_notification(Request::new(
+            proto::AcknowledgeNotificationRequest {
+                session_id,
+                notification_id: Uuid::new_v4().to_string(),
+            },
+        ))
+        .await
+        .unwrap_err()
+        .code(),
+        Code::NotFound,
+    );
+}
+
+#[tokio::test]
 async fn rejects_heap_limit_until_runtime_enforces_it() {
     let host = GrpcCodeModeHost::new();
 

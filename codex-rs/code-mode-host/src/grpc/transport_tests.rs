@@ -107,6 +107,19 @@ async fn canonical_transport_accepts_messages_above_tonic_default() {
         })
         .await
         .unwrap();
+    assert!(matches!(
+        execution.message().await.unwrap().unwrap().event,
+        Some(proto::execute_event::Event::Outcome(
+            proto::ExecutionOutcome {
+                outcome: Some(proto::execution_outcome::Outcome::Completed(_)),
+                ..
+            }
+        ))
+    ));
+    assert!(matches!(
+        events.message().await.unwrap().unwrap().event,
+        Some(proto::session_event::Event::CellClosed(_))
+    ));
     client
         .close_session(proto::CloseSessionRequest { session_id })
         .await

@@ -68,6 +68,8 @@ pub(super) struct SessionState {
     pub(super) next_subscription: usize,
     pub(super) pending_invocations: HashMap<Uuid, PendingInvocation>,
     pub(super) seen_invocations: BoundedIds<Uuid>,
+    pending_notifications: HashMap<Uuid, oneshot::Sender<()>>,
+    seen_notifications: BoundedIds<Uuid>,
     pub(super) waits: HashMap<String, ActiveWait>,
     pub(super) seen_waits: BoundedIds,
     pub(super) cancelled_waits: BoundedIds,
@@ -504,6 +506,72 @@ impl GrpcSession {
         cell_permit: Option<OwnedSemaphorePermit>,
     ) -> Result<(), String> {
         self.events.send_now(event, cell_permit)
+    }
+
+    pub(super) fn register_notification(
+        &self,
+        notification_id: Uuid,
+        acknowledgement: oneshot::Sender<()>,
+    ) -> Result<(), String> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.closed.is_cancelled() {
+            return Err("code-mode session is closed".to_string());
+        }
+        if state.pending_notifications.contains_key(&notification_id)
+            || !state.seen_notifications.remember(notification_id)
+        {
+            return Err("code-mode notification ID was reused".to_string());
+        }
+        state
+            .pending_notifications
+            .insert(notification_id, acknowledgement);
+        Ok(())
+    }
+
+    pub(super) fn acknowledge_notification(
+        &self,
+        notification_id: Uuid,
+    ) -> Result<(), Status> {
+        let acknowledgement = {
+            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            if self.closed.is_cancelled() {
+                return Err(Status::cancelled("code-mode session is closed"));
+            }
+            match state.pending_notifications.remove(&notification_id) {
+                Some(acknowledgement) => acknowledgement,
+                None if state.seen_notifications.contains(&notification_id) => {
+                    return Err(Status::already_exists(format!(
+                        "code-mode notification {notification_id} was already retired"
+                    )));
+                }
+                None => {
+                    return Err(Status::not_found(format!(
+                        "unknown code-mode notification {notification_id}"
+                    )));
+                }
+            }
+        };
+        let _ = acknowledgement.send(());
+        Ok(())
+    }
+
+    pub(super) fn cancel_notification(&self, notification_id: Uuid) {
+        let pending = self
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pending_notifications
+            .remove(&notification_id);
+        if pending.is_some() {
+            let _ = self.send_event_now(
+                proto::session_event::Event::NotificationCancelled(
+                    proto::NotificationCancelled {
+                        notification_id: notification_id.to_string(),
+                    },
+                ),
+                /*cell_permit*/ None,
+            );
+        }
     }
 }
 
