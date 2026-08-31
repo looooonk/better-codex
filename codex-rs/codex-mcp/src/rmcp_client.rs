@@ -76,6 +76,7 @@ use rmcp::model::JsonObject;
 use rmcp::model::ProtocolVersion;
 use rmcp::model::Tool as RmcpTool;
 use tokio::time::Instant as TokioInstant;
+use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 use tracing::instrument;
@@ -169,14 +170,19 @@ struct CodexAppsStartupStatusContext {
 pub(crate) struct CodexAppsStartupReconnect {
     factory: Arc<dyn Fn() -> ManagedClientFuture + Send + Sync>,
     state: StdMutex<CodexAppsStartupReconnectState>,
+    catalog_revision: Arc<RwLock<u64>>,
     startup_status_context: Option<CodexAppsStartupStatusContext>,
 }
 
 impl CodexAppsStartupReconnect {
-    pub(crate) fn new(factory: Arc<dyn Fn() -> ManagedClientFuture + Send + Sync>) -> Self {
+    pub(crate) fn new(
+        factory: Arc<dyn Fn() -> ManagedClientFuture + Send + Sync>,
+        catalog_revision: Arc<RwLock<u64>>,
+    ) -> Self {
         Self {
             factory,
             state: StdMutex::new(CodexAppsStartupReconnectState::default()),
+            catalog_revision,
             startup_status_context: None,
         }
     }
@@ -225,30 +231,39 @@ impl CodexAppsStartupReconnect {
         tokio::spawn(async move {
             let result = (reconnect.factory)().await;
             let startup_status_context = reconnect.startup_status_context.clone();
-            let recovered = {
-                let mut state = reconnect
-                    .state
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                state.reconnect_in_flight = false;
-                match result {
-                    Ok(client) => {
+            let recovered = match result {
+                Ok(client) => {
+                    let mut catalog_revision = reconnect.catalog_revision.write().await;
+                    let mut state = reconnect
+                        .state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    state.reconnect_in_flight = false;
+                    if state.current_client.is_none() {
                         state.current_client = Some(client);
                         state.consecutive_failures = 0;
                         state.retry_not_before = None;
+                        *catalog_revision += 1;
                         true
-                    }
-                    Err(error) => {
-                        state.consecutive_failures = state.consecutive_failures.saturating_add(1);
-                        let retry_after = codex_apps_reconnect_backoff(state.consecutive_failures);
-                        state.retry_not_before = Some(TokioInstant::now() + retry_after);
-                        warn!(
-                            error = %error,
-                            retry_after_ms = retry_after.as_millis(),
-                            "Apps MCP startup reconnect failed; continuing with cached tools"
-                        );
+                    } else {
                         false
                     }
+                }
+                Err(error) => {
+                    let mut state = reconnect
+                        .state
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    state.reconnect_in_flight = false;
+                    state.consecutive_failures = state.consecutive_failures.saturating_add(1);
+                    let retry_after = codex_apps_reconnect_backoff(state.consecutive_failures);
+                    state.retry_not_before = Some(TokioInstant::now() + retry_after);
+                    warn!(
+                        error = %error,
+                        retry_after_ms = retry_after.as_millis(),
+                        "Apps MCP startup reconnect failed; continuing with cached tools"
+                    );
+                    false
                 }
             };
 
@@ -293,10 +308,17 @@ struct ManagedClientStartup {
     protocol_mode: McpProtocolMode,
     cancel_token: CancellationToken,
     startup_complete: Arc<AtomicBool>,
+    catalog_revision: Arc<RwLock<u64>>,
+}
+
+#[derive(Clone, Copy)]
+enum ManagedClientStartupKind {
+    Initial,
+    Reconnect,
 }
 
 impl ManagedClientStartup {
-    fn start(&self) -> ManagedClientFuture {
+    fn start(&self, kind: ManagedClientStartupKind) -> ManagedClientFuture {
         let Self {
             server_name,
             server,
@@ -314,6 +336,7 @@ impl ManagedClientStartup {
             protocol_mode,
             cancel_token,
             startup_complete,
+            catalog_revision,
         } = self.clone();
         let is_codex_apps_mcp_server = server_name == CODEX_APPS_MCP_SERVER_NAME;
         let tool_filter = server
@@ -395,7 +418,11 @@ impl ManagedClientStartup {
                 );
             }
 
-            startup_complete.store(true, Ordering::Release);
+            if matches!(kind, ManagedClientStartupKind::Initial) {
+                let mut catalog_revision = catalog_revision.write().await;
+                *catalog_revision += 1;
+                startup_complete.store(true, Ordering::Release);
+            }
             outcome
         }
         .in_current_span()
@@ -435,6 +462,7 @@ impl AsyncManagedClient {
         codex_apps_tools_cache_context: Option<CodexAppsToolsCacheContext>,
         tool_catalog_cache_context: Option<McpToolCatalogCacheContext>,
         tool_plugin_provenance: Arc<ToolPluginProvenance>,
+        catalog_revision: Arc<RwLock<u64>>,
         runtime_context: McpRuntimeContext,
         resolved_environment: std::result::Result<Option<Arc<Environment>>, String>,
         runtime_auth_provider: Option<SharedAuthProvider>,
@@ -474,12 +502,16 @@ impl AsyncManagedClient {
             protocol_mode,
             cancel_token: cancel_token.clone(),
             startup_complete: Arc::clone(&startup_complete),
+            catalog_revision: Arc::clone(&catalog_revision),
         });
-        let client = startup.start();
+        let client = startup.start(ManagedClientStartupKind::Initial);
         let startup_reconnect = is_codex_apps_mcp_server.then(|| {
             let startup = Arc::clone(&startup);
             Arc::new(
-                CodexAppsStartupReconnect::new(Arc::new(move || startup.start()))
+                CodexAppsStartupReconnect::new(
+                    Arc::new(move || startup.start(ManagedClientStartupKind::Reconnect)),
+                    Arc::clone(&catalog_revision),
+                )
                     .with_startup_status_context(
                         startup_submit_id,
                         reconnect_server_name,
@@ -578,15 +610,13 @@ impl AsyncManagedClient {
         }
     }
 
-    pub(crate) async fn listed_tools(&self) -> Option<Vec<ToolInfo>> {
-        // Plugin provenance is resolved per-session rather than stored in shared cache payloads.
-        let tools = if !self.startup_complete.load(Ordering::Acquire)
-            && let Some(startup_tools) = self.cached_tools()
-        {
-            Some(startup_tools)
+    pub(crate) async fn listed_tools_after_startup_wait(&self) -> Option<Vec<ToolInfo>> {
+        let tools = if !self.startup_complete.load(Ordering::Acquire) {
+            self.cached_tools()
         } else {
+            self.reconnect_failed_startup().await;
             match self.client().await {
-                Ok(client) => Some(client.listed_tools()),
+                Ok(client) => Some(filter_tools(client.tools, &self.tool_filter)),
                 Err(_) if self.is_codex_apps_mcp_server => self.cached_tools(),
                 Err(_) => None,
             }

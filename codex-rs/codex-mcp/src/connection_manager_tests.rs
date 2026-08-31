@@ -167,6 +167,7 @@ fn create_test_manager_with_failed_apps_startup(
         &permission_profile,
         /*prefix_mcp_tool_names*/ true,
     );
+    let catalog_revision = Arc::clone(&manager.tool_catalog_revision);
     manager.clients.insert(
         CODEX_APPS_MCP_SERVER_NAME.to_string(),
         AsyncManagedClient {
@@ -177,7 +178,10 @@ fn create_test_manager_with_failed_apps_startup(
             tool_catalog_cache_context: None,
             tool_filter: ToolFilter::default(),
             startup_complete: Arc::new(std::sync::atomic::AtomicBool::new(true)),
-            startup_reconnect: Some(Arc::new(CodexAppsStartupReconnect::new(reconnect_factory))),
+            startup_reconnect: Some(Arc::new(CodexAppsStartupReconnect::new(
+                reconnect_factory,
+                Arc::clone(&catalog_revision),
+            ))),
             tool_plugin_provenance: Arc::new(ToolPluginProvenance::default()),
             cancel_token: CancellationToken::new(),
         },
@@ -1345,7 +1349,7 @@ async fn list_all_tools_adds_server_metadata_to_tools() {
 }
 
 #[tokio::test]
-async fn model_visible_tool_info_uses_live_tools_instead_of_cached_tools() {
+async fn model_catalog_uses_live_tools_instead_of_shared_cached_tools() {
     let server_name = CODEX_APPS_MCP_SERVER_NAME;
     let cached_tool = create_test_tool(server_name, "search");
     let mut live_tool = create_test_tool(server_name, "search");
@@ -1396,7 +1400,7 @@ async fn model_visible_tool_info_uses_live_tools_instead_of_cached_tools() {
             .into_iter()
             .map(|tool| tool.tool.name.to_string())
             .collect::<Vec<_>>(),
-        vec!["search"]
+        Vec::<String>::new()
     );
     assert!(
         manager
