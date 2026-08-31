@@ -30,7 +30,9 @@ use codex_code_mode_protocol::host::SessionId;
 use codex_code_mode_protocol::host::SupportedProtocolVersions;
 use tokio::io::AsyncRead;
 use tokio::io::AsyncWrite;
+use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
+use tokio::sync::TryAcquireError;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -49,6 +51,28 @@ const MAX_RECENT_REQUEST_IDS: usize = 4096;
 const MAX_RECENT_SESSION_IDS: usize = 4096;
 const OUTGOING_CHANNEL_CAPACITY: usize = 128;
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
+
+struct HostLimits {
+    request_permits: Arc<Semaphore>,
+    active_cell_permits: Arc<Semaphore>,
+}
+
+impl HostLimits {
+    fn new() -> Self {
+        Self {
+            request_permits: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
+            active_cell_permits: Arc::new(Semaphore::new(MAX_ACTIVE_CELLS)),
+        }
+    }
+
+    fn request_permit(&self) -> Result<OwnedSemaphorePermit, TryAcquireError> {
+        Arc::clone(&self.request_permits).try_acquire_owned()
+    }
+
+    fn cell_permit(&self) -> Result<OwnedSemaphorePermit, TryAcquireError> {
+        Arc::clone(&self.active_cell_permits).try_acquire_owned()
+    }
+}
 
 /// Runs one code-mode host connection over the process standard streams.
 pub async fn run_stdio() -> Result<()> {
