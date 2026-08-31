@@ -33,6 +33,8 @@ pub struct LocalConfigLayers {
 
 impl LocalConfigLayers {
     /// Retains only the requested TOML paths and drops empty layers.
+    ///
+    /// An empty path selects the whole document and must be rejected by RPC callers.
     pub fn project(self, config_paths: &[Vec<String>], requirements_paths: &[Vec<String>]) -> Self {
         Self {
             config: self.config.project(config_paths),
@@ -79,7 +81,8 @@ pub struct LocalTomlLayer<S> {
     pub toml: TomlValue,
 }
 
-/// Loads fixed executor-local sources without cloud, profiles, session flags, or thread layers.
+/// Loads fixed executor-local sources without cloud, selected profiles, session flags, or thread
+/// layers. Project discovery uses only system and base-user config.
 pub async fn load_local_config_layers(
     fs: &dyn ExecutorFileSystem,
     codex_home: &Path,
