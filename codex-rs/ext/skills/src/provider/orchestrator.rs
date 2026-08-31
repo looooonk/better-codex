@@ -26,6 +26,7 @@ const ORCHESTRATOR_SKILL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(10);
 const ORCHESTRATOR_SKILL_READ_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESOURCE_PAGES: usize = 10;
 const MAX_ORCHESTRATOR_SKILLS: usize = 100;
+const MAX_HIDDEN_ORCHESTRATOR_SKILLS: usize = MAX_RESOURCE_PAGES * MAX_ORCHESTRATOR_SKILLS;
 const MAX_SKILL_NAME_CHARS: usize = 64;
 const MAX_QUALIFIED_SKILL_NAME_CHARS: usize = 128;
 const MAX_SKILL_PACKAGE_URI_CHARS: usize = 1_024;
@@ -60,7 +61,8 @@ impl SkillProvider for OrchestratorSkillProvider {
             let mut catalog = SkillCatalog::default();
             let mut cursor = None;
             let mut seen_cursors = HashSet::new();
-            let mut skill_resources_seen = 0usize;
+            let mut visible_skills_seen = 0usize;
+            let mut hidden_skills_seen = 0usize;
             let mut skipped_resources = 0usize;
             let mut truncated = false;
             let mut completed_pages = 0usize;
@@ -104,20 +106,27 @@ impl SkillProvider for OrchestratorSkillProvider {
                     if resource.mime_type.as_deref() != Some(ORCHESTRATOR_SKILL_MIME_TYPE) {
                         continue;
                     }
-                    if skill_resources_seen >= MAX_ORCHESTRATOR_SKILLS {
-                        truncated = true;
-                        break;
-                    }
-                    skill_resources_seen = skill_resources_seen.saturating_add(1);
                     match catalog_entry_from_resource(resource) {
-                        Some(entry) => catalog.push_entry(entry),
+                        Some(entry) => {
+                            if entry.prompt_visible {
+                                if visible_skills_seen >= MAX_ORCHESTRATOR_SKILLS {
+                                    truncated = true;
+                                    continue;
+                                }
+                                visible_skills_seen = visible_skills_seen.saturating_add(1);
+                            } else {
+                                if hidden_skills_seen >= MAX_HIDDEN_ORCHESTRATOR_SKILLS {
+                                    truncated = true;
+                                    continue;
+                                }
+                                hidden_skills_seen = hidden_skills_seen.saturating_add(1);
+                            }
+                            catalog.push_entry(entry);
+                        }
                         None => skipped_resources = skipped_resources.saturating_add(1),
                     }
                 }
 
-                if truncated {
-                    break;
-                }
                 let Some(next_cursor) = result.next_cursor else {
                     cursor = None;
                     break;
@@ -135,7 +144,7 @@ impl SkillProvider for OrchestratorSkillProvider {
 
             if cursor.is_some() || truncated {
                 catalog.warnings.push(format!(
-                    "Orchestrator skill discovery was truncated at {MAX_ORCHESTRATOR_SKILLS} skills or {MAX_RESOURCE_PAGES} resource pages."
+                    "Orchestrator skill discovery was truncated at {MAX_ORCHESTRATOR_SKILLS} visible skills, {MAX_HIDDEN_ORCHESTRATOR_SKILLS} hidden skills, or {MAX_RESOURCE_PAGES} resource pages."
                 ));
             }
             if skipped_resources > 0 {
@@ -222,6 +231,10 @@ impl SkillProvider for OrchestratorSkillProvider {
 fn catalog_entry_from_resource(resource: &Resource) -> Option<SkillCatalogEntry> {
     let uri = validated_skill_uri(resource.uri.as_str(), MAX_SKILL_PACKAGE_URI_CHARS)?;
     let meta = resource.meta.as_ref()?.as_object()?;
+    let allow_implicit_invocation = meta
+        .get("allow_implicit_invocation")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(true);
     let skill_name = normalized_label(meta.get("skill_name")?.as_str()?, MAX_SKILL_NAME_CHARS)?;
     let name = if meta.get("source").and_then(|value| value.as_str()) == Some("user") {
         skill_name
@@ -235,16 +248,20 @@ fn catalog_entry_from_resource(resource: &Resource) -> Option<SkillCatalogEntry>
     let description = normalized_description(resource.description.as_deref().unwrap_or_default())?;
     let main_prompt = main_prompt_uri(uri);
 
-    Some(
-        SkillCatalogEntry::new(
-            SkillPackageId(uri.to_string()),
-            SkillAuthority::new(SkillSourceKind::Orchestrator, CODEX_APPS_MCP_SERVER_NAME),
-            name,
-            description,
-            SkillResourceId::new(main_prompt),
-        )
-        .with_display_path(uri),
+    let entry = SkillCatalogEntry::new(
+        SkillPackageId(uri.to_string()),
+        SkillAuthority::new(SkillSourceKind::Orchestrator, CODEX_APPS_MCP_SERVER_NAME),
+        name,
+        description,
+        SkillResourceId::new(main_prompt),
     )
+    .with_display_path(uri);
+
+    Some(if allow_implicit_invocation {
+        entry
+    } else {
+        entry.hidden_from_prompt()
+    })
 }
 
 fn validated_skill_uri(uri: &str, max_chars: usize) -> Option<&str> {
@@ -329,3 +346,7 @@ fn normalized_single_line(value: &str, max_chars: usize) -> Option<String> {
 fn main_prompt_uri(package_uri: &str) -> String {
     format!("{}/SKILL.md", package_uri.trim_end_matches('/'))
 }
+
+#[cfg(test)]
+#[path = "orchestrator_tests.rs"]
+mod tests;
