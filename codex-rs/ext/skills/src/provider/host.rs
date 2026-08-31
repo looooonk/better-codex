@@ -98,7 +98,13 @@ fn catalog_from_outcome(outcome: &SkillLoadOutcome) -> SkillCatalog {
     };
 
     for (skill, enabled) in outcome.skills_with_enabled() {
-        catalog.push_entry(catalog_entry_from_skill(skill, enabled));
+        let mut entry = catalog_entry_from_skill(skill, enabled);
+        if let Some(discovery_path) =
+            outcome.skill_discovery_path_for_path(&skill.path_to_skills_md)
+        {
+            entry = entry.with_display_path(discovery_path.to_string_lossy().replace('\\', "/"));
+        }
+        catalog.push_entry(entry);
     }
 
     catalog
@@ -127,3 +133,7 @@ fn catalog_entry_from_skill(skill: &SkillMetadata, enabled: bool) -> SkillCatalo
 
     entry
 }
+
+#[cfg(test)]
+#[path = "host_tests.rs"]
+mod tests;

@@ -725,6 +725,21 @@ async fn loads_skills_via_symlinked_subdir_for_user_scope() {
             plugin_id: None,
         }]
     );
+    let canonical_skill_path = normalized(&shared_skill_path);
+    let discovery_path = outcome
+        .skill_root_for_path(&canonical_skill_path)
+        .expect("symlinked skill should retain its discovery root")
+        .join("shared/demo/SKILL.md");
+    assert_eq!(
+        outcome.skill_discovery_path_for_path(&canonical_skill_path),
+        Some(&discovery_path)
+    );
+    let filtered_outcome =
+        crate::filter_skill_load_outcome_for_product(outcome, Some(Product::Codex));
+    assert_eq!(
+        filtered_outcome.skill_discovery_path_for_path(&canonical_skill_path),
+        Some(&discovery_path)
+    );
 }
 
 // Directory symlinks on Windows can require Developer Mode or administrator privileges.
