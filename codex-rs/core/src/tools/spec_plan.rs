@@ -498,6 +498,7 @@ fn build_code_mode_executors(
                 &enabled_tools,
                 &deferred_tools,
                 &namespace_descriptions,
+                turn_context.config.code_mode.default_exec_yield_time_ms,
                 tool_mode == ToolMode::CodeModeOnly,
             ),
             code_mode_nested_tool_specs,

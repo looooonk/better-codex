@@ -21,6 +21,7 @@ use serde_json::Value as JsonValue;
 use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 
+use crate::config::CodeModeConfig;
 use crate::function_tool::FunctionCallError;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::original_image_detail::sanitize_original_image_detail as sanitize_image_detail_items;
@@ -67,16 +68,21 @@ pub(crate) struct CodeModeService {
     session: OnceCell<Arc<dyn CodeModeSession>>,
     session_provider: Arc<dyn CodeModeSessionProvider>,
     dispatch_broker: Arc<CodeModeDispatchBroker>,
+    default_exec_yield_time_ms: u64,
     shutting_down: AtomicBool,
 }
 
 impl CodeModeService {
-    pub(crate) fn new(session_provider: Arc<dyn CodeModeSessionProvider>) -> Self {
+    pub(crate) fn new(
+        session_provider: Arc<dyn CodeModeSessionProvider>,
+        config: &CodeModeConfig,
+    ) -> Self {
         let dispatch_broker = Arc::new(CodeModeDispatchBroker::new());
         Self {
             session: OnceCell::new(),
             session_provider,
             dispatch_broker,
+            default_exec_yield_time_ms: config.default_exec_yield_time_ms,
             shutting_down: AtomicBool::new(false),
         }
     }
@@ -87,8 +93,11 @@ impl CodeModeService {
 
     pub(crate) async fn execute(
         &self,
-        request: codex_code_mode::ExecuteRequest,
+        mut request: codex_code_mode::ExecuteRequest,
     ) -> Result<codex_code_mode::StartedCell, String> {
+        request
+            .yield_time_ms
+            .get_or_insert(self.default_exec_yield_time_ms);
         self.session().await?.execute(request).await
     }
 
@@ -364,6 +373,7 @@ mod tests {
     use super::CodeModeService;
     use super::build_nested_tool_payload;
     use super::truncate_code_mode_result;
+    use crate::config::CodeModeConfig;
     use crate::tools::context::ToolPayload;
     use codex_code_mode::CodeModeToolKind;
     use codex_code_mode::ExecuteRequest;
@@ -429,11 +439,12 @@ mod tests {
 
     #[tokio::test]
     async fn missing_process_host_falls_back_to_in_process_session() {
-        let service = CodeModeService::new(Arc::new(
-            ProcessOwnedCodeModeSessionProvider::with_host_program(
+        let service = CodeModeService::new(
+            Arc::new(ProcessOwnedCodeModeSessionProvider::with_host_program(
                 "codex-code-mode-host-does-not-exist".into(),
-            ),
-        ));
+            )),
+            &CodeModeConfig::default(),
+        );
 
         let response = service
             .execute(ExecuteRequest {
