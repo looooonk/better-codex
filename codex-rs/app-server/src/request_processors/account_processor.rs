@@ -8,6 +8,7 @@ mod rate_limit_resets;
 // Duration before a browser ChatGPT login attempt is abandoned.
 const LOGIN_CHATGPT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const ACCOUNT_TOKEN_USAGE_FETCH_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 10);
+const THREAD_USAGE_FETCH_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 10);
 const ACCOUNT_WORKSPACE_MESSAGES_FETCH_TIMEOUT: Duration =
     Duration::from_millis(/*millis*/ 1000);
 // Login overrides are intentionally available only in debug builds.
@@ -143,8 +144,9 @@ impl AccountRequestProcessor {
 
     pub(crate) async fn get_account_token_usage(
         &self,
+        params: Option<GetAccountTokenUsageParams>,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-        self.get_account_token_usage_response()
+        self.get_account_token_usage_response(params)
             .await
             .map(|response| Some(response.into()))
     }
@@ -996,7 +998,15 @@ impl AccountRequestProcessor {
 
     async fn get_account_token_usage_response(
         &self,
+        params: Option<GetAccountTokenUsageParams>,
     ) -> Result<GetAccountTokenUsageResponse, JSONRPCErrorError> {
+        let thread_id = params
+            .and_then(|params| params.thread_id)
+            .map(|thread_id| {
+                ThreadId::from_string(&thread_id)
+                    .map_err(|error| invalid_request(format!("invalid thread id: {error}")))
+            })
+            .transpose()?;
         let Some(auth) = self.auth_manager.auth().await else {
             return Err(invalid_request(
                 "codex account authentication required to read token usage",
@@ -1011,6 +1021,57 @@ impl AccountRequestProcessor {
 
         let client = BackendClient::from_auth(self.config.chatgpt_base_url.clone(), &auth)
             .map_err(|err| internal_error(format!("failed to construct backend client: {err}")))?;
+        if let Some(thread_id) = thread_id {
+            let usage = tokio::time::timeout(
+                THREAD_USAGE_FETCH_TIMEOUT,
+                client.get_thread_usage(&thread_id.to_string()),
+            )
+            .await
+            .map_err(|_| internal_error("thread usage fetch timed out"))?;
+            let thread_usage = match usage {
+                Ok(usage) => Some(ThreadUsage {
+                    thread_id: usage.thread_id,
+                    estimated_usage_credits_micros: usage.estimated_usage_credits_micros,
+                    estimated_usage_usd_micros: usage.estimated_usage_usd_micros,
+                    groups: usage
+                        .groups
+                        .into_iter()
+                        .map(|group| ThreadUsageBreakdownGroup {
+                            model: group.model,
+                            reasoning_effort: group.reasoning_effort,
+                            speed: group.speed,
+                            estimated_usage_credits_micros: group.estimated_usage_credits_micros,
+                            net_new_input_tokens: group.net_new_input_tokens,
+                            cached_input_tokens: group.cached_input_tokens,
+                            input_tokens: group.input_tokens,
+                            output_tokens: group.output_tokens,
+                            total_tokens: group.total_tokens,
+                        })
+                        .collect(),
+                }),
+                Err(error)
+                    if matches!(
+                        error.status().map(|status| status.as_u16()),
+                        Some(403 | 404)
+                    ) => None,
+                Err(error) => {
+                    return Err(internal_error(format!(
+                        "failed to fetch thread usage: {error}"
+                    )));
+                }
+            };
+            return Ok(GetAccountTokenUsageResponse {
+                summary: AccountTokenUsageSummary {
+                    lifetime_tokens: None,
+                    peak_daily_tokens: None,
+                    longest_running_turn_sec: None,
+                    current_streak_days: None,
+                    longest_streak_days: None,
+                },
+                daily_usage_buckets: None,
+                thread_usage,
+            });
+        }
         let profile = tokio::time::timeout(
             ACCOUNT_TOKEN_USAGE_FETCH_TIMEOUT,
             client.get_token_usage_profile(),
@@ -1082,6 +1143,7 @@ impl AccountRequestProcessor {
                     })
                     .collect()
             }),
+            thread_usage: None,
         }
     }
 
@@ -1228,6 +1290,7 @@ mod tests {
                     start_date: "2026-05-29".to_string(),
                     tokens: 10,
                 }]),
+                thread_usage: None,
             }
         );
     }
