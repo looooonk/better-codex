@@ -32,6 +32,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::OnceCell;
 use tokio::sync::OwnedMutexGuard;
+use tokio::sync::OwnedRwLockWriteGuard;
+use tokio::sync::RwLock;
 
 use crate::AppendThreadItemsParams;
 use crate::ArchiveThreadParams;
@@ -59,6 +61,8 @@ use crate::ThreadStoreFuture;
 use crate::ThreadStoreResult;
 use crate::TurnPage;
 use crate::UpdateThreadMetadataParams;
+use crate::local::writer_lock::WriterLockCoordinator;
+use crate::local::writer_lock::WriterLockGuard;
 
 /// Local filesystem/SQLite-backed implementation of [`ThreadStore`].
 ///
@@ -78,6 +82,7 @@ pub struct LocalThreadStore {
     pub(super) config: LocalThreadStoreConfig,
     live_recorders: Arc<Mutex<HashMap<ThreadId, LiveRecorderEntry>>>,
     live_writer_locks: Arc<LiveWriterLocks>,
+    writer_lock_coordinator: Arc<WriterLockCoordinator>,
     state_db: Option<StateDbHandle>,
     thread_history_db: Arc<OnceCell<sqlx::SqlitePool>>,
 }
@@ -89,25 +94,48 @@ struct LiveRecorderEntry {
     // canonical SessionMeta is durable. Retain the mode captured when live persistence was opened
     // so missing SQLite rows can still be seeded.
     history_mode: ThreadHistoryMode,
+    _writer_lock: WriterLockGuard,
 }
 
 #[derive(Default)]
 struct LiveWriterLocks {
     // Keep per-thread locks after a writer goes idle. Removing one while another caller is about
     // to acquire it could let two operations for the same thread run at once.
-    by_thread: Mutex<HashMap<ThreadId, Arc<Mutex<()>>>>,
+    by_thread: Mutex<HashMap<ThreadId, Arc<ThreadCoordination>>>,
+}
+
+#[derive(Default)]
+struct ThreadCoordination {
+    writer: Arc<Mutex<()>>,
+    lifecycle: Arc<RwLock<()>>,
 }
 
 impl LiveWriterLocks {
-    async fn lock(&self, thread_id: ThreadId) -> OwnedMutexGuard<()> {
-        let lock = self
-            .by_thread
+    async fn coordination(&self, thread_id: ThreadId) -> Arc<ThreadCoordination> {
+        self.by_thread
             .lock()
             .await
             .entry(thread_id)
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone();
-        lock.lock_owned().await
+            .or_default()
+            .clone()
+    }
+
+    async fn lock(&self, thread_id: ThreadId) -> OwnedMutexGuard<()> {
+        self.coordination(thread_id)
+            .await
+            .writer
+            .clone()
+            .lock_owned()
+            .await
+    }
+
+    async fn lock_lifecycle(&self, thread_id: ThreadId) -> OwnedRwLockWriteGuard<()> {
+        self.coordination(thread_id)
+            .await
+            .lifecycle
+            .clone()
+            .write_owned()
+            .await
     }
 }
 
@@ -144,10 +172,12 @@ impl std::fmt::Debug for LocalThreadStore {
 impl LocalThreadStore {
     /// Create a local store using an already initialized state DB handle.
     pub fn new(config: LocalThreadStoreConfig, state_db: Option<StateDbHandle>) -> Self {
+        let writer_lock_coordinator = Arc::new(WriterLockCoordinator::new(&config.codex_home));
         Self {
             config,
             live_recorders: Arc::new(Mutex::new(HashMap::new())),
             live_writer_locks: Arc::new(LiveWriterLocks::default()),
+            writer_lock_coordinator,
             state_db,
             thread_history_db: Arc::new(OnceCell::new()),
         }
@@ -213,6 +243,7 @@ impl LocalThreadStore {
         recorder: RolloutRecorder,
         rollout_id: RolloutId,
         history_mode: ThreadHistoryMode,
+        writer_lock: WriterLockGuard,
     ) -> ThreadStoreResult<()> {
         match self.live_recorders.lock().await.entry(thread_id) {
             Entry::Occupied(entry) => Err(ThreadStoreError::InvalidRequest {
@@ -223,6 +254,7 @@ impl LocalThreadStore {
                     recorder,
                     rollout_id,
                     history_mode,
+                    _writer_lock: writer_lock,
                 });
                 Ok(())
             }

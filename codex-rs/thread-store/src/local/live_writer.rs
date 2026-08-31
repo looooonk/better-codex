@@ -31,9 +31,10 @@ pub(super) async fn create_thread(
     let _live_writer_guard = store.live_writer_locks.lock(thread_id).await;
     let history_mode = params.history_mode;
     store.ensure_live_recorder_absent(thread_id).await?;
+    let writer_lock = store.writer_lock_coordinator.acquire(thread_id)?;
     let recorder = create_thread::create_thread(store, params).await?;
     store
-        .insert_live_recorder(thread_id, recorder, thread_id, history_mode)
+        .insert_live_recorder(thread_id, recorder, thread_id, history_mode, writer_lock)
         .await
 }
 
@@ -43,6 +44,7 @@ pub(super) async fn resume_thread(
 ) -> ThreadStoreResult<()> {
     let _live_writer_guard = store.live_writer_locks.lock(params.thread_id).await;
     store.ensure_live_recorder_absent(params.thread_id).await?;
+    let writer_lock = store.writer_lock_coordinator.acquire(params.thread_id)?;
     let history_mode = if let Some(history) = params.history.as_deref() {
         canonical_history_mode_from_rollout_items(history)
     } else if let Some(rollout_path) = params.rollout_path.as_ref() {
@@ -130,7 +132,13 @@ pub(super) async fn resume_thread(
             message: format!("failed to resume local thread recorder: {err}"),
         })?;
     store
-        .insert_live_recorder(params.thread_id, recorder, rollout_id, history_mode)
+        .insert_live_recorder(
+            params.thread_id,
+            recorder,
+            rollout_id,
+            history_mode,
+            writer_lock,
+        )
         .await
 }
 
