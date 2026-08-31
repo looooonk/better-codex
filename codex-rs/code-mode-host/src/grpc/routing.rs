@@ -101,6 +101,11 @@ impl GrpcSession {
         };
         let (sequence, subscriptions) = {
             let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            if self.closed.is_cancelled() {
+                return Err(
+                    "code-mode session closed before dispatching its tool call".to_string(),
+                );
+            }
             let Some(execution) = state.cells.get(&cell_id) else {
                 return Err("code-mode cell closed before dispatching its tool call".to_string());
             };
@@ -166,6 +171,11 @@ impl GrpcSession {
             };
 
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            if self.closed.is_cancelled() {
+                return Err(
+                    "code-mode session closed before dispatching its tool call".to_string(),
+                );
+            }
             let Some(subscription_index) = state.subscriptions.iter().position(|subscription| {
                 subscription.id == subscription_id && !subscription.sender.is_closed()
             }) else {

@@ -303,6 +303,9 @@ impl GrpcSession {
         permit: OwnedSemaphorePermit,
     ) -> Result<(), Status> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.closed.is_cancelled() {
+            return Err(Status::cancelled("code-mode session is closed"));
+        }
         if !state.pending_executions.remove(&execution_id) {
             return Err(Status::cancelled("code-mode execution was abandoned"));
         }
@@ -457,6 +460,11 @@ where
         T: Borrow<Q>,
         Q: Eq + Hash + ?Sized,
     {
-        self.ids.remove(id)
+        if !self.ids.remove(id) {
+            return false;
+        }
+        self.order
+            .retain(|queued| <T as Borrow<Q>>::borrow(queued) != id);
+        true
     }
 }

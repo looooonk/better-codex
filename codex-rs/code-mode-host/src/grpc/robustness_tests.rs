@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::Barrier;
 use std::time::Duration;
 
 use codex_code_mode_protocol::CellId;
@@ -29,8 +30,10 @@ use super::validation::MAX_TOOL_DEFINITIONS;
 use super::validation::MAX_TOOL_DESCRIPTION_BYTES;
 use super::validation::MAX_TOOL_ERROR_BYTES;
 use super::validation::MAX_TOOL_FILTERS;
+use super::waits::WaitRegistration;
 use crate::MAX_ACTIVE_CELLS;
 use crate::MAX_IN_FLIGHT_REQUESTS;
+use crate::MAX_RECENT_REQUEST_IDS;
 use crate::OUTGOING_CHANNEL_CAPACITY;
 
 fn assert_invalid<T>(result: Result<T, Status>) {
@@ -69,10 +72,43 @@ async fn rejects_values_beyond_every_grpc_metadata_cap() {
         .await,
     );
     assert_invalid(
+        host.complete_tool_call(Request::new(proto::CompleteToolCallRequest {
+            session_id: session_id.clone(),
+            invocation_id: "not-a-uuid".to_string(),
+            outcome: Some(proto::complete_tool_call_request::Outcome::Succeeded(
+                proto::ToolCallSucceeded {
+                    output_json: b"null".to_vec(),
+                },
+            )),
+        }))
+        .await,
+    );
+    assert_invalid(
+        host.acknowledge_notification(Request::new(
+            proto::AcknowledgeNotificationRequest {
+                session_id: session_id.clone(),
+                notification_id: "not-a-uuid".to_string(),
+            },
+        ))
+        .await,
+    );
+    assert_invalid(
+        host.execute(Request::new(execute_request(
+            &session_id,
+            &oversized_id,
+            "text(\"unused\");",
+        )))
+        .await,
+    );
+    let mut oversized_tool_call =
+        execute_request(&session_id, "oversized-tool-call", "text(\"unused\");");
+    oversized_tool_call.tool_call_id = oversized_id.clone();
+    assert_invalid(host.execute(Request::new(oversized_tool_call)).await);
+    assert_invalid(
         host.subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
             session_id: session_id.clone(),
             tool_names: vec![proto::ToolName {
-                name: oversized_id,
+                name: oversized_id.clone(),
                 namespace: None,
             }],
         }))
@@ -123,6 +159,21 @@ async fn rejects_values_beyond_every_grpc_metadata_cap() {
             .await,
     );
     assert!(host.state.session(&session_id).is_ok());
+}
+
+#[tokio::test]
+async fn rejects_heap_limit_until_runtime_enforces_it() {
+    let host = GrpcCodeModeHost::new();
+
+    assert_invalid(
+        host.open_session(Request::new(proto::OpenSessionRequest {
+            cell_execution_limits: Some(proto::SessionCellExecutionLimits {
+                max_yield_time_ms: None,
+                max_heap_size_bytes: Some(16 * 1_024 * 1_024),
+            }),
+        }))
+        .await,
+    );
 }
 
 #[tokio::test]
@@ -184,6 +235,134 @@ async fn abandoning_execution_releases_its_reservation() {
         )
         .expect_err("abandoned execution must not admit a runtime cell");
     assert_eq!(error.code(), Code::Cancelled);
+}
+
+#[tokio::test]
+async fn close_is_a_cell_admission_barrier() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, _lease) = open_session(&host).await;
+    let session = host.state.session(&session_id).expect("open session");
+    let execution_id = "execution-close-race".to_string();
+    session
+        .reserve_execution(&execution_id)
+        .expect("reserve execution");
+    let state = session.state.lock().unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    let admit_barrier = Arc::clone(&barrier);
+    let admit_session = Arc::clone(&session);
+    let permit = host.state.cell_permit().expect("reserve cell permit");
+    let admission = std::thread::spawn(move || {
+        admit_barrier.wait();
+        admit_session.admit_execution(execution_id, "cell-close-race".to_string(), permit)
+    });
+
+    barrier.wait();
+    session.closed.cancel();
+    drop(state);
+
+    let error = admission
+        .join()
+        .expect("cell admission thread")
+        .expect_err("closed session must reject cell admission");
+    assert_eq!(error.code(), Code::Cancelled);
+    assert!(session.state.lock().unwrap().cells.is_empty());
+}
+
+#[tokio::test]
+async fn close_is_a_tool_dispatch_barrier() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, lease) = open_session(&host).await;
+    let session = host.state.session(&session_id).expect("open session");
+    let execution_id = "execution-dispatch-race".to_string();
+    session
+        .reserve_execution(&execution_id)
+        .expect("reserve execution");
+    session
+        .admit_execution(
+            execution_id.clone(),
+            "cell-dispatch-race".to_string(),
+            host.state.cell_permit().expect("reserve cell permit"),
+        )
+        .expect("admit execution");
+    let state = session.state.lock().unwrap();
+    let barrier = Arc::new(Barrier::new(2));
+    let dispatch_barrier = Arc::clone(&barrier);
+    let dispatch_session = Arc::clone(&session);
+    let dispatch = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("build dispatch runtime");
+        let cancellation = CancellationToken::new();
+        let (response, _receiver) = oneshot::channel();
+        dispatch_barrier.wait();
+        runtime.block_on(dispatch_session.dispatch_tool(
+            invocation("cell-dispatch-race", "echo"),
+            execution_id,
+            Uuid::new_v4(),
+            /*input_json*/ None,
+            response,
+            &cancellation,
+        ))
+    });
+
+    barrier.wait();
+    session.closed.cancel();
+    drop(state);
+
+    let error = dispatch
+        .join()
+        .expect("tool dispatch thread")
+        .expect_err("closed session must reject tool dispatch");
+    assert!(error.contains("session closed"));
+    assert!(session.state.lock().unwrap().pending_invocations.is_empty());
+    drop(lease);
+}
+
+#[tokio::test]
+async fn consumed_wait_tombstone_survives_reinsertion_churn() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, _lease) = open_session(&host).await;
+    let session = host.state.session(&session_id).expect("open session");
+    let wait_id = "wait-reinserted".to_string();
+    session
+        .cancel_wait(&wait_id)
+        .await
+        .expect("pre-cancel wait");
+    let error = match WaitRegistration::new(Arc::clone(&session), wait_id.clone()) {
+        Ok(_) => panic!("pre-cancelled wait must not be admitted"),
+        Err(error) => error,
+    };
+    assert_eq!(error.code(), Code::Cancelled);
+    {
+        let mut state = session.state.lock().unwrap();
+        for index in 0..MAX_RECENT_REQUEST_IDS {
+            assert!(state.seen_waits.remember(format!("seen-wait-{index}")));
+        }
+    }
+    for index in 0..MAX_RECENT_REQUEST_IDS - 2 {
+        let cancelled_id = format!("cancelled-wait-{index}");
+        session
+            .cancel_wait(&cancelled_id)
+            .await
+            .expect("churn cancellation tombstones");
+    }
+    session
+        .cancel_wait(&wait_id)
+        .await
+        .expect("reinsert cancellation tombstone");
+    session
+        .cancel_wait("cancelled-wait-last")
+        .await
+        .expect("reach tombstone capacity");
+
+    assert!(
+        session
+            .state
+            .lock()
+            .unwrap()
+            .cancelled_waits
+            .contains(&wait_id)
+    );
 }
 
 #[tokio::test]

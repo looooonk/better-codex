@@ -17,13 +17,14 @@ pub(super) fn session_limits(
     limits: Option<proto::SessionCellExecutionLimits>,
 ) -> Result<CodeModeSessionCellExecutionLimits, Status> {
     let limits = limits.unwrap_or_default();
+    if limits.max_heap_size_bytes.is_some() {
+        return Err(Status::invalid_argument(
+            "maximum heap size is not supported by the gRPC code-mode host",
+        ));
+    }
     Ok(CodeModeSessionCellExecutionLimits {
         max_yield_time_ms: limits.max_yield_time_ms,
-        max_heap_size_bytes: limits
-            .max_heap_size_bytes
-            .map(usize::try_from)
-            .transpose()
-            .map_err(|_| Status::invalid_argument("maximum heap size exceeds this platform"))?,
+        max_heap_size_bytes: None,
     })
 }
 
