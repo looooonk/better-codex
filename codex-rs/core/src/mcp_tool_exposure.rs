@@ -32,28 +32,36 @@ struct CachedMcpHandlers {
 }
 
 impl McpHandlerCache {
+    fn rebind(&self, binding: &Arc<McpBinding>) {
+        let mut cached = self
+            .cached
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let replacement = Arc::downgrade(binding);
+        if cached
+            .as_ref()
+            .is_some_and(|cached| Weak::ptr_eq(&cached.binding, &replacement))
+        {
+            return;
+        }
+        *cached = Some(CachedMcpHandlers {
+            binding: replacement,
+            handlers: HashMap::new(),
+        });
+    }
+
     fn get_or_build(
         &self,
         binding: &Arc<McpBinding>,
         tool: McpToolInfo,
     ) -> Result<Arc<McpHandler>, serde_json::Error> {
         let tool_name = tool.canonical_tool_name();
+        self.rebind(binding);
         let mut cached = self
             .cached
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        if !cached
-            .as_ref()
-            .and_then(|cached| cached.binding.upgrade())
-            .is_some_and(|cached_binding| Arc::ptr_eq(&cached_binding, binding))
-        {
-            *cached = None;
-        }
-
-        let cached = cached.get_or_insert_with(|| CachedMcpHandlers {
-            binding: Arc::downgrade(binding),
-            handlers: HashMap::new(),
-        });
+        let cached = cached.as_mut().expect("cache was rebound");
         if let Some(handler) = cached.handlers.get(&tool_name) {
             return Ok(Arc::clone(handler));
         }
@@ -102,6 +110,7 @@ pub(crate) fn build_bound_mcp_tool_runtimes(
     search_tool_enabled: bool,
     cache: &McpHandlerCache,
 ) -> Vec<Arc<dyn CoreToolRuntime>> {
+    cache.rebind(&binding);
     let exposed_tools = exposed_mcp_tools(binding.tools(), connectors, config);
     let exposure = if search_tool_enabled {
         ToolExposure::Deferred

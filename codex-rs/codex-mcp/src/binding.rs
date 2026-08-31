@@ -12,6 +12,7 @@ use crate::McpConnectionManager;
 use crate::ToolInfo;
 
 const MAX_BINDING_CAPTURE_ATTEMPTS: usize = 3;
+const UNSTABLE_CATALOG_REVISION: u64 = u64::MAX;
 
 pub struct McpBinding {
     manager: Arc<McpConnectionManager>,
@@ -35,7 +36,7 @@ impl McpBinding {
 
         warn!("MCP catalog kept changing while capturing a binding; exposing no tools");
         Arc::new(Self {
-            catalog_revision: manager.catalog_revision().await,
+            catalog_revision: UNSTABLE_CATALOG_REVISION,
             manager,
             tools: Vec::<ToolInfo>::new().into(),
         })

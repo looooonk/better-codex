@@ -349,3 +349,45 @@ async fn handler_cache_reuses_only_the_current_binding() {
     assert!(first_weak.upgrade().is_none());
     assert_eq!(replacement.tool_name(), tool_name);
 }
+
+#[tokio::test]
+async fn empty_binding_clears_handlers_from_the_previous_catalog() {
+    async fn binding() -> Arc<McpBinding> {
+        let manager = Arc::new(McpConnectionManager::new_uninitialized_with_permission_profile(
+            &Constrained::allow_any(AskForApproval::OnRequest),
+            &PermissionProfile::default(),
+            /*prefix_mcp_tool_names*/ true,
+        ));
+        McpBinding::capture(manager).await
+    }
+
+    let cache = McpHandlerCache::default();
+    let previous_binding = binding().await;
+    let previous = cache
+        .get_or_build(
+            &previous_binding,
+            make_mcp_tool(
+                "rmcp",
+                "tool",
+                "mcp__rmcp",
+                "tool",
+                /*connector_id*/ None,
+                /*connector_name*/ None,
+            ),
+        )
+        .expect("handler should build");
+    let previous = Arc::downgrade(&previous);
+
+    let empty_binding = binding().await;
+    assert!(
+        build_bound_mcp_tool_runtimes(
+            empty_binding,
+            /*connectors*/ None,
+            &test_config().await,
+            /*search_tool_enabled*/ false,
+            &cache,
+        )
+        .is_empty()
+    );
+    assert!(previous.upgrade().is_none());
+}

@@ -163,11 +163,7 @@ impl McpHandler {
         };
 
         let started = Instant::now();
-        let execution_binding = if self.binding.is_some() {
-            Some(step_context.mcp.binding().await)
-        } else {
-            None
-        };
+        let execution_binding = self.binding.clone();
         // TODO(sayan): Use StepContext for MCP file arguments when MCP follows dynamic environments.
         let result = handle_mcp_tool_call(
             Arc::clone(&session),
