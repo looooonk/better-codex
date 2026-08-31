@@ -10,6 +10,8 @@ use sqlx::Sqlite;
 use super::super::LocalThreadStore;
 use super::super::thread_rollout_resolver;
 use super::super::thread_rollout_resolver::ResolvedThreadRollout;
+use super::MAX_THREAD_HISTORY_INPUT_BYTES;
+use super::MAX_THREAD_HISTORY_PAGE_SIZE;
 use super::thread_history_error;
 use crate::ItemPage;
 use crate::ListItemsParams;
@@ -65,6 +67,9 @@ pub(in crate::local) async fn list_turns(
     store: &LocalThreadStore,
     params: ListTurnsParams,
 ) -> ThreadStoreResult<TurnPage> {
+    let limit = page_limit(params.page_size)?;
+    let scope = CursorScope::Turns;
+    let cursor = parse_cursor(params.cursor.as_deref(), params.thread_id, &scope)?;
     let resolved = validate_thread_for_paginated_reads(
         store,
         params.thread_id,
@@ -72,10 +77,7 @@ pub(in crate::local) async fn list_turns(
         "list_turns",
     )
     .await?;
-    let scope = CursorScope::Turns;
-    let cursor = parse_cursor(params.cursor.as_deref(), resolved.thread_id, &scope)?;
     let pool = store.thread_history_db().await?;
-    let limit = page_limit(params.page_size)?;
     let mut query = QueryBuilder::<Sqlite>::new(
         r#"
 SELECT
@@ -144,6 +146,9 @@ pub(in crate::local) async fn list_items(
     store: &LocalThreadStore,
     params: ListItemsParams,
 ) -> ThreadStoreResult<ItemPage> {
+    let limit = page_limit(params.page_size)?;
+    let scope = CursorScope::Items;
+    let cursor = parse_cursor(params.cursor.as_deref(), params.thread_id, &scope)?;
     let resolved = validate_thread_for_paginated_reads(
         store,
         params.thread_id,
@@ -151,10 +156,7 @@ pub(in crate::local) async fn list_items(
         "list_items",
     )
     .await?;
-    let scope = CursorScope::Items;
-    let cursor = parse_cursor(params.cursor.as_deref(), resolved.thread_id, &scope)?;
     let pool = store.thread_history_db().await?;
-    let limit = page_limit(params.page_size)?;
     let mut query = QueryBuilder::<Sqlite>::new(
         r#"
 SELECT turn_id, item_id, rollout_ordinal, created_at_ms, item_json
@@ -237,6 +239,11 @@ fn page_limit(page_size: usize) -> ThreadStoreResult<i64> {
             message: "page size must be positive".to_string(),
         });
     }
+    if page_size > MAX_THREAD_HISTORY_PAGE_SIZE {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!("page size cannot exceed {MAX_THREAD_HISTORY_PAGE_SIZE}"),
+        });
+    }
     let limit = page_size
         .checked_add(1)
         .ok_or_else(|| ThreadStoreError::InvalidRequest {
@@ -255,6 +262,11 @@ fn parse_cursor(
     let Some(cursor) = cursor else {
         return Ok(None);
     };
+    if cursor.len() > MAX_THREAD_HISTORY_INPUT_BYTES {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!("cursor cannot exceed {MAX_THREAD_HISTORY_INPUT_BYTES} bytes"),
+        });
+    }
     let cursor_value: HistoryCursor =
         serde_json::from_str(cursor).map_err(|_| invalid_cursor(cursor))?;
     if cursor_value.thread_id != thread_id || &cursor_value.scope != scope {

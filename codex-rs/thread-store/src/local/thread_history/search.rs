@@ -16,6 +16,8 @@ use super::super::LocalThreadStore;
 use super::read::CursorScope;
 use super::read::serialize_cursor;
 use super::read::validate_thread_for_paginated_reads;
+use super::MAX_THREAD_HISTORY_INPUT_BYTES;
+use super::MAX_THREAD_OCCURRENCE_PAGE_SIZE;
 use super::thread_history_error;
 use crate::SearchTextRange;
 use crate::SearchThreadOccurrencesParams;
@@ -26,6 +28,10 @@ use crate::ThreadStoreResult;
 
 const SNIPPET_CONTEXT_BEFORE_CHARS: usize = 48;
 const SNIPPET_CONTEXT_AFTER_CHARS: usize = 96;
+
+#[cfg(test)]
+#[path = "search_tests.rs"]
+mod tests;
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,16 +54,7 @@ pub(in crate::local) async fn search_thread_occurrences(
     store: &LocalThreadStore,
     params: SearchThreadOccurrencesParams,
 ) -> ThreadStoreResult<ThreadOccurrenceSearchPage> {
-    if params.search_term.trim().is_empty() {
-        return Err(ThreadStoreError::InvalidRequest {
-            message: "thread/searchOccurrences requires search_term".to_string(),
-        });
-    }
-    if params.page_size == 0 {
-        return Err(ThreadStoreError::InvalidRequest {
-            message: "thread/searchOccurrences requires page_size greater than zero".to_string(),
-        });
-    }
+    validate_search_request(&params)?;
     let resolved = validate_thread_for_paginated_reads(
         store,
         params.thread_id,
@@ -180,6 +177,45 @@ ORDER BY rollout_ordinal ASC
     })
 }
 
+fn validate_search_request(params: &SearchThreadOccurrencesParams) -> ThreadStoreResult<()> {
+    if params.search_term.len() > MAX_THREAD_HISTORY_INPUT_BYTES {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!(
+                "thread/searchOccurrences search_term cannot exceed {MAX_THREAD_HISTORY_INPUT_BYTES} bytes"
+            ),
+        });
+    }
+    if params.search_term.trim().is_empty() {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: "thread/searchOccurrences requires search_term".to_string(),
+        });
+    }
+    if params.page_size == 0 {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: "thread/searchOccurrences requires page_size greater than zero".to_string(),
+        });
+    }
+    if params.page_size > MAX_THREAD_OCCURRENCE_PAGE_SIZE {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!(
+                "thread/searchOccurrences page_size cannot exceed {MAX_THREAD_OCCURRENCE_PAGE_SIZE}"
+            ),
+        });
+    }
+    if params
+        .cursor
+        .as_ref()
+        .is_some_and(|cursor| cursor.len() > MAX_THREAD_HISTORY_INPUT_BYTES)
+    {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!(
+                "thread/searchOccurrences cursor cannot exceed {MAX_THREAD_HISTORY_INPUT_BYTES} bytes"
+            ),
+        });
+    }
+    Ok(())
+}
+
 fn candidate_row(row: sqlx::sqlite::SqliteRow) -> ThreadStoreResult<CandidateRow> {
     let rollout_ordinal = row.try_get::<i64, _>("rollout_ordinal")?;
     let turn_rollout_ordinal = row.try_get::<i64, _>("turn_rollout_ordinal")?;
@@ -205,6 +241,13 @@ fn parse_cursor(
     let Some(cursor) = cursor else {
         return Ok(None);
     };
+    if cursor.len() > MAX_THREAD_HISTORY_INPUT_BYTES {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!(
+                "thread/searchOccurrences cursor cannot exceed {MAX_THREAD_HISTORY_INPUT_BYTES} bytes"
+            ),
+        });
+    }
     let cursor_value: SearchCursor =
         serde_json::from_str(cursor).map_err(|_| invalid_cursor(cursor))?;
     if cursor_value.thread_id != thread_id

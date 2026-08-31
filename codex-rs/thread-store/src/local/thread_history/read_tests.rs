@@ -364,6 +364,29 @@ async fn list_history_keeps_legacy_threads_unsupported() {
     ));
 }
 
+#[test]
+fn history_pages_and_cursors_are_bounded() {
+    let error = page_limit(MAX_THREAD_HISTORY_PAGE_SIZE + 1).expect_err("reject oversized page");
+    assert_eq!(
+        error.to_string(),
+        "invalid thread-store request: page size cannot exceed 100"
+    );
+
+    let cursor = "x".repeat(MAX_THREAD_HISTORY_INPUT_BYTES + 1);
+    let error = match parse_cursor(
+        Some(cursor.as_str()),
+        ThreadId::default(),
+        &CursorScope::Items,
+    ) {
+        Ok(_) => panic!("oversized cursor should fail"),
+        Err(error) => error,
+    };
+    assert_eq!(
+        error.to_string(),
+        "invalid thread-store request: cursor cannot exceed 65536 bytes"
+    );
+}
+
 async fn store_with_mode(history_mode: ThreadHistoryMode) -> (TempDir, LocalThreadStore, ThreadId) {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
