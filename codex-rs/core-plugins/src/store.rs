@@ -1,4 +1,5 @@
 use crate::manifest::PluginManifest;
+use crate::manifest::is_agent_plugin_manifest;
 use crate::manifest::load_plugin_manifest;
 use crate::manifest::parse_plugin_manifest;
 use codex_plugin::PluginId;
@@ -109,6 +110,18 @@ impl PluginStore {
         self.data_root
             .join(AGENT_PLUGINS_DATA_DIR)
             .join(hex_prefix(&digest.finalize(), /*count*/ 32))
+    }
+
+    pub(crate) fn plugin_data_root_for_source(
+        &self,
+        plugin_id: &PluginId,
+        plugin_root: &Path,
+    ) -> AbsolutePathBuf {
+        if is_agent_plugin_manifest(plugin_root) {
+            self.agent_plugin_data_root(plugin_id)
+        } else {
+            self.plugin_data_root(plugin_id)
+        }
     }
 
     pub fn active_plugin_version(&self, plugin_id: &PluginId) -> Option<String> {

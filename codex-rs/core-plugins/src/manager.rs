@@ -491,6 +491,15 @@ impl PluginsManager {
         }
     }
 
+    pub fn plugin_data_root_for_source(
+        &self,
+        plugin_id: &PluginId,
+        plugin_root: &Path,
+    ) -> AbsolutePathBuf {
+        self.store
+            .plugin_data_root_for_source(plugin_id, plugin_root)
+    }
+
     fn remote_global_catalog_active(&self, config: &PluginsConfigInput) -> bool {
         config.remote_plugin_enabled && self.auth_mode().is_some_and(AuthMode::uses_codex_backend)
     }
@@ -790,7 +799,12 @@ impl PluginsManager {
     ) -> PluginTelemetryMetadata {
         let mut metadata = self.telemetry_metadata_for_plugin_id(plugin_id);
         metadata.capability_summary = match self.store.active_plugin_root(plugin_id) {
-            Some(plugin_root) => plugin_capability_summary_from_root(plugin_id, &plugin_root).await,
+            Some(plugin_root) => {
+                let plugin_data_root = self
+                    .store
+                    .plugin_data_root_for_source(plugin_id, plugin_root.as_path());
+                plugin_capability_summary_from_root(plugin_id, &plugin_root, &plugin_data_root).await
+            }
             None => None,
         };
         metadata
@@ -804,7 +818,12 @@ impl PluginsManager {
         let mut metadata =
             self.telemetry_metadata_for_plugin_id_with_remote_id(plugin_id, remote_plugin_id);
         metadata.capability_summary = match self.store.active_plugin_root(plugin_id) {
-            Some(plugin_root) => plugin_capability_summary_from_root(plugin_id, &plugin_root).await,
+            Some(plugin_root) => {
+                let plugin_data_root = self
+                    .store
+                    .plugin_data_root_for_source(plugin_id, plugin_root.as_path());
+                plugin_capability_summary_from_root(plugin_id, &plugin_root, &plugin_data_root).await
+            }
             None => None,
         };
         metadata
@@ -1891,7 +1910,9 @@ impl PluginsManager {
             /*plugin_skill_snapshots*/ None,
         )
         .await;
-        let plugin_data_root = self.store.plugin_data_root(&plugin_id);
+        let plugin_data_root = self
+            .store
+            .plugin_data_root_for_source(&plugin_id, source_path.as_path());
         let (hook_sources, _hook_load_warnings) =
             load_plugin_hooks(&source_path, &plugin_id, &plugin_data_root, &manifest.paths);
         let hooks = plugin_hook_declarations(&hook_sources)
@@ -1906,6 +1927,7 @@ impl PluginsManager {
             load_plugin_apps_from_manifest(source_path.as_path(), &manifest.paths).await;
         let mut mcp_servers = load_plugin_mcp_servers_from_manifest(
             source_path.as_path(),
+            plugin_data_root.as_path(),
             &manifest.paths,
             /*plugin_policy*/ None,
         )

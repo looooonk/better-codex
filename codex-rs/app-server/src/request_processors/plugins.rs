@@ -1480,8 +1480,11 @@ impl PluginRequestProcessor {
 
         self.on_effective_plugins_changed();
 
+        let plugin_data_root = plugins_manager
+            .plugin_data_root_for_source(&result.plugin_id, result.installed_path.as_path());
         let plugin_mcp_servers = load_plugin_mcp_servers(
             result.installed_path.as_path(),
+            plugin_data_root.as_path(),
             auth.as_ref().map(CodexAuth::auth_mode),
         )
         .await;
@@ -1657,8 +1660,13 @@ impl PluginRequestProcessor {
         self.analytics_events_client
             .track_plugin_installed(plugin_metadata);
 
+        let plugin_data_root = self
+            .thread_manager
+            .plugins_manager()
+            .plugin_data_root_for_source(&result.plugin_id, result.installed_path.as_path());
         let plugin_mcp_servers = load_plugin_mcp_servers(
             result.installed_path.as_path(),
+            plugin_data_root.as_path(),
             auth.as_ref().map(CodexAuth::auth_mode),
         )
         .await;

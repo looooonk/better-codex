@@ -1608,6 +1608,7 @@ async fn plugin_telemetry_metadata_uses_default_mcp_config_path() {
     let summary = plugin_capability_summary_from_root(
         &PluginId::parse("sample@test").expect("plugin id should parse"),
         &plugin_root.abs(),
+        &plugin_root.abs(),
     )
     .await;
 
@@ -1648,6 +1649,7 @@ async fn plugin_capability_summary_uses_manifest_mcp_server_objects() {
 
     let summary = plugin_capability_summary_from_root(
         &PluginId::parse("counter-sample@test").expect("plugin id should parse"),
+        &plugin_root.abs(),
         &plugin_root.abs(),
     )
     .await;

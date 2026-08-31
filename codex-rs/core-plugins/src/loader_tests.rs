@@ -210,6 +210,77 @@ enabled = true
     assert!(hooks_only_valid.apps.is_empty());
 }
 
+#[tokio::test]
+async fn agent_plugin_mcp_uses_portable_parser_and_hashed_data_root() {
+    let temp_dir = TempDir::new().expect("tempdir");
+    let plugin_root = temp_dir.path().join("plugins/cache/test/sample/local");
+    write_file(
+        &plugin_root.join("plugin.json"),
+        r#"{
+  "$schema":"https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name":"sample"
+}"#,
+    );
+    write_file(
+        &plugin_root.join("mcp.json"),
+        r#"{
+  "$schema":"https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers":{"sample":{
+    "type":"stdio",
+    "command":"node",
+    "args":["--data=${PLUGIN_DATA}"],
+    "cwd":"${PLUGIN_DATA}/state"
+  }}
+}"#,
+    );
+    let stack = ConfigLayerStack::new(
+        vec![user_layer(
+            user_config_path(&temp_dir, "config.toml"),
+            "[plugins.\"sample@test\"]\nenabled = true\n",
+        )],
+        ConfigRequirements::default(),
+        ConfigRequirementsToml::default(),
+    )
+    .expect("valid config layer stack");
+    let store = PluginStore::new(temp_dir.path().to_path_buf());
+    let plugin_id = PluginId::parse("sample@test").expect("plugin id");
+    let plugin_data_root = store.agent_plugin_data_root(&plugin_id);
+    fs::create_dir_all(plugin_data_root.as_path()).expect("create plugin data root");
+
+    let plugins = load_plugins_from_layer_stack(
+        &stack,
+        HashMap::new(),
+        &store,
+        /*plugin_skill_snapshots*/ None,
+        Some(Product::Codex),
+        /*remote_global_catalog_active*/ false,
+    )
+    .await;
+    let server = &plugins
+        .iter()
+        .find(|plugin| plugin.config_name == "sample@test")
+        .expect("loaded Agent Plugin")
+        .mcp_servers["sample"];
+    let root = fs::canonicalize(&plugin_root).expect("canonical plugin root");
+    let data = fs::canonicalize(plugin_data_root.as_path()).expect("canonical plugin data root");
+
+    assert_eq!(
+        server.transport,
+        codex_config::McpServerTransportConfig::Stdio {
+            command: "node".to_string(),
+            args: vec![format!("--data={}", data.display())],
+            env: Some(HashMap::from([
+                ("PLUGIN_DATA".to_string(), data.display().to_string()),
+                ("PLUGIN_ROOT".to_string(), root.display().to_string()),
+            ])),
+            env_vars: Vec::new(),
+            cwd: Some(codex_utils_path_uri::LegacyAppPathString::from_path(
+                &data.join("state"),
+            )),
+        }
+    );
+}
+
 #[test]
 fn curated_plugin_cache_version_shortens_full_git_sha() {
     assert_eq!(
