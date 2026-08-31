@@ -126,6 +126,7 @@ impl ToolCallRuntime {
         cancellation_token: CancellationToken,
     ) -> impl std::future::Future<Output = Result<AnyToolResult, FunctionCallError>> {
         let supports_parallel = self.router.tool_supports_parallel(&call);
+        let tool_runtime = self.router.tool_runtime(&call);
         let router = Arc::clone(&self.router);
         let session = Arc::clone(&self.session);
         let step_context = Arc::clone(&self.step_context);
@@ -158,6 +159,11 @@ impl ToolCallRuntime {
 
         let mut dispatch_handle: AbortOnDropHandle<Result<AnyToolResult, FunctionCallError>> =
             AbortOnDropHandle::new(tokio::spawn(async move {
+                if let Some(tool_runtime) = tool_runtime
+                    && let Some(readiness) = tool_runtime.wait_until_ready(&session)
+                {
+                    readiness.await;
+                }
                 let _guard = if supports_parallel {
                     Either::Left(lock.read().await)
                 } else {
@@ -380,6 +386,8 @@ mod tests {
     use crate::tools::registry::CoreToolRuntime;
     use crate::tools::registry::ToolExecutor;
     use crate::tools::registry::ToolRegistry;
+    use crate::tools::registry::ToolExposure;
+    use crate::tools::registry::override_tool_exposure;
     use crate::turn_diff_tracker::TurnDiffTracker;
     use codex_extension_api::ToolCallOutcome;
     use codex_protocol::models::FunctionCallOutputBody;
@@ -567,6 +575,89 @@ mod tests {
     }
 
     impl CoreToolRuntime for ImmediateHandler {}
+
+    struct ReadinessHandler {
+        inner: ImmediateHandler,
+        readiness_started: std::sync::Mutex<Option<oneshot::Sender<()>>>,
+        allow_ready: Arc<Notify>,
+    }
+
+    impl ToolExecutor<ToolInvocation> for ReadinessHandler {
+        fn tool_name(&self) -> codex_tools::ToolName {
+            self.inner.tool_name()
+        }
+
+        fn spec(&self) -> codex_tools::ToolSpec {
+            self.inner.spec()
+        }
+
+        fn handle(&self, invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+            self.inner.handle(invocation)
+        }
+    }
+
+    impl CoreToolRuntime for ReadinessHandler {
+        fn wait_until_ready<'a>(
+            &'a self,
+            _session: &'a Arc<Session>,
+        ) -> Option<futures::future::BoxFuture<'a, ()>> {
+            let readiness_started = self
+                .readiness_started
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            Some(Box::pin(async move {
+                if let Some(readiness_started) = readiness_started {
+                    let _ = readiness_started.send(());
+                }
+                self.allow_ready.notified().await;
+            }))
+        }
+    }
+
+    #[tokio::test]
+    async fn readiness_runs_before_the_parallel_execution_gate() -> anyhow::Result<()> {
+        let (session, turn_context) = crate::session::tests::make_session_and_context().await;
+        let session = Arc::new(session);
+        let turn_context = Arc::new(turn_context);
+        let tool_name = codex_tools::ToolName::plain("readiness_tool");
+        let (readiness_started_tx, readiness_started_rx) = oneshot::channel();
+        let allow_ready = Arc::new(Notify::new());
+        let handler: Arc<dyn CoreToolRuntime> = Arc::new(ReadinessHandler {
+            inner: ImmediateHandler {
+                tool_name: tool_name.clone(),
+            },
+            readiness_started: std::sync::Mutex::new(Some(readiness_started_tx)),
+            allow_ready: Arc::clone(&allow_ready),
+        });
+        let handler = override_tool_exposure(handler, ToolExposure::Deferred);
+        let step_context = StepContext::for_test(turn_context);
+        let router = Arc::new(ToolRouter::from_parts(
+            ToolRegistry::from_tools([handler]),
+            Vec::new(),
+        ));
+        let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::new()));
+        let runtime = ToolCallRuntime::new(router, session, step_context, tracker);
+        let execution_gate = Arc::clone(&runtime.parallel_execution);
+        let execution_gate_guard = execution_gate.write_owned().await;
+        let call = ToolCall {
+            tool_name,
+            call_id: "call-ready".to_string(),
+            payload: ToolPayload::Function {
+                arguments: "{}".to_string(),
+            },
+        };
+
+        let response = tokio::spawn(runtime.handle_tool_call(call, CancellationToken::new()));
+        tokio::time::timeout(Duration::from_secs(1), readiness_started_rx)
+            .await
+            .expect("readiness should start before gate admission")
+            .expect("readiness sender should remain alive");
+        allow_ready.notify_one();
+        drop(execution_gate_guard);
+        response.await.expect("tool task should join")?;
+        Ok(())
+    }
 
     struct CancellationCleanupHandler {
         tool_name: codex_tools::ToolName,

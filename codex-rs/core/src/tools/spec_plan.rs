@@ -1,5 +1,6 @@
 use crate::agent::exceeds_thread_spawn_depth_limit;
 use crate::agent::next_thread_spawn_depth;
+use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
 use crate::tools::code_mode::execute_spec::create_code_mode_tool;
@@ -86,6 +87,7 @@ use codex_tools::default_namespace_description;
 use codex_tools::request_user_input_available_modes;
 use codex_tools::shell_command_backend_for_features;
 use codex_tools::shell_type_for_model_and_features;
+use futures::future::BoxFuture;
 use std::collections::BTreeMap;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -1059,6 +1061,10 @@ impl ToolExecutor<ToolInvocation> for MultiAgentV2NamespaceOverride {
 }
 
 impl CoreToolRuntime for MultiAgentV2NamespaceOverride {
+    fn wait_until_ready<'a>(&'a self, session: &'a Arc<Session>) -> Option<BoxFuture<'a, ()>> {
+        self.handler.wait_until_ready(session)
+    }
+
     fn matches_kind(&self, payload: &crate::tools::context::ToolPayload) -> bool {
         self.handler.matches_kind(payload)
     }

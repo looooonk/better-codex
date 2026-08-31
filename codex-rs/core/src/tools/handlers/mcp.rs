@@ -4,6 +4,7 @@ use std::time::Instant;
 use crate::function_tool::FunctionCallError;
 use crate::mcp_tool_call::handle_mcp_tool_call;
 use crate::original_image_detail::can_request_original_image_detail;
+use crate::session::session::Session;
 use crate::tools::context::McpToolOutput;
 use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
@@ -23,6 +24,7 @@ use codex_tools::ToolSearchInfo;
 use codex_tools::ToolSearchSourceInfo;
 use codex_tools::ToolSpec;
 use codex_tools::mcp_tool_to_responses_api_tool;
+use futures::future::BoxFuture;
 use serde_json::Map;
 use serde_json::Value;
 
@@ -164,6 +166,17 @@ impl McpHandler {
 }
 
 impl CoreToolRuntime for McpHandler {
+    fn wait_until_ready<'a>(&'a self, session: &'a Arc<Session>) -> Option<BoxFuture<'a, ()>> {
+        Some(Box::pin(async move {
+            session.refresh_mcp_if_dirty().await;
+            session
+                .services
+                .mcp_runtime
+                .wait_for_server_startup(&self.tool_info.server_name)
+                .await;
+        }))
+    }
+
     fn telemetry_tags<'a>(
         &'a self,
         _invocation: &'a ToolInvocation,
