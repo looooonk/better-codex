@@ -14,6 +14,8 @@ use crate::state::RequestPermissionsResponseConstraint;
 use crate::tools::approvals::ApprovalAction;
 use crate::tools::approvals::ApprovalCacheKey;
 use crate::tools::approvals::guardian_cwd;
+use crate::tools::approval_review_boundary::prepare_approval_review_input;
+use crate::tools::approval_review_boundary::sanitize_approval_review_result;
 use crate::tools::flat_tool_name;
 use crate::tools::context::ToolCallSource;
 use crate::tools::sandboxing::ToolError;
@@ -431,30 +433,35 @@ async fn request_guardian_v2_approval_until(
             return ApprovalReviewResult::Cancelled;
         }
         let (evidence_revision, evidence, images) = approval_review_evidence(&ctx.turn, &ctx.source);
+        let input = ApprovalReviewInput {
+            binding: codex_extension_api::ApprovalReviewBinding {
+                thread_id: session.thread_id.to_string(),
+                turn_id: ctx.turn.sub_id.clone(),
+                action_id: ctx.call_id.clone(),
+                attempt_id: ctx.attempt_id.clone(),
+                source: extension_tool_call_source(ctx.source.clone()),
+                evidence_revision,
+            },
+            action: action.clone(),
+            history: history.clone(),
+            evidence,
+            images,
+            deadline,
+            cancellation: Arc::new(CoreApprovalReviewCancellation(
+                ctx.cancellation_token.clone(),
+            )),
+        };
+        let input = match prepare_approval_review_input(input) {
+            Ok(input) => input,
+            Err(failure) => return ApprovalReviewResult::ManualReview(failure),
+        };
         let review = session
             .services
             .extensions
             .approval_review(
                 &session.services.session_extension_data,
                 &session.services.thread_extension_data,
-                ApprovalReviewInput {
-                    binding: codex_extension_api::ApprovalReviewBinding {
-                        thread_id: session.thread_id.to_string(),
-                        turn_id: ctx.turn.sub_id.clone(),
-                        action_id: ctx.call_id.clone(),
-                        attempt_id: ctx.attempt_id.clone(),
-                        source: extension_tool_call_source(ctx.source.clone()),
-                        evidence_revision,
-                    },
-                    action: action.clone(),
-                    history: history.clone(),
-                    evidence,
-                    images,
-                    deadline,
-                    cancellation: Arc::new(CoreApprovalReviewCancellation(
-                        ctx.cancellation_token.clone(),
-                    )),
-                },
+                input,
             );
         let result = tokio::select! {
             biased;
@@ -465,6 +472,7 @@ async fn request_guardian_v2_approval_until(
                 ))
             }
         };
+        let result = sanitize_approval_review_result(result);
         if !matches!(result, ApprovalReviewResult::Allow(_)) {
             return result;
         }

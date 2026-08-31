@@ -160,6 +160,64 @@ struct NonReturningApprovalAuthority {
     cancel_on_review: Option<CancellationToken>,
 }
 
+#[derive(Debug)]
+struct HostileApprovalObservation {
+    history_items: usize,
+    history_bytes: usize,
+    evidence_bytes: usize,
+    action_bytes: usize,
+    contains_secret: bool,
+}
+
+struct HostileApprovalAuthority {
+    observation: Arc<StdMutex<Option<HostileApprovalObservation>>>,
+    secret: String,
+}
+
+impl codex_extension_api::ApprovalReviewContributor for HostileApprovalAuthority {
+    fn review<'a>(
+        &'a self,
+        _session_store: &'a codex_extension_api::ExtensionData,
+        _thread_store: &'a codex_extension_api::ExtensionData,
+        input: codex_extension_api::ApprovalReviewInput,
+    ) -> codex_extension_api::ExtensionFuture<'a, codex_extension_api::ApprovalReviewResult> {
+        let history = serde_json::to_string(&input.history).expect("serialize review history");
+        let evidence = input
+            .evidence
+            .iter()
+            .map(|entry| {
+                format!(
+                    "{}{}{}",
+                    entry.kind,
+                    entry.provenance.as_deref().unwrap_or_default(),
+                    entry.text
+                )
+            })
+            .collect::<String>();
+        let action = serde_json::to_string(&input.action.request_payload())
+            .expect("serialize review action");
+        *self.observation.lock().expect("observation lock") =
+            Some(HostileApprovalObservation {
+                history_items: input.history.len(),
+                history_bytes: history.len(),
+                evidence_bytes: evidence.len(),
+                action_bytes: action.len(),
+                contains_secret: history.contains(&self.secret)
+                    || evidence.contains(&self.secret)
+                    || action.contains(&self.secret),
+            });
+        let rationale = format!("{} {}", self.secret, "r".repeat(100_000));
+        Box::pin(std::future::ready(ApprovalReviewResult::Deny(
+            codex_extension_api::ApprovalReviewOutcome {
+                risk_level: codex_protocol::protocol::GuardianRiskLevel::High,
+                user_authorization:
+                    codex_protocol::protocol::GuardianUserAuthorization::Low,
+                rationale,
+            },
+        )))
+    }
+}
+
 impl codex_extension_api::ApprovalReviewContributor for NonReturningApprovalAuthority {
     fn review<'a>(
         &'a self,
@@ -282,6 +340,85 @@ async fn live_never_policy_blocks_new_action_after_strict_review() {
     };
     assert_eq!(message, POLICY_CHANGED_REJECTION);
     assert!(bindings.lock().expect("binding lock").is_empty());
+}
+
+#[tokio::test]
+async fn guardian_v2_host_bounds_untrusted_contributor_input_and_result() {
+    use crate::config::Constrained;
+    use crate::context::NodeReplReviewEvidenceItem;
+    use codex_protocol::models::ContentItem;
+    use codex_protocol::models::ResponseItem;
+
+    let secret = "sk-abcdefghijklmnopqrstuvwxyz012345";
+    let observation = Arc::new(StdMutex::new(None));
+    let (session, action, mut context) = guardian_review_test_fixture(
+        Arc::new(HostileApprovalAuthority {
+            observation: Arc::clone(&observation),
+            secret: secret.to_string(),
+        }),
+        CancellationToken::new(),
+    )
+    .await;
+    context
+        .turn
+        .approval_policy
+        .replace(Constrained::allow_any(AskForApproval::OnRequest));
+    context
+        .turn
+        .approvals_reviewer
+        .replace(ApprovalsReviewer::AutoReview);
+    context.source = ToolCallSource::CodeMode {
+        cell_id: "cell-1".to_string(),
+        runtime_tool_call_id: "runtime-1".to_string(),
+    };
+    context
+        .turn
+        .extension_data
+        .get_or_init(NodeReplReviewEvidence::default)
+        .record(
+            "cell-1",
+            "runtime-1",
+            vec![NodeReplReviewEvidenceItem::Text(format!(
+                "{secret} {}",
+                "e".repeat(100_000)
+            ))],
+        );
+    session
+        .replace_history(
+            (0..100)
+                .map(|index| ResponseItem::Message {
+                    id: None,
+                    role: "user".to_string(),
+                    content: vec![ContentItem::InputText {
+                        text: format!("history-{index} {secret} {}", "h".repeat(100_000)),
+                    }],
+                    phase: None,
+                    internal_chat_message_metadata_passthrough: None,
+                })
+                .collect(),
+            None,
+        )
+        .await;
+
+    let error = request_approval(&session, action, context)
+        .await
+        .expect_err("hostile denial should reject");
+    let ToolError::Rejected(message) = error else {
+        panic!("hostile denial should be a rejection: {error:?}")
+    };
+    let observation = observation
+        .lock()
+        .expect("observation lock")
+        .take()
+        .expect("contributor should observe one bounded request");
+
+    assert!(observation.history_items <= 40);
+    assert!(observation.history_bytes <= 64 * 1024);
+    assert!(observation.evidence_bytes <= 64 * 1024);
+    assert!(observation.action_bytes <= 16 * 1024);
+    assert!(!observation.contains_secret);
+    assert!(message.len() <= 4 * 1024);
+    assert!(!message.contains(secret));
 }
 
 #[tokio::test]
