@@ -1046,6 +1046,39 @@ async fn login_account_api_key_rejected_when_forced_chatgpt() -> Result<()> {
 }
 
 #[tokio::test]
+async fn login_account_api_key_rejected_by_managed_policy_before_persistence() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    create_config_toml(codex_home.path(), CreateConfigTomlParams::default())?;
+    std::fs::write(
+        codex_home.path().join("requirements.toml"),
+        "allowed_login_methods = [\"chatgpt\"]\n",
+    )?;
+
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .build()
+        .await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_login_account_api_key_request("sk-must-not-be-saved")
+        .await?;
+    let err: JSONRPCError = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+
+    assert_eq!(
+        err.error.message,
+        "API key login is disabled. Use ChatGPT login instead."
+    );
+    assert!(!codex_home.path().join("auth.json").exists());
+    Ok(())
+}
+
+#[tokio::test]
 async fn login_account_chatgpt_rejected_when_forced_api() -> Result<()> {
     let codex_home = TempDir::new()?;
     create_config_toml(
@@ -1074,6 +1107,106 @@ async fn login_account_chatgpt_rejected_when_forced_api() -> Result<()> {
         err.error.message,
         "ChatGPT login is disabled. Use API key login instead."
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn login_account_chatgpt_flows_rejected_by_managed_policy_before_network() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    create_config_toml(codex_home.path(), CreateConfigTomlParams::default())?;
+    std::fs::write(
+        codex_home.path().join("requirements.toml"),
+        "allowed_login_methods = [\"api\"]\n",
+    )?;
+    let mock_server = MockServer::start().await;
+    let issuer = mock_server.uri();
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .with_env_overrides(&[(LOGIN_ISSUER_ENV_VAR, Some(issuer.as_str()))])
+        .build()
+        .await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    for request_id in [
+        mcp.send_login_account_chatgpt_request().await?,
+        mcp.send_login_account_chatgpt_device_code_request().await?,
+    ] {
+        let err: JSONRPCError = timeout(
+            DEFAULT_READ_TIMEOUT,
+            mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+        )
+        .await??;
+        assert_eq!(
+            err.error.message,
+            "ChatGPT login is disabled. Use API key login instead."
+        );
+    }
+
+    let access_token =
+        encode_id_token(&ChatGptIdTokenClaims::new().chatgpt_account_id(WORKSPACE_ID_EMBEDDED))?;
+    let request_id = mcp
+        .send_chatgpt_auth_tokens_login_request(
+            access_token,
+            WORKSPACE_ID_EMBEDDED.to_string(),
+            Some("pro".to_string()),
+        )
+        .await?;
+    let err: JSONRPCError = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    assert_eq!(
+        err.error.message,
+        "External ChatGPT auth is disabled. Use API key login instead."
+    );
+    assert!(!codex_home.path().join("auth.json").exists());
+    assert!(
+        mock_server
+            .received_requests()
+            .await
+            .expect("recorded requests")
+            .is_empty()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn external_auth_rejected_by_managed_workspace_policy() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    create_config_toml(codex_home.path(), CreateConfigTomlParams::default())?;
+    std::fs::write(
+        codex_home.path().join("requirements.toml"),
+        format!(
+            "allowed_login_methods = [\"chatgpt\"]\nallowed_chatgpt_workspaces = [\"{WORKSPACE_ID_ALLOWED}\"]\n"
+        ),
+    )?;
+    let mut mcp = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .without_auto_env()
+        .build()
+        .await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let access_token =
+        encode_id_token(&ChatGptIdTokenClaims::new().chatgpt_account_id(WORKSPACE_ID_DISALLOWED))?;
+    let request_id = mcp
+        .send_chatgpt_auth_tokens_login_request(
+            access_token,
+            WORKSPACE_ID_DISALLOWED.to_string(),
+            Some("pro".to_string()),
+        )
+        .await?;
+    let err: JSONRPCError = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_error_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+
+    assert!(err.error.message.contains(WORKSPACE_ID_ALLOWED));
+    assert!(err.error.message.contains(WORKSPACE_ID_DISALLOWED));
+    assert!(!codex_home.path().join("auth.json").exists());
     Ok(())
 }
 

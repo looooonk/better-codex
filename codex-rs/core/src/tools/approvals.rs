@@ -209,7 +209,7 @@ where
             }
             Some(PermissionRequestDecision::Deny { message }) => {
                 let resolution = ApprovalResolution {
-                    decision: ReviewDecision::Denied,
+                    decision: ReviewDecision::denied(),
                     rejection: Some(message),
                     source: ApprovalResolutionSource::Hook,
                 };
@@ -275,8 +275,9 @@ async fn normalize_guardian(
             network_policy_amendment,
         } if network_policy_amendment.action == NetworkPolicyRuleAction::Allow => None,
         ReviewDecision::TimedOut => Some(guardian_timeout_message()),
-        ReviewDecision::NetworkPolicyAmendment { .. }
-        | ReviewDecision::Denied
+        ReviewDecision::ApprovedMcpPolicyAmendment
+        | ReviewDecision::NetworkPolicyAmendment { .. }
+        | ReviewDecision::Denied { .. }
         | ReviewDecision::Abort => {
             Some(guardian_rejection_message(session.as_ref(), &review_id).await)
         }
@@ -297,8 +298,9 @@ fn normalize_user_rejection(mut resolution: ApprovalResolution) -> ApprovalResol
             ReviewDecision::NetworkPolicyAmendment {
                 network_policy_amendment,
             } if network_policy_amendment.action == NetworkPolicyRuleAction::Allow => None,
-            ReviewDecision::NetworkPolicyAmendment { .. }
-            | ReviewDecision::Denied
+            ReviewDecision::ApprovedMcpPolicyAmendment
+            | ReviewDecision::NetworkPolicyAmendment { .. }
+            | ReviewDecision::Denied { .. }
             | ReviewDecision::Abort => Some("rejected by user".to_string()),
             ReviewDecision::TimedOut => Some("approval request timed out".to_string()),
         };

@@ -73,6 +73,16 @@ fn test_absolute_path() -> AbsolutePathBuf {
 }
 
 #[test]
+fn command_approval_conversion_fails_closed_for_mcp_policy_amendments() {
+    assert_eq!(
+        CommandExecutionApprovalDecision::from(
+            codex_protocol::protocol::ReviewDecision::ApprovedMcpPolicyAmendment,
+        ),
+        CommandExecutionApprovalDecision::Decline
+    );
+}
+
+#[test]
 fn thread_sources_round_trip_as_scalar_labels() {
     for (source, label) in [
         (ThreadSource::User, "user"),
@@ -2673,10 +2683,19 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
     let command_item = TurnItem::CommandExecution(CommandExecutionItem {
         id: "exec-1".to_string(),
         process_id: Some("pid-1".to_string()),
-        command: vec!["echo".to_string(), "done".to_string()],
+        command: vec![
+            "git".to_string(),
+            "-c".to_string(),
+            "http.extraHeader=Authorization: Bearer example_synthetic_bearer_token_123456"
+                .to_string(),
+            "-c".to_string(),
+            "http.extraHeader=X-Trace:example".to_string(),
+            "push".to_string(),
+        ],
         cwd: PathUri::from_abs_path(&test_path_buf("/tmp").abs()),
         parsed_cmd: vec![codex_protocol::parse_command::ParsedCommand::Unknown {
-            cmd: "echo done".to_string(),
+            cmd: "git -c 'http.extraHeader=Authorization: Bearer example_synthetic_bearer_token_123456' -c http.extraHeader=X-Trace:example push"
+                .to_string(),
         }],
         source: CoreExecCommandSource::Agent,
         interaction_input: None,
@@ -2693,13 +2712,15 @@ fn core_turn_item_into_thread_item_converts_supported_variants() {
         ThreadItem::from(command_item),
         ThreadItem::CommandExecution {
             id: "exec-1".to_string(),
-            command: "echo done".to_string(),
+            command: "git -c 'http.extraHeader=Authorization: Bearer [REDACTED_SECRET]' -c 'http.extraHeader=X-Trace:example' push"
+                .to_string(),
             cwd: LegacyAppPathString::from_abs_path(&test_path_buf("/tmp").abs()),
             process_id: Some("pid-1".to_string()),
             source: CommandExecutionSource::Agent,
             status: CommandExecutionStatus::Completed,
             command_actions: vec![CommandAction::Unknown {
-                command: "echo done".to_string(),
+                command: "git -c 'http.extraHeader=Authorization: Bearer [REDACTED_SECRET]' -c http.extraHeader=X-Trace:example push"
+                    .to_string(),
             }],
             aggregated_output: Some("done\n".to_string()),
             exit_code: Some(0),

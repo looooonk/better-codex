@@ -14,6 +14,7 @@ use std::time::UNIX_EPOCH;
 
 use anyhow::Context;
 use anyhow::Result;
+use codex_rollout::redact_persisted_json;
 use serde::Serialize;
 
 use crate::bundle::MANIFEST_FILE_NAME;
@@ -97,7 +98,7 @@ impl TraceWriter {
         // Payload files are created before the event that references them. A
         // replay interrupted after an event is appended should never point at a
         // payload file that the writer planned but had not written yet.
-        write_json_file(&absolute_path, value)?;
+        write_redacted_json_file(&absolute_path, value)?;
         Ok(RawPayloadRef {
             raw_payload_id,
             kind,
@@ -127,7 +128,9 @@ impl TraceWriter {
             payload,
         };
         inner.next_seq += 1;
-        serde_json::to_writer(&mut inner.event_log, &event)?;
+        let mut persisted_event = serde_json::to_value(&event)?;
+        redact_persisted_json(&mut persisted_event);
+        serde_json::to_writer(&mut inner.event_log, &persisted_event)?;
         inner.event_log.write_all(b"\n")?;
         inner.event_log.flush()?;
         Ok(event)
@@ -145,6 +148,12 @@ fn write_json_file(path: &Path, value: &impl Serialize) -> Result<()> {
     let file = File::create(path).with_context(|| format!("create {}", path.display()))?;
     serde_json::to_writer_pretty(file, value)
         .with_context(|| format!("write JSON {}", path.display()))
+}
+
+fn write_redacted_json_file(path: &Path, value: &impl Serialize) -> Result<()> {
+    let mut value = serde_json::to_value(value)?;
+    redact_persisted_json(&mut value);
+    write_json_file(path, &value)
 }
 
 pub(crate) fn unix_time_ms() -> i64 {
@@ -263,3 +272,7 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "writer_redaction_tests.rs"]
+mod redaction_tests;

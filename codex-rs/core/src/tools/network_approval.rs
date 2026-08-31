@@ -706,6 +706,7 @@ impl NetworkApprovalService {
                                     &network_policy_amendment,
                                 )
                                 .await;
+                            PendingApprovalDecision::AllowForSession
                         }
                         Err(err) => {
                             let message =
@@ -717,9 +718,18 @@ impl NetworkApprovalService {
                                     msg: EventMsg::Warning(WarningEvent { message }),
                                 })
                                 .await;
+                            if let Some(owner_call) = owner_call.as_ref() {
+                                self.record_call_outcome(
+                                    &owner_call.registration_id,
+                                    NetworkApprovalOutcome::DeniedByPolicy(
+                                        policy_denial_message.clone(),
+                                    ),
+                                )
+                                .await;
+                            }
+                            PendingApprovalDecision::Deny
                         }
                     }
-                    PendingApprovalDecision::AllowForSession
                 }
                 NetworkPolicyRuleAction::Deny => {
                     match session
@@ -760,7 +770,9 @@ impl NetworkApprovalService {
                     PendingApprovalDecision::Deny
                 }
             },
-            ReviewDecision::Denied | ReviewDecision::Abort => {
+            ReviewDecision::ApprovedMcpPolicyAmendment
+            | ReviewDecision::Denied { .. }
+            | ReviewDecision::Abort => {
                 if let Some(review_id) = guardian_review_id.as_deref() {
                     if let Some(owner_call) = owner_call.as_ref() {
                         let message = guardian_rejection_message(session.as_ref(), review_id).await;

@@ -309,7 +309,15 @@ async fn load_rollout_items_handles_flattened_token_count_event() -> std::io::Re
     assert_eq!(loaded_thread_id, Some(thread_id));
     assert_eq!(parse_errors, 0);
     assert_eq!(items.len(), 2);
-    assert_eq!(serde_json::to_value(&items[1])?, token_count_item,);
+    let mut normalized_token_count_item = token_count_item;
+    normalized_token_count_item["payload"]["info"]["total_token_usage"]["cache_write_input_tokens"] =
+        serde_json::json!(0);
+    normalized_token_count_item["payload"]["info"]["last_token_usage"]["cache_write_input_tokens"] =
+        serde_json::json!(0);
+    assert_eq!(
+        serde_json::to_value(&items[1])?,
+        normalized_token_count_item
+    );
     Ok(())
 }
 

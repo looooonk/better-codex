@@ -1,11 +1,14 @@
 use super::Config;
 use super::ConfigTomlLoadResult;
 use super::ManagedFeatures;
+use super::resolve_bootstrap_auth_route_config;
 use codex_config::types::AuthKeyringBackendKind;
 use codex_features::Feature;
 use codex_features::FeatureConfigSource;
 use codex_features::FeatureOverrides;
 use codex_features::Features;
+use codex_login::AuthConfig;
+use std::path::Path;
 
 impl Config {
     pub fn auth_keyring_backend_kind(&self) -> AuthKeyringBackendKind {
@@ -13,6 +16,67 @@ impl Config {
             self.features.enabled(Feature::SecretAuthStorage),
         )
     }
+
+    /// Returns the complete authentication settings for this resolved config.
+    pub fn auth_config(&self) -> AuthConfig {
+        AuthConfig {
+            codex_home: self.codex_home.to_path_buf(),
+            auth_credentials_store_mode: self.cli_auth_credentials_store_mode,
+            keyring_backend_kind: self.auth_keyring_backend_kind(),
+            forced_login_method: self.forced_login_method,
+            chatgpt_base_url: Some(self.chatgpt_base_url.clone()),
+            forced_chatgpt_workspace_id: self.forced_chatgpt_workspace_id.clone(),
+            managed_auth_policy: self.config_layer_stack.requirements().managed_auth_policy(),
+            auth_route_config: self.auth_route_config(),
+        }
+    }
+}
+
+/// Builds authentication settings from locally resolved bootstrap config.
+///
+/// This must be used before fetching cloud requirements, when a full [`Config`]
+/// is not yet available, so local login and workspace policy is applied before
+/// credentials can hydrate or make a cloud request.
+pub fn bootstrap_auth_config(
+    codex_home: &Path,
+    bootstrap_config: &ConfigTomlLoadResult,
+) -> std::io::Result<AuthConfig> {
+    let config = &bootstrap_config.config_toml;
+    // Empty legacy workspace settings mean unrestricted, not an empty allowlist.
+    let forced_chatgpt_workspace_id = config
+        .forced_chatgpt_workspace_id
+        .clone()
+        .map(|workspaces| {
+            workspaces
+                .into_vec()
+                .into_iter()
+                .map(|workspace| workspace.trim().to_string())
+                .filter(|workspace| !workspace.is_empty())
+                .collect::<Vec<_>>()
+        })
+        .filter(|workspaces| !workspaces.is_empty());
+    let auth_config = AuthConfig {
+        codex_home: codex_home.to_path_buf(),
+        auth_credentials_store_mode: config.cli_auth_credentials_store.unwrap_or_default(),
+        keyring_backend_kind: resolve_bootstrap_auth_keyring_backend_kind(bootstrap_config)?,
+        forced_login_method: config.forced_login_method,
+        chatgpt_base_url: config.chatgpt_base_url.clone(),
+        forced_chatgpt_workspace_id,
+        managed_auth_policy: bootstrap_config
+            .config_layer_stack
+            .requirements()
+            .managed_auth_policy(),
+        auth_route_config: resolve_bootstrap_auth_route_config(
+            config,
+            bootstrap_config
+                .config_layer_stack
+                .requirements()
+                .feature_requirements
+                .as_ref(),
+        )?,
+    };
+    auth_config.validate()?;
+    Ok(auth_config)
 }
 
 /// Resolve the auth keyring backend from a partially loaded bootstrap config.

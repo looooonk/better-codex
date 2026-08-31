@@ -602,9 +602,14 @@ async fn write_value_defaults_to_selected_user_config_path() {
 }
 
 #[tokio::test]
-async fn load_default_config_preserves_selected_user_config_path_after_load_error() {
+async fn load_default_config_preserves_requirements_and_selected_path_after_load_error() {
     let tmp = tempdir().expect("tempdir");
     std::fs::write(tmp.path().join(CONFIG_TOML_FILE), "model = \"gpt-main\"").unwrap();
+    std::fs::write(
+        tmp.path().join("requirements.toml"),
+        "allowed_login_methods = [\"api\"]\nallowed_chatgpt_workspaces = [\"managed-workspace\"]\n",
+    )
+    .unwrap();
     let selected_path = tmp.path().join("work.config.toml");
     std::fs::write(&selected_path, "not valid toml").unwrap();
     let selected_file =
@@ -633,6 +638,18 @@ async fn load_default_config_preserves_selected_user_config_path_after_load_erro
     assert_eq!(
         config.config_layer_stack.get_user_config_file(),
         Some(&selected_file)
+    );
+    let auth_config = config.auth_config();
+    assert!(
+        auth_config.is_login_method_allowed(codex_protocol::config_types::ForcedLoginMethod::Api)
+    );
+    assert!(
+        !auth_config
+            .is_login_method_allowed(codex_protocol::config_types::ForcedLoginMethod::Chatgpt)
+    );
+    assert_eq!(
+        auth_config.effective_chatgpt_workspaces(),
+        Some(vec!["managed-workspace".to_string()])
     );
 }
 

@@ -2071,6 +2071,7 @@ dependencies = [
  "url",
  "uuid",
  "wiremock",
+ "zstd 0.13.3",
 ]
 
 [[package]]
@@ -2130,6 +2131,7 @@ dependencies = [
  "codex-experimental-api-macros",
  "codex-extension-items",
  "codex-protocol",
+ "codex-secrets",
  "codex-shell-command",
  "codex-utils-absolute-path",
  "codex-utils-cargo-bin",
@@ -3188,6 +3190,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-guardian-v2"
+version = "0.1.0-alpha.12"
+dependencies = [
+ "codex-extension-api",
+]
+
+[[package]]
 name = "codex-home"
 version = "0.1.0-alpha.12"
 dependencies = [
@@ -3870,12 +3879,14 @@ dependencies = [
  "codex-git-utils",
  "codex-otel",
  "codex-protocol",
+ "codex-secrets",
  "codex-state",
  "codex-utils-path",
  "pretty_assertions",
  "regex",
  "serde",
  "serde_json",
+ "shlex",
  "tempfile",
  "time",
  "tokio",
@@ -3891,6 +3902,7 @@ dependencies = [
  "anyhow",
  "codex-code-mode",
  "codex-protocol",
+ "codex-rollout",
  "http 1.4.0",
  "pretty_assertions",
  "serde",

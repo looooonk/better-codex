@@ -1,4 +1,5 @@
 use codex_protocol::config_types::ApprovalsReviewer;
+use codex_protocol::config_types::ForcedLoginMethod;
 use codex_protocol::config_types::SandboxMode;
 use codex_protocol::config_types::WebSearchMode;
 use codex_protocol::models::PermissionProfile;
@@ -19,6 +20,7 @@ use super::requirements_exec_policy::RequirementsExecPolicy;
 use super::requirements_exec_policy::RequirementsExecPolicyToml;
 use crate::Constrained;
 use crate::ConstraintError;
+use crate::ManagedAuthPolicy;
 use crate::ManagedHooksRequirementsToml;
 use crate::mcp_requirements::McpServerRequirement;
 use crate::mcp_types::AppToolApproval;
@@ -145,6 +147,8 @@ impl<T> std::ops::DerefMut for ConstrainedWithSource<T> {
 /// normalization.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigRequirements {
+    pub allowed_login_methods: Option<Sourced<Vec<ForcedLoginMethod>>>,
+    pub allowed_chatgpt_workspaces: Option<Sourced<Vec<String>>>,
     pub approval_policy: ConstrainedWithSource<AskForApproval>,
     pub approvals_reviewer: ConstrainedWithSource<ApprovalsReviewer>,
     pub permission_profile: ConstrainedWithSource<PermissionProfile>,
@@ -172,6 +176,8 @@ pub struct ConfigRequirements {
 impl Default for ConfigRequirements {
     fn default() -> Self {
         Self {
+            allowed_login_methods: None,
+            allowed_chatgpt_workspaces: None,
             approval_policy: ConstrainedWithSource::new(
                 Constrained::allow_any_from_default(),
                 /*source*/ None,
@@ -214,6 +220,17 @@ impl Default for ConfigRequirements {
 }
 
 impl ConfigRequirements {
+    pub fn managed_auth_policy(&self) -> ManagedAuthPolicy {
+        let mut policy = ManagedAuthPolicy::default();
+        if let Some(allowed) = &self.allowed_login_methods {
+            policy = policy.restrict_login_methods_to(allowed.value.iter().copied());
+        }
+        if let Some(allowed) = &self.allowed_chatgpt_workspaces {
+            policy = policy.restrict_chatgpt_workspaces_to(allowed.value.iter().cloned());
+        }
+        policy
+    }
+
     pub fn exec_policy_source(&self) -> Option<&RequirementSource> {
         self.exec_policy.as_ref().map(|policy| &policy.source)
     }
@@ -853,6 +870,8 @@ pub(crate) fn merge_app_requirements_descending(
 /// Base config deserialized from system `requirements.toml` or MDM.
 #[derive(Deserialize, Debug, Clone, Default, PartialEq)]
 pub struct ConfigRequirementsToml {
+    pub allowed_login_methods: Option<Vec<ForcedLoginMethod>>,
+    pub allowed_chatgpt_workspaces: Option<Vec<String>>,
     pub allowed_approval_policies: Option<Vec<AskForApproval>>,
     pub allowed_approvals_reviewers: Option<Vec<ApprovalsReviewer>>,
     pub allowed_sandbox_modes: Option<Vec<SandboxModeRequirement>>,
@@ -937,6 +956,8 @@ impl<T> std::ops::Deref for Sourced<T> {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ConfigRequirementsWithSources {
+    pub allowed_login_methods: Option<Sourced<Vec<ForcedLoginMethod>>>,
+    pub allowed_chatgpt_workspaces: Option<Sourced<Vec<String>>>,
     pub allowed_approval_policies: Option<Sourced<Vec<AskForApproval>>>,
     pub allowed_approvals_reviewers: Option<Sourced<Vec<ApprovalsReviewer>>>,
     pub allowed_sandbox_modes: Option<Sourced<Vec<SandboxModeRequirement>>>,
@@ -981,6 +1002,8 @@ impl ConfigRequirementsWithSources {
         // Destructure without `..` so adding fields to `ConfigRequirementsToml`
         // forces this merge logic to be updated.
         let ConfigRequirementsToml {
+            allowed_login_methods: _,
+            allowed_chatgpt_workspaces: _,
             allowed_approval_policies: _,
             allowed_approvals_reviewers: _,
             allowed_sandbox_modes: _,
@@ -1020,6 +1043,8 @@ impl ConfigRequirementsWithSources {
             other,
             source,
             {
+                allowed_login_methods,
+                allowed_chatgpt_workspaces,
                 allowed_approval_policies,
                 allowed_approvals_reviewers,
                 allowed_sandbox_modes,
@@ -1056,6 +1081,8 @@ impl ConfigRequirementsWithSources {
 
     pub fn into_toml(self) -> ConfigRequirementsToml {
         let ConfigRequirementsWithSources {
+            allowed_login_methods,
+            allowed_chatgpt_workspaces,
             allowed_approval_policies,
             allowed_approvals_reviewers,
             allowed_sandbox_modes,
@@ -1081,6 +1108,8 @@ impl ConfigRequirementsWithSources {
             guardian_policy_config,
         } = self;
         ConfigRequirementsToml {
+            allowed_login_methods: allowed_login_methods.map(|sourced| sourced.value),
+            allowed_chatgpt_workspaces: allowed_chatgpt_workspaces.map(|sourced| sourced.value),
             allowed_approval_policies: allowed_approval_policies.map(|sourced| sourced.value),
             allowed_approvals_reviewers: allowed_approvals_reviewers.map(|sourced| sourced.value),
             allowed_sandbox_modes: allowed_sandbox_modes.map(|sourced| sourced.value),
@@ -1173,7 +1202,9 @@ impl ConfigRequirementsToml {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.allowed_approval_policies.is_none()
+        self.allowed_login_methods.is_none()
+            && self.allowed_chatgpt_workspaces.is_none()
+            && self.allowed_approval_policies.is_none()
             && self.allowed_approvals_reviewers.is_none()
             && self.allowed_sandbox_modes.is_none()
             && self.allowed_permission_profiles.is_none()
@@ -1255,6 +1286,8 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
         // defaults also remain there because they are initialization values,
         // not runtime constraints.
         let ConfigRequirementsWithSources {
+            allowed_login_methods,
+            allowed_chatgpt_workspaces,
             allowed_approval_policies,
             allowed_approvals_reviewers,
             allowed_sandbox_modes,
@@ -1558,6 +1591,8 @@ impl TryFrom<ConfigRequirementsWithSources> for ConfigRequirements {
         });
         let guardian_policy_config_source = guardian_policy_config.map(|sourced| sourced.source);
         Ok(ConfigRequirements {
+            allowed_login_methods,
+            allowed_chatgpt_workspaces,
             approval_policy,
             approvals_reviewer,
             permission_profile,
@@ -1652,6 +1687,8 @@ mod tests {
 
     fn with_unknown_source(toml: ConfigRequirementsToml) -> ConfigRequirementsWithSources {
         let ConfigRequirementsToml {
+            allowed_login_methods,
+            allowed_chatgpt_workspaces,
             allowed_approval_policies,
             allowed_approvals_reviewers,
             allowed_sandbox_modes,
@@ -1678,6 +1715,10 @@ mod tests {
             guardian_policy_config,
         } = toml;
         ConfigRequirementsWithSources {
+            allowed_login_methods: allowed_login_methods
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
+            allowed_chatgpt_workspaces: allowed_chatgpt_workspaces
+                .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allowed_approval_policies: allowed_approval_policies
                 .map(|value| Sourced::new(value, RequirementSource::Unknown)),
             allowed_approvals_reviewers: allowed_approvals_reviewers
@@ -1920,10 +1961,14 @@ mod tests {
         let enforce_residency = ResidencyRequirement::Us;
         let enforce_source = source.clone();
         let guardian_policy_config = "Use the company-managed guardian policy.".to_string();
+        let allowed_login_methods = vec![ForcedLoginMethod::Chatgpt];
+        let allowed_chatgpt_workspaces = vec!["managed-workspace".to_string()];
 
         // Intentionally constructed without `..Default::default()` so adding a new field to
         // `ConfigRequirementsToml` forces this test to be updated.
         let other = ConfigRequirementsToml {
+            allowed_login_methods: Some(allowed_login_methods.clone()),
+            allowed_chatgpt_workspaces: Some(allowed_chatgpt_workspaces.clone()),
             allowed_approval_policies: Some(allowed_approval_policies.clone()),
             allowed_approvals_reviewers: Some(allowed_approvals_reviewers.clone()),
             allowed_sandbox_modes: Some(allowed_sandbox_modes.clone()),
@@ -1955,6 +2000,11 @@ mod tests {
         assert_eq!(
             target,
             ConfigRequirementsWithSources {
+                allowed_login_methods: Some(Sourced::new(allowed_login_methods, source.clone(),)),
+                allowed_chatgpt_workspaces: Some(Sourced::new(
+                    allowed_chatgpt_workspaces,
+                    source.clone(),
+                )),
                 allowed_approval_policies: Some(Sourced::new(
                     allowed_approval_policies,
                     source.clone()
@@ -2021,6 +2071,8 @@ mod tests {
         assert_eq!(
             empty_target,
             ConfigRequirementsWithSources {
+                allowed_login_methods: None,
+                allowed_chatgpt_workspaces: None,
                 allowed_approval_policies: Some(Sourced::new(
                     vec![AskForApproval::OnRequest],
                     source_location,
@@ -2077,6 +2129,8 @@ mod tests {
         assert_eq!(
             populated_target,
             ConfigRequirementsWithSources {
+                allowed_login_methods: None,
+                allowed_chatgpt_workspaces: None,
                 allowed_approval_policies: Some(Sourced::new(
                     vec![AskForApproval::Never],
                     existing_source,

@@ -54,6 +54,7 @@ members = [
     "ext/extension-api",
     "ext/goal",
     "ext/guardian",
+    "ext/guardian-v2",
     "ext/image-generation",
     "ext/items",
     "ext/memories",

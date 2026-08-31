@@ -6,6 +6,7 @@
 //!
 //! A few fields carry domain-specific meaning that raw TOML replacement would
 //! break:
+//! - authentication allowlists intersect across local managed layers.
 //! - `remote_sandbox_config` is evaluated within each layer before merging.
 //! - `rules.prefix_rules` append high-priority rules first.
 //! - `hooks` append high-priority event groups first while failing closed on
@@ -23,6 +24,7 @@ use std::io;
 use thiserror::Error;
 use toml::Value as TomlValue;
 
+use super::auth::AuthRequirementsMergeState;
 use super::hooks::HookDirectoryField;
 use super::hooks::HookMergeState;
 use super::layer::ComposableRequirementsLayer;
@@ -162,6 +164,7 @@ impl RequirementsLayerStack {
         let mut output = ConfigRequirementsWithSources::default();
         populate_merged_regular_fields_with_sources(&mut output, requirements, &layers);
         let mut rules = None;
+        let mut auth = AuthRequirementsMergeState::default();
         let mut hooks = HookMergeState::new(hook_directory_field);
         let mut hooks_output = None;
         let mut deny_read = DenyReadMergeState::default();
@@ -170,6 +173,7 @@ impl RequirementsLayerStack {
         // priority order visible in the output.
         for layer in layers.iter().rev() {
             let domain_fields = &layer.domain_fields;
+            auth.merge(domain_fields, &layer.source);
             super::rules::merge(&mut rules, domain_fields.rules.clone(), &layer.source);
             hooks.merge(
                 &mut hooks_output,
@@ -179,6 +183,7 @@ impl RequirementsLayerStack {
             deny_read.merge(domain_fields.permissions.clone(), &layer.source);
         }
         output.rules = rules;
+        auth.apply_to(&mut output);
         output.hooks = hooks_output;
         deny_read.apply_to(&mut output.permissions);
 
@@ -206,6 +211,8 @@ fn populate_merged_regular_fields_with_sources(
     // Destructure without `..` so every new requirements field must choose
     // whether it belongs in the regular TOML merge path or in a special merger.
     let ConfigRequirementsToml {
+        allowed_login_methods: _,
+        allowed_chatgpt_workspaces: _,
         allowed_approval_policies,
         allowed_approvals_reviewers,
         allowed_sandbox_modes,

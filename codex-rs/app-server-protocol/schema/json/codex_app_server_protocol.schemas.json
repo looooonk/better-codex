@@ -4059,6 +4059,13 @@
           "type": "string"
         },
         {
+          "description": "User has approved this MCP tool call and wants matching future calls to be automatically approved across sessions.",
+          "enum": [
+            "approved_mcp_policy_amendment"
+          ],
+          "type": "string"
+        },
+        {
           "additionalProperties": false,
           "description": "User chose to persist a network policy rule (allow/deny) for future requests to the same host.",
           "properties": {
@@ -4081,11 +4088,26 @@
           "type": "object"
         },
         {
+          "additionalProperties": false,
           "description": "User has denied this command and the agent should not execute it, but it should continue the session and try something else.",
-          "enum": [
+          "properties": {
+            "denied": {
+              "properties": {
+                "rejection": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "type": "object"
+            }
+          },
+          "required": [
             "denied"
           ],
-          "type": "string"
+          "title": "DeniedReviewDecision",
+          "type": "object"
         },
         {
           "description": "Automatic approval review timed out before reaching a decision.",

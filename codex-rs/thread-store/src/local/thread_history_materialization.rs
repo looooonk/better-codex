@@ -6,6 +6,7 @@ use codex_app_server_protocol::ThreadHistoryChangeSet;
 use codex_app_server_protocol::project_rollout_line;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::RolloutLine;
+use serde_json::Value;
 use tokio::io::AsyncReadExt;
 use tokio::io::AsyncSeekExt;
 use tracing::warn;
@@ -102,7 +103,11 @@ async fn read_complete_rollout_lines(
     let text = std::str::from_utf8(&bytes[..complete_byte_count]).map_err(thread_history_error)?;
     let mut lines = Vec::new();
     for line in text.lines().filter(|line| !line.is_empty()) {
-        match serde_json::from_str(line) {
+        let parsed = serde_json::from_str::<Value>(line).and_then(|mut value| {
+            codex_rollout::redact_persisted_json(&mut value);
+            serde_json::from_value::<RolloutLine>(value)
+        });
+        match parsed {
             Ok(line) => lines.push(line),
             Err(err) => {
                 // A failed append can leave a partial record behind. The rollout writer repairs

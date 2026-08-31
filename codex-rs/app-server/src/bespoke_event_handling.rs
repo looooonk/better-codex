@@ -16,6 +16,7 @@ use codex_app_server_protocol::AdditionalPermissionProfile as V2AdditionalPermis
 use codex_app_server_protocol::CodexErrorInfo as V2CodexErrorInfo;
 use codex_app_server_protocol::CommandAction as V2ParsedCommand;
 use codex_app_server_protocol::CommandExecutionApprovalDecision;
+use codex_app_server_protocol::CommandExecutionPresentation;
 use codex_app_server_protocol::CommandExecutionRequestApprovalParams;
 use codex_app_server_protocol::CommandExecutionRequestApprovalResponse;
 use codex_app_server_protocol::CommandExecutionSource;
@@ -120,6 +121,7 @@ use std::time::UNIX_EPOCH;
 use tokio::sync::Mutex;
 use tokio::sync::oneshot;
 use tracing::error;
+use tracing::warn;
 
 enum CommandExecutionApprovalPresentation {
     Network(V2NetworkApprovalContext),
@@ -244,6 +246,16 @@ pub(crate) async fn apply_bespoke_event_handling(
                 .await;
         }
         EventMsg::GuardianAssessment(assessment) => {
+            let assessment = match codex_rollout::redacted_event_msg_for_diagnostics(
+                EventMsg::GuardianAssessment(assessment),
+            ) {
+                Ok(EventMsg::GuardianAssessment(assessment)) => assessment,
+                Ok(_) => unreachable!("guardian assessment redaction changed the event variant"),
+                Err(err) => {
+                    warn!("failed to redact guardian diagnostic; suppressing event: {err}");
+                    return;
+                }
+            };
             let pending_command_execution = match build_item_from_guardian_event(
                 &assessment,
                 CommandExecutionStatus::InProgress,
@@ -591,11 +603,15 @@ pub(crate) async fn apply_bespoke_event_handling(
             {
                 CommandExecutionApprovalPresentation::Network(network_approval_context)
             } else {
-                let command_string = shlex_join(&command);
+                let command_presentation = CommandExecutionPresentation::from_raw(
+                    &command,
+                    &parsed_cmd,
+                    &cwd.clone().into(),
+                );
                 let completion_item = CommandExecutionCompletionItem {
-                    command: command_string,
+                    command: command_presentation.command,
                     cwd: cwd.clone().into(),
-                    command_actions: command_actions.clone(),
+                    command_actions: command_presentation.command_actions,
                 };
                 CommandExecutionApprovalPresentation::Command(completion_item)
             };
@@ -606,9 +622,9 @@ pub(crate) async fn apply_bespoke_event_handling(
                     }
                     CommandExecutionApprovalPresentation::Command(completion_item) => (
                         None,
-                        Some(completion_item.command.clone()),
+                        Some(shlex_join(&command)),
                         Some(completion_item.cwd.clone()),
-                        Some(completion_item.command_actions.clone()),
+                        Some(command_actions),
                         Some(completion_item),
                     ),
                 };
@@ -961,12 +977,21 @@ pub(crate) async fn apply_bespoke_event_handling(
                 _ => None,
             };
             if should_emit {
-                let notification = item_event_to_server_notification(
-                    EventMsg::ItemStarted(event),
-                    &conversation_id.to_string(),
-                    &event_turn_id,
-                );
-                outgoing.send_server_notification(notification).await;
+                match codex_rollout::redacted_event_msg_for_diagnostics(EventMsg::ItemStarted(
+                    event,
+                )) {
+                    Ok(event) => {
+                        let notification = item_event_to_server_notification(
+                            event,
+                            &conversation_id.to_string(),
+                            &event_turn_id,
+                        );
+                        outgoing.send_server_notification(notification).await;
+                    }
+                    Err(err) => {
+                        warn!("failed to redact started item diagnostic; suppressing event: {err}");
+                    }
+                }
             }
             if let Some(params) = dynamic_tool_call_params {
                 let call_id = params.call_id.clone();
@@ -986,12 +1011,20 @@ pub(crate) async fn apply_bespoke_event_handling(
                 &event.item,
             )
             .await;
-            let notification = item_event_to_server_notification(
-                EventMsg::ItemCompleted(event),
-                &conversation_id.to_string(),
-                &event_turn_id,
-            );
-            outgoing.send_server_notification(notification).await;
+            match codex_rollout::redacted_event_msg_for_diagnostics(EventMsg::ItemCompleted(event))
+            {
+                Ok(event) => {
+                    let notification = item_event_to_server_notification(
+                        event,
+                        &conversation_id.to_string(),
+                        &event_turn_id,
+                    );
+                    outgoing.send_server_notification(notification).await;
+                }
+                Err(err) => {
+                    warn!("failed to redact completed item diagnostic; suppressing event: {err}");
+                }
+            }
         }
         msg @ (EventMsg::PatchApplyUpdated(_) | EventMsg::TerminalInteraction(_)) => {
             let notification = item_event_to_server_notification(
@@ -1400,6 +1433,13 @@ async fn maybe_emit_raw_response_item_completed(
     item: codex_protocol::models::ResponseItem,
     outgoing: &ThreadScopedOutgoingMessageSender,
 ) {
+    let item = match codex_rollout::redacted_response_item_for_diagnostics(item) {
+        Ok(item) => item,
+        Err(err) => {
+            warn!("failed to redact raw response item diagnostic; suppressing event: {err}");
+            return;
+        }
+    };
     let notification = RawResponseItemCompletedNotification {
         thread_id: conversation_id.to_string(),
         turn_id: turn_id.to_string(),
@@ -1865,7 +1905,7 @@ fn map_file_change_approval_decision(decision: FileChangeApprovalDecision) -> Re
     match decision {
         FileChangeApprovalDecision::Accept => ReviewDecision::Approved,
         FileChangeApprovalDecision::AcceptForSession => ReviewDecision::ApprovedForSession,
-        FileChangeApprovalDecision::Decline => ReviewDecision::Denied,
+        FileChangeApprovalDecision::Decline => ReviewDecision::denied(),
         FileChangeApprovalDecision::Cancel => ReviewDecision::Abort,
     }
 }
@@ -1897,11 +1937,11 @@ async fn on_file_change_request_approval_response(
         Ok(Err(err)) if is_turn_transition_server_request_error(&err) => return,
         Ok(Err(err)) => {
             error!("request failed with client error: {err:?}");
-            ReviewDecision::Denied
+            ReviewDecision::denied()
         }
         Err(err) => {
             error!("request failed: {err:?}");
-            ReviewDecision::Denied
+            ReviewDecision::denied()
         }
     };
 
@@ -1973,7 +2013,7 @@ async fn on_command_execution_request_approval_response(
                     )
                 }
                 CommandExecutionApprovalDecision::Decline => (
-                    ReviewDecision::Denied,
+                    ReviewDecision::denied(),
                     Some(CommandExecutionStatus::Declined),
                 ),
                 CommandExecutionApprovalDecision::Cancel => (
@@ -1986,11 +2026,17 @@ async fn on_command_execution_request_approval_response(
         Ok(Err(err)) if is_turn_transition_server_request_error(&err) => return,
         Ok(Err(err)) => {
             error!("request failed with client error: {err:?}");
-            (ReviewDecision::Denied, Some(CommandExecutionStatus::Failed))
+            (
+                ReviewDecision::denied(),
+                Some(CommandExecutionStatus::Failed),
+            )
         }
         Err(err) => {
             error!("request failed: {err:?}");
-            (ReviewDecision::Denied, Some(CommandExecutionStatus::Failed))
+            (
+                ReviewDecision::denied(),
+                Some(CommandExecutionStatus::Failed),
+            )
         }
     };
 
@@ -2047,6 +2093,10 @@ fn now_unix_timestamp_ms() -> i64 {
         .map(|duration| duration.as_millis() as i64)
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+#[path = "bespoke_event_handling_redaction_tests.rs"]
+mod redaction_tests;
 
 #[cfg(test)]
 mod tests {

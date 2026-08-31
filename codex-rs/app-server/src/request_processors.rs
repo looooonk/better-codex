@@ -419,8 +419,6 @@ use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort;
-#[cfg(test)]
-use codex_protocol::permissions::FileSystemSandboxPolicy;
 use codex_protocol::protocol::AgentStatus;
 use codex_protocol::protocol::ConversationAudioParams;
 use codex_protocol::protocol::ConversationSpeechParams;
@@ -677,7 +675,14 @@ pub(crate) fn build_legacy_api_turns_from_rollout_items(items: &[RolloutItem]) -
     let mut builder = ThreadHistoryBuilder::new();
     for item in items {
         if is_persisted_rollout_item(item, codex_protocol::protocol::ThreadHistoryMode::Legacy) {
-            builder.handle_rollout_item(item);
+            match codex_rollout::redacted_rollout_item_for_diagnostics(item) {
+                Ok(item) => builder.handle_rollout_item(&item),
+                Err(err) => {
+                    tracing::warn!(
+                        "failed to redact replayed rollout item; suppressing item: {err}"
+                    );
+                }
+            }
         }
     }
     builder.finish()
