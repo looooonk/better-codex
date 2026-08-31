@@ -1220,6 +1220,8 @@ impl UnifiedExecProcessManager {
             turn: context.turn.clone(),
             call_id: context.call_id.clone(),
             tool_name: ToolName::plain("exec_command"),
+            source: context.source.clone(),
+            cancellation_token: context.cancellation_token.clone(),
         };
         orchestrator
             .run(&mut runtime, &req, &tool_ctx, &context.turn)

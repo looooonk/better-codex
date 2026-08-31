@@ -1149,6 +1149,8 @@ async fn danger_full_access_tool_attempts_do_not_enforce_managed_network() -> an
         turn: Arc::clone(&turn),
         call_id: "probe-call".to_string(),
         tool_name: codex_tools::ToolName::plain("probe"),
+        source: crate::tools::context::ToolCallSource::Direct,
+        cancellation_token: tokio_util::sync::CancellationToken::new(),
     };
 
     orchestrator

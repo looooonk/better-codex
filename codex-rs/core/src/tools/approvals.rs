@@ -9,6 +9,7 @@ use crate::tools::runtimes::shell::ApprovalKey;
 use crate::tools::runtimes::unified_exec::UnifiedExecApprovalKey;
 use crate::tools::sandboxing::PermissionRequestPayload;
 use codex_protocol::approvals::ExecPolicyAmendment;
+use codex_protocol::approvals::GuardianCommandSource;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::protocol::FileChange;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -64,6 +65,65 @@ pub(crate) enum ApprovalCacheKey {
 }
 
 impl ApprovalAction {
+    pub(crate) fn approval_review_action(
+        &self,
+    ) -> std::io::Result<codex_extension_api::ApprovalReviewAction> {
+        Ok(match self {
+            Self::Shell {
+                environment_id,
+                command,
+                cwd,
+                sandbox_permissions,
+                additional_permissions,
+                justification,
+                ..
+            } => codex_extension_api::ApprovalReviewAction::Command {
+                source: GuardianCommandSource::Shell,
+                command: codex_shell_command::parse_command::shlex_join(command),
+                argv: command.clone(),
+                cwd: guardian_cwd(environment_id, cwd.clone())?,
+                sandbox_permissions: *sandbox_permissions,
+                additional_permissions: additional_permissions.clone(),
+                justification: justification.clone(),
+                tty: None,
+            },
+            Self::ExecCommand {
+                environment_id,
+                command,
+                cwd,
+                sandbox_permissions,
+                additional_permissions,
+                justification,
+                tty,
+                ..
+            } => codex_extension_api::ApprovalReviewAction::Command {
+                source: GuardianCommandSource::UnifiedExec,
+                command: codex_shell_command::parse_command::shlex_join(command),
+                argv: command.clone(),
+                cwd: guardian_cwd(environment_id, cwd.clone())?,
+                sandbox_permissions: *sandbox_permissions,
+                additional_permissions: additional_permissions.clone(),
+                justification: justification.clone(),
+                tty: Some(*tty),
+            },
+            Self::ApplyPatch {
+                environment_id,
+                cwd,
+                files,
+                patch,
+                ..
+            } => codex_extension_api::ApprovalReviewAction::ApplyPatch {
+                cwd: guardian_cwd(environment_id, cwd.clone())?,
+                files: files
+                    .iter()
+                    .cloned()
+                    .map(|path| path.to_abs_path())
+                    .collect::<std::io::Result<Vec<_>>>()?,
+                patch: patch.clone(),
+            },
+        })
+    }
+
     pub(crate) fn permission_request_payload(&self) -> PermissionRequestPayload {
         match self {
             Self::Shell {

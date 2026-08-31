@@ -4,6 +4,8 @@ use crate::guardian::guardian_rejection_message;
 use crate::guardian::guardian_timeout_message;
 use crate::guardian::new_guardian_review_id;
 use crate::guardian::review_approval_request;
+use crate::context::NodeReplReviewEvidence;
+use crate::context::NodeReplReviewEvidenceItem;
 use crate::hook_runtime::run_permission_request_hooks;
 use crate::session::live_approval_policy::LiveApprovalPolicySnapshot;
 use crate::session::session::Session;
@@ -12,8 +14,17 @@ use crate::tools::approvals::ApprovalAction;
 use crate::tools::approvals::ApprovalCacheKey;
 use crate::tools::approvals::guardian_cwd;
 use crate::tools::flat_tool_name;
+use crate::tools::context::ToolCallSource;
 use crate::tools::sandboxing::ToolError;
 use codex_config::types::ApprovalsReviewer;
+use codex_extension_api::ApprovalReviewCancellation;
+use codex_extension_api::ApprovalReviewEvidence;
+use codex_extension_api::ApprovalReviewFailure;
+use codex_extension_api::ApprovalReviewImage;
+use codex_extension_api::ApprovalReviewInput;
+use codex_extension_api::ApprovalReviewResult;
+use codex_extension_api::ToolCallSource as ExtensionToolCallSource;
+use codex_features::Feature;
 use codex_hooks::PermissionRequestDecision;
 use codex_otel::ToolDecisionSource;
 use codex_protocol::error::CodexErr;
@@ -23,9 +34,13 @@ use codex_protocol::protocol::ReviewDecision;
 use codex_tools::ToolName;
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
+use tokio_util::sync::CancellationToken;
 
 const MAX_REVIEWER_REROUTES: usize = 8;
 const MAX_ROUTE_SNAPSHOT_ATTEMPTS: usize = 8;
+const GUARDIAN_V2_REVIEW_TIMEOUT: Duration = Duration::from_secs(30);
 const APPROVAL_SETTINGS_CHURN_REJECTION: &str =
     "approval settings changed too often to authorize the action";
 pub(crate) const POLICY_CHANGED_REJECTION: &str =
@@ -40,6 +55,9 @@ pub(crate) struct ApprovalContext {
     pub(crate) retry_reason: Option<String>,
     pub(crate) network_approval_context: Option<codex_protocol::approvals::NetworkApprovalContext>,
     pub(crate) required_by_strict: bool,
+    pub(crate) attempt_id: String,
+    pub(crate) source: ToolCallSource,
+    pub(crate) cancellation_token: CancellationToken,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -74,6 +92,12 @@ struct ApprovalResolution {
     decision: ReviewDecision,
     source: ApprovalResolutionSource,
     pending_cache: Vec<ApprovalCacheKey>,
+}
+
+#[derive(Clone, Copy)]
+enum ApprovalCacheMode {
+    Use,
+    Bypass,
 }
 
 pub(crate) async fn request_approval(
@@ -169,9 +193,9 @@ async fn resolve_with_live_reviewer(
         }
 
         let resolution = if before.guardian {
-            request_guardian_approval(session, action, ctx).await
+            request_guardian_approval(session, action, ctx, before).await
         } else {
-            request_user_approval(session, action, ctx, before).await
+            request_user_approval(session, action, ctx, before, ApprovalCacheMode::Use).await
         };
         if !decision_grants_action(&resolution.decision) {
             return finish_resolution(ctx, resolution);
@@ -248,7 +272,66 @@ async fn request_guardian_approval(
     session: &Arc<Session>,
     action: &ApprovalAction,
     ctx: &ApprovalContext,
+    route: ApprovalRouteSnapshot,
 ) -> ApprovalResolution {
+    if ctx.turn.config.features.enabled(Feature::GuardianV2) {
+        return match request_guardian_v2_approval(session, action, ctx).await {
+            ApprovalReviewResult::Allow(_) => ApprovalResolution {
+                decision: ReviewDecision::Approved,
+                source: ApprovalResolutionSource::Guardian,
+                pending_cache: Vec::new(),
+            },
+            ApprovalReviewResult::Deny(outcome) => ApprovalResolution {
+                decision: ReviewDecision::denied_with_reason(
+                    if outcome.rationale.trim().is_empty() {
+                        "automatic approval review denied the action".to_string()
+                    } else {
+                        outcome.rationale
+                    },
+                ),
+                source: ApprovalResolutionSource::Guardian,
+                pending_cache: Vec::new(),
+            },
+            ApprovalReviewResult::Cancelled => ApprovalResolution {
+                decision: ReviewDecision::Abort,
+                source: ApprovalResolutionSource::Guardian,
+                pending_cache: Vec::new(),
+            },
+            ApprovalReviewResult::ManualReview(failure) => {
+                tracing::warn!(?failure, "Guardian V2 requires manual review");
+                if route.strict || ctx.required_by_strict {
+                    ApprovalResolution {
+                        decision: ReviewDecision::denied_with_reason(
+                            "automatic approval review failed closed; manual review is required",
+                        ),
+                        source: ApprovalResolutionSource::Guardian,
+                        pending_cache: Vec::new(),
+                    }
+                } else {
+                    let resolution = request_user_approval(
+                        session,
+                        action,
+                        ctx,
+                        route,
+                        ApprovalCacheMode::Bypass,
+                    )
+                    .await;
+                    ApprovalResolution {
+                        decision: match resolution.decision {
+                            ReviewDecision::Approved
+                            | ReviewDecision::ApprovedForSession
+                            | ReviewDecision::ApprovedExecpolicyAmendment { .. } => {
+                                ReviewDecision::Approved
+                            }
+                            decision => decision,
+                        },
+                        source: ApprovalResolutionSource::User,
+                        pending_cache: Vec::new(),
+                    }
+                }
+            }
+        };
+    }
     let review_id = new_guardian_review_id();
     let action = match action.clone().into_guardian_request() {
         Ok(action) => action,
@@ -290,14 +373,163 @@ async fn request_guardian_approval(
     }
 }
 
+struct CoreApprovalReviewCancellation(CancellationToken);
+
+impl ApprovalReviewCancellation for CoreApprovalReviewCancellation {
+    fn is_cancelled(&self) -> bool {
+        self.0.is_cancelled()
+    }
+
+    fn cancelled(&self) -> codex_extension_api::ExtensionFuture<'_, ()> {
+        Box::pin(self.0.cancelled())
+    }
+}
+
+async fn request_guardian_v2_approval(
+    session: &Arc<Session>,
+    action: &ApprovalAction,
+    ctx: &ApprovalContext,
+) -> ApprovalReviewResult {
+    let action = match action.approval_review_action() {
+        Ok(action) => action,
+        Err(error) => {
+            tracing::warn!(%error, "failed to prepare Guardian V2 action");
+            return ApprovalReviewResult::ManualReview(ApprovalReviewFailure::InvalidInput);
+        }
+    };
+    let deadline = Instant::now() + GUARDIAN_V2_REVIEW_TIMEOUT;
+    let history = session.clone_history().await.raw_items().to_vec();
+    for _ in 0..MAX_REVIEWER_REROUTES {
+        if ctx.cancellation_token.is_cancelled() {
+            return ApprovalReviewResult::Cancelled;
+        }
+        let (evidence_revision, evidence, images) = approval_review_evidence(&ctx.turn, &ctx.source);
+        let result = session
+            .services
+            .extensions
+            .approval_review(
+                &session.services.session_extension_data,
+                &session.services.thread_extension_data,
+                ApprovalReviewInput {
+                    binding: codex_extension_api::ApprovalReviewBinding {
+                        thread_id: session.thread_id.to_string(),
+                        turn_id: ctx.turn.sub_id.clone(),
+                        action_id: ctx.call_id.clone(),
+                        attempt_id: ctx.attempt_id.clone(),
+                        source: extension_tool_call_source(ctx.source.clone()),
+                        evidence_revision,
+                    },
+                    action: action.clone(),
+                    history: history.clone(),
+                    evidence,
+                    images,
+                    deadline,
+                    cancellation: Arc::new(CoreApprovalReviewCancellation(
+                        ctx.cancellation_token.clone(),
+                    )),
+                },
+            )
+            .await;
+        if !matches!(result, ApprovalReviewResult::Allow(_)) {
+            return result;
+        }
+        if Instant::now() >= deadline {
+            return ApprovalReviewResult::ManualReview(ApprovalReviewFailure::Deadline);
+        }
+        if ctx.cancellation_token.is_cancelled() {
+            return ApprovalReviewResult::Cancelled;
+        }
+        if matches!(&ctx.source, ToolCallSource::CodeMode { .. })
+            && session
+                .turn_context_for_sub_id(&ctx.turn.sub_id)
+                .await
+                .is_none()
+        {
+            return ApprovalReviewResult::Cancelled;
+        }
+        if approval_review_evidence_revision(&ctx.turn, &ctx.source) == evidence_revision {
+            return result;
+        }
+    }
+    ApprovalReviewResult::ManualReview(ApprovalReviewFailure::InvalidInput)
+}
+
+fn approval_review_evidence(
+    turn: &TurnContext,
+    source: &ToolCallSource,
+) -> (u64, Vec<ApprovalReviewEvidence>, Vec<ApprovalReviewImage>) {
+    if !matches!(source, ToolCallSource::CodeMode { .. }) {
+        return (0, Vec::new(), Vec::new());
+    }
+    let Some(snapshot) = turn
+        .extension_data
+        .get::<NodeReplReviewEvidence>()
+        .map(|evidence| evidence.snapshot())
+    else {
+        return (0, Vec::new(), Vec::new());
+    };
+    let mut evidence = Vec::new();
+    let mut images = Vec::new();
+    if snapshot.omitted_records != 0 {
+        evidence.push(ApprovalReviewEvidence {
+            kind: "node_repl_omission".to_string(),
+            provenance: None,
+            text: format!("{} earlier records omitted", snapshot.omitted_records),
+        });
+    }
+    for record in snapshot.records {
+        for item in record.items {
+            match item {
+                NodeReplReviewEvidenceItem::Text(text) => evidence.push(ApprovalReviewEvidence {
+                    kind: "node_repl_output".to_string(),
+                    provenance: Some(record.provenance.clone()),
+                    text,
+                }),
+                NodeReplReviewEvidenceItem::Image { data_url } => {
+                    images.push(ApprovalReviewImage { data_url });
+                }
+            }
+        }
+    }
+    (snapshot.sequence, evidence, images)
+}
+
+fn approval_review_evidence_revision(turn: &TurnContext, source: &ToolCallSource) -> u64 {
+    if !matches!(source, ToolCallSource::CodeMode { .. }) {
+        return 0;
+    }
+    turn.extension_data
+        .get::<NodeReplReviewEvidence>()
+        .map_or(0, |evidence| evidence.snapshot().sequence)
+}
+
+fn extension_tool_call_source(source: ToolCallSource) -> ExtensionToolCallSource {
+    match source {
+        ToolCallSource::Direct => ExtensionToolCallSource::Direct,
+        ToolCallSource::CodeMode {
+            cell_id,
+            runtime_tool_call_id,
+        } => ExtensionToolCallSource::CodeMode {
+            cell_id,
+            runtime_tool_call_id,
+        },
+    }
+}
+
 async fn request_user_approval(
     session: &Session,
     action: &ApprovalAction,
     ctx: &ApprovalContext,
     route: ApprovalRouteSnapshot,
+    cache_mode: ApprovalCacheMode,
 ) -> ApprovalResolution {
-    let keys = action.cache_keys();
-    if cached_for_session(session, &keys, route).await {
+    let keys = match cache_mode {
+        ApprovalCacheMode::Use => action.cache_keys(),
+        ApprovalCacheMode::Bypass => Vec::new(),
+    };
+    if matches!(cache_mode, ApprovalCacheMode::Use)
+        && cached_for_session(session, &keys, route).await
+    {
         return ApprovalResolution {
             decision: ReviewDecision::ApprovedForSession,
             source: ApprovalResolutionSource::User,

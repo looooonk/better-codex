@@ -11,6 +11,7 @@ use crate::session::turn_context::TurnContext;
 use crate::state::SessionServices;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::network_approval::NetworkApprovalSpec;
+use crate::tools::context::ToolCallSource;
 use codex_file_system::FileSystemSandboxContext;
 use codex_network_proxy::NetworkProxy;
 use codex_protocol::approvals::ExecPolicyAmendment;
@@ -380,6 +381,8 @@ pub(crate) struct ToolCtx {
     pub turn: Arc<TurnContext>,
     pub call_id: String,
     pub tool_name: ToolName,
+    pub source: ToolCallSource,
+    pub cancellation_token: CancellationToken,
 }
 
 #[derive(Debug)]

@@ -82,6 +82,8 @@ impl ToolOrchestrator {
             turn: tool_ctx.turn.clone(),
             call_id: tool_ctx.call_id.clone(),
             tool_name: tool_ctx.tool_name.clone(),
+            source: tool_ctx.source.clone(),
+            cancellation_token: tool_ctx.cancellation_token.clone(),
         };
         let attempt_with_network_approval = SandboxAttempt {
             sandbox: attempt.sandbox,
@@ -186,6 +188,9 @@ impl ToolOrchestrator {
                         retry_reason: None,
                         network_approval_context: None,
                         required_by_strict: true,
+                        attempt_id: uuid::Uuid::new_v4().to_string(),
+                        source: tool_ctx.source.clone(),
+                        cancellation_token: tool_ctx.cancellation_token.clone(),
                     };
                     request_approval(&tool_ctx.session, action, approval_ctx).await?;
                     already_approved = true;
@@ -218,6 +223,9 @@ impl ToolOrchestrator {
                     retry_reason: None,
                     network_approval_context: None,
                     required_by_strict: false,
+                    attempt_id: uuid::Uuid::new_v4().to_string(),
+                    source: tool_ctx.source.clone(),
+                    cancellation_token: tool_ctx.cancellation_token.clone(),
                 };
                 request_approval(&tool_ctx.session, action, approval_ctx).await?;
                 already_approved = true;
@@ -280,7 +288,12 @@ impl ToolOrchestrator {
             network_proxy: None,
         };
 
-        ensure_approval_is_current(turn_ctx, approval_never_revision, approved_under_strict)?;
+        ensure_approval_is_current(
+            turn_ctx,
+            &tool_ctx.cancellation_token,
+            approval_never_revision,
+            approved_under_strict,
+        )?;
 
         let initial_attempt_start = Instant::now();
         let (first_result, first_deferred_network_approval) = Self::run_attempt(
@@ -418,6 +431,9 @@ impl ToolOrchestrator {
                         retry_reason: Some(retry_reason),
                         network_approval_context: network_approval_context.clone(),
                         required_by_strict: false,
+                        attempt_id: uuid::Uuid::new_v4().to_string(),
+                        source: tool_ctx.source.clone(),
+                        cancellation_token: tool_ctx.cancellation_token.clone(),
                     };
                     request_approval(&tool_ctx.session, action, approval_ctx).await?;
                 }
@@ -467,6 +483,7 @@ impl ToolOrchestrator {
 
                 ensure_approval_is_current(
                     turn_ctx,
+                    &tool_ctx.cancellation_token,
                     Some(retry_never_revision),
                     /*approved_under_strict*/ false,
                 )?;
@@ -523,9 +540,13 @@ impl ToolOrchestrator {
 
 fn ensure_approval_is_current(
     turn: &crate::session::turn_context::TurnContext,
+    cancellation_token: &tokio_util::sync::CancellationToken,
     never_revision: Option<u64>,
     approved_under_strict: bool,
 ) -> Result<(), ToolError> {
+    if cancellation_token.is_cancelled() {
+        return Err(ToolError::Codex(CodexErr::TurnAborted));
+    }
     let Some(never_revision) = never_revision else {
         return Ok(());
     };

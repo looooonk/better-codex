@@ -3,6 +3,7 @@ use pretty_assertions::assert_eq;
 use pretty_assertions::assert_ne;
 use std::cell::Cell;
 use std::future::ready;
+use std::sync::Mutex as StdMutex;
 
 #[tokio::test]
 async fn stable_snapshot_fails_closed_after_bounded_churn() {
@@ -77,6 +78,142 @@ fn timeout_rejection_is_specific_to_the_reviewer() {
             "approval request timed out".to_string(),
         )
     );
+}
+
+struct RecordingApprovalAuthority {
+    bindings: Arc<StdMutex<Vec<codex_extension_api::ApprovalReviewBinding>>>,
+}
+
+impl codex_extension_api::ApprovalReviewContributor for RecordingApprovalAuthority {
+    fn review<'a>(
+        &'a self,
+        _session_store: &'a codex_extension_api::ExtensionData,
+        _thread_store: &'a codex_extension_api::ExtensionData,
+        input: codex_extension_api::ApprovalReviewInput,
+    ) -> codex_extension_api::ExtensionFuture<'a, codex_extension_api::ApprovalReviewResult> {
+        self.bindings
+            .lock()
+            .expect("binding lock")
+            .push(input.binding);
+        Box::pin(std::future::ready(
+            codex_extension_api::ApprovalReviewResult::Allow(
+                codex_extension_api::ApprovalReviewOutcome {
+                    risk_level: codex_protocol::protocol::GuardianRiskLevel::Low,
+                    user_authorization:
+                        codex_protocol::protocol::GuardianUserAuthorization::High,
+                    rationale: "allowed".to_string(),
+                },
+            ),
+        ))
+    }
+}
+
+#[tokio::test]
+async fn guardian_v2_allow_is_bound_to_the_exact_action_attempt() {
+    use crate::config::Constrained;
+    use crate::session::tests::make_session_and_context;
+    use codex_protocol::models::SandboxPermissions;
+    use codex_utils_path_uri::PathUri;
+
+    let (mut session, mut turn) = make_session_and_context().await;
+    let mut config = turn.config.as_ref().clone();
+    config.features.enable(Feature::GuardianV2);
+    turn.config = Arc::new(config);
+    turn.approval_policy
+        .replace(Constrained::allow_any(AskForApproval::OnRequest));
+    turn.approvals_reviewer
+        .replace(ApprovalsReviewer::AutoReview);
+    let bindings = Arc::new(StdMutex::new(Vec::new()));
+    let mut extensions = codex_extension_api::ExtensionRegistryBuilder::new();
+    extensions.approval_review_contributor(Arc::new(RecordingApprovalAuthority {
+        bindings: Arc::clone(&bindings),
+    }));
+    session.services.extensions = Arc::new(extensions.build());
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    let cwd = PathUri::from_abs_path(
+        &codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(
+            std::env::current_dir().expect("current directory"),
+        )
+        .expect("absolute current directory"),
+    );
+
+    let decision = request_approval(
+        &session,
+        ApprovalAction::Shell {
+            id: "call-1".to_string(),
+            environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
+            command: vec!["echo".to_string(), "safe".to_string()],
+            hook_command: "echo safe".to_string(),
+            cwd,
+            sandbox_permissions: SandboxPermissions::UseDefault,
+            additional_permissions: None,
+            justification: None,
+            proposed_execpolicy_amendment: None,
+            cache_keys: Vec::new(),
+        },
+        ApprovalContext {
+            turn: Arc::clone(&turn),
+            call_id: "call-1".to_string(),
+            tool_name: ToolName::plain("shell_command"),
+            approval_reason: None,
+            retry_reason: None,
+            network_approval_context: None,
+            required_by_strict: false,
+            attempt_id: "attempt-1".to_string(),
+            source: crate::tools::context::ToolCallSource::Direct,
+            cancellation_token: CancellationToken::new(),
+        },
+    )
+    .await
+    .expect("review should allow the action");
+
+    assert_eq!(decision, ReviewDecision::Approved);
+    assert_eq!(
+        bindings.lock().expect("binding lock").as_slice(),
+        [codex_extension_api::ApprovalReviewBinding {
+            thread_id: session.thread_id.to_string(),
+            turn_id: turn.sub_id.clone(),
+            action_id: "call-1".to_string(),
+            attempt_id: "attempt-1".to_string(),
+            source: codex_extension_api::ToolCallSource::Direct,
+            evidence_revision: 0,
+        }]
+    );
+}
+
+#[tokio::test]
+async fn code_mode_review_evidence_is_correlated_by_sequence() {
+    use crate::context::NodeReplReviewEvidenceItem;
+    use crate::session::tests::make_session_and_context;
+
+    let (_session, turn) = make_session_and_context().await;
+    turn.extension_data
+        .get_or_init(NodeReplReviewEvidence::default)
+        .record(
+            "cell-1",
+            "runtime-1",
+            vec![NodeReplReviewEvidenceItem::Text("accepted output".to_string())],
+        );
+    let source = ToolCallSource::CodeMode {
+        cell_id: "cell-1".to_string(),
+        runtime_tool_call_id: "runtime-1".to_string(),
+    };
+
+    let (revision, evidence, images) = approval_review_evidence(&turn, &source);
+
+    assert_eq!(revision, approval_review_evidence_revision(&turn, &source));
+    assert_eq!(
+        evidence,
+        vec![ApprovalReviewEvidence {
+            kind: "node_repl_output".to_string(),
+            provenance: Some(
+                "tool=node_repl/js cell=cell-1 call=runtime-1".to_string(),
+            ),
+            text: "accepted output".to_string(),
+        }]
+    );
+    assert_eq!(images, Vec::<ApprovalReviewImage>::new());
 }
 
 #[cfg(unix)]
@@ -198,6 +335,9 @@ print(json.dumps({{
                     retry_reason: None,
                     network_approval_context: None,
                     required_by_strict: false,
+                    attempt_id: "attempt".to_string(),
+                    source: crate::tools::context::ToolCallSource::Direct,
+                    cancellation_token: tokio_util::sync::CancellationToken::new(),
                 },
             )
             .await
