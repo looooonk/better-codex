@@ -1,6 +1,7 @@
 //! Turn-scoped state and active turn metadata scaffolding.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::Notify;
@@ -87,6 +88,7 @@ pub(crate) struct RunningTask {
 pub(crate) struct TurnState {
     pending_approvals: HashMap<String, oneshot::Sender<ReviewDecision>>,
     pending_request_permissions: HashMap<String, PendingRequestPermissions>,
+    used_request_permission_ids: HashSet<String>,
     pending_user_input: HashMap<String, oneshot::Sender<RequestUserInputResponse>>,
     pending_elicitations: HashMap<(String, RequestId), oneshot::Sender<ElicitationResponse>>,
     pending_dynamic_tools: HashMap<String, oneshot::Sender<DynamicToolResponse>>,
@@ -140,9 +142,16 @@ impl TurnState {
         &mut self,
         key: String,
         pending_request_permissions: PendingRequestPermissions,
-    ) -> Option<PendingRequestPermissions> {
-        self.pending_request_permissions
-            .insert(key, pending_request_permissions)
+    ) -> Result<(), PendingRequestPermissions> {
+        if !self.used_request_permission_ids.insert(key.clone()) {
+            return Err(pending_request_permissions);
+        }
+        debug_assert!(
+            self.pending_request_permissions
+                .insert(key, pending_request_permissions)
+                .is_none()
+        );
+        Ok(())
     }
 
     pub(crate) fn remove_pending_request_permissions(

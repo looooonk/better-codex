@@ -2245,7 +2245,7 @@ impl Session {
         let effective_approval_id = approval_id.clone().unwrap_or_else(|| call_id.clone());
         // Add the tx_approve callback to the map before sending the request.
         let (tx_approve, rx_approve) = oneshot::channel();
-        let prev_entry = {
+        let inserted = {
             let mut active = self.active_turn.lock().await;
             match active.as_mut() {
                 Some(at) => {
@@ -2610,8 +2610,13 @@ impl Session {
                 None => None,
             }
         };
-        if prev_entry.is_some() {
-            warn!("Overwriting existing pending request_permissions for call_id: {call_id}");
+        if inserted.is_err() {
+            warn!("Rejecting reused pending request_permissions call_id: {call_id}");
+            return Some(RequestPermissionsResponse {
+                permissions: RequestPermissionProfile::default(),
+                scope: PermissionGrantScope::Turn,
+                strict_auto_review: false,
+            });
         }
 
         let event = EventMsg::RequestPermissions(RequestPermissionsEvent {
