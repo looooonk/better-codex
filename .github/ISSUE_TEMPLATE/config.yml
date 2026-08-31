@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Better Codex documentation
+    url: https://github.com/looooonk/better-codex#readme
+    about: Check installation, usage, and project documentation before filing an issue.

@@ -1,0 +1,62 @@
+name: Bug report
+description: Tell us about a reproducible problem in Better Codex.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve Better Codex. Please remove secrets, tokens, and private source code from logs and screenshots.
+  - type: input
+    id: version
+    attributes:
+      label: Better Codex version
+      description: Run `better-codex --version` to find this.
+      placeholder: 0.1.0-alpha.12
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux (ARM64)
+        - Linux (x86_64)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal
+      description: Include the terminal application, shell, and multiplexer if relevant.
+      placeholder: Ghostty, zsh, no multiplexer
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Describe the problem and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Give the smallest sequence that reliably triggers the issue.
+      placeholder: |
+        1. Open Better Codex in...
+        2. Select...
+        3. Press...
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Logs or screenshots
+      description: Add sanitized logs, screenshots, or a recording if they help explain the issue.
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include configuration, recent changes, or anything else that may be relevant.
