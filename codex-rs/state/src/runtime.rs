@@ -70,7 +70,9 @@ mod recovery;
 mod remote_control;
 #[cfg(test)]
 mod test_support;
+mod thread_section_order;
 mod thread_section_queries;
+mod thread_sections;
 mod threads;
 
 pub use external_agent_config_imports::ExternalAgentConfigImportDetailsRecord;
@@ -89,6 +91,8 @@ pub use recovery::runtime_db_path_for_corruption_error;
 pub use recovery::sqlite_error_detail_is_corruption;
 pub use recovery::sqlite_error_detail_is_lock;
 pub use remote_control::RemoteControlEnrollmentRecord;
+pub use thread_section_order::ThreadSectionMove;
+pub use thread_sections::ThreadSectionAppearanceUpdate;
 pub use threads::ThreadFilterOptions;
 pub use threads::ThreadSectionFilter;
 
