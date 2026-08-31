@@ -210,13 +210,7 @@ async fn run_exec_like(args: RunExecLikeArgs) -> Result<FunctionToolOutput, Func
         tool_name,
     };
     let out = orchestrator
-        .run(
-            &mut runtime,
-            &req,
-            &tool_ctx,
-            &turn,
-            turn.approval_policy.value(),
-        )
+        .run(&mut runtime, &req, &tool_ctx, &turn)
         .await
         .map(|result| result.output);
     let event_ctx = ToolEventCtx::new(

@@ -689,6 +689,49 @@ fn install_allow_permission_request_hook(home: &Path) -> Result<()> {
     )
 }
 
+fn install_blocking_allow_permission_request_hook(home: &Path) -> Result<()> {
+    let script_path = home.join("blocking_permission_request_hook.py");
+    let started_path = home.join("permission_request_hook_started");
+    let release_path = home.join("permission_request_hook_release");
+    let script = format!(
+        r#"import json
+from pathlib import Path
+import sys
+import time
+
+json.load(sys.stdin)
+started = Path(r"{started_path}")
+release = Path(r"{release_path}")
+started.touch()
+while not release.exists():
+    time.sleep(0.01)
+print(json.dumps({{
+    "hookSpecificOutput": {{
+        "hookEventName": "PermissionRequest",
+        "decision": {{"behavior": "allow"}}
+    }}
+}}))
+"#,
+        started_path = started_path.display(),
+        release_path = release_path.display(),
+    );
+    let hooks = serde_json::json!({
+        "hooks": {
+            "PermissionRequest": [{
+                "matcher": PERMISSION_REQUEST_HOOK_MATCHER,
+                "hooks": [{
+                    "type": "command",
+                    "command": format!("python3 {}", script_path.display()),
+                }]
+            }]
+        }
+    });
+
+    fs::write(script_path, script).context("write blocking permission request hook")?;
+    fs::write(home.join("hooks.json"), hooks.to_string()).context("write hooks.json")?;
+    Ok(())
+}
+
 fn write_post_tool_use_hook(
     home: &Path,
     matcher: Option<&str>,
@@ -2305,6 +2348,104 @@ async fn permission_request_hook_allows_shell_command_without_user_approval() ->
             .as_str()
             .is_some_and(|turn_id| !turn_id.is_empty())
     );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn permission_request_hook_allow_is_revoked_by_live_never_policy() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let call_id = "permission-request-live-never";
+    let marker = std::env::temp_dir().join("permission-request-live-never-marker");
+    let command = format!("rm -f {}", marker.display());
+    let args = serde_json::json!({ "command": command });
+    let responses = mount_sse_sequence(
+        &server,
+        vec![
+            sse(vec![
+                ev_response_created("resp-live-never-1"),
+                ev_function_call(call_id, "shell_command", &serde_json::to_string(&args)?),
+                ev_completed("resp-live-never-1"),
+            ]),
+            sse(vec![
+                ev_response_created("resp-live-never-2"),
+                ev_assistant_message("msg-live-never", "policy changed"),
+                ev_completed("resp-live-never-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    let mut builder = test_codex()
+        .with_pre_build_hook(|home| {
+            install_blocking_allow_permission_request_hook(home)
+                .expect("write blocking permission request hook");
+        })
+        .with_config(trust_discovered_hooks);
+    let test = builder.build(&server).await?;
+    fs::write(&marker, "seed").context("create live policy marker")?;
+
+    let (sandbox_policy, permission_profile) =
+        turn_permission_fields(PermissionProfile::Disabled, test.config.cwd.as_path());
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "run only if the pending hook remains authorized".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: codex_protocol::protocol::ThreadSettingsOverrides {
+                approval_policy: Some(AskForApproval::OnRequest),
+                sandbox_policy: Some(sandbox_policy),
+                permission_profile,
+                ..Default::default()
+            },
+        })
+        .await?;
+
+    let started = test
+        .codex_home_path()
+        .join("permission_request_hook_started");
+    timeout(Duration::from_secs(5), async {
+        while !started.exists() {
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .context("permission request hook did not reach the barrier")?;
+    core_test_support::submit_thread_settings(
+        &test.codex,
+        codex_protocol::protocol::ThreadSettingsOverrides {
+            approval_policy: Some(AskForApproval::Never),
+            ..Default::default()
+        },
+    )
+    .await?;
+    fs::write(
+        test.codex_home_path()
+            .join("permission_request_hook_release"),
+        "release",
+    )?;
+
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+    assert!(marker.exists(), "revoked hook approval must not execute");
+    let requests = responses.requests();
+    assert_eq!(requests.len(), 2);
+    let output = requests[1].function_call_output(call_id);
+    assert!(
+        output
+            .to_string()
+            .contains("approval policy changed to never"),
+        "unexpected rejection output: {output}"
+    );
+    fs::remove_file(marker)?;
 
     Ok(())
 }

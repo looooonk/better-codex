@@ -1055,17 +1055,20 @@ async fn danger_full_access_tool_attempts_do_not_enforce_managed_network() -> an
         fn approval_action(
             &self,
             _req: &(),
-            ctx: &crate::tools::sandboxing::ApprovalCtx<'_>,
+            call_id: &str,
         ) -> std::io::Result<crate::tools::sandboxing::ApprovalAction> {
             Ok(crate::tools::sandboxing::ApprovalAction::Shell {
-                id: ctx.call_id.to_string(),
+                id: call_id.to_string(),
                 environment_id: codex_exec_server::LOCAL_ENVIRONMENT_ID.to_string(),
                 command: Vec::new(),
+                hook_command: String::new(),
                 #[allow(deprecated)]
-                cwd: PathUri::from_abs_path(&ctx.turn.cwd),
+                cwd: PathUri::from_abs_path(&std::env::temp_dir().abs()),
                 sandbox_permissions: crate::sandboxing::SandboxPermissions::UseDefault,
                 additional_permissions: None,
                 justification: None,
+                proposed_execpolicy_amendment: None,
+                cache_keys: Vec::new(),
             })
         }
     }
@@ -1149,13 +1152,7 @@ async fn danger_full_access_tool_attempts_do_not_enforce_managed_network() -> an
     };
 
     orchestrator
-        .run(
-            &mut tool,
-            &(),
-            &tool_ctx,
-            turn.as_ref(),
-            AskForApproval::Never,
-        )
+        .run(&mut tool, &(), &tool_ctx, turn.as_ref())
         .await
         .expect("probe runtime should succeed");
 

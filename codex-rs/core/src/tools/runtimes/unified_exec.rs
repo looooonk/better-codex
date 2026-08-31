@@ -13,6 +13,7 @@ use crate::sandboxing::ExecServerEnvConfig;
 use crate::sandboxing::SandboxPermissions;
 use crate::session::turn_context::TurnEnvironment;
 use crate::shell::ShellType;
+use crate::tools::approvals::ApprovalCacheKey;
 use crate::tools::flat_tool_name;
 use crate::tools::network_approval::NetworkApprovalMode;
 use crate::tools::network_approval::NetworkApprovalSpec;
@@ -219,17 +220,27 @@ impl Approvable<UnifiedExecRequest> for UnifiedExecRuntime<'_> {
     fn approval_action(
         &self,
         req: &UnifiedExecRequest,
-        ctx: &ApprovalCtx<'_>,
+        call_id: &str,
     ) -> std::io::Result<ApprovalAction> {
         Ok(ApprovalAction::ExecCommand {
-            id: ctx.call_id.to_string(),
+            id: call_id.to_string(),
             environment_id: req.turn_environment.environment_id.clone(),
             command: req.command.clone(),
+            hook_command: req.hook_command.clone(),
             cwd: req.cwd.clone(),
             sandbox_permissions: req.sandbox_permissions,
             additional_permissions: req.additional_permissions.clone(),
             justification: req.justification.clone(),
             tty: req.tty,
+            proposed_execpolicy_amendment: req
+                .exec_approval_requirement
+                .proposed_execpolicy_amendment()
+                .cloned(),
+            cache_keys: self
+                .approval_keys(req)
+                .into_iter()
+                .map(ApprovalCacheKey::ExecCommand)
+                .collect(),
         })
     }
 

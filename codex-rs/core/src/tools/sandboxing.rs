@@ -116,6 +116,8 @@ where
     decision
 }
 
+/// Compatibility context for runtimes that have not yet removed their local
+/// approval adapters. The shared pipeline does not call these adapters.
 #[derive(Clone)]
 pub(crate) struct ApprovalCtx<'a> {
     pub session: &'a Arc<Session>,
@@ -363,7 +365,7 @@ pub(crate) trait Approvable<Req> {
         ctx: ApprovalCtx<'a>,
     ) -> BoxFuture<'a, ReviewDecision>;
 
-    fn approval_action(&self, req: &Req, ctx: &ApprovalCtx<'_>) -> std::io::Result<ApprovalAction>;
+    fn approval_action(&self, req: &Req, call_id: &str) -> std::io::Result<ApprovalAction>;
 }
 
 pub(crate) trait Sandboxable {

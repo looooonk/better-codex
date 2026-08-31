@@ -77,12 +77,40 @@ impl ToolCallRuntime {
         call: ToolCall,
         cancellation_token: CancellationToken,
     ) -> impl std::future::Future<Output = Result<ResponseInputItem, CodexErr>> {
+        self.handle_tool_call_inner(call, cancellation_token, None)
+    }
+
+    pub(crate) fn handle_tool_call_for_turn(
+        self,
+        call: ToolCall,
+        cancellation_token: CancellationToken,
+        turn_cancellation_token: CancellationToken,
+    ) -> impl std::future::Future<Output = Result<ResponseInputItem, CodexErr>> {
+        self.handle_tool_call_inner(call, cancellation_token, Some(turn_cancellation_token))
+    }
+
+    fn handle_tool_call_inner(
+        self,
+        call: ToolCall,
+        cancellation_token: CancellationToken,
+        turn_cancellation_token: Option<CancellationToken>,
+    ) -> impl std::future::Future<Output = Result<ResponseInputItem, CodexErr>> {
         let error_call = call.clone();
         let future =
             self.handle_tool_call_with_source(call, ToolCallSource::Direct, cancellation_token);
         async move {
             match future.await {
                 Ok(response) => Ok(response.into_response()),
+                Err(FunctionCallError::TurnAborted) => {
+                    let response =
+                        Self::failure_response(error_call, FunctionCallError::TurnAborted);
+                    if let Some(turn_cancellation_token) = turn_cancellation_token {
+                        turn_cancellation_token.cancel();
+                        Ok(response)
+                    } else {
+                        Err(CodexErr::TurnAborted)
+                    }
+                }
                 Err(FunctionCallError::Fatal(message)) => Err(CodexErr::Fatal(message)),
                 Err(other) => Ok(Self::failure_response(error_call, other)),
             }
