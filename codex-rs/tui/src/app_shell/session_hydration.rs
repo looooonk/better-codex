@@ -6,6 +6,7 @@ use super::workspace::WorkspaceGitStatusProbe;
 use crate::app_server_session::app_server_rate_limit_snapshots;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::ThreadGoal;
+use codex_app_server_protocol::ThreadUsage;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_protocol::ThreadId;
@@ -37,11 +38,15 @@ pub(super) struct SessionHydrationState {
     rate_limits_revision: u64,
     rate_limits_loaded: bool,
     rate_limits_refresh_due: bool,
+    thread_usage_revision: u64,
+    thread_usage_loaded: bool,
+    thread_usage_refresh_due: bool,
     goal_task: LookupTask<Option<ThreadGoal>>,
     workspace_task: LookupTask<WorkspaceGitStatusProbe>,
     session_list_params: Option<ThreadListParams>,
     session_list_task: Option<JoinHandle<SessionLookup<SessionListPage>>>,
     rate_limits_task: LookupTask<GetAccountRateLimitsResponse>,
+    thread_usage_task: LookupTask<Option<ThreadUsage>>,
 }
 
 struct SessionLookup<T> {
@@ -58,6 +63,8 @@ impl ShellState {
         self.session_hydration.generation = self.session_hydration.generation.wrapping_add(1);
         self.cancel_session_hydration();
         self.session_hydration.rate_limits_refresh_due = rate_limits_refresh_due;
+        self.session_hydration.thread_usage_loaded = false;
+        self.session_hydration.thread_usage_refresh_due = true;
     }
 
     pub(super) fn start_replaced_session_hydration<S>(&mut self, app_server: &S)
@@ -67,6 +74,7 @@ impl ShellState {
         self.start_goal_hydration(app_server);
         self.start_workspace_hydration();
         self.start_rate_limits_hydration(app_server);
+        self.start_thread_usage_hydration(app_server);
     }
 
     pub(super) fn start_initial_dashboard_hydration<S>(&mut self, app_server: &S)
@@ -76,6 +84,7 @@ impl ShellState {
         self.start_workspace_hydration();
         self.start_session_list_refresh(app_server);
         self.start_rate_limits_hydration(app_server);
+        self.start_thread_usage_hydration(app_server);
     }
 
     pub(super) fn start_session_list_refresh<S>(&mut self, app_server: &S)
@@ -170,6 +179,36 @@ impl ShellState {
         }));
     }
 
+    fn start_thread_usage_hydration<S>(&mut self, app_server: &S)
+    where
+        S: AppShellBackend,
+    {
+        if self.session_hydration.thread_usage_task.is_some()
+            || (self.session_hydration.thread_usage_loaded
+                && !self.session_hydration.thread_usage_refresh_due)
+        {
+            return;
+        }
+        self.session_hydration.thread_usage_refresh_due = false;
+        let generation = self.session_hydration.generation;
+        let thread_id = self.thread_id;
+        let revision = self.session_hydration.thread_usage_revision;
+        let lookup = app_server.thread_usage_in_background(thread_id);
+        self.session_hydration.thread_usage_task = Some(tokio::spawn(async move {
+            let value = match timeout(SESSION_HYDRATION_LOOKUP_TIMEOUT, lookup).await {
+                Ok(Ok(response)) => Ok(response.thread_usage),
+                Ok(Err(err)) => Err(err.to_string()),
+                Err(_) => Err("thread usage refresh timed out".to_string()),
+            };
+            SessionLookup {
+                generation,
+                thread_id,
+                revision,
+                value,
+            }
+        }));
+    }
+
     pub(super) fn start_initial_goal_hydration<S>(&mut self, app_server: &S)
     where
         S: AppShellBackend,
@@ -243,6 +282,8 @@ impl ShellState {
             || self.session_hydration.session_list_task.is_some()
             || self.session_hydration.rate_limits_task.is_some()
             || self.session_hydration.rate_limits_refresh_due
+            || self.session_hydration.thread_usage_task.is_some()
+            || self.session_hydration.thread_usage_refresh_due
             || self.has_pending_goal_rate_limit_recovery()
     }
 
@@ -373,6 +414,37 @@ impl ShellState {
             }
         }
 
+        if self
+            .session_hydration
+            .thread_usage_task
+            .as_ref()
+            .is_some_and(JoinHandle::is_finished)
+            && let Some(task) = self.session_hydration.thread_usage_task.take()
+        {
+            let lookup = match task.await {
+                Ok(lookup) => Some(lookup),
+                Err(err) => {
+                    if !err.is_cancelled() {
+                        tracing::warn!(%err, "thread usage refresh task failed");
+                    }
+                    None
+                }
+            };
+            if let Some(lookup) = lookup
+                && lookup.generation == self.session_hydration.generation
+                && lookup.thread_id == self.thread_id
+                && lookup.revision == self.session_hydration.thread_usage_revision
+            {
+                match lookup.value {
+                    Ok(usage) => {
+                        self.record_thread_usage(usage);
+                        changed = true;
+                    }
+                    Err(err) => tracing::debug!(%err, "failed to refresh thread usage"),
+                }
+            }
+        }
+
         if self.workspace_status_refresh_due && self.active_turn_id.is_none() {
             self.start_workspace_status_refresh();
         }
@@ -380,6 +452,11 @@ impl ShellState {
             && self.session_hydration.rate_limits_task.is_none()
         {
             self.start_rate_limits_hydration(app_server);
+        }
+        if self.session_hydration.thread_usage_refresh_due
+            && self.session_hydration.thread_usage_task.is_none()
+        {
+            self.start_thread_usage_hydration(app_server);
         }
         changed |= self.poll_goal_rate_limit_recovery().await;
         self.maybe_start_goal_rate_limit_recovery(app_server);
@@ -408,6 +485,9 @@ impl ShellState {
         }
         self.session_hydration.session_list_params = None;
         if let Some(task) = self.session_hydration.rate_limits_task.take() {
+            task.abort();
+        }
+        if let Some(task) = self.session_hydration.thread_usage_task.take() {
             task.abort();
         }
         self.cancel_goal_rate_limit_recovery();
@@ -511,4 +591,38 @@ impl ShellState {
         self.session_hydration.rate_limits_revision =
             self.session_hydration.rate_limits_revision.wrapping_add(1);
     }
+
+    pub(super) fn record_thread_usage(&mut self, mut usage: Option<ThreadUsage>) {
+        self.session_hydration.thread_usage_loaded = true;
+        self.session_hydration.thread_usage_refresh_due = false;
+        self.session_hydration.thread_usage_revision =
+            self.session_hydration.thread_usage_revision.wrapping_add(1);
+        if let (Some(previous), Some(current)) = (&self.thread_usage, &mut usage) {
+            let transient_zero_credits = current.estimated_usage_credits_micros == 0
+                && previous.estimated_usage_credits_micros > 0;
+            if transient_zero_credits {
+                current.estimated_usage_credits_micros =
+                    previous.estimated_usage_credits_micros;
+            }
+            let transient_zero_cost = current.estimated_usage_usd_micros == Some(0)
+                && previous.estimated_usage_usd_micros.is_some_and(|value| value > 0);
+            if transient_zero_cost {
+                current.estimated_usage_usd_micros = previous.estimated_usage_usd_micros;
+            }
+            if (transient_zero_credits || transient_zero_cost) && current.groups.is_empty() {
+                current.groups.clone_from(&previous.groups);
+            }
+        }
+        self.thread_usage = usage;
+    }
+
+    pub(super) fn request_thread_usage_refresh(&mut self) {
+        self.session_hydration.thread_usage_refresh_due = true;
+        self.session_hydration.thread_usage_revision =
+            self.session_hydration.thread_usage_revision.wrapping_add(1);
+    }
 }
+
+#[cfg(test)]
+#[path = "session_hydration_tests.rs"]
+mod tests;

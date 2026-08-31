@@ -35,6 +35,7 @@ use codex_app_server_protocol::RateLimitSnapshot;
 use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadItem;
+use codex_app_server_protocol::ThreadUsage;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnPlanStep;
@@ -113,6 +114,7 @@ mod login_method_availability;
 mod mcp_management;
 mod modal_view;
 mod navigation;
+mod thread_usage;
 mod paste;
 mod plugin_management;
 mod pointer;
@@ -616,6 +618,7 @@ pub(crate) async fn run(
                 }
                 _ = rate_limits_refresh.tick() => {
                     shell.request_rate_limits_refresh();
+                    shell.request_thread_usage_refresh();
                 }
                 _ = workspace_status_poll.tick() => {
                     shell.poll_workspace_status_if_visible();
@@ -962,6 +965,7 @@ struct ShellState {
     token_usage: TokenUsage,
     context_token_usage: TokenUsage,
     model_context_window: Option<i64>,
+    thread_usage: Option<ThreadUsage>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1101,6 +1105,7 @@ impl ShellState {
             token_usage: TokenUsage::default(),
             context_token_usage: TokenUsage::default(),
             model_context_window: None,
+            thread_usage: None,
         };
         shell.push_system("Better Codex app shell");
         shell
@@ -2773,6 +2778,7 @@ impl ShellState {
                 total_tokens: 1440,
             },
             model_context_window: Some(200000),
+            thread_usage: None,
         };
         shell.push_system("Better Codex app shell");
         shell.push_user("Create a divergent standalone TUI.");
@@ -3047,6 +3053,7 @@ pub mod bench_support {
                 total_tokens: 155_000,
             },
             model_context_window: Some(200_000),
+            thread_usage: None,
         };
         shell.push_system("Better Codex app shell benchmark");
         shell

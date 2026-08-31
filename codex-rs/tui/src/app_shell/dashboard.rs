@@ -11,6 +11,7 @@ use super::design::palette;
 use super::diff_style::diff_stat_spans;
 use super::navigation::DashboardRoute;
 use super::navigation::DashboardTabs;
+use super::thread_usage::thread_usage_line;
 use crate::goal_display::format_goal_elapsed_seconds;
 use crate::goal_display::goal_status_label;
 use crate::line_truncation::truncate_line_with_ellipsis_if_overflow;
@@ -211,9 +212,8 @@ fn dashboard_panel(
                 ],
             ))
         }
-        DashboardPanelKind::Tokens => Some(DashboardPanel::new(
-            "Tokens",
-            vec![
+        DashboardPanelKind::Tokens => {
+            let mut lines = vec![
                 Line::from(format!(
                     "input {} | output {}",
                     format_token_count(shell.token_usage.input_tokens),
@@ -227,8 +227,12 @@ fn dashboard_panel(
                     )
                     .unwrap_or(100)
                 )),
-            ],
-        )),
+            ];
+            if let Some(line) = shell.thread_usage.as_ref().and_then(thread_usage_line) {
+                lines.push(line);
+            }
+            Some(DashboardPanel::new("Tokens", lines))
+        }
         DashboardPanelKind::Approvals => (shell.pending_approval.is_some()
             || shell.pending_elicitation.is_some()
             || shell.pending_user_input.is_some())

@@ -470,6 +470,7 @@ impl ShellState {
         self.token_usage = TokenUsage::default();
         self.context_token_usage = TokenUsage::default();
         self.model_context_window = None;
+        self.thread_usage = None;
         self.clear_active_turn();
         self.clear_interactive_requests();
         self.pending_session_delete = None;

@@ -1,0 +1,8 @@
+---
+source: tui/src/app_shell/dashboard_tests.rs
+expression: "panel.render_lines(100).into_iter().map(|line|\nline.to_string()).collect::<Vec<_>>().join(\"\\n\")"
+---
+◆ TOKENS
+input 1k | output 240
+Context 100% left
+5.2 credits | ~$1.82

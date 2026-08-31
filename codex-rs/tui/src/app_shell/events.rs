@@ -168,6 +168,7 @@ impl ShellState {
                     };
                     if completed_active_turn && turn_ended {
                         self.push_turn_separator();
+                        self.request_thread_usage_refresh();
                     }
                 } else if self.prepare_active_agent_thread(&completed.thread_id) {
                     self.agent_activity.record_child_turn(

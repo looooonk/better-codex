@@ -8,6 +8,7 @@ use base64::Engine;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AccountRateLimitsUpdatedNotification;
+use codex_app_server_protocol::AccountTokenUsageSummary;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
 use codex_app_server_protocol::AppSummary;
 use codex_app_server_protocol::CollabAgentState;
@@ -35,6 +36,7 @@ use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
 use codex_app_server_protocol::FileChangePatchUpdatedNotification;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
+use codex_app_server_protocol::GetAccountTokenUsageResponse;
 use codex_app_server_protocol::ImageGenerationItem;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
@@ -14183,6 +14185,54 @@ async fn periodic_rate_limit_refresh_fetches_canonical_state() {
 }
 
 #[tokio::test]
+async fn completed_turn_refreshes_canonical_thread_usage() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    backend.set_thread_usage(Some(ThreadUsage {
+        thread_id: shell.thread_id.to_string(),
+        estimated_usage_credits_micros: 1_000_000,
+        estimated_usage_usd_micros: None,
+        groups: Vec::new(),
+    }));
+    shell.start_initial_dashboard_hydration(&backend);
+    finish_session_hydration(&mut shell, &backend).await;
+
+    backend.set_thread_usage(Some(ThreadUsage {
+        thread_id: shell.thread_id.to_string(),
+        estimated_usage_credits_micros: 2_000_000,
+        estimated_usage_usd_micros: Some(500_000),
+        groups: Vec::new(),
+    }));
+    shell.active_turn_id = Some("turn-usage".to_string());
+    shell.handle_notification(ServerNotification::TurnCompleted(
+        codex_app_server_protocol::TurnCompletedNotification {
+            thread_id: shell.thread_id.to_string(),
+            turn: test_turn("turn-usage", TurnStatus::Completed),
+        },
+    ));
+
+    assert!(shell.has_pending_session_hydration());
+    finish_session_hydration(&mut shell, &backend).await;
+    assert_eq!(
+        shell.thread_usage,
+        Some(ThreadUsage {
+            thread_id: shell.thread_id.to_string(),
+            estimated_usage_credits_micros: 2_000_000,
+            estimated_usage_usd_micros: Some(500_000),
+            groups: Vec::new(),
+        })
+    );
+    assert_eq!(
+        backend
+            .calls()
+            .into_iter()
+            .filter(|call| matches!(call, RecordedBackendCall::ThreadUsage(_)))
+            .count(),
+        2
+    );
+}
+
+#[tokio::test]
 async fn refreshed_rate_limits_resume_the_current_usage_limited_goal() {
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Status;
@@ -15917,6 +15967,7 @@ struct RecordingBackend {
     thread_list_gate: Option<Arc<tokio::sync::Semaphore>>,
     rate_limits_gate: Option<Arc<tokio::sync::Semaphore>>,
     rate_limits_used_percent: Arc<Mutex<i32>>,
+    thread_usage: Arc<Mutex<Option<ThreadUsage>>>,
     login_response: Arc<Mutex<LoginAccountResponse>>,
     turn_start_error: Arc<Mutex<Option<String>>>,
     turn_start_gate: Option<Arc<tokio::sync::Semaphore>>,
@@ -15948,6 +15999,7 @@ impl Default for RecordingBackend {
             thread_list_gate: None,
             rate_limits_gate: None,
             rate_limits_used_percent: Arc::new(Mutex::new(73)),
+            thread_usage: Arc::new(Mutex::new(None)),
             login_response: Arc::new(Mutex::new(LoginAccountResponse::ApiKey {})),
             turn_start_error: Arc::new(Mutex::new(None)),
             turn_start_gate: None,
@@ -16029,6 +16081,10 @@ impl RecordingBackend {
             .expect("rate-limit percentage should lock") = used_percent;
     }
 
+    fn set_thread_usage(&self, usage: Option<ThreadUsage>) {
+        *self.thread_usage.lock().expect("thread usage should lock") = usage;
+    }
+
     fn set_login_response(&self, response: LoginAccountResponse) {
         *self
             .login_response
@@ -16086,6 +16142,7 @@ enum RecordedBackendCall {
     },
     ThreadReadFull(codex_protocol::ThreadId),
     RateLimits,
+    ThreadUsage(codex_protocol::ThreadId),
     Login(LoginAccountParams),
     CancelLogin(String),
     Logout,
@@ -16440,6 +16497,33 @@ impl backend::AppShellBackend for RecordingBackend {
                 },
                 rate_limits_by_limit_id: None,
                 rate_limit_reset_credits: None,
+            })
+        }
+    }
+
+    fn thread_usage_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> impl std::future::Future<Output = color_eyre::Result<GetAccountTokenUsageResponse>>
+    + Send
+    + 'static {
+        self.push(RecordedBackendCall::ThreadUsage(thread_id));
+        let thread_usage = self
+            .thread_usage
+            .lock()
+            .expect("thread usage should lock")
+            .clone();
+        async move {
+            Ok(GetAccountTokenUsageResponse {
+                summary: AccountTokenUsageSummary {
+                    lifetime_tokens: None,
+                    peak_daily_tokens: None,
+                    longest_running_turn_sec: None,
+                    current_streak_days: None,
+                    longest_streak_days: None,
+                },
+                daily_usage_buckets: None,
+                thread_usage,
             })
         }
     }

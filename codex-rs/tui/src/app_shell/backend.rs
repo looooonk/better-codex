@@ -15,6 +15,8 @@ use codex_app_server_protocol::ExternalAgentConfigDetectParams;
 use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
+use codex_app_server_protocol::GetAccountTokenUsageParams;
+use codex_app_server_protocol::GetAccountTokenUsageResponse;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::LoginAccountParams;
@@ -128,6 +130,12 @@ pub(super) trait AppShellBackend {
     fn account_rate_limits_in_background(
         &self,
     ) -> impl std::future::Future<Output = Result<GetAccountRateLimitsResponse>> + Send + 'static;
+
+    /// Starts a current-thread usage lookup without borrowing the event-loop-owned backend.
+    fn thread_usage_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<GetAccountTokenUsageResponse>> + Send + 'static;
 
     fn login_account(
         &mut self,
@@ -502,6 +510,25 @@ impl AppShellBackend for AppServerSession {
                 .request_typed(ClientRequest::GetAccountRateLimits {
                     request_id: app_shell_request_id("app-shell-rate-limits"),
                     params: None,
+                })
+                .await
+                .map_err(Into::into)
+        }
+    }
+
+    fn thread_usage_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<GetAccountTokenUsageResponse>> + Send + 'static
+    {
+        let request_handle = AppServerSession::request_handle(self);
+        async move {
+            request_handle
+                .request_typed(ClientRequest::GetAccountTokenUsage {
+                    request_id: app_shell_request_id("app-shell-thread-usage"),
+                    params: Some(GetAccountTokenUsageParams {
+                        thread_id: Some(thread_id.to_string()),
+                    }),
                 })
                 .await
                 .map_err(Into::into)
