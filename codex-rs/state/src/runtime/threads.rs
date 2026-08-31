@@ -370,6 +370,23 @@ ON CONFLICT(child_thread_id) DO NOTHING
             .map(PathBuf::from))
     }
 
+    /// Swap one thread's rollout path only when it still matches the expected path.
+    pub async fn replace_rollout_path_if_current(
+        &self,
+        id: ThreadId,
+        expected: &Path,
+        replacement: &Path,
+    ) -> anyhow::Result<bool> {
+        let result =
+            sqlx::query("UPDATE threads SET rollout_path = ? WHERE id = ? AND rollout_path = ?")
+                .bind(replacement.display().to_string())
+                .bind(id.to_string())
+                .bind(expected.display().to_string())
+                .execute(self.pool.as_ref())
+                .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     /// Find the newest thread whose user-facing title exactly matches `title`.
     #[allow(clippy::too_many_arguments)]
     pub async fn find_thread_by_exact_title(
@@ -1591,6 +1608,63 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::path::PathBuf;
+
+    #[tokio::test]
+    async fn rollout_path_compare_and_swap_rejects_stale_and_replayed_updates() {
+        let codex_home = unique_temp_dir();
+        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+            .await
+            .expect("state db should initialize");
+        let thread_id = ThreadId::new();
+        let original_path = codex_home.join("original.jsonl");
+        let replacement_path = codex_home.join("replacement.jsonl");
+        let replay_path = codex_home.join("replay.jsonl");
+        let metadata = test_thread_metadata(&codex_home, thread_id, original_path.clone());
+        runtime
+            .upsert_thread(&metadata)
+            .await
+            .expect("insert thread metadata");
+
+        assert!(
+            !runtime
+                .replace_rollout_path_if_current(
+                    thread_id,
+                    replacement_path.as_path(),
+                    replay_path.as_path(),
+                )
+                .await
+                .expect("reject stale swap")
+        );
+        assert!(
+            runtime
+                .replace_rollout_path_if_current(
+                    thread_id,
+                    original_path.as_path(),
+                    replacement_path.as_path(),
+                )
+                .await
+                .expect("apply current swap")
+        );
+        assert!(
+            !runtime
+                .replace_rollout_path_if_current(
+                    thread_id,
+                    original_path.as_path(),
+                    replay_path.as_path(),
+                )
+                .await
+                .expect("reject replayed swap")
+        );
+        assert_eq!(
+            runtime
+                .get_thread(thread_id)
+                .await
+                .expect("read metadata")
+                .expect("thread metadata")
+                .rollout_path,
+            replacement_path
+        );
+    }
 
     #[tokio::test]
     async fn upsert_thread_keeps_creation_memory_mode_for_existing_rows() {
