@@ -1,13 +1,17 @@
 //! Model-history and persisted-rollout domain types.
 
 mod initial;
+mod persisted;
 
-pub use codex_protocol::protocol::CompactedItem;
-pub use codex_protocol::protocol::RolloutItem;
-pub use codex_protocol::protocol::RolloutLine;
 pub use initial::InitialHistory;
 pub use initial::ResumedHistory;
+pub use persisted::CompactedItem;
+pub use persisted::RolloutItem;
+pub use persisted::RolloutLine;
 
 #[cfg(test)]
 #[path = "initial_tests.rs"]
-mod tests;
+mod initial_tests;
+#[cfg(test)]
+#[path = "persisted_tests.rs"]
+mod persisted_tests;

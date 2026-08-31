@@ -8,7 +8,6 @@ use codex_protocol::dynamic_tools::DynamicToolSpec;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::MultiAgentVersion;
-use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
@@ -17,6 +16,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 use ts_rs::TS;
+
+use crate::RolloutItem;
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
 pub struct ResumedHistory {

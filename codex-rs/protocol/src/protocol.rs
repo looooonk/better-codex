@@ -2929,23 +2929,6 @@ impl<'de> Deserialize<'de> for SessionMetaLine {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, TS)]
-#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
-pub enum RolloutItem {
-    SessionMeta(SessionMetaLine),
-    ResponseItem(ResponseItem),
-    /// Legacy delivery item reconstructed as a model-visible `agent_message`.
-    InterAgentCommunication(InterAgentCommunication),
-    /// Local delivery metadata that is not part of the Responses API item.
-    InterAgentCommunicationMetadata {
-        trigger_turn: bool,
-    },
-    Compacted(CompactedItem),
-    TurnContext(TurnContextItem),
-    WorldState(WorldStateItem),
-    EventMsg(EventMsg),
-}
-
 /// Persisted comparison state used to resume model-visible world-state diffing.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, TS)]
 pub struct WorldStateItem {
@@ -2961,39 +2944,6 @@ impl WorldStateItem {
 
     pub fn patch(state: Value) -> Self {
         Self { full: false, state }
-    }
-}
-
-#[derive(Serialize, Clone, Debug, PartialEq, JsonSchema, TS)]
-pub struct CompactedItem {
-    pub message: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub replacement_history: Option<Vec<ResponseItem>>,
-    /// Monotonic position of this context window within the thread.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub window_number: Option<u64>,
-    /// UUIDv7 identity of the first context window in this thread's window chain.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_window_id: Option<String>,
-    /// UUIDv7 identity of the context window immediately before this one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub previous_window_id: Option<String>,
-    /// UUIDv7 identity of this context window.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub window_id: Option<String>,
-}
-
-impl From<CompactedItem> for ResponseItem {
-    fn from(value: CompactedItem) -> Self {
-        ResponseItem::Message {
-            id: None,
-            role: "assistant".to_string(),
-            content: vec![ContentItem::OutputText {
-                text: value.message,
-            }],
-            phase: None,
-            internal_chat_message_metadata_passthrough: None,
-        }
     }
 }
 
@@ -3122,15 +3072,6 @@ impl Mul<f64> for TruncationPolicy {
             }
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Clone, JsonSchema)]
-pub struct RolloutLine {
-    pub timestamp: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ordinal: Option<u64>,
-    #[serde(flatten)]
-    pub item: RolloutItem,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
