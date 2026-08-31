@@ -5,6 +5,14 @@ use codex_core_skills::render_available_skills_body;
 use codex_extension_api::ContextualUserFragment;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_CLOSE_TAG;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
+use serde::Serialize;
+
+use crate::tools::SkillToolAuthority;
+
+const MAX_EXPLICIT_SKILL_PROMPT_BYTES: usize = 3_600;
+const MAX_SKILL_NAME_BYTES: usize = 256;
+const MAX_SKILL_PATH_BYTES: usize = 1_024;
+const TRUNCATION_SUFFIX: &str = "\n\n[skill prompt truncated]";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AvailableSkillsInstructions {
@@ -13,6 +21,21 @@ pub(crate) struct AvailableSkillsInstructions {
 }
 
 pub(crate) struct SkillsUpdate(String);
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct SkillInstructions {
+    name: String,
+    path: String,
+    contents: String,
+    resource_access: Option<SkillResourceAccess>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct SkillResourceAccess {
+    pub(crate) authority: SkillToolAuthority,
+    pub(crate) package: String,
+    pub(crate) main_resource: String,
+}
 
 impl SkillsUpdate {
     pub(crate) fn new(body: impl Into<String>) -> Self {
@@ -91,3 +114,83 @@ impl ContextualUserFragment for SkillsUpdate {
         self.0.clone()
     }
 }
+
+impl SkillInstructions {
+    pub(crate) fn bounded(
+        name: &str,
+        path: &str,
+        contents: &str,
+        resource_access: Option<SkillResourceAccess>,
+    ) -> Option<(Self, bool)> {
+        let (name, name_truncated) = truncate_utf8_to_bytes(name, MAX_SKILL_NAME_BYTES);
+        let (path, path_truncated) = truncate_utf8_to_bytes(path, MAX_SKILL_PATH_BYTES);
+        let empty = Self {
+            name,
+            path,
+            contents: String::new(),
+            resource_access,
+        };
+        let max_contents_bytes = MAX_EXPLICIT_SKILL_PROMPT_BYTES
+            .checked_sub(empty.render().len())?
+            .saturating_sub(TRUNCATION_SUFFIX.len());
+        let (mut contents, contents_truncated) =
+            truncate_utf8_to_bytes(contents, max_contents_bytes);
+        if contents_truncated {
+            contents.push_str(TRUNCATION_SUFFIX);
+        }
+        let instructions = Self { contents, ..empty };
+        (instructions.rendered_bytes() <= MAX_EXPLICIT_SKILL_PROMPT_BYTES).then_some((
+            instructions,
+            name_truncated || path_truncated || contents_truncated,
+        ))
+    }
+
+    pub(crate) fn rendered_bytes(&self) -> usize {
+        self.render().len()
+    }
+}
+
+impl ContextualUserFragment for SkillInstructions {
+    fn role(&self) -> &'static str {
+        "user"
+    }
+
+    fn markers(&self) -> (&'static str, &'static str) {
+        Self::type_markers()
+    }
+
+    fn type_markers() -> (&'static str, &'static str) {
+        ("<skill>", "</skill>")
+    }
+
+    fn body(&self) -> String {
+        let resource_access = self
+            .resource_access
+            .as_ref()
+            .map(|access| {
+                let metadata = serde_json::to_string(access)
+                    .expect("skill resource access should always serialize");
+                format!("\n<resource_access>{metadata}</resource_access>")
+            })
+            .unwrap_or_default();
+        format!(
+            "\n<name>{}</name>\n<path>{}</path>{resource_access}\n{}\n",
+            self.name, self.path, self.contents
+        )
+    }
+}
+
+fn truncate_utf8_to_bytes(value: &str, max_bytes: usize) -> (String, bool) {
+    if value.len() <= max_bytes {
+        return (value.to_string(), false);
+    }
+    let mut end = max_bytes.min(value.len());
+    while !value.is_char_boundary(end) {
+        end = end.saturating_sub(1);
+    }
+    (value[..end].to_string(), true)
+}
+
+#[cfg(test)]
+#[path = "fragments_tests.rs"]
+mod tests;

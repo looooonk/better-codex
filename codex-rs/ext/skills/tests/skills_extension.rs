@@ -856,14 +856,19 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
             entries: [("root-a", root_a_locator), ("root-b", root_b_locator)]
                 .into_iter()
                 .map(|(root_id, locator)| {
-                    SkillCatalogEntry::new(
+                    let entry = SkillCatalogEntry::new(
                         SkillPackageId(locator.to_string()),
                         SkillAuthority::new(SkillSourceKind::Executor, root_id),
                         "lint-fix",
                         "Fix lint errors.",
                         SkillResourceId::new(locator),
                     )
-                    .with_display_path(locator)
+                    .with_display_path(locator);
+                    if root_id == "root-b" {
+                        entry.hidden_from_prompt()
+                    } else {
+                        entry
+                    }
                 })
                 .collect(),
             warnings: Vec::new(),
@@ -937,6 +942,9 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
 
     assert_eq!(1, fragments.len());
     assert!(fragments[0].render().contains(root_b_locator));
+    assert!(fragments[0].render().contains(&format!(
+        "<resource_access>{{\"authority\":{{\"kind\":\"executor\",\"id\":\"root-b\"}},\"package\":\"{root_b_locator}\",\"main_resource\":\"{root_b_locator}\"}}</resource_access>"
+    )));
     assert_eq!(
         vec![(
             SkillAuthority::new(SkillSourceKind::Executor, "root-b"),

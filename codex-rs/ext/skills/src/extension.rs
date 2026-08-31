@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use codex_core_skills::ExplicitSkillPromptBudget;
 use codex_core_skills::HostSkillsSnapshot;
-use codex_core_skills::SkillInstructions;
 use codex_core_skills::default_skill_metadata_budget;
 use codex_core_skills::injection::HostSkillsCatalogInWorldState;
 use codex_core_skills::injection::InjectedHostSkillPrompts;
@@ -43,12 +42,15 @@ use crate::provider::HostSkillProvider;
 use crate::provider::SkillListQuery;
 use crate::provider::SkillReadRequest;
 use crate::render::available_skills_fragment;
+use crate::fragments::SkillInstructions;
+use crate::fragments::SkillResourceAccess;
 use crate::selection::collect_explicit_skill_mentions;
 use crate::sources::SkillProviders;
 use crate::state::ExecutorSkillsStepState;
 use crate::state::SkillsThreadState;
 use crate::state::SkillsTurnState;
 use crate::tools::skill_tools;
+use crate::tools::SkillToolAuthority;
 use crate::world_state::executor_skills_world_state_section;
 use crate::world_state::host_skills_world_state_section;
 
@@ -351,11 +353,31 @@ where
                     .await
                 {
                     Ok(read_result) => {
-                        let (fragment, truncated) = SkillInstructions::bounded(
+                        let resource_access = (!entry.prompt_visible)
+                            .then(|| {
+                                SkillToolAuthority::from_authority(&entry.authority).map(
+                                    |authority| SkillResourceAccess {
+                                        authority,
+                                        package: entry.id.0.clone(),
+                                        main_resource: entry.main_prompt.as_str().to_string(),
+                                    },
+                                )
+                            })
+                            .flatten();
+                        let Some((fragment, truncated)) = SkillInstructions::bounded(
                             &entry.name,
                             entry.rendered_path(),
                             &read_result.contents,
-                        );
+                            resource_access,
+                        ) else {
+                            let warning = format!(
+                                "Skill `{}` was omitted because its instructions could not fit within the main prompt context limit.",
+                                entry.name
+                            );
+                            self.emit_warning(&input.turn_id, warning.clone());
+                            warnings.push(warning);
+                            continue;
+                        };
                         if truncated {
                             let warning = format!(
                                 "Skill `{}` exceeded the main prompt context limit and was truncated.",
