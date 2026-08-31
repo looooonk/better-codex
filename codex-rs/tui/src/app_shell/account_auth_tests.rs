@@ -23,8 +23,8 @@ fn render_state(state: &AccountAuthState) -> String {
 }
 
 #[test]
-fn forced_login_method_filters_choices() {
-    let chatgpt = AccountAuthState::new(Some(ForcedLoginMethod::Chatgpt));
+fn login_method_availability_filters_choices() {
+    let chatgpt = AccountAuthState::new(LoginMethodAvailability::ChatGptOnly);
     assert_eq!(
         chatgpt.choices(),
         vec![
@@ -34,7 +34,7 @@ fn forced_login_method_filters_choices() {
         ]
     );
 
-    let api = AccountAuthState::new(Some(ForcedLoginMethod::Api));
+    let api = AccountAuthState::new(LoginMethodAvailability::ApiOnly);
     assert_eq!(
         api.choices(),
         vec![AccountAuthChoice::ApiKey, AccountAuthChoice::Cancel]
@@ -43,7 +43,7 @@ fn forced_login_method_filters_choices() {
 
 #[test]
 fn completion_only_updates_the_matching_login() {
-    let mut state = AccountAuthState::new(/*forced_login_method*/ None);
+    let mut state = AccountAuthState::new(LoginMethodAvailability::All);
     state.mode = AccountAuthMode::DeviceCode {
         login_id: "login-1".to_string(),
         verification_url: "https://auth.example.test/device".to_string(),
@@ -67,7 +67,7 @@ fn completion_only_updates_the_matching_login() {
 
 #[test]
 fn account_login_prompts_map_clicks_to_url_and_copy_actions() {
-    let mut state = AccountAuthState::new(/*forced_login_method*/ None);
+    let mut state = AccountAuthState::new(LoginMethodAvailability::All);
     state.mode = AccountAuthMode::Browser {
         login_id: "login-browser".to_string(),
         auth_url: "https://auth.example.test/browser".to_string(),
@@ -85,13 +85,19 @@ fn account_login_prompts_map_clicks_to_url_and_copy_actions() {
 
 #[test]
 fn account_login_choices_snapshot() {
-    let state = AccountAuthState::new(/*forced_login_method*/ None);
+    let state = AccountAuthState::new(LoginMethodAvailability::All);
     insta::assert_snapshot!("account_login_choices", render_state(&state));
 }
 
 #[test]
+fn account_login_api_only_choices_snapshot() {
+    let state = AccountAuthState::new(LoginMethodAvailability::ApiOnly);
+    insta::assert_snapshot!("account_login_api_only_choices", render_state(&state));
+}
+
+#[test]
 fn account_login_device_code_snapshot() {
-    let mut state = AccountAuthState::new(/*forced_login_method*/ None);
+    let mut state = AccountAuthState::new(LoginMethodAvailability::All);
     state.mode = AccountAuthMode::DeviceCode {
         login_id: "login-1".to_string(),
         verification_url: "https://auth.example.test/device".to_string(),
@@ -102,7 +108,7 @@ fn account_login_device_code_snapshot() {
 
 #[test]
 fn account_login_browser_snapshot() {
-    let mut state = AccountAuthState::new(/*forced_login_method*/ None);
+    let mut state = AccountAuthState::new(LoginMethodAvailability::All);
     state.mode = AccountAuthMode::Browser {
         login_id: "login-1".to_string(),
         auth_url: "https://auth.example.test/browser".to_string(),
@@ -112,7 +118,7 @@ fn account_login_browser_snapshot() {
 
 #[test]
 fn account_login_api_key_snapshot() {
-    let mut state = AccountAuthState::new(/*forced_login_method*/ None);
+    let mut state = AccountAuthState::new(LoginMethodAvailability::All);
     state.mode = AccountAuthMode::ApiKey;
     state.api_key.set_text("sk-secret-value");
     let rendered = render_state(&state);
@@ -122,7 +128,7 @@ fn account_login_api_key_snapshot() {
 
 #[test]
 fn account_login_success_snapshot() {
-    let mut state = AccountAuthState::new(/*forced_login_method*/ None);
+    let mut state = AccountAuthState::new(LoginMethodAvailability::All);
     state.mode = AccountAuthMode::Success;
     insta::assert_snapshot!("account_login_success", render_state(&state));
 }

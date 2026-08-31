@@ -1,14 +1,48 @@
 use super::RealtimeHandoffState;
 use super::RealtimeSessionKind;
+use super::ensure_realtime_api_login_allowed;
 use super::realtime_delegation_from_handoff;
 use super::realtime_request_headers;
 use super::realtime_text_from_handoff_request;
 use super::wrap_realtime_delegation_input;
 use async_channel::bounded;
+use codex_config::ManagedAuthPolicy;
 use codex_config::config_toml::RealtimeWsVersion;
+use codex_config::types::AuthCredentialsStoreMode;
+use codex_login::AuthConfig;
+use codex_login::AuthKeyringBackendKind;
+use codex_login::AuthManager;
+use codex_protocol::config_types::ForcedLoginMethod;
+use codex_protocol::error::CodexErr;
 use codex_protocol::protocol::RealtimeHandoffRequested;
 use codex_protocol::protocol::RealtimeTranscriptEntry;
 use pretty_assertions::assert_eq;
+
+#[tokio::test]
+async fn realtime_rejects_chatgpt_only_policy_before_credential_selection() {
+    let codex_home = tempfile::tempdir().expect("tempdir");
+    let manager = AuthManager::shared_from_stored_auth_config(AuthConfig {
+        codex_home: codex_home.path().to_path_buf(),
+        auth_credentials_store_mode: AuthCredentialsStoreMode::Ephemeral,
+        keyring_backend_kind: AuthKeyringBackendKind::default(),
+        forced_login_method: None,
+        chatgpt_base_url: None,
+        forced_chatgpt_workspace_id: None,
+        managed_auth_policy: ManagedAuthPolicy::default()
+            .restrict_login_methods_to([ForcedLoginMethod::Chatgpt]),
+        auth_route_config: None,
+    })
+    .await;
+
+    let err = ensure_realtime_api_login_allowed(&manager)
+        .expect_err("ChatGPT-only policy should reject realtime startup");
+
+    assert!(matches!(err, CodexErr::InvalidRequest(_)));
+    assert_eq!(
+        err.to_string(),
+        "realtime conversation requires API key login, which is disabled by authentication policy"
+    );
+}
 
 #[test]
 fn prefers_handoff_input_transcript_over_active_transcript() {

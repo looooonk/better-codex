@@ -11,7 +11,7 @@ expression: rendered
                             │ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
  ▎ CODEX  Started a fullscre│ ↵ / c       Copy item │  ⌘⌫          Delete st…
  ▎ PLAN  1. Build shell     │ e           Branch    │  ⌥/^ + ←→    Move word
-         2. Wire transcript │ ^O          Copy reply│  S/A + ↵     Newline
+         2. Wire transcript │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
          3. Render dashboard│◆ DASHBOARD            │  Alt+M       Model
                             │ ^1 … ^4     Open tab  │  Alt+E       Effort
  ▌ tool exec just test -p co│ Alt+← / →   Prev/next │ ◆ APP

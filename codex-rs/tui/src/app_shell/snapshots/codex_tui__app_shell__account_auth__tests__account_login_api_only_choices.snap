@@ -1,0 +1,28 @@
+---
+source: tui/src/app_shell/account_auth_tests.rs
+expression: render_state(&state)
+---
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"        ╭──────────────────────────────────────────────────────────────────────╮        "
+"        │◆ ACCOUNT LOGIN                                                       │        "
+"        │Choose how to sign in.                                                │        "
+"        │                                                                      │        "
+"        │> 1. Use an API key                                                   │        "
+"        │    Store an OpenAI API key through app-server auth.                  │        "
+"        │  2. Cancel                                                           │        "
+"        │    Keep the current account and return to the session.               │        "
+"        │                                                                      │        "
+"        │↑↓ / j k navigate   Enter select   Esc close                          │        "
+"        │                                                                      │        "
+"        ╰──────────────────────────────────────────────────────────────────────╯        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "
+"                                                                                        "

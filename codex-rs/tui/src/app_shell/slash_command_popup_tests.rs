@@ -42,7 +42,7 @@ fn suggestions_follow_the_first_command_token_and_cursor() {
         ],
         [
             Some(vec![
-                "/clear", "/goal", "/login", "/logout", "/vim", "/exit",
+                "/clear", "/copy", "/goal", "/login", "/logout", "/vim", "/exit",
             ]),
             Some(vec!["/login", "/logout"]),
             Some(vec!["/clear"]),

@@ -79,6 +79,7 @@ impl McpRuntimeSnapshot {
             use_legacy_landlock: config.features.use_legacy_landlock(),
             apps_enabled: config.features.enabled(Feature::Apps),
             prefix_mcp_tool_names: config.prefix_mcp_tool_names(),
+            protocol_mode: config.mcp_protocol_mode(),
             client_elicitation_capability: ElicitationCapability::default(),
             mcp_server_catalog: ResolvedMcpCatalog::default(),
             connector_snapshot: codex_connectors::ConnectorSnapshot::default(),

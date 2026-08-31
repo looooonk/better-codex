@@ -1232,6 +1232,7 @@ impl Session {
                 sess.services.mcp_manager.tool_catalog_cache(),
                 codex_apps_tools_cache_key(auth),
                 config.prefix_mcp_tool_names(),
+                mcp_projection.config.protocol_mode,
                 mcp_projection
                     .config
                     .client_elicitation_capability

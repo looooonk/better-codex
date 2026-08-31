@@ -1,7 +1,12 @@
-const ARGUMENT_SLASH_COMMAND: &str = "/goal";
+const ARGUMENT_SLASH_COMMANDS: [&str; 2] = ["/copy", "/goal"];
 const NO_ARGUMENT_SLASH_COMMANDS: [&str; 5] = ["/clear", "/exit", "/login", "/logout", "/vim"];
 
 pub(super) fn script() -> String {
+    let argument_commands = ARGUMENT_SLASH_COMMANDS
+        .iter()
+        .map(|command| format!("'{command}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
     let no_argument_commands = NO_ARGUMENT_SLASH_COMMANDS
         .iter()
         .map(|command| format!("'{command}'"))
@@ -48,7 +53,7 @@ function! s:RefreshSlashCommandHighlight() abort
   let l:command_prefix = strcharpart(l:remaining, 0, 8)
   let l:boundary = match(l:command_prefix, s:RustWhitespaceAtom)
   let l:command = l:boundary < 0 ? l:command_prefix : strpart(l:command_prefix, 0, l:boundary)
-  let l:valid = l:command ==# '{ARGUMENT_SLASH_COMMAND}'
+  let l:valid = index([{argument_commands}], l:command) >= 0
   if !l:valid && index([{no_argument_commands}], l:command) >= 0
     let l:tail = strpart(l:remaining, strlen(l:command))
     let l:valid = matchend(l:tail, '^' . s:RustWhitespaceAtom . '*') == strlen(l:tail)

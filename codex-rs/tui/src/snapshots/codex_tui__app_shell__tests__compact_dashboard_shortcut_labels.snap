@@ -6,7 +6,7 @@ expression: rendered(60)
  Alt+↑ / ↓   Select msgs     │  ⌘← / →      Line ends
  ↵ / c       Copy item       │  ⌘⌫          Delete start
  e           Branch          │  ⌥/^ + ←→    Move word
- ^O          Copy reply      │  S/A + ↵     Newline
+ ^O/⌥1-9     Copy reply      │  S/A + ↵     Newline
                              │  Alt+M       Model
 ◆ DASHBOARD                  │  Alt+E       Effort
  ^1 … ^4     Open tab        │

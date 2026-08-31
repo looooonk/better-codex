@@ -213,6 +213,7 @@ async fn discover_streamable_http_oauth_with_headers(
     let builder = Client::builder().timeout(DISCOVERY_TIMEOUT).no_proxy();
     let client = apply_default_headers(builder, default_headers).build()?;
     let mut authorization_manager = AuthorizationManager::new(url).await?;
+    authorization_manager.set_allow_missing_issuer(true);
     authorization_manager.with_client(client)?;
     discover_streamable_http_oauth_with_manager(&authorization_manager).await
 }
@@ -222,20 +223,22 @@ async fn discover_streamable_http_oauth_with_headers_and_http_client(
     default_headers: HeaderMap,
     http_client: Arc<dyn HttpClient>,
 ) -> Result<Option<StreamableHttpOAuthDiscovery>> {
-    let authorization_manager = AuthorizationManager::new_with_oauth_http_client(
+    let mut authorization_manager = AuthorizationManager::new_with_oauth_http_client(
         url,
         Arc::new(OAuthHttpClientAdapter::new(http_client, default_headers)),
     )
     .await?;
+    authorization_manager.set_allow_missing_issuer(true);
     discover_streamable_http_oauth_with_manager(&authorization_manager).await
 }
 
 async fn discover_streamable_http_oauth_with_manager(
     authorization_manager: &AuthorizationManager,
 ) -> Result<Option<StreamableHttpOAuthDiscovery>> {
-    match authorization_manager.discover_metadata().boxed().await {
-        Ok(metadata) => Ok(Some(StreamableHttpOAuthDiscovery {
-            scopes_supported: normalize_scopes(metadata.scopes_supported),
+    match authorization_manager.resolve_metadata().boxed().await {
+        Ok(resolution) if !resolution.source.is_discovered() => Ok(None),
+        Ok(resolution) => Ok(Some(StreamableHttpOAuthDiscovery {
+            scopes_supported: normalize_scopes(resolution.metadata.scopes_supported),
         })),
         Err(AuthError::NoAuthorizationSupport) => Ok(None),
         Err(err) => Err(err.into()),
@@ -289,11 +292,31 @@ mod tests {
         }
     }
 
-    async fn spawn_oauth_discovery_server(metadata: serde_json::Value) -> TestServer {
+    #[derive(Clone, Copy)]
+    enum TestIssuer {
+        Missing,
+        Matching,
+        Mismatched,
+    }
+
+    async fn spawn_oauth_discovery_server(
+        metadata: serde_json::Value,
+        issuer: TestIssuer,
+    ) -> TestServer {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
             .expect("listener should bind");
         let address = listener.local_addr().expect("listener should have address");
+        let mut metadata = metadata;
+        if let Some(metadata) = metadata.as_object_mut()
+            && let Some(issuer) = match issuer {
+                TestIssuer::Missing => None,
+                TestIssuer::Matching => Some(format!("http://{address}/mcp")),
+                TestIssuer::Mismatched => Some(format!("http://{address}/other")),
+            }
+        {
+            metadata.insert("issuer".to_string(), issuer.into());
+        }
         let app = Router::new().route(
             "/.well-known/oauth-authorization-server/mcp",
             get({
@@ -389,12 +412,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn discover_streamable_http_oauth_returns_normalized_scopes() {
-        let server = spawn_oauth_discovery_server(serde_json::json!({
-            "authorization_endpoint": "https://example.com/authorize",
-            "token_endpoint": "https://example.com/token",
-            "scopes_supported": ["profile", " email ", "profile", "", "   "],
-        }))
+    async fn discover_streamable_http_oauth_accepts_missing_issuer_and_normalizes_scopes() {
+        let server = spawn_oauth_discovery_server(
+            serde_json::json!({
+                "authorization_endpoint": "https://example.com/authorize",
+                "token_endpoint": "https://example.com/token",
+                "scopes_supported": ["profile", " email ", "profile", "", "   "],
+            }),
+            TestIssuer::Missing,
+        )
         .await;
 
         let discovery = discover_streamable_http_oauth(
@@ -414,11 +440,14 @@ mod tests {
 
     #[tokio::test]
     async fn discover_streamable_http_oauth_follows_protected_resource_metadata() {
-        let authorization_server = spawn_oauth_discovery_server(serde_json::json!({
-            "authorization_endpoint": "https://example.com/authorize",
-            "token_endpoint": "https://example.com/token",
-            "scopes_supported": ["read", " write ", "read"],
-        }))
+        let authorization_server = spawn_oauth_discovery_server(
+            serde_json::json!({
+                "authorization_endpoint": "https://example.com/authorize",
+                "token_endpoint": "https://example.com/token",
+                "scopes_supported": ["read", " write ", "read"],
+            }),
+            TestIssuer::Missing,
+        )
         .await;
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -473,11 +502,14 @@ mod tests {
 
     #[tokio::test]
     async fn discover_streamable_http_oauth_ignores_empty_scopes() {
-        let server = spawn_oauth_discovery_server(serde_json::json!({
-            "authorization_endpoint": "https://example.com/authorize",
-            "token_endpoint": "https://example.com/token",
-            "scopes_supported": ["", "   "],
-        }))
+        let server = spawn_oauth_discovery_server(
+            serde_json::json!({
+                "authorization_endpoint": "https://example.com/authorize",
+                "token_endpoint": "https://example.com/token",
+                "scopes_supported": ["", "   "],
+            }),
+            TestIssuer::Missing,
+        )
         .await;
 
         let discovery = discover_streamable_http_oauth(
@@ -494,10 +526,13 @@ mod tests {
 
     #[tokio::test]
     async fn supports_oauth_login_does_not_require_scopes_supported() {
-        let server = spawn_oauth_discovery_server(serde_json::json!({
-            "authorization_endpoint": "https://example.com/authorize",
-            "token_endpoint": "https://example.com/token",
-        }))
+        let server = spawn_oauth_discovery_server(
+            serde_json::json!({
+                "authorization_endpoint": "https://example.com/authorize",
+                "token_endpoint": "https://example.com/token",
+            }),
+            TestIssuer::Missing,
+        )
         .await;
 
         let supported = supports_oauth_login(&server.url)
@@ -505,5 +540,36 @@ mod tests {
             .expect("support check should succeed");
 
         assert!(supported);
+    }
+
+    #[tokio::test]
+    async fn oauth_discovery_accepts_matching_metadata_issuer() {
+        let server = spawn_oauth_discovery_server(
+            serde_json::json!({
+                "authorization_endpoint": "https://example.com/authorize",
+                "token_endpoint": "https://example.com/token",
+            }),
+            TestIssuer::Matching,
+        )
+        .await;
+
+        assert!(supports_oauth_login(&server.url).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn oauth_discovery_rejects_mismatched_metadata_issuer() {
+        let server = spawn_oauth_discovery_server(
+            serde_json::json!({
+                "authorization_endpoint": "https://example.com/authorize",
+                "token_endpoint": "https://example.com/token",
+            }),
+            TestIssuer::Mismatched,
+        )
+        .await;
+
+        let error = supports_oauth_login(&server.url)
+            .await
+            .expect_err("mismatched issuer should fail closed");
+        assert!(error.to_string().contains("issuer mismatch"));
     }
 }

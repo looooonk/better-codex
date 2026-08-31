@@ -5626,51 +5626,83 @@ async fn alt_arrow_selection_starts_on_a_user_message() {
     }
 }
 
-#[test]
-fn copies_selected_transcript_item() {
+#[tokio::test]
+async fn response_copy_shortcuts_route_requested_ordinals() {
+    let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
-    shell.transcript_selection = Some(1);
-    let mut copied = None;
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.push_assistant("older response");
+    shell.push_user("follow-up");
+    shell.push_assistant("latest response");
 
-    shell.copy_selected_transcript_with(|text| {
-        copied = Some(text.to_string());
-        Ok(None)
-    });
+    for (digit, expected, status) in [
+        ('1', "latest response", "copied latest Codex response"),
+        ('2', "older response", "copied 2nd latest Codex response"),
+    ] {
+        let mut copied = None;
+        shell
+            .handle_key_with_transcript_copy(
+                KeyEvent::new(KeyCode::Char(digit), KeyModifiers::ALT),
+                &config,
+                &mut backend,
+                |text| {
+                    copied = Some(text.to_string());
+                    Ok(None)
+                },
+            )
+            .await
+            .expect("response copy shortcut should be routed");
 
-    assert_eq!(
-        copied,
-        Some("Create a divergent standalone TUI.".to_string())
-    );
-    assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Status,
-            "copied you transcript item"
-        ))
-    );
+        assert_eq!(
+            (copied.as_deref(), shell.transcript.back()),
+            (
+                Some(expected),
+                Some(&TranscriptLine::new(TranscriptKind::Status, status))
+            )
+        );
+    }
 }
 
-#[test]
-fn copies_latest_assistant_without_selection() {
+#[tokio::test]
+async fn control_o_routes_selection_then_falls_back_to_latest_response() {
+    let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
-    let mut copied = None;
+    let mut backend = RecordingBackend::default();
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.push_assistant("older response");
+    shell.push_user("selected prompt");
+    shell.push_assistant("latest response");
 
-    shell.copy_selected_transcript_with(|text| {
-        copied = Some(text.to_string());
-        Ok(None)
-    });
+    for (selection, expected, status) in [
+        (Some(1), "selected prompt", "copied you transcript item"),
+        (None, "latest response", "copied latest Codex response"),
+    ] {
+        shell.transcript_selection = selection;
+        let mut copied = None;
+        shell
+            .handle_key_with_transcript_copy(
+                KeyEvent::new(KeyCode::Char('o'), KeyModifiers::CONTROL),
+                &config,
+                &mut backend,
+                |text| {
+                    copied = Some(text.to_string());
+                    Ok(None)
+                },
+            )
+            .await
+            .expect("Ctrl+O should be routed");
 
-    assert_eq!(
-        copied,
-        Some("Started a fullscreen app shell backed by app-server turns.".to_string())
-    );
-    assert_eq!(
-        shell.transcript.back(),
-        Some(&TranscriptLine::new(
-            TranscriptKind::Status,
-            "copied codex transcript item"
-        ))
-    );
+        assert_eq!(
+            (copied.as_deref(), shell.transcript.back()),
+            (
+                Some(expected),
+                Some(&TranscriptLine::new(TranscriptKind::Status, status))
+            )
+        );
+    }
 }
 
 #[test]

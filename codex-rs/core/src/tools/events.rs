@@ -396,6 +396,11 @@ impl ToolEmitter {
                 let result = Err(FunctionCallError::RespondToModel(response));
                 (event, result)
             }
+            Err(ToolError::Codex(CodexErr::TurnAborted)) => {
+                let message = "approval aborted by user".to_string();
+                let event = ToolEventStage::Failure(ToolEventFailure::Message(message));
+                (event, Err(FunctionCallError::TurnAborted))
+            }
             Err(ToolError::Codex(err)) => {
                 let message = format!("execution error: {err:?}");
                 let event = ToolEventStage::Failure(ToolEventFailure::Message(message.clone()));

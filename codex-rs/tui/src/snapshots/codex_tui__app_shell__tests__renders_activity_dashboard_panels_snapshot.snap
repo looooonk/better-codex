@@ -9,7 +9,7 @@ expression: "render_shell(&shell, area)"
  ◆ CONVERSATION                                                       │ Alt+↑ / ↓   Select ms…│  ⌘← / →      Line ends
  ▎ SYSTEM  Better Codex app shell                                     │ ↵ / c       Copy item │  ⌘⌫          Delete st…
  ▎ YOU  Create a divergent standalone TUI.                            │ e           Branch    │  ⌥/^ + ←→    Move word
-                                                                      │ ^O          Copy reply│  S/A + ↵     Newline
+                                                                      │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │                       │  Alt+M       Model
  ▎ PLAN  1. Build shell                                               │◆ DASHBOARD            │  Alt+E       Effort
          2. Wire transcript                                           │ ^1 … ^4     Open tab  │  ↵           Steer turn

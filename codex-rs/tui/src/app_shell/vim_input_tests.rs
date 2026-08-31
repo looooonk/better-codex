@@ -437,6 +437,7 @@ call add(results, 'config=' . get(g:, 'better_codex_user_config', 'missing'))
 call add(results, 'mapping=' . maparg('<C-J>', 'n'))
 call add(results, 'style=' . synIDattr(hlID('BetterCodexSlashCommand'), 'fg', 'cterm'))
 call add(results, 'exact=' . join(exact_groups, ','))
+call add(results, 'copy=' . s:IsBetterCodexSlashCommand(['/copy 9']))
 call add(results, 'goal=' . s:IsBetterCodexSlashCommand(['/goal objective']))
 call add(results, 'leading=' . s:IsBetterCodexSlashCommand(['', '  /goal objective']))
 let nbsp = nr2char(0xa0)
@@ -502,7 +503,7 @@ Codex
         (
             true,
             format!(
-                "config={editor_name}\nmapping=:Codex<CR>\nstyle=123\nexact=1,1,1,1,1\ngoal=1\nleading=1\nunicode=1,1,0\ninvalid=0,0,0,0\nlarge=0\n"
+                "config={editor_name}\nmapping=:Codex<CR>\nstyle=123\nexact=1,1,1,1,1\ncopy=1\ngoal=1\nleading=1\nunicode=1,1,0\ninvalid=0,0,0,0\nlarge=0\n"
             ),
             "from bridge\nsecond line".to_string(),
             true,

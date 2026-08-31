@@ -241,14 +241,19 @@ impl AppServerTarget {
         matches!(self, Self::Remote { .. })
     }
 
-    fn auth_config_for_cloud_loader(&self, mut auth_config: AuthConfig) -> AuthConfig {
+    async fn cloud_config_bundle_loader(
+        &self,
+        local_auth_config: impl FnOnce() -> std::io::Result<AuthConfig>,
+    ) -> std::io::Result<CloudConfigBundleLoader> {
         if self.uses_remote_workspace() {
-            // The remote app server owns authentication policy for its workspace.
-            auth_config.forced_login_method = None;
-            auth_config.forced_chatgpt_workspace_id = None;
-            auth_config.managed_auth_policy = Default::default();
+            Ok(CloudConfigBundleLoader::default())
+        } else {
+            Ok(cloud_config_bundle_loader_for_storage(
+                local_auth_config()?,
+                /*enable_codex_api_key_env*/ false,
+            )
+            .await)
         }
-        auth_config
     }
 
     fn thread_params_mode(&self) -> ThreadParamsMode {
@@ -997,12 +1002,9 @@ pub async fn run_main(
         CloudConfigBundleLoader::default(),
     )
     .await;
-    let cloud_config_bundle = cloud_config_bundle_loader_for_storage(
-        app_server_target
-            .auth_config_for_cloud_loader(bootstrap_auth_config(&codex_home, &bootstrap_config)?),
-        /*enable_codex_api_key_env*/ false,
-    )
-    .await;
+    let cloud_config_bundle = app_server_target
+        .cloud_config_bundle_loader(|| bootstrap_auth_config(&codex_home, &bootstrap_config))
+        .await?;
     let bootstrap_config_toml = &bootstrap_config.config_toml;
 
     let cwd_override = if app_server_target.uses_remote_workspace() {
@@ -1946,6 +1948,7 @@ mod tests {
     use super::*;
     use crate::legacy_core::config::ConfigBuilder;
     use crate::legacy_core::config::ConfigOverrides;
+    use base64::Engine;
     use codex_app_server_protocol::AskForApproval;
     use codex_app_server_protocol::ClientRequest;
     use codex_app_server_protocol::RequestId;
@@ -1960,12 +1963,26 @@ mod tests {
     use serial_test::serial;
     use std::sync::Mutex;
     use tempfile::TempDir;
+    use wiremock::Mock;
+    use wiremock::MockServer;
+    use wiremock::ResponseTemplate;
+    use wiremock::matchers::method;
 
     async fn build_config(temp_dir: &TempDir) -> std::io::Result<Config> {
         ConfigBuilder::default()
             .codex_home(temp_dir.path().to_path_buf())
             .build()
             .await
+    }
+
+    fn business_auth_jwt() -> String {
+        let encode = |bytes: &[u8]| base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+        let header = encode(br#"{"alg":"none"}"#);
+        let payload = encode(
+            br#"{"email":"user@example.com","https://api.openai.com/auth":{"chatgpt_plan_type":"business","chatgpt_user_id":"user-123","chatgpt_account_id":"workspace-123"}}"#,
+        );
+        let signature = encode(b"sig");
+        format!("{header}.{payload}.{signature}")
     }
 
     fn write_session_rollout(
@@ -2380,6 +2397,66 @@ mod tests {
         );
         assert!(target.uses_remote_workspace());
         assert_eq!(target.thread_params_mode(), ThreadParamsMode::Remote);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn remote_target_does_not_load_local_cloud_config_credentials() -> color_eyre::Result<()>
+    {
+        let codex_home = TempDir::new()?;
+        std::fs::write(
+            codex_home.path().join("auth.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "auth_mode": "chatgpt",
+                "tokens": {
+                    "id_token": business_auth_jwt(),
+                    "access_token": "local-access-token",
+                    "refresh_token": "local-refresh-token",
+                    "account_id": "workspace-123",
+                },
+            }))?,
+        )?;
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({})))
+            .expect(0)
+            .mount(&server)
+            .await;
+        let target = AppServerTarget::Remote {
+            endpoint: RemoteAppServerEndpoint::WebSocket {
+                websocket_url: "ws://127.0.0.1:4500".to_string(),
+                auth_token: None,
+            },
+        };
+        let auth_config = AuthConfig {
+            codex_home: codex_home.path().to_path_buf(),
+            auth_credentials_store_mode: AuthCredentialsStoreMode::File,
+            keyring_backend_kind: Default::default(),
+            forced_login_method: Some(ForcedLoginMethod::Api),
+            chatgpt_base_url: Some(server.uri()),
+            forced_chatgpt_workspace_id: None,
+            managed_auth_policy: Default::default(),
+            auth_route_config: None,
+        };
+
+        let local_auth_config_loaded = std::sync::atomic::AtomicBool::new(false);
+        let loader = target
+            .cloud_config_bundle_loader(|| {
+                local_auth_config_loaded.store(true, std::sync::atomic::Ordering::Relaxed);
+                Ok(auth_config)
+            })
+            .await?;
+
+        assert!(!local_auth_config_loaded.load(std::sync::atomic::Ordering::Relaxed));
+        assert_eq!(loader.get().await?, None);
+        assert!(
+            server
+                .received_requests()
+                .await
+                .expect("read cloud config requests")
+                .is_empty()
+        );
+        server.verify().await;
         Ok(())
     }
 

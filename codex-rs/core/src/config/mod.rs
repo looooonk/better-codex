@@ -80,6 +80,7 @@ use codex_login::AuthManagerConfig;
 use codex_login::AuthRouteConfig;
 use codex_mcp::McpConfig;
 use codex_mcp::McpPluginAttribution;
+use codex_mcp::McpProtocolMode;
 use codex_mcp::McpServerRegistration;
 use codex_mcp::ResolvedMcpCatalog;
 use codex_memories_read::memory_root;
@@ -1652,11 +1653,11 @@ impl Config {
             use_legacy_landlock: self.features.use_legacy_landlock(),
             apps_enabled: self.features.enabled(Feature::Apps),
             prefix_mcp_tool_names: self.prefix_mcp_tool_names(),
+            protocol_mode: self.mcp_protocol_mode(),
             client_elicitation_capability: if self.features.enabled(Feature::AuthElicitation) {
-                ElicitationCapability {
-                    form: Some(FormElicitationCapability::default()),
-                    url: Some(UrlElicitationCapability::default()),
-                }
+                ElicitationCapability::new()
+                    .with_form(FormElicitationCapability::new())
+                    .with_url(UrlElicitationCapability::new())
             } else {
                 // https://modelcontextprotocol.io/specification/2025-06-18/client/elicitation#capabilities
                 // indicates this should be an empty object.
@@ -1672,6 +1673,14 @@ impl Config {
 
     pub(crate) fn prefix_mcp_tool_names(&self) -> bool {
         !self.features.enabled(Feature::NonPrefixedMcpToolNames)
+    }
+
+    pub fn mcp_protocol_mode(&self) -> McpProtocolMode {
+        if self.features.enabled(Feature::Mcp20260728) {
+            McpProtocolMode::V20260728
+        } else {
+            McpProtocolMode::Legacy
+        }
     }
 
     pub async fn rebuild_preserving_session_layers(

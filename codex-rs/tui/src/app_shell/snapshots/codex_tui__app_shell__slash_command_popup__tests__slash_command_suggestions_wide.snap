@@ -13,10 +13,10 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 28))"
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.
  ▎ PLAN  1. Build shell
          2. Wire transcript
-         3. Render dashboard
 ╭──────────────────────────────────────────────────────────────────────╮
 │◆ COMMANDS                                                            │
 │▌ /clear  Clear the visible transcript                                │
+│  /copy   Copy response Markdown; accepts an optional 1-9 index       │
 │  /goal   Show or update the active goal                              │
 │  /login  Sign in to your OpenAI account                              │
 │  /logout Sign out of your OpenAI account                             │

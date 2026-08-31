@@ -447,13 +447,7 @@ impl ApplyPatchHandler {
                             tool_name: tool_name.clone(),
                         };
                         let out = orchestrator
-                            .run(
-                                &mut runtime,
-                                &req,
-                                &tool_ctx,
-                                turn.as_ref(),
-                                turn.approval_policy.value(),
-                            )
+                            .run(&mut runtime, &req, &tool_ctx, turn.as_ref())
                             .await
                             .map(|result| result.output);
                         let (out, delta) = match out {
@@ -611,13 +605,7 @@ pub(crate) async fn intercept_apply_patch(
                         tool_name: ToolName::plain(tool_name),
                     };
                     let out = orchestrator
-                        .run(
-                            &mut runtime,
-                            &req,
-                            &tool_ctx,
-                            turn.as_ref(),
-                            turn.approval_policy.value(),
-                        )
+                        .run(&mut runtime, &req, &tool_ctx, turn.as_ref())
                         .await
                         .map(|result| result.output);
                     let (out, delta) = match out {

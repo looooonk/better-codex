@@ -5,6 +5,7 @@
 //! sandboxing enforced by the explicit filesystem sandbox context.
 use crate::exec::is_likely_sandbox_denied;
 use crate::session::turn_context::TurnEnvironment;
+use crate::tools::approvals::ApprovalCacheKey;
 use crate::tools::hook_names::HookToolName;
 use crate::tools::sandboxing::Approvable;
 use crate::tools::sandboxing::ApprovalAction;
@@ -34,6 +35,7 @@ use codex_sandboxing::policy_transforms::effective_permission_profile;
 use codex_utils_path_uri::PathUri;
 use futures::future::BoxFuture;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Instant;
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, serde::Serialize)]
@@ -80,6 +82,19 @@ impl ApplyPatchRuntime {
             cwd: req.action.cwd.clone(),
             files: req.file_paths.clone(),
             patch: req.action.patch.clone(),
+            changes: Arc::new(req.changes.clone()),
+            permissions_preapproved: req.permissions_preapproved,
+            cache_keys: req
+                .file_paths
+                .iter()
+                .cloned()
+                .map(|path| {
+                    ApprovalCacheKey::ApplyPatch(ApplyPatchApprovalKey {
+                        environment_id: req.turn_environment.environment_id.clone(),
+                        path,
+                    })
+                })
+                .collect(),
         }
     }
 
@@ -173,9 +188,9 @@ impl Approvable<ApplyPatchRequest> for ApplyPatchRuntime {
     fn approval_action(
         &self,
         req: &ApplyPatchRequest,
-        ctx: &ApprovalCtx<'_>,
+        call_id: &str,
     ) -> std::io::Result<ApprovalAction> {
-        Ok(ApplyPatchRuntime::build_approval_action(req, ctx.call_id))
+        Ok(ApplyPatchRuntime::build_approval_action(req, call_id))
     }
 
     fn wants_no_sandbox_approval(&self, policy: AskForApproval) -> bool {

@@ -348,11 +348,12 @@ pub(crate) async fn handle_output_item_done(
                 .await;
 
             let cancellation_token = ctx.cancellation_token.child_token();
-            let tool_future: InFlightFuture<'static> = Box::pin(
-                ctx.tool_runtime
-                    .clone()
-                    .handle_tool_call(call, cancellation_token),
-            );
+            let tool_future: InFlightFuture<'static> =
+                Box::pin(ctx.tool_runtime.clone().handle_tool_call_for_turn(
+                    call,
+                    cancellation_token,
+                    ctx.cancellation_token.clone(),
+                ));
 
             output.needs_follow_up = true;
             output.tool_future = Some(tool_future);
@@ -412,6 +413,7 @@ pub(crate) async fn handle_output_item_done(
 
             output.needs_follow_up = true;
         }
+        Err(FunctionCallError::TurnAborted) => return Err(CodexErr::TurnAborted),
         // A fatal error occurred; surface it back into history.
         Err(FunctionCallError::Fatal(message)) => {
             return Err(CodexErr::Fatal(message));
