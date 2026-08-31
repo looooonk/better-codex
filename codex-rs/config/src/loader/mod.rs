@@ -1,4 +1,5 @@
 mod layer_io;
+mod local;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(test)]
@@ -48,6 +49,11 @@ use std::path::Path;
 #[cfg(windows)]
 use std::path::PathBuf;
 use toml::Value as TomlValue;
+
+pub use local::LocalConfigLayers;
+pub use local::LocalTomlLayer;
+pub use local::LocalTomlLayerStack;
+pub use local::load_local_config_layers;
 
 #[cfg(unix)]
 const SYSTEM_CONFIG_TOML_FILE_UNIX: &str = "/etc/codex/config.toml";

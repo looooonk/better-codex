@@ -332,3 +332,67 @@ model = "gpt-dev"
     .await
     .expect("profile-v2 should allow unrelated legacy profiles in base user config");
 }
+
+#[test]
+fn local_layer_projection_preserves_blockers_and_cloud_position() {
+    let tmp = tempdir().expect("tempdir");
+    let base_dir = AbsolutePathBuf::from_absolute_path(tmp.path()).expect("absolute base");
+    let layer = |source, contents| LocalTomlLayer {
+        source,
+        base_dir: base_dir.clone(),
+        toml: toml::from_str(contents).expect("valid TOML"),
+    };
+    let requirements = LocalTomlLayerStack {
+        layers: Vec::<LocalTomlLayer<RequirementSource>>::new(),
+        cloud_insertion_index: 0,
+    };
+    let layers = LocalConfigLayers {
+        config: LocalTomlLayerStack {
+            layers: vec![
+                layer(
+                    ConfigLayerSource::System {
+                        file: base_dir.join("system.toml"),
+                    },
+                    "ignored=true\narray=[1,2]\n[a]\nb=1\nc=2",
+                ),
+                layer(ConfigLayerSource::SessionFlags, "a=2\nonly_user=true"),
+            ],
+            cloud_insertion_index: 1,
+        },
+        requirements,
+    };
+
+    let only_user = layers
+        .clone()
+        .project(&[vec!["only_user".into()]], &[]);
+    assert_eq!(
+        only_user.config,
+        LocalTomlLayerStack {
+            layers: vec![layer(ConfigLayerSource::SessionFlags, "only_user=true")],
+            cloud_insertion_index: 0,
+        }
+    );
+
+    let projected = layers.project(
+        &[
+            vec!["a".into(), "b".into()],
+            vec!["array".into(), "unused".into()],
+        ],
+        &[],
+    );
+    assert_eq!(
+        projected.config,
+        LocalTomlLayerStack {
+            layers: vec![
+                layer(
+                    ConfigLayerSource::System {
+                        file: base_dir.join("system.toml"),
+                    },
+                    "array=[1,2]\n[a]\nb=1",
+                ),
+                layer(ConfigLayerSource::SessionFlags, "a=2"),
+            ],
+            cloud_insertion_index: 1,
+        }
+    );
+}
