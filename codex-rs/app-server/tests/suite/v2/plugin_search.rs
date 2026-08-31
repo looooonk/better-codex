@@ -16,6 +16,7 @@ use wiremock::matchers::query_param;
 use wiremock::matchers::query_param_is_missing;
 
 use super::plugin_search_support::DEFAULT_TIMEOUT;
+use super::plugin_search_support::read_plugin_search_response;
 use super::plugin_search_support::remote_plugin_json;
 use super::plugin_search_support::write_chatgpt_search_auth;
 use super::plugin_search_support::write_remote_search_config;
@@ -74,8 +75,9 @@ async fn plugin_search_routes_bounded_remote_queries_and_filters_shared_results(
     let mut app_server = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
-        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .build()
         .await?;
+    timeout(DEFAULT_TIMEOUT, app_server.initialize()).await??;
     let request_id = app_server
         .send_plugin_search_request(PluginSearchParams {
             search_term: "linear & docs".to_string(),
@@ -85,8 +87,7 @@ async fn plugin_search_routes_bounded_remote_queries_and_filters_shared_results(
             limit: Some(u32::MAX),
         })
         .await?;
-    let response: PluginSearchResponse =
-        timeout(DEFAULT_TIMEOUT, app_server.read_response(request_id)).await??;
+    let response = read_plugin_search_response(&mut app_server, request_id).await?;
 
     assert_eq!(response.next_cursor.as_deref(), Some("outgoing-token"));
     assert_eq!(
@@ -137,8 +138,9 @@ async fn plugin_search_falls_back_to_workspace_when_remote_plugin_is_disabled() 
     let mut app_server = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
-        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .build()
         .await?;
+    timeout(DEFAULT_TIMEOUT, app_server.initialize()).await??;
     let request_id = app_server
         .send_plugin_search_request(PluginSearchParams {
             search_term: "linear".to_string(),
@@ -148,8 +150,7 @@ async fn plugin_search_falls_back_to_workspace_when_remote_plugin_is_disabled() 
             limit: None,
         })
         .await?;
-    let response: PluginSearchResponse =
-        timeout(DEFAULT_TIMEOUT, app_server.read_response(request_id)).await??;
+    let response = read_plugin_search_response(&mut app_server, request_id).await?;
     assert_eq!(
         response
             .data
@@ -168,8 +169,7 @@ async fn plugin_search_falls_back_to_workspace_when_remote_plugin_is_disabled() 
             limit: None,
         })
         .await?;
-    let response: PluginSearchResponse =
-        timeout(DEFAULT_TIMEOUT, app_server.read_response(request_id)).await??;
+    let response = read_plugin_search_response(&mut app_server, request_id).await?;
     assert_eq!(
         response,
         PluginSearchResponse {
@@ -190,8 +190,9 @@ async fn plugin_search_returns_empty_when_plugins_are_disabled() -> Result<()> {
     let mut app_server = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
-        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .build()
         .await?;
+    timeout(DEFAULT_TIMEOUT, app_server.initialize()).await??;
 
     let request_id = app_server
         .send_plugin_search_request(PluginSearchParams {
@@ -202,8 +203,7 @@ async fn plugin_search_returns_empty_when_plugins_are_disabled() -> Result<()> {
             limit: None,
         })
         .await?;
-    let response: PluginSearchResponse =
-        timeout(DEFAULT_TIMEOUT, app_server.read_response(request_id)).await??;
+    let response = read_plugin_search_response(&mut app_server, request_id).await?;
     assert_eq!(
         response,
         PluginSearchResponse {

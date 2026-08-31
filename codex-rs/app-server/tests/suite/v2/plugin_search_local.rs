@@ -1,7 +1,6 @@
 use anyhow::Result;
 use app_test_support::TestAppServer;
 use codex_app_server_protocol::PluginSearchParams;
-use codex_app_server_protocol::PluginSearchResponse;
 use codex_app_server_protocol::PluginSearchScope;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_login::AuthKeyringBackendKind;
@@ -20,6 +19,7 @@ use wiremock::matchers::query_param;
 use wiremock::matchers::query_param_is_missing;
 
 use super::plugin_search_support::DEFAULT_TIMEOUT;
+use super::plugin_search_support::read_plugin_search_response;
 use super::plugin_search_support::remote_plugin_json;
 use super::plugin_search_support::write_chatgpt_search_auth;
 use super::plugin_search_support::write_installed_plugin;
@@ -55,8 +55,9 @@ async fn plugin_search_uses_local_catalogs_for_api_key_auth() -> Result<()> {
     let mut app_server = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
-        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .build()
         .await?;
+    timeout(DEFAULT_TIMEOUT, app_server.initialize()).await??;
     let request_id = app_server
         .send_plugin_search_request(PluginSearchParams {
             search_term: "calendar".to_string(),
@@ -66,8 +67,7 @@ async fn plugin_search_uses_local_catalogs_for_api_key_auth() -> Result<()> {
             limit: None,
         })
         .await?;
-    let response: PluginSearchResponse =
-        timeout(DEFAULT_TIMEOUT, app_server.read_response(request_id)).await??;
+    let response = read_plugin_search_response(&mut app_server, request_id).await?;
 
     assert_eq!(response.next_cursor, None);
     assert_eq!(
@@ -146,8 +146,9 @@ async fn plugin_search_adds_local_results_only_to_the_first_remote_page() -> Res
     let mut app_server = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
-        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .build()
         .await?;
+    timeout(DEFAULT_TIMEOUT, app_server.initialize()).await??;
     let roots = vec![AbsolutePathBuf::try_from(repo_root.path())?];
     let request_id = app_server
         .send_plugin_search_request(PluginSearchParams {
@@ -158,8 +159,7 @@ async fn plugin_search_adds_local_results_only_to_the_first_remote_page() -> Res
             limit: Some(1),
         })
         .await?;
-    let first_page: PluginSearchResponse =
-        timeout(DEFAULT_TIMEOUT, app_server.read_response(request_id)).await??;
+    let first_page = read_plugin_search_response(&mut app_server, request_id).await?;
     assert_eq!(first_page.next_cursor.as_deref(), Some("next-page"));
     assert_eq!(
         first_page
@@ -179,8 +179,7 @@ async fn plugin_search_adds_local_results_only_to_the_first_remote_page() -> Res
             limit: Some(1),
         })
         .await?;
-    let later_page: PluginSearchResponse =
-        timeout(DEFAULT_TIMEOUT, app_server.read_response(request_id)).await??;
+    let later_page = read_plugin_search_response(&mut app_server, request_id).await?;
     assert_eq!(later_page.next_cursor, None);
     assert_eq!(
         later_page
@@ -242,8 +241,9 @@ async fn plugin_search_deduplicates_remote_matches_and_retains_installed_state()
     let mut app_server = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
-        .build_initialized_with_timeout(DEFAULT_TIMEOUT)
+        .build()
         .await?;
+    timeout(DEFAULT_TIMEOUT, app_server.initialize()).await??;
     let request_id = app_server
         .send_plugin_search_request(PluginSearchParams {
             search_term: "calendar".to_string(),
@@ -253,8 +253,7 @@ async fn plugin_search_deduplicates_remote_matches_and_retains_installed_state()
             limit: None,
         })
         .await?;
-    let response: PluginSearchResponse =
-        timeout(DEFAULT_TIMEOUT, app_server.read_response(request_id)).await??;
+    let response = read_plugin_search_response(&mut app_server, request_id).await?;
 
     assert_eq!(
         response

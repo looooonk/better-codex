@@ -3,13 +3,30 @@ use std::time::Duration;
 
 use anyhow::Result;
 use app_test_support::ChatGptAuthFixture;
+use app_test_support::TestAppServer;
+use app_test_support::to_response;
 use app_test_support::write_chatgpt_auth;
+use codex_app_server_protocol::PluginSearchResponse;
+use codex_app_server_protocol::RequestId;
 use codex_config::types::AuthCredentialsStoreMode;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use serde_json::json;
+use tokio::time::timeout;
 use wiremock::MockServer;
 
 pub(super) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
+
+pub(super) async fn read_plugin_search_response(
+    app_server: &mut TestAppServer,
+    request_id: i64,
+) -> Result<PluginSearchResponse> {
+    let response = timeout(
+        DEFAULT_TIMEOUT,
+        app_server.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    to_response(response)
+}
 
 pub(super) fn write_remote_search_config(
     codex_home: &Path,

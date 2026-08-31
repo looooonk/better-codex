@@ -161,7 +161,7 @@ fn convert_configured_marketplace_plugin_to_plugin_summary(
         id: plugin.id,
         remote_plugin_id: None,
         version: None,
-        local_version: plugin.local_version,
+        local_version: plugin.installed_version.or(plugin.local_version),
         installed: plugin.installed,
         enabled: plugin.enabled,
         name: plugin.name,
