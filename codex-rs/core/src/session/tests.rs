@@ -3197,6 +3197,16 @@ async fn thread_rollback_drops_last_turn_from_history() {
         let mut state = sess.state.lock().await;
         state.set_reference_context_item(Some(tc.to_turn_context_item()));
     }
+    sess.services
+        .thread_extension_data
+        .get_or_init(crate::context::NodeReplReviewEvidence::default)
+        .record(
+            "cell-1",
+            "call-1",
+            vec![crate::context::NodeReplReviewEvidenceItem::Text(
+                "rolled-back evidence".to_string(),
+            )],
+        );
 
     handlers::thread_rollback(&sess, "sub-1".to_string(), /*num_turns*/ 1).await;
 
@@ -3211,6 +3221,12 @@ async fn thread_rollback_drops_last_turn_from_history() {
     assert_eq!(expected, history.raw_items());
     assert_eq!(sess.previous_turn_settings().await, None);
     assert!(sess.reference_context_item().await.is_none());
+    assert!(
+        sess.services
+            .thread_extension_data
+            .get::<crate::context::NodeReplReviewEvidence>()
+            .is_none()
+    );
 
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
         .await

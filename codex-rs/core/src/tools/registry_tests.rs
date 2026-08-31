@@ -1,5 +1,8 @@
 use super::*;
 use crate::session::step_context::StepContext;
+use codex_hooks::Hooks;
+use codex_hooks::HooksConfig;
+use core_test_support::hooks::trusted_config_layer_stack;
 use pretty_assertions::assert_eq;
 
 struct TestHandler {
@@ -28,6 +31,42 @@ impl ToolExecutor<ToolInvocation> for TestHandler {
 }
 
 impl CoreToolRuntime for TestHandler {}
+
+struct AcceptedResultTestHandler {
+    tool_name: codex_tools::ToolName,
+    accepted_results: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl ToolExecutor<ToolInvocation> for AcceptedResultTestHandler {
+    fn tool_name(&self) -> codex_tools::ToolName {
+        self.tool_name.clone()
+    }
+
+    fn spec(&self) -> codex_tools::ToolSpec {
+        test_spec(&self.tool_name)
+    }
+
+    fn handle(&self, _invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
+        Box::pin(async {
+            Ok(Box::new(
+                crate::tools::context::FunctionToolOutput::from_text(
+                    "accepted result".to_string(),
+                    /*success*/ Some(true),
+                ),
+            ) as Box<dyn crate::tools::context::ToolOutput>)
+        })
+    }
+}
+
+impl CoreToolRuntime for AcceptedResultTestHandler {
+    fn on_tool_result_accepted(
+        &self,
+        _invocation: &ToolInvocation,
+        _result: &dyn crate::tools::context::ToolOutput,
+    ) {
+        self.accepted_results.fetch_add(1, Ordering::SeqCst);
+    }
+}
 
 #[derive(Clone)]
 enum LifecycleTestResult {
@@ -449,6 +488,114 @@ async fn dispatch_notifies_tool_lifecycle_contributors() -> anyhow::Result<()> {
         .collect::<Vec<_>>();
     assert_eq!(expected, actual);
 
+    Ok(())
+}
+
+#[tokio::test]
+async fn accepted_result_observer_runs_only_after_post_tool_use_accepts() -> anyhow::Result<()> {
+    let (session, turn) = crate::session::tests::make_session_and_context().await;
+    let accepted_results = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let tool_name = codex_tools::ToolName::plain("accepted_result");
+    let handler = Arc::new(AcceptedResultTestHandler {
+        tool_name: tool_name.clone(),
+        accepted_results: Arc::clone(&accepted_results),
+    });
+    let registry = ToolRegistry::with_handler_for_test(handler);
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+
+    registry
+        .dispatch_any(test_invocation(
+            Arc::clone(&session),
+            Arc::clone(&turn),
+            "accepted-call",
+            tool_name.clone(),
+        ))
+        .await?;
+    assert_eq!(accepted_results.load(Ordering::SeqCst), 1);
+
+    install_blocking_post_tool_use_hook(session.as_ref(), turn.as_ref())?;
+    let error = match registry
+        .dispatch_any(test_invocation(
+            Arc::clone(&session),
+            Arc::clone(&turn),
+            "blocked-call",
+            tool_name,
+        ))
+        .await
+    {
+        Ok(_) => panic!("PostToolUse should block the result"),
+        Err(error) => error,
+    };
+
+    assert_eq!(error.to_string(), "blocked after execution");
+    assert_eq!(accepted_results.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
+fn install_blocking_post_tool_use_hook(
+    session: &crate::session::session::Session,
+    turn: &crate::session::turn_context::TurnContext,
+) -> anyhow::Result<()> {
+    let script_path = turn.config.codex_home.join("block_post_tool_use.py");
+    std::fs::write(
+        &script_path,
+        r#"import json
+import sys
+
+json.load(sys.stdin)
+print(json.dumps({"decision": "block", "reason": "blocked after execution"}))
+"#,
+    )?;
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    let script_path_arg = if cfg!(windows) {
+        script_path.display().to_string()
+    } else {
+        format!(
+            "'{}'",
+            script_path.display().to_string().replace('\'', "'\\''")
+        )
+    };
+    std::fs::write(
+        turn.config.codex_home.join("hooks.json"),
+        serde_json::json!({
+            "hooks": {
+                "PostToolUse": [{
+                    "matcher": "^accepted_result$",
+                    "hooks": [{
+                        "type": "command",
+                        "command": format!("{python} {script_path_arg}"),
+                    }]
+                }]
+            }
+        })
+        .to_string(),
+    )?;
+    let hook_list = codex_hooks::list_hooks(HooksConfig {
+        feature_enabled: true,
+        config_layer_stack: Some(turn.config.config_layer_stack.clone()),
+        ..HooksConfig::default()
+    });
+    assert_eq!(hook_list.hooks.len(), 1);
+    let trusted_stack = trusted_config_layer_stack(
+        &turn.config.config_layer_stack,
+        &turn.config.codex_home,
+        hook_list.hooks,
+    );
+    session
+        .services
+        .hooks
+        .store(Arc::new(Hooks::new(HooksConfig {
+            feature_enabled: true,
+            config_layer_stack: Some(trusted_stack),
+            shell_program: (!cfg!(windows)).then_some("/bin/sh".to_string()),
+            shell_args: if cfg!(windows) {
+                Vec::new()
+            } else {
+                vec!["-c".to_string()]
+            },
+            ..HooksConfig::default()
+        })));
     Ok(())
 }
 
