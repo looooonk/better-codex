@@ -40,6 +40,8 @@ use tokio_util::task::TaskTracker;
 use self::delegate::RemoteDelegate;
 use self::peer::HostPeer;
 
+pub use self::grpc::GrpcCodeModeHost;
+
 mod delegate;
 mod grpc;
 mod peer;
