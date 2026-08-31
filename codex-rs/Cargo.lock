@@ -3193,7 +3193,16 @@ dependencies = [
 name = "codex-guardian-v2"
 version = "0.1.0-alpha.12"
 dependencies = [
+ "codex-api",
  "codex-extension-api",
+ "codex-http-client",
+ "codex-login",
+ "codex-model-provider",
+ "codex-protocol",
+ "http 1.4.0",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
