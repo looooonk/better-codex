@@ -3203,6 +3203,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "codex-history"
+version = "0.1.0-alpha.12"
+dependencies = [
+ "codex-protocol",
+]
+
+[[package]]
 name = "codex-home"
 version = "0.1.0-alpha.12"
 dependencies = [
@@ -3883,6 +3890,7 @@ dependencies = [
  "chrono",
  "codex-file-search",
  "codex-git-utils",
+ "codex-history",
  "codex-otel",
  "codex-protocol",
  "codex-secrets",
