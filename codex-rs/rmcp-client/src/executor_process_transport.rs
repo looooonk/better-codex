@@ -46,6 +46,9 @@ use tracing::debug;
 use tracing::info;
 use tracing::warn;
 
+use crate::local_stdio_transport::MAX_MCP_STDIO_LINE_BYTES;
+use crate::protocol_mode::McpProtocolMode;
+
 static PROCESS_COUNTER: AtomicUsize = AtomicUsize::new(1);
 // Tool results can make valid MCP responses large, so keep the protocol
 // ceiling well above ordinary messages while still bounding hostile input.
@@ -177,6 +180,9 @@ pub(super) struct ExecutorProcessTransport {
     /// Human-readable program name used only in diagnostics.
     program_name: String,
 
+    /// Compatibility policy for outbound stdio message limits.
+    protocol_mode: McpProtocolMode,
+
     /// Buffered child stdout bytes that have not yet formed a complete
     /// newline-delimited JSON-RPC message.
     stdout: LineBuffer,
@@ -201,7 +207,11 @@ pub(super) struct ExecutorProcessTransport {
 }
 
 impl ExecutorProcessTransport {
-    pub(super) fn new(process: Arc<dyn ExecProcess>, program_name: String) -> Self {
+    pub(super) fn new(
+        process: Arc<dyn ExecProcess>,
+        program_name: String,
+        protocol_mode: McpProtocolMode,
+    ) -> Self {
         // Subscribe before returning the transport to rmcp. Some test servers
         // can emit output or exit quickly after `process/start`, and the
         // process event log will replay anything that landed before this
@@ -212,6 +222,7 @@ impl ExecutorProcessTransport {
             stdin_write_semaphore: Arc::new(Semaphore::new(1)),
             events,
             program_name,
+            protocol_mode,
             stdout: LineBuffer::default(),
             stderr: LineBuffer::new(MAX_MCP_STDERR_LINE_BYTES),
             closed: false,
@@ -238,6 +249,7 @@ impl Transport<RoleClient> for ExecutorProcessTransport {
     ) -> impl Future<Output = std::result::Result<(), Self::Error>> + Send + 'static {
         let process = Arc::clone(&self.process);
         let stdin_write_semaphore = Arc::clone(&self.stdin_write_semaphore);
+        let protocol_mode = self.protocol_mode;
         async move {
             let _stdin_write_permit = stdin_write_semaphore
                 .acquire()
@@ -246,6 +258,13 @@ impl Transport<RoleClient> for ExecutorProcessTransport {
             // rmcp hands us a structured JSON-RPC message. Stdio transport on
             // the wire is JSON plus one newline delimiter.
             let mut bytes = to_vec(&item).map_err(io::Error::other)?;
+            if protocol_mode == McpProtocolMode::V20260728 && bytes.len() > MAX_MCP_STDIO_LINE_BYTES
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("MCP stdio message exceeds {MAX_MCP_STDIO_LINE_BYTES} bytes"),
+                ));
+            }
             bytes.push(b'\n');
             let response = process.write(bytes).await.map_err(io::Error::other)?;
             match response.status {
@@ -355,10 +374,22 @@ impl ExecutorProcessTransport {
             .await
             .map_err(io::Error::other)?;
         for chunk in response.chunks {
+            let expected_seq = self.last_seq.saturating_add(1);
+            if chunk.seq > expected_seq {
+                return Err(self.close_for_lost_output(expected_seq, chunk.seq));
+            }
             self.push_process_output_if_new(chunk);
             if self.closed {
                 return Ok(());
             }
+        }
+        // Reads omit sequenced terminal events from `chunks`; subtract them
+        // before deciding whether retained process output has a gap.
+        let terminal_event_count = u64::from(response.exited) + u64::from(response.closed);
+        let next_output_seq = response.next_seq.saturating_sub(terminal_event_count);
+        let expected_seq = self.last_seq.saturating_add(1);
+        if next_output_seq > expected_seq {
+            return Err(self.close_for_lost_output(expected_seq, next_output_seq));
         }
         self.last_seq = self.last_seq.max(response.next_seq.saturating_sub(1));
         if let Some(message) = response.failure {
@@ -371,6 +402,18 @@ impl ExecutorProcessTransport {
             self.closed = true;
         }
         Ok(())
+    }
+
+    fn close_for_lost_output(&mut self, expected_seq: u64, received_seq: u64) -> io::Error {
+        self.stdout.clear();
+        self.stderr.clear();
+        self.closed = true;
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "remote MCP server output stream lost process events: expected sequence {expected_seq}, received {received_seq}"
+            ),
+        )
     }
 
     fn push_process_output_if_new(&mut self, chunk: ProcessOutputChunk) {

@@ -512,7 +512,7 @@ impl ExecutorStdioServerLauncher {
             env,
             env_vars,
             cwd,
-            protocol_mode: _,
+            protocol_mode,
         } = command;
         let Some(cwd) = cwd else {
             return Err(io::Error::other(
@@ -559,6 +559,7 @@ impl ExecutorStdioServerLauncher {
             inner: StdioServerTransportInner::Executor(ExecutorProcessTransport::new(
                 started.process,
                 program_name,
+                protocol_mode,
             )),
             process,
         })
