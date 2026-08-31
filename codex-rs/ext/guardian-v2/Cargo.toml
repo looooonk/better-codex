@@ -19,7 +19,10 @@ codex-http-client = { workspace = true }
 codex-login = { workspace = true }
 codex-model-provider = { workspace = true }
 codex-protocol = { workspace = true }
+codex-secrets = { workspace = true }
+codex-utils-output-truncation = { workspace = true }
 http = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time"] }

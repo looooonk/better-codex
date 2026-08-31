@@ -1,7 +1,10 @@
 use codex_extension_api::ExtensionRegistryBuilder;
 
+mod evidence;
 mod sampler;
+mod transcript;
 
+pub use evidence::GuardianEvidenceEntry;
 pub use sampler::LunaSampler;
 pub use sampler::LunaSamplerConfig;
 pub use sampler::LunaSamplerError;
