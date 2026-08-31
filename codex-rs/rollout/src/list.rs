@@ -18,6 +18,7 @@ use uuid::Uuid;
 use super::ARCHIVED_SESSIONS_SUBDIR;
 use super::SESSIONS_SUBDIR;
 use super::compression;
+use super::rollout_file_name::RolloutFileName;
 use crate::protocol::EventMsg;
 use crate::state_db;
 use codex_file_search as file_search;
@@ -962,21 +963,9 @@ async fn collect_rollout_day_files(
 }
 
 pub(crate) fn parse_timestamp_uuid_from_filename(name: &str) -> Option<(OffsetDateTime, Uuid)> {
-    // Expected: rollout-YYYY-MM-DDThh-mm-ss-<uuid>.jsonl[.zst]
-    let name = compression::parse_rollout_file_name(name)?;
-    let core = name.strip_prefix("rollout-")?.strip_suffix(".jsonl")?;
-
-    // Scan from the right for a '-' such that the suffix parses as a UUID.
-    let (sep_idx, uuid) = core
-        .match_indices('-')
-        .rev()
-        .find_map(|(i, _)| Uuid::parse_str(&core[i + 1..]).ok().map(|u| (i, u)))?;
-
-    let ts_str = &core[..sep_idx];
-    let format: &[FormatItem] =
-        format_description!("[year]-[month]-[day]T[hour]-[minute]-[second]");
-    let ts = PrimitiveDateTime::parse(ts_str, format).ok()?.assume_utc();
-    Some((ts, uuid))
+    let file_name = RolloutFileName::parse(name)?;
+    let thread_id = Uuid::parse_str(&file_name.thread_id().to_string()).ok()?;
+    Some((file_name.timestamp(), thread_id))
 }
 
 struct ThreadCandidate {

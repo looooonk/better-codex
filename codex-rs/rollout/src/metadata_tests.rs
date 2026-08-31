@@ -197,12 +197,13 @@ async fn extract_metadata_from_rollout_returns_latest_memory_mode() {
 }
 
 #[test]
-fn builder_from_items_falls_back_to_filename() {
+fn builder_from_items_uses_thread_id_from_replacement_filename() {
     let dir = tempdir().expect("tempdir");
-    let uuid = Uuid::new_v4();
-    let path = dir
-        .path()
-        .join(format!("rollout-2026-01-27T12-34-56-{uuid}.jsonl"));
+    let thread_uuid = Uuid::new_v4();
+    let rollout_uuid = Uuid::new_v4();
+    let path = dir.path().join(format!(
+        "rollout-2026-01-27T12-34-56-{thread_uuid}_{rollout_uuid}.jsonl"
+    ));
     let items = vec![RolloutItem::Compacted(CompactedItem {
         message: "noop".to_string(),
         replacement_history: None,
@@ -219,13 +220,17 @@ fn builder_from_items_falls_back_to_filename() {
         .with_nanosecond(0)
         .expect("nanosecond");
     let expected = ThreadMetadataBuilder::new(
-        ThreadId::from_string(&uuid.to_string()).expect("thread id"),
-        path,
+        ThreadId::from_string(&thread_uuid.to_string()).expect("thread id"),
+        path.clone(),
         created_at,
         SessionSource::default(),
     );
 
     assert_eq!(builder, expected);
+    assert_eq!(
+        rollout_id_from_path(path.as_path()),
+        Some(ThreadId::from_string(&rollout_uuid.to_string()).expect("rollout id"))
+    );
 }
 
 #[tokio::test]

@@ -2787,8 +2787,13 @@ impl SessionContextWindow {
 }
 
 /// Exclusive position in another thread's paginated rollout history.
+/// Exclusive position in another rollout's paginated history.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema, TS)]
 pub struct HistoryPosition {
+    /// Rollout ID for the immutable prefix file.
+    ///
+    /// This field predates replacement rollouts and retains its source-compatible name. Ordinary
+    /// rollouts use their thread ID here; replacement rollouts use their distinct rollout ID.
     pub thread_id: ThreadId,
     /// First rollout ordinal not included from the prefix file.
     pub end_ordinal_exclusive: u64,
