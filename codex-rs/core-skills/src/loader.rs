@@ -4,9 +4,6 @@ mod namespace;
 
 pub use environment::EnvironmentSkillLoadOutcome;
 pub use environment::EnvironmentSkillMetadata;
-pub use environment::EnvironmentSkillSnapshot;
-pub use environment::EnvironmentSkillSnapshotOutcome;
-pub use environment::load_environment_skills_from_discovery;
 pub use environment::load_environment_skills_from_root;
 
 use crate::model::SkillDependencies;
