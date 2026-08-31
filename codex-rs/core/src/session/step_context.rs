@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::agents_md::LoadedAgentsMd;
@@ -5,7 +6,9 @@ use crate::environment_selection::TurnEnvironmentSnapshot;
 use crate::session::McpRuntimeSnapshot;
 use crate::session::turn_context::TurnContext;
 use codex_exec_server::ExecutorCapabilityDiscoverySnapshot;
+use codex_exec_server::FileSystemSandboxContext;
 use codex_exec_server::ResolvedSelectedCapabilityRoot;
+use codex_extension_api::ExtensionData;
 use codex_mcp::ToolInfo;
 use tokio::sync::OnceCell;
 
@@ -24,6 +27,8 @@ pub(crate) struct StepContext {
     mcp_tool_snapshot: OnceCell<Vec<ToolInfo>>,
     /// The canonical AGENTS.md value observed with this environment snapshot.
     pub(crate) loaded_agents_md: Option<Arc<LoadedAgentsMd>>,
+    /// Extension-owned values captured for this exact sampling request.
+    pub(crate) extension_data: ExtensionData,
 }
 
 impl StepContext {
@@ -35,6 +40,33 @@ impl StepContext {
         mcp: Arc<McpRuntimeSnapshot>,
         loaded_agents_md: Option<Arc<LoadedAgentsMd>>,
     ) -> Self {
+        let extension_data = ExtensionData::new(turn.sub_id.clone());
+        extension_data.insert(selected_capability_roots.clone());
+        if let Some(discovery) = &executor_capability_discovery {
+            extension_data.insert(discovery.as_ref().clone());
+        }
+        if !turn
+            .config
+            .permissions
+            .file_system_sandbox_policy()
+            .has_full_disk_read_access()
+        {
+            extension_data.insert(
+                environments
+                    .turn_environments
+                    .iter()
+                    .map(|environment| {
+                        (
+                            environment.environment_id.clone(),
+                            turn.file_system_sandbox_context(
+                                /*additional_permissions*/ None,
+                                environment,
+                            ),
+                        )
+                    })
+                    .collect::<HashMap<String, FileSystemSandboxContext>>(),
+            );
+        }
         Self {
             turn,
             environments,
@@ -43,6 +75,7 @@ impl StepContext {
             mcp,
             mcp_tool_snapshot: OnceCell::new(),
             loaded_agents_md,
+            extension_data,
         }
     }
 
