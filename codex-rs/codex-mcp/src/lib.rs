@@ -85,6 +85,7 @@ pub(crate) mod codex_apps_cache;
 pub(crate) mod connection_manager;
 pub(crate) mod elicitation;
 pub(crate) mod mcp;
+mod pagination;
 mod plugin_config;
 mod resource_client;
 pub(crate) mod rmcp_client;
