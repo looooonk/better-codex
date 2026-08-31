@@ -906,6 +906,37 @@ async fn cached_catalog_is_superseded_only_after_live_startup_revision_publishes
             .collect::<Vec<_>>(),
         vec!["live_search"]
     );
+
+    let preparation_started = Arc::new(tokio::sync::Notify::new());
+    let preparation_started_wait = preparation_started.notified();
+    let release_preparation = Arc::new(tokio::sync::Notify::new());
+    let call = tokio::spawn({
+        let preparation_started = Arc::clone(&preparation_started);
+        let release_preparation = Arc::clone(&release_preparation);
+        async move {
+            live_binding
+                .call_tool_with_preparation(
+                    CODEX_APPS_MCP_SERVER_NAME,
+                    "live_search",
+                    move || async move {
+                        preparation_started.notify_one();
+                        release_preparation.notified().await;
+                        Err(anyhow!("stop after preparation"))
+                    },
+                )
+                .await
+        }
+    });
+    preparation_started_wait.await;
+    let catalog_writer = tokio::time::timeout(
+        Duration::from_secs(1),
+        manager.tool_catalog_revision.write(),
+    )
+    .await
+    .expect("catalog writer must not wait for call preparation");
+    drop(catalog_writer);
+    release_preparation.notify_one();
+    assert!(call.await.expect("tool call task").is_err());
 }
 
 #[tokio::test]

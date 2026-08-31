@@ -81,7 +81,7 @@ impl McpBinding {
 
     #[expect(
         clippy::await_holding_invalid_type,
-        reason = "catalog replacement must stay serialized with visibility revalidation and execution"
+        reason = "exact target materialization must stay serialized with visibility revalidation"
     )]
     pub async fn call_tool_with_preparation<F, Fut>(
         &self,
@@ -93,7 +93,7 @@ impl McpBinding {
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<(Option<serde_json::Value>, Option<serde_json::Value>)>>,
     {
-        let _authority = self
+        let authority = self
             .manager
             .lock_catalog_revision(self.catalog_revision)
             .await?;
@@ -110,8 +110,10 @@ impl McpBinding {
                 "MCP tool `{server}/{tool}` changed identity after it was advertised"
             ));
         }
+        let call = self.manager.prepare_tool_call(server, tool).await?;
+        drop(authority);
         let (arguments, meta) = prepare().await?;
-        self.manager.call_tool(server, tool, arguments, meta).await
+        call.call(arguments, meta).await
     }
 }
 

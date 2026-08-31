@@ -142,6 +142,45 @@ pub struct McpConnectionManager {
     startup_cancellation_token: CancellationToken,
 }
 
+pub(crate) struct PreparedMcpToolCall {
+    client: Arc<codex_rmcp_client::RmcpClient>,
+    server: String,
+    tool: String,
+    timeout: Option<Duration>,
+}
+
+impl PreparedMcpToolCall {
+    pub(crate) async fn call(
+        self,
+        arguments: Option<serde_json::Value>,
+        meta: Option<serde_json::Value>,
+    ) -> Result<CallToolResult> {
+        let result: rmcp::model::CallToolResult = self
+            .client
+            .call_tool(self.tool.clone(), arguments, meta, self.timeout)
+            .await
+            .with_context(|| {
+                format!("tool call failed for `{}/{}`", self.server, self.tool)
+            })?;
+
+        let content = result
+            .content
+            .into_iter()
+            .map(|content| {
+                serde_json::to_value(content)
+                    .unwrap_or_else(|_| serde_json::Value::String("<content>".to_string()))
+            })
+            .collect();
+
+        Ok(CallToolResult {
+            content,
+            structured_content: result.structured_content,
+            is_error: result.is_error,
+            meta: result.meta.and_then(|meta| serde_json::to_value(meta).ok()),
+        })
+    }
+}
+
 #[derive(Default)]
 struct CodexAppsLocalCatalog {
     tools: Option<Vec<ToolInfo>>,
@@ -1038,33 +1077,28 @@ impl McpConnectionManager {
         arguments: Option<serde_json::Value>,
         meta: Option<serde_json::Value>,
     ) -> Result<CallToolResult> {
+        self.prepare_tool_call(server, tool)
+            .await?
+            .call(arguments, meta)
+            .await
+    }
+
+    pub(crate) async fn prepare_tool_call(
+        &self,
+        server: &str,
+        tool: &str,
+    ) -> Result<PreparedMcpToolCall> {
         let client = self.client_by_name(server).await?;
         if !client.tool_filter.allows(tool) {
             return Err(anyhow!(
                 "tool '{tool}' is disabled for MCP server '{server}'"
             ));
         }
-
-        let result: rmcp::model::CallToolResult = client
-            .client
-            .call_tool(tool.to_string(), arguments, meta, client.tool_timeout)
-            .await
-            .with_context(|| format!("tool call failed for `{server}/{tool}`"))?;
-
-        let content = result
-            .content
-            .into_iter()
-            .map(|content| {
-                serde_json::to_value(content)
-                    .unwrap_or_else(|_| serde_json::Value::String("<content>".to_string()))
-            })
-            .collect();
-
-        Ok(CallToolResult {
-            content,
-            structured_content: result.structured_content,
-            is_error: result.is_error,
-            meta: result.meta.and_then(|meta| serde_json::to_value(meta).ok()),
+        Ok(PreparedMcpToolCall {
+            client: client.client,
+            server: server.to_string(),
+            tool: tool.to_string(),
+            timeout: client.tool_timeout,
         })
     }
 
