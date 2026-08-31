@@ -10,6 +10,7 @@ use crate::ThreadStoreResult;
 
 mod read;
 mod search;
+mod turn_lookup;
 
 const MAX_THREAD_HISTORY_PAGE_SIZE: usize = 100;
 const MAX_THREAD_OCCURRENCE_PAGE_SIZE: usize = 250;
@@ -18,6 +19,7 @@ const MAX_THREAD_HISTORY_INPUT_BYTES: usize = 64 * 1024;
 pub(super) use read::list_items;
 pub(super) use read::list_turns;
 pub(super) use search::search_thread_occurrences;
+pub(super) use turn_lookup::find_source_turn;
 
 pub(super) struct ProjectedRolloutLine {
     pub ordinal: u64,
