@@ -178,7 +178,8 @@ impl GrpcCodeModeHost {
                 )),
             }))
             .map_err(|_| Status::internal("failed to publish code-mode execution admission"))?;
-        tokio::spawn(async move {
+        let response_session = Arc::clone(&session);
+        let response_task_registered = session.spawn_task(async move {
             let _request_permit = request_permit;
             tokio::select! {
                 biased;
@@ -189,9 +190,12 @@ impl GrpcCodeModeHost {
                         .and_then(conversions::execute_event);
                     let _ = sender.send(event).await;
                 }
-                _ = session.closed.cancelled() => {}
+                _ = response_session.closed.cancelled() => {}
             }
         });
+        if !response_task_registered {
+            return Err(Status::cancelled("code-mode session is closed"));
+        }
 
         Ok(Response::new(execution_stream(receiver, admission)))
     }

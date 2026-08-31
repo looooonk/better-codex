@@ -51,7 +51,7 @@ impl GrpcSession {
 
         let session = Arc::downgrade(self);
         let closed = self.closed.clone();
-        tokio::spawn(async move {
+        let watcher_registered = self.spawn_task(async move {
             tokio::select! {
                 _ = sender.closed() => {}
                 _ = closed.cancelled() => return,
@@ -82,6 +82,14 @@ impl GrpcSession {
                 }
             }
         });
+        if !watcher_registered {
+            self.state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .subscriptions
+                .retain(|subscription| subscription.id != id);
+            return Err(Status::cancelled("code-mode session is closed"));
+        }
         Ok(Box::pin(ReceiverStream::new(receiver)))
     }
 

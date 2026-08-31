@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::collections::hash_map::Entry;
+use std::future::Future;
 use std::hash::Hash;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -21,6 +22,7 @@ use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tonic::Status;
 use uuid::Uuid;
 
@@ -56,10 +58,12 @@ pub(super) struct GrpcSession {
     events: EventSender,
     cells_changed: Notify,
     delegate_permits: Arc<Semaphore>,
+    tasks: TaskTracker,
 }
 
 #[derive(Default)]
 pub(super) struct SessionState {
+    shutdown_started: bool,
     pub(super) cells: HashMap<String, ExecutionState>,
     pending_executions: HashSet<String>,
     pending_closures: HashSet<String>,
@@ -290,28 +294,67 @@ impl GrpcSession {
                 events,
                 cells_changed: Notify::new(),
                 delegate_permits,
+                tasks: TaskTracker::new(),
             }
         })
     }
 
     async fn shutdown(&self) -> Result<(), Status> {
+        self.shutdown_with_deadline(tokio::time::Instant::now() + crate::SHUTDOWN_TIMEOUT)
+            .await
+    }
+
+    pub(super) async fn shutdown_with_deadline(
+        &self,
+        deadline: tokio::time::Instant,
+    ) -> Result<(), Status> {
         self.closed.cancel();
         {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            if state.shutdown_started {
+                return Ok(());
+            }
+            state.shutdown_started = true;
+            self.tasks.close();
             for wait in state.waits.values() {
                 wait.cancellation.cancel();
             }
             state.pending_invocations.clear();
+            state.pending_notifications.clear();
             state.subscriptions.clear();
         }
-        let result = self.runtime.shutdown().await.map_err(Status::internal);
-        self.events.shutdown().await;
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .cells
-            .clear();
+        let shutdown = async {
+            let (runtime, (), ()) = tokio::join!(
+                self.runtime.shutdown(),
+                self.events.shutdown(),
+                self.tasks.wait(),
+            );
+            runtime.map_err(Status::internal)
+        };
+        let result = tokio::time::timeout_at(deadline, shutdown)
+            .await
+            .unwrap_or_else(|_| {
+                Err(Status::deadline_exceeded(
+                    "timed out shutting down code-mode gRPC session",
+                ))
+            });
+        *self.state.lock().unwrap_or_else(PoisonError::into_inner) = SessionState {
+            shutdown_started: true,
+            ..SessionState::default()
+        };
         result
+    }
+
+    pub(super) fn spawn_task(
+        &self,
+        task: impl Future<Output = ()> + Send + 'static,
+    ) -> bool {
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if state.shutdown_started || self.closed.is_cancelled() {
+            return false;
+        }
+        self.tasks.spawn(task);
+        true
     }
 
     pub(super) async fn terminate(&self, cell_id: CellId) -> Result<WaitOutcome, Status> {
@@ -401,7 +444,7 @@ impl GrpcSession {
         }
         if let Some(cell_id) = cell_id {
             let session = Arc::clone(self);
-            tokio::spawn(async move {
+            self.spawn_task(async move {
                 let _ = session.terminate(CellId::new(cell_id)).await;
             });
         }

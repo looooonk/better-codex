@@ -183,6 +183,28 @@ async fn unknown_notification_acknowledgements_are_rejected() {
 }
 
 #[tokio::test]
+async fn session_shutdown_is_bounded_and_closes_task_admission() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, _events) = open_session(&host).await;
+    let session = host.state.session(&session_id).unwrap();
+    let (release, wait) = oneshot::channel();
+    assert!(session.spawn_task(async move {
+        let _ = wait.await;
+    }));
+    assert_eq!(
+        session
+            .shutdown_with_deadline(tokio::time::Instant::now())
+            .await
+            .unwrap_err()
+            .code(),
+        Code::DeadlineExceeded,
+    );
+    assert!(!session.spawn_task(async {}));
+    let _ = release.send(());
+    tokio::task::yield_now().await;
+}
+
+#[tokio::test]
 async fn rejects_heap_limit_until_runtime_enforces_it() {
     let host = GrpcCodeModeHost::new();
 
