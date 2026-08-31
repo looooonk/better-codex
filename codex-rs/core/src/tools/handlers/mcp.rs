@@ -227,7 +227,11 @@ impl CoreToolRuntime for McpHandler {
         invocation: &ToolInvocation,
         result: &dyn crate::tools::context::ToolOutput,
     ) {
-        let ToolCallSource::CodeMode { cell_id, .. } = &invocation.source else {
+        let ToolCallSource::CodeMode {
+            cell_id,
+            runtime_tool_call_id,
+        } = &invocation.source
+        else {
             return;
         };
         if self.tool_info.server_name != "node_repl"
@@ -325,7 +329,7 @@ impl CoreToolRuntime for McpHandler {
             .turn
             .extension_data
             .get_or_init(NodeReplReviewEvidence::default)
-            .record(cell_id, &invocation.call_id, items);
+            .record(cell_id, runtime_tool_call_id, items);
     }
 
     fn post_tool_use_payload(
@@ -657,8 +661,10 @@ mod tests {
         assert_eq!(snapshot.records.len(), 1);
         assert_eq!(
             snapshot.records[0].provenance,
-            "tool=node_repl/js cell=cell-1 call=call-node-js"
+            "tool=node_repl/js cell=cell-1 call=runtime-call-1"
         );
+        assert_eq!(snapshot.records[0].cell_id, "cell-1");
+        assert_eq!(snapshot.records[0].runtime_tool_call_id, "runtime-call-1");
         let NodeReplReviewEvidenceItem::Text(text) = &snapshot.records[0].items[0] else {
             panic!("accepted result should retain text evidence");
         };

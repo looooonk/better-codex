@@ -127,6 +127,8 @@ where
                     review_id: binding.attempt_id,
                     turn_id: binding.turn_id,
                     action_id: binding.action_id,
+                    source: binding.source,
+                    evidence_revision: binding.evidence_revision,
                     action: action.assessment_action(),
                     request_payload: action.request_payload(),
                 },

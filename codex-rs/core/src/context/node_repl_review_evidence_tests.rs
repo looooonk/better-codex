@@ -84,6 +84,8 @@ fn empty_success_is_retained_as_a_correlated_record() {
             omitted_records: 0,
             records: vec![NodeReplReviewEvidenceRecord {
                 sequence: 1,
+                cell_id: "cell".to_string(),
+                runtime_tool_call_id: "call".to_string(),
                 provenance: "tool=node_repl/js cell=cell call=call".to_string(),
                 items: Vec::new(),
             }],

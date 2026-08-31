@@ -24,6 +24,8 @@ pub(crate) enum NodeReplReviewEvidenceItem {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct NodeReplReviewEvidenceRecord {
     pub(crate) sequence: u64,
+    pub(crate) cell_id: String,
+    pub(crate) runtime_tool_call_id: String,
     pub(crate) provenance: String,
     pub(crate) items: Vec<NodeReplReviewEvidenceItem>,
 }
@@ -31,6 +33,8 @@ pub(crate) struct NodeReplReviewEvidenceRecord {
 impl NodeReplReviewEvidenceRecord {
     fn retained_bytes(&self) -> usize {
         std::mem::size_of::<Self>()
+            .saturating_add(self.cell_id.capacity())
+            .saturating_add(self.runtime_tool_call_id.capacity())
             .saturating_add(self.provenance.capacity())
             .saturating_add(
                 self.items
@@ -43,6 +47,10 @@ impl NodeReplReviewEvidenceRecord {
                     NodeReplReviewEvidenceItem::Image { data_url } => data_url.capacity(),
                 })
             }))
+    }
+
+    pub(crate) fn has_cell_id(&self, cell_id: &str) -> bool {
+        self.cell_id == bounded_identifier(cell_id)
     }
 }
 
@@ -68,18 +76,22 @@ impl NodeReplReviewEvidence {
     pub(crate) fn record(
         &self,
         cell_id: &str,
-        call_id: &str,
+        runtime_tool_call_id: &str,
         items: Vec<NodeReplReviewEvidenceItem>,
     ) {
         let items = bounded_items(items);
+        let bounded_cell_id = bounded_identifier(cell_id);
+        let bounded_runtime_tool_call_id = bounded_identifier(runtime_tool_call_id);
         let mut state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         state.next_sequence = state.next_sequence.saturating_add(1);
         let record = NodeReplReviewEvidenceRecord {
             sequence: state.next_sequence,
+            cell_id: bounded_cell_id,
+            runtime_tool_call_id: bounded_runtime_tool_call_id,
             provenance: format!(
                 "tool=node_repl/js cell={} call={}",
                 bounded_provenance(cell_id),
-                bounded_provenance(call_id)
+                bounded_provenance(runtime_tool_call_id)
             ),
             items,
         };
@@ -167,6 +179,11 @@ fn bounded_provenance(value: &str) -> String {
     let value = redact_secrets(value.to_string())
         .replace(['\n', '\r', '[', ']', '='], "_")
         .replace("</", "<\\/");
+    take_bytes(&value, MAX_PROVENANCE_BYTES).to_string()
+}
+
+fn bounded_identifier(value: &str) -> String {
+    let value = redact_secrets(value.to_string());
     take_bytes(&value, MAX_PROVENANCE_BYTES).to_string()
 }
 

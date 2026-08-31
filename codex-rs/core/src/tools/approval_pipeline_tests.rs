@@ -160,6 +160,11 @@ struct NonReturningApprovalAuthority {
     cancel_on_review: Option<CancellationToken>,
 }
 
+struct StaleEvidenceApprovalAuthority {
+    turn: Arc<StdMutex<Option<Arc<TurnContext>>>>,
+    revisions: Arc<StdMutex<Vec<u64>>>,
+}
+
 #[derive(Debug)]
 struct HostileApprovalObservation {
     history_items: usize,
@@ -232,6 +237,50 @@ impl codex_extension_api::ApprovalReviewContributor for NonReturningApprovalAuth
             }
             std::future::pending().await
         })
+    }
+}
+
+impl codex_extension_api::ApprovalReviewContributor for StaleEvidenceApprovalAuthority {
+    fn review<'a>(
+        &'a self,
+        _session_store: &'a codex_extension_api::ExtensionData,
+        _thread_store: &'a codex_extension_api::ExtensionData,
+        input: codex_extension_api::ApprovalReviewInput,
+    ) -> codex_extension_api::ExtensionFuture<'a, codex_extension_api::ApprovalReviewResult> {
+        let mut revisions = self.revisions.lock().expect("revision lock");
+        revisions.push(input.binding.evidence_revision);
+        let first_review = revisions.len() == 1;
+        drop(revisions);
+        if first_review {
+            self.turn
+                .lock()
+                .expect("turn lock")
+                .as_ref()
+                .expect("turn context")
+                .extension_data
+                .get_or_init(NodeReplReviewEvidence::default)
+                .record(
+                    "cell-1",
+                    "runtime-evidence",
+                    vec![NodeReplReviewEvidenceItem::Text(
+                        "late evidence".to_string(),
+                    )],
+                );
+        }
+        let result = codex_extension_api::ApprovalReviewOutcome {
+            risk_level: codex_protocol::protocol::GuardianRiskLevel::Low,
+            user_authorization: codex_protocol::protocol::GuardianUserAuthorization::High,
+            rationale: if first_review {
+                "stale allow".to_string()
+            } else {
+                "current denial".to_string()
+            },
+        };
+        Box::pin(std::future::ready(if first_review {
+            ApprovalReviewResult::Allow(result)
+        } else {
+            ApprovalReviewResult::Deny(result)
+        }))
     }
 }
 
@@ -617,6 +666,15 @@ async fn code_mode_review_evidence_is_correlated_by_sequence() {
     turn.extension_data
         .get_or_init(NodeReplReviewEvidence::default)
         .record(
+            "cell-other",
+            "runtime-other",
+            vec![NodeReplReviewEvidenceItem::Text(
+                "unrelated output".to_string(),
+            )],
+        );
+    turn.extension_data
+        .get_or_init(NodeReplReviewEvidence::default)
+        .record(
             "cell-1",
             "runtime-1",
             vec![NodeReplReviewEvidenceItem::Text("accepted output".to_string())],
@@ -640,6 +698,39 @@ async fn code_mode_review_evidence_is_correlated_by_sequence() {
         }]
     );
     assert_eq!(images, Vec::<ApprovalReviewImage>::new());
+}
+
+#[tokio::test]
+async fn code_mode_allow_is_retried_when_evidence_revision_changes() {
+    let turn_slot = Arc::new(StdMutex::new(None));
+    let revisions = Arc::new(StdMutex::new(Vec::new()));
+    let (session, action, mut context) = guardian_review_test_fixture(
+        Arc::new(StaleEvidenceApprovalAuthority {
+            turn: Arc::clone(&turn_slot),
+            revisions: Arc::clone(&revisions),
+        }),
+        CancellationToken::new(),
+    )
+    .await;
+    context.source = ToolCallSource::CodeMode {
+        cell_id: "cell-1".to_string(),
+        runtime_tool_call_id: "runtime-action".to_string(),
+    };
+    *turn_slot.lock().expect("turn lock") = Some(Arc::clone(&context.turn));
+
+    let result = request_guardian_v2_approval_until(
+        &session,
+        &action,
+        &context,
+        Instant::now() + Duration::from_secs(1),
+    )
+    .await;
+
+    let ApprovalReviewResult::Deny(outcome) = result else {
+        panic!("stale allow should not authorize the action: {result:?}")
+    };
+    assert_eq!(outcome.rationale, "current denial");
+    assert_eq!(revisions.lock().expect("revision lock").as_slice(), [0, 1]);
 }
 
 #[tokio::test]

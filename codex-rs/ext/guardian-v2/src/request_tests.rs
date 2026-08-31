@@ -16,6 +16,11 @@ fn action(payload: Value) -> GuardianReviewAction {
         review_id: "review-1".to_string(),
         turn_id: "turn-1".to_string(),
         action_id: "action-1".to_string(),
+        source: codex_extension_api::ToolCallSource::CodeMode {
+            cell_id: "cell-1".to_string(),
+            runtime_tool_call_id: "runtime-call-1".to_string(),
+        },
+        evidence_revision: 7,
         action: GuardianAssessmentAction::McpToolCall {
             server: "node_repl".to_string(),
             tool_name: "js".to_string(),
@@ -75,7 +80,35 @@ fn request_is_redacted_and_inside_both_serialized_limits() {
     assert!(approx_token_count(&serialized) < MAX_REQUEST_TOKENS);
     assert!(!serialized.contains(secret));
     assert!(serialized.contains("[REDACTED_SECRET]"));
-    assert!(serialized.contains(NODE_REPL_JS_INSTRUCTIONS.trim()));
+    assert!(serialized.contains(CODE_MODE_INSTRUCTIONS.trim()));
+}
+
+#[test]
+fn sampling_body_carries_code_mode_binding_and_evidence_revision() {
+    let request = build_sampling_request(
+        attribution(),
+        request(json!({"script": "return 1"})),
+    )
+    .expect("bounded request");
+    let ResponseItem::Message { content, .. } = &request.input[2] else {
+        panic!("expected user message");
+    };
+    let ContentItem::InputText { text } = &content[0] else {
+        panic!("expected text review context");
+    };
+    let body: Value = serde_json::from_str(text).expect("review body");
+
+    assert_eq!(
+        body["binding"],
+        json!({
+            "source": {
+                "type": "codeMode",
+                "cellId": "cell-1",
+                "runtimeToolCallId": "runtime-call-1",
+            },
+            "evidenceRevision": 7,
+        })
+    );
 }
 
 #[test]

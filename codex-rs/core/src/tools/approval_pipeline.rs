@@ -512,9 +512,9 @@ fn approval_review_evidence(
     turn: &TurnContext,
     source: &ToolCallSource,
 ) -> (u64, Vec<ApprovalReviewEvidence>, Vec<ApprovalReviewImage>) {
-    if !matches!(source, ToolCallSource::CodeMode { .. }) {
+    let ToolCallSource::CodeMode { cell_id, .. } = source else {
         return (0, Vec::new(), Vec::new());
-    }
+    };
     let Some(snapshot) = turn
         .extension_data
         .get::<NodeReplReviewEvidence>()
@@ -524,14 +524,11 @@ fn approval_review_evidence(
     };
     let mut evidence = Vec::new();
     let mut images = Vec::new();
-    if snapshot.omitted_records != 0 {
-        evidence.push(ApprovalReviewEvidence {
-            kind: "node_repl_omission".to_string(),
-            provenance: None,
-            text: format!("{} earlier records omitted", snapshot.omitted_records),
-        });
-    }
-    for record in snapshot.records {
+    for record in snapshot
+        .records
+        .into_iter()
+        .filter(|record| record.has_cell_id(cell_id))
+    {
         for item in record.items {
             match item {
                 NodeReplReviewEvidenceItem::Text(text) => evidence.push(ApprovalReviewEvidence {

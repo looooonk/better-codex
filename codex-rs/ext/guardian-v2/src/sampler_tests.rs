@@ -122,6 +122,11 @@ fn review_request() -> GuardianReviewRequest {
             review_id: "review-1".to_string(),
             turn_id: "turn-1".to_string(),
             action_id: "action-1".to_string(),
+            source: codex_extension_api::ToolCallSource::CodeMode {
+                cell_id: "cell-1".to_string(),
+                runtime_tool_call_id: "runtime-call-1".to_string(),
+            },
+            evidence_revision: 1,
             action: GuardianAssessmentAction::McpToolCall {
                 server: "node_repl".to_string(),
                 tool_name: "js".to_string(),
