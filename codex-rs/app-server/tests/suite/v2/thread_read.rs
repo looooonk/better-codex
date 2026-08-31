@@ -75,7 +75,6 @@ use codex_thread_store::CreateThreadParams;
 use codex_thread_store::InMemoryThreadStore;
 use codex_thread_store::LocalThreadStore;
 use codex_thread_store::LocalThreadStoreConfig;
-use codex_thread_store::PersistContext;
 use codex_thread_store::ThreadMetadataPatch;
 use codex_thread_store::ThreadPersistenceMetadata;
 use codex_thread_store::ThreadStore;
@@ -538,7 +537,7 @@ async fn thread_search_occurrences_reads_paginated_projection() -> Result<()> {
             },
         })
         .await?;
-    store.persist_thread(thread_id, PersistContext::Standard).await?;
+    store.persist_thread(thread_id).await?;
     store
         .append_items(AppendThreadItemsParams {
             thread_id,
@@ -1537,7 +1536,7 @@ async fn paginated_history_lists_use_projected_turns_and_items() -> Result<()> {
             },
         })
         .await?;
-    store.persist_thread(thread_id, PersistContext::Standard).await?;
+    store.persist_thread(thread_id).await?;
     store
         .append_items(AppendThreadItemsParams {
             thread_id,

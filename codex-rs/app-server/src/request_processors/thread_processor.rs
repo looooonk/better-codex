@@ -5,7 +5,6 @@ use codex_app_server_protocol::SelectedCapabilityRoot;
 use codex_extension_api::ExtensionDataInit;
 use codex_protocol::config_types::MultiAgentMode;
 use codex_protocol::protocol::ThreadHistoryMode;
-use codex_thread_store::PersistContext;
 
 const THREAD_LIST_DEFAULT_LIMIT: usize = 25;
 const THREAD_LIST_MAX_LIMIT: usize = 100;
@@ -3214,7 +3213,7 @@ impl ThreadRequestProcessor {
                 if needs_paginated_projection
                     && let Err(error) = self
                         .thread_store
-                        .persist_thread(thread_id, PersistContext::Standard)
+                        .persist_thread(thread_id)
                         .await
                         .map_err(thread_store_resume_read_error)
                 {
@@ -3606,7 +3605,7 @@ impl ThreadRequestProcessor {
                 // previous write failure. Persist before legacy response hydration reads the
                 // latest durable turns and items.
                 self.thread_store
-                    .persist_thread(existing_thread_id, PersistContext::Standard)
+                    .persist_thread(existing_thread_id)
                     .await
                     .map_err(thread_store_resume_read_error)?;
             }

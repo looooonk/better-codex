@@ -252,13 +252,17 @@ impl LiveThread {
         Ok(items)
     }
 
-    pub async fn persist(&self, context: PersistContext) -> ThreadStoreResult<()> {
+    pub async fn persist(&self) -> ThreadStoreResult<()> {
+        self.persist_with_context(PersistContext::Standard).await
+    }
+
+    pub async fn persist_with_context(&self, context: PersistContext) -> ThreadStoreResult<()> {
         if context == PersistContext::TurnStart {
             self.flush_pending_metadata_update_for_existing_history()
                 .await?;
         }
         self.thread_store
-            .persist_thread(self.thread_id, context)
+            .persist_thread_with_context(self.thread_id, context)
             .await?;
         if context == PersistContext::TurnStart
             && let Some(message) = self.canonical_append_failure.lock().await.clone()

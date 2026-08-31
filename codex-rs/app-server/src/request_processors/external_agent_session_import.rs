@@ -20,7 +20,6 @@ use codex_protocol::protocol::ThreadMemoryMode;
 use codex_rollout::is_persisted_rollout_item;
 use codex_thread_store::AppendThreadItemsParams;
 use codex_thread_store::CreateThreadParams;
-use codex_thread_store::PersistContext;
 use codex_thread_store::ThreadMetadataPatch;
 use codex_thread_store::ThreadPersistenceMetadata;
 use codex_thread_store::ThreadStore;
@@ -281,7 +280,7 @@ impl ExternalAgentSessionImporter {
             .await
             .map_err(|err| format!("failed to update imported session: {err}"))?;
         self.thread_store
-            .persist_thread(thread_id, PersistContext::Standard)
+            .persist_thread(thread_id)
             .await
             .map_err(|err| format!("failed to persist imported session: {err}"))?;
         self.thread_store

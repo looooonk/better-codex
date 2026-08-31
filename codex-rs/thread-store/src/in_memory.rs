@@ -92,7 +92,7 @@ mod tests {
         );
 
         let persist_error = live_thread
-            .persist(PersistContext::TurnStart)
+            .persist_with_context(PersistContext::TurnStart)
             .await
             .expect_err("successful store persist must not hide append failure");
         assert_eq!(
@@ -701,11 +701,7 @@ impl ThreadStore for InMemoryThreadStore {
         Box::pin(InMemoryThreadStore::append_items(self, params))
     }
 
-    fn persist_thread(
-        &self,
-        _thread_id: ThreadId,
-        _context: PersistContext,
-    ) -> ThreadStoreFuture<'_, ()> {
+    fn persist_thread(&self, _thread_id: ThreadId) -> ThreadStoreFuture<'_, ()> {
         Box::pin(async move {
             self.state.lock().await.calls.persist_thread += 1;
             Ok(())

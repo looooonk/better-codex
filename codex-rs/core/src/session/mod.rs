@@ -1222,7 +1222,7 @@ impl Session {
     ) -> std::io::Result<()> {
         if let Some(live_thread) = self.live_thread() {
             live_thread
-                .persist(context)
+                .persist_with_context(context)
                 .await
                 .map_err(std::io::Error::other)?;
         }

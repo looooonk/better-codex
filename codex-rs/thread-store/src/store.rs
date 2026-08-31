@@ -67,15 +67,21 @@ pub trait ThreadStore: Any + Send + Sync {
     fn append_items(&self, params: AppendThreadItemsParams) -> ThreadStoreFuture<'_, ()>;
 
     /// Materializes the thread if persistence is lazy, then persists all queued items.
+    fn persist_thread(&self, thread_id: ThreadId) -> ThreadStoreFuture<'_, ()>;
+
+    /// Persists a thread with additional lifecycle context.
     ///
-    /// Standard persistence must complete before returning. Turn-start persistence may complete
-    /// in the background only when it is enqueued before returning, fenced by subsequent flush,
-    /// standard-persist, or shutdown operations, and failures surface through those operations.
-    fn persist_thread(
+    /// Turn-start persistence may complete in the background only when it is enqueued before
+    /// returning, fenced by subsequent flush, standard-persist, or shutdown operations, and
+    /// failures surface through those operations. Existing stores retain standard behavior by
+    /// default.
+    fn persist_thread_with_context(
         &self,
         thread_id: ThreadId,
-        context: PersistContext,
-    ) -> ThreadStoreFuture<'_, ()>;
+        _context: PersistContext,
+    ) -> ThreadStoreFuture<'_, ()> {
+        self.persist_thread(thread_id)
+    }
 
     /// Flushes all queued items and returns once they are durable/readable.
     fn flush_thread(&self, thread_id: ThreadId) -> ThreadStoreFuture<'_, ()>;
