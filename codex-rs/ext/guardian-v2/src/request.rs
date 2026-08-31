@@ -17,6 +17,7 @@ use serde_json::json;
 use thiserror::Error;
 
 use crate::evidence::GuardianEvidenceEntry;
+use crate::sampler::LunaSamplerError;
 use crate::sampler::model;
 use crate::transcript::MAX_EVIDENCE_ENTRIES;
 use crate::transcript::bounded_redacted_text;
@@ -108,6 +109,32 @@ pub enum GuardianReviewError {
     /// The request could not be serialized.
     #[error("Guardian request serialization failed")]
     Serialization(#[source] serde_json::Error),
+    /// Luna sampling failed.
+    #[error(transparent)]
+    Sampler(#[from] LunaSamplerError),
+    /// The single review deadline elapsed.
+    #[error("Guardian review deadline elapsed")]
+    Deadline,
+    /// Luna returned an invalid structured review.
+    #[error("Guardian returned an invalid structured review")]
+    InvalidOutput,
+}
+
+impl GuardianReviewError {
+    /// Whether an authoritative caller must fail closed into manual review.
+    pub fn requires_manual_review(&self) -> bool {
+        matches!(
+            self,
+            Self::ActionTooLarge
+                | Self::RequestTooLarge
+                | Self::InvalidIdentifier
+                | Self::InvalidImage
+                | Self::Serialization(_)
+                | Self::Sampler(_)
+                | Self::Deadline
+                | Self::InvalidOutput
+        )
+    }
 }
 
 pub(crate) struct SamplingAttribution {
