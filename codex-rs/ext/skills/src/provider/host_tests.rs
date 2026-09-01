@@ -1,14 +1,15 @@
 use std::sync::Arc;
 
-use codex_core_skills::loader::SkillRoot;
-use codex_core_skills::loader::load_skills_from_roots;
 use codex_exec_server::LOCAL_FS;
 use codex_protocol::protocol::SkillScope;
 use codex_utils_absolute_path::AbsolutePathBuf;
-use codex_utils_plugins::SkillDiscoveryMode;
 use pretty_assertions::assert_eq;
+use tokio::sync::Semaphore;
 
 use super::catalog_from_outcome;
+use crate::loader::HostSkillRoot;
+use crate::loader::MAX_CONCURRENT_ROOT_SCANS;
+use crate::loader::load_and_merge_host_skill_roots;
 
 #[cfg(unix)]
 #[tokio::test]
@@ -25,16 +26,14 @@ async fn catalog_preserves_symlinked_skill_discovery_path(
     std::os::unix::fs::symlink(&source_skill_dir, root.path().join("linked-skill"))?;
 
     let root = AbsolutePathBuf::try_from(std::fs::canonicalize(root.path())?)?;
-    let outcome = load_skills_from_roots(
-        [SkillRoot {
-            path: root.clone(),
-            scope: SkillScope::User,
-            file_system: Arc::clone(&LOCAL_FS),
-            plugin_id: None,
-            plugin_namespace: None,
-            plugin_root: None,
-            discovery_mode: SkillDiscoveryMode::Recursive,
-        }],
+    let outcome = load_and_merge_host_skill_roots(
+        vec![HostSkillRoot::host(
+            root.clone(),
+            SkillScope::User,
+            Arc::clone(&LOCAL_FS),
+        )],
+        &Semaphore::new(MAX_CONCURRENT_ROOT_SCANS),
+        /*restriction_product*/ None,
         /*plugin_skill_snapshots*/ None,
     )
     .await;

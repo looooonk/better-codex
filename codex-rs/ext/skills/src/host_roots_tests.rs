@@ -7,8 +7,6 @@ use codex_config::ConfigLayerEntry;
 use codex_config::ConfigLayerSource;
 use codex_config::ConfigLayerStack;
 use codex_config::ConfigRequirementsToml;
-use codex_core_skills::SkillMetadata;
-use codex_core_skills::loader::load_skills_from_roots;
 use codex_exec_server::CopyOptions;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::ExecutorFileSystem;
@@ -22,6 +20,7 @@ use codex_exec_server::RemoveOptions;
 use codex_exec_server::WalkOptions;
 use codex_exec_server::WalkOutcome;
 use codex_protocol::protocol::SkillScope;
+use codex_skills::SkillMetadata;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use codex_utils_plugins::PluginSkillRoot;
@@ -34,6 +33,19 @@ use tokio::sync::Semaphore;
 use super::repo_agents_skill_roots;
 use super::resolve_skill_roots_with_home_dir;
 use super::roots_from_layer_stack;
+use crate::loader::HostSkillRoot;
+use crate::loader::MAX_CONCURRENT_ROOT_SCANS;
+use crate::loader::load_and_merge_host_skill_roots;
+
+async fn load_roots(roots: Vec<HostSkillRoot>) -> codex_core_skills::SkillLoadOutcome {
+    load_and_merge_host_skill_roots(
+        roots,
+        &Semaphore::new(MAX_CONCURRENT_ROOT_SCANS),
+        /*restriction_product*/ None,
+        /*plugin_skill_snapshots*/ None,
+    )
+    .await
+}
 
 struct BlockingMetadataFileSystem {
     inner: Arc<dyn ExecutorFileSystem>,
@@ -308,21 +320,17 @@ async fn plugin_roots_preserve_plugin_resolution_metadata() {
     assert_eq!(roots.len(), 1);
     let root = &roots[0];
     assert_eq!(
-        (
-            root.path.clone(),
-            root.scope,
-            root.plugin_id.clone(),
-            root.plugin_namespace.clone(),
-            root.plugin_root.clone(),
-            root.discovery_mode,
-        ),
+        (root.path.clone(), root.scope, root.plugin_skill_root()),
         (
             skills_root,
             SkillScope::User,
-            Some(plugin_id),
-            Some(plugin_namespace),
-            Some(plugin_root),
-            SkillDiscoveryMode::DirectChildren,
+            Some(PluginSkillRoot {
+                path: plugin_root.join("skills"),
+                plugin_id,
+                plugin_namespace,
+                plugin_root,
+                discovery_mode: SkillDiscoveryMode::DirectChildren,
+            }),
         )
     );
     assert!(Arc::ptr_eq(&root.file_system, &LOCAL_FS));
@@ -348,26 +356,12 @@ async fn unique_extra_root_loads_as_recursive_user_root() {
     assert_eq!(roots.len(), 1);
     let root = &roots[0];
     assert_eq!(
-        (
-            root.path.clone(),
-            root.scope,
-            root.plugin_id.clone(),
-            root.plugin_namespace.clone(),
-            root.plugin_root.clone(),
-            root.discovery_mode,
-        ),
-        (
-            extra_root,
-            SkillScope::User,
-            None,
-            None,
-            None,
-            SkillDiscoveryMode::Recursive,
-        )
+        (root.path.clone(), root.scope, root.plugin_skill_root()),
+        (extra_root, SkillScope::User, None)
     );
     assert!(Arc::ptr_eq(&root.file_system, &LOCAL_FS));
 
-    let outcome = load_skills_from_roots(roots, /*plugin_skill_snapshots*/ None).await;
+    let outcome = load_roots(roots).await;
 
     assert!(outcome.errors.is_empty());
     assert_eq!(
@@ -444,7 +438,7 @@ async fn resolved_project_layer_loads_skill_without_git_marker() {
         Vec::new(),
     )
     .await;
-    let outcome = load_skills_from_roots(roots, /*plugin_skill_snapshots*/ None).await;
+    let outcome = load_roots(roots).await;
 
     assert!(outcome.errors.is_empty());
     assert_eq!(
@@ -475,7 +469,7 @@ async fn resolved_project_layer_loads_skill_when_cwd_is_file() {
         Vec::new(),
     )
     .await;
-    let outcome = load_skills_from_roots(roots, /*plugin_skill_snapshots*/ None).await;
+    let outcome = load_roots(roots).await;
 
     assert!(outcome.errors.is_empty());
     assert_eq!(
@@ -624,7 +618,7 @@ async fn resolved_config_and_repo_roots_preserve_order_and_dedupe_paths_not_name
     )
     .await;
     assert_eq!(roots.len(), 8);
-    let outcome = load_skills_from_roots(roots, /*plugin_skill_snapshots*/ None).await;
+    let outcome = load_roots(roots).await;
     assert!(outcome.errors.is_empty());
     assert_eq!(
         outcome.skills,

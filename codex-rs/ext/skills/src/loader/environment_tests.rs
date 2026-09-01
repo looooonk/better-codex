@@ -1,6 +1,5 @@
 use std::fs;
 
-use codex_core_skills::loader::load_environment_skills_from_root;
 use codex_exec_server::CapabilityRootDiscoverRequest;
 use codex_exec_server::CapabilityRootsDiscoverParams;
 use codex_exec_server::LOCAL_FS;
@@ -10,9 +9,10 @@ use pretty_assertions::assert_eq;
 use tempfile::tempdir;
 
 use super::load_environment_skills_from_discovery;
+use super::load_environment_skills_from_root;
 
 #[tokio::test]
-async fn executor_bundle_parser_matches_the_existing_environment_loader() {
+async fn executor_bundle_parser_matches_direct_environment_loader() {
     let root = tempdir().expect("tempdir");
     let plugin_manifest = root.path().join(".codex-plugin/plugin.json");
     let nested_manifest = root.path().join("nested/.claude-plugin/plugin.json");

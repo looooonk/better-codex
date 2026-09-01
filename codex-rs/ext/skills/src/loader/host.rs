@@ -32,10 +32,10 @@ use super::metadata::validate_len;
 use super::namespace::SkillNamespaceResolver;
 
 /// A resolved host skill root ready for filesystem discovery.
-pub(crate) struct HostSkillRoot {
-    pub(crate) path: AbsolutePathBuf,
-    pub(crate) scope: SkillScope,
-    pub(crate) file_system: Arc<dyn ExecutorFileSystem>,
+pub struct HostSkillRoot {
+    pub path: AbsolutePathBuf,
+    pub scope: SkillScope,
+    pub file_system: Arc<dyn ExecutorFileSystem>,
     plugin: Option<PluginSkillRootContext>,
 }
 
@@ -77,7 +77,7 @@ impl HostSkillRoot {
         }
     }
 
-    pub(crate) fn plugin_id(&self) -> Option<&str> {
+    pub fn plugin_id(&self) -> Option<&str> {
         self.plugin.as_ref().map(|plugin| plugin.id.as_str())
     }
 
