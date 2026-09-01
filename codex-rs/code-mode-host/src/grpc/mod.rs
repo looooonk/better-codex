@@ -296,6 +296,12 @@ impl GrpcCodeModeHost {
     }
 }
 
+impl Default for GrpcCodeModeHost {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn execution_stream(
     receiver: mpsc::Receiver<Result<proto::ExecuteEvent, Status>>,
     mut admission: ExecutionAdmission,
