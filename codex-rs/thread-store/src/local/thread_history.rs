@@ -3,6 +3,7 @@ use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::TurnStatus;
 use codex_protocol::RolloutId;
 use codex_protocol::models::MessagePhase;
+use codex_protocol::protocol::TurnAbortReason;
 
 use super::LocalThreadStore;
 use crate::ThreadStoreError;
@@ -47,13 +48,38 @@ pub(super) async fn projection_state(
     }
 
     let pool = store.thread_history_db().await?;
+    let mut transaction = pool
+        .begin_with("BEGIN IMMEDIATE")
+        .await
+        .map_err(thread_history_error)?;
+    let rollout_id = rollout_id.to_string();
+    // Return only a checkpoint that remains valid after compatibility repair.
+    sqlx::query(
+        r#"
+DELETE FROM thread_history_projection_state
+WHERE thread_id = ?
+  AND EXISTS (
+    SELECT 1
+    FROM thread_turns
+    WHERE thread_id = ?
+      AND status = 'interrupted'
+      AND abort_reason IS NULL
+  )
+        "#,
+    )
+    .bind(rollout_id.as_str())
+    .bind(rollout_id.as_str())
+    .execute(&mut *transaction)
+    .await
+    .map_err(thread_history_error)?;
     let state = sqlx::query_as::<_, (i64, i64)>(
         "SELECT next_rollout_byte_offset, next_rollout_ordinal FROM thread_history_projection_state WHERE thread_id = ?",
     )
-    .bind(rollout_id.to_string())
-    .fetch_optional(pool)
+    .bind(rollout_id.as_str())
+    .fetch_optional(&mut *transaction)
     .await
     .map_err(thread_history_error)?;
+    transaction.commit().await.map_err(thread_history_error)?;
     state
         .map(|(next_byte_offset, next_ordinal)| {
             Ok(RolloutProjectionState {
@@ -107,7 +133,15 @@ WHERE thread_id = ?
     let (expected_offset, mut next_ordinal) =
         projection_state.unwrap_or((0, sqlite_integer(initial_ordinal, "rollout ordinal")?));
     let start_offset = sqlite_integer(start_offset, "rollout byte offset")?;
+    let next_offset = sqlite_integer(next_offset, "rollout byte offset")?;
     if expected_offset != start_offset {
+        if expected_offset >= next_offset {
+            transaction
+                .rollback()
+                .await
+                .map_err(thread_history_error)?;
+            return Ok(());
+        }
         return Err(ThreadStoreError::Internal {
             message: format!(
                 "rollout history projection for {rollout_id} is behind durable rollout"
@@ -154,7 +188,7 @@ ON CONFLICT(thread_id) DO UPDATE SET
         "#,
     )
     .bind(rollout_id.as_str())
-    .bind(sqlite_integer(next_offset, "rollout byte offset")?)
+    .bind(next_offset)
     .bind(next_ordinal)
     .execute(&mut *transaction)
     .await
@@ -218,6 +252,7 @@ async fn apply_change_set(
             .map(serde_json::to_string)
             .transpose()
             .map_err(thread_history_error)?;
+        let abort_reason = turn.abort_reason.as_ref().map(turn_abort_reason);
         let (terminal_ordinal, terminal_byte_offset) = match &turn.status {
             TurnStatus::Completed | TurnStatus::Interrupted | TurnStatus::Failed => {
                 (Some(rollout_ordinal), Some(rollout_end_byte_offset))
@@ -237,21 +272,30 @@ INSERT INTO thread_turns (
     rollout_end_ordinal,
     rollout_end_byte_offset,
     status,
+    abort_reason,
     error_json,
     started_at,
     completed_at,
     duration_ms
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(thread_id, turn_id) DO UPDATE SET
     rollout_end_ordinal = excluded.rollout_end_ordinal,
     rollout_end_byte_offset = excluded.rollout_end_byte_offset,
     status = excluded.status,
+    abort_reason = excluded.abort_reason,
     error_json = excluded.error_json,
     started_at = excluded.started_at,
     completed_at = excluded.completed_at,
     duration_ms = excluded.duration_ms
-WHERE thread_turns.rollout_end_ordinal IS NULL
-  AND thread_turns.status = 'inProgress'
+WHERE (
+    thread_turns.rollout_end_ordinal IS NULL
+    AND thread_turns.status = 'inProgress'
+) OR (
+    thread_turns.status = 'interrupted'
+    AND thread_turns.abort_reason IS NULL
+    AND excluded.status = 'interrupted'
+    AND excluded.abort_reason IS NOT NULL
+)
             "#,
         )
         .bind(thread_id)
@@ -261,6 +305,7 @@ WHERE thread_turns.rollout_end_ordinal IS NULL
         .bind(terminal_ordinal)
         .bind(terminal_byte_offset)
         .bind(turn_status(&turn.status))
+        .bind(abort_reason)
         .bind(error_json)
         .bind(turn.started_at)
         .bind(turn.completed_at)
@@ -428,6 +473,15 @@ fn turn_status(status: &TurnStatus) -> &'static str {
         TurnStatus::Interrupted => "interrupted",
         TurnStatus::Failed => "failed",
         TurnStatus::InProgress => "inProgress",
+    }
+}
+
+fn turn_abort_reason(reason: &TurnAbortReason) -> &'static str {
+    match reason {
+        TurnAbortReason::Interrupted => "interrupted",
+        TurnAbortReason::Replaced => "replaced",
+        TurnAbortReason::ReviewEnded => "review_ended",
+        TurnAbortReason::BudgetLimited => "budget_limited",
     }
 }
 

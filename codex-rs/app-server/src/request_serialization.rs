@@ -8,12 +8,20 @@ use std::sync::Arc;
 use codex_app_server_protocol::ClientRequestSerializationScope;
 use futures::future::join_all;
 use tokio::sync::Mutex;
+use tokio::sync::oneshot;
 use tracing::Instrument;
 
 use crate::connection_rpc_gate::ConnectionRpcGate;
 use crate::outgoing_message::ConnectionId;
 
 type BoxFutureUnit = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+
+tokio::task_local! {
+    static CURRENT_REQUEST_SERIALIZATION_KEY: RequestSerializationQueueKey;
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RequestSerializationTaskEnded;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum RequestSerializationQueueKey {
@@ -146,6 +154,29 @@ pub(crate) struct RequestSerializationQueues {
 }
 
 impl RequestSerializationQueues {
+    pub(crate) async fn run_exclusive_or_enqueue_and_wait<T>(
+        &self,
+        key: RequestSerializationQueueKey,
+        future: impl Future<Output = T> + Send + 'static,
+    ) -> Result<T, RequestSerializationTaskEnded>
+    where
+        T: Send + 'static,
+    {
+        if CURRENT_REQUEST_SERIALIZATION_KEY
+            .try_with(|current| current == &key)
+            .unwrap_or(false)
+        {
+            return Ok(future.await);
+        }
+
+        let (result_tx, result_rx) = oneshot::channel();
+        self.enqueue_background(key, RequestSerializationAccess::Exclusive, async move {
+            let _ = result_tx.send(future.await);
+        })
+        .await;
+        result_rx.await.map_err(|_| RequestSerializationTaskEnded)
+    }
+
     /// Enqueue app-owned work alongside RPCs that mutate the same serialized resource.
     pub(crate) async fn enqueue_background(
         &self,
@@ -221,7 +252,10 @@ impl RequestSerializationQueues {
                 }
             };
 
-            join_all(requests.into_iter().map(|request| request.request.run())).await;
+            join_all(requests.into_iter().map(|request| {
+                CURRENT_REQUEST_SERIALIZATION_KEY.scope(key.clone(), request.request.run())
+            }))
+            .await;
         }
     }
 }
@@ -703,5 +737,125 @@ mod tests {
             .await
             .expect("later read should start after the write")
             .expect("sender should be open");
+    }
+
+    #[tokio::test]
+    async fn same_key_nested_wait_runs_inline() {
+        let queues = RequestSerializationQueues::default();
+        let key = RequestSerializationQueueKey::Global("nested");
+        let nested_queues = queues.clone();
+        let nested_key = key.clone();
+
+        let result = timeout(
+            queue_drain_timeout(),
+            queues.run_exclusive_or_enqueue_and_wait(key, async move {
+                nested_queues
+                    .run_exclusive_or_enqueue_and_wait(nested_key, async { SECOND_REQUEST_VALUE })
+                    .await
+            }),
+        )
+        .await
+        .expect("nested request should not deadlock")
+        .expect("outer serialized task should complete")
+        .expect("nested serialized task should complete");
+
+        assert_eq!(result, SECOND_REQUEST_VALUE);
+    }
+
+    #[tokio::test]
+    async fn reentrant_wait_preserves_earlier_nested_and_later_fifo() {
+        let queues = RequestSerializationQueues::default();
+        let key = RequestSerializationQueueKey::Global("nested-fifo");
+        let (values_tx, mut values_rx) = mpsc::unbounded_channel();
+        let (earlier_release_tx, earlier_release_rx) = oneshot::channel::<()>();
+
+        let earlier_values_tx = values_tx.clone();
+        queues
+            .enqueue_background(
+                key.clone(),
+                RequestSerializationAccess::Exclusive,
+                async move {
+                    earlier_values_tx
+                        .send(FIRST_REQUEST_VALUE)
+                        .expect("receiver should be open");
+                    let _ = earlier_release_rx.await;
+                },
+            )
+            .await;
+        assert_eq!(
+            timeout(queue_drain_timeout(), values_rx.recv())
+                .await
+                .expect("earlier request should start"),
+            Some(FIRST_REQUEST_VALUE)
+        );
+
+        let current_queues = queues.clone();
+        let nested_queues = queues.clone();
+        let current_key = key.clone();
+        let nested_key = key.clone();
+        let current_values_tx = values_tx.clone();
+        let current = tokio::spawn(async move {
+            current_queues
+                .run_exclusive_or_enqueue_and_wait(current_key, async move {
+                    nested_queues
+                        .run_exclusive_or_enqueue_and_wait(nested_key, async move {
+                            current_values_tx
+                                .send(SECOND_REQUEST_VALUE)
+                                .expect("receiver should be open");
+                        })
+                        .await
+                })
+                .await
+        });
+        timeout(queue_drain_timeout(), async {
+            loop {
+                let queued = queues
+                    .inner
+                    .lock()
+                    .await
+                    .get(&key)
+                    .is_some_and(|queue| !queue.is_empty());
+                if queued {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("current request should be queued");
+
+        let later_values_tx = values_tx.clone();
+        queues
+            .enqueue_background(key, RequestSerializationAccess::Exclusive, async move {
+                later_values_tx
+                    .send(THIRD_REQUEST_VALUE)
+                    .expect("receiver should be open");
+            })
+            .await;
+        drop(values_tx);
+        earlier_release_tx
+            .send(())
+            .expect("earlier request should still be waiting");
+
+        current
+            .await
+            .expect("current task should join")
+            .expect("current serialized task should complete")
+            .expect("nested serialized task should complete");
+        let mut values = vec![FIRST_REQUEST_VALUE];
+        while let Some(value) = timeout(queue_drain_timeout(), values_rx.recv())
+            .await
+            .expect("timed out waiting for queue to drain")
+        {
+            values.push(value);
+        }
+        assert_eq!(
+            values,
+            vec![
+                FIRST_REQUEST_VALUE,
+                SECOND_REQUEST_VALUE,
+                THIRD_REQUEST_VALUE
+            ]
+        );
     }
 }

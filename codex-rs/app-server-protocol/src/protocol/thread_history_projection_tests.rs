@@ -1,14 +1,14 @@
+use codex_history::CompactedItem;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::ThreadId;
 use codex_protocol::items::AgentMessageContent;
 use codex_protocol::items::AgentMessageItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
-use codex_history::CompactedItem;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ItemCompletedEvent;
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
@@ -54,6 +54,7 @@ fn projects_turn_lifecycle_without_prior_builder_state() {
             changed_turns: vec![ThreadHistoryTurnChange {
                 turn_id: "turn-1".to_string(),
                 status: TurnStatus::Completed,
+                abort_reason: None,
                 error: None,
                 started_at: Some(10),
                 completed_at: Some(20),
@@ -89,6 +90,7 @@ fn projects_failed_turn_completion_as_snapshot() {
             changed_turns: vec![ThreadHistoryTurnChange {
                 turn_id: "turn-1".to_string(),
                 status: TurnStatus::Failed,
+                abort_reason: None,
                 error: Some(TurnError {
                     message: "request failed".to_string(),
                     codex_error_info: None,
@@ -172,31 +174,39 @@ fn ignores_legacy_abort_without_turn_id_and_context_only_records() {
 }
 
 #[test]
-fn projects_identified_turn_aborts() {
-    let changes = project(RolloutItem::EventMsg(EventMsg::TurnAborted(
-        TurnAbortedEvent {
-            turn_id: Some("turn-1".to_string()),
-            reason: TurnAbortReason::Interrupted,
-            started_at: Some(10),
-            completed_at: Some(20),
-            duration_ms: Some(10_000),
-        },
-    )));
-
-    assert_eq!(
-        changes,
-        ThreadHistoryChangeSet {
-            changed_turns: vec![ThreadHistoryTurnChange {
-                turn_id: "turn-1".to_string(),
-                status: TurnStatus::Interrupted,
-                error: None,
+fn projects_identified_turn_abort_reasons() {
+    for reason in [
+        TurnAbortReason::Interrupted,
+        TurnAbortReason::BudgetLimited,
+        TurnAbortReason::Replaced,
+        TurnAbortReason::ReviewEnded,
+    ] {
+        let changes = project(RolloutItem::EventMsg(EventMsg::TurnAborted(
+            TurnAbortedEvent {
+                turn_id: Some("turn-1".to_string()),
+                reason: reason.clone(),
                 started_at: Some(10),
                 completed_at: Some(20),
                 duration_ms: Some(10_000),
-            }],
-            ..Default::default()
-        }
-    );
+            },
+        )));
+
+        assert_eq!(
+            changes,
+            ThreadHistoryChangeSet {
+                changed_turns: vec![ThreadHistoryTurnChange {
+                    turn_id: "turn-1".to_string(),
+                    status: TurnStatus::Interrupted,
+                    abort_reason: Some(reason),
+                    error: None,
+                    started_at: Some(10),
+                    completed_at: Some(20),
+                    duration_ms: Some(10_000),
+                }],
+                ..Default::default()
+            }
+        );
+    }
 }
 
 fn project(item: RolloutItem) -> ThreadHistoryChangeSet {

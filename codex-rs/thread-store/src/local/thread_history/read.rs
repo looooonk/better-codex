@@ -1,6 +1,7 @@
 use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::ThreadHistoryMode;
+use codex_protocol::protocol::TurnAbortReason;
 use serde::Deserialize;
 use serde::Serialize;
 use sqlx::QueryBuilder;
@@ -51,6 +52,7 @@ struct StoredTurnRow {
     turn_id: String,
     rollout_ordinal: i64,
     status: StoredTurnStatus,
+    abort_reason: Option<TurnAbortReason>,
     error: Option<StoredTurnError>,
     started_at: Option<i64>,
     completed_at: Option<i64>,
@@ -86,6 +88,7 @@ SELECT
     turn_id,
     rollout_ordinal,
     status,
+    abort_reason,
     error_json,
     started_at,
     completed_at,
@@ -96,12 +99,10 @@ FROM thread_turns
 WHERE
         "#,
     );
-    push_lineage_filter(
-        &mut query,
-        &lineage,
-        "thread_id",
-        "rollout_ordinal",
-    )?;
+    push_lineage_filter(&mut query, &lineage, "thread_id", "rollout_ordinal")?;
+    if let Some(turn_id) = params.turn_id.as_deref() {
+        query.push(" AND turn_id = ").push_bind(turn_id);
+    }
     push_pagination_clause(&mut query, params.sort_direction, cursor.as_ref(), limit);
     let rows = query
         .build()
@@ -135,6 +136,7 @@ WHERE
             items,
             items_view: params.items_view,
             status: turn.status,
+            abort_reason: turn.abort_reason,
             error: turn.error,
             started_at: turn.started_at,
             completed_at: turn.completed_at,
@@ -171,12 +173,7 @@ FROM thread_items
 WHERE
         "#,
     );
-    push_lineage_filter(
-        &mut query,
-        &lineage,
-        "thread_id",
-        "rollout_ordinal",
-    )?;
+    push_lineage_filter(&mut query, &lineage, "thread_id", "rollout_ordinal")?;
     if let Some(turn_id) = params.turn_id.as_deref() {
         query.push(" AND turn_id = ").push_bind(turn_id);
     }
@@ -435,6 +432,18 @@ fn stored_turn_row(row: sqlx::sqlite::SqliteRow) -> ThreadStoreResult<StoredTurn
         .map(serde_json::from_str)
         .transpose()
         .map_err(thread_history_error)?;
+    let abort_reason = match row.try_get::<Option<String>, _>("abort_reason")?.as_deref() {
+        Some("interrupted") => Some(TurnAbortReason::Interrupted),
+        Some("replaced") => Some(TurnAbortReason::Replaced),
+        Some("review_ended") => Some(TurnAbortReason::ReviewEnded),
+        Some("budget_limited") => Some(TurnAbortReason::BudgetLimited),
+        Some(reason) => {
+            return Err(ThreadStoreError::Internal {
+                message: format!("unknown stored turn abort reason: {reason}"),
+            });
+        }
+        None => None,
+    };
     let rollout_id = row.try_get::<String, _>("source_rollout_id")?;
     Ok(StoredTurnRow {
         rollout_id: ThreadId::from_string(rollout_id.as_str()).map_err(|err| {
@@ -445,6 +454,7 @@ fn stored_turn_row(row: sqlx::sqlite::SqliteRow) -> ThreadStoreResult<StoredTurn
         turn_id: row.try_get("turn_id")?,
         rollout_ordinal: row.try_get("rollout_ordinal")?,
         status,
+        abort_reason,
         error,
         started_at: row.try_get("started_at")?,
         completed_at: row.try_get("completed_at")?,

@@ -164,10 +164,7 @@ impl StateRuntime {
         Ok(true)
     }
 
-    pub(super) async fn repair_thread_section_ordering(
-        &self,
-        section: &str,
-    ) -> anyhow::Result<()> {
+    pub(super) async fn repair_thread_section_ordering(&self, section: &str) -> anyhow::Result<()> {
         let needs_repair = sqlx::query_scalar::<_, i64>(
             "SELECT 1 FROM threads WHERE thread_section_id = ? AND (section_position IS NULL OR section_entered_at_ms IS NULL) LIMIT 1",
         )

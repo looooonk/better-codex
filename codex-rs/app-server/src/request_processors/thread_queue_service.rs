@@ -11,17 +11,21 @@ use crate::request_serialization::RequestSerializationQueueKey;
 use crate::request_serialization::RequestSerializationQueues;
 use crate::thread_state::ThreadListenerCommand;
 use crate::thread_state::ThreadStateManager;
+use crate::thread_status::ThreadWatchManager;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::JSONRPCErrorError;
+use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::TurnStatus;
 use codex_core::CodexThread;
 use codex_core::ThreadManager;
 use codex_protocol::ThreadId;
+use codex_protocol::protocol::AgentStatus;
 use codex_protocol::protocol::QueuedTurnStartRejectionReason;
 use codex_protocol::protocol::QueuedTurnStartSubmission;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_rollout::StateDbHandle;
+use codex_state::BlockedSubmissionRetryPolicy;
 use codex_state::MAX_QUEUE_IDENTIFIER_BYTES;
 use codex_state::QueueClaimResult;
 use codex_state::QueuedSubmissionAdmissionRejection;
@@ -41,7 +45,8 @@ pub(crate) struct ThreadQueueService {
     outgoing: Arc<OutgoingMessageSender>,
     pub(super) state_db: Option<StateDbHandle>,
     request_serialization_queues: RequestSerializationQueues,
-    thread_state_manager: ThreadStateManager,
+    pub(super) thread_state_manager: ThreadStateManager,
+    thread_watch_manager: ThreadWatchManager,
 }
 
 pub(super) struct QueueStartResult {
@@ -63,6 +68,7 @@ impl ThreadQueueService {
         state_db: Option<StateDbHandle>,
         request_serialization_queues: RequestSerializationQueues,
         thread_state_manager: ThreadStateManager,
+        thread_watch_manager: ThreadWatchManager,
     ) -> Self {
         Self {
             thread_manager,
@@ -71,6 +77,7 @@ impl ThreadQueueService {
             state_db,
             request_serialization_queues,
             thread_state_manager,
+            thread_watch_manager,
         }
     }
 
@@ -161,18 +168,156 @@ impl ThreadQueueService {
         }
     }
 
-    pub(super) async fn schedule_dispatch(&self, thread_id: ThreadId) {
-        let service = self.clone();
-        self.enqueue_background(thread_id, async move {
-            if let Err(error) = service.recover(thread_id).await {
-                tracing::warn!(%thread_id, message = %error.message, "failed to recover thread queue");
-                return;
+    pub(super) async fn recover_before_queue_access(
+        &self,
+        thread_id: ThreadId,
+        loaded_thread: Option<&CodexThread>,
+    ) -> Result<(), JSONRPCErrorError> {
+        let disposition = if let Some(thread) = loaded_thread {
+            let watch_status = self
+                .thread_watch_manager
+                .loaded_status_for_thread(&thread_id.to_string())
+                .await;
+            match thread.agent_status().await {
+                AgentStatus::PendingInit if !matches!(watch_status, ThreadStatus::Idle) => {
+                    return Ok(());
+                }
+                AgentStatus::PendingInit | AgentStatus::Interrupted | AgentStatus::Completed(_) => {
+                    thread.flush_rollout().await.map_err(|error| {
+                        internal_error(format!(
+                            "failed to flush idle thread before queue recovery: {error}"
+                        ))
+                    })?;
+                    self.recover_serialized(thread_id).await?
+                }
+                AgentStatus::Errored(_) => {
+                    thread.flush_rollout().await.map_err(|error| {
+                        internal_error(format!(
+                            "failed to flush errored thread before terminal queue recovery: {error}"
+                        ))
+                    })?;
+                    self.recover_errored_serialized(thread_id).await?
+                }
+                AgentStatus::Running | AgentStatus::Shutdown | AgentStatus::NotFound => {
+                    return Ok(());
+                }
             }
-            if let Err(error) = service.dispatch_next(thread_id).await {
-                tracing::warn!(%thread_id, message = %error.message, "failed to dispatch thread queue");
-            }
+        } else {
+            self.recover_serialized(thread_id).await?
+        };
+        if matches!(
+            disposition,
+            Some(codex_state::QueueTerminalDisposition::Continue)
+        ) {
+            self.schedule_dispatch(thread_id).await;
+        }
+        Ok(())
+    }
+
+    pub(super) fn schedule_dispatch(
+        &self,
+        thread_id: ThreadId,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+        Box::pin(async move {
+            let service = self.clone();
+            self.enqueue_background(thread_id, async move {
+                if let Err(error) = service.dispatch_next(thread_id).await {
+                    tracing::warn!(%thread_id, message = %error.message, "failed to dispatch thread queue");
+                }
+            })
+            .await;
         })
-        .await;
+    }
+
+    pub(super) async fn recover_and_dispatch_serialized(
+        &self,
+        thread_id: ThreadId,
+    ) -> Result<(), JSONRPCErrorError> {
+        let service = self.clone();
+        self.request_serialization_queues
+            .run_exclusive_or_enqueue_and_wait(thread_serialization_key(thread_id), async move {
+                service.recover_and_dispatch(thread_id).await
+            })
+            .await
+            .map_err(|_| {
+                internal_error("serialized thread queue task ended before dispatch completed")
+            })?
+    }
+
+    pub(super) async fn recover_serialized(
+        &self,
+        thread_id: ThreadId,
+    ) -> Result<Option<codex_state::QueueTerminalDisposition>, JSONRPCErrorError> {
+        let service = self.clone();
+        self.request_serialization_queues
+            .run_exclusive_or_enqueue_and_wait(thread_serialization_key(thread_id), async move {
+                service.recover(thread_id).await
+            })
+            .await
+            .map_err(|_| {
+                internal_error("serialized thread queue task ended before recovery completed")
+            })?
+    }
+
+    async fn recover_errored_serialized(
+        &self,
+        thread_id: ThreadId,
+    ) -> Result<Option<codex_state::QueueTerminalDisposition>, JSONRPCErrorError> {
+        let service = self.clone();
+        self.request_serialization_queues
+            .run_exclusive_or_enqueue_and_wait(thread_serialization_key(thread_id), async move {
+                service.recover_errored(thread_id).await
+            })
+            .await
+            .map_err(|_| {
+                internal_error("serialized thread queue task ended before recovery completed")
+            })?
+    }
+
+    async fn recover_and_dispatch(&self, thread_id: ThreadId) -> Result<(), JSONRPCErrorError> {
+        if let Some(thread_manager) = self.thread_manager.upgrade()
+            && let Ok(thread) = thread_manager.get_thread(thread_id).await
+        {
+            match thread.agent_status().await {
+                AgentStatus::Running | AgentStatus::Shutdown | AgentStatus::NotFound => {
+                    return Ok(());
+                }
+                AgentStatus::Errored(_) => {
+                    let state_db = self.state_db()?;
+                    if state_db
+                        .active_queued_submission(thread_id)
+                        .await
+                        .map_err(queue_error)?
+                        .is_some()
+                    {
+                        thread.flush_rollout().await.map_err(|error| {
+                            internal_error(format!(
+                                "failed to flush errored thread before terminal queue recovery: {error}"
+                            ))
+                        })?;
+                        let _ = self.recover_errored(thread_id).await?;
+                        if state_db
+                            .active_queued_submission(thread_id)
+                            .await
+                            .map_err(queue_error)?
+                            .is_some()
+                        {
+                            return Ok(());
+                        }
+                    }
+                    return self.dispatch_next(thread_id).await;
+                }
+                AgentStatus::PendingInit | AgentStatus::Interrupted | AgentStatus::Completed(_) => {
+                }
+            }
+            thread.flush_rollout().await.map_err(|error| {
+                internal_error(format!(
+                    "failed to flush loaded thread before queue recovery: {error}"
+                ))
+            })?;
+        }
+        let _ = self.recover(thread_id).await?;
+        self.dispatch_next(thread_id).await
     }
 
     pub(super) async fn enqueue_background(
@@ -182,9 +327,7 @@ impl ThreadQueueService {
     ) {
         self.request_serialization_queues
             .enqueue_background(
-                RequestSerializationQueueKey::Thread {
-                    thread_id: thread_id.to_string(),
-                },
+                thread_serialization_key(thread_id),
                 RequestSerializationAccess::Exclusive,
                 future,
             )
@@ -223,8 +366,17 @@ impl ThreadQueueService {
         let Ok(thread) = thread_manager.get_thread(thread_id).await else {
             return Ok(());
         };
+        if self
+            .thread_state_manager
+            .current_listener_command_tx(thread_id)
+            .is_none()
+        {
+            return Ok(());
+        }
         thread.flush_rollout().await.map_err(|error| {
-            internal_error(format!("failed to flush thread before queue dispatch: {error}"))
+            internal_error(format!(
+                "failed to flush thread before queue dispatch: {error}"
+            ))
         })?;
         match self
             .start_claimed(thread_id, thread.as_ref(), None, /*trace*/ None)
@@ -249,15 +401,20 @@ impl ThreadQueueService {
         queued_submission_id: Option<&str>,
         trace: Option<W3cTraceContext>,
     ) -> Result<QueueStartResult, QueueStartFailure> {
+        if self
+            .thread_state_manager
+            .current_listener_command_tx(thread_id)
+            .is_none()
+        {
+            return Err(QueueStartFailure::unchanged(invalid_request(
+                "resume/subscribe the thread before starting a queued message",
+            )));
+        }
         let proposed_turn_id = Uuid::now_v7().to_string();
         let claim = self
             .state_db()
             .map_err(QueueStartFailure::unchanged)?
-            .claim_queued_submission_and_resume(
-                thread_id,
-                queued_submission_id,
-                &proposed_turn_id,
-            )
+            .claim_queued_submission_and_resume(thread_id, queued_submission_id, &proposed_turn_id)
             .await
             .map_err(queue_error)
             .map_err(QueueStartFailure::unchanged)?;
@@ -323,6 +480,20 @@ impl ThreadQueueService {
                     "thread already has an active or pending turn",
                 )));
             }
+            QueueClaimResult::Blocked {
+                owner_id,
+                retry_policy,
+            } => {
+                let message = match retry_policy {
+                    BlockedSubmissionRetryPolicy::Allowed => format!(
+                        "queued submission {owner_id} must be retried or deleted before another queued message can start"
+                    ),
+                    BlockedSubmissionRetryPolicy::Forbidden => format!(
+                        "queued submission {owner_id} is blocked because its input is already durable; delete it to acknowledge and discard it"
+                    ),
+                };
+                return Err(QueueStartFailure::unchanged(invalid_request(message)));
+            }
             QueueClaimResult::Empty => {
                 return Err(QueueStartFailure::unchanged(invalid_request(
                     match queued_submission_id {
@@ -333,26 +504,68 @@ impl ThreadQueueService {
             }
         };
         let turn_id = record.turn_id.clone().ok_or_else(|| {
-            QueueStartFailure::changed(internal_error(
-                "claimed queue item is missing its turn id",
-            ))
+            QueueStartFailure::changed(internal_error("claimed queue item is missing its turn id"))
         })?;
+        let queued_input = queued_core_input(&record).map_err(QueueStartFailure::changed)?;
+        self.thread_state_manager
+            .thread_state(thread_id)
+            .await
+            .lock()
+            .await
+            .mark_queued_turn_awaiting_terminal(turn_id.clone());
         let submission = thread
             .start_queued_turn(
                 turn_id.clone(),
-                queued_core_input(&record).map_err(QueueStartFailure::changed)?,
+                queued_input,
                 record.client_user_message_id.clone(),
                 trace,
             )
             .await;
         match submission {
             Ok(QueuedTurnStartSubmission::Persisted) => {
-                self.state_db()
-                    .map_err(QueueStartFailure::changed)?
+                let state_db = self.state_db().map_err(QueueStartFailure::changed)?;
+                match state_db
                     .mark_queued_submission_inflight(thread_id, &turn_id)
                     .await
-                    .map_err(queue_error)
-                    .map_err(QueueStartFailure::changed)?;
+                {
+                    Ok(true) => {}
+                    Ok(false) => {
+                        match state_db
+                            .queued_submission_for_turn(thread_id, &turn_id)
+                            .await
+                        {
+                            Ok(Some(observed)) => tracing::error!(
+                                %thread_id,
+                                queued_submission_id = %record.id,
+                                %turn_id,
+                                observed_submission_id = %observed.id,
+                                observed_state = ?observed.state,
+                                observed_turn_id = ?observed.turn_id,
+                                "admitted queued turn did not transition from starting to inflight"
+                            ),
+                            Ok(None) => tracing::error!(
+                                %thread_id,
+                                queued_submission_id = %record.id,
+                                %turn_id,
+                                "admitted queued turn disappeared before its inflight transition"
+                            ),
+                            Err(error) => tracing::error!(
+                                %thread_id,
+                                queued_submission_id = %record.id,
+                                %turn_id,
+                                %error,
+                                "admitted queued turn state could not be read after its inflight transition failed"
+                            ),
+                        }
+                    }
+                    Err(error) => tracing::error!(
+                        %thread_id,
+                        queued_submission_id = %record.id,
+                        %turn_id,
+                        %error,
+                        "failed to persist admitted queued turn as inflight"
+                    ),
+                }
                 Ok(QueueStartResult {
                     turn_id,
                     status: TurnStatus::InProgress,
@@ -362,29 +575,59 @@ impl ThreadQueueService {
             Ok(QueuedTurnStartSubmission::NotSubmitted { reason }) => {
                 match reason {
                     QueuedTurnStartRejectionReason::Busy
-                    | QueuedTurnStartRejectionReason::PendingTriggerTurn
-                    | QueuedTurnStartRejectionReason::FailedBeforePersistence => {
-                        self.state_db()
+                    | QueuedTurnStartRejectionReason::PendingTriggerTurn => {
+                        self.thread_state_manager
+                            .thread_state(thread_id)
+                            .await
+                            .lock()
+                            .await
+                            .clear_queued_turn_awaiting_terminal(&turn_id);
+                        let released = self
+                            .state_db()
                             .map_err(QueueStartFailure::changed)?
                             .release_queued_submission_claim(thread_id, &record.id, &turn_id)
                             .await
                             .map_err(queue_error)
                             .map_err(QueueStartFailure::changed)?;
-                        return Err(QueueStartFailure::unchanged(invalid_request(format!(
+                        let error = invalid_request(format!(
                             "queued submission was not started: {reason:?}"
-                        ))));
+                        ));
+                        return Err(if released {
+                            QueueStartFailure::unchanged(error)
+                        } else {
+                            QueueStartFailure::changed(error)
+                        });
+                    }
+                    QueuedTurnStartRejectionReason::FailedBeforePersistence => {
+                        self.recover_ambiguous_start(thread_id, thread, record)
+                            .await
+                            .map_err(QueueStartFailure::changed)?;
                     }
                     QueuedTurnStartRejectionReason::RejectedByHook => {
-                        self.state_db()
-                            .map_err(QueueStartFailure::changed)?
+                        let state_db = self.state_db().map_err(QueueStartFailure::changed)?;
+                        match state_db
                             .mark_queued_submission_admission_rejected(
                                 thread_id,
                                 &turn_id,
                                 QueuedSubmissionAdmissionRejection::Hook,
                             )
                             .await
-                            .map_err(queue_error)
-                            .map_err(QueueStartFailure::changed)?;
+                        {
+                            Ok(true) => {}
+                            Ok(false) => tracing::error!(
+                                %thread_id,
+                                queued_submission_id = %record.id,
+                                %turn_id,
+                                "rejected queued turn did not persist its admission marker"
+                            ),
+                            Err(error) => tracing::error!(
+                                %thread_id,
+                                queued_submission_id = %record.id,
+                                %turn_id,
+                                %error,
+                                "failed to persist queued turn admission rejection"
+                            ),
+                        }
                     }
                 }
                 Err(QueueStartFailure::changed(invalid_request(format!(
@@ -394,20 +637,18 @@ impl ThreadQueueService {
             Err(error) => {
                 let admission_error =
                     internal_error(format!("failed to admit queued submission: {error}"));
-                let released = self
-                    .state_db()
-                    .map_err(QueueStartFailure::changed)?
-                    .release_queued_submission_claim(thread_id, &record.id, &turn_id)
+                self.recover_ambiguous_start(thread_id, thread, record)
                     .await
-                    .map_err(queue_error)
                     .map_err(QueueStartFailure::changed)?;
-                Err(if released {
-                    QueueStartFailure::unchanged(admission_error)
-                } else {
-                    QueueStartFailure::changed(admission_error)
-                })
+                Err(QueueStartFailure::changed(admission_error))
             }
         }
+    }
+}
+
+fn thread_serialization_key(thread_id: ThreadId) -> RequestSerializationQueueKey {
+    RequestSerializationQueueKey::Thread {
+        thread_id: thread_id.to_string(),
     }
 }
 

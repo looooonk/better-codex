@@ -14,12 +14,13 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::GitInfo;
 use codex_protocol::protocol::MultiAgentVersion;
-use codex_rollout::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode as MemoryMode;
 use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TokenUsage;
+use codex_protocol::protocol::TurnAbortReason;
+use codex_rollout::RolloutItem;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
@@ -349,6 +350,9 @@ pub struct StoredTurnError {
 pub struct ListTurnsParams {
     /// Thread id to read.
     pub thread_id: ThreadId,
+    /// Exact turn id to return, or all turns when omitted.
+    #[serde(default)]
+    pub turn_id: Option<String>,
     /// Whether archived threads are eligible.
     pub include_archived: bool,
     /// Opaque cursor returned by a previous list call.
@@ -372,6 +376,9 @@ pub struct StoredTurn {
     pub items_view: StoredTurnItemsView,
     /// Store-owned status for API layer projection.
     pub status: StoredTurnStatus,
+    /// Exact reason for an interrupted turn, when projected from durable history.
+    #[serde(default)]
+    pub abort_reason: Option<TurnAbortReason>,
     /// Error message when the turn failed.
     pub error: Option<StoredTurnError>,
     /// Unix timestamp (seconds) when the turn started.
@@ -864,6 +871,46 @@ mod tests {
             serde_json::from_value(json!({})).expect("deserialize legacy patch");
 
         assert!(decoded.is_empty());
+    }
+
+    #[test]
+    fn turn_store_types_accept_missing_exact_lookup_and_abort_reason() {
+        let mut params = serde_json::to_value(ListTurnsParams {
+            thread_id: ThreadId::default(),
+            turn_id: Some("turn-1".to_string()),
+            include_archived: false,
+            cursor: None,
+            page_size: 1,
+            sort_direction: SortDirection::Asc,
+            items_view: StoredTurnItemsView::NotLoaded,
+        })
+        .expect("serialize turn list params");
+        params
+            .as_object_mut()
+            .expect("params should be an object")
+            .remove("turn_id");
+        let params: ListTurnsParams =
+            serde_json::from_value(params).expect("deserialize legacy turn list params");
+
+        let mut turn = serde_json::to_value(StoredTurn {
+            turn_id: "turn-1".to_string(),
+            items: Vec::new(),
+            items_view: StoredTurnItemsView::NotLoaded,
+            status: StoredTurnStatus::Interrupted,
+            abort_reason: Some(TurnAbortReason::BudgetLimited),
+            error: None,
+            started_at: None,
+            completed_at: None,
+            duration_ms: None,
+        })
+        .expect("serialize stored turn");
+        turn.as_object_mut()
+            .expect("turn should be an object")
+            .remove("abort_reason");
+        let turn: StoredTurn =
+            serde_json::from_value(turn).expect("deserialize legacy stored turn");
+
+        assert_eq!((params.turn_id, turn.abort_reason), (None, None));
     }
 
     #[test]

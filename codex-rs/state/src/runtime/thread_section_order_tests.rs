@@ -9,11 +9,7 @@ use crate::runtime::test_support::unique_temp_dir;
 use pretty_assertions::assert_eq;
 use std::path::Path;
 
-async fn insert_test_thread(
-    runtime: &StateRuntime,
-    codex_home: &Path,
-    thread_id: ThreadId,
-) {
+async fn insert_test_thread(runtime: &StateRuntime, codex_home: &Path, thread_id: ThreadId) {
     runtime
         .upsert_thread(&test_thread_metadata(
             codex_home,

@@ -3,6 +3,7 @@ use super::datetime_to_epoch_millis;
 use super::thread_queue::QUEUED_SUBMISSION_COLUMNS;
 use super::thread_queue::ThreadQueueError;
 use super::thread_queue::validate_queue_identifier;
+use crate::BlockedSubmissionRetryPolicy;
 use crate::QueuedSubmissionRecord;
 use crate::QueuedSubmissionState;
 use chrono::Utc;
@@ -16,6 +17,10 @@ pub enum QueueClaimResult {
     Claimed(QueuedSubmissionRecord),
     Existing(QueuedSubmissionRecord),
     Busy(QueuedSubmissionRecord),
+    Blocked {
+        owner_id: String,
+        retry_policy: BlockedSubmissionRetryPolicy,
+    },
     Empty,
 }
 
@@ -75,13 +80,62 @@ impl StateRuntime {
             validate_queue_identifier(item_id)?;
         }
         let mut transaction = self.pool.begin().await?;
+        let blocked_control = sqlx::query_as::<_, (Option<String>, Option<i64>)>(
+            "SELECT blocked_submission_id, blocked_retry_allowed FROM thread_queue_controls WHERE thread_id = ?",
+        )
+        .bind(thread_id.to_string())
+        .fetch_optional(transaction.as_mut())
+        .await?;
+        let blocked = match blocked_control {
+            Some((Some(owner_id), Some(1))) => {
+                Some((owner_id, BlockedSubmissionRetryPolicy::Allowed))
+            }
+            Some((Some(owner_id), Some(0))) => {
+                Some((owner_id, BlockedSubmissionRetryPolicy::Forbidden))
+            }
+            Some((None, None)) | None => None,
+            Some((owner_id, retry_allowed)) => {
+                return Err(ThreadQueueError::Storage(anyhow::anyhow!(
+                    "queue block control is inconsistent: owner={owner_id:?}, retry_allowed={retry_allowed:?}"
+                )));
+            }
+        };
+        if let Some((owner_id, retry_policy)) = blocked.as_ref() {
+            match pause_policy {
+                QueueClaimPausePolicy::Preserve => {
+                    return finish_queue_claim(
+                        transaction,
+                        thread_id,
+                        QueueClaimResult::Blocked {
+                            owner_id: owner_id.to_string(),
+                            retry_policy: *retry_policy,
+                        },
+                        pause_policy,
+                    )
+                    .await;
+                }
+                QueueClaimPausePolicy::ResumeOnSuccess
+                    if *retry_policy == BlockedSubmissionRetryPolicy::Forbidden
+                        || item_id.is_some_and(|item_id| item_id != owner_id) =>
+                {
+                    return finish_queue_claim(
+                        transaction,
+                        thread_id,
+                        QueueClaimResult::Blocked {
+                            owner_id: owner_id.to_string(),
+                            retry_policy: *retry_policy,
+                        },
+                        pause_policy,
+                    )
+                    .await;
+                }
+                QueueClaimPausePolicy::ResumeOnSuccess => {}
+            }
+        }
+        let item_id = item_id.or(blocked.as_ref().map(|(owner_id, _)| owner_id.as_str()));
         if let Some(item_id) = item_id
-            && let Some(existing) = queued_submission_on_connection(
-                transaction.as_mut(),
-                thread_id,
-                item_id,
-            )
-            .await?
+            && let Some(existing) =
+                queued_submission_on_connection(transaction.as_mut(), thread_id, item_id).await?
             && existing.state != QueuedSubmissionState::Pending
         {
             return finish_queue_claim(
@@ -160,12 +214,8 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
             .await;
         }
         if let Some(item_id) = item_id
-            && let Some(existing) = queued_submission_on_connection(
-                transaction.as_mut(),
-                thread_id,
-                item_id,
-            )
-            .await?
+            && let Some(existing) =
+                queued_submission_on_connection(transaction.as_mut(), thread_id, item_id).await?
             && existing.state != QueuedSubmissionState::Pending
         {
             return finish_queue_claim(
@@ -199,7 +249,7 @@ async fn finish_queue_claim(
             record.turn_id.is_some()
         }
         (
-            QueueClaimResult::Busy(_) | QueueClaimResult::Empty,
+            QueueClaimResult::Busy(_) | QueueClaimResult::Blocked { .. } | QueueClaimResult::Empty,
             QueueClaimPausePolicy::ResumeOnSuccess,
         )
         | (_, QueueClaimPausePolicy::Preserve) => false,

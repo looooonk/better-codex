@@ -361,9 +361,7 @@ async fn list_history_pages_across_selected_rollout_lineage() {
         HistoryPosition {
             thread_id,
             end_ordinal_exclusive: 15,
-            end_byte_offset: std::fs::metadata(root_path)
-                .expect("root metadata")
-                .len(),
+            end_byte_offset: std::fs::metadata(root_path).expect("root metadata").len(),
         },
     );
     let mut metadata = state_db
@@ -608,6 +606,7 @@ fn turn_params(
 ) -> ListTurnsParams {
     ListTurnsParams {
         thread_id,
+        turn_id: None,
         include_archived: false,
         cursor,
         page_size,

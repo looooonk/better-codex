@@ -35,8 +35,8 @@ use crate::telemetry::DbKind;
 use crate::telemetry::DbTelemetry;
 use chrono::DateTime;
 use chrono::Utc;
-use codex_protocol::ThreadId;
 use codex_history::RolloutItem;
+use codex_protocol::ThreadId;
 use log::LevelFilter;
 use serde_json::Value;
 use sqlx::ConnectOptions;
@@ -93,13 +93,13 @@ pub use recovery::runtime_db_path_for_corruption_error;
 pub use recovery::sqlite_error_detail_is_corruption;
 pub use recovery::sqlite_error_detail_is_lock;
 pub use remote_control::RemoteControlEnrollmentRecord;
-pub use thread_section_order::ThreadSectionMove;
+pub use thread_queue::MAX_QUEUE_IDENTIFIER_BYTES;
 pub use thread_queue::MAX_QUEUED_INPUT_BYTES;
 pub use thread_queue::MAX_QUEUED_SUBMISSIONS;
-pub use thread_queue::MAX_QUEUE_IDENTIFIER_BYTES;
 pub use thread_queue::ThreadQueueError;
 pub use thread_queue_claim::QueueClaimAndResumeResult;
 pub use thread_queue_claim::QueueClaimResult;
+pub use thread_section_order::ThreadSectionMove;
 pub use thread_sections::ThreadSectionAppearanceUpdate;
 pub use threads::ThreadFilterOptions;
 pub use threads::ThreadSectionFilter;
@@ -585,17 +585,22 @@ pub async fn sqlite_integrity_check(path: &Path) -> anyhow::Result<Vec<String>> 
 mod tests {
     use super::StateRuntime;
     use super::open_state_sqlite;
+    use super::open_thread_history_db;
     use super::runtime_state_migrator;
     use super::sqlite_integrity_check;
     use super::state_db_path;
     use super::test_support::unique_temp_dir;
+    use super::thread_history_db_path;
     use crate::DB_INIT_METRIC;
     use crate::DbTelemetry;
     use crate::migrations::STATE_MIGRATOR;
+    use crate::migrations::THREAD_HISTORY_MIGRATOR;
     use pretty_assertions::assert_eq;
     use sqlx::SqlitePool;
     use sqlx::migrate::MigrateError;
+    use sqlx::migrate::Migrator;
     use sqlx::sqlite::SqliteConnectOptions;
+    use std::borrow::Cow;
     use std::collections::BTreeMap;
     use std::collections::BTreeSet;
     use std::path::Path;
@@ -738,6 +743,98 @@ mod tests {
         .await
         .expect("runtime migrator should tolerate newer applied migrations");
         tolerant_pool.close().await;
+
+        let _ = tokio::fs::remove_dir_all(codex_home).await;
+    }
+
+    #[tokio::test]
+    async fn thread_history_abort_reason_migration_invalidates_interrupted_projections() {
+        let codex_home = unique_temp_dir();
+        tokio::fs::create_dir_all(&codex_home)
+            .await
+            .expect("create codex home");
+        let history_path = thread_history_db_path(codex_home.as_path());
+        let pool = SqlitePool::connect_with(
+            SqliteConnectOptions::new()
+                .filename(&history_path)
+                .create_if_missing(true),
+        )
+        .await
+        .expect("open old thread history db");
+        let old_migrator = Migrator {
+            migrations: Cow::Owned(
+                THREAD_HISTORY_MIGRATOR
+                    .migrations
+                    .iter()
+                    .filter(|migration| migration.version <= 3)
+                    .cloned()
+                    .collect(),
+            ),
+            ignore_missing: THREAD_HISTORY_MIGRATOR.ignore_missing,
+            locking: THREAD_HISTORY_MIGRATOR.locking,
+            table_name: THREAD_HISTORY_MIGRATOR.table_name.clone(),
+            create_schemas: THREAD_HISTORY_MIGRATOR.create_schemas.clone(),
+            no_tx: THREAD_HISTORY_MIGRATOR.no_tx,
+        };
+        old_migrator
+            .run(&pool)
+            .await
+            .expect("apply old thread history schema");
+        for (thread_id, status) in [
+            ("thread-completed", "completed"),
+            ("thread-interrupted", "interrupted"),
+        ] {
+            sqlx::query(
+                "INSERT INTO thread_turns (thread_id, turn_id, rollout_ordinal, status) VALUES (?, 'turn-1', 1, ?)",
+            )
+            .bind(thread_id)
+            .bind(status)
+            .execute(&pool)
+            .await
+            .expect("insert old projected turn");
+            sqlx::query(
+                "INSERT INTO thread_history_projection_state (thread_id, next_rollout_byte_offset, next_rollout_ordinal) VALUES (?, 100, 2)",
+            )
+            .bind(thread_id)
+            .execute(&pool)
+            .await
+            .expect("insert old projection state");
+        }
+        pool.close().await;
+
+        let pool = open_thread_history_db(codex_home.as_path())
+            .await
+            .expect("upgrade thread history db");
+        let turns = sqlx::query_as::<_, (String, Option<String>)>(
+            "SELECT thread_id, abort_reason FROM thread_turns ORDER BY thread_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("read upgraded turns");
+        let projected_threads = sqlx::query_scalar::<_, String>(
+            "SELECT thread_id FROM thread_history_projection_state ORDER BY thread_id",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("read upgraded projection states");
+        let migration_applied = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM _sqlx_migrations WHERE version = 4 AND success = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("read applied migration");
+        assert_eq!(
+            (turns, projected_threads, migration_applied),
+            (
+                vec![
+                    ("thread-completed".to_string(), None),
+                    ("thread-interrupted".to_string(), None),
+                ],
+                vec!["thread-completed".to_string()],
+                1,
+            )
+        );
+        pool.close().await;
 
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }

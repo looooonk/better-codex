@@ -1,6 +1,8 @@
 use crate::error_code::internal_error;
 use crate::error_code::invalid_params;
 use crate::error_code::invalid_request;
+#[cfg(test)]
+use crate::thread_state::ThreadTerminalEvent;
 use codex_app_server_protocol::JSONRPCErrorError;
 use codex_app_server_protocol::QueuedSubmission;
 use codex_app_server_protocol::Turn;
@@ -23,6 +25,7 @@ use codex_state::QueuedSubmissionState;
 use codex_state::QueuedSubmissionTerminalStatus;
 use codex_state::ThreadQueueError;
 use codex_state::ThreadQueuePauseReason;
+use codex_thread_store::StoredTurnStatus;
 use codex_utils_string::approx_token_count;
 
 use super::turn_processor::validate_user_input_image_urls;
@@ -41,14 +44,22 @@ pub(super) fn ensure_direct_input_allowed(
 ) -> Result<(), JSONRPCErrorError> {
     match loaded_thread {
         Some(thread)
-            if thread.multi_agent_version() == Some(codex_protocol::protocol::MultiAgentVersion::V2)
-                && matches!(source, SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })) =>
+            if thread.multi_agent_version()
+                == Some(codex_protocol::protocol::MultiAgentVersion::V2)
+                && matches!(
+                    source,
+                    SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })
+                ) =>
         {
             Err(invalid_request(
                 DIRECT_INPUT_TO_MULTI_AGENT_V2_SUBAGENT_ERROR,
             ))
         }
-        None if matches!(source, SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })) => {
+        None if matches!(
+            source,
+            SessionSource::SubAgent(SubAgentSource::ThreadSpawn { .. })
+        ) =>
+        {
             Err(invalid_request(DIRECT_INPUT_TO_UNLOADED_SUBAGENT_ERROR))
         }
         _ => Ok(()),
@@ -60,10 +71,12 @@ pub(super) fn prepare_payload(input: &[UserInput]) -> Result<String, JSONRPCErro
         return Err(invalid_params("queued input must not be empty"));
     }
     validate_user_input_image_urls(input)?;
-    if input
-        .iter()
-        .any(|item| matches!(item, UserInput::LocalImage { .. } | UserInput::LocalAudio { .. }))
-    {
+    if input.iter().any(|item| {
+        matches!(
+            item,
+            UserInput::LocalImage { .. } | UserInput::LocalAudio { .. }
+        )
+    }) {
         return Err(invalid_params(
             "local media cannot be queued durably; use an inline attachment",
         ));
@@ -128,7 +141,8 @@ pub(super) fn queue_error(error: ThreadQueueError) -> JSONRPCErrorError {
         | ThreadQueueError::InputBytesExceeded
         | ThreadQueueError::InvalidReorder
         | ThreadQueueError::InvalidIdentifier
-        | ThreadQueueError::ClientMessageConflict => invalid_params(error.to_string()),
+        | ThreadQueueError::ClientMessageConflict
+        | ThreadQueueError::BlockedInputAlreadyDurable => invalid_params(error.to_string()),
         ThreadQueueError::Storage(_) => {
             internal_error(format!("queued submission operation failed: {error}"))
         }
@@ -171,7 +185,9 @@ pub(super) fn terminal_disposition(reason: &TurnAbortReason) -> QueueTerminalDis
         TurnAbortReason::BudgetLimited => {
             QueueTerminalDisposition::Pause(ThreadQueuePauseReason::BudgetLimited)
         }
-        TurnAbortReason::Replaced | TurnAbortReason::ReviewEnded => QueueTerminalDisposition::Continue,
+        TurnAbortReason::Replaced | TurnAbortReason::ReviewEnded => {
+            QueueTerminalDisposition::Continue
+        }
     }
 }
 
@@ -179,27 +195,24 @@ pub(super) fn terminal_disposition(reason: &TurnAbortReason) -> QueueTerminalDis
 pub(super) enum QueueRecoveryOutcome {
     Completed(QueuedSubmissionTerminalStatus),
     Aborted(TurnAbortReason),
-    Incomplete,
+    TerminalWithoutInput,
+    Incomplete { input_persisted: bool },
     NotStarted,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum QueueRecoveryAction {
-    Retry,
+    Indeterminate {
+        input_persisted: bool,
+    },
     Finish {
         status: QueuedSubmissionTerminalStatus,
         disposition: QueueTerminalDisposition,
     },
 }
 
-pub(super) fn queue_recovery_action(
-    state: QueuedSubmissionState,
-    outcome: QueueRecoveryOutcome,
-) -> QueueRecoveryAction {
+pub(super) fn queue_recovery_action(outcome: QueueRecoveryOutcome) -> QueueRecoveryAction {
     match outcome {
-        QueueRecoveryOutcome::NotStarted if state == QueuedSubmissionState::Starting => {
-            QueueRecoveryAction::Retry
-        }
         QueueRecoveryOutcome::Completed(status) => QueueRecoveryAction::Finish {
             status,
             disposition: QueueTerminalDisposition::Continue,
@@ -208,12 +221,25 @@ pub(super) fn queue_recovery_action(
             status: QueuedSubmissionTerminalStatus::Interrupted,
             disposition: terminal_disposition(&reason),
         },
-        QueueRecoveryOutcome::Incomplete | QueueRecoveryOutcome::NotStarted => {
-            QueueRecoveryAction::Finish {
-                status: QueuedSubmissionTerminalStatus::Interrupted,
-                disposition: QueueTerminalDisposition::Pause(ThreadQueuePauseReason::Interrupted),
-            }
+        QueueRecoveryOutcome::TerminalWithoutInput => QueueRecoveryAction::Indeterminate {
+            input_persisted: false,
+        },
+        QueueRecoveryOutcome::Incomplete { input_persisted } => {
+            QueueRecoveryAction::Indeterminate { input_persisted }
         }
+        QueueRecoveryOutcome::NotStarted => QueueRecoveryAction::Indeterminate {
+            input_persisted: false,
+        },
+    }
+}
+
+pub(super) fn missing_turn_recovery_outcome(
+    admission_rejection: Option<QueuedSubmissionAdmissionRejection>,
+) -> QueueRecoveryOutcome {
+    if admission_rejection.is_some() {
+        QueueRecoveryOutcome::Completed(QueuedSubmissionTerminalStatus::Failed)
+    } else {
+        QueueRecoveryOutcome::NotStarted
     }
 }
 
@@ -223,6 +249,9 @@ pub(super) fn queue_recovery_outcome(
     client_user_message_id: &str,
     admission_rejection: Option<QueuedSubmissionAdmissionRejection>,
 ) -> QueueRecoveryOutcome {
+    if admission_rejection.is_some() {
+        return QueueRecoveryOutcome::Completed(QueuedSubmissionTerminalStatus::Failed);
+    }
     let mut started = false;
     let mut input_persisted = false;
     for item in items {
@@ -230,15 +259,17 @@ pub(super) fn queue_recovery_outcome(
             continue;
         };
         match event {
-            EventMsg::TurnStarted(event) if event.turn_id == turn_id => started = true,
+            EventMsg::TurnStarted(event) => started = event.turn_id == turn_id,
             EventMsg::UserMessage(event)
                 if started && event.client_id.as_deref() == Some(client_user_message_id) =>
             {
                 input_persisted = true;
             }
             EventMsg::TurnComplete(event) if event.turn_id == turn_id => {
-                let failed =
-                    admission_rejection.is_some() || event.error.is_some() || !input_persisted;
+                if !input_persisted {
+                    return QueueRecoveryOutcome::TerminalWithoutInput;
+                }
+                let failed = event.error.is_some();
                 return QueueRecoveryOutcome::Completed(if failed {
                     QueuedSubmissionTerminalStatus::Failed
                 } else {
@@ -246,16 +277,108 @@ pub(super) fn queue_recovery_outcome(
                 });
             }
             EventMsg::TurnAborted(event) if event.turn_id.as_deref() == Some(turn_id) => {
+                if !input_persisted {
+                    return QueueRecoveryOutcome::TerminalWithoutInput;
+                }
                 return QueueRecoveryOutcome::Aborted(event.reason.clone());
             }
             _ => {}
         }
     }
     if started || input_persisted {
-        QueueRecoveryOutcome::Incomplete
+        QueueRecoveryOutcome::Incomplete { input_persisted }
     } else {
         QueueRecoveryOutcome::NotStarted
     }
+}
+
+#[cfg(test)]
+pub(super) fn observed_queue_recovery_outcome(
+    event: &ThreadTerminalEvent,
+    input_persisted: bool,
+    admission_rejection: Option<QueuedSubmissionAdmissionRejection>,
+) -> QueueRecoveryOutcome {
+    if admission_rejection.is_some() {
+        return QueueRecoveryOutcome::Completed(QueuedSubmissionTerminalStatus::Failed);
+    }
+    if !input_persisted {
+        return QueueRecoveryOutcome::TerminalWithoutInput;
+    }
+    match event {
+        ThreadTerminalEvent::Completed { has_error, .. } => {
+            let failed = *has_error;
+            QueueRecoveryOutcome::Completed(if failed {
+                QueuedSubmissionTerminalStatus::Failed
+            } else {
+                QueuedSubmissionTerminalStatus::Completed
+            })
+        }
+        ThreadTerminalEvent::Aborted { reason, .. } => {
+            QueueRecoveryOutcome::Aborted(reason.clone())
+        }
+    }
+}
+
+pub(super) fn paginated_queue_recovery_outcome(
+    status: StoredTurnStatus,
+    abort_reason: Option<TurnAbortReason>,
+    input_persisted: bool,
+    admission_rejection: Option<QueuedSubmissionAdmissionRejection>,
+) -> QueueRecoveryOutcome {
+    if admission_rejection.is_some() {
+        return QueueRecoveryOutcome::Completed(QueuedSubmissionTerminalStatus::Failed);
+    }
+    match status {
+        StoredTurnStatus::Completed => {
+            if !input_persisted {
+                return QueueRecoveryOutcome::TerminalWithoutInput;
+            }
+            QueueRecoveryOutcome::Completed(QueuedSubmissionTerminalStatus::Completed)
+        }
+        StoredTurnStatus::Failed => {
+            if !input_persisted {
+                QueueRecoveryOutcome::TerminalWithoutInput
+            } else {
+                QueueRecoveryOutcome::Completed(QueuedSubmissionTerminalStatus::Failed)
+            }
+        }
+        StoredTurnStatus::Interrupted => {
+            if !input_persisted {
+                QueueRecoveryOutcome::TerminalWithoutInput
+            } else {
+                QueueRecoveryOutcome::Aborted(abort_reason.unwrap_or(TurnAbortReason::Interrupted))
+            }
+        }
+        StoredTurnStatus::InProgress => QueueRecoveryOutcome::Incomplete { input_persisted },
+    }
+}
+
+#[cfg(test)]
+pub(super) fn queue_input_persisted(
+    items: &[RolloutItem],
+    turn_id: &str,
+    client_user_message_id: &str,
+) -> bool {
+    let mut in_turn = false;
+    for item in items {
+        let RolloutItem::EventMsg(event) = item else {
+            continue;
+        };
+        match event {
+            EventMsg::TurnStarted(event) => in_turn = event.turn_id == turn_id,
+            EventMsg::UserMessage(event)
+                if in_turn && event.client_id.as_deref() == Some(client_user_message_id) =>
+            {
+                return true;
+            }
+            EventMsg::TurnComplete(event) if event.turn_id == turn_id => return false,
+            EventMsg::TurnAborted(event) if event.turn_id.as_deref() == Some(turn_id) => {
+                return false;
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 #[cfg(test)]

@@ -1093,19 +1093,13 @@ async fn config_value_write_expected_version_is_atomic_across_processes() -> Res
     let mut first = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
-        .with_env_overrides(&[(
-            "CODEX_SQLITE_HOME",
-            Some(first_sqlite_home_dir.as_str()),
-        )])
+        .with_env_overrides(&[("CODEX_SQLITE_HOME", Some(first_sqlite_home_dir.as_str()))])
         .build()
         .await?;
     let mut second = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
-        .with_env_overrides(&[(
-            "CODEX_SQLITE_HOME",
-            Some(second_sqlite_home_dir.as_str()),
-        )])
+        .with_env_overrides(&[("CODEX_SQLITE_HOME", Some(second_sqlite_home_dir.as_str()))])
         .build()
         .await?;
     let (first_init, second_init) = tokio::join!(first.initialize(), second.initialize());

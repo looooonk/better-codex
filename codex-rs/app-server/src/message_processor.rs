@@ -252,6 +252,8 @@ impl MessageProcessor {
         // resumed, or forked threads to a different persistence backend/root.
         let thread_store = codex_core::thread_store_from_config(config.as_ref(), state_db.clone());
         let request_serialization_queues = RequestSerializationQueues::default();
+        let thread_watch_manager =
+            crate::thread_status::ThreadWatchManager::new_with_outgoing(outgoing.clone());
         let environment_manager_for_requests = Arc::clone(&environment_manager);
         let environment_manager_for_extensions = Arc::clone(&environment_manager);
         let restriction_product = session_source.restriction_product();
@@ -271,6 +273,7 @@ impl MessageProcessor {
                 state_db.clone(),
                 request_serialization_queues.clone(),
                 thread_state_manager.clone(),
+                thread_watch_manager.clone(),
             ));
             let _ = thread_queue_service_cell.set(Arc::clone(&thread_queue_service));
             ThreadManager::new(
@@ -332,8 +335,6 @@ impl MessageProcessor {
         );
 
         let pending_thread_unloads = Arc::new(Mutex::new(HashSet::new()));
-        let thread_watch_manager =
-            crate::thread_status::ThreadWatchManager::new_with_outgoing(outgoing.clone());
         let thread_list_state_permit = Arc::new(Semaphore::new(/*permits*/ 1));
         let workspace_settings_cache =
             Arc::new(workspace_settings::WorkspaceSettingsCache::default());

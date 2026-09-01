@@ -13,13 +13,15 @@ use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ItemCompletedEvent;
-use codex_rollout::RolloutItem;
-use codex_rollout::RolloutLine;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode;
+use codex_protocol::protocol::TurnAbortReason;
+use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
+use codex_rollout::RolloutItem;
+use codex_rollout::RolloutLine;
 use codex_rollout::RolloutRecorder;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
@@ -146,8 +148,7 @@ ORDER BY rollout_ordinal
         .await
         .expect("rollout path");
     let rollout_bytes = fs::read(rollout_path.as_path()).expect("read rollout");
-    let rollout_len = i64::try_from(rollout_bytes.len())
-        .expect("rollout length");
+    let rollout_len = i64::try_from(rollout_bytes.len()).expect("rollout length");
     let first_record_end = i64::try_from(
         rollout_bytes
             .split_inclusive(|byte| *byte == b'\n')
@@ -184,6 +185,147 @@ WHERE thread_id = ?
     .await
     .expect("read projection state");
     assert_eq!(projection_state, (rollout_len, 5));
+}
+
+#[tokio::test]
+async fn paginated_abort_reasons_repair_concurrent_advanced_legacy_projection() {
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let state_db = codex_state::StateRuntime::init(
+        config.sqlite_home.clone(),
+        config.default_model_provider_id.clone(),
+    )
+    .await
+    .expect("state runtime");
+    let store = LocalThreadStore::new(config.clone(), Some(state_db.clone()));
+    let thread_id = ThreadId::default();
+    create_paginated_thread(&store, thread_id).await;
+    let rollout_path = store
+        .live_rollout_path(thread_id)
+        .await
+        .expect("live rollout path");
+    let mut builder = codex_state::ThreadMetadataBuilder::new(
+        thread_id,
+        rollout_path.clone(),
+        Utc::now(),
+        SessionSource::Exec,
+    );
+    builder.history_mode = ThreadHistoryMode::Paginated;
+    state_db
+        .upsert_thread(&builder.build(config.default_model_provider_id.as_str()))
+        .await
+        .expect("seed thread metadata");
+    let reasons = [
+        TurnAbortReason::Interrupted,
+        TurnAbortReason::BudgetLimited,
+        TurnAbortReason::Replaced,
+        TurnAbortReason::ReviewEnded,
+    ];
+    let mut items = Vec::new();
+    for (index, reason) in reasons.iter().enumerate() {
+        let turn_id = format!("turn-{index}");
+        items.push(turn_started(&turn_id));
+        items.push(turn_aborted(&turn_id, reason.clone()));
+    }
+    store
+        .append_items(AppendThreadItemsParams { thread_id, items })
+        .await
+        .expect("append aborted turns");
+
+    let turns = store
+        .list_turns(ListTurnsParams {
+            thread_id,
+            turn_id: None,
+            include_archived: false,
+            cursor: None,
+            page_size: 10,
+            sort_direction: SortDirection::Asc,
+            items_view: StoredTurnItemsView::NotLoaded,
+        })
+        .await
+        .expect("list aborted turns")
+        .turns
+        .into_iter()
+        .map(|turn| (turn.turn_id, turn.abort_reason))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        turns,
+        reasons
+            .iter()
+            .enumerate()
+            .map(|(index, reason)| (format!("turn-{index}"), Some(reason.clone())))
+            .collect::<Vec<_>>()
+    );
+
+    let pool = codex_state::open_thread_history_db(home.path())
+        .await
+        .expect("open thread history db");
+    let rollout_len = i64::try_from(
+        fs::metadata(rollout_path.as_path())
+            .expect("rollout metadata")
+            .len(),
+    )
+    .expect("rollout length");
+    let advanced_projection_state = projection_state(&pool, thread_id).await;
+    assert_eq!(advanced_projection_state, (rollout_len, 9));
+    sqlx::query(
+        "UPDATE thread_turns SET abort_reason = NULL WHERE thread_id = ? AND turn_id = 'turn-2'",
+    )
+    .bind(thread_id.to_string())
+    .execute(&pool)
+    .await
+    .expect("simulate an old interrupted projection");
+    assert_eq!(projection_state_count(&pool, thread_id).await, 0);
+    sqlx::query(
+        r#"
+INSERT INTO thread_history_projection_state (
+    thread_id, next_rollout_byte_offset, next_rollout_ordinal
+) VALUES (?, ?, ?)
+ON CONFLICT(thread_id) DO UPDATE SET
+    next_rollout_byte_offset = excluded.next_rollout_byte_offset,
+    next_rollout_ordinal = excluded.next_rollout_ordinal
+        "#,
+    )
+    .bind(thread_id.to_string())
+    .bind(advanced_projection_state.0)
+    .bind(advanced_projection_state.1)
+    .execute(&pool)
+    .await
+    .expect("simulate an old writer advancing the projection");
+    assert_eq!(projection_state_count(&pool, thread_id).await, 0);
+
+    let (first_projection, second_projection) = tokio::join!(
+        super::materialize_to_sqlite(&store, thread_id, rollout_path.as_path()),
+        super::materialize_to_sqlite(&store, thread_id, rollout_path.as_path()),
+    );
+    first_projection.expect("repair first concurrent projection");
+    second_projection.expect("repair second concurrent projection");
+    assert_eq!(
+        projection_state(&pool, thread_id).await,
+        advanced_projection_state
+    );
+
+    let exact = store
+        .list_turns(ListTurnsParams {
+            thread_id,
+            turn_id: Some("turn-2".to_string()),
+            include_archived: false,
+            cursor: None,
+            page_size: 1,
+            sort_direction: SortDirection::Desc,
+            items_view: StoredTurnItemsView::NotLoaded,
+        })
+        .await
+        .expect("read replaced turn behind newer history")
+        .turns;
+    assert_eq!(
+        exact
+            .into_iter()
+            .map(|turn| (turn.turn_id, turn.abort_reason))
+            .collect::<Vec<_>>(),
+        vec![("turn-2".to_string(), Some(TurnAbortReason::Replaced),)]
+    );
+    pool.close().await;
 }
 
 #[tokio::test]
@@ -424,6 +566,7 @@ async fn summary_items_use_final_answers_and_ignore_commentary() {
     let summary = store
         .list_turns(ListTurnsParams {
             thread_id,
+            turn_id: None,
             include_archived: false,
             cursor: None,
             page_size: 2,
@@ -883,7 +1026,8 @@ async fn projection_batches_accept_boundary_and_reject_oversized_records() {
         padded_rollout_record(limit + 1, /*ordinal*/ 0),
     )
     .expect("write oversized rollout");
-    let error = match super::read_complete_rollout_lines(&oversized_path, /*start_offset*/ 0).await {
+    let error = match super::read_complete_rollout_lines(&oversized_path, /*start_offset*/ 0).await
+    {
         Ok(_) => panic!("oversized record should fail"),
         Err(error) => error,
     };
@@ -1064,6 +1208,16 @@ fn turn_completed(turn_id: &str) -> RolloutItem {
     }))
 }
 
+fn turn_aborted(turn_id: &str, reason: TurnAbortReason) -> RolloutItem {
+    RolloutItem::EventMsg(EventMsg::TurnAborted(TurnAbortedEvent {
+        turn_id: Some(turn_id.to_string()),
+        reason,
+        started_at: Some(10),
+        completed_at: Some(20),
+        duration_ms: Some(10_000),
+    }))
+}
+
 fn completed_item(thread_id: ThreadId, turn_id: &str, item: TurnItem) -> RolloutItem {
     RolloutItem::EventMsg(EventMsg::ItemCompleted(ItemCompletedEvent {
         thread_id,
@@ -1096,6 +1250,14 @@ WHERE thread_id = ?
     .fetch_one(pool)
     .await
     .expect("read projection state")
+}
+
+async fn projection_state_count(pool: &sqlx::SqlitePool, thread_id: ThreadId) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM thread_history_projection_state WHERE thread_id = ?")
+        .bind(thread_id.to_string())
+        .fetch_one(pool)
+        .await
+        .expect("count projection states")
 }
 
 fn rollout_line(ordinal: Option<u64>, item: RolloutItem) -> String {

@@ -10,12 +10,12 @@ use chrono::Utc;
 use codex_protocol::ThreadId;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
-use codex_rollout::RolloutItem;
 use codex_protocol::protocol::SessionContextWindow;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode;
+use codex_rollout::RolloutItem;
 use codex_rollout::persisted_rollout_items;
 
 use crate::AppendThreadItemsParams;
@@ -75,16 +75,18 @@ mod tests {
         store.fail_appends_for_testing("append rejected").await;
 
         let append_error = live_thread
-            .append_items(&[RolloutItem::ResponseItem(ResponseItem::Message {
-                id: None,
-                role: "user".to_string(),
-                content: vec![ContentItem::InputText {
-                    text: "must be durable".to_string(),
-                }],
-                phase: None,
-                internal_chat_message_metadata_passthrough: None,
-            }
-            .into())])
+            .append_items(&[RolloutItem::ResponseItem(
+                ResponseItem::Message {
+                    id: None,
+                    role: "user".to_string(),
+                    content: vec![ContentItem::InputText {
+                        text: "must be durable".to_string(),
+                    }],
+                    phase: None,
+                    internal_chat_message_metadata_passthrough: None,
+                }
+                .into(),
+            )])
             .await
             .expect_err("append should fail");
         assert_eq!(
@@ -124,6 +126,7 @@ mod tests {
         let turns_err = store
             .list_turns(ListTurnsParams {
                 thread_id,
+                turn_id: None,
                 include_archived: true,
                 cursor: None,
                 page_size: 10,

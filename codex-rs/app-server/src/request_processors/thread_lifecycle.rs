@@ -318,13 +318,6 @@ pub(super) async fn ensure_listener_task_running(
                         thread_state.track_current_turn_event(&event.id, &event.msg);
                         thread_state.experimental_raw_events
                     };
-                    let queue_terminal_event = matches!(
-                        &event.msg,
-                        EventMsg::TurnComplete(_) | EventMsg::TurnAborted(_)
-                    );
-                    thread_queue_service
-                        .observe_event(conversation.clone(), conversation_id, &event.msg)
-                        .await;
                     if matches!(
                         &event.msg,
                         EventMsg::RawResponseItem(_) | EventMsg::RawResponseCompleted(_)
@@ -353,6 +346,13 @@ pub(super) async fn ensure_listener_task_running(
                         fallback_model_provider.clone(),
                     )
                     .await;
+                    thread_state
+                        .lock()
+                        .await
+                        .note_terminal_event_translated(&event.msg);
+                    thread_queue_service
+                        .observe_event(conversation.clone(), conversation_id, &event.msg)
+                        .await;
                     if matches!(event.msg, EventMsg::ShutdownComplete)
                         && let Some(completion_tx) = thread_state
                             .lock()
@@ -360,9 +360,6 @@ pub(super) async fn ensure_listener_task_running(
                             .take_shutdown_drain_waiter()
                     {
                         let _ = completion_tx.send(());
-                    }
-                    if queue_terminal_event {
-                        conversation.emit_thread_idle_lifecycle_if_idle().await;
                     }
                 }
                 unloading_watchers_open = unloading_state.wait_for_unloading_trigger() => {

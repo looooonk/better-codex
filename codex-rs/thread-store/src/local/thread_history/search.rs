@@ -15,12 +15,12 @@ use sqlx::Row;
 use sqlx::Sqlite;
 
 use super::super::LocalThreadStore;
+use super::MAX_THREAD_HISTORY_INPUT_BYTES;
+use super::MAX_THREAD_OCCURRENCE_PAGE_SIZE;
 use super::read::CursorScope;
 use super::read::prepare_lineage_for_paginated_reads;
 use super::read::push_lineage_filter;
 use super::read::serialize_cursor;
-use super::MAX_THREAD_HISTORY_INPUT_BYTES;
-use super::MAX_THREAD_OCCURRENCE_PAGE_SIZE;
 use super::thread_history_error;
 use crate::SearchTextRange;
 use crate::SearchThreadOccurrencesParams;

@@ -2640,6 +2640,7 @@ impl ThreadRequestProcessor {
             .thread_store
             .list_turns(StoreListTurnsParams {
                 thread_id,
+                turn_id: None,
                 include_archived: true,
                 cursor,
                 page_size,
@@ -2803,6 +2804,7 @@ impl ThreadRequestProcessor {
         let turns_page = thread_store
             .list_turns(StoreListTurnsParams {
                 thread_id,
+                turn_id: None,
                 include_archived: true,
                 cursor: None,
                 page_size: 1,

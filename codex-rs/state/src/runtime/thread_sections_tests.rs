@@ -1,7 +1,7 @@
 use super::*;
+use crate::MAX_THREAD_SECTIONS_PAGE_SIZE;
 use crate::PINNED_THREAD_SECTION_ID;
 use crate::PINNED_THREAD_SECTION_NAME;
-use crate::MAX_THREAD_SECTIONS_PAGE_SIZE;
 use crate::SortDirection;
 use crate::SortKey;
 use crate::ThreadFilterOptions;
@@ -331,8 +331,7 @@ async fn section_position_listing_repairs_only_the_requested_legacy_section() {
     let positioned = ThreadId::new();
     let legacy = ThreadId::new();
     let other_legacy = ThreadId::new();
-    let mut positioned_metadata =
-        test_thread_metadata(&codex_home, positioned, codex_home.clone());
+    let mut positioned_metadata = test_thread_metadata(&codex_home, positioned, codex_home.clone());
     positioned_metadata.section = Some(first_section.clone());
     positioned_metadata.section_position = Some(1_000_000);
     positioned_metadata.section_entered_at = Some(positioned_metadata.recency_at);

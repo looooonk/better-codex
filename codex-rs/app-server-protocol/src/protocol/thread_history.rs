@@ -27,13 +27,14 @@ use crate::protocol::v2::WebSearchAction;
 use crate::protocol::v2::WebSearchItem;
 use crate::protocol::v2::web_search_action_from_core;
 use codex_extension_items::image_generation::ImageGenerationItem;
+use codex_history::CompactedItem;
+use codex_history::RolloutItem;
 use codex_protocol::items::parse_hook_prompt_message;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::protocol::AgentReasoningEvent;
 use codex_protocol::protocol::AgentReasoningRawContentEvent;
 use codex_protocol::protocol::AgentStatus;
 use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
-use codex_history::CompactedItem;
 use codex_protocol::protocol::ContextCompactedEvent;
 use codex_protocol::protocol::DynamicToolCallResponseEvent;
 use codex_protocol::protocol::ErrorEvent;
@@ -50,8 +51,8 @@ use codex_protocol::protocol::McpToolCallBeginEvent;
 use codex_protocol::protocol::McpToolCallEndEvent;
 use codex_protocol::protocol::PatchApplyBeginEvent;
 use codex_protocol::protocol::PatchApplyEndEvent;
-use codex_history::RolloutItem;
 use codex_protocol::protocol::ThreadRolledBackEvent;
+use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
@@ -103,6 +104,7 @@ pub struct ThreadHistoryItemChange {
 pub struct ThreadHistoryTurnChange {
     pub turn_id: String,
     pub status: TurnStatus,
+    pub abort_reason: Option<TurnAbortReason>,
     pub error: Option<TurnError>,
     pub started_at: Option<i64>,
     pub completed_at: Option<i64>,
@@ -130,6 +132,7 @@ impl ThreadHistoryTurnChange {
         Self {
             turn_id: turn.id.clone(),
             status: turn.status.clone(),
+            abort_reason: None,
             error: turn.error.clone(),
             started_at: turn.started_at,
             completed_at: turn.completed_at,
@@ -141,6 +144,7 @@ impl ThreadHistoryTurnChange {
         Self {
             turn_id: turn.id.clone(),
             status: turn.status.clone(),
+            abort_reason: None,
             error: turn.error.clone(),
             started_at: turn.started_at,
             completed_at: turn.completed_at,
@@ -1202,7 +1206,10 @@ impl ThreadHistoryBuilder {
             turn.status = TurnStatus::Interrupted;
             turn.completed_at = payload.completed_at;
             turn.duration_ms = payload.duration_ms;
-            ThreadHistoryTurnChange::from_pending_turn(turn)
+            ThreadHistoryTurnChange {
+                abort_reason: Some(payload.reason.clone()),
+                ..ThreadHistoryTurnChange::from_pending_turn(turn)
+            }
         };
         if let Some(turn_id) = payload.turn_id.as_deref() {
             // Prefer an exact ID match so we interrupt the turn explicitly targeted by the event.
@@ -1216,7 +1223,10 @@ impl ThreadHistoryBuilder {
                 turn.status = TurnStatus::Interrupted;
                 turn.completed_at = payload.completed_at;
                 turn.duration_ms = payload.duration_ms;
-                let changed_turn = ThreadHistoryTurnChange::from_turn(turn);
+                let changed_turn = ThreadHistoryTurnChange {
+                    abort_reason: Some(payload.reason.clone()),
+                    ..ThreadHistoryTurnChange::from_turn(turn)
+                };
                 self.record_changed_turn(changed_turn);
                 return;
             }
@@ -1589,6 +1599,7 @@ mod tests {
     use super::*;
     use crate::protocol::v2::CommandExecutionSource;
     use codex_extension_items::ExtensionItem as CoreExtensionItem;
+    use codex_history::CompactedItem;
     use codex_protocol::ThreadId;
     use codex_protocol::dynamic_tools::DynamicToolCallOutputContentItem as CoreDynamicToolCallOutputContentItem;
     use codex_protocol::items::CommandExecutionItem as CoreCommandExecutionItem;
@@ -1610,7 +1621,6 @@ mod tests {
     use codex_protocol::protocol::AgentReasoningRawContentEvent;
     use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
     use codex_protocol::protocol::CodexErrorInfo;
-    use codex_history::CompactedItem;
     use codex_protocol::protocol::DynamicToolCallResponseEvent;
     use codex_protocol::protocol::EnteredReviewModeEvent;
     use codex_protocol::protocol::ExecCommandBeginEvent;
@@ -4188,16 +4198,18 @@ mod tests {
                 model_context_window: None,
                 collaboration_mode_kind: Default::default(),
             })),
-            RolloutItem::ResponseItem(codex_protocol::models::ResponseItem::Message {
-                id: Some(codex_protocol::ResponseItemId::with_suffix("msg", "1")),
-                role: "user".into(),
-                content: vec![codex_protocol::models::ContentItem::InputText {
-                    text: "plain text".into(),
-                }],
-                phase: None,
-                internal_chat_message_metadata_passthrough: None,
-            }
-            .into()),
+            RolloutItem::ResponseItem(
+                codex_protocol::models::ResponseItem::Message {
+                    id: Some(codex_protocol::ResponseItemId::with_suffix("msg", "1")),
+                    role: "user".into(),
+                    content: vec![codex_protocol::models::ContentItem::InputText {
+                        text: "plain text".into(),
+                    }],
+                    phase: None,
+                    internal_chat_message_metadata_passthrough: None,
+                }
+                .into(),
+            ),
             RolloutItem::EventMsg(EventMsg::TurnComplete(TurnCompleteEvent {
                 turn_id: "turn-a".into(),
                 started_at: None,
@@ -4245,6 +4257,7 @@ mod tests {
                 changed_turns: vec![ThreadHistoryTurnChange {
                     turn_id: "rollout-0".into(),
                     status: TurnStatus::Completed,
+                    abort_reason: None,
                     error: None,
                     started_at: None,
                     completed_at: None,
@@ -4347,6 +4360,7 @@ mod tests {
                 changed_turns: vec![ThreadHistoryTurnChange {
                     turn_id: "turn-a".into(),
                     status: TurnStatus::InProgress,
+                    abort_reason: None,
                     error: None,
                     started_at: Some(10),
                     completed_at: None,
@@ -4385,6 +4399,7 @@ mod tests {
                 changed_turns: vec![ThreadHistoryTurnChange {
                     turn_id: "turn-a".into(),
                     status: TurnStatus::Completed,
+                    abort_reason: None,
                     error: None,
                     started_at: Some(10),
                     completed_at: Some(20),
@@ -4430,6 +4445,7 @@ mod tests {
                 changed_turns: vec![ThreadHistoryTurnChange {
                     turn_id: "rollout-0".into(),
                     status: TurnStatus::Completed,
+                    abort_reason: None,
                     error: None,
                     started_at: None,
                     completed_at: None,
@@ -4469,6 +4485,7 @@ mod tests {
                 changed_turns: vec![ThreadHistoryTurnChange {
                     turn_id: "turn-a".into(),
                     status: TurnStatus::Completed,
+                    abort_reason: None,
                     error: None,
                     started_at: Some(10),
                     completed_at: Some(20),

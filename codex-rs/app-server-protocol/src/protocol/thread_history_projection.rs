@@ -3,9 +3,9 @@
 //! This module is only for the new paginated rollout format that persists canonical
 //! `ItemCompleted(TurnItem)` records, not legacy event-only rollouts.
 
-use codex_protocol::protocol::EventMsg;
 use codex_history::RolloutItem;
 use codex_history::RolloutLine;
+use codex_protocol::protocol::EventMsg;
 
 use crate::protocol::thread_history::ThreadHistoryChangeSet;
 use crate::protocol::thread_history::ThreadHistoryItemChange;
@@ -24,6 +24,7 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
             changed_turns: vec![ThreadHistoryTurnChange {
                 turn_id: event.turn_id.clone(),
                 status: TurnStatus::InProgress,
+                abort_reason: None,
                 error: None,
                 started_at: event.started_at,
                 completed_at: None,
@@ -39,6 +40,7 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
                 } else {
                     TurnStatus::Completed
                 },
+                abort_reason: None,
                 error: event.error.as_ref().map(|error| TurnError {
                     message: error.message.clone(),
                     codex_error_info: error.codex_error_info.clone().map(Into::into),
@@ -58,6 +60,7 @@ pub fn project_rollout_line(line: &RolloutLine) -> ThreadHistoryChangeSet {
                 changed_turns: vec![ThreadHistoryTurnChange {
                     turn_id: turn_id.clone(),
                     status: TurnStatus::Interrupted,
+                    abort_reason: Some(event.reason.clone()),
                     error: None,
                     started_at: event.started_at,
                     completed_at: event.completed_at,

@@ -7,6 +7,7 @@ use codex_app_server_protocol::ServerNotification;
 use codex_app_server_protocol::ThreadRevertParams;
 use codex_app_server_protocol::ThreadRevertResponse;
 use codex_app_server_protocol::ThreadRevertedNotification;
+use codex_core::CodexThread;
 use codex_core::NewThread;
 use codex_core::ThreadConfigSnapshot;
 use codex_core::config::Config;
@@ -38,7 +39,7 @@ impl ThreadRequestProcessor {
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
     ) -> Result<Option<ClientResponsePayload>, JSONRPCErrorError> {
-        let (response, thread_id) = self
+        let (response, thread_id, thread) = self
             .thread_revert_response(
                 &request_id,
                 params,
@@ -49,9 +50,12 @@ impl ThreadRequestProcessor {
         self.outgoing.send_response(request_id, response).await;
         self.outgoing
             .send_server_notification(ServerNotification::ThreadReverted(
-                ThreadRevertedNotification { thread_id },
+                ThreadRevertedNotification {
+                    thread_id: thread_id.to_string(),
+                },
             ))
             .await;
+        thread.emit_thread_idle_lifecycle_if_idle().await;
         Ok(None)
     }
 
@@ -61,7 +65,7 @@ impl ThreadRequestProcessor {
         params: ThreadRevertParams,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
-    ) -> Result<(ThreadRevertResponse, String), JSONRPCErrorError> {
+    ) -> Result<(ThreadRevertResponse, ThreadId, Arc<CodexThread>), JSONRPCErrorError> {
         let _thread_list_state_permit = self.acquire_thread_list_state_permit().await?;
         let ThreadRevertParams {
             thread_id,
@@ -129,6 +133,12 @@ impl ThreadRequestProcessor {
             thread_state.lock().await.take_shutdown_drain_waiter();
             return Err(err);
         }
+        if self.state_db.is_some() {
+            let _ = self
+                .thread_queue_service
+                .recover_after_shutdown(thread_id)
+                .await?;
+        }
         if self
             .thread_manager
             .remove_thread(&thread_id)
@@ -151,7 +161,7 @@ impl ThreadRequestProcessor {
             })
             .await
             .map_err(|err| thread_store_mutation_error("revert", err));
-        let response = self
+        let (response, thread) = self
             .reload_paginated_thread(
                 request_id,
                 thread_id,
@@ -160,8 +170,16 @@ impl ThreadRequestProcessor {
                 app_server_client_version,
             )
             .await?;
-        revert_result?;
-        Ok((response, thread_id.to_string()))
+        if let Err(error) = revert_result {
+            let thread = Arc::clone(&thread);
+            self.thread_queue_service
+                .enqueue_background(thread_id, async move {
+                    thread.emit_thread_idle_lifecycle_if_idle().await;
+                })
+                .await;
+            return Err(error);
+        }
+        Ok((response, thread_id, thread))
     }
 
     async fn reload_paginated_thread(
@@ -171,7 +189,7 @@ impl ThreadRequestProcessor {
         runtime_snapshot: ThreadRevertRuntimeSnapshot,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
-    ) -> Result<ThreadRevertResponse, JSONRPCErrorError> {
+    ) -> Result<(ThreadRevertResponse, Arc<CodexThread>), JSONRPCErrorError> {
         let ThreadRevertRuntimeSnapshot {
             config,
             settings,
@@ -243,7 +261,9 @@ impl ThreadRequestProcessor {
             )
             .await
             .map_err(internal_error)?;
-        self.thread_watch_manager.upsert_thread(thread.clone()).await;
+        self.thread_watch_manager
+            .upsert_thread(thread.clone())
+            .await;
         let thread_status = self
             .thread_watch_manager
             .loaded_status_for_thread(&thread.id)
@@ -255,10 +275,13 @@ impl ThreadRequestProcessor {
         );
         let (turns_backwards_cursor, items_backwards_cursor) =
             Self::paginated_resume_backwards_cursors(self.thread_store.as_ref(), thread_id).await?;
-        Ok(ThreadRevertResponse {
-            thread,
-            turns_backwards_cursor,
-            items_backwards_cursor,
-        })
+        Ok((
+            ThreadRevertResponse {
+                thread,
+                turns_backwards_cursor,
+                items_backwards_cursor,
+            },
+            codex_thread,
+        ))
     }
 }

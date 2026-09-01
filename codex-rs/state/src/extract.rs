@@ -1,8 +1,8 @@
 use crate::model::ThreadMetadata;
+use codex_history::RolloutItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
-use codex_history::RolloutItem;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::TurnContextItem;
 use codex_protocol::protocol::UserMessageEvent;
@@ -156,6 +156,7 @@ mod tests {
     use crate::model::ThreadMetadata;
     use chrono::DateTime;
     use chrono::Utc;
+    use codex_history::RolloutItem;
     use codex_protocol::ThreadId;
     use codex_protocol::items::TurnItem;
     use codex_protocol::items::UserMessageItem;
@@ -166,7 +167,6 @@ mod tests {
     use codex_protocol::protocol::AskForApproval;
     use codex_protocol::protocol::EventMsg;
     use codex_protocol::protocol::ItemCompletedEvent;
-    use codex_history::RolloutItem;
     use codex_protocol::protocol::SandboxPolicy;
     use codex_protocol::protocol::SessionMeta;
     use codex_protocol::protocol::SessionMetaLine;
@@ -187,16 +187,18 @@ mod tests {
     #[test]
     fn response_item_user_messages_do_not_set_title_or_first_user_message() {
         let mut metadata = metadata_for_test();
-        let item = RolloutItem::ResponseItem(ResponseItem::Message {
-            id: None,
-            role: "user".to_string(),
-            content: vec![ContentItem::InputText {
-                text: "hello from response item".to_string(),
-            }],
-            phase: None,
-            internal_chat_message_metadata_passthrough: None,
-        }
-        .into());
+        let item = RolloutItem::ResponseItem(
+            ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "hello from response item".to_string(),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            }
+            .into(),
+        );
 
         apply_rollout_item(&mut metadata, &item, "test-provider");
 

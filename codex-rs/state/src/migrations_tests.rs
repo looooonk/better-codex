@@ -61,6 +61,142 @@ INSERT INTO threads (
 }
 
 #[tokio::test]
+async fn queue_block_owner_migration_preserves_existing_pause_controls() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory database should open");
+    migrator_through(/*version*/ 50)
+        .run(&pool)
+        .await
+        .expect("thread queue schema should apply");
+    sqlx::query(
+        "INSERT INTO thread_queue_controls (thread_id, paused_reason, updated_at_ms) VALUES ('thread-1', 'interrupted', 1)",
+    )
+    .execute(&pool)
+    .await
+    .expect("legacy queue pause should insert");
+
+    STATE_MIGRATOR
+        .run(&pool)
+        .await
+        .expect("queue block owner migration should apply");
+
+    let control = sqlx::query_as::<_, (String, Option<String>, Option<i64>)>(
+        "SELECT paused_reason, blocked_submission_id, blocked_retry_allowed FROM thread_queue_controls WHERE thread_id = 'thread-1'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("upgraded pause control should load");
+    assert_eq!(control, ("interrupted".to_string(), None, None));
+}
+
+#[tokio::test]
+async fn queue_block_owner_migration_guards_pre_upgrade_writers() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory database should open");
+    STATE_MIGRATOR
+        .run(&pool)
+        .await
+        .expect("thread queue schema should apply");
+    sqlx::query(
+        r#"
+INSERT INTO thread_queue_items (
+    id, thread_id, payload_json, payload_digest, client_user_message_id,
+    queue_order, state, turn_id, terminal_status, created_at_ms, updated_at_ms
+) VALUES
+    ('forbidden-owner', 'thread-forbidden', 'owner', 'owner-digest', 'owner-client', 1, 'pending', NULL, NULL, 1, 1),
+    ('forbidden-follower', 'thread-forbidden', 'follower', 'follower-digest', 'follower-client', 2, 'pending', NULL, NULL, 2, 2),
+    ('allowed-owner', 'thread-allowed', 'allowed', 'allowed-digest', 'allowed-client', 1, 'pending', NULL, NULL, 1, 1)
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .expect("queue fixtures should insert");
+    sqlx::query(
+        r#"
+INSERT INTO thread_queue_controls (
+    thread_id, paused_reason, updated_at_ms, blocked_submission_id, blocked_retry_allowed
+) VALUES
+    ('thread-forbidden', 'interrupted', 1, 'forbidden-owner', 0),
+    ('thread-allowed', 'interrupted', 1, 'allowed-owner', 1)
+        "#,
+    )
+    .execute(&pool)
+    .await
+    .expect("blocked controls should insert");
+
+    for (item_id, state) in [
+        ("forbidden-owner", "inflight"),
+        ("forbidden-follower", "starting"),
+    ] {
+        sqlx::query("UPDATE thread_queue_items SET state = ?, turn_id = 'old-turn' WHERE id = ?")
+            .bind(state)
+            .bind(item_id)
+            .execute(&pool)
+            .await
+            .expect_err("pre-upgrade claim should be blocked");
+    }
+    sqlx::query(
+        "UPDATE thread_queue_items SET payload_json = 'replaced', payload_digest = 'replaced-digest' WHERE id = 'forbidden-owner'",
+    )
+    .execute(&pool)
+    .await
+    .expect_err("pre-upgrade owner update should be blocked");
+    let forbidden = sqlx::query_as::<_, (String, String, String, Option<String>)>(
+        "SELECT payload_json, payload_digest, state, turn_id FROM thread_queue_items WHERE id = 'forbidden-owner'",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("forbidden owner should remain");
+    assert_eq!(
+        forbidden,
+        (
+            "owner".to_string(),
+            "owner-digest".to_string(),
+            "pending".to_string(),
+            None,
+        )
+    );
+
+    sqlx::query("DELETE FROM thread_queue_items WHERE id = 'forbidden-owner'")
+        .execute(&pool)
+        .await
+        .expect("pre-upgrade owner deletion should succeed");
+    let forbidden_control = sqlx::query_scalar::<_, i64>(
+        "SELECT 1 FROM thread_queue_controls WHERE thread_id = 'thread-forbidden'",
+    )
+    .fetch_optional(&pool)
+    .await
+    .expect("deleted owner control should query");
+    assert_eq!(forbidden_control, None);
+    assert_eq!(
+        sqlx::query(
+            "UPDATE thread_queue_items SET state = 'starting', turn_id = 'follower-turn' WHERE id = 'forbidden-follower'",
+        )
+        .execute(&pool)
+        .await
+        .expect("follower should claim after owner deletion")
+        .rows_affected(),
+        1
+    );
+    assert_eq!(
+        sqlx::query(
+            "UPDATE thread_queue_items SET state = 'starting', turn_id = 'allowed-turn' WHERE id = 'allowed-owner'",
+        )
+        .execute(&pool)
+        .await
+        .expect("retryable owner should remain claimable")
+        .rows_affected(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn recency_migration_backfills_and_seeds_old_binary_inserts() {
     let pool = SqlitePoolOptions::new()
         .max_connections(1)

@@ -12,10 +12,10 @@ use codex_rollout::RolloutItem;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
+use super::super::test_support::test_config;
 use super::LocalThreadStore;
 use super::publish_replacement;
 use super::replacement_write_error;
-use super::super::test_support::test_config;
 use crate::AppendThreadItemsParams;
 use crate::CreateThreadParams;
 use crate::ListTurnsParams;
@@ -140,8 +140,14 @@ async fn failed_revert_keeps_compressed_selection_readable() {
 
     assert!(err.to_string().contains("turn not found"), "{err}");
     assert_eq!(selected_path(&state_db, thread_id).await, original_path);
-    assert_eq!(std::fs::read(&original_path).expect("read plain copy"), original_contents);
-    assert!(compressed_path.exists(), "failed revert keeps immutable source");
+    assert_eq!(
+        std::fs::read(&original_path).expect("read plain copy"),
+        original_contents
+    );
+    assert!(
+        compressed_path.exists(),
+        "failed revert keeps immutable source"
+    );
     store
         .resume_thread(ResumeThreadParams {
             thread_id,
@@ -156,7 +162,10 @@ async fn failed_revert_keeps_compressed_selection_readable() {
         })
         .await
         .expect("resume after failed revert");
-    assert!(!compressed_path.exists(), "resuming canonicalizes representation");
+    assert!(
+        !compressed_path.exists(),
+        "resuming canonicalizes representation"
+    );
     store
         .shutdown_thread(thread_id)
         .await
@@ -181,14 +190,9 @@ async fn stale_revert_publication_removes_replacement_without_mutating_selection
     std::fs::write(replacement.as_path(), "replacement").expect("write replacement");
     seed_selected_rollout(&state_db, thread_id, selected.clone()).await;
 
-    let err = publish_replacement(
-        &state_db,
-        thread_id,
-        stale.as_path(),
-        replacement.as_path(),
-    )
-    .await
-    .expect_err("stale publication should conflict");
+    let err = publish_replacement(&state_db, thread_id, stale.as_path(), replacement.as_path())
+        .await
+        .expect_err("stale publication should conflict");
 
     assert!(matches!(err, ThreadStoreError::Conflict { .. }));
     assert!(!replacement.exists());
@@ -248,7 +252,10 @@ async fn revert_rejects_noncanonical_paginated_selection() {
     };
     std::fs::write(
         path.as_path(),
-        format!("{}\n", serde_json::to_string(&meta).expect("serialize metadata")),
+        format!(
+            "{}\n",
+            serde_json::to_string(&meta).expect("serialize metadata")
+        ),
     )
     .expect("write rollout");
     seed_selected_rollout(&state_db, thread_id, path).await;
@@ -261,7 +268,10 @@ async fn revert_rejects_noncanonical_paginated_selection() {
         .await
         .expect_err("noncanonical selection should fail closed");
 
-    assert!(err.to_string().contains("canonical rollout filename"), "{err}");
+    assert!(
+        err.to_string().contains("canonical rollout filename"),
+        "{err}"
+    );
 }
 
 async fn create_paginated_thread(store: &LocalThreadStore, thread_id: ThreadId) {
@@ -296,6 +306,7 @@ async fn turn_ids(store: &LocalThreadStore, thread_id: ThreadId) -> Vec<String> 
     store
         .list_turns(ListTurnsParams {
             thread_id,
+            turn_id: None,
             include_archived: false,
             cursor: None,
             page_size: 10,
@@ -378,7 +389,6 @@ fn turn_completed(turn_id: &str) -> RolloutItem {
 fn compress_rollout(path: &Path) {
     let contents = std::fs::read(path).expect("read rollout");
     let compressed = zstd::stream::encode_all(contents.as_slice(), 3).expect("compress rollout");
-    std::fs::write(path.with_extension("jsonl.zst"), compressed)
-        .expect("write compressed rollout");
+    std::fs::write(path.with_extension("jsonl.zst"), compressed).expect("write compressed rollout");
     std::fs::remove_file(path).expect("remove plain rollout");
 }

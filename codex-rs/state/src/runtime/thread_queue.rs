@@ -1,8 +1,9 @@
 use super::*;
-use crate::QueuedSubmissionRecord;
-use crate::QueuedSubmissionAdmissionRejection;
-use crate::QueuedSubmissionTerminalStatus;
+use crate::BlockedSubmissionRetryPolicy;
 use crate::QueueTerminalDisposition;
+use crate::QueuedSubmissionAdmissionRejection;
+use crate::QueuedSubmissionRecord;
+use crate::QueuedSubmissionTerminalStatus;
 use crate::ThreadQueuePauseReason;
 use sha2::Digest;
 use sha2::Sha256;
@@ -14,8 +15,7 @@ pub const MAX_QUEUED_SUBMISSIONS: usize = 100;
 pub const MAX_QUEUED_INPUT_BYTES: usize = 1024 * 1024;
 pub const MAX_QUEUE_IDENTIFIER_BYTES: usize = 256;
 const TERMINAL_TOMBSTONES_PER_THREAD: i64 = 100;
-pub(super) const QUEUED_SUBMISSION_COLUMNS: &str =
-    "id, thread_id, payload_json, payload_digest, client_user_message_id, state, turn_id, admission_rejection, terminal_status";
+pub(super) const QUEUED_SUBMISSION_COLUMNS: &str = "id, thread_id, payload_json, payload_digest, client_user_message_id, state, turn_id, admission_rejection, terminal_status";
 
 #[derive(Debug)]
 pub enum ThreadQueueError {
@@ -24,6 +24,7 @@ pub enum ThreadQueueError {
     InvalidReorder,
     InvalidIdentifier,
     ClientMessageConflict,
+    BlockedInputAlreadyDurable,
     Storage(anyhow::Error),
 }
 
@@ -50,6 +51,10 @@ impl fmt::Display for ThreadQueueError {
                 formatter,
                 "client message id is already associated with different queued input"
             ),
+            Self::BlockedInputAlreadyDurable => write!(
+                formatter,
+                "queued input is already durable and the blocked submission can only be deleted"
+            ),
             Self::Storage(error) => write!(formatter, "queue storage failed: {error}"),
         }
     }
@@ -63,7 +68,8 @@ impl std::error::Error for ThreadQueueError {
             | Self::InputBytesExceeded
             | Self::InvalidReorder
             | Self::InvalidIdentifier
-            | Self::ClientMessageConflict => None,
+            | Self::ClientMessageConflict
+            | Self::BlockedInputAlreadyDurable => None,
         }
     }
 }
@@ -275,6 +281,10 @@ ORDER BY updated_at_ms DESC LIMIT 1
 UPDATE thread_queue_items
 SET payload_json = ?, payload_digest = ?, updated_at_ms = ?
 WHERE thread_id = ? AND id = ? AND state = 'pending'
+  AND NOT EXISTS (
+      SELECT 1 FROM thread_queue_controls
+      WHERE thread_id = ? AND blocked_submission_id = ? AND blocked_retry_allowed = 0
+  )
   AND COALESCE((
       SELECT SUM(length(CAST(payload_json AS BLOB)))
       FROM thread_queue_items
@@ -290,6 +300,8 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
         .bind(item_id)
         .bind(thread_id.to_string())
         .bind(item_id)
+        .bind(thread_id.to_string())
+        .bind(item_id)
         .bind(i64::try_from(payload.len()).map_err(anyhow::Error::from)?)
         .bind(i64::try_from(MAX_QUEUED_INPUT_BYTES).map_err(anyhow::Error::from)?)
         .fetch_optional(self.pool.as_ref())
@@ -298,6 +310,20 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
             return QueuedSubmissionRecord::try_from_row(&row)
                 .map(Some)
                 .map_err(Into::into);
+        }
+        let retry_forbidden = sqlx::query_scalar::<_, i64>(
+            r#"
+SELECT 1 FROM thread_queue_controls
+WHERE thread_id = ? AND blocked_submission_id = ? AND blocked_retry_allowed = 0
+            "#,
+        )
+        .bind(thread_id.to_string())
+        .bind(item_id)
+        .fetch_optional(self.pool.as_ref())
+        .await?
+        .is_some();
+        if retry_forbidden {
+            return Err(ThreadQueueError::BlockedInputAlreadyDurable);
         }
         let pending = sqlx::query_scalar::<_, i64>(
             "SELECT 1 FROM thread_queue_items WHERE thread_id = ? AND id = ? AND state = 'pending'",
@@ -320,15 +346,27 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
         item_id: &str,
     ) -> Result<bool, ThreadQueueError> {
         validate_queue_identifier(item_id)?;
-        Ok(sqlx::query(
+        let mut transaction = self.pool.begin().await?;
+        let deleted = sqlx::query(
             "DELETE FROM thread_queue_items WHERE thread_id = ? AND id = ? AND state = 'pending'",
         )
         .bind(thread_id.to_string())
         .bind(item_id)
-        .execute(self.pool.as_ref())
+        .execute(transaction.as_mut())
         .await?
         .rows_affected()
-            > 0)
+            > 0;
+        if deleted {
+            sqlx::query(
+                "DELETE FROM thread_queue_controls WHERE thread_id = ? AND blocked_submission_id = ?",
+            )
+            .bind(thread_id.to_string())
+            .bind(item_id)
+            .execute(transaction.as_mut())
+            .await?;
+        }
+        transaction.commit().await?;
+        Ok(deleted)
     }
 
     pub async fn reorder_queued_submissions(
@@ -527,10 +565,14 @@ WHERE thread_id = ? AND turn_id = ? AND state IN ('starting', 'inflight')
             if let QueueTerminalDisposition::Pause(reason) = disposition {
                 sqlx::query(
                     r#"
-INSERT INTO thread_queue_controls (thread_id, paused_reason, updated_at_ms)
-VALUES (?, ?, ?)
+INSERT INTO thread_queue_controls (
+    thread_id, paused_reason, blocked_submission_id, blocked_retry_allowed, updated_at_ms
+)
+VALUES (?, ?, NULL, NULL, ?)
 ON CONFLICT(thread_id) DO UPDATE SET
     paused_reason = excluded.paused_reason,
+    blocked_submission_id = NULL,
+    blocked_retry_allowed = NULL,
     updated_at_ms = excluded.updated_at_ms
                     "#,
                 )
@@ -553,6 +595,55 @@ WHERE rowid IN (
             )
             .bind(thread_id.to_string())
             .bind(TERMINAL_TOMBSTONES_PER_THREAD)
+            .execute(transaction.as_mut())
+            .await?;
+        }
+        transaction.commit().await?;
+        Ok(changed)
+    }
+
+    pub async fn block_indeterminate_queued_submission(
+        &self,
+        thread_id: ThreadId,
+        item_id: &str,
+        turn_id: &str,
+        retry_policy: BlockedSubmissionRetryPolicy,
+    ) -> Result<bool, ThreadQueueError> {
+        validate_queue_identifier(item_id)?;
+        let mut transaction = self.pool.begin().await?;
+        let changed = sqlx::query(
+            r#"
+UPDATE thread_queue_items
+SET state = 'pending', turn_id = NULL, admission_rejection = NULL, updated_at_ms = ?
+WHERE thread_id = ? AND id = ? AND turn_id = ? AND state IN ('starting', 'inflight')
+            "#,
+        )
+        .bind(datetime_to_epoch_millis(Utc::now()))
+        .bind(thread_id.to_string())
+        .bind(item_id)
+        .bind(turn_id)
+        .execute(transaction.as_mut())
+        .await?
+        .rows_affected()
+            > 0;
+        if changed {
+            sqlx::query(
+                r#"
+INSERT INTO thread_queue_controls (
+    thread_id, paused_reason, blocked_submission_id, blocked_retry_allowed, updated_at_ms
+)
+VALUES (?, 'interrupted', ?, ?, ?)
+ON CONFLICT(thread_id) DO UPDATE SET
+    paused_reason = excluded.paused_reason,
+    blocked_submission_id = excluded.blocked_submission_id,
+    blocked_retry_allowed = excluded.blocked_retry_allowed,
+    updated_at_ms = excluded.updated_at_ms
+                "#,
+            )
+            .bind(thread_id.to_string())
+            .bind(item_id)
+            .bind(retry_policy.as_i64())
+            .bind(datetime_to_epoch_millis(Utc::now()))
             .execute(transaction.as_mut())
             .await?;
         }

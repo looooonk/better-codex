@@ -1,6 +1,7 @@
 use super::*;
-use crate::runtime::test_support::unique_temp_dir;
+use crate::BlockedSubmissionRetryPolicy;
 use crate::QueuedSubmissionState;
+use crate::runtime::test_support::unique_temp_dir;
 use pretty_assertions::assert_eq;
 
 async fn runtime() -> anyhow::Result<Arc<StateRuntime>> {
@@ -22,14 +23,16 @@ async fn pause_queue(
             .await?,
         QueueClaimResult::Claimed(_)
     ));
-    assert!(runtime
-        .finish_queued_submission(
-            thread_id,
-            turn_id,
-            QueuedSubmissionTerminalStatus::Failed,
-            QueueTerminalDisposition::Pause(ThreadQueuePauseReason::Interrupted),
-        )
-        .await?);
+    assert!(
+        runtime
+            .finish_queued_submission(
+                thread_id,
+                turn_id,
+                QueuedSubmissionTerminalStatus::Failed,
+                QueueTerminalDisposition::Pause(ThreadQueuePauseReason::Interrupted),
+            )
+            .await?
+    );
     Ok(item)
 }
 
@@ -81,7 +84,7 @@ async fn queue_crud_pagination_and_ordering_are_durable() -> anyhow::Result<()> 
     );
 
     runtime.close().await;
-    let reopened = StateRuntime::init(codex_home, "test-provider".to_string()).await?;
+    let reopened = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
     assert_eq!(
         reopened
             .list_queued_submissions(thread_id, /*offset*/ 0, /*limit*/ 10)
@@ -299,9 +302,11 @@ async fn reorder_uses_collision_free_slots_and_release_restores_position() -> an
     let third = runtime
         .enqueue_queued_submission(thread_id, "third", "client-3")
         .await?;
-    assert!(runtime
-        .delete_queued_submission(thread_id, &first.id)
-        .await?);
+    assert!(
+        runtime
+            .delete_queued_submission(thread_id, &first.id)
+            .await?
+    );
 
     runtime
         .reorder_queued_submissions(thread_id, &[third.id.clone(), second.id.clone()])
@@ -312,9 +317,11 @@ async fn reorder_uses_collision_free_slots_and_release_restores_position() -> an
             .await?,
         QueueClaimResult::Claimed(_)
     ));
-    assert!(runtime
-        .release_queued_submission_claim(thread_id, &third.id, "turn-3")
-        .await?);
+    assert!(
+        runtime
+            .release_queued_submission_claim(thread_id, &third.id, "turn-3")
+            .await?
+    );
     assert_eq!(
         runtime
             .list_queued_submissions(thread_id, /*offset*/ 0, /*limit*/ 10)
@@ -360,11 +367,7 @@ async fn active_items_remain_within_queue_limits_and_terminal_payloads_are_scrub
     let runtime = runtime().await?;
     let thread_id = ThreadId::new();
     let item = runtime
-        .enqueue_queued_submission(
-            thread_id,
-            &"x".repeat(MAX_QUEUED_INPUT_BYTES),
-            "client-1",
-        )
+        .enqueue_queued_submission(thread_id, &"x".repeat(MAX_QUEUED_INPUT_BYTES), "client-1")
         .await?;
     assert!(matches!(
         runtime
@@ -378,14 +381,16 @@ async fn active_items_remain_within_queue_limits_and_terminal_payloads_are_scrub
             .await,
         Err(ThreadQueueError::InputBytesExceeded)
     ));
-    assert!(runtime
-        .finish_queued_submission(
-            thread_id,
-            "turn-1",
-            QueuedSubmissionTerminalStatus::Completed,
-            QueueTerminalDisposition::Continue,
-        )
-        .await?);
+    assert!(
+        runtime
+            .finish_queued_submission(
+                thread_id,
+                "turn-1",
+                QueuedSubmissionTerminalStatus::Completed,
+                QueueTerminalDisposition::Continue,
+            )
+            .await?
+    );
     assert_eq!(
         runtime
             .queued_submission(thread_id, &item.id)
@@ -394,10 +399,12 @@ async fn active_items_remain_within_queue_limits_and_terminal_payloads_are_scrub
             .payload,
         "[]"
     );
-    assert!(runtime
-        .enqueue_queued_submission(thread_id, "x", "client-2")
-        .await
-        .is_ok());
+    assert!(
+        runtime
+            .enqueue_queued_submission(thread_id, "x", "client-2")
+            .await
+            .is_ok()
+    );
     Ok(())
 }
 
@@ -415,21 +422,25 @@ async fn hook_rejection_and_pause_state_survive_reopen() -> anyhow::Result<()> {
             .await?,
         QueueClaimResult::Claimed(_)
     ));
-    assert!(runtime
-        .mark_queued_submission_admission_rejected(
-            thread_id,
-            "turn-1",
-            QueuedSubmissionAdmissionRejection::Hook,
-        )
-        .await?);
-    assert!(runtime
-        .finish_queued_submission(
-            thread_id,
-            "turn-1",
-            QueuedSubmissionTerminalStatus::Failed,
-            QueueTerminalDisposition::Pause(ThreadQueuePauseReason::Interrupted),
-        )
-        .await?);
+    assert!(
+        runtime
+            .mark_queued_submission_admission_rejected(
+                thread_id,
+                "turn-1",
+                QueuedSubmissionAdmissionRejection::Hook,
+            )
+            .await?
+    );
+    assert!(
+        runtime
+            .finish_queued_submission(
+                thread_id,
+                "turn-1",
+                QueuedSubmissionTerminalStatus::Failed,
+                QueueTerminalDisposition::Pause(ThreadQueuePauseReason::Interrupted),
+            )
+            .await?
+    );
 
     runtime.close().await;
     let reopened = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
@@ -461,7 +472,13 @@ async fn failed_explicit_claims_preserve_pause_across_reopen() -> anyhow::Result
     let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
 
     let missing_thread = ThreadId::new();
-    pause_queue(&runtime, missing_thread, "pause-missing", "turn-missing-pause").await?;
+    pause_queue(
+        &runtime,
+        missing_thread,
+        "pause-missing",
+        "turn-missing-pause",
+    )
+    .await?;
     runtime
         .enqueue_queued_submission(missing_thread, "pending", "pending-missing")
         .await?;
@@ -493,11 +510,7 @@ async fn failed_explicit_claims_preserve_pause_across_reopen() -> anyhow::Result
     pause_queue(&runtime, empty_thread, "pause-empty", "turn-empty-pause").await?;
     assert_eq!(
         runtime
-            .claim_queued_submission_and_resume(
-                empty_thread,
-                /*item_id*/ None,
-                "turn-empty",
-            )
+            .claim_queued_submission_and_resume(empty_thread, /*item_id*/ None, "turn-empty",)
             .await?,
         QueueClaimAndResumeResult {
             claim: QueueClaimResult::Empty,
@@ -522,11 +535,7 @@ async fn failed_explicit_claims_preserve_pause_across_reopen() -> anyhow::Result
     };
     assert_eq!(
         runtime
-            .claim_queued_submission_and_resume(
-                busy_thread,
-                /*item_id*/ None,
-                "turn-busy",
-            )
+            .claim_queued_submission_and_resume(busy_thread, /*item_id*/ None, "turn-busy",)
             .await?,
         QueueClaimAndResumeResult {
             claim: QueueClaimResult::Busy(active),
@@ -542,7 +551,7 @@ async fn failed_explicit_claims_preserve_pause_across_reopen() -> anyhow::Result
     }
     runtime.close().await;
 
-    let reopened = StateRuntime::init(codex_home, "test-provider".to_string()).await?;
+    let reopened = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
     for thread_id in [missing_thread, empty_thread, busy_thread] {
         assert_eq!(
             reopened.thread_queue_pause_reason(thread_id).await?,
@@ -569,29 +578,22 @@ async fn successful_explicit_claim_keeps_queue_resumed_after_release() -> anyhow
         outcome.claim,
         QueueClaimResult::Claimed(ref claimed) if claimed.id == pending.id
     ));
-    assert!(runtime
-        .release_queued_submission_claim(thread_id, &pending.id, "turn-new")
-        .await?);
+    assert!(
+        runtime
+            .release_queued_submission_claim(thread_id, &pending.id, "turn-new")
+            .await?
+    );
 
     let existing_thread = ThreadId::new();
-    let terminal = pause_queue(
-        &runtime,
-        existing_thread,
-        "pause-existing",
-        "turn-existing",
-    )
-    .await?;
+    let terminal =
+        pause_queue(&runtime, existing_thread, "pause-existing", "turn-existing").await?;
     let stored_terminal = runtime
         .queued_submission(existing_thread, &terminal.id)
         .await?
         .expect("terminal tombstone should remain");
     assert_eq!(
         runtime
-            .claim_queued_submission_and_resume(
-                existing_thread,
-                Some(&terminal.id),
-                "turn-unused",
-            )
+            .claim_queued_submission_and_resume(existing_thread, Some(&terminal.id), "turn-unused",)
             .await?,
         QueueClaimAndResumeResult {
             claim: QueueClaimResult::Existing(stored_terminal),
@@ -710,6 +712,183 @@ async fn crash_window_recovery_transitions_are_idempotent_across_reopens() -> an
             .thread_queue_pause_reason(interrupted_thread)
             .await?,
         Some(ThreadQueuePauseReason::Interrupted)
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn indeterminate_owner_is_durable_visible_and_controls_retry_or_delete() -> anyhow::Result<()>
+{
+    let codex_home = unique_temp_dir();
+    let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
+    let thread_id = ThreadId::new();
+    let first = runtime
+        .enqueue_queued_submission(thread_id, "first", "client-first")
+        .await?;
+    let owner = runtime
+        .enqueue_queued_submission(thread_id, "owner", "client-owner")
+        .await?;
+    let last = runtime
+        .enqueue_queued_submission(thread_id, "last", "client-last")
+        .await?;
+    assert!(matches!(
+        runtime
+            .claim_queued_submission(thread_id, Some(&owner.id), "turn-owner")
+            .await?,
+        QueueClaimResult::Claimed(_)
+    ));
+    assert!(
+        runtime
+            .mark_queued_submission_inflight(thread_id, "turn-owner")
+            .await?
+    );
+    assert!(
+        runtime
+            .block_indeterminate_queued_submission(
+                thread_id,
+                &owner.id,
+                "turn-owner",
+                BlockedSubmissionRetryPolicy::Allowed,
+            )
+            .await?
+    );
+    let recovered_owner = QueuedSubmissionRecord {
+        state: QueuedSubmissionState::Pending,
+        turn_id: None,
+        ..owner.clone()
+    };
+    assert_eq!(
+        runtime
+            .list_queued_submissions(thread_id, /*offset*/ 0, /*limit*/ 10)
+            .await?,
+        vec![first.clone(), recovered_owner.clone(), last.clone()]
+    );
+    assert_eq!(
+        runtime
+            .claim_queued_submission(thread_id, /*item_id*/ None, "turn-auto")
+            .await?,
+        QueueClaimResult::Blocked {
+            owner_id: owner.id.clone(),
+            retry_policy: BlockedSubmissionRetryPolicy::Allowed,
+        }
+    );
+    assert_eq!(
+        runtime
+            .claim_queued_submission_and_resume(thread_id, Some(&first.id), "turn-other")
+            .await?,
+        QueueClaimAndResumeResult {
+            claim: QueueClaimResult::Blocked {
+                owner_id: owner.id.clone(),
+                retry_policy: BlockedSubmissionRetryPolicy::Allowed,
+            },
+            resumed: false,
+        }
+    );
+    let updated_owner = runtime
+        .update_queued_submission(thread_id, &owner.id, "owner updated")
+        .await?
+        .expect("blocked owner should remain editable");
+    runtime
+        .reorder_queued_submissions(
+            thread_id,
+            &[last.id.clone(), first.id.clone(), owner.id.clone()],
+        )
+        .await?;
+    runtime.close().await;
+
+    let reopened = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
+    assert_eq!(
+        reopened
+            .list_queued_submissions(thread_id, /*offset*/ 0, /*limit*/ 10)
+            .await?,
+        vec![last.clone(), first.clone(), updated_owner.clone()]
+    );
+    let retry = reopened
+        .claim_queued_submission_and_resume(thread_id, /*item_id*/ None, "turn-retry")
+        .await?;
+    assert!(retry.resumed);
+    assert!(matches!(
+        retry.claim,
+        QueueClaimResult::Claimed(ref claimed) if claimed.id == owner.id
+    ));
+    assert_eq!(reopened.thread_queue_pause_reason(thread_id).await?, None);
+    assert!(
+        reopened
+            .release_queued_submission_claim(thread_id, &owner.id, "turn-retry")
+            .await?
+    );
+
+    assert!(matches!(
+        reopened
+            .claim_queued_submission(thread_id, Some(&owner.id), "turn-consumed")
+            .await?,
+        QueueClaimResult::Claimed(_)
+    ));
+    assert!(
+        reopened
+            .block_indeterminate_queued_submission(
+                thread_id,
+                &owner.id,
+                "turn-consumed",
+                BlockedSubmissionRetryPolicy::Forbidden,
+            )
+            .await?
+    );
+    assert!(matches!(
+        reopened
+            .update_queued_submission(thread_id, &owner.id, "must not replace durable input")
+            .await,
+        Err(ThreadQueueError::BlockedInputAlreadyDurable)
+    ));
+    let forbidden_owner = reopened
+        .queued_submission(thread_id, &owner.id)
+        .await?
+        .expect("forbidden blocked owner should remain visible");
+    assert_eq!(forbidden_owner, updated_owner);
+    reopened.close().await;
+
+    let reopened = StateRuntime::init(codex_home, "test-provider".to_string()).await?;
+    assert_eq!(
+        reopened
+            .queued_submission(thread_id, &owner.id)
+            .await?
+            .expect("forbidden blocked owner should survive reopen"),
+        forbidden_owner
+    );
+    for item_id in [None, Some(owner.id.as_str()), Some(last.id.as_str())] {
+        assert_eq!(
+            reopened
+                .claim_queued_submission_and_resume(thread_id, item_id, "turn-forbidden")
+                .await?,
+            QueueClaimAndResumeResult {
+                claim: QueueClaimResult::Blocked {
+                    owner_id: owner.id.clone(),
+                    retry_policy: BlockedSubmissionRetryPolicy::Forbidden,
+                },
+                resumed: false,
+            }
+        );
+    }
+    assert!(
+        reopened
+            .delete_queued_submission(thread_id, &last.id)
+            .await?
+    );
+    assert_eq!(
+        reopened.thread_queue_pause_reason(thread_id).await?,
+        Some(ThreadQueuePauseReason::Interrupted)
+    );
+    assert!(
+        reopened
+            .delete_queued_submission(thread_id, &owner.id)
+            .await?
+    );
+    assert_eq!(reopened.thread_queue_pause_reason(thread_id).await?, None);
+    assert_eq!(
+        reopened
+            .list_queued_submissions(thread_id, /*offset*/ 0, /*limit*/ 10)
+            .await?,
+        vec![first]
     );
     Ok(())
 }

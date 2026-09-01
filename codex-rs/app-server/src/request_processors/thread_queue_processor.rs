@@ -47,6 +47,9 @@ impl ThreadQueueRequestProcessor {
         let (thread_id, loaded_thread, source) =
             self.service.require_thread(&params.thread_id).await?;
         ensure_direct_input_allowed(loaded_thread.as_deref(), &source)?;
+        self.service
+            .recover_before_queue_access(thread_id, loaded_thread.as_deref())
+            .await?;
         let payload = prepare_payload(&params.input)?;
         let record = self
             .service
@@ -79,7 +82,10 @@ impl ThreadQueueRequestProcessor {
         &self,
         params: ThreadQueueListParams,
     ) -> Result<ThreadQueueListResponse, JSONRPCErrorError> {
-        let (thread_id, _, _) = self.service.require_thread(&params.thread_id).await?;
+        let (thread_id, loaded_thread, _) = self.service.require_thread(&params.thread_id).await?;
+        self.service
+            .recover_before_queue_access(thread_id, loaded_thread.as_deref())
+            .await?;
         let offset = parse_cursor(params.cursor.as_deref())?;
         let limit = params
             .limit
@@ -115,6 +121,9 @@ impl ThreadQueueRequestProcessor {
         let (thread_id, loaded_thread, source) =
             self.service.require_thread(&params.thread_id).await?;
         ensure_direct_input_allowed(loaded_thread.as_deref(), &source)?;
+        self.service
+            .recover_before_queue_access(thread_id, loaded_thread.as_deref())
+            .await?;
         let payload = prepare_payload(&params.input)?;
         let record = self
             .service
@@ -146,7 +155,10 @@ impl ThreadQueueRequestProcessor {
         request_id: ConnectionRequestId,
         params: ThreadQueueDeleteParams,
     ) -> Result<(), JSONRPCErrorError> {
-        let (thread_id, _, _) = self.service.require_thread(&params.thread_id).await?;
+        let (thread_id, loaded_thread, _) = self.service.require_thread(&params.thread_id).await?;
+        self.service
+            .recover_before_queue_access(thread_id, loaded_thread.as_deref())
+            .await?;
         let deleted = self
             .service
             .state_db()?
@@ -158,6 +170,7 @@ impl ThreadQueueRequestProcessor {
             self.service
                 .send_changed_response(request_id, response.into(), thread_id)
                 .await;
+            self.service.wake_if_loaded(thread_id).await;
         } else {
             self.service
                 .outgoing()
@@ -172,18 +185,17 @@ impl ThreadQueueRequestProcessor {
         request_id: ConnectionRequestId,
         params: ThreadQueueReorderParams,
     ) -> Result<(), JSONRPCErrorError> {
-        let (thread_id, _, _) = self.service.require_thread(&params.thread_id).await?;
+        let (thread_id, loaded_thread, _) = self.service.require_thread(&params.thread_id).await?;
+        self.service
+            .recover_before_queue_access(thread_id, loaded_thread.as_deref())
+            .await?;
         self.service
             .state_db()?
             .reorder_queued_submissions(thread_id, &params.queued_submission_ids)
             .await
             .map_err(queue_error)?;
         self.service
-            .send_changed_response(
-                request_id,
-                ThreadQueueReorderResponse {}.into(),
-                thread_id,
-            )
+            .send_changed_response(request_id, ThreadQueueReorderResponse {}.into(), thread_id)
             .await;
         Ok(())
     }
@@ -196,8 +208,12 @@ impl ThreadQueueRequestProcessor {
         let (thread_id, loaded_thread, source) =
             self.service.require_thread(&params.thread_id).await?;
         ensure_direct_input_allowed(loaded_thread.as_deref(), &source)?;
-        let thread = loaded_thread
-            .ok_or_else(|| invalid_request("resume the thread before starting a queued message"))?;
+        self.service
+            .recover_before_queue_access(thread_id, loaded_thread.as_deref())
+            .await?;
+        let thread = loaded_thread.ok_or_else(|| {
+            invalid_request("resume/subscribe the thread before starting a queued message")
+        })?;
         let trace = self
             .service
             .outgoing()

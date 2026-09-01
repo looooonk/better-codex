@@ -38,6 +38,7 @@ use tempfile::TempDir;
 use tokio::time::timeout;
 
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const ACTIVE_REVERT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(2);
 
 #[tokio::test]
 async fn thread_revert_replaces_paginated_history_before_turn() -> Result<()> {
@@ -313,7 +314,7 @@ async fn thread_revert_interrupts_active_turn_and_keeps_subscription() -> Result
         })
         .await?;
     let revert_response: JSONRPCResponse = timeout(
-        DEFAULT_READ_TIMEOUT,
+        ACTIVE_REVERT_TIMEOUT,
         mcp.read_stream_until_response_message(RequestId::Integer(revert_id)),
     )
     .await??;

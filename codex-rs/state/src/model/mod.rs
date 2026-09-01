@@ -25,6 +25,7 @@ pub use memories::Stage1JobClaim;
 pub use memories::Stage1JobClaimOutcome;
 pub use memories::Stage1Output;
 pub use memories::Stage1StartupClaimParams;
+pub use queued_submission::BlockedSubmissionRetryPolicy;
 pub use queued_submission::QueueTerminalDisposition;
 pub use queued_submission::QueuedSubmissionAdmissionRejection;
 pub use queued_submission::QueuedSubmissionRecord;

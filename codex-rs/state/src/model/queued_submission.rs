@@ -12,15 +12,6 @@ pub enum QueuedSubmissionState {
 }
 
 impl QueuedSubmissionState {
-    pub(crate) fn as_str(self) -> &'static str {
-        match self {
-            Self::Pending => "pending",
-            Self::Starting => "starting",
-            Self::Inflight => "inflight",
-            Self::Terminal => "terminal",
-        }
-    }
-
     fn parse(value: &str) -> anyhow::Result<Self> {
         match value {
             "pending" => Ok(Self::Pending),
@@ -63,6 +54,21 @@ impl QueuedSubmissionAdmissionRejection {
 pub enum ThreadQueuePauseReason {
     Interrupted,
     BudgetLimited,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BlockedSubmissionRetryPolicy {
+    Allowed,
+    Forbidden,
+}
+
+impl BlockedSubmissionRetryPolicy {
+    pub(crate) fn as_i64(self) -> i64 {
+        match self {
+            Self::Allowed => 1,
+            Self::Forbidden => 0,
+        }
+    }
 }
 
 impl ThreadQueuePauseReason {
