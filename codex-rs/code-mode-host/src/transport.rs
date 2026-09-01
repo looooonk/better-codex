@@ -200,7 +200,7 @@ pub(crate) fn bounded_incoming(
     })
 }
 
-struct BoundedTcpConnection {
+pub(crate) struct BoundedTcpConnection {
     stream: TcpStream,
     authenticated: Arc<AtomicBool>,
     first_byte_timeout: Option<Pin<Box<Sleep>>>,
