@@ -76,38 +76,43 @@ fn unix_endpoints_require_bounded_absolute_paths() {
 }
 
 #[tokio::test]
-async fn plaintext_loopback_transport_ignores_configured_proxy() {
-    let destination = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let proxy = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let target = reqwest::Url::parse(&format!("http://{}", destination.local_addr().unwrap()))
+async fn loopback_transports_ignore_configured_proxy() {
+    for scheme in ["http", "https"] {
+        let destination = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target = reqwest::Url::parse(&format!(
+            "{scheme}://{}",
+            destination.local_addr().unwrap()
+        ))
         .unwrap();
-    let client = build_transport_client(
-        &target,
-        &HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-        reqwest::Client::builder()
-            .http2_prior_knowledge()
-            .proxy(reqwest::Proxy::all(format!(
-                "http://{}",
-                proxy.local_addr().unwrap()
-            )).unwrap()),
-    )
-    .unwrap();
-    let request = tokio::spawn(async move { client.get(target).send().await });
+        let client = build_transport_client(
+            &target,
+            &HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+            reqwest::Client::builder()
+                .http2_prior_knowledge()
+                .proxy(
+                    reqwest::Proxy::all(format!("http://{}", proxy.local_addr().unwrap()))
+                        .unwrap(),
+                ),
+        )
+        .unwrap();
+        let request = tokio::spawn(async move { client.get(target).send().await });
 
-    let accepted_directly = timeout(Duration::from_secs(/*secs*/ 1), async {
-        tokio::select! {
-            result = destination.accept() => {
-                result.unwrap();
-                true
+        let accepted_directly = timeout(Duration::from_secs(/*secs*/ 1), async {
+            tokio::select! {
+                result = destination.accept() => {
+                    result.unwrap();
+                    true
+                }
+                result = proxy.accept() => {
+                    result.unwrap();
+                    false
+                }
             }
-            result = proxy.accept() => {
-                result.unwrap();
-                false
-            }
-        }
-    })
-    .await
-    .unwrap();
-    assert!(accepted_directly);
-    request.abort();
+        })
+        .await
+        .unwrap();
+        assert!(accepted_directly);
+        request.abort();
+    }
 }

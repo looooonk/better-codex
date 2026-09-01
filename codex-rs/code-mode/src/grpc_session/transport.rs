@@ -154,7 +154,16 @@ fn build_transport_client(
     http_client_factory: &HttpClientFactory,
     builder: reqwest::ClientBuilder,
 ) -> Result<reqwest::Client, String> {
-    if target.scheme() == "http" {
+    if target
+        .host_str()
+        .and_then(|host| {
+            host.trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse::<IpAddr>()
+                .ok()
+        })
+        .is_some_and(|ip| ip.is_loopback())
+    {
         return build_reqwest_client_with_custom_ca(builder.no_proxy()).map_err(|error| {
             format!("failed to configure direct gRPC code-mode host transport: {error}")
         });
