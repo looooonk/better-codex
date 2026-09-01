@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::panic::AssertUnwindSafe;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::PoisonError;
@@ -24,6 +26,7 @@ use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
 use tokio::sync::watch;
+use tokio::sync::Semaphore;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tonic::transport::Channel;
@@ -42,12 +45,48 @@ mod deadline;
 mod generation;
 mod operations;
 mod reconnect;
+mod response_admission;
 mod state;
 mod transport;
 
 type GrpcClient = CodeModeHostClient<GrpcTransport>;
 
 const SHUTDOWN_ERROR: &str = "code mode session is shutting down";
+
+/// A server-issued bearer capability for an HTTP gRPC code-mode host.
+#[derive(Clone, Eq, PartialEq)]
+pub struct GrpcCodeModeHostCapability(String);
+
+impl GrpcCodeModeHostCapability {
+    /// Parses the fixed-size hexadecimal capability printed by the host.
+    pub fn new(value: impl Into<String>) -> Result<Self, String> {
+        let value = value.into();
+        if value.len() != grpc::CAPABILITY_HEX_BYTES
+            || !value.bytes().all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err("invalid gRPC code-mode host capability".to_string());
+        }
+        Ok(Self(value))
+    }
+
+    pub(super) fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Debug for GrpcCodeModeHostCapability {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("GrpcCodeModeHostCapability([REDACTED])")
+    }
+}
+
+impl FromStr for GrpcCodeModeHostCapability {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        Self::new(value)
+    }
+}
 
 /// Creates code-mode sessions over an HTTP/2 gRPC connection.
 #[derive(Clone)]
@@ -56,7 +95,10 @@ pub struct GrpcCodeModeSessionProvider {
 }
 
 impl GrpcCodeModeSessionProvider {
-    /// Connects lazily to a loopback `http://`, authenticated `https://`, or local `unix:` endpoint.
+    /// Connects lazily to a trusted `https:` or local `unix:` endpoint.
+    ///
+    /// The deployment is responsible for authenticating an endpoint-only HTTPS
+    /// host. Plaintext HTTP endpoints require [`Self::with_capability`].
     pub fn new(endpoint: impl Into<String>) -> Self {
         Self::with_http_client_factory(
             endpoint,
@@ -64,12 +106,44 @@ impl GrpcCodeModeSessionProvider {
         )
     }
 
-    /// Connects using the application's resolved outbound proxy and custom CA policy.
+    /// Connects a trusted HTTPS or local Unix endpoint using the application's HTTP policy.
+    ///
+    /// Plaintext HTTP endpoints require
+    /// [`Self::with_http_client_factory_and_capability`].
     pub fn with_http_client_factory(
         endpoint: impl Into<String>,
         http_client_factory: HttpClientFactory,
     ) -> Self {
-        Self::from_transport(SharedTransport::new(endpoint.into(), http_client_factory))
+        Self::from_transport(SharedTransport::new(
+            endpoint.into(),
+            http_client_factory,
+            /*capability*/ None,
+        ))
+    }
+
+    /// Connects to an HTTP host using its server-issued bearer capability.
+    pub fn with_capability(
+        endpoint: impl Into<String>,
+        capability: GrpcCodeModeHostCapability,
+    ) -> Self {
+        Self::with_http_client_factory_and_capability(
+            endpoint,
+            HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+            capability,
+        )
+    }
+
+    /// Connects with the application's HTTP policy and a server-issued capability.
+    pub fn with_http_client_factory_and_capability(
+        endpoint: impl Into<String>,
+        http_client_factory: HttpClientFactory,
+        capability: GrpcCodeModeHostCapability,
+    ) -> Self {
+        Self::from_transport(SharedTransport::new(
+            endpoint.into(),
+            http_client_factory,
+            Some(capability),
+        ))
     }
 
     /// Uses an existing channel, including channels backed by custom transports.
@@ -127,6 +201,9 @@ impl GrpcCodeModeSessionProvider {
             shutdown_result: Mutex::new(None),
             stopped: CancellationToken::new(),
             stream_tasks: TaskTracker::new(),
+            callback_tasks: self.transport.callback_tasks(),
+            callback_bytes: self.transport.callback_bytes(),
+            cleanup_tasks: self.transport.cleanup_tasks(),
             _transport: Arc::clone(&self.transport),
         });
         let mut opening = OpeningSession {
@@ -240,6 +317,9 @@ pub(super) struct SessionInner {
     shutdown_result: Mutex<Option<ShutdownResultReceiver>>,
     pub(super) stopped: CancellationToken,
     stream_tasks: TaskTracker,
+    callback_tasks: Arc<Semaphore>,
+    callback_bytes: Arc<Semaphore>,
+    cleanup_tasks: Arc<Semaphore>,
     _transport: Arc<SharedTransport>,
 }
 

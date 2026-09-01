@@ -1,9 +1,11 @@
 use std::io;
 use std::net::IpAddr;
+use std::sync::Arc;
 
 use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
+use codex_code_mode_protocol::grpc::CAPABILITY_METADATA_KEY;
 use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
-use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use codex_http_client::build_reqwest_client_with_custom_ca;
 use codex_http_client::ClientRouteClass;
 use codex_http_client::HttpClientFactory;
@@ -11,17 +13,22 @@ use http_body_util::BodyExt;
 use tonic::body::Body;
 use tonic::codegen::http::Request;
 use tonic::codegen::http::Response;
+use tonic::codegen::http::HeaderValue;
 use tonic::codegen::http::Uri;
 use tonic::transport::Channel;
 use tonic::transport::Endpoint;
+use tokio::sync::Semaphore;
 use tower::ServiceExt;
 use tower::service_fn;
 use tower::util::BoxCloneSyncService;
 use uuid::Uuid;
 
 use super::GrpcClient;
+use super::GrpcCodeModeHostCapability;
+use super::response_admission::ResponseAdmission;
 
 const MAX_ENDPOINT_BYTES: usize = 2_048;
+pub(super) const MAX_CLEANUP_TASKS: usize = 32;
 
 pub(super) type GrpcTransport = BoxCloneSyncService<Request<Body>, Response<Body>, io::Error>;
 
@@ -29,6 +36,11 @@ pub(super) struct SharedTransport {
     endpoint: TransportEndpoint,
     client_id: Uuid,
     client: tokio::sync::OnceCell<GrpcClient>,
+    callback_tasks: Arc<Semaphore>,
+    callback_bytes: Arc<Semaphore>,
+    response_admission: ResponseAdmission,
+    cleanup_tasks: Arc<Semaphore>,
+    capability: Option<GrpcCodeModeHostCapability>,
 }
 
 enum TransportEndpoint {
@@ -40,7 +52,11 @@ enum TransportEndpoint {
 }
 
 impl SharedTransport {
-    pub(super) fn new(endpoint: String, http_client_factory: HttpClientFactory) -> Self {
+    pub(super) fn new(
+        endpoint: String,
+        http_client_factory: HttpClientFactory,
+        capability: Option<GrpcCodeModeHostCapability>,
+    ) -> Self {
         Self {
             endpoint: TransportEndpoint::Url {
                 endpoint,
@@ -48,6 +64,11 @@ impl SharedTransport {
             },
             client_id: Uuid::new_v4(),
             client: tokio::sync::OnceCell::new(),
+            callback_tasks: Arc::new(Semaphore::new(super::callbacks::MAX_CALLBACK_TASKS)),
+            callback_bytes: Arc::new(Semaphore::new(super::callbacks::MAX_CALLBACK_BYTES)),
+            response_admission: ResponseAdmission::new(),
+            cleanup_tasks: Arc::new(Semaphore::new(MAX_CLEANUP_TASKS)),
+            capability,
         }
     }
 
@@ -56,26 +77,55 @@ impl SharedTransport {
             endpoint: TransportEndpoint::Connected(channel),
             client_id: Uuid::new_v4(),
             client: tokio::sync::OnceCell::new(),
+            callback_tasks: Arc::new(Semaphore::new(super::callbacks::MAX_CALLBACK_TASKS)),
+            callback_bytes: Arc::new(Semaphore::new(super::callbacks::MAX_CALLBACK_BYTES)),
+            response_admission: ResponseAdmission::new(),
+            cleanup_tasks: Arc::new(Semaphore::new(MAX_CLEANUP_TASKS)),
+            capability: None,
         }
+    }
+
+    pub(super) fn callback_tasks(&self) -> Arc<Semaphore> {
+        Arc::clone(&self.callback_tasks)
+    }
+
+    pub(super) fn callback_bytes(&self) -> Arc<Semaphore> {
+        Arc::clone(&self.callback_bytes)
+    }
+
+    pub(super) fn cleanup_tasks(&self) -> Arc<Semaphore> {
+        Arc::clone(&self.cleanup_tasks)
     }
 
     pub(super) async fn client(&self) -> Result<GrpcClient, String> {
         self.client
             .get_or_try_init(|| async {
                 let client_id = self.client_id;
+                let capability = self.capability.clone();
                 let client = match &self.endpoint {
                     TransportEndpoint::Url { endpoint, .. } if endpoint.starts_with("unix:") => {
                         validate_unix_endpoint(endpoint)?;
                         let channel = Endpoint::from_shared(endpoint.clone())
                             .map_err(|_| "invalid gRPC code-mode Unix socket endpoint".to_string())?
                             .connect_lazy();
-                        channel_client(channel, client_id)
+                        channel_client(
+                            channel,
+                            client_id,
+                            capability,
+                            self.response_admission.clone(),
+                        )
                     }
                     TransportEndpoint::Url {
                         endpoint,
                         http_client_factory,
                     } => {
                         let target = validate_endpoint(endpoint)?;
+                        if target.scheme() == "http" && capability.is_none() {
+                            return Err(
+                                "plaintext HTTP gRPC code-mode hosts require a server-issued capability"
+                                    .to_string(),
+                            );
+                        }
                         let origin: Uri = target
                             .as_str()
                             .parse()
@@ -95,10 +145,14 @@ impl SharedTransport {
                         .map_err(|error| {
                             format!("gRPC code-mode host transport task failed: {error}")
                         })??;
+                        let response_admission = self.response_admission.clone();
                         let transport = service_fn(move |mut request: Request<Body>| {
                             let client = client.clone();
+                            let capability = capability.clone();
+                            let response_admission = response_admission.clone();
                             async move {
-                                identify_request(&mut request, client_id)?;
+                                let path = request.uri().path().to_string();
+                                identify_request(&mut request, client_id, capability.as_ref())?;
                                 let request = request.map(|body| {
                                     reqwest::Body::wrap_stream(body.into_data_stream())
                                 });
@@ -109,7 +163,7 @@ impl SharedTransport {
                                     .await
                                     .map_err(io::Error::other)?
                                     .into();
-                                Ok::<_, io::Error>(response.map(Body::new))
+                                response_admission.wrap(&path, response.map(Body::new))
                             }
                         });
                         CodeModeHostClient::with_origin(
@@ -118,34 +172,60 @@ impl SharedTransport {
                         )
                     }
                     TransportEndpoint::Connected(channel) => {
-                        channel_client(channel.clone(), client_id)
+                        channel_client(
+                            channel.clone(),
+                            client_id,
+                            capability,
+                            self.response_admission.clone(),
+                        )
                     }
                 };
                 Ok(client
-                    .max_decoding_message_size(MAX_FRAME_BYTES)
-                    .max_encoding_message_size(MAX_FRAME_BYTES))
+                    .max_decoding_message_size(MAX_APPLICATION_MESSAGE_BYTES)
+                    .max_encoding_message_size(MAX_APPLICATION_MESSAGE_BYTES))
             })
             .await
             .cloned()
     }
 }
 
-fn channel_client(channel: Channel, client_id: Uuid) -> GrpcClient {
+fn channel_client(
+    channel: Channel,
+    client_id: Uuid,
+    capability: Option<GrpcCodeModeHostCapability>,
+    response_admission: ResponseAdmission,
+) -> GrpcClient {
     let transport = service_fn(move |mut request: Request<Body>| {
         let channel = channel.clone();
+        let capability = capability.clone();
+        let response_admission = response_admission.clone();
         async move {
-            identify_request(&mut request, client_id)?;
-            channel.oneshot(request).await.map_err(io::Error::other)
+            let path = request.uri().path().to_string();
+            identify_request(&mut request, client_id, capability.as_ref())?;
+            let response = channel.oneshot(request).await.map_err(io::Error::other)?;
+            response_admission.wrap(&path, response)
         }
     });
     CodeModeHostClient::new(BoxCloneSyncService::new(transport))
 }
 
-fn identify_request<T>(request: &mut Request<T>, client_id: Uuid) -> Result<(), io::Error> {
+fn identify_request<T>(
+    request: &mut Request<T>,
+    client_id: Uuid,
+    capability: Option<&GrpcCodeModeHostCapability>,
+) -> Result<(), io::Error> {
     request.headers_mut().insert(
         CLIENT_ID_METADATA_KEY,
         client_id.to_string().parse().map_err(io::Error::other)?,
     );
+    if let Some(capability) = capability {
+        let mut value: HeaderValue = capability.as_str().parse().map_err(io::Error::other)?;
+        value.set_sensitive(true);
+        request.headers_mut().insert(
+            CAPABILITY_METADATA_KEY,
+            value,
+        );
+    }
     Ok(())
 }
 

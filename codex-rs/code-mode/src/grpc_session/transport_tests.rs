@@ -5,10 +5,15 @@ use codex_http_client::OutboundProxyPolicy;
 use pretty_assertions::assert_eq;
 use tokio::net::TcpListener;
 use tokio::time::timeout;
+use uuid::Uuid;
 
 use super::build_transport_client;
+use super::identify_request;
+use super::SharedTransport;
 use super::validate_endpoint;
 use super::validate_unix_endpoint;
+use crate::grpc_session::GrpcCodeModeHostCapability;
+use codex_code_mode_protocol::grpc::CAPABILITY_METADATA_KEY;
 
 #[test]
 fn endpoint_accepts_loopback_http_and_https() {
@@ -75,6 +80,15 @@ fn unix_endpoints_require_bounded_absolute_paths() {
     }
 }
 
+#[test]
+fn capability_header_is_marked_sensitive() {
+    let capability = GrpcCodeModeHostCapability::new("a1".repeat(32)).unwrap();
+    let mut request = tonic::codegen::http::Request::new(());
+    identify_request(&mut request, Uuid::new_v4(), Some(&capability)).unwrap();
+
+    assert!(request.headers()[CAPABILITY_METADATA_KEY].is_sensitive());
+}
+
 #[tokio::test]
 async fn loopback_transports_ignore_configured_proxy() {
     for scheme in ["http", "https"] {
@@ -115,4 +129,32 @@ async fn loopback_transports_ignore_configured_proxy() {
         assert!(accepted_directly);
         request.abort();
     }
+}
+
+#[tokio::test]
+async fn endpoint_only_http_transport_is_rejected_before_connecting() {
+    let transport = SharedTransport::new(
+        "http://127.0.0.1:1".to_string(),
+        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+        /*capability*/ None,
+    );
+
+    let Err(error) = transport.client().await else {
+        panic!("endpoint-only HTTP transport should fail");
+    };
+    assert_eq!(
+        error,
+        "plaintext HTTP gRPC code-mode hosts require a server-issued capability"
+    );
+}
+
+#[tokio::test]
+async fn endpoint_only_https_transport_remains_available_for_trusted_deployments() {
+    let transport = SharedTransport::new(
+        "https://code-mode.example".to_string(),
+        HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+        /*capability*/ None,
+    );
+
+    assert!(transport.client().await.is_ok());
 }

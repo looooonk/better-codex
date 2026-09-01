@@ -6,7 +6,10 @@ use std::time::Duration;
 
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::grpc;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use futures::FutureExt;
+use prost::Message;
+use tokio::sync::OwnedSemaphorePermit;
 use tokio_util::sync::CancellationToken;
 use tracing::warn;
 
@@ -18,6 +21,15 @@ use super::state::CallbackAdmission;
 
 const MAX_NOTIFICATION_BYTES: usize = 1_024;
 const TRUNCATED_NOTIFICATION_SUFFIX: &str = "... [truncated]";
+pub(super) const MAX_CALLBACK_TASKS: usize = 64;
+pub(super) const MAX_CALLBACK_BYTES: usize = 32 * 1_024 * 1_024;
+const TOOL_CALL_ALLOCATION_MULTIPLIER: usize = 16;
+const NOTIFICATION_ALLOCATION_MULTIPLIER: usize = 2;
+
+struct CallbackResources {
+    _task: OwnedSemaphorePermit,
+    _bytes: OwnedSemaphorePermit,
+}
 
 impl SessionInner {
     pub(super) fn spawn_session_events(
@@ -112,6 +124,11 @@ impl SessionInner {
     }
 
     fn handle_tool_call(self: &Arc<Self>, call: grpc::ToolCall) -> Result<(), String> {
+        let resources = self.admit_callback(
+            call.encoded_len(),
+            TOOL_CALL_ALLOCATION_MULTIPLIER,
+            "tool invocation",
+        )?;
         if call.session_id != self.id {
             return Err(format!(
                 "gRPC code-mode tool invocation belongs to session {} instead of {}",
@@ -135,6 +152,7 @@ impl SessionInner {
             Err(error) => {
                 let inner = Arc::clone(self);
                 tokio::spawn(async move {
+                    let _resources = resources;
                     inner
                         .complete_tool_call(invocation_id, CancellationToken::new(), Err(error))
                         .await;
@@ -145,6 +163,7 @@ impl SessionInner {
         let invocation = conversion::tool_call(call);
         let inner = Arc::clone(self);
         tokio::spawn(async move {
+            let _resources = resources;
             let result = match invocation {
                 Ok(invocation) => {
                     let callback = AssertUnwindSafe(async {
@@ -207,12 +226,19 @@ impl SessionInner {
         self: &Arc<Self>,
         mut notification: grpc::Notification,
     ) -> Result<(), String> {
+        let resources = self.admit_callback(
+            notification.encoded_len(),
+            NOTIFICATION_ALLOCATION_MULTIPLIER,
+            "notification",
+        )?;
         if notification.text.len() > MAX_NOTIFICATION_BYTES {
             let boundary = notification
                 .text
                 .floor_char_boundary(MAX_NOTIFICATION_BYTES - TRUNCATED_NOTIFICATION_SUFFIX.len());
-            notification.text.truncate(boundary);
-            notification.text.push_str(TRUNCATED_NOTIFICATION_SUFFIX);
+            let mut bounded = String::with_capacity(MAX_NOTIFICATION_BYTES);
+            bounded.push_str(&notification.text[..boundary]);
+            bounded.push_str(TRUNCATED_NOTIFICATION_SUFFIX);
+            notification.text = bounded;
         }
         let admission = self
             .state
@@ -232,6 +258,7 @@ impl SessionInner {
         // Delegate callbacks stay outside the tracked session tasks so shutdown can cancel
         // them without waiting for arbitrary delegate work to complete.
         tokio::spawn(async move {
+            let _resources = resources;
             let callback = AssertUnwindSafe(async {
                 inner
                     .delegate
@@ -296,5 +323,34 @@ impl SessionInner {
             inner.report_closed_cell(cell);
         });
         Ok(())
+    }
+
+    fn admit_callback(
+        &self,
+        encoded_len: usize,
+        multiplier: usize,
+        label: &str,
+    ) -> Result<CallbackResources, String> {
+        if encoded_len > MAX_APPLICATION_MESSAGE_BYTES {
+            return Err(format!(
+                "gRPC code-mode {label} exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
+            ));
+        }
+        let bytes = encoded_len
+            .checked_mul(multiplier)
+            .filter(|bytes| *bytes <= MAX_CALLBACK_BYTES)
+            .ok_or_else(|| format!("gRPC code-mode {label} exceeds the callback byte budget"))?;
+        let bytes = u32::try_from(bytes.max(1))
+            .map_err(|_| format!("gRPC code-mode {label} byte size exceeds this platform"))?;
+        let task = Arc::clone(&self.callback_tasks)
+            .try_acquire_owned()
+            .map_err(|_| "gRPC code-mode callback task budget is exhausted".to_string())?;
+        let bytes = Arc::clone(&self.callback_bytes)
+            .try_acquire_many_owned(bytes)
+            .map_err(|_| "gRPC code-mode callback byte budget is exhausted".to_string())?;
+        Ok(CallbackResources {
+            _task: task,
+            _bytes: bytes,
+        })
     }
 }

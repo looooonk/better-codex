@@ -50,7 +50,12 @@ impl Drop for ExecutionOwnership {
             return;
         }
         let session = Arc::clone(&self.session);
+        let Ok(task_permit) = Arc::clone(&session.cleanup_tasks).try_acquire_owned() else {
+            session.fail("gRPC code-mode cleanup task budget is exhausted".to_string());
+            return;
+        };
         self.session.runtime.spawn(async move {
+            let _task_permit = task_permit;
             if let Err(error) = session.terminate(cell_id).await
                 && !session.stopped.is_cancelled()
             {
@@ -393,7 +398,18 @@ impl Drop for WaitCancellation {
             return;
         }
         let session = Arc::clone(&self.session);
+        let task_permit = match Arc::clone(&session.cleanup_tasks).try_acquire_owned() {
+            Ok(permit) => permit,
+            Err(_) => {
+                session.fail("gRPC code-mode cleanup task budget is exhausted".to_string());
+                drop(permit);
+                drop(slot);
+                session.prune_wait_slots();
+                return;
+            }
+        };
         self.session.runtime.spawn(async move {
+            let _task_permit = task_permit;
             let mut client = session.client();
             let result = deadline::request(
                 &session,

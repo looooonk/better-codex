@@ -10,6 +10,7 @@ pub(crate) type TaskFailureHandler = std::sync::Arc<dyn Fn(String) + Send + Sync
 
 pub use codex_code_mode_protocol::*;
 pub use grpc_session::GrpcCodeModeSessionProvider;
+pub use grpc_session::GrpcCodeModeHostCapability;
 pub use remote_session::ProcessOwnedCodeModeSession;
 pub use remote_session::ProcessOwnedCodeModeSessionProvider;
 pub use service::InProcessCodeModeSession;
