@@ -15,7 +15,6 @@ workspace = true
 [dependencies]
 anyhow = { workspace = true }
 codex-analytics = { workspace = true }
-codex-config = { workspace = true }
 codex-context-fragments = { workspace = true }
 codex-exec-server = { workspace = true }
 codex-login = { workspace = true }
@@ -40,5 +39,3 @@ zip = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
-tempfile = { workspace = true }
-toml = { workspace = true }

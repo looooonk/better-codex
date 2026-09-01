@@ -64,12 +64,13 @@ use crate::tool_suggest_metadata::ToolSuggestMetadataCache;
 use codex_analytics::AnalyticsEventsClient;
 use codex_analytics::PluginInstallSource;
 use codex_config::ConfigLayerStack;
+use codex_config::SkillConfigRules;
 use codex_config::clear_user_plugin;
 use codex_config::set_user_plugin_enabled;
+use codex_config::skill_config_rules_from_stack;
 use codex_config::types::PluginConfig;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_config::types::ToolSuggestDiscoverableType;
-use codex_core_skills::config_rules::skill_config_rules_from_stack;
 use codex_hooks::plugin_hook_declarations;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
@@ -83,7 +84,6 @@ use codex_plugin::prompt_safe_plugin_description;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::protocol::HookEventName;
 use codex_protocol::protocol::Product;
-use codex_skills::SkillConfigRules;
 use codex_skills::SkillMetadata;
 use codex_skills::SkillRootLoader;
 use codex_skills::SkillRootSnapshots;
@@ -1935,9 +1935,7 @@ impl PluginsManager {
             self.skill_root_loader.as_ref(),
         )
         .await
-        .resolve(&codex_core_skills::config_rules::skill_config_rules_from_stack(
-            &config.config_layer_stack,
-        ));
+        .resolve(&skill_config_rules_from_stack(&config.config_layer_stack));
         let plugin_data_root = self
             .store
             .plugin_data_root_for_source(&plugin_id, source_path.as_path());
