@@ -166,6 +166,10 @@ async fn filesystem_repair_preserves_selected_rollout_path() -> anyhow::Result<(
             .await?
             .metadata;
     runtime.upsert_thread(&selected_metadata).await?;
+    let selected_metadata = runtime
+        .get_thread(thread_id)
+        .await?
+        .expect("selected thread metadata");
 
     read_repair_rollout_path(
         Some(runtime.as_ref()),
