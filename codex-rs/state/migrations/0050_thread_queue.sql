@@ -2,6 +2,7 @@ CREATE TABLE thread_queue_items (
     id TEXT PRIMARY KEY NOT NULL,
     thread_id TEXT NOT NULL,
     payload_json TEXT NOT NULL,
+    payload_digest TEXT NOT NULL,
     client_user_message_id TEXT NOT NULL CHECK (
         length(CAST(client_user_message_id AS BLOB)) BETWEEN 1 AND 256
     ),

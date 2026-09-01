@@ -317,6 +317,12 @@ async fn enqueue_retry_reuses_stable_submission_id() -> anyhow::Result<()> {
             .await?,
         vec![first]
     );
+    assert!(matches!(
+        runtime
+            .enqueue_queued_submission(thread_id, "different", "client-1")
+            .await,
+        Err(ThreadQueueError::ClientMessageConflict)
+    ));
     Ok(())
 }
 

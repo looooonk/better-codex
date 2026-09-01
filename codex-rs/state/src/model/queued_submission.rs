@@ -63,6 +63,7 @@ pub struct QueuedSubmissionRecord {
     pub id: String,
     pub thread_id: ThreadId,
     pub payload: String,
+    pub payload_digest: String,
     pub client_user_message_id: String,
     pub state: QueuedSubmissionState,
     pub turn_id: Option<String>,
@@ -82,6 +83,7 @@ impl QueuedSubmissionRecord {
             thread_id: ThreadId::try_from(row.try_get::<String, _>("thread_id")?)
                 .context("queued submission has invalid thread id")?,
             payload: row.try_get("payload_json")?,
+            payload_digest: row.try_get("payload_digest")?,
             client_user_message_id: row.try_get("client_user_message_id")?,
             state,
             turn_id: row.try_get("turn_id")?,

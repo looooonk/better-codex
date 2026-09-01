@@ -10,7 +10,7 @@ pub const MAX_QUEUED_INPUT_BYTES: usize = 1024 * 1024;
 pub const MAX_QUEUE_IDENTIFIER_BYTES: usize = 256;
 const TERMINAL_TOMBSTONES_PER_THREAD: i64 = 100;
 const QUEUED_SUBMISSION_COLUMNS: &str =
-    "id, thread_id, payload_json, client_user_message_id, state, turn_id, terminal_status";
+    "id, thread_id, payload_json, payload_digest, client_user_message_id, state, turn_id, terminal_status";
 
 #[derive(Debug)]
 pub enum ThreadQueueError {
@@ -18,6 +18,7 @@ pub enum ThreadQueueError {
     InputBytesExceeded,
     InvalidReorder,
     InvalidIdentifier,
+    ClientMessageConflict,
     Storage(anyhow::Error),
 }
 
@@ -40,6 +41,10 @@ impl fmt::Display for ThreadQueueError {
                 formatter,
                 "queue identifiers must contain 1 to {MAX_QUEUE_IDENTIFIER_BYTES} bytes"
             ),
+            Self::ClientMessageConflict => write!(
+                formatter,
+                "client message id is already associated with different queued input"
+            ),
             Self::Storage(error) => write!(formatter, "queue storage failed: {error}"),
         }
     }
@@ -52,7 +57,8 @@ impl std::error::Error for ThreadQueueError {
             Self::QueueFull
             | Self::InputBytesExceeded
             | Self::InvalidReorder
-            | Self::InvalidIdentifier => None,
+            | Self::InvalidIdentifier
+            | Self::ClientMessageConflict => None,
         }
     }
 }
@@ -88,21 +94,26 @@ impl StateRuntime {
         if payload.len() > MAX_QUEUED_INPUT_BYTES {
             return Err(ThreadQueueError::InputBytesExceeded);
         }
+        let payload_digest = queue_payload_digest(payload);
         if let Some(existing) = self
             .queued_submission_by_client_message_id(thread_id, client_user_message_id)
             .await?
         {
-            return Ok(existing);
+            return if existing.payload_digest == payload_digest {
+                Ok(existing)
+            } else {
+                Err(ThreadQueueError::ClientMessageConflict)
+            };
         }
         let id = Uuid::now_v7().to_string();
         let now_ms = datetime_to_epoch_millis(Utc::now());
         let row = sqlx::query(&format!(
             r#"
 INSERT INTO thread_queue_items (
-    id, thread_id, payload_json, client_user_message_id, queue_order,
+    id, thread_id, payload_json, payload_digest, client_user_message_id, queue_order,
     state, turn_id, terminal_status, created_at_ms, updated_at_ms
 )
-SELECT ?, ?, ?, ?,
+SELECT ?, ?, ?, ?, ?,
        COALESCE((
            SELECT MAX(queue_order) FROM thread_queue_items
            WHERE thread_id = ? AND state != 'terminal'
@@ -120,6 +131,7 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
         .bind(&id)
         .bind(thread_id.to_string())
         .bind(payload)
+        .bind(&payload_digest)
         .bind(client_user_message_id)
         .bind(thread_id.to_string())
         .bind(now_ms)
@@ -138,7 +150,11 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
             .queued_submission_by_client_message_id(thread_id, client_user_message_id)
             .await?
         {
-            return Ok(existing);
+            return if existing.payload_digest == payload_digest {
+                Ok(existing)
+            } else {
+                Err(ThreadQueueError::ClientMessageConflict)
+            };
         }
         let (count, bytes): (i64, i64) = sqlx::query_as(
             r#"
@@ -260,7 +276,7 @@ ORDER BY updated_at_ms DESC LIMIT 1
         let row = sqlx::query(&format!(
             r#"
 UPDATE thread_queue_items
-SET payload_json = ?, updated_at_ms = ?
+SET payload_json = ?, payload_digest = ?, updated_at_ms = ?
 WHERE thread_id = ? AND id = ? AND state = 'pending'
   AND COALESCE((
       SELECT SUM(length(CAST(payload_json AS BLOB)))
@@ -271,6 +287,7 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
             "#
         ))
         .bind(payload)
+        .bind(queue_payload_digest(payload))
         .bind(datetime_to_epoch_millis(Utc::now()))
         .bind(thread_id.to_string())
         .bind(item_id)
@@ -558,6 +575,18 @@ fn validate_queue_identifier(identifier: &str) -> Result<(), ThreadQueueError> {
     } else {
         Ok(())
     }
+}
+
+fn queue_payload_digest(payload: &str) -> String {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let digest = payload
+        .as_bytes()
+        .iter()
+        .fold(FNV_OFFSET, |digest, byte| {
+            (digest ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
+        });
+    format!("{digest:016x}")
 }
 
 #[cfg(test)]
