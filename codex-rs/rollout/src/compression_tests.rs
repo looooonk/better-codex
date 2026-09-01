@@ -110,6 +110,11 @@ async fn boundary_ordinals_use_decompressed_jsonl_offsets() -> anyhow::Result<()
         },
     ];
     let first = serde_json::to_string(&records[0])?;
+    fs::create_dir_all(
+        rollout_path
+            .parent()
+            .expect("rollout path should have parent"),
+    )?;
     fs::write(
         rollout_path.as_path(),
         format!("{first}\n{}\n", serde_json::to_string(&records[1])?),

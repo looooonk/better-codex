@@ -1421,8 +1421,8 @@ mod tests {
             .await
             .expect_err("mismatch should fail");
 
-        assert!(matches!(err, ThreadStoreError::Internal { .. }));
-        assert!(err.to_string().contains("metadata id mismatch"));
+        assert!(matches!(err, ThreadStoreError::InvalidRequest { .. }));
+        assert!(err.to_string().contains("belongs to thread"));
     }
 
     #[tokio::test]

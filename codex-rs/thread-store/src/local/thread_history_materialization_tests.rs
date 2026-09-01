@@ -947,16 +947,24 @@ async fn delete_waits_for_in_flight_projection_before_removing_rows() {
         .persist_thread(thread_id)
         .await
         .expect("persist session metadata");
+    let rollout_path = store
+        .live_rollout_path(thread_id)
+        .await
+        .expect("live rollout path");
+    store
+        .shutdown_thread(thread_id)
+        .await
+        .expect("close live writer");
+    append_suffix(
+        rollout_path.as_path(),
+        &format!("{}\n", rollout_line(Some(1), turn_started("turn-1"))),
+    );
     let write_permit = store.live_writer_locks.lock(thread_id).await;
 
-    let append_store = store.clone();
-    let append = tokio::spawn(async move {
-        append_store
-            .append_items(AppendThreadItemsParams {
-                thread_id,
-                items: vec![turn_started("turn-1")],
-            })
-            .await
+    let projection_store = store.clone();
+    let projection = tokio::spawn(async move {
+        let _guard = projection_store.live_writer_locks.lock(thread_id).await;
+        super::materialize_to_sqlite(&projection_store, thread_id, rollout_path.as_path()).await
     });
     tokio::time::sleep(Duration::from_millis(/*millis*/ 10)).await;
     let delete_store = store.clone();
@@ -969,10 +977,10 @@ async fn delete_waits_for_in_flight_projection_before_removing_rows() {
     assert!(!delete.is_finished());
 
     drop(write_permit);
-    append
+    projection
         .await
-        .expect("join append")
-        .expect("finish in-flight append");
+        .expect("join projection")
+        .expect("finish in-flight projection");
     delete.await.expect("join delete").expect("delete thread");
 
     let pool = codex_state::open_thread_history_db(home.path())

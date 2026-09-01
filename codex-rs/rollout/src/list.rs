@@ -2,6 +2,7 @@
 
 use codex_utils_path as path_utils;
 use std::cmp::Reverse;
+use std::collections::HashSet;
 use std::ffi::OsStr;
 use std::io;
 use std::num::NonZero;
@@ -228,6 +229,7 @@ trait RolloutFileVisitor {
 /// applying pagination and filters inline.
 struct FilesByCreatedAtVisitor<'a> {
     items: &'a mut Vec<ThreadItem>,
+    seen_thread_ids: HashSet<Uuid>,
     page_size: usize,
     anchor_state: AnchorState,
     more_matches_available: bool,
@@ -244,6 +246,9 @@ impl<'a> RolloutFileVisitor for FilesByCreatedAtVisitor<'a> {
         path: PathBuf,
         scanned: usize,
     ) -> ControlFlow<()> {
+        if !self.seen_thread_ids.insert(id) {
+            return ControlFlow::Continue(());
+        }
         if scanned >= MAX_SCAN_FILES && self.items.len() >= self.page_size {
             self.more_matches_available = true;
             return ControlFlow::Break(());
@@ -510,6 +515,7 @@ async fn traverse_directories_for_paths_created(
     let mut more_matches_available = false;
     let mut visitor = FilesByCreatedAtVisitor {
         items: &mut items,
+        seen_thread_ids: HashSet::new(),
         page_size,
         anchor_state: AnchorState::new(anchor),
         more_matches_available,
@@ -558,6 +564,7 @@ async fn traverse_directories_for_paths_updated(
     let mut scanned_files = 0usize;
     let mut anchor_state = AnchorState::new(anchor);
     let mut more_matches_available = false;
+    let mut seen_thread_ids = HashSet::new();
 
     let mut candidates = collect_files_by_updated_at(&root, &mut scanned_files).await?;
     candidates.sort_by_key(|candidate| {
@@ -567,6 +574,9 @@ async fn traverse_directories_for_paths_updated(
 
     for candidate in candidates.into_iter() {
         let ts = candidate.updated_at.unwrap_or(OffsetDateTime::UNIX_EPOCH);
+        if !seen_thread_ids.insert(candidate.id) {
+            continue;
+        }
         if anchor_state.should_skip(ts, candidate.id) {
             continue;
         }
@@ -619,9 +629,13 @@ async fn traverse_flat_paths_created(
     let mut scanned_files = 0usize;
     let mut anchor_state = AnchorState::new(anchor);
     let mut more_matches_available = false;
+    let mut seen_thread_ids = HashSet::new();
 
     let files = collect_flat_rollout_files(&root, &mut scanned_files).await?;
     for (ts, id, path) in files.into_iter() {
+        if !seen_thread_ids.insert(id) {
+            continue;
+        }
         if anchor_state.should_skip(ts, id) {
             continue;
         }
@@ -676,6 +690,7 @@ async fn traverse_flat_paths_updated(
     let mut scanned_files = 0usize;
     let mut anchor_state = AnchorState::new(anchor);
     let mut more_matches_available = false;
+    let mut seen_thread_ids = HashSet::new();
 
     let mut candidates = collect_flat_files_by_updated_at(&root, &mut scanned_files).await?;
     candidates.sort_by_key(|candidate| {
@@ -685,6 +700,9 @@ async fn traverse_flat_paths_updated(
 
     for candidate in candidates.into_iter() {
         let ts = candidate.updated_at.unwrap_or(OffsetDateTime::UNIX_EPOCH);
+        if !seen_thread_ids.insert(candidate.id) {
+            continue;
+        }
         if anchor_state.should_skip(ts, candidate.id) {
             continue;
         }

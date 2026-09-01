@@ -1620,7 +1620,8 @@ mod tests {
         let original_path = codex_home.join("original.jsonl");
         let replacement_path = codex_home.join("replacement.jsonl");
         let replay_path = codex_home.join("replay.jsonl");
-        let metadata = test_thread_metadata(&codex_home, thread_id, original_path.clone());
+        let mut metadata = test_thread_metadata(&codex_home, thread_id, codex_home.clone());
+        metadata.rollout_path = original_path.clone();
         runtime
             .upsert_thread(&metadata)
             .await

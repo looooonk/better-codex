@@ -52,7 +52,7 @@ const TEST_PROVIDER: &str = "test-provider";
 #[test]
 fn rollout_line_decoder_preserves_canonical_json_compatibility() -> Result<()> {
     let cases = [
-        r#"{"timestamp":"2025-01-03T12:00:00.000Z","ordinal":7,"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"limit_id":null,"limit_name":null,"primary":{"used_percent":0.0,"window_minutes":60,"resets_at":1800000000},"secondary":{"used_percent":12.5,"window_minutes":10080,"resets_at":1800100000},"credits":null,"individual_limit":null,"spend_control_reached":null,"plan_type":null,"rate_limit_reached_type":null}}}"#,
+        r#"{"timestamp":"2025-01-03T12:00:00.000Z","ordinal":7,"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"limit_id":null,"limit_name":null,"primary":{"used_percent":0.0,"window_minutes":60,"resets_at":1800000000},"secondary":{"used_percent":12.5,"window_minutes":10080,"resets_at":1800100000},"credits":null,"individual_limit":null,"plan_type":null,"rate_limit_reached_type":null}}}"#,
         r#"{"metadata":{"client_authored":true},"payload":{"type":"message","role":"developer","content":[{"type":"input_text","text":"hello"}]},"type":"response_item","ordinal":9,"timestamp":"2025-01-03T12:00:00.000Z"}"#,
         r#"{"timestamp":"2025-01-03T12:00:00.000Z","ordinal":10,"type":"event_msg","payload":{"type":"warning","message":"hello"},"metadata":"ignored"}"#,
     ];
@@ -242,6 +242,70 @@ async fn filesystem_lookup_distinguishes_thread_and_rollout_ids() {
             .unwrap(),
         vec![original_path, archived_replacement_path]
     );
+}
+
+#[tokio::test]
+async fn filesystem_listing_deduplicates_rollout_lineage_across_pages() -> Result<()> {
+    let temp = TempDir::new().expect("temp dir");
+    let home = temp.path();
+    let thread_uuid = Uuid::from_u128(411);
+    let other_uuid = Uuid::from_u128(412);
+    let replacement_uuid = Uuid::from_u128(413);
+    for (timestamp, uuid) in [
+        ("2025-01-03T13-00-00", thread_uuid),
+        ("2025-01-04T13-00-00", other_uuid),
+        ("2025-01-05T13-00-00", thread_uuid),
+    ] {
+        write_session_file(
+            home,
+            timestamp,
+            uuid,
+            /*num_records*/ 1,
+            Some(SessionSource::Cli),
+        )?;
+    }
+    let replacement_source = home.join(format!(
+        "sessions/2025/01/05/rollout-2025-01-05T13-00-00-{thread_uuid}.jsonl"
+    ));
+    let replacement_path = replacement_source.with_file_name(format!(
+        "rollout-2025-01-05T13-00-00-{thread_uuid}_{replacement_uuid}.jsonl"
+    ));
+    fs::rename(replacement_source, replacement_path.as_path())?;
+
+    let first = get_threads(
+        home,
+        /*page_size*/ 1,
+        /*cursor*/ None,
+        ThreadSortKey::CreatedAt,
+        NO_SOURCE_FILTER,
+        /*model_providers*/ None,
+        /*cwd_filters*/ None,
+        TEST_PROVIDER,
+    )
+    .await?;
+    assert_eq!(first.items.len(), 1);
+    assert_eq!(first.items[0].path, replacement_path);
+    let second = get_threads(
+        home,
+        /*page_size*/ 1,
+        first.next_cursor.as_ref(),
+        ThreadSortKey::CreatedAt,
+        NO_SOURCE_FILTER,
+        /*model_providers*/ None,
+        /*cwd_filters*/ None,
+        TEST_PROVIDER,
+    )
+    .await?;
+    assert_eq!(
+        second
+            .items
+            .iter()
+            .filter_map(|item| item.thread_id)
+            .collect::<Vec<_>>(),
+        vec![thread_id_from_uuid(other_uuid)]
+    );
+    assert_eq!(second.next_cursor, None);
+    Ok(())
 }
 
 #[tokio::test]

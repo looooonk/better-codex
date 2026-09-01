@@ -107,15 +107,21 @@ async fn rejects_missing_cycles_and_out_of_bounds_offsets() {
         home.path(),
         cycle_thread,
         cycle_a,
-        Some(unchecked_history_position(cycle_b, 1)),
-        /*next_ordinal*/ 2,
+        /*history_base*/ None,
+        /*next_ordinal*/ 1,
     );
-    write_rollout(
+    let cycle_b_path = write_rollout(
         home.path(),
         cycle_thread,
         cycle_b,
-        Some(unchecked_history_position(cycle_a, 1)),
-        /*next_ordinal*/ 2,
+        /*history_base*/ None,
+        /*next_ordinal*/ 1,
+    );
+    write_cycle_metadata(
+        cycle_a_path.as_path(),
+        cycle_a,
+        cycle_b_path.as_path(),
+        cycle_b,
     );
     seed_selected_rollout(&store, cycle_thread, cycle_a_path).await;
     assert_invalid_lineage(&store, cycle_thread, "cycle detected").await;
@@ -350,4 +356,59 @@ fn unchecked_history_position(
         end_ordinal_exclusive,
         end_byte_offset: 0,
     }
+}
+
+fn write_cycle_metadata(
+    cycle_a_path: &Path,
+    cycle_a: RolloutId,
+    cycle_b_path: &Path,
+    cycle_b: RolloutId,
+) {
+    let mut cycle_a_offset = 1;
+    let mut cycle_b_offset = 1;
+    for _ in 0..8 {
+        set_history_base_and_ordinal(
+            cycle_a_path,
+            HistoryPosition {
+                thread_id: cycle_b,
+                end_ordinal_exclusive: 1,
+                end_byte_offset: cycle_b_offset,
+            },
+            /*ordinal*/ 1,
+        );
+        set_history_base_and_ordinal(
+            cycle_b_path,
+            HistoryPosition {
+                thread_id: cycle_a,
+                end_ordinal_exclusive: 2,
+                end_byte_offset: cycle_a_offset,
+            },
+            /*ordinal*/ 0,
+        );
+        let next_cycle_a_offset = fs::metadata(cycle_a_path).expect("cycle A metadata").len();
+        let next_cycle_b_offset = fs::metadata(cycle_b_path).expect("cycle B metadata").len();
+        if (next_cycle_a_offset, next_cycle_b_offset) == (cycle_a_offset, cycle_b_offset) {
+            return;
+        }
+        cycle_a_offset = next_cycle_a_offset;
+        cycle_b_offset = next_cycle_b_offset;
+    }
+    panic!("cycle fixture offsets did not converge");
+}
+
+fn set_history_base_and_ordinal(path: &Path, history_base: HistoryPosition, ordinal: u64) {
+    let contents = fs::read_to_string(path).expect("read rollout");
+    let mut lines = contents.lines();
+    let mut head: serde_json::Value =
+        serde_json::from_str(lines.next().expect("session metadata")).expect("parse metadata");
+    head["ordinal"] = serde_json::json!(ordinal);
+    head["payload"]["history_base"] =
+        serde_json::to_value(history_base).expect("serialize history base");
+    let mut updated = serde_json::to_string(&head).expect("serialize metadata");
+    for line in lines {
+        updated.push('\n');
+        updated.push_str(line);
+    }
+    updated.push('\n');
+    fs::write(path, updated).expect("write history base");
 }

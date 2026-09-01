@@ -70,13 +70,13 @@ pub(super) async fn resume_thread(
     };
     let mut rollout_path = match (params.rollout_path, params.history) {
         (Some(rollout_path), _history) => rollout_path,
-        (None, history) => {
+        (None, _history) => {
             let thread = super::read_thread::read_thread(
                 store,
                 ReadThreadParams {
                     thread_id: params.thread_id,
                     include_archived: params.include_archived,
-                    include_history: history.is_none(),
+                    include_history: false,
                 },
             )
             .await?;

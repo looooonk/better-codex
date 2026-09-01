@@ -97,15 +97,31 @@ async fn resolve(
                     if !scope.accepts(location) {
                         return Ok(None);
                     }
-                    let rollout_id =
-                        rollout_id_for_thread_path(path.as_path(), thread_id, metadata.history_mode)
-                            .await?;
-                    return Ok(Some(ResolvedThreadRollout {
-                        thread_id,
-                        rollout_id,
-                        path,
-                        location,
-                    }));
+                    if metadata.history_mode == ThreadHistoryMode::Legacy
+                        && matches!(
+                            codex_rollout::read_session_meta_line(path.as_path()).await,
+                            Ok(meta) if meta.meta.id != thread_id
+                        )
+                    {
+                        tracing::warn!(
+                            thread_id = %thread_id,
+                            rollout_path = %path.display(),
+                            "ignoring stale legacy rollout selection owned by another thread"
+                        );
+                    } else {
+                        let rollout_id = rollout_id_for_thread_path(
+                            path.as_path(),
+                            thread_id,
+                            metadata.history_mode,
+                        )
+                        .await?;
+                        return Ok(Some(ResolvedThreadRollout {
+                            thread_id,
+                            rollout_id,
+                            path,
+                            location,
+                        }));
+                    }
                 }
                 if metadata.history_mode == ThreadHistoryMode::Paginated {
                     return Ok(None);
