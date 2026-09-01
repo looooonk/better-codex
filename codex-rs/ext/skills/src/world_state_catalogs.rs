@@ -279,7 +279,7 @@ impl<'a> CatalogContext<'a> {
             .unwrap_or_default();
         let body = catalog
             .rendered
-            .and_then(|rendered| rendered.into_fragment(self.include_usage))
+            .and_then(AvailableSkillsRender::into_fragment)
             .map(|fragment| fragment.body());
         let include_instructions = self.config.include_instructions;
         let on_render = self.catalog_render_callback(catalog.kind, catalog.status, report.clone());

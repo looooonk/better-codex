@@ -10,6 +10,7 @@ use crate::catalog::SkillSourceKind;
 use crate::catalog_prompt::SkillPromptKind;
 use crate::catalog_prompt::render_available_skills_body;
 use crate::fragments::AvailableSkillsInstructions;
+use crate::fragments::SkillsUsage;
 
 mod allocation;
 mod combined;
@@ -192,6 +193,7 @@ pub(crate) struct AvailableSkillsRender {
     skill_root_lines: Vec<String>,
     skill_lines: Vec<String>,
     preserve_empty_fragment: bool,
+    usage: SkillsUsage,
     pub(crate) report: SkillRenderReport,
 }
 
@@ -203,16 +205,13 @@ pub(crate) struct RenderedSkillCatalogs {
 }
 
 impl AvailableSkillsRender {
-    pub(crate) fn into_fragment(
-        self,
-        include_skills_usage_instructions: bool,
-    ) -> Option<AvailableSkillsInstructions> {
+    pub(crate) fn into_fragment(self) -> Option<AvailableSkillsInstructions> {
         (self.preserve_empty_fragment || !self.skill_lines.is_empty()).then(|| {
             AvailableSkillsInstructions::from_skill_lines(
                 self.prompt_kind,
                 self.skill_root_lines,
                 self.skill_lines,
-                include_skills_usage_instructions,
+                self.usage,
             )
         })
     }
@@ -271,6 +270,11 @@ pub(crate) fn render_available_skills(
         skill_root_lines: selected.skill_root_lines,
         skill_lines: selected.skill_lines,
         preserve_empty_fragment: policy == SkillCatalogRenderPolicy::CoreCompatible,
+        usage: if include_skills_usage_instructions {
+            SkillsUsage::Catalog
+        } else {
+            SkillsUsage::Omit
+        },
         report: selected.report,
     })
 }
@@ -289,7 +293,7 @@ pub(crate) fn render_extension_catalog(
         return (None, SkillRenderReport::default());
     };
     let report = rendered.report.clone();
-    let fragment = rendered.into_fragment(include_skills_usage_instructions);
+    let fragment = rendered.into_fragment();
     if report.omitted_count > 0 || report.truncated_description_chars > 0 {
         tracing::info!(
             total_skills = report.total_count,
@@ -360,7 +364,7 @@ fn available_skills_fragment(
     budget: SkillMetadataBudget,
 ) -> Option<AvailableSkillsInstructions> {
     render_available_skills(catalog, policy, budget, include_skills_usage_instructions)?
-        .into_fragment(include_skills_usage_instructions)
+        .into_fragment()
 }
 
 fn build_aliased_catalog(

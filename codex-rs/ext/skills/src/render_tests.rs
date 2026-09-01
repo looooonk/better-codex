@@ -7,6 +7,8 @@ use crate::catalog::SkillCatalogEntry;
 use crate::catalog::SkillPackageId;
 use crate::catalog::SkillResourceId;
 use crate::catalog::SkillSourceKind;
+use crate::catalog_prompt::HOST_ALIAS_INSTRUCTIONS;
+use crate::catalog_prompt::RESOURCE_ALIAS_INSTRUCTIONS;
 use crate::catalog_prompt::SkillPromptKind;
 
 use super::SkillLine;
@@ -15,6 +17,7 @@ use super::SkillMetadataBudget;
 use super::aliased_metadata_overhead_cost;
 use super::available_skills_fragment;
 use super::build_alias_plan;
+use super::metadata_line_cost;
 use super::render_combined_available_skills;
 use super::render_extension_catalog;
 use super::render_skill_locator_with_aliases;
@@ -177,6 +180,112 @@ fn combined_catalogs_keep_provider_aliases_distinct() {
             .expect("host catalog should render")
             .skill_root_lines
     );
+}
+
+#[test]
+fn combined_catalogs_emit_one_bounded_usage_block() {
+    let executor_root = "skill://executor/workspace/skills-with-a-long-prefix";
+    let orchestrator_root = "skill://orchestrator/packages-with-a-long-prefix";
+    let host_root = "/workspace/host-skills-with-a-long-prefix";
+    let catalog = |source, authority: &str, root: &str, prefix: &str| SkillCatalog {
+        entries: (0..3)
+            .map(|index| {
+                entry(
+                    source.clone(),
+                    authority,
+                    root,
+                    &format!("{prefix}-{index}"),
+                    "A long description that makes compact aliases useful.",
+                )
+            })
+            .collect(),
+        warnings: Vec::new(),
+    };
+    let executor = catalog(
+        SkillSourceKind::Executor,
+        "executor",
+        executor_root,
+        "executor",
+    );
+    let orchestrator = catalog(
+        SkillSourceKind::Orchestrator,
+        "orchestrator",
+        orchestrator_root,
+        "orchestrator",
+    );
+    let host = catalog(SkillSourceKind::Host, "host", host_root, "host");
+    let empty_orchestrator = SkillCatalog::default();
+    let budget = SkillMetadataBudget::Characters(900);
+
+    for orchestrator in [&empty_orchestrator, &orchestrator] {
+        let rendered = render_combined_available_skills(
+            &executor,
+            orchestrator,
+            &host,
+            budget,
+            true,
+        );
+        let catalogs = [
+            rendered.executor.as_ref(),
+            rendered.orchestrator.as_ref(),
+            rendered.host.as_ref(),
+        ];
+        let resource_aliases = catalogs[..2]
+            .iter()
+            .flatten()
+            .any(|catalog| !catalog.skill_root_lines.is_empty());
+        let host_aliases = catalogs[2]
+            .is_some_and(|catalog| !catalog.skill_root_lines.is_empty());
+        if !orchestrator.entries.is_empty() {
+            assert!(resource_aliases);
+            assert!(host_aliases);
+        }
+
+        let alias_instruction_cost = resource_aliases
+            .then(|| metadata_line_cost(budget, RESOURCE_ALIAS_INSTRUCTIONS))
+            .unwrap_or_default()
+            .saturating_add(
+                host_aliases
+                    .then(|| metadata_line_cost(budget, HOST_ALIAS_INSTRUCTIONS))
+                    .unwrap_or_default(),
+            );
+        let metadata_cost = catalogs
+            .into_iter()
+            .flatten()
+            .fold(alias_instruction_cost, |used, catalog| {
+                let root_cost = (!catalog.skill_root_lines.is_empty())
+                    .then(|| {
+                        aliased_metadata_overhead_cost(
+                            budget,
+                            catalog.prompt_kind,
+                            &catalog.skill_root_lines,
+                            false,
+                        )
+                    })
+                    .unwrap_or_default();
+                catalog.skill_lines.iter().fold(
+                    used.saturating_add(root_cost),
+                    |used, line| used.saturating_add(metadata_line_cost(budget, line)),
+                )
+            });
+        assert!(metadata_cost <= budget.limit());
+
+        let body = [rendered.executor, rendered.orchestrator, rendered.host]
+            .into_iter()
+            .flatten()
+            .filter_map(|catalog| catalog.into_fragment())
+            .map(|fragment| fragment.body())
+            .collect::<String>();
+        assert_eq!(1, body.matches("### How to use skills").count());
+        assert_eq!(
+            if resource_aliases { 1 } else { 0 },
+            body.matches(RESOURCE_ALIAS_INSTRUCTIONS).count()
+        );
+        assert_eq!(
+            if host_aliases { 1 } else { 0 },
+            body.matches(HOST_ALIAS_INSTRUCTIONS).count()
+        );
+    }
 }
 
 #[test]

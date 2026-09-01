@@ -8,6 +8,8 @@ use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
 use serde::Serialize;
 
 use crate::catalog_prompt::SkillPromptKind;
+use crate::catalog_prompt::HOST_ALIAS_INSTRUCTIONS;
+use crate::catalog_prompt::RESOURCE_ALIAS_INSTRUCTIONS;
 use crate::catalog_prompt::render_available_skills_body;
 use crate::host_prompt::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
 use crate::tools::SkillToolAuthority;
@@ -20,6 +22,16 @@ pub(crate) struct AvailableSkillsInstructions {
     prompt_kind: Option<SkillPromptKind>,
     skill_root_lines: Vec<String>,
     skill_lines: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SkillsUsage {
+    Omit,
+    Catalog,
+    Combined {
+        resource_aliases: bool,
+        host_aliases: bool,
+    },
 }
 
 pub(crate) struct SkillsUpdate(String);
@@ -50,14 +62,24 @@ impl AvailableSkillsInstructions {
         prompt_kind: SkillPromptKind,
         skill_root_lines: Vec<String>,
         mut skill_lines: Vec<String>,
-        include_skills_usage_instructions: bool,
+        usage: SkillsUsage,
     ) -> Self {
-        if include_skills_usage_instructions {
-            skill_lines.push("### How to use skills".to_string());
-            if let Some(instructions) = prompt_kind.alias_instructions() {
-                skill_lines.push(instructions.to_string());
+        match usage {
+            SkillsUsage::Omit => {}
+            SkillsUsage::Catalog => append_catalog_usage(&mut skill_lines, prompt_kind),
+            SkillsUsage::Combined {
+                resource_aliases,
+                host_aliases,
+            } => {
+                skill_lines.push("### How to use skills".to_string());
+                if resource_aliases {
+                    skill_lines.push(RESOURCE_ALIAS_INSTRUCTIONS.to_string());
+                }
+                if host_aliases {
+                    skill_lines.push(HOST_ALIAS_INSTRUCTIONS.to_string());
+                }
+                skill_lines.push(SkillPromptKind::Unaliased.usage_instructions().to_string());
             }
-            skill_lines.push(prompt_kind.usage_instructions().to_string());
         }
         Self {
             prompt_kind: Some(prompt_kind),
@@ -86,6 +108,14 @@ impl AvailableSkillsInstructions {
             skill_lines,
         }
     }
+}
+
+fn append_catalog_usage(skill_lines: &mut Vec<String>, prompt_kind: SkillPromptKind) {
+    skill_lines.push("### How to use skills".to_string());
+    if let Some(instructions) = prompt_kind.alias_instructions() {
+        skill_lines.push(instructions.to_string());
+    }
+    skill_lines.push(prompt_kind.usage_instructions().to_string());
 }
 
 impl ContextualUserFragment for AvailableSkillsInstructions {

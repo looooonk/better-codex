@@ -1,4 +1,7 @@
 use crate::catalog::SkillCatalog;
+use crate::catalog_prompt::HOST_ALIAS_INSTRUCTIONS;
+use crate::catalog_prompt::RESOURCE_ALIAS_INSTRUCTIONS;
+use crate::fragments::SkillsUsage;
 
 use super::AvailableSkillsRender;
 use super::CatalogLines;
@@ -132,6 +135,8 @@ pub(crate) fn render_combined_available_skills(
         }
     }
 
+    assign_combined_usage(&mut selected, include_skills_usage_instructions);
+
     RenderedSkillCatalogs {
         executor: Some(selected.executor),
         orchestrator: Some(selected.orchestrator),
@@ -217,6 +222,7 @@ fn render_combined_group(
         skill_root_lines,
         skill_lines: lines.into_iter().map(|rendered| rendered.line).collect(),
         preserve_empty_fragment: false,
+        usage: SkillsUsage::Omit,
         report: super::SkillRenderReport {
             total_count: skill_lines.len(),
             included_count: skill_lines.len().saturating_sub(omitted_count),
@@ -245,6 +251,8 @@ fn build_aliased_combined_catalog(
         return None;
     }
 
+    let resource_aliases = !executor.root_lines.is_empty() || !orchestrator.root_lines.is_empty();
+    let host_aliases = !host.root_lines.is_empty();
     let table_cost = [&executor, &orchestrator, &host]
         .into_iter()
         .filter(|catalog| !catalog.root_lines.is_empty())
@@ -253,10 +261,16 @@ fn build_aliased_combined_catalog(
                 budget,
                 catalog.prompt_kind,
                 &catalog.root_lines,
-                include_skills_usage_instructions,
+                false,
             )
         })
-        .fold(0usize, usize::saturating_add);
+        .fold(0usize, usize::saturating_add)
+        .saturating_add(combined_alias_instruction_cost(
+            budget,
+            include_skills_usage_instructions,
+            resource_aliases,
+            host_aliases,
+        ));
     if table_cost >= budget.limit() {
         return None;
     }
@@ -319,26 +333,82 @@ fn combined_available_skills_cost(
     rendered: &CombinedAvailableSkillsRender,
     include_skills_usage_instructions: bool,
 ) -> usize {
-    [&rendered.executor, &rendered.orchestrator, &rendered.host]
+    let catalogs = [&rendered.executor, &rendered.orchestrator, &rendered.host];
+    let resource_aliases = !rendered.executor.skill_root_lines.is_empty()
+        || !rendered.orchestrator.skill_root_lines.is_empty();
+    let host_aliases = !rendered.host.skill_root_lines.is_empty();
+    catalogs
         .into_iter()
-        .fold(0usize, |used, catalog| {
-            let root_cost = if !catalog.skill_root_lines.is_empty() {
-                aliased_metadata_overhead_cost(
-                    budget,
-                    catalog.prompt_kind,
-                    &catalog.skill_root_lines,
-                    include_skills_usage_instructions,
-                )
-            } else {
-                Default::default()
-            };
-            catalog
-                .skill_lines
-                .iter()
-                .fold(used.saturating_add(root_cost), |used, line| {
-                    used.saturating_add(metadata_line_cost(budget, line))
-                })
-        })
+        .fold(
+            combined_alias_instruction_cost(
+                budget,
+                include_skills_usage_instructions,
+                resource_aliases,
+                host_aliases,
+            ),
+            |used, catalog| {
+                let root_cost = if !catalog.skill_root_lines.is_empty() {
+                    aliased_metadata_overhead_cost(
+                        budget,
+                        catalog.prompt_kind,
+                        &catalog.skill_root_lines,
+                        false,
+                    )
+                } else {
+                    Default::default()
+                };
+                catalog
+                    .skill_lines
+                    .iter()
+                    .fold(used.saturating_add(root_cost), |used, line| {
+                        used.saturating_add(metadata_line_cost(budget, line))
+                    })
+            },
+        )
+}
+
+fn assign_combined_usage(
+    rendered: &mut CombinedAvailableSkillsRender,
+    include_skills_usage_instructions: bool,
+) {
+    if !include_skills_usage_instructions {
+        return;
+    }
+
+    let usage = SkillsUsage::Combined {
+        resource_aliases: !rendered.executor.skill_root_lines.is_empty()
+            || !rendered.orchestrator.skill_root_lines.is_empty(),
+        host_aliases: !rendered.host.skill_root_lines.is_empty(),
+    };
+    if let Some(catalog) = [
+        &mut rendered.executor,
+        &mut rendered.orchestrator,
+        &mut rendered.host,
+    ]
+    .into_iter()
+    .find(|catalog| catalog.preserve_empty_fragment || !catalog.skill_lines.is_empty())
+    {
+        catalog.usage = usage;
+    }
+}
+
+fn combined_alias_instruction_cost(
+    budget: SkillMetadataBudget,
+    include_skills_usage_instructions: bool,
+    resource_aliases: bool,
+    host_aliases: bool,
+) -> usize {
+    if !include_skills_usage_instructions {
+        return 0;
+    }
+
+    let resource_cost = resource_aliases
+        .then(|| metadata_line_cost(budget, RESOURCE_ALIAS_INSTRUCTIONS))
+        .unwrap_or_default();
+    let host_cost = host_aliases
+        .then(|| metadata_line_cost(budget, HOST_ALIAS_INSTRUCTIONS))
+        .unwrap_or_default();
+    resource_cost.saturating_add(host_cost)
 }
 
 fn reserve_non_host_omission_marker(

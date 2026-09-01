@@ -3,7 +3,8 @@ use crate::catalog::SkillSourceKind;
 const SKILLS_INTRO_WITH_SOURCE_LOCATORS: &str = "A skill is a set of instructions provided through a `SKILL.md` source. Below is the list of skills that can be used. Each entry includes a name, description, and source locator. `file` locators are on the host filesystem, `executor package` locators are owned by their execution environment, `orchestrator package` locators are opaque package identifiers, and `custom resource` locators use their provider's access mechanism.";
 const SKILLS_INTRO_WITH_HOST_ALIASES: &str = "A skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and a short path that can be expanded into an absolute path using the skill roots table.";
 const SKILLS_INTRO_WITH_RESOURCE_ALIASES: &str = "A skill is a set of instructions provided through a `SKILL.md` source. Below is the list of skills that can be used. Each entry includes a name, description, and source locator. Short locators can be expanded using the skill roots table.";
-const RESOURCE_ALIAS_INSTRUCTIONS: &str = "- Root aliases: Pass short package locators directly to `skills.read`; it resolves their matching alias from `### Skill roots`.";
+pub(crate) const RESOURCE_ALIAS_INSTRUCTIONS: &str = "- Root aliases: Pass short package locators directly to `skills.read`; it resolves their matching alias from `### Skill roots`.";
+pub(crate) const HOST_ALIAS_INSTRUCTIONS: &str = "- Host root aliases: Expand short file paths with the matching alias from `### Skill roots`, then open the resolved host path.";
 const SKILLS_HOW_TO_USE_WITH_SOURCE_LOCATORS: &str = r###"- Discovery: The list above is the skills available in this session (name + description + source locator). `file` entries live on the host filesystem, `executor package` and `orchestrator package` entries are accessed directly through `skills.read`, and `custom resource` entries use their provider's access mechanism.
 - Trigger rules: If the user names a skill (with `$SkillName` or plain text) OR the task clearly matches a skill's description shown above, you must use that skill for that turn. Multiple mentions mean use them all. Do not carry skills across turns unless re-mentioned.
 - Missing/blocked: If a named skill isn't in the list or its source can't be read, say so briefly and continue with the best fallback.
@@ -103,4 +104,3 @@ pub(crate) fn render_available_skills_body(
 
     format!("\n{}\n", lines.join("\n"))
 }
-
