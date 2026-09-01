@@ -90,6 +90,54 @@ struct DelayAcknowledgement<S> {
     release: Arc<Notify>,
 }
 
+#[derive(Clone)]
+struct OversizedHeaderLayer;
+
+impl<S> Layer<S> for OversizedHeaderLayer {
+    type Service = OversizedHeader<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        OversizedHeader { inner }
+    }
+}
+
+#[derive(Clone)]
+struct OversizedHeader<S> {
+    inner: S,
+}
+
+impl<S, B, R> Service<tonic::codegen::http::Request<B>> for OversizedHeader<S>
+where
+    S: Service<
+            tonic::codegen::http::Request<B>,
+            Response = tonic::codegen::http::Response<R>,
+        > + Send
+        + 'static,
+    S::Future: Send + 'static,
+    S::Error: Send + 'static,
+    R: Send + 'static,
+{
+    type Response = tonic::codegen::http::Response<R>;
+    type Error = S::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: tonic::codegen::http::Request<B>) -> Self::Future {
+        let response = self.inner.call(request);
+        Box::pin(async move {
+            let mut response = response.await?;
+            response.headers_mut().insert(
+                "x-oversized-code-mode-header",
+                "x".repeat(16 * 1_024).parse().expect("valid test header"),
+            );
+            Ok(response)
+        })
+    }
+}
+
 impl<S, B> Service<tonic::codegen::http::Request<B>> for DelayAcknowledgement<S>
 where
     S: Service<tonic::codegen::http::Request<B>> + Send + 'static,
@@ -209,6 +257,24 @@ async fn start_server_with_delayed_acknowledgement(
     let server = tokio::spawn(
         Server::builder()
             .layer(DelayAcknowledgementLayer { committed, release })
+            .add_service(authenticated_loopback_grpc_service(TEST_CAPABILITY.into()))
+            .serve_with_incoming_shutdown(incoming, server_shutdown.cancelled_owned()),
+    );
+    (endpoint, shutdown, server)
+}
+
+async fn start_server_with_oversized_response_header() -> (
+    String,
+    CancellationToken,
+    tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+) {
+    let incoming = TcpIncoming::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let endpoint = format!("http://{}", incoming.local_addr().unwrap());
+    let shutdown = CancellationToken::new();
+    let server_shutdown = shutdown.clone();
+    let server = tokio::spawn(
+        Server::builder()
+            .layer(OversizedHeaderLayer)
             .add_service(authenticated_loopback_grpc_service(TEST_CAPABILITY.into()))
             .serve_with_incoming_shutdown(incoming, server_shutdown.cancelled_owned()),
     );
@@ -384,6 +450,23 @@ async fn canonical_transport_applies_the_application_cap_above_tonic_default() {
         .close_session(identified_request(client_id, proto::CloseSessionRequest { session_id }))
         .await
         .unwrap();
+    shutdown.cancel();
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn production_provider_rejects_oversized_response_headers() {
+    let (endpoint, shutdown, server) = start_server_with_oversized_response_header().await;
+    let provider = GrpcCodeModeSessionProvider::with_capability(endpoint, capability());
+
+    let result = timeout(
+        Duration::from_secs(/*secs*/ 5),
+        provider.create_session(Arc::new(NoopCodeModeSessionDelegate)),
+    )
+    .await
+    .expect("oversized response headers must fail promptly");
+    assert!(result.is_err());
+
     shutdown.cancel();
     server.await.unwrap().unwrap();
 }

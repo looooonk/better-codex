@@ -28,6 +28,7 @@ use super::GrpcCodeModeHostCapability;
 use super::response_admission::ResponseAdmission;
 
 const MAX_ENDPOINT_BYTES: usize = 2_048;
+const HTTP2_MAX_RESPONSE_HEADER_BYTES: u32 = 8 * 1_024;
 pub(super) const MAX_CLEANUP_TASKS: usize = 32;
 
 pub(super) type GrpcTransport = BoxCloneSyncService<Request<Body>, Response<Body>, io::Error>;
@@ -138,6 +139,9 @@ impl SharedTransport {
                                 &http_client_factory,
                                 reqwest::Client::builder()
                                     .http2_prior_knowledge()
+                                    .http2_max_header_list_size(
+                                        HTTP2_MAX_RESPONSE_HEADER_BYTES,
+                                    )
                                     .redirect(reqwest::redirect::Policy::none()),
                             )
                         })
@@ -152,6 +156,8 @@ impl SharedTransport {
                             let response_admission = response_admission.clone();
                             async move {
                                 let path = request.uri().path().to_string();
+                                let _request_permit =
+                                    response_admission.request_permit(&path)?;
                                 identify_request(&mut request, client_id, capability.as_ref())?;
                                 let request = request.map(|body| {
                                     reqwest::Body::wrap_stream(body.into_data_stream())
@@ -201,6 +207,7 @@ fn channel_client(
         let response_admission = response_admission.clone();
         async move {
             let path = request.uri().path().to_string();
+            let _request_permit = response_admission.request_permit(&path)?;
             identify_request(&mut request, client_id, capability.as_ref())?;
             let response = channel.oneshot(request).await.map_err(io::Error::other)?;
             response_admission.wrap(&path, response)

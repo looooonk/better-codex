@@ -3,6 +3,7 @@ use pretty_assertions::assert_eq;
 use tonic::Code;
 
 use super::ResponseShape;
+use super::ResponseAdmission;
 use super::preflight_response;
 
 fn length_delimited(field: u8, value: &[u8]) -> Vec<u8> {
@@ -38,4 +39,16 @@ fn bounded_content_items_and_unrelated_nested_fields_are_accepted() {
     outcome.extend_from_slice(&length_delimited(7, &[0x12, 0]));
 
     assert!(preflight_response(ResponseShape::Execute, &length_delimited(2, &outcome)).is_ok());
+}
+
+#[test]
+fn normal_request_saturation_preserves_critical_headroom() {
+    let admission = ResponseAdmission::new();
+    let normal = (0..super::MAX_NORMAL_REQUESTS)
+        .map(|_| admission.request_permit(super::WAIT_PATH).unwrap())
+        .collect::<Vec<_>>();
+
+    assert!(admission.request_permit(super::WAIT_PATH).is_err());
+    assert!(admission.request_permit(super::CLOSE_PATH).is_ok());
+    drop(normal);
 }

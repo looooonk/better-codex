@@ -146,7 +146,9 @@ impl GrpcCodeModeSessionProvider {
         ))
     }
 
-    /// Uses an existing channel, including channels backed by custom transports.
+    /// Uses an existing trusted channel, including channels backed by custom transports.
+    ///
+    /// The caller owns peer authentication and HTTP/2 header and flow-control bounds.
     pub fn with_channel(channel: Channel) -> Self {
         Self::from_transport(SharedTransport::with_channel(channel))
     }

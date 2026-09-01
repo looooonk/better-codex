@@ -19,6 +19,8 @@ const MAX_SUBSCRIBE_RESPONSE_BODIES: usize = 12;
 const MAX_EXECUTE_RESPONSE_BODIES: usize = 6;
 const MAX_NORMAL_RESPONSE_BODIES: usize = 4;
 const MAX_CRITICAL_RESPONSE_BODIES: usize = 4;
+const MAX_NORMAL_REQUESTS: usize = 24;
+const MAX_CRITICAL_REQUESTS: usize = 8;
 const MAX_BUFFERED_BODY_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES * 2;
 const MAX_DECODE_ALLOCATION_BYTES: usize = 32 * 1_024 * 1_024;
 const DECODE_ALLOCATION_MULTIPLIER: usize = 16;
@@ -41,6 +43,8 @@ pub(super) struct ResponseAdmission {
     execute_bodies: Arc<Semaphore>,
     normal_bodies: Arc<Semaphore>,
     critical_bodies: Arc<Semaphore>,
+    normal_requests: Arc<Semaphore>,
+    critical_requests: Arc<Semaphore>,
     decoded: Arc<Semaphore>,
 }
 
@@ -52,8 +56,21 @@ impl ResponseAdmission {
             execute_bodies: Arc::new(Semaphore::new(MAX_EXECUTE_RESPONSE_BODIES)),
             normal_bodies: Arc::new(Semaphore::new(MAX_NORMAL_RESPONSE_BODIES)),
             critical_bodies: Arc::new(Semaphore::new(MAX_CRITICAL_RESPONSE_BODIES)),
+            normal_requests: Arc::new(Semaphore::new(MAX_NORMAL_REQUESTS)),
+            critical_requests: Arc::new(Semaphore::new(MAX_CRITICAL_REQUESTS)),
             decoded: Arc::new(Semaphore::new(MAX_DECODE_ALLOCATION_BYTES)),
         }
+    }
+
+    pub(super) fn request_permit(&self, path: &str) -> Result<OwnedSemaphorePermit, io::Error> {
+        let permits = if is_critical(path) {
+            &self.critical_requests
+        } else {
+            &self.normal_requests
+        };
+        Arc::clone(permits)
+            .try_acquire_owned()
+            .map_err(|_| io::Error::other("gRPC code-mode request budget is exhausted"))
     }
 
     pub(super) fn wrap(
@@ -67,10 +84,7 @@ impl ResponseAdmission {
             &self.subscribe_bodies
         } else if path == EXECUTE_PATH {
             &self.execute_bodies
-        } else if matches!(
-            path,
-            CLOSE_PATH | COMPLETE_PATH | ACKNOWLEDGE_PATH | CANCEL_WAIT_PATH | TERMINATE_PATH
-        ) {
+        } else if is_critical(path) {
             &self.critical_bodies
         } else {
             &self.normal_bodies
@@ -91,6 +105,13 @@ impl ResponseAdmission {
             })
         }))
     }
+}
+
+fn is_critical(path: &str) -> bool {
+    matches!(
+        path,
+        CLOSE_PATH | COMPLETE_PATH | ACKNOWLEDGE_PATH | CANCEL_WAIT_PATH | TERMINATE_PATH
+    )
 }
 
 #[derive(Clone, Copy)]
