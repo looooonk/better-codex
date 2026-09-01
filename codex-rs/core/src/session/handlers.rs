@@ -768,6 +768,16 @@ pub(super) async fn submission_loop(
                         .await;
                     false
                 }
+                Op::StartQueuedTurn { items, reply } => {
+                    sess.start_queued_turn(
+                        sub.id.clone(),
+                        items,
+                        sub.client_user_message_id.unwrap_or_else(|| sub.id.clone()),
+                        reply,
+                    )
+                    .await;
+                    false
+                }
                 Op::ThreadSettings { thread_settings } => {
                     update_thread_settings(&sess, sub.id.clone(), thread_settings).await;
                     false

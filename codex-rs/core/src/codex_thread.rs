@@ -37,6 +37,8 @@ use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::TurnEnvironmentSelections;
+use codex_protocol::protocol::QueuedTurnStartReply;
+use codex_protocol::protocol::QueuedTurnStartSubmission;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::user_input::UserInput;
 use codex_thread_store::PersistContext;
@@ -95,15 +97,6 @@ pub enum TryStartTurnIfIdleRejectionReason {
     PlanMode,
     /// Another turn or task is active, or the idle reservation was lost before
     /// the automatic turn could start.
-    Busy,
-}
-
-/// Explains why a durable queued submission was not admitted as a new turn.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StartQueuedTurnRejectionReason {
-    /// User/client-triggered mailbox work was already waiting and keeps priority.
-    PendingTriggerTurn,
-    /// Another turn or task is active, or the idle reservation was lost.
     Busy,
 }
 
@@ -353,11 +346,25 @@ impl CodexThread {
         turn_id: String,
         items: Vec<codex_protocol::user_input::UserInput>,
         client_user_message_id: String,
-    ) -> Result<(), StartQueuedTurnRejectionReason> {
+        trace: Option<W3cTraceContext>,
+    ) -> CodexResult<QueuedTurnStartSubmission> {
+        let (reply, receiver) = QueuedTurnStartReply::channel();
+        let op = Op::StartQueuedTurn { items, reply };
         self.codex
             .session
-            .start_queued_turn(turn_id, items, client_user_message_id)
-            .await
+            .services
+            .agent_control
+            .ensure_execution_capacity_for_op(self.session_configured.thread_id, &op)
+            .await?;
+        self.codex
+            .submit_with_id(Submission {
+                id: turn_id,
+                op,
+                client_user_message_id: Some(client_user_message_id),
+                trace,
+            })
+            .await?;
+        receiver.await.map_err(|_| CodexErr::InternalAgentDied)
     }
 
     pub async fn set_app_server_client_info(

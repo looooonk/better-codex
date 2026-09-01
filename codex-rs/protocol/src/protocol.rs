@@ -187,6 +187,66 @@ pub struct Submission {
     pub trace: Option<W3cTraceContext>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum QueuedTurnStartRejectionReason {
+    PendingTriggerTurn,
+    Busy,
+    RejectedByHook,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum QueuedTurnStartSubmission {
+    Persisted,
+    NotSubmitted {
+        reason: QueuedTurnStartRejectionReason,
+    },
+}
+
+#[derive(Clone)]
+pub struct QueuedTurnStartReply {
+    sender: std::sync::Arc<
+        std::sync::Mutex<Option<tokio::sync::oneshot::Sender<QueuedTurnStartSubmission>>>,
+    >,
+}
+
+impl QueuedTurnStartReply {
+    pub fn channel() -> (
+        Self,
+        tokio::sync::oneshot::Receiver<QueuedTurnStartSubmission>,
+    ) {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        (
+            Self {
+                sender: std::sync::Arc::new(std::sync::Mutex::new(Some(sender))),
+            },
+            receiver,
+        )
+    }
+
+    pub fn send(&self, submission: QueuedTurnStartSubmission) {
+        let sender = self
+            .sender
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        if let Some(sender) = sender {
+            let _ = sender.send(submission);
+        }
+    }
+}
+
+impl fmt::Debug for QueuedTurnStartReply {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.debug_struct("QueuedTurnStartReply").finish()
+    }
+}
+
+impl PartialEq for QueuedTurnStartReply {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.sender, &other.sender)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
 pub struct W3cTraceContext {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -569,6 +629,12 @@ pub enum Op {
 
         /// Persistent thread-settings overrides to apply before the input.
         thread_settings: ThreadSettingsOverrides,
+    },
+
+    /// Starts durable queued user input only if the thread is idle.
+    StartQueuedTurn {
+        items: Vec<UserInput>,
+        reply: QueuedTurnStartReply,
     },
 
     /// Apply persistent thread-settings overrides without starting a turn.

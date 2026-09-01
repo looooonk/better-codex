@@ -102,6 +102,9 @@ use codex_protocol::protocol::AgentReasoningSectionBreakEvent;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::QueuedTurnStartRejectionReason;
+use codex_protocol::protocol::QueuedTurnStartReply;
+use codex_protocol::protocol::QueuedTurnStartSubmission;
 use codex_protocol::protocol::PlanDeltaEvent;
 use codex_protocol::protocol::RawResponseCompletedEvent;
 use codex_protocol::protocol::ReasoningContentDeltaEvent;
@@ -150,6 +153,7 @@ pub(crate) async fn run_turn(
     turn_context: Arc<TurnContext>,
     turn_extension_data: Arc<codex_extension_api::ExtensionData>,
     input: Vec<TurnInput>,
+    admission_reply: Option<QueuedTurnStartReply>,
     prewarmed_client_session: Option<ModelClientSession>,
     cancellation_token: CancellationToken,
 ) -> CodexResult<Option<String>> {
@@ -181,7 +185,15 @@ pub(crate) async fn run_turn(
     }
     let mut can_drain_pending_input = input.is_empty();
     if run_hooks_and_record_inputs(&sess, &turn_context, &input, PersistContext::TurnStart).await? {
+        if let Some(reply) = admission_reply {
+            reply.send(QueuedTurnStartSubmission::NotSubmitted {
+                reason: QueuedTurnStartRejectionReason::RejectedByHook,
+            });
+        }
         return Ok(None);
+    }
+    if let Some(reply) = admission_reply {
+        reply.send(QueuedTurnStartSubmission::Persisted);
     }
 
     sess.merge_connector_selection(explicitly_enabled_connectors.clone())
