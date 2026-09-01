@@ -1,22 +1,25 @@
 mod conversions;
 mod delegate;
-mod events;
-mod principal;
-mod routing;
-mod session;
-mod validation;
+pub(crate) mod events;
+pub(crate) mod principal;
+pub(crate) mod routing;
+pub(crate) mod session;
+pub(crate) mod validation;
 mod waits;
 
 use std::future::Future;
+use std::convert::Infallible;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::task::Context;
+use std::task::Poll;
 
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::WaitRequest;
 use codex_code_mode_protocol::grpc as proto;
 use codex_code_mode_protocol::grpc::code_mode_host_server::CodeModeHost;
 use codex_code_mode_protocol::grpc::code_mode_host_server::CodeModeHostServer;
-use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use futures::Stream;
 use futures::StreamExt;
 use tokio::sync::mpsc;
@@ -24,12 +27,20 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::Request;
 use tonic::Response;
 use tonic::Status;
+use tonic::body::Body;
+use tonic::codegen::http::Request as HttpRequest;
+use tonic::codegen::http::Response as HttpResponse;
+use tonic::server::NamedService;
+use tower::Layer;
+use tower::Service;
 
 use self::session::GrpcHostState;
 use self::session::GrpcSession;
 use self::waits::WaitRegistration;
-use self::principal::GrpcPrincipal;
 use self::principal::PrincipalPolicy;
+use self::principal::RequestPrincipal;
+use crate::transport_admission::GrpcAdmission;
+use crate::transport_admission::GrpcAdmissionLayer;
 
 type GrpcStream<T> = Pin<Box<dyn Stream<Item = Result<T, Status>> + Send + 'static>>;
 type GrpcFuture<'a, T> = Pin<Box<dyn Future<Output = Result<Response<T>, Status>> + Send + 'a>>;
@@ -42,68 +53,80 @@ pub struct GrpcCodeModeHost {
 }
 
 impl GrpcCodeModeHost {
-    #[cfg(test)]
-    fn new() -> Self {
+    /// Creates a trusted in-process host without transport caller checks.
+    ///
+    /// Embedders must not expose this service to an untrusted transport.
+    /// [`loopback_grpc_service`] likewise requires an independently trusted
+    /// local caller boundary. The host CLI owns the capability-authenticated
+    /// production TCP listener.
+    pub fn new() -> Self {
         Self {
             state: Arc::new(GrpcHostState::new()),
             principal_policy: PrincipalPolicy::InProcess,
         }
     }
 
-    fn loopback_tcp() -> Self {
+    fn loopback_tcp(principal_policy: PrincipalPolicy) -> Self {
         Self {
             state: Arc::new(GrpcHostState::new()),
-            principal_policy: PrincipalPolicy::LoopbackTcp,
+            principal_policy,
         }
     }
 
     async fn open_session_request(
         &self,
         request: proto::OpenSessionRequest,
-        principal: GrpcPrincipal,
+        principal: RequestPrincipal,
     ) -> Result<Response<GrpcStream<proto::SessionEvent>>, Status> {
         let _permit = self.state.request_permit()?;
         let limits = conversions::session_limits(request.cell_execution_limits)?;
-        Ok(Response::new(self.state.open_session(limits, principal)?))
+        let stream = self.state.open_session(limits, principal.identity())?;
+        principal.authorize();
+        Ok(Response::new(stream))
     }
 
     async fn close_session_request(
         &self,
         request: proto::CloseSessionRequest,
-        principal: GrpcPrincipal,
+        principal: RequestPrincipal,
     ) -> Result<Response<proto::CloseSessionResponse>, Status> {
         let _permit = self.state.control_permit()?;
-        self.state
-            .close_session(&request.session_id, principal)
-            .await?;
+        let session = self
+            .state
+            .take_session_for_close(&request.session_id, principal.identity())?;
+        principal.authorize();
+        session.shutdown().await?;
         Ok(Response::new(proto::CloseSessionResponse {}))
     }
 
     async fn subscribe_request(
         &self,
         request: proto::SubscribeToToolCallsRequest,
-        principal: GrpcPrincipal,
+        principal: RequestPrincipal,
     ) -> Result<Response<GrpcStream<proto::ToolCall>>, Status> {
         let _permit = self.state.request_permit()?;
         let session = self
             .state
-            .session_for_principal(&request.session_id, principal)?;
-        Ok(Response::new(session.subscribe(request.tool_names)?))
+            .session_for_principal(&request.session_id, principal.identity())?;
+        let stream = session.subscribe(request.tool_names)?;
+        principal.authorize();
+        Ok(Response::new(stream))
     }
 
     async fn complete_tool_request(
         &self,
         request: proto::CompleteToolCallRequest,
-        principal: GrpcPrincipal,
+        principal: RequestPrincipal,
     ) -> Result<Response<proto::CompleteToolCallResponse>, Status> {
         let _permit = self.state.control_permit()?;
         let session = self
             .state
-            .session_for_principal(&request.session_id, principal)?;
+            .session_for_principal(&request.session_id, principal.identity())?;
+        principal.authorize();
         let invocation_id = validation::uuid(&request.invocation_id, "tool invocation ID")?;
         let result = match request.outcome {
             Some(proto::complete_tool_call_request::Outcome::Succeeded(result)) => Ok(
-                serde_json::from_slice(&result.output_json).map_err(|error| {
+                codex_code_mode_protocol::parse_bounded_json(&result.output_json).map_err(|error| {
                     Status::invalid_argument(format!("invalid code-mode tool output JSON: {error}"))
                 })?,
             ),
@@ -128,12 +151,13 @@ impl GrpcCodeModeHost {
     async fn acknowledge_notification_request(
         &self,
         request: proto::AcknowledgeNotificationRequest,
-        principal: GrpcPrincipal,
+        principal: RequestPrincipal,
     ) -> Result<Response<proto::AcknowledgeNotificationResponse>, Status> {
         let _permit = self.state.control_permit()?;
         let session = self
             .state
-            .session_for_principal(&request.session_id, principal)?;
+            .session_for_principal(&request.session_id, principal.identity())?;
+        principal.authorize();
         let notification_id = validation::uuid(&request.notification_id, "notification ID")?;
         session.acknowledge_notification(notification_id)?;
         Ok(Response::new(proto::AcknowledgeNotificationResponse {}))
@@ -142,11 +166,12 @@ impl GrpcCodeModeHost {
     async fn execute_request(
         &self,
         request: proto::ExecuteRequest,
-        principal: GrpcPrincipal,
+        principal: RequestPrincipal,
     ) -> Result<Response<GrpcStream<proto::ExecuteEvent>>, Status> {
         let session = self
             .state
-            .session_for_principal(&request.session_id, principal)?;
+            .session_for_principal(&request.session_id, principal.identity())?;
+        principal.authorize();
         validation::identifier(&request.execution_id, "execution ID")?;
         let request_permit = self.state.request_permit()?;
         let execution_id = request.execution_id.clone();
@@ -204,11 +229,12 @@ impl GrpcCodeModeHost {
     async fn wait_request(
         &self,
         request: proto::WaitRequest,
-        principal: GrpcPrincipal,
+        principal: RequestPrincipal,
     ) -> Result<Response<proto::WaitResponse>, Status> {
         let session = self
             .state
-            .session_for_principal(&request.session_id, principal)?;
+            .session_for_principal(&request.session_id, principal.identity())?;
+        principal.authorize();
         validation::identifier(&request.cell_id, "cell ID")?;
         validation::identifier(&request.wait_id, "wait ID")?;
         let _permit = self.state.request_permit()?;
@@ -239,12 +265,13 @@ impl GrpcCodeModeHost {
     async fn cancel_wait_request(
         &self,
         request: proto::CancelWaitRequest,
-        principal: GrpcPrincipal,
+        principal: RequestPrincipal,
     ) -> Result<Response<proto::CancelWaitResponse>, Status> {
         let _permit = self.state.control_permit()?;
         let session = self
             .state
-            .session_for_principal(&request.session_id, principal)?;
+            .session_for_principal(&request.session_id, principal.identity())?;
+        principal.authorize();
         validation::identifier(&request.wait_id, "wait ID")?;
         session.cancel_wait(&request.wait_id).await?;
         Ok(Response::new(proto::CancelWaitResponse {}))
@@ -253,11 +280,12 @@ impl GrpcCodeModeHost {
     async fn terminate_request(
         &self,
         request: proto::TerminateRequest,
-        principal: GrpcPrincipal,
+        principal: RequestPrincipal,
     ) -> Result<Response<proto::WaitResponse>, Status> {
         let session = self
             .state
-            .session_for_principal(&request.session_id, principal)?;
+            .session_for_principal(&request.session_id, principal.identity())?;
+        principal.authorize();
         validation::identifier(&request.cell_id, "cell ID")?;
         let _permit = self.state.request_permit()?;
         let result = session.terminate(CellId::new(request.cell_id)).await?;
@@ -266,6 +294,12 @@ impl GrpcCodeModeHost {
             session.terminal_outcome_observed(cell_id);
         }
         Ok(Response::new(response))
+    }
+}
+
+impl Default for GrpcCodeModeHost {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -292,11 +326,61 @@ fn terminal_wait_cell_id(response: &proto::WaitResponse) -> Option<&str> {
     .then_some(outcome.cell_id.as_str())
 }
 
-/// Builds the only routable gRPC service, restricted to one loopback TCP caller per session.
-pub fn loopback_grpc_service() -> CodeModeHostServer<GrpcCodeModeHost> {
-    CodeModeHostServer::new(GrpcCodeModeHost::loopback_tcp())
-        .max_decoding_message_size(MAX_FRAME_BYTES)
-        .max_encoding_message_size(MAX_FRAME_BYTES)
+/// A routable code-mode service with transport admission applied before protobuf decoding.
+#[derive(Clone)]
+pub struct LoopbackGrpcService {
+    inner: GrpcAdmission<CodeModeHostServer<GrpcCodeModeHost>>,
+}
+
+impl Service<HttpRequest<Body>> for LoopbackGrpcService {
+    type Response = HttpResponse<Body>;
+    type Error = Infallible;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: HttpRequest<Body>) -> Self::Future {
+        Box::pin(self.inner.call(request))
+    }
+}
+
+impl NamedService for LoopbackGrpcService {
+    const NAME: &'static str =
+        <CodeModeHostServer<GrpcCodeModeHost> as NamedService>::NAME;
+}
+
+/// Builds a bounded local service for a transport with its own trusted caller boundary.
+///
+/// This compatibility constructor does not authenticate TCP peers. Production
+/// loopback listeners must use the capability-bound service.
+pub fn loopback_grpc_service() -> LoopbackGrpcService {
+    loopback_service(PrincipalPolicy::TrustedLocalTransport)
+}
+
+pub(crate) fn authenticated_loopback_grpc_service(
+    capability: Arc<str>,
+) -> LoopbackGrpcService {
+    loopback_service(PrincipalPolicy::AuthenticatedLocalTransport(capability))
+}
+
+fn loopback_service(principal_policy: PrincipalPolicy) -> LoopbackGrpcService {
+    let admission = match &principal_policy {
+        PrincipalPolicy::AuthenticatedLocalTransport(capability) => {
+            GrpcAdmissionLayer::authenticated(Arc::clone(capability))
+        }
+        PrincipalPolicy::InProcess | PrincipalPolicy::TrustedLocalTransport => {
+            GrpcAdmissionLayer::new()
+        }
+    };
+    let service = CodeModeHostServer::new(GrpcCodeModeHost::loopback_tcp(principal_policy))
+        .max_decoding_message_size(MAX_APPLICATION_MESSAGE_BYTES)
+        .max_encoding_message_size(MAX_APPLICATION_MESSAGE_BYTES);
+    LoopbackGrpcService {
+        inner: admission.layer(service),
+    }
 }
 
 impl CodeModeHost for GrpcCodeModeHost {

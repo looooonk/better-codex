@@ -36,6 +36,24 @@ When running with `--listen ws://IP:PORT`, the same listener also serves basic H
 
 Websocket transport is currently experimental and unsupported. Do not rely on it for production workloads.
 
+Pass `--code-mode-host URL` to share one gRPC code-mode host across every thread in the
+app-server process instead of starting the local process host. The built-in loopback TCP host
+prints its HTTP endpoint on the first stdout line and a server-issued capability on the second. Put that capability in a
+private environment variable and name it with `--code-mode-host-token-env ENV`; the capability is
+never accepted in the URL or command line. Plaintext `http://` endpoints must use a literal
+loopback IP address and require this capability. Endpoint-only `https://` remains available for
+trusted external deployments, which are responsible for authenticating their own transport;
+`--code-mode-host-token-env` may also be used with HTTPS. `unix:` endpoints must name an absolute
+local socket path. HTTP URLs must not include credentials, a path, a query, or a fragment. Remote
+host selection requires the `code_mode_host` feature and is independent of the app-server
+`--listen` transport.
+
+For example, capture the two output lines from
+`codex-code-mode-host --listen grpc://127.0.0.1:0`, store the second as `CODE_MODE_HOST_TOKEN`, and
+start the app server with `--code-mode-host "$endpoint"` and
+`--code-mode-host-token-env CODE_MODE_HOST_TOKEN`. Do not write the capability to logs or shell
+history.
+
 The unix socket transport is intended for local app-server control-plane clients. `better-codex app-server proxy`
 opens exactly one raw stream connection to `$CODEX_HOME/app-server-control/app-server-control.sock`
 by default, or to `--sock PATH` when provided, and proxies bytes between that socket and stdin/stdout.

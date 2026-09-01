@@ -4,13 +4,15 @@ use std::time::Duration;
 
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::CodeModeNestedToolCall;
+use codex_code_mode_protocol::CodeModeSessionDelegate;
 use codex_code_mode_protocol::CodeModeToolKind;
 use codex_code_mode_protocol::grpc as proto;
 use codex_code_mode_protocol::grpc::code_mode_host_server::CodeModeHost;
-use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use codex_protocol::ToolName;
 use futures::FutureExt;
 use futures::StreamExt;
+use prost::Message;
 use pretty_assertions::assert_eq;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
@@ -22,6 +24,8 @@ use uuid::Uuid;
 
 use super::ExecutionAdmission;
 use super::GrpcCodeModeHost;
+use super::delegate::GrpcDelegate;
+use super::events::MAX_SESSION_EVENT_BYTES;
 use super::execution_stream;
 use super::tests::execute_events;
 use super::tests::execute_request;
@@ -33,6 +37,7 @@ use super::validation::MAX_TOOL_DESCRIPTION_BYTES;
 use super::validation::MAX_TOOL_ERROR_BYTES;
 use super::validation::MAX_TOOL_FILTERS;
 use super::waits::WaitRegistration;
+use super::session::MAX_OPEN_GRPC_SESSIONS;
 use crate::MAX_ACTIVE_CELLS;
 use crate::MAX_IN_FLIGHT_REQUESTS;
 use crate::MAX_RECENT_REQUEST_IDS;
@@ -183,6 +188,73 @@ async fn unknown_notification_acknowledgements_are_rejected() {
 }
 
 #[tokio::test]
+async fn cancelling_an_unpublished_notification_does_not_emit_a_cancellation() {
+    let host = GrpcCodeModeHost::new();
+    let (session_id, mut events) = open_session(&host).await;
+    let session = host.state.session(&session_id).expect("open session");
+    session.reserve_execution("notification-admission").unwrap();
+    session
+        .admit_execution(
+            "notification-admission".to_string(),
+            "notification-cell".to_string(),
+            host.state.cell_permit().unwrap(),
+        )
+        .unwrap();
+
+    let mut text_bytes = MAX_SESSION_EVENT_BYTES - 128;
+    let filler = loop {
+        let event = proto::session_event::Event::Notification(proto::Notification {
+            notification_id: Uuid::new_v4().to_string(),
+            execution_id: "filler-execution".to_string(),
+            cell_id: "filler-cell".to_string(),
+            call_id: "filler-call".to_string(),
+            text: "x".repeat(text_bytes),
+        });
+        let encoded_len = proto::SessionEvent {
+            event: Some(event.clone()),
+        }
+        .encoded_len();
+        if encoded_len == MAX_SESSION_EVENT_BYTES {
+            break event;
+        }
+        if encoded_len > MAX_SESSION_EVENT_BYTES {
+            text_bytes -= encoded_len - MAX_SESSION_EVENT_BYTES;
+        } else {
+            text_bytes += MAX_SESSION_EVENT_BYTES - encoded_len;
+        }
+    };
+    session.send_event_now(filler, /*cell_permit*/ None).unwrap();
+
+    let delegate = GrpcDelegate::new(Arc::downgrade(&session));
+    let notify = tokio::spawn(async move {
+        delegate
+            .notify(
+                "outer-call".to_string(),
+                CellId::new("notification-cell".to_string()),
+                "blocked".to_string(),
+                CancellationToken::new(),
+            )
+            .await
+    });
+    assert!(notify.await.unwrap().is_err());
+    assert!(
+        session
+            .state
+            .lock()
+            .unwrap()
+            .pending_notifications
+            .is_empty()
+    );
+    assert!(events.next().await.unwrap().is_ok());
+    assert!(
+        tokio::time::timeout(Duration::from_millis(/*millis*/ 20), events.next())
+            .await
+            .is_err()
+    );
+    assert!(!session.closed.is_cancelled());
+}
+
+#[tokio::test]
 async fn session_shutdown_is_bounded_and_closes_task_admission() {
     let host = GrpcCodeModeHost::new();
     let (session_id, _events) = open_session(&host).await;
@@ -254,6 +326,40 @@ async fn request_and_cell_admission_fail_closed_at_capacity() {
         Err(error) => error,
     };
     assert_eq!(error.code(), Code::ResourceExhausted);
+}
+
+#[tokio::test]
+async fn session_capacity_reserves_stream_headroom_for_control() {
+    let host = GrpcCodeModeHost::new();
+    let mut sessions = Vec::new();
+    for _ in 0..MAX_OPEN_GRPC_SESSIONS {
+        let (session_id, lease) = open_session(&host).await;
+        let subscription = host
+            .subscribe_to_tool_calls(Request::new(proto::SubscribeToToolCallsRequest {
+                session_id: session_id.clone(),
+                tool_names: Vec::new(),
+            }))
+            .await
+            .unwrap()
+            .into_inner();
+        sessions.push((session_id, lease, subscription));
+    }
+
+    assert_eq!(
+        host.open_session(Request::new(proto::OpenSessionRequest {
+            cell_execution_limits: None,
+        }))
+        .await
+        .err()
+        .expect("session capacity should be enforced")
+        .code(),
+        Code::ResourceExhausted,
+    );
+    let (session_id, _, _) = sessions.pop().unwrap();
+    host.close_session(Request::new(proto::CloseSessionRequest { session_id }))
+        .await
+        .expect("control request should remain available at session capacity");
+    let _replacement = open_session(&host).await;
 }
 
 #[tokio::test]
@@ -441,7 +547,13 @@ async fn close_after_tool_reservation_does_not_commit_or_deliver() {
         .unwrap();
     let sender = session.state.lock().unwrap().subscriptions[0].sender.clone();
     for _ in 0..OUTGOING_CHANNEL_CAPACITY {
-        sender.try_send(Ok(proto::ToolCall::default())).unwrap();
+        let reservation = session.reserve_tool_bytes(/*bytes*/ 1).unwrap();
+        sender
+            .try_send(session.buffered_tool_call(
+                proto::ToolCall::default(),
+                reservation,
+            ))
+            .unwrap();
     }
     let baseline_senders = sender.strong_count();
     let invocation_id = Uuid::new_v4();
@@ -753,13 +865,13 @@ async fn oversized_tool_invocation_does_not_consume_sequence_or_close_session() 
             invocation(&cell_id, "echo"),
             "execution-oversized".to_string(),
             Uuid::new_v4(),
-            Some(vec![0; MAX_FRAME_BYTES]),
+            Some(vec![0; MAX_APPLICATION_MESSAGE_BYTES]),
             response,
             &cancellation,
         )
         .await
         .expect_err("oversized invocation must be rejected");
-    assert!(error.contains("gRPC message limit"));
+    assert!(error.contains("application limit"));
     assert!(!session.closed.is_cancelled());
 
     let (response, _receiver) = oneshot::channel();
@@ -898,14 +1010,20 @@ async fn missing_selected_subscription_retries_alternate_match() {
         .iter()
         .map(|subscription| (subscription.id, subscription.sender.clone()))
         .collect::<Vec<_>>();
+    let cancellation = CancellationToken::new();
     for (_, sender) in &subscriptions {
         for _ in 0..OUTGOING_CHANNEL_CAPACITY {
+            let reservation = session
+                .reserve_tool_bytes(/*bytes*/ 1)
+                .expect("reserve subscription queue bytes");
             sender
-                .try_send(Ok(proto::ToolCall::default()))
+                .try_send(session.buffered_tool_call(
+                    proto::ToolCall::default(),
+                    reservation,
+                ))
                 .expect("fill subscription queue");
         }
     }
-    let cancellation = CancellationToken::new();
     let (response, _receiver) = oneshot::channel();
     let invocation_id = Uuid::new_v4();
     let dispatch = session.dispatch_tool(

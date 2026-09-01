@@ -2,6 +2,7 @@ use clap::Parser;
 use codex_app_server::AppServerRuntimeOptions;
 use codex_app_server::AppServerTransport;
 use codex_app_server::AppServerWebsocketAuthArgs;
+use codex_app_server::AppServerCodeModeHostArgs;
 use codex_app_server::PluginStartupTasks;
 use codex_app_server::run_main_with_transport_options;
 use codex_arg0::Arg0DispatchPaths;
@@ -43,6 +44,9 @@ struct AppServerArgs {
     #[command(flatten)]
     auth: AppServerWebsocketAuthArgs,
 
+    #[command(flatten)]
+    code_mode_host: AppServerCodeModeHostArgs,
+
     /// Fail if config.toml contains unknown configuration fields.
     #[arg(long = "strict-config", default_value_t = false)]
     strict_config: bool,
@@ -66,6 +70,7 @@ fn main() -> anyhow::Result<()> {
             listen,
             session_source,
             auth,
+            code_mode_host,
             strict_config,
             #[cfg(debug_assertions)]
             disable_plugin_startup_tasks_for_tests,
@@ -81,6 +86,9 @@ fn main() -> anyhow::Result<()> {
         let transport = listen;
         let auth = auth.try_into_settings()?;
         let mut runtime_options = AppServerRuntimeOptions::default();
+        runtime_options.code_mode_host_transport = code_mode_host
+            .try_into_transport()
+            .map_err(anyhow::Error::msg)?;
         #[cfg(debug_assertions)]
         if disable_plugin_startup_tasks_for_tests {
             runtime_options.plugin_startup_tasks = PluginStartupTasks::Skip;

@@ -7,7 +7,9 @@ use codex_code_mode_protocol::RuntimeResponse;
 use codex_code_mode_protocol::ToolDefinition;
 use codex_code_mode_protocol::WaitOutcome;
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
+use codex_code_mode_protocol::parse_bounded_json;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
+use codex_code_mode_protocol::grpc::MAX_CONTENT_ITEMS;
 use codex_protocol::ToolName;
 use prost::Message;
 use serde_json::Value as JsonValue;
@@ -32,11 +34,43 @@ pub(super) fn session_limits(
 }
 
 pub(super) fn execute_request(request: proto::ExecuteRequest) -> Result<ExecuteRequest, Status> {
+    if request.encoded_len() > MAX_APPLICATION_MESSAGE_BYTES {
+        return Err(Status::resource_exhausted(format!(
+            "code-mode execution request exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
+        )));
+    }
     validation::identifier(&request.tool_call_id, "tool call ID")?;
+    validation::bounded(
+        &request.source,
+        validation::MAX_APPLICATION_MESSAGE_BYTES,
+        "execution source",
+    )?;
     if request.enabled_tools.len() > validation::MAX_TOOL_DEFINITIONS {
         return Err(Status::invalid_argument(format!(
             "code-mode execution exceeds {} enabled tools",
             validation::MAX_TOOL_DEFINITIONS
+        )));
+    }
+    let metadata_bytes = request.enabled_tools.iter().try_fold(0usize, |total, tool| {
+        let tool_name_bytes = tool
+            .tool_name
+            .as_ref()
+            .map_or(0, |name| name.name.len() + name.namespace.as_ref().map_or(0, String::len));
+        [
+            tool.name.len(),
+            tool_name_bytes,
+            tool.description.len(),
+            tool.input_schema_json.as_ref().map_or(0, Vec::len),
+            tool.output_schema_json.as_ref().map_or(0, Vec::len),
+        ]
+        .into_iter()
+        .try_fold(total, usize::checked_add)
+        .ok_or_else(|| Status::invalid_argument("tool metadata byte count overflowed"))
+    })?;
+    if metadata_bytes > validation::MAX_TOOL_METADATA_BYTES {
+        return Err(Status::invalid_argument(format!(
+            "code-mode tool metadata exceeds {} bytes",
+            validation::MAX_TOOL_METADATA_BYTES
         )));
     }
     Ok(ExecuteRequest {
@@ -88,7 +122,7 @@ fn tool_definition(definition: proto::ToolDefinition) -> Result<ToolDefinition, 
 fn json_field(value: Option<Vec<u8>>, field: &str) -> Result<Option<JsonValue>, Status> {
     value
         .map(|value| {
-            serde_json::from_slice(&value)
+            parse_bounded_json(&value)
                 .map_err(|error| Status::invalid_argument(format!("invalid tool {field}: {error}")))
         })
         .transpose()
@@ -124,6 +158,11 @@ pub(super) fn execution_outcome(
             proto::execution_outcome::Outcome::Completed(proto::ExecutionCompleted { error_text }),
         ),
     };
+    if content_items.len() > MAX_CONTENT_ITEMS {
+        return Err(Status::resource_exhausted(format!(
+            "code-mode execution outcome exceeds {MAX_CONTENT_ITEMS} content items"
+        )));
+    }
     bounded_message(
         proto::ExecutionOutcome {
             cell_id: cell_id.to_string(),
@@ -161,9 +200,9 @@ pub(super) fn wait_response(outcome: WaitOutcome) -> Result<proto::WaitResponse,
 }
 
 fn bounded_message<T: Message>(message: T, label: &str) -> Result<T, Status> {
-    if message.encoded_len() > MAX_FRAME_BYTES {
+    if message.encoded_len() > MAX_APPLICATION_MESSAGE_BYTES {
         return Err(Status::resource_exhausted(format!(
-            "{label} exceeds the {MAX_FRAME_BYTES}-byte gRPC message limit"
+            "{label} exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
         )));
     }
     Ok(message)

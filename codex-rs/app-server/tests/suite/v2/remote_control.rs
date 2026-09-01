@@ -239,6 +239,7 @@ async fn explicit_remote_control_startup_fails_when_disabled_by_requirements() -
             SessionSource::VSCode,
             AppServerWebsocketAuthSettings::default(),
             AppServerRuntimeOptions {
+                code_mode_host_transport: Default::default(),
                 plugin_startup_tasks: PluginStartupTasks::Skip,
                 remote_control_startup_mode: RemoteControlStartupMode::EnabledEphemeral,
                 install_shutdown_signal_handler: false,

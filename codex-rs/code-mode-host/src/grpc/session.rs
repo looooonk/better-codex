@@ -14,6 +14,7 @@ use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::CodeModeSessionCellExecutionLimits;
 use codex_code_mode_protocol::WaitOutcome;
 use codex_code_mode_protocol::grpc as proto;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use codex_code_mode::InProcessCodeModeSession;
 use serde_json::Value as JsonValue;
 use tokio::sync::Notify;
@@ -37,9 +38,13 @@ use super::waits::ActiveWait;
 use crate::HostLimits;
 use crate::MAX_ACTIVE_CELLS;
 use crate::MAX_IN_FLIGHT_REQUESTS;
-use crate::MAX_PENDING_DELEGATE_CALLS;
 use crate::MAX_RECENT_REQUEST_IDS;
 use crate::OUTGOING_CHANNEL_CAPACITY;
+
+pub(crate) const MAX_OPEN_GRPC_SESSIONS: usize = 6;
+pub(crate) const MAX_HOST_TOOL_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES * 8;
+const MAX_SESSION_TOOL_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES * 2;
+pub(crate) const MAX_GRPC_PENDING_DELEGATE_CALLS: usize = 8;
 
 pub(super) struct GrpcHostState {
     sessions: Mutex<HashMap<Uuid, Arc<GrpcSession>>>,
@@ -47,6 +52,7 @@ pub(super) struct GrpcHostState {
     delegate_permits: Arc<Semaphore>,
     control_permits: Arc<Semaphore>,
     event_byte_permits: Arc<Semaphore>,
+    tool_byte_permits: Arc<Semaphore>,
 }
 
 pub(super) struct GrpcSession {
@@ -58,6 +64,8 @@ pub(super) struct GrpcSession {
     events: EventSender,
     cells_changed: Notify,
     delegate_permits: Arc<Semaphore>,
+    session_tool_byte_permits: Arc<Semaphore>,
+    host_tool_byte_permits: Arc<Semaphore>,
     tasks: TaskTracker,
 }
 
@@ -72,7 +80,7 @@ pub(super) struct SessionState {
     pub(super) next_subscription: usize,
     pub(super) pending_invocations: HashMap<Uuid, PendingInvocation>,
     pub(super) seen_invocations: BoundedIds<Uuid>,
-    pending_notifications: HashMap<Uuid, oneshot::Sender<()>>,
+    pub(super) pending_notifications: HashMap<Uuid, oneshot::Sender<()>>,
     seen_notifications: BoundedIds<Uuid>,
     pub(super) waits: HashMap<String, ActiveWait>,
     pub(super) seen_waits: BoundedIds,
@@ -90,7 +98,34 @@ pub(super) struct ExecutionState {
 pub(super) struct ToolSubscription {
     pub(super) id: Uuid,
     pub(super) filters: Vec<proto::ToolName>,
-    pub(super) sender: mpsc::Sender<Result<proto::ToolCall, Status>>,
+    pub(super) sender: mpsc::Sender<BufferedToolCall>,
+}
+
+pub(super) struct BufferedToolCall {
+    pub(super) message: proto::ToolCall,
+    _reservation: ToolByteReservation,
+}
+
+pub(super) struct ToolByteReservation {
+    _session: OwnedSemaphorePermit,
+    _host: OwnedSemaphorePermit,
+}
+
+impl ToolByteReservation {
+    pub(super) fn retain(mut self, bytes: usize) -> Result<Self, String> {
+        let session = self
+            ._session
+            .split(bytes)
+            .ok_or_else(|| "code-mode session tool-call reservation was too small".to_string())?;
+        let host = self
+            ._host
+            .split(bytes)
+            .ok_or_else(|| "code-mode host tool-call reservation was too small".to_string())?;
+        Ok(Self {
+            _session: session,
+            _host: host,
+        })
+    }
 }
 
 pub(super) struct PendingInvocation {
@@ -109,9 +144,10 @@ impl GrpcHostState {
         Self {
             sessions: Mutex::new(HashMap::new()),
             limits: HostLimits::new(),
-            delegate_permits: Arc::new(Semaphore::new(MAX_PENDING_DELEGATE_CALLS)),
+            delegate_permits: Arc::new(Semaphore::new(MAX_GRPC_PENDING_DELEGATE_CALLS)),
             control_permits: Arc::new(Semaphore::new(MAX_IN_FLIGHT_REQUESTS)),
             event_byte_permits: Arc::new(Semaphore::new(MAX_HOST_EVENT_BYTES)),
+            tool_byte_permits: Arc::new(Semaphore::new(MAX_HOST_TOOL_BYTES)),
         }
     }
 
@@ -120,6 +156,12 @@ impl GrpcHostState {
         limits: CodeModeSessionCellExecutionLimits,
         principal: GrpcPrincipal,
     ) -> Result<GrpcStream<proto::SessionEvent>, Status> {
+        let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+        if sessions.len() >= MAX_OPEN_GRPC_SESSIONS {
+            return Err(Status::resource_exhausted(
+                "code-mode host has too many open sessions",
+            ));
+        }
         let id = Uuid::new_v4();
         let (events, receiver) = mpsc::channel(OUTGOING_CHANNEL_CAPACITY);
         let closed = CancellationToken::new();
@@ -135,6 +177,7 @@ impl GrpcHostState {
             event_sender,
             closed,
             Arc::clone(&self.delegate_permits),
+            Arc::clone(&self.tool_byte_permits),
             limits,
         );
         session
@@ -145,12 +188,6 @@ impl GrpcHostState {
                 /*cell_permit*/ None,
             )
             .map_err(Status::internal)?;
-        let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
-        if sessions.len() >= MAX_IN_FLIGHT_REQUESTS {
-            return Err(Status::resource_exhausted(
-                "code-mode host has too many open sessions",
-            ));
-        }
         sessions.insert(id, Arc::clone(&session));
         drop(sessions);
 
@@ -202,25 +239,22 @@ impl GrpcHostState {
             .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))
     }
 
-    pub(super) async fn close_session(
+    pub(super) fn take_session_for_close(
         &self,
         id: &str,
         principal: GrpcPrincipal,
-    ) -> Result<(), Status> {
+    ) -> Result<Arc<GrpcSession>, Status> {
         let session_id = validation::uuid(id, "session ID")?;
-        let session = {
-            let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
-            let session = sessions
-                .get(&session_id)
-                .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))?;
-            if session.principal != principal {
-                return Err(Status::permission_denied(
-                    "code-mode session belongs to another caller",
-                ));
-            }
-            sessions.remove(&session_id).expect("session was checked above")
-        };
-        session.shutdown().await
+        let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+        let session = sessions
+            .get(&session_id)
+            .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))?;
+        if session.principal != principal {
+            return Err(Status::permission_denied(
+                "code-mode session belongs to another caller",
+            ));
+        }
+        Ok(sessions.remove(&session_id).expect("session was checked above"))
     }
 
     async fn close_lease(&self, id: Uuid, expected: &Arc<GrpcSession>) {
@@ -268,6 +302,7 @@ impl GrpcSession {
         events: EventSender,
         closed: CancellationToken,
         delegate_permits: Arc<Semaphore>,
+        host_tool_byte_permits: Arc<Semaphore>,
         limits: CodeModeSessionCellExecutionLimits,
     ) -> Arc<Self> {
         Arc::new_cyclic(|weak: &Weak<Self>| {
@@ -294,12 +329,14 @@ impl GrpcSession {
                 events,
                 cells_changed: Notify::new(),
                 delegate_permits,
+                session_tool_byte_permits: Arc::new(Semaphore::new(MAX_SESSION_TOOL_BYTES)),
+                host_tool_byte_permits,
                 tasks: TaskTracker::new(),
             }
         })
     }
 
-    async fn shutdown(&self) -> Result<(), Status> {
+    pub(super) async fn shutdown(&self) -> Result<(), Status> {
         self.shutdown_with_deadline(tokio::time::Instant::now() + crate::SHUTDOWN_TIMEOUT)
             .await
     }
@@ -536,6 +573,38 @@ impl GrpcSession {
             .map_err(|_| "code-mode host has too many pending delegate calls".to_string())
     }
 
+    pub(super) fn reserve_tool_bytes(
+        &self,
+        bytes: usize,
+    ) -> Result<ToolByteReservation, String> {
+        if bytes == 0 || bytes > MAX_APPLICATION_MESSAGE_BYTES {
+            return Err("invalid code-mode tool-call byte reservation".to_string());
+        }
+        let bytes = u32::try_from(bytes)
+            .map_err(|_| "code-mode tool-call budget exceeds this platform".to_string())?;
+        let session = Arc::clone(&self.session_tool_byte_permits)
+            .try_acquire_many_owned(bytes)
+            .map_err(|_| "code-mode session tool-call budget is exhausted".to_string())?;
+        let host = Arc::clone(&self.host_tool_byte_permits)
+            .try_acquire_many_owned(bytes)
+            .map_err(|_| "code-mode host tool-call budget is exhausted".to_string())?;
+        Ok(ToolByteReservation {
+            _session: session,
+            _host: host,
+        })
+    }
+
+    pub(super) fn buffered_tool_call(
+        &self,
+        message: proto::ToolCall,
+        reservation: ToolByteReservation,
+    ) -> BufferedToolCall {
+        BufferedToolCall {
+            message,
+            _reservation: reservation,
+        }
+    }
+
     pub(super) async fn send_event(
         &self,
         event: proto::session_event::Event,
@@ -616,6 +685,14 @@ impl GrpcSession {
                 /*cell_permit*/ None,
             );
         }
+    }
+
+    pub(super) fn discard_notification(&self, notification_id: Uuid) {
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pending_notifications
+            .remove(&notification_id);
     }
 }
 

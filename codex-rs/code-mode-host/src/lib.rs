@@ -41,15 +41,21 @@ use self::delegate::RemoteDelegate;
 use self::peer::HostPeer;
 
 pub use self::grpc::GrpcCodeModeHost;
+pub use self::grpc::LoopbackGrpcService;
 pub use self::grpc::loopback_grpc_service;
+pub use self::transport::DEFAULT_LISTEN_URL;
+pub use self::transport::run_transport;
 
 mod delegate;
 mod grpc;
 mod peer;
+mod transport;
+mod transport_admission;
 
 const MAX_IN_FLIGHT_REQUESTS: usize = 256;
 const MAX_ACTIVE_CELLS: usize = 128;
-const MAX_PENDING_DELEGATE_CALLS: usize = 256;
+const MAX_PENDING_DELEGATE_CALLS: usize =
+    codex_code_mode_protocol::host::MAX_PENDING_DELEGATE_CALLS;
 const MAX_RECENT_REQUEST_IDS: usize = 4096;
 const MAX_RECENT_SESSION_IDS: usize = 4096;
 const OUTGOING_CHANNEL_CAPACITY: usize = 128;
@@ -75,6 +81,11 @@ impl HostLimits {
     fn cell_permit(&self) -> Result<OwnedSemaphorePermit, TryAcquireError> {
         Arc::clone(&self.active_cell_permits).try_acquire_owned()
     }
+}
+
+/// Runs the code-mode host on its selected transport.
+pub async fn run_main(listen_url: &str) -> Result<()> {
+    run_transport(listen_url).await
 }
 
 /// Runs one code-mode host connection over the process standard streams.

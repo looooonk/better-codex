@@ -149,6 +149,9 @@ async fn run_cell<H: CellHost>(
     let mut tool_tasks = JoinSet::new();
     let mut command_rx = Some(command_rx);
     loop {
+        let yield_deadline_elapsed = yield_timer
+            .as_ref()
+            .is_some_and(|yield_timer| yield_timer.deadline() <= tokio::time::Instant::now());
         tokio::select! {
             biased;
             _ = cancellation_token.cancelled(), if !termination => {
@@ -269,7 +272,7 @@ async fn run_cell<H: CellHost>(
                 } else {
                     event_rx.recv().await
                 }
-            } => {
+            }, if !yield_deadline_elapsed => {
                 let Some(event) = maybe_event else {
                     runtime_closed = true;
                     if termination || cancellation_token.is_cancelled() {

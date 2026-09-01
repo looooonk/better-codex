@@ -560,6 +560,9 @@ struct AppServerCommand {
 
     #[command(flatten)]
     auth: codex_app_server::AppServerWebsocketAuthArgs,
+
+    #[command(flatten)]
+    code_mode_host: codex_app_server::AppServerCodeModeHostArgs,
 }
 
 #[derive(Debug, Parser)]
@@ -1103,6 +1106,7 @@ async fn cli_main(
                 remote_control,
                 analytics_default_enabled,
                 auth,
+                code_mode_host,
             } = app_server_cli;
             let strict_config = app_server_strict_config || root_strict_config;
             reject_strict_config_for_app_server_subcommand(strict_config, subcommand.as_ref())?;
@@ -1120,6 +1124,9 @@ async fn cli_main(
                     };
                     let auth = auth.try_into_settings()?;
                     let runtime_options = codex_app_server::AppServerRuntimeOptions {
+                        code_mode_host_transport: code_mode_host
+                            .try_into_transport()
+                            .map_err(anyhow::Error::msg)?,
                         remote_control_startup_mode: match (remote_control, remote_control_disabled)
                         {
                             (true, _) => {
@@ -3961,6 +3968,54 @@ mod tests {
         let parse_result =
             MultitoolCli::try_parse_from(["codex", "app-server", "--listen", "http://foo"]);
         assert!(parse_result.is_err());
+    }
+
+    #[test]
+    fn app_server_code_mode_host_parses() {
+        let app_server = app_server_from_args(
+            [
+                "codex",
+                "app-server",
+                "--code-mode-host",
+                "https://code-mode.example:45123",
+                "--code-mode-host-token-env",
+                "CODE_MODE_TOKEN",
+            ]
+            .as_ref(),
+        );
+        assert_eq!(
+            app_server.code_mode_host.code_mode_host,
+            Some(
+                url::Url::parse("https://code-mode.example:45123")
+                    .expect("test endpoint should parse")
+            )
+        );
+        assert_eq!(
+            app_server
+                .code_mode_host
+                .code_mode_host_token_env
+                .as_deref(),
+            Some("CODE_MODE_TOKEN")
+        );
+    }
+
+    #[test]
+    fn app_server_code_mode_host_rejects_secret_components_without_echoing_them() {
+        for endpoint in [
+            "http://alice:super-secret@127.0.0.1:45123",
+            "https://code-mode.example?token=super-secret",
+        ] {
+            let error = MultitoolCli::try_parse_from([
+                "codex",
+                "app-server",
+                "--code-mode-host",
+                endpoint,
+            ])
+            .expect_err("invalid endpoint should fail argument parsing");
+            let rendered = error.to_string();
+            assert!(!rendered.contains("alice"));
+            assert!(!rendered.contains("super-secret"));
+        }
     }
 
     #[test]

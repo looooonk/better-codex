@@ -65,6 +65,7 @@ use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::experimental_required_message;
 use codex_arg0::Arg0DispatchPaths;
 use codex_chatgpt::workspace_settings;
+use codex_code_mode::CodeModeSessionProvider;
 use codex_core::ThreadManager;
 use codex_core::config::Config;
 use codex_exec_server::EnvironmentManager;
@@ -219,6 +220,7 @@ pub(crate) struct MessageProcessorArgs {
     pub(crate) session_source: SessionSource,
     pub(crate) auth_manager: Arc<AuthManager>,
     pub(crate) installation_id: String,
+    pub(crate) code_mode_session_provider: Option<Arc<dyn CodeModeSessionProvider>>,
     pub(crate) rpc_transport: AppServerRpcTransport,
     pub(crate) remote_control_handle: Option<RemoteControlHandle>,
     pub(crate) plugin_startup_tasks: crate::PluginStartupTasks,
@@ -242,6 +244,7 @@ impl MessageProcessor {
             session_source,
             auth_manager,
             installation_id,
+            code_mode_session_provider,
             rpc_transport,
             remote_control_handle,
             plugin_startup_tasks,
@@ -276,7 +279,7 @@ impl MessageProcessor {
                 thread_watch_manager.clone(),
             ));
             let _ = thread_queue_service_cell.set(Arc::clone(&thread_queue_service));
-            ThreadManager::new(
+            let manager = ThreadManager::new(
                 config.as_ref(),
                 auth_manager.clone(),
                 session_source,
@@ -316,7 +319,11 @@ impl MessageProcessor {
                     outgoing.clone(),
                     thread_state_manager.clone(),
                 )),
-            )
+            );
+            match code_mode_session_provider {
+                Some(provider) => manager.with_code_mode_session_provider(provider),
+                None => manager,
+            }
         });
         let thread_queue_service = thread_queue_service_cell
             .get()

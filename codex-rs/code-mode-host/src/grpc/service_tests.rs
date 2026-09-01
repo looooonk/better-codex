@@ -81,7 +81,7 @@ pub(super) async fn execute_events(
 
 #[tokio::test]
 async fn execute_stream_starts_immediately_and_wait_preserves_missing_cells() {
-    let host = GrpcCodeModeHost::new();
+    let host = GrpcCodeModeHost::default();
     let (session_id, mut session_events) = open_session(&host).await;
     let mut request = execute_request(
         &session_id,

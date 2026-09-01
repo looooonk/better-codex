@@ -2002,6 +2002,7 @@ dependencies = [
  "codex-backend-client",
  "codex-chatgpt",
  "codex-cloud-config",
+ "codex-code-mode",
  "codex-config",
  "codex-connectors",
  "codex-core",
@@ -2528,14 +2529,22 @@ name = "codex-code-mode"
 version = "0.1.0-alpha.12"
 dependencies = [
  "codex-code-mode-protocol",
+ "codex-http-client",
  "codex-protocol",
  "deno_core_icudata",
  "futures",
+ "http-body 1.0.1",
+ "http-body-util",
  "pretty_assertions",
+ "prost 0.14.3",
+ "reqwest 0.12.28",
  "serde_json",
  "tokio",
  "tokio-util",
+ "tonic",
+ "tower",
  "tracing",
+ "uuid",
  "v8",
 ]
 
@@ -2544,11 +2553,14 @@ name = "codex-code-mode-host"
 version = "0.1.0-alpha.12"
 dependencies = [
  "anyhow",
+ "clap",
  "codex-code-mode",
  "codex-code-mode-protocol",
  "codex-protocol",
  "codex-utils-cargo-bin",
  "futures",
+ "http-body 1.0.1",
+ "http-body-util",
  "pretty_assertions",
  "prost 0.14.3",
  "serde_json",
@@ -2557,7 +2569,9 @@ dependencies = [
  "tokio-stream",
  "tokio-util",
  "tonic",
+ "tower",
  "tracing",
+ "url",
  "uuid",
 ]
 
