@@ -8,6 +8,7 @@ mod user_instructions;
 pub use capabilities::AgentSpawnFuture;
 pub use capabilities::AgentSpawner;
 pub use capabilities::ExtensionEventSink;
+pub use capabilities::ExtensionMetrics;
 pub use capabilities::NoopExtensionEventSink;
 pub use capabilities::NoopResponseItemInjector;
 pub use capabilities::ResponseItemInjectionFuture;

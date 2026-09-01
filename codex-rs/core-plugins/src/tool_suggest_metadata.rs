@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use codex_core_skills::config_rules::SkillConfigRules;
+use codex_config::SkillConfigRules;
 use codex_plugin::AppDeclaration;
 use codex_plugin::PluginCapabilitySummary;
 use codex_plugin::PluginId;
@@ -11,6 +11,8 @@ use codex_plugin::app_connector_ids_from_declarations;
 use codex_plugin::prompt_safe_plugin_description;
 use codex_protocol::auth::AuthMode;
 use codex_protocol::protocol::Product;
+use codex_skills::SkillRootLoader;
+use codex_utils_plugins::PluginSkillRoot;
 use tokio::sync::Semaphore;
 
 use crate::app_mcp_routing::apply_app_mcp_routing_policy;
@@ -118,6 +120,7 @@ impl ToolSuggestMetadataCache {
         marketplace_name: &str,
         plugin: &ConfiguredMarketplacePlugin,
         restriction_product: Option<Product>,
+        skill_root_loader: &dyn SkillRootLoader<PluginSkillRoot>,
     ) -> Result<Arc<ToolSuggestMetadataFragment>, MarketplaceError> {
         let artifact = PluginArtifactIdentity {
             plugin_id: plugin.id.clone(),
@@ -138,7 +141,13 @@ impl ToolSuggestMetadataCache {
             }
 
             let generation = self.generation();
-            let entry = load_plugin_metadata(marketplace_name, plugin, restriction_product).await;
+            let entry = load_plugin_metadata(
+                marketplace_name,
+                plugin,
+                restriction_product,
+                skill_root_loader,
+            )
+            .await;
             if self.cache_entry_if_current(generation, artifact.clone(), entry.clone()) {
                 return entry.map_err(MarketplaceError::InvalidPlugin);
             }
@@ -186,6 +195,7 @@ async fn load_plugin_metadata(
     marketplace_name: &str,
     plugin: &ConfiguredMarketplacePlugin,
     restriction_product: Option<Product>,
+    skill_root_loader: &dyn SkillRootLoader<PluginSkillRoot>,
 ) -> ToolSuggestMetadataEntry {
     let plugin_id = PluginId::new(plugin.name.clone(), marketplace_name.to_string()).map_err(
         |err| match err {
@@ -219,6 +229,7 @@ async fn load_plugin_metadata(
         restriction_product,
         /*plugin_skill_snapshots*/ None,
         discovery_mode,
+        skill_root_loader,
     )
     .await;
     let mut mcp_server_names = load_plugin_mcp_servers(

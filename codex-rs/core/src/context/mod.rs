@@ -46,7 +46,6 @@ pub(crate) use codex_context_fragments::AdditionalContextUserFragment;
 pub use codex_context_fragments::ContextualUserFragment;
 pub(crate) use codex_context_fragments::FragmentRegistration;
 pub(crate) use codex_context_fragments::FragmentRegistrationProxy;
-pub(crate) use codex_core_skills::SkillInstructions;
 pub(crate) use collaboration_mode_instructions::CollaborationModeInstructions;
 pub(crate) use contextual_user_message::is_contextual_user_message;
 pub(crate) use contextual_user_message::is_explicit_user_message;

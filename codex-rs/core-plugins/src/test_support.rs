@@ -1,18 +1,56 @@
 use std::fs;
 use std::path::Path;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::OPENAI_API_CURATED_MARKETPLACE_NAME;
 use crate::OPENAI_CURATED_MARKETPLACE_NAME;
 use crate::PluginsConfigInput;
+use crate::PluginsManager;
 use codex_config::LoaderOverrides;
 use codex_config::NoopThreadConfigLoader;
 use codex_config::loader::load_config_layers_state;
 use codex_exec_server::LOCAL_FS;
+use codex_protocol::auth::AuthMode;
+use codex_protocol::protocol::Product;
+use codex_skills::SkillRootLoader;
+use codex_skills_extension::HostSkillsService;
 use codex_utils_absolute_path::AbsolutePathBuf;
+use codex_utils_plugins::PluginSkillRoot;
 use toml::Value;
 
 pub(crate) const TEST_CURATED_PLUGIN_SHA: &str = "0123456789abcdef0123456789abcdef01234567";
 pub(crate) const TEST_CURATED_PLUGIN_CACHE_VERSION: &str = "01234567";
+
+pub(crate) fn test_plugins_manager(codex_home: PathBuf) -> PluginsManager {
+    let skill_root_loader = test_skill_root_loader(codex_home.as_path());
+    PluginsManager::new(codex_home, skill_root_loader)
+}
+
+pub(crate) fn test_plugins_manager_with_options(
+    codex_home: PathBuf,
+    restriction_product: Option<Product>,
+    auth_mode: Option<AuthMode>,
+) -> PluginsManager {
+    let skill_root_loader = test_skill_root_loader(codex_home.as_path());
+    PluginsManager::new_with_options(
+        codex_home,
+        restriction_product,
+        auth_mode,
+        skill_root_loader,
+    )
+}
+
+pub(crate) fn test_skill_root_loader(
+    codex_home: &Path,
+) -> Arc<dyn SkillRootLoader<PluginSkillRoot>> {
+    let codex_home = AbsolutePathBuf::try_from(codex_home)
+        .expect("test CODEX_HOME should be an absolute path");
+    Arc::new(HostSkillsService::new(
+        codex_home,
+        /*bundled_skills_enabled*/ false,
+    ))
+}
 
 pub(crate) fn write_file(path: &Path, contents: &str) {
     fs::create_dir_all(path.parent().expect("file should have a parent")).unwrap();

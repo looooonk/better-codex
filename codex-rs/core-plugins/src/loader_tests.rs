@@ -1,6 +1,7 @@
 use super::*;
 use crate::manifest::load_plugin_manifest;
 use crate::test_support::write_file;
+use crate::test_support::test_skill_root_loader;
 use codex_config::ConfigLayerEntry;
 use codex_config::ConfigLayerSource;
 use codex_config::ConfigRequirements;
@@ -156,6 +157,7 @@ enabled = true
     .expect("valid config layer stack");
     let store = PluginStore::new(temp_dir.path().to_path_buf());
 
+    let skill_root_loader = test_skill_root_loader(temp_dir.path());
     let full = load_plugins_from_layer_stack(
         &stack,
         HashMap::new(),
@@ -163,6 +165,7 @@ enabled = true
         /*plugin_skill_snapshots*/ None,
         Some(Product::Codex),
         /*remote_global_catalog_active*/ false,
+        skill_root_loader.as_ref(),
     )
     .await;
     let hooks_only = load_plugins_from_layer_stack_with_scope(
@@ -247,6 +250,7 @@ async fn agent_plugin_mcp_uses_portable_parser_and_hashed_data_root() {
     let plugin_data_root = store.agent_plugin_data_root(&plugin_id);
     fs::create_dir_all(plugin_data_root.as_path()).expect("create plugin data root");
 
+    let skill_root_loader = test_skill_root_loader(temp_dir.path());
     let plugins = load_plugins_from_layer_stack(
         &stack,
         HashMap::new(),
@@ -254,6 +258,7 @@ async fn agent_plugin_mcp_uses_portable_parser_and_hashed_data_root() {
         /*plugin_skill_snapshots*/ None,
         Some(Product::Codex),
         /*remote_global_catalog_active*/ false,
+        skill_root_loader.as_ref(),
     )
     .await;
     let server = &plugins

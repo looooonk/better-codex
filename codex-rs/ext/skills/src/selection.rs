@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use codex_core_skills::injection::extract_tool_mentions;
 use codex_protocol::user_input::UserInput;
+use codex_skills::extract_tool_mentions;
 
 use crate::catalog::SkillAuthority;
 use crate::catalog::SkillCatalog;
@@ -66,17 +66,27 @@ pub(crate) fn collect_explicit_skill_mentions(
             if blocked_plain_names.contains(name) {
                 continue;
             }
-            if let Some(entry) = catalog
-                .entries
-                .iter()
-                .find(|entry| entry.enabled && entry.name == name)
-            {
+            if let Some(entry) = unique_enabled_entry_by_name(catalog, name) {
                 push_selected(entry, &mut seen, &mut selected);
             }
         }
     }
 
     selected
+}
+
+fn unique_enabled_entry_by_name<'a>(
+    catalog: &'a SkillCatalog,
+    name: &str,
+) -> Option<&'a SkillCatalogEntry> {
+    let mut matches = catalog
+        .entries
+        .iter()
+        .filter(|entry| entry.enabled && entry.name == name);
+    let selected = matches.next()?;
+    matches
+        .all(|entry| entry.authority == selected.authority && entry.id == selected.id)
+        .then_some(selected)
 }
 
 fn select_by_path(
@@ -139,3 +149,7 @@ impl From<&SkillCatalogEntry> for SkillCatalogEntryKey {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "selection_tests.rs"]
+mod tests;

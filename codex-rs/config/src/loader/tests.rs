@@ -117,6 +117,107 @@ impl ExecutorFileSystem for TestFileSystem {
 }
 
 #[tokio::test]
+async fn packaged_defaults_have_lower_precedence_than_existing_layers() {
+    let tmp = tempdir().expect("tempdir");
+    let packaged_defaults_path =
+        AbsolutePathBuf::resolve_path_against_base("packaged-defaults.toml", tmp.path());
+    let system_config_path = tmp.path().join("system.toml");
+    let user_config_path = tmp.path().join(CONFIG_TOML_FILE);
+    std::fs::write(
+        packaged_defaults_path.as_path(),
+        "model = \"packaged-model\"\nmodel_provider = \"packaged-provider\"\nmodel_context_window = 120000\n",
+    )
+    .expect("write packaged defaults");
+    std::fs::write(
+        &system_config_path,
+        "model = \"system-model\"\nmodel_provider = \"system-provider\"\n",
+    )
+    .expect("write system config");
+    std::fs::write(&user_config_path, "model = \"user-model\"\n").expect("write user config");
+    let mut overrides = LoaderOverrides::without_managed_config_for_tests();
+    overrides.packaged_defaults_path = Some(packaged_defaults_path.clone());
+    overrides.system_config_path = Some(system_config_path.clone());
+
+    let stack = load_config_layers_state(
+        &TestFileSystem,
+        tmp.path(),
+        /*cwd*/ None,
+        &[(
+            "model".to_string(),
+            TomlValue::String("session-model".to_string()),
+        )],
+        overrides,
+        &crate::NoopThreadConfigLoader,
+    )
+    .await
+    .expect("load config layers");
+
+    assert_eq!(
+        stack
+            .get_layers(
+                crate::ConfigLayerStackOrdering::LowestPrecedenceFirst,
+                /*include_disabled*/ false,
+            )
+            .into_iter()
+            .map(|layer| layer.name.clone())
+            .collect::<Vec<_>>(),
+        vec![
+            ConfigLayerSource::PackagedDefaults {
+                file: packaged_defaults_path,
+            },
+            ConfigLayerSource::System {
+                file: AbsolutePathBuf::from_absolute_path(system_config_path)
+                    .expect("absolute system config path"),
+            },
+            ConfigLayerSource::User {
+                file: AbsolutePathBuf::from_absolute_path(user_config_path)
+                    .expect("absolute user config path"),
+                profile: None,
+            },
+            ConfigLayerSource::SessionFlags,
+        ]
+    );
+    assert_eq!(
+        stack.effective_config(),
+        toml::toml! {
+            model = "session-model"
+            model_provider = "system-provider"
+            model_context_window = 120000
+        }
+        .into()
+    );
+}
+
+#[tokio::test]
+async fn missing_packaged_defaults_file_returns_an_error() {
+    let tmp = tempdir().expect("tempdir");
+    let packaged_defaults_path =
+        AbsolutePathBuf::resolve_path_against_base("packaged-defaults.toml", tmp.path());
+    let mut overrides = LoaderOverrides::without_managed_config_for_tests();
+    overrides.packaged_defaults_path = Some(packaged_defaults_path.clone());
+
+    let err = load_config_layers_state(
+        &TestFileSystem,
+        tmp.path(),
+        /*cwd*/ None,
+        &[],
+        overrides,
+        &crate::NoopThreadConfigLoader,
+    )
+    .await
+    .expect_err("an explicitly configured packaged defaults file must exist");
+
+    assert_eq!(err.kind(), io::ErrorKind::NotFound);
+    assert_eq!(
+        err.to_string(),
+        format!(
+            "packaged defaults config file {} not found",
+            packaged_defaults_path.display()
+        )
+    );
+}
+
+#[tokio::test]
 async fn ignore_login_requirements_only_strips_managed_auth_policy() {
     let tmp = tempdir().expect("tempdir");
     std::fs::write(

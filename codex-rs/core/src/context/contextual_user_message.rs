@@ -12,7 +12,6 @@ use super::LegacyApplyPatchExecCommandWarning;
 use super::LegacyModelMismatchWarning;
 use super::LegacyUnifiedExecProcessLimitWarning;
 use super::RecommendedPluginsInstructions;
-use super::SkillInstructions;
 use super::SubagentNotification;
 use super::TurnAborted;
 use super::UserInstructions;
@@ -25,8 +24,16 @@ static ENVIRONMENT_CONTEXT_REGISTRATION: FragmentRegistrationProxy<EnvironmentsS
     FragmentRegistrationProxy::new();
 static ADDITIONAL_CONTEXT_REGISTRATION: FragmentRegistrationProxy<AdditionalContextUserFragment> =
     FragmentRegistrationProxy::new();
-static SKILL_INSTRUCTIONS_REGISTRATION: FragmentRegistrationProxy<SkillInstructions> =
-    FragmentRegistrationProxy::new();
+struct SkillInstructionsRegistration;
+
+impl FragmentRegistration for SkillInstructionsRegistration {
+    fn matches_text(&self, text: &str) -> bool {
+        codex_skills_extension::is_skill_prompt_fragment(text)
+    }
+}
+
+static SKILL_INSTRUCTIONS_REGISTRATION: SkillInstructionsRegistration =
+    SkillInstructionsRegistration;
 static USER_SHELL_COMMAND_REGISTRATION: FragmentRegistrationProxy<UserShellCommand> =
     FragmentRegistrationProxy::new();
 static TURN_ABORTED_REGISTRATION: FragmentRegistrationProxy<TurnAborted> =

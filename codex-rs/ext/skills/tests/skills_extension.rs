@@ -1,20 +1,23 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
-use codex_core_skills::HostSkillsSnapshot;
-use codex_core_skills::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
-use codex_core_skills::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
-use codex_core_skills::SKILLS_INTRO_WITH_ABSOLUTE_PATHS;
-use codex_core_skills::SkillLoadOutcome;
-use codex_core_skills::SkillMetadata;
-use codex_core_skills::injection::HostSkillsCatalogInWorldState;
+use codex_skills_extension::HostSkillsCatalogInWorldState;
+use codex_skills_extension::HostSkillsSnapshot;
+use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
+use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
+use codex_skills_extension::SkillLoadOutcome;
+use codex_exec_server::EnvironmentManager;
+use codex_exec_server::FileSystemSandboxContext;
 use codex_extension_api::ConversationHistory;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionEventSink;
+use codex_extension_api::ExtensionMetrics;
 use codex_extension_api::ExtensionRegistryBuilder;
+use codex_extension_api::FunctionCallError;
 use codex_extension_api::NoopTurnItemEmitter;
 use codex_extension_api::PreviousWorldStateSection;
 use codex_extension_api::ThreadStartInput;
@@ -33,6 +36,11 @@ use codex_protocol::protocol::SkillScope;
 use codex_protocol::protocol::TruncationPolicy;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::user_input::UserInput;
+use codex_otel::THREAD_SKILLS_DESCRIPTION_TRUNCATED_CHARS_METRIC;
+use codex_otel::THREAD_SKILLS_ENABLED_TOTAL_METRIC;
+use codex_otel::THREAD_SKILLS_KEPT_TOTAL_METRIC;
+use codex_otel::THREAD_SKILLS_TRUNCATED_METRIC;
+use codex_skills::SkillMetadata;
 use codex_skills_extension::SkillProviders;
 use codex_skills_extension::SkillsExtensionConfig;
 use codex_skills_extension::catalog::SkillAuthority;
@@ -118,6 +126,7 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
             environments: &[],
             ready_selected_capability_roots: &[],
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &turn_store,
@@ -144,20 +153,19 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
         )
         .await;
 
-    let expected_catalog = format!(
-        "{SKILLS_INSTRUCTIONS_OPEN_TAG}\n## Skills\n{SKILLS_INTRO_WITH_ABSOLUTE_PATHS}\n### Available skills\n- demo: Demo skill. (file: {skill_prompt_path})\n{SKILLS_INSTRUCTIONS_CLOSE_TAG}"
-    );
-    assert_eq!(
-        expected_catalog,
-        host_catalog.into_context_fragment().render(),
-    );
-    assert_eq!(
-        Vec::<(&str, String)>::new(),
-        fragments
-            .iter()
-            .map(|fragment| (fragment.role(), fragment.render()))
-            .collect::<Vec<_>>()
-    );
+    let rendered_host_catalog = host_catalog.into_context_fragment().render();
+    assert!(rendered_host_catalog.starts_with(SKILLS_INSTRUCTIONS_OPEN_TAG));
+    assert!(rendered_host_catalog.contains("## Skills"));
+    assert!(rendered_host_catalog.contains(&format!(
+        "- demo: Demo skill. (file: {skill_prompt_path})"
+    )));
+    assert!(rendered_host_catalog.ends_with(SKILLS_INSTRUCTIONS_CLOSE_TAG));
+    assert_eq!(1, fragments.len());
+    assert_eq!("user", fragments[0].role());
+    let rendered_skill = fragments[0].render();
+    assert!(rendered_skill.contains("<name>demo</name>"));
+    assert!(rendered_skill.contains(&format!("<path>{skill_prompt_path}</path>")));
+    assert!(rendered_skill.contains("Use the demo skill."));
     assert!(turn_store.get::<HostSkillsCatalogInWorldState>().is_some());
 
     let oversized_skills = (0..64)
@@ -185,6 +193,7 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
             environments: &[],
             ready_selected_capability_roots: &[],
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &oversized_turn_store,
@@ -196,6 +205,126 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
     assert!(bounded_body.chars().count() <= 9_024);
 
     std::fs::remove_dir_all(codex_home)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn host_world_state_records_metrics_only_on_publish_and_change() -> TestResult {
+    let mut builder = ExtensionRegistryBuilder::new();
+    install(&mut builder, skills_extension_config);
+    let registry = builder.build();
+    let metrics = Arc::new(RecordingMetrics::default());
+    let session_store = ExtensionData::new("session");
+    let thread_store = ExtensionData::new("thread");
+    let config = default_config();
+    registry.thread_lifecycle_contributors()[0]
+        .on_thread_start(ThreadStartInput {
+            config: &config,
+            session_source: &SessionSource::Cli,
+            originator: "test",
+            persistent_thread_state_available: true,
+            environments: &[],
+            session_store: &session_store,
+            thread_store: &thread_store,
+        })
+        .await;
+
+    let skill = |name: &str| SkillMetadata {
+            name: name.to_string(),
+            description: format!("{name} skill."),
+            short_description: None,
+            interface: None,
+            dependencies: None,
+            policy: None,
+            path_to_skills_md: AbsolutePathBuf::try_from(
+                test_codex_home().join(format!("skills/{name}/SKILL.md")),
+            )
+            .expect("test skill path should be absolute"),
+            scope: SkillScope::User,
+            plugin_id: None,
+    };
+    let mut outcome = SkillLoadOutcome::default();
+    outcome.skills.push(skill("demo"));
+    let turn_store = ExtensionData::new("turn-1");
+    turn_store.insert(HostSkillsSnapshot::new(Arc::new(outcome.clone())));
+
+    let sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-1",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            executor_capability_discovery: None,
+            extension_metrics: Some(metrics.clone()),
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &turn_store,
+        })
+        .await;
+    let host_section = sections
+        .iter()
+        .find(|section| section.id() == "host_skills")
+        .ok_or("host section")?;
+    let published_snapshot = host_section.snapshot().clone();
+    assert!(
+        host_section
+            .render_diff(PreviousWorldStateSection::Absent)
+            .is_some()
+    );
+    assert_eq!(metrics.samples(), expected_catalog_samples(1));
+
+    let sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-1",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            executor_capability_discovery: None,
+            extension_metrics: Some(metrics.clone()),
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &turn_store,
+        })
+        .await;
+    let host_section = sections
+        .iter()
+        .find(|section| section.id() == "host_skills")
+        .ok_or("host section")?;
+    assert!(
+        host_section
+            .render_diff(PreviousWorldStateSection::Known(&published_snapshot))
+            .is_none()
+    );
+    assert_eq!(metrics.samples(), expected_catalog_samples(1));
+
+    outcome.skills.push(skill("other"));
+    turn_store.insert(HostSkillsSnapshot::new(Arc::new(outcome)));
+    let sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-1",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            executor_capability_discovery: None,
+            extension_metrics: Some(metrics.clone()),
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &turn_store,
+        })
+        .await;
+    let host_section = sections
+        .iter()
+        .find(|section| section.id() == "host_skills")
+        .ok_or("host section")?;
+    assert!(
+        host_section
+            .render_diff(PreviousWorldStateSection::Known(&published_snapshot))
+            .is_some()
+    );
+    let mut expected = expected_catalog_samples(1);
+    expected.extend(expected_catalog_samples(2));
+    assert_eq!(metrics.samples(), expected);
+
     Ok(())
 }
 
@@ -349,6 +478,7 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
             environments: std::slice::from_ref(&turn_environment),
             ready_selected_capability_roots: &selected_roots,
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &turn_store,
@@ -363,7 +493,7 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
     assert!(
         available_fragment
             .body()
-            .contains("(environment resource: skill://executor/lint-fix/SKILL.md)")
+            .contains("(executor package: executor/lint-fix)")
     );
 
     let fragments = registry.turn_input_contributors()[0]
@@ -402,6 +532,7 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
             environments: &[],
             ready_selected_capability_roots: &[],
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &unavailable_turn_store,
@@ -425,6 +556,7 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
             environments: &[turn_environment],
             ready_selected_capability_roots: &selected_roots,
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &restored_turn_store,
@@ -453,6 +585,7 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
             environments: &[],
             ready_selected_capability_roots: &selected_roots,
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &listing_disabled_turn_store,
@@ -524,8 +657,27 @@ async fn default_context_truncates_catalog_descriptions() -> TestResult {
     let fragments = registry.context_contributors()[0]
         .contribute_thread_context(&session_store, &thread_store)
         .await;
-    assert_eq!(1, fragments.len());
-    let rendered = fragments[0].render();
+    assert!(fragments.is_empty());
+    let turn_store = ExtensionData::new("turn-1");
+    let sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-1",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            executor_capability_discovery: None,
+            extension_metrics: None,
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &turn_store,
+        })
+        .await;
+    let rendered = sections
+        .iter()
+        .find(|section| section.id() == "orchestrator_skills")
+        .and_then(|section| section.render_diff(PreviousWorldStateSection::Absent))
+        .ok_or("orchestrator catalog should render")?
+        .body();
     assert!(rendered.contains(&("x".repeat(1_021) + "...")));
     assert!(!rendered.contains(&"x".repeat(1_024)));
     assert!(!rendered.contains(&description));
@@ -608,6 +760,331 @@ async fn skills_list_truncates_catalog_descriptions_in_tool_output() -> TestResu
 }
 
 #[tokio::test]
+async fn step_tools_list_and_read_exact_executor_authority() -> TestResult {
+    let hidden_path = PathUri::parse("file:///skills/root-a/explicit-only/SKILL.md")?;
+    let hidden_skill_root = hidden_path
+        .parent()
+        .ok_or("hidden skill should have a root")?
+        .inferred_native_path_string();
+    let hidden = SkillCatalogEntry::new(
+        SkillPackageId("skill://root-a/explicit-only".to_string()),
+        SkillAuthority::new(SkillSourceKind::Executor, "root-a"),
+        "explicit-only",
+        "Fix lint errors.",
+        SkillResourceId::environment(
+            "skill://root-a/explicit-only/SKILL.md",
+            "local",
+            hidden_path,
+        ),
+    )
+    .with_display_path("skill://root-a/explicit-only/SKILL.md")
+    .hidden_from_prompt();
+    let mut entries = (0..21)
+        .map(|index| {
+            test_entry(
+                SkillSourceKind::Executor,
+                "root-a",
+                &format!("skill://root-a/visible-{index}"),
+                &format!("skill://root-a/visible-{index}/SKILL.md"),
+            )
+            .with_alias_root("skill://root-a")
+        })
+        .collect::<Vec<_>>();
+    entries.push(hidden);
+    let providers = SkillProviders::new().with_executor_provider(Arc::new(StaticSkillProvider {
+        catalog: SkillCatalog {
+            entries,
+            warnings: Vec::new(),
+        },
+        read_requests: Arc::new(Mutex::new(Vec::new())),
+        list_calls: None,
+        fail_first_list: false,
+        read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
+    }));
+    let mut builder = ExtensionRegistryBuilder::new();
+    install_with_providers(&mut builder, providers, skills_extension_config);
+    let registry = builder.build();
+    let session_store = ExtensionData::new("session");
+    let thread_store = ExtensionData::new("thread");
+    let config = default_config();
+    registry.thread_lifecycle_contributors()[0]
+        .on_thread_start(ThreadStartInput {
+            config: &config,
+            session_source: &SessionSource::Cli,
+            originator: "test",
+            persistent_thread_state_available: true,
+            environments: &[],
+            session_store: &session_store,
+            thread_store: &thread_store,
+        })
+        .await;
+
+    let selected_root = SelectedCapabilityRoot {
+        id: "root-a".to_string(),
+        location: CapabilityRootLocation::Environment {
+            environment_id: "local".to_string(),
+            path: PathUri::parse("file:///skills/root-a")?,
+        },
+    };
+    let environment_manager = EnvironmentManager::default_for_tests();
+    let local = environment_manager
+        .get_environment("local")
+        .ok_or("local environment should exist")?;
+    let resolved = environment_manager
+        .resolve_selected_capability_roots(
+            std::slice::from_ref(&selected_root),
+            &HashMap::from([("local".to_string(), Some(local))]),
+        )
+        .await;
+    let step_store = ExtensionData::new("turn-1");
+    step_store.insert(resolved);
+    let tools = registry.tool_contributors()[0].tools_for_step(
+        &session_store,
+        &thread_store,
+        &step_store,
+    );
+    let list_tool = tools
+        .iter()
+        .find(|tool| tool.tool_name().name == "list")
+        .ok_or("skills.list tool should be registered")?;
+    let list_payload = ToolPayload::Function {
+        arguments: serde_json::json!({"authority": {"kind": "executor"}}).to_string(),
+    };
+    let list_output = list_tool
+        .handle(ToolCall {
+            turn_id: "turn-1".to_string(),
+            call_id: "call-list".to_string(),
+            tool_name: list_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload: list_payload.clone(),
+        })
+        .await?;
+    let list_response = list_output
+        .post_tool_use_response("call-list", &list_payload)
+        .ok_or("skills.list should expose structured output")?;
+    assert_eq!(list_response["skills"].as_array().map(Vec::len), Some(20));
+    assert_eq!(
+        list_response["skills"][0]["authority"],
+        serde_json::json!({"kind": "executor", "id": "root-a"})
+    );
+    let next_cursor = list_response["next_cursor"]
+        .as_str()
+        .ok_or("skills.list should paginate")?;
+    let next_payload = ToolPayload::Function {
+        arguments: serde_json::json!({
+            "authority": {"kind": "executor"},
+            "cursor": next_cursor
+        })
+        .to_string(),
+    };
+    let next_output = list_tool
+        .handle(ToolCall {
+            turn_id: "turn-1".to_string(),
+            call_id: "call-list-next".to_string(),
+            tool_name: list_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload: next_payload.clone(),
+        })
+        .await?;
+    let next_response = next_output
+        .post_tool_use_response("call-list-next", &next_payload)
+        .ok_or("skills.list next page should expose structured output")?;
+    assert_eq!(next_response["skills"].as_array().map(Vec::len), Some(1));
+    assert_eq!(next_response["next_cursor"], serde_json::Value::Null);
+
+    let read_tool = tools
+        .iter()
+        .find(|tool| tool.tool_name().name == "read")
+        .ok_or("skills.read tool should be registered")?;
+    let read_payload = ToolPayload::Function {
+        arguments: serde_json::json!({
+            "package": "skill://root-a/explicit-only"
+        })
+        .to_string(),
+    };
+    let read_output = read_tool
+        .handle(ToolCall {
+            turn_id: "turn-1".to_string(),
+            call_id: "call-read".to_string(),
+            tool_name: read_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload: read_payload.clone(),
+        })
+        .await?;
+    let read_response = read_output
+        .post_tool_use_response("call-read", &read_payload)
+        .ok_or("skills.read should expose structured output")?;
+    assert_eq!(
+        read_response,
+        serde_json::json!({
+            "resource": "skill://root-a/explicit-only/SKILL.md",
+            "contents": DEFAULT_PROVIDER_SKILL_CONTENTS,
+            "skill_root": hidden_skill_root,
+            "next_cursor": null
+        })
+    );
+
+    let legacy_payload = ToolPayload::Function {
+        arguments: serde_json::json!({
+            "authority": {"kind": "executor", "id": "root-a"},
+            "package": "skill://root-a/explicit-only",
+            "resource": "skill://root-a/explicit-only/SKILL.md"
+        })
+        .to_string(),
+    };
+    read_tool
+        .handle(ToolCall {
+            turn_id: "turn-1".to_string(),
+            call_id: "call-read-legacy".to_string(),
+            tool_name: read_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload: legacy_payload,
+        })
+        .await?;
+
+    let alias_payload = ToolPayload::Function {
+        arguments: serde_json::json!({"package": "e0/visible-0"}).to_string(),
+    };
+    let alias_output = read_tool
+        .handle(ToolCall {
+            turn_id: "turn-1".to_string(),
+            call_id: "call-read-alias".to_string(),
+            tool_name: read_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload: alias_payload.clone(),
+        })
+        .await?;
+    let alias_response = alias_output
+        .post_tool_use_response("call-read-alias", &alias_payload)
+        .ok_or("skills.read alias should expose structured output")?;
+    assert_eq!(
+        alias_response["resource"],
+        "skill://root-a/visible-0/SKILL.md"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn skills_read_rejects_ambiguous_cross_provider_packages() -> TestResult {
+    let package = "skill://shared/demo";
+    let entry_for = |source, authority: &str| {
+        test_entry(
+            source,
+            authority,
+            package,
+            "skill://shared/demo/SKILL.md",
+        )
+    };
+    let provider = |entry| {
+        Arc::new(StaticSkillProvider {
+            catalog: SkillCatalog {
+                entries: vec![entry],
+                warnings: Vec::new(),
+            },
+            read_requests: Arc::new(Mutex::new(Vec::new())),
+            list_calls: None,
+            fail_first_list: false,
+            read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
+        })
+    };
+    let providers = SkillProviders::new()
+        .with_executor_provider(provider(entry_for(SkillSourceKind::Executor, "root-a")))
+        .with_orchestrator_provider(provider(entry_for(
+            SkillSourceKind::Orchestrator,
+            "codex_apps",
+        )));
+    let mut builder = ExtensionRegistryBuilder::new();
+    install_with_providers(&mut builder, providers, skills_extension_config);
+    let registry = builder.build();
+    let session_store = ExtensionData::new("session");
+    let thread_store = ExtensionData::new("thread");
+    let config = default_config();
+    registry.thread_lifecycle_contributors()[0]
+        .on_thread_start(ThreadStartInput {
+            config: &config,
+            session_source: &SessionSource::Cli,
+            originator: "test",
+            persistent_thread_state_available: true,
+            environments: &[],
+            session_store: &session_store,
+            thread_store: &thread_store,
+        })
+        .await;
+
+    let selected_root = SelectedCapabilityRoot {
+        id: "root-a".to_string(),
+        location: CapabilityRootLocation::Environment {
+            environment_id: "local".to_string(),
+            path: PathUri::parse("file:///skills/root-a")?,
+        },
+    };
+    let environment_manager = EnvironmentManager::default_for_tests();
+    let local = environment_manager
+        .get_environment("local")
+        .ok_or("local environment should exist")?;
+    let resolved = environment_manager
+        .resolve_selected_capability_roots(
+            std::slice::from_ref(&selected_root),
+            &HashMap::from([("local".to_string(), Some(local))]),
+        )
+        .await;
+    let step_store = ExtensionData::new("turn-ambiguous");
+    step_store.insert(resolved);
+    let read_tool = registry.tool_contributors()[0]
+        .tools_for_step(&session_store, &thread_store, &step_store)
+        .into_iter()
+        .find(|tool| tool.tool_name().name == "read")
+        .ok_or("skills.read tool should be registered")?;
+    let payload = ToolPayload::Function {
+        arguments: serde_json::json!({"package": package}).to_string(),
+    };
+
+    let result = read_tool
+        .handle(ToolCall {
+            turn_id: "turn-ambiguous".to_string(),
+            call_id: "call-read-ambiguous".to_string(),
+            tool_name: read_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload,
+        })
+        .await;
+
+    assert_eq!(
+        Err(FunctionCallError::RespondToModel(
+            "skill package is ambiguous; use the complete package locator".to_string(),
+        )),
+        result.map(|_| ())
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn orchestrator_catalog_snapshot_caches_failure() -> TestResult {
     let list_calls = Arc::new(AtomicUsize::new(0));
     let providers =
@@ -651,6 +1128,20 @@ async fn orchestrator_catalog_snapshot_caches_failure() -> TestResult {
         .contribute_thread_context(&session_store, &thread_store)
         .await;
     assert!(initial_fragments.is_empty());
+    let turn_store = ExtensionData::new("turn-0");
+    registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-0",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            executor_capability_discovery: None,
+            extension_metrics: None,
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &turn_store,
+        })
+        .await;
     let EventMsg::Warning(warning) = event_rx.try_recv()?.msg else {
         panic!("expected warning event");
     };
@@ -687,21 +1178,43 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
     let read_requests = Arc::new(Mutex::new(Vec::new()));
     let root_a_locator = "skill://root-a/shared/lint-fix/SKILL.md";
     let root_b_locator = "skill://root-b/shared/lint-fix/SKILL.md";
+    let mut entries = [("root-a", root_a_locator), ("root-b", root_b_locator)]
+        .into_iter()
+        .map(|(root_id, locator)| {
+            let entry = SkillCatalogEntry::new(
+                SkillPackageId(locator.to_string()),
+                SkillAuthority::new(SkillSourceKind::Executor, root_id),
+                "lint-fix",
+                "Fix lint errors.",
+                SkillResourceId::new(locator),
+            )
+            .with_display_path(locator);
+            if root_id == "root-b" {
+                entry.hidden_from_prompt()
+            } else {
+                entry
+            }
+        })
+        .collect::<Vec<_>>();
+    let restricted_locator = "skill://root-c/restricted/SKILL.md";
+    entries.push(
+        SkillCatalogEntry::new(
+            SkillPackageId("skill://root-c/restricted".to_string()),
+            SkillAuthority::new(SkillSourceKind::Executor, "root-c"),
+            "restricted",
+            "Read a restricted skill.",
+            SkillResourceId::environment(
+                restricted_locator,
+                "env-1",
+                PathUri::parse("file:///restricted/SKILL.md")?,
+            ),
+        )
+        .with_display_path(restricted_locator)
+        .hidden_from_prompt(),
+    );
     let executor_provider = Arc::new(StaticSkillProvider {
         catalog: SkillCatalog {
-            entries: [("root-a", root_a_locator), ("root-b", root_b_locator)]
-                .into_iter()
-                .map(|(root_id, locator)| {
-                    SkillCatalogEntry::new(
-                        SkillPackageId(locator.to_string()),
-                        SkillAuthority::new(SkillSourceKind::Executor, root_id),
-                        "lint-fix",
-                        "Fix lint errors.",
-                        SkillResourceId::new(locator),
-                    )
-                    .with_display_path(locator)
-                })
-                .collect(),
+            entries,
             warnings: Vec::new(),
         },
         read_requests: Arc::clone(&read_requests),
@@ -751,6 +1264,7 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
             }],
             ready_selected_capability_roots: &selected_roots,
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &turn_store,
@@ -774,6 +1288,9 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
 
     assert_eq!(1, fragments.len());
     assert!(fragments[0].render().contains(root_b_locator));
+    assert!(fragments[0].render().contains(&format!(
+        "<resource_access>{{\"authority\":{{\"kind\":\"executor\",\"id\":\"root-b\"}},\"package\":\"{root_b_locator}\",\"main_resource\":\"{root_b_locator}\"}}</resource_access>"
+    )));
     assert_eq!(
         vec![(
             SkillAuthority::new(SkillSourceKind::Executor, "root-b"),
@@ -781,6 +1298,31 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
             SkillResourceId::new(root_b_locator),
         )],
         read_request_keys(&read_requests)
+    );
+
+    turn_store.insert(HashMap::<String, FileSystemSandboxContext>::new());
+    let restricted_fragments = registry.turn_input_contributors()[0]
+        .contribute(
+            TurnInputContext {
+                turn_id: "turn-1".to_string(),
+                user_input: vec![UserInput::Mention {
+                    name: "restricted".to_string(),
+                    path: restricted_locator.to_string(),
+                }],
+                environments: Vec::new(),
+            },
+            &session_store,
+            &thread_store,
+            &turn_store,
+        )
+        .await;
+    assert!(restricted_fragments.is_empty());
+    assert_eq!(
+        1,
+        read_requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
     );
 
     Ok(())
@@ -880,6 +1422,57 @@ impl ExtensionEventSink for ChannelEventSink {
     fn emit(&self, event: Event) {
         let _ = self.0.send(event);
     }
+}
+
+#[derive(Default)]
+struct RecordingMetrics {
+    samples: Mutex<Vec<(String, i64, Vec<(String, String)>)>>,
+}
+
+impl RecordingMetrics {
+    fn samples(&self) -> Vec<(String, i64, Vec<(String, String)>)> {
+        self.samples
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl ExtensionMetrics for RecordingMetrics {
+    fn histogram(&self, name: &str, value: i64, tags: &[(&str, &str)]) {
+        self.samples
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push((
+                name.to_string(),
+                value,
+                tags.iter()
+                    .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+                    .collect(),
+            ));
+    }
+}
+
+fn expected_catalog_samples(count: i64) -> Vec<(String, i64, Vec<(String, String)>)> {
+    let tags = vec![("catalog_surface".to_string(), "host_world_state".to_string())];
+    vec![
+        (
+            THREAD_SKILLS_ENABLED_TOTAL_METRIC.to_string(),
+            count,
+            tags.clone(),
+        ),
+        (
+            THREAD_SKILLS_KEPT_TOTAL_METRIC.to_string(),
+            count,
+            tags.clone(),
+        ),
+        (THREAD_SKILLS_TRUNCATED_METRIC.to_string(), 0, tags.clone()),
+        (
+            THREAD_SKILLS_DESCRIPTION_TRUNCATED_CHARS_METRIC.to_string(),
+            0,
+            tags,
+        ),
+    ]
 }
 
 impl SkillProvider for StaticSkillProvider {
