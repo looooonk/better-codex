@@ -280,7 +280,6 @@ async fn create_paginated_thread(store: &LocalThreadStore, thread_id: ThreadId) 
             selected_capability_roots: Vec::new(),
             multi_agent_version: None,
             history_mode: ThreadHistoryMode::Paginated,
-            history_base: None,
             subagent_history_start_ordinal: None,
             initial_window_id: "window-1".to_string(),
             metadata: ThreadPersistenceMetadata {
