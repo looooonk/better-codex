@@ -31,7 +31,10 @@ const TEST_CAPABILITY: &str =
 
 #[test]
 fn listen_url_accepts_stdio_and_loopback_grpc() {
-    assert_eq!(parse_listen_transport("stdio").unwrap(), ListenTransport::Stdio);
+    assert_eq!(
+        parse_listen_transport(super::DEFAULT_LISTEN_URL).unwrap(),
+        ListenTransport::Stdio
+    );
     assert_eq!(
         parse_listen_transport("grpc://127.0.0.1:0").unwrap(),
         ListenTransport::Grpc("127.0.0.1:0".parse().unwrap())

@@ -51,6 +51,8 @@ const CONNECTION_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(/*secs*/ 30)
 const CONNECTION_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 10);
 const CONNECTION_FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
+pub const DEFAULT_LISTEN_URL: &str = "stdio";
+
 const MAX_HTTP2_CONNECTION_WINDOW_BYTES: usize =
     MAX_ACCEPTED_CONNECTIONS * HTTP2_CONNECTION_WINDOW_BYTES as usize;
 const MAX_HTTP2_STREAM_WINDOW_BYTES: usize = MAX_ACCEPTED_CONNECTIONS
