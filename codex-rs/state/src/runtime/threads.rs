@@ -1117,6 +1117,10 @@ WHERE id = ?
                 .bind(thread_id_string)
                 .execute(&mut *state_tx)
                 .await?;
+            sqlx::query("DELETE FROM thread_queue_controls WHERE thread_id = ?")
+                .bind(thread_id_string)
+                .execute(&mut *state_tx)
+                .await?;
         }
 
         let now = Utc::now().timestamp();

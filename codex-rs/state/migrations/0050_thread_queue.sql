@@ -9,6 +9,9 @@ CREATE TABLE thread_queue_items (
     queue_order INTEGER NOT NULL,
     state TEXT NOT NULL CHECK (state IN ('pending', 'starting', 'inflight', 'terminal')),
     turn_id TEXT,
+    admission_rejection TEXT CHECK (
+        admission_rejection IS NULL OR admission_rejection = 'hook'
+    ),
     terminal_status TEXT CHECK (
         terminal_status IS NULL OR terminal_status IN ('completed', 'failed', 'interrupted')
     ),
@@ -19,6 +22,12 @@ CREATE TABLE thread_queue_items (
         OR (state IN ('starting', 'inflight') AND turn_id IS NOT NULL AND terminal_status IS NULL)
         OR (state = 'terminal' AND turn_id IS NOT NULL AND terminal_status IS NOT NULL)
     )
+);
+
+CREATE TABLE thread_queue_controls (
+    thread_id TEXT PRIMARY KEY NOT NULL,
+    paused_reason TEXT NOT NULL CHECK (paused_reason IN ('interrupted', 'budget_limited')),
+    updated_at_ms INTEGER NOT NULL
 );
 
 CREATE UNIQUE INDEX thread_queue_pending_order_idx

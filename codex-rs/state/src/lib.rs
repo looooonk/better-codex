@@ -23,8 +23,11 @@ pub use model::LogQuery;
 pub use model::LogRow;
 pub use model::Phase2JobClaimOutcome;
 pub use model::QueuedSubmissionRecord;
+pub use model::QueuedSubmissionAdmissionRejection;
 pub use model::QueuedSubmissionState;
 pub use model::QueuedSubmissionTerminalStatus;
+pub use model::QueueTerminalDisposition;
+pub use model::ThreadQueuePauseReason;
 /// Preferred entrypoint: owns configuration and metrics.
 pub use runtime::StateRuntime;
 

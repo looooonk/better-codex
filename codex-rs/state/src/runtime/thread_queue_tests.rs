@@ -145,6 +145,7 @@ async fn queue_claims_are_idempotent_and_cas_guarded() -> anyhow::Result<()> {
                 thread_id,
                 "turn-1",
                 QueuedSubmissionTerminalStatus::Completed,
+                QueueTerminalDisposition::Continue,
             )
             .await?
     );
@@ -355,6 +356,7 @@ async fn active_items_remain_within_queue_limits_and_terminal_payloads_are_scrub
             thread_id,
             "turn-1",
             QueuedSubmissionTerminalStatus::Completed,
+            QueueTerminalDisposition::Continue,
         )
         .await?);
     assert_eq!(
@@ -362,13 +364,72 @@ async fn active_items_remain_within_queue_limits_and_terminal_payloads_are_scrub
             .queued_submission(thread_id, &item.id)
             .await?
             .expect("terminal tombstone should remain")
-            .payload_json,
+            .payload,
         "[]"
     );
     assert!(runtime
         .enqueue_queued_submission(thread_id, "x", "client-2")
         .await
         .is_ok());
+    Ok(())
+}
+
+#[tokio::test]
+async fn hook_rejection_and_pause_state_survive_reopen() -> anyhow::Result<()> {
+    let codex_home = unique_temp_dir();
+    let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
+    let thread_id = ThreadId::new();
+    let item = runtime
+        .enqueue_queued_submission(thread_id, "queued", "client-1")
+        .await?;
+    assert!(matches!(
+        runtime
+            .claim_queued_submission(thread_id, Some(&item.id), "turn-1")
+            .await?,
+        QueueClaimResult::Claimed(_)
+    ));
+    assert!(runtime
+        .mark_queued_submission_admission_rejected(
+            thread_id,
+            "turn-1",
+            QueuedSubmissionAdmissionRejection::Hook,
+        )
+        .await?);
+    assert!(runtime
+        .finish_queued_submission(
+            thread_id,
+            "turn-1",
+            QueuedSubmissionTerminalStatus::Failed,
+            QueueTerminalDisposition::Pause(ThreadQueuePauseReason::Interrupted),
+        )
+        .await?);
+
+    runtime.close().await;
+    let reopened = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
+    let stored = reopened
+        .queued_submission(thread_id, &item.id)
+        .await?
+        .expect("terminal tombstone should remain");
+    assert_eq!(
+        stored.admission_rejection,
+        Some(QueuedSubmissionAdmissionRejection::Hook)
+    );
+    assert_eq!(
+        reopened.thread_queue_pause_reason(thread_id).await?,
+        Some(ThreadQueuePauseReason::Interrupted)
+    );
+    reopened.close().await;
+
+    let reopened_again = StateRuntime::init(codex_home, "test-provider".to_string()).await?;
+    assert_eq!(
+        reopened_again.thread_queue_pause_reason(thread_id).await?,
+        Some(ThreadQueuePauseReason::Interrupted)
+    );
+    assert!(reopened_again.resume_thread_queue(thread_id).await?);
+    assert_eq!(
+        reopened_again.thread_queue_pause_reason(thread_id).await?,
+        None
+    );
     Ok(())
 }
 

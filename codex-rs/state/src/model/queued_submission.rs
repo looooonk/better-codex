@@ -39,6 +39,55 @@ pub enum QueuedSubmissionTerminalStatus {
     Interrupted,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum QueuedSubmissionAdmissionRejection {
+    Hook,
+}
+
+impl QueuedSubmissionAdmissionRejection {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Hook => "hook",
+        }
+    }
+
+    fn parse(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "hook" => Ok(Self::Hook),
+            _ => anyhow::bail!("unknown queued submission admission rejection `{value}`"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ThreadQueuePauseReason {
+    Interrupted,
+    BudgetLimited,
+}
+
+impl ThreadQueuePauseReason {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::Interrupted => "interrupted",
+            Self::BudgetLimited => "budget_limited",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "interrupted" => Ok(Self::Interrupted),
+            "budget_limited" => Ok(Self::BudgetLimited),
+            _ => anyhow::bail!("unknown thread queue pause reason `{value}`"),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum QueueTerminalDisposition {
+    Continue,
+    Pause(ThreadQueuePauseReason),
+}
+
 impl QueuedSubmissionTerminalStatus {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
@@ -67,6 +116,7 @@ pub struct QueuedSubmissionRecord {
     pub client_user_message_id: String,
     pub state: QueuedSubmissionState,
     pub turn_id: Option<String>,
+    pub admission_rejection: Option<QueuedSubmissionAdmissionRejection>,
     pub terminal_status: Option<QueuedSubmissionTerminalStatus>,
 }
 
@@ -78,6 +128,11 @@ impl QueuedSubmissionRecord {
             .as_deref()
             .map(QueuedSubmissionTerminalStatus::parse)
             .transpose()?;
+        let admission_rejection = row
+            .try_get::<Option<String>, _>("admission_rejection")?
+            .as_deref()
+            .map(QueuedSubmissionAdmissionRejection::parse)
+            .transpose()?;
         Ok(Self {
             id: row.try_get("id")?,
             thread_id: ThreadId::try_from(row.try_get::<String, _>("thread_id")?)
@@ -87,6 +142,7 @@ impl QueuedSubmissionRecord {
             client_user_message_id: row.try_get("client_user_message_id")?,
             state,
             turn_id: row.try_get("turn_id")?,
+            admission_rejection,
             terminal_status,
         })
     }

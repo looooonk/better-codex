@@ -1,7 +1,12 @@
 use super::*;
 use crate::QueuedSubmissionRecord;
+use crate::QueuedSubmissionAdmissionRejection;
 use crate::QueuedSubmissionState;
 use crate::QueuedSubmissionTerminalStatus;
+use crate::QueueTerminalDisposition;
+use crate::ThreadQueuePauseReason;
+use sha2::Digest;
+use sha2::Sha256;
 use std::fmt;
 use uuid::Uuid;
 
@@ -10,7 +15,7 @@ pub const MAX_QUEUED_INPUT_BYTES: usize = 1024 * 1024;
 pub const MAX_QUEUE_IDENTIFIER_BYTES: usize = 256;
 const TERMINAL_TOMBSTONES_PER_THREAD: i64 = 100;
 const QUEUED_SUBMISSION_COLUMNS: &str =
-    "id, thread_id, payload_json, payload_digest, client_user_message_id, state, turn_id, terminal_status";
+    "id, thread_id, payload_json, payload_digest, client_user_message_id, state, turn_id, admission_rejection, terminal_status";
 
 #[derive(Debug)]
 pub enum ThreadQueueError {
@@ -111,14 +116,14 @@ impl StateRuntime {
             r#"
 INSERT INTO thread_queue_items (
     id, thread_id, payload_json, payload_digest, client_user_message_id, queue_order,
-    state, turn_id, terminal_status, created_at_ms, updated_at_ms
+    state, turn_id, admission_rejection, terminal_status, created_at_ms, updated_at_ms
 )
 SELECT ?, ?, ?, ?, ?,
        COALESCE((
            SELECT MAX(queue_order) FROM thread_queue_items
            WHERE thread_id = ? AND state != 'terminal'
        ), -1) + 1,
-       'pending', NULL, NULL, ?, ?
+       'pending', NULL, NULL, NULL, ?, ?
 WHERE (SELECT COUNT(*) FROM thread_queue_items WHERE thread_id = ? AND state != 'terminal') < ?
   AND COALESCE((
       SELECT SUM(length(CAST(payload_json AS BLOB)))
@@ -493,6 +498,7 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
             r#"
 UPDATE thread_queue_items
 SET state = 'pending', turn_id = NULL,
+    admission_rejection = NULL,
     updated_at_ms = ?
 WHERE thread_id = ? AND id = ? AND turn_id = ? AND state = 'starting'
             "#,
@@ -527,12 +533,83 @@ WHERE thread_id = ? AND turn_id = ? AND state = 'starting'
             > 0)
     }
 
+    pub async fn mark_queued_submission_admission_rejected(
+        &self,
+        thread_id: ThreadId,
+        turn_id: &str,
+        rejection: QueuedSubmissionAdmissionRejection,
+    ) -> Result<bool, ThreadQueueError> {
+        Ok(sqlx::query(
+            r#"
+UPDATE thread_queue_items SET admission_rejection = ?, updated_at_ms = ?
+WHERE thread_id = ? AND turn_id = ? AND state IN ('starting', 'inflight')
+            "#,
+        )
+        .bind(rejection.as_str())
+        .bind(datetime_to_epoch_millis(Utc::now()))
+        .bind(thread_id.to_string())
+        .bind(turn_id)
+        .execute(self.pool.as_ref())
+        .await?
+        .rows_affected()
+            > 0)
+    }
+
+    pub async fn queued_submission_for_turn(
+        &self,
+        thread_id: ThreadId,
+        turn_id: &str,
+    ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
+        let row = sqlx::query(&format!(
+            "SELECT {QUEUED_SUBMISSION_COLUMNS} FROM thread_queue_items WHERE thread_id = ? AND turn_id = ?"
+        ))
+        .bind(thread_id.to_string())
+        .bind(turn_id)
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        row.as_ref()
+            .map(QueuedSubmissionRecord::try_from_row)
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    pub async fn thread_queue_pause_reason(
+        &self,
+        thread_id: ThreadId,
+    ) -> Result<Option<ThreadQueuePauseReason>, ThreadQueueError> {
+        let value = sqlx::query_scalar::<_, String>(
+            "SELECT paused_reason FROM thread_queue_controls WHERE thread_id = ?",
+        )
+        .bind(thread_id.to_string())
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        value
+            .as_deref()
+            .map(ThreadQueuePauseReason::parse)
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    pub async fn resume_thread_queue(
+        &self,
+        thread_id: ThreadId,
+    ) -> Result<bool, ThreadQueueError> {
+        Ok(sqlx::query("DELETE FROM thread_queue_controls WHERE thread_id = ?")
+            .bind(thread_id.to_string())
+            .execute(self.pool.as_ref())
+            .await?
+            .rows_affected()
+            > 0)
+    }
+
     pub async fn finish_queued_submission(
         &self,
         thread_id: ThreadId,
         turn_id: &str,
         status: QueuedSubmissionTerminalStatus,
+        disposition: QueueTerminalDisposition,
     ) -> Result<bool, ThreadQueueError> {
+        let mut transaction = self.pool.begin().await?;
         let changed = sqlx::query(
             r#"
 UPDATE thread_queue_items
@@ -544,11 +621,27 @@ WHERE thread_id = ? AND turn_id = ? AND state IN ('starting', 'inflight')
         .bind(datetime_to_epoch_millis(Utc::now()))
         .bind(thread_id.to_string())
         .bind(turn_id)
-        .execute(self.pool.as_ref())
+        .execute(transaction.as_mut())
         .await?
         .rows_affected()
             > 0;
         if changed {
+            if let QueueTerminalDisposition::Pause(reason) = disposition {
+                sqlx::query(
+                    r#"
+INSERT INTO thread_queue_controls (thread_id, paused_reason, updated_at_ms)
+VALUES (?, ?, ?)
+ON CONFLICT(thread_id) DO UPDATE SET
+    paused_reason = excluded.paused_reason,
+    updated_at_ms = excluded.updated_at_ms
+                    "#,
+                )
+                .bind(thread_id.to_string())
+                .bind(reason.as_str())
+                .bind(datetime_to_epoch_millis(Utc::now()))
+                .execute(transaction.as_mut())
+                .await?;
+            }
             sqlx::query(
                 r#"
 DELETE FROM thread_queue_items
@@ -562,9 +655,10 @@ WHERE rowid IN (
             )
             .bind(thread_id.to_string())
             .bind(TERMINAL_TOMBSTONES_PER_THREAD)
-            .execute(self.pool.as_ref())
+            .execute(transaction.as_mut())
             .await?;
         }
+        transaction.commit().await?;
         Ok(changed)
     }
 }
@@ -578,15 +672,7 @@ fn validate_queue_identifier(identifier: &str) -> Result<(), ThreadQueueError> {
 }
 
 fn queue_payload_digest(payload: &str) -> String {
-    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
-    const FNV_PRIME: u64 = 0x100000001b3;
-    let digest = payload
-        .as_bytes()
-        .iter()
-        .fold(FNV_OFFSET, |digest, byte| {
-            (digest ^ u64::from(*byte)).wrapping_mul(FNV_PRIME)
-        });
-    format!("{digest:016x}")
+    format!("{:x}", Sha256::digest(payload.as_bytes()))
 }
 
 #[cfg(test)]
