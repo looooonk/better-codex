@@ -42,10 +42,12 @@ use self::peer::HostPeer;
 
 pub use self::grpc::GrpcCodeModeHost;
 pub use self::grpc::loopback_grpc_service;
+pub use self::transport::run_transport;
 
 mod delegate;
 mod grpc;
 mod peer;
+mod transport;
 
 const MAX_IN_FLIGHT_REQUESTS: usize = 256;
 const MAX_ACTIVE_CELLS: usize = 128;
