@@ -82,13 +82,35 @@ pub(crate) fn compressed_rollout_path(path: &Path) -> PathBuf {
 /// Materializes a compressed rollout back to plain `.jsonl` for async append paths.
 pub(crate) async fn materialize_rollout_for_append(path: &Path) -> io::Result<PathBuf> {
     let path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || materialize_rollout_for_append_blocking(path.as_path()))
-        .await
-        .map_err(io::Error::other)?
+    tokio::task::spawn_blocking(move || {
+        materialize_rollout_blocking(path.as_path(), MaterializeMode::Append)
+    })
+    .await
+    .map_err(io::Error::other)?
 }
 
 /// Materializes a compressed rollout back to plain `.jsonl` for blocking append paths.
 pub(crate) fn materialize_rollout_for_append_blocking(path: &Path) -> io::Result<PathBuf> {
+    materialize_rollout_blocking(path, MaterializeMode::Append)
+}
+
+/// Materializes a plain reference while preserving the selected compressed representation.
+pub(crate) async fn materialize_rollout_for_reference(path: &Path) -> io::Result<PathBuf> {
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        materialize_rollout_blocking(path.as_path(), MaterializeMode::Reference)
+    })
+    .await
+    .map_err(io::Error::other)?
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MaterializeMode {
+    Append,
+    Reference,
+}
+
+fn materialize_rollout_blocking(path: &Path, mode: MaterializeMode) -> io::Result<PathBuf> {
     let plain_path = plain_rollout_path(path);
     if plain_path.exists() {
         metrics::materialize("plain_exists");
@@ -120,10 +142,12 @@ pub(crate) fn materialize_rollout_for_append_blocking(path: &Path) -> io::Result
             Err(_) => persist_temp_file_noclobber(temp_path.as_path(), plain_path.as_path())?,
         }
         let _ = std::fs::remove_file(temp_path.as_path());
-        match std::fs::remove_file(compressed_path.as_path()) {
-            Ok(()) => {}
-            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
-            Err(err) => return Err(err),
+        if mode == MaterializeMode::Append {
+            match std::fs::remove_file(compressed_path.as_path()) {
+                Ok(()) => {}
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err),
+            }
         }
         Ok(())
     })();

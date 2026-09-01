@@ -96,6 +96,54 @@ async fn revert_keeps_thread_identity_and_hides_suffix_across_compressed_lineage
 }
 
 #[tokio::test]
+async fn failed_revert_keeps_compressed_selection_readable() {
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let state_db = codex_state::StateRuntime::init(
+        config.sqlite_home.clone(),
+        config.default_model_provider_id.clone(),
+    )
+    .await
+    .expect("initialize state database");
+    let store = LocalThreadStore::new(config, Some(state_db.clone()));
+    let thread_id = ThreadId::new();
+    create_paginated_thread(&store, thread_id).await;
+    store
+        .append_items(AppendThreadItemsParams {
+            thread_id,
+            items: vec![turn_started("turn-1"), turn_completed("turn-1")],
+        })
+        .await
+        .expect("append turn");
+    let original_path = store
+        .live_rollout_path(thread_id)
+        .await
+        .expect("source rollout path");
+    store
+        .shutdown_thread(thread_id)
+        .await
+        .expect("close source writer");
+    reconcile_rollout(&state_db, original_path.as_path()).await;
+    let original_contents = std::fs::read(original_path.as_path()).expect("read rollout");
+    compress_rollout(original_path.as_path());
+    let compressed_path = original_path.with_extension("jsonl.zst");
+
+    let err = store
+        .revert_thread(RevertThreadParams {
+            thread_id,
+            before_turn_id: "missing-turn".to_string(),
+        })
+        .await
+        .expect_err("missing turn should fail");
+
+    assert!(err.to_string().contains("turn not found"), "{err}");
+    assert_eq!(selected_path(&state_db, thread_id).await, original_path);
+    assert_eq!(std::fs::read(&original_path).expect("read plain copy"), original_contents);
+    assert!(compressed_path.exists());
+    assert_eq!(turn_ids(&store, thread_id).await, vec!["turn-1"]);
+}
+
+#[tokio::test]
 async fn stale_revert_publication_removes_replacement_without_mutating_selection() {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());

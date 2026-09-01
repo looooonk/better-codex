@@ -95,8 +95,7 @@ pub(super) async fn revert(
     let rollout_id = RolloutId::new();
     let recorder = create_replacement_recorder(store, source_meta, rollout_id, history_base).await?;
     let replacement_path = recorder.rollout_path().to_path_buf();
-    recorder.persist().await.map_err(thread_store_io_error)?;
-    recorder.shutdown().await.map_err(thread_store_io_error)?;
+    persist_replacement(&recorder, replacement_path.as_path()).await?;
     publish_replacement(
         &state_db,
         thread_id,
@@ -104,6 +103,27 @@ pub(super) async fn revert(
         replacement_path.as_path(),
     )
     .await
+}
+
+async fn persist_replacement(recorder: &RolloutRecorder, path: &Path) -> ThreadStoreResult<()> {
+    let persist_error = recorder.persist().await.err();
+    match recorder.shutdown().await {
+        Ok(()) => Ok(()),
+        Err(shutdown_error) => {
+            let message = match persist_error {
+                Some(persist_error) => format!(
+                    "failed to persist replacement rollout: {persist_error}; shutdown retry failed: {shutdown_error}"
+                ),
+                None => format!("failed to shut down replacement rollout: {shutdown_error}"),
+            };
+            match remove_failed_replacement(path).await {
+                Ok(()) => Err(ThreadStoreError::Internal { message }),
+                Err(cleanup_error) => Err(ThreadStoreError::Internal {
+                    message: format!("{message}; cleanup failed: {cleanup_error}"),
+                }),
+            }
+        }
+    }
 }
 
 async fn history_base_before_turn(
@@ -212,10 +232,13 @@ async fn publish_replacement(
             })
         }
         Err(err) => {
-            remove_failed_replacement(replacement_path).await?;
-            Err(ThreadStoreError::Internal {
-                message: format!("failed to switch thread {thread_id} to reverted rollout: {err}"),
-            })
+            let message = format!("failed to switch thread {thread_id} to reverted rollout: {err}");
+            match remove_failed_replacement(replacement_path).await {
+                Ok(()) => Err(ThreadStoreError::Internal { message }),
+                Err(cleanup_error) => Err(ThreadStoreError::Internal {
+                    message: format!("{message}; cleanup failed: {cleanup_error}"),
+                }),
+            }
         }
     }
 }
@@ -242,12 +265,6 @@ fn missing_turn_position(turn_id: &str) -> ThreadStoreError {
 fn invalid_turn_position(turn_id: &str) -> ThreadStoreError {
     ThreadStoreError::Internal {
         message: format!("invalid rollout position for turn {turn_id}"),
-    }
-}
-
-fn thread_store_io_error(err: std::io::Error) -> ThreadStoreError {
-    ThreadStoreError::Internal {
-        message: err.to_string(),
     }
 }
 

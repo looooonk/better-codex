@@ -79,7 +79,7 @@ pub use compression::spawn_rollout_compression_worker;
 pub async fn materialize_rollout_for_reference(
     path: &std::path::Path,
 ) -> std::io::Result<std::path::PathBuf> {
-    compression::materialize_rollout_for_append(path).await
+    compression::materialize_rollout_for_reference(path).await
 }
 
 /// Returns the paginated record ordinals adjacent to a logical JSONL byte boundary.

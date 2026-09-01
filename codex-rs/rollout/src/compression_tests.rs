@@ -283,6 +283,26 @@ async fn append_rollout_item_materializes_compressed_rollout() -> anyhow::Result
 }
 
 #[tokio::test]
+async fn reference_materialization_preserves_compressed_rollout() -> anyhow::Result<()> {
+    let home = TempDir::new()?;
+    let uuid = Uuid::from_u128(20);
+    let thread_id = ThreadId::from_string(&uuid.to_string())?;
+    let rollout_path = rollout_path(home.path(), "2025-01-03T12-00-00", uuid);
+    write_rollout(&rollout_path, thread_id, "immutable reference")?;
+    let expected = fs::read(&rollout_path)?;
+    compress_now(&rollout_path)?;
+    let compressed_path = compressed_rollout_path(&rollout_path);
+
+    assert_eq!(
+        materialize_rollout_for_reference(compressed_path.as_path()).await?,
+        rollout_path
+    );
+    assert_eq!(fs::read(&rollout_path)?, expected);
+    assert!(compressed_path.exists());
+    Ok(())
+}
+
+#[tokio::test]
 async fn search_rollout_matches_uses_logical_path_for_compressed_rollout() -> anyhow::Result<()> {
     let home = TempDir::new()?;
     let uuid = Uuid::from_u128(15);
