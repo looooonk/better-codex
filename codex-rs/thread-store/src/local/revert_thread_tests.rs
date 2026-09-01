@@ -14,10 +14,12 @@ use tempfile::TempDir;
 
 use super::LocalThreadStore;
 use super::publish_replacement;
+use super::replacement_write_error;
 use super::super::test_support::test_config;
 use crate::AppendThreadItemsParams;
 use crate::CreateThreadParams;
 use crate::ListTurnsParams;
+use crate::ResumeThreadParams;
 use crate::RevertThreadParams;
 use crate::SortDirection;
 use crate::StoredTurnItemsView;
@@ -139,7 +141,26 @@ async fn failed_revert_keeps_compressed_selection_readable() {
     assert!(err.to_string().contains("turn not found"), "{err}");
     assert_eq!(selected_path(&state_db, thread_id).await, original_path);
     assert_eq!(std::fs::read(&original_path).expect("read plain copy"), original_contents);
-    assert!(compressed_path.exists());
+    assert!(compressed_path.exists(), "failed revert keeps immutable source");
+    store
+        .resume_thread(ResumeThreadParams {
+            thread_id,
+            rollout_path: None,
+            history: None,
+            include_archived: false,
+            metadata: ThreadPersistenceMetadata {
+                cwd: Some(std::env::current_dir().expect("cwd")),
+                model_provider: "test-provider".to_string(),
+                memory_mode: ThreadMemoryMode::Enabled,
+            },
+        })
+        .await
+        .expect("resume after failed revert");
+    assert!(!compressed_path.exists(), "resuming canonicalizes representation");
+    store
+        .shutdown_thread(thread_id)
+        .await
+        .expect("shutdown resumed writer");
     assert_eq!(turn_ids(&store, thread_id).await, vec!["turn-1"]);
 }
 
@@ -172,6 +193,30 @@ async fn stale_revert_publication_removes_replacement_without_mutating_selection
     assert!(matches!(err, ThreadStoreError::Conflict { .. }));
     assert!(!replacement.exists());
     assert_eq!(selected_path(&state_db, thread_id).await, selected);
+}
+
+#[test]
+fn replacement_write_failures_never_allow_publication() {
+    let error = |message| Some(std::io::Error::other(message));
+
+    assert_eq!(
+        replacement_write_error(/*persist_error*/ None, /*shutdown_error*/ None),
+        None
+    );
+    assert_eq!(
+        replacement_write_error(error("persist"), /*shutdown_error*/ None),
+        Some("failed to persist replacement rollout: persist".to_string())
+    );
+    assert_eq!(
+        replacement_write_error(/*persist_error*/ None, error("shutdown")),
+        Some("failed to shut down replacement rollout: shutdown".to_string())
+    );
+    assert_eq!(
+        replacement_write_error(error("persist"), error("shutdown")),
+        Some(
+            "failed to persist replacement rollout: persist; shutdown failed: shutdown".to_string()
+        )
+    );
 }
 
 #[tokio::test]

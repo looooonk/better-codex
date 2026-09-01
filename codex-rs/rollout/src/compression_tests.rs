@@ -299,6 +299,10 @@ async fn reference_materialization_preserves_compressed_rollout() -> anyhow::Res
     );
     assert_eq!(fs::read(&rollout_path)?, expected);
     assert!(compressed_path.exists());
+
+    materialize_rollout_for_append(rollout_path.as_path()).await?;
+
+    assert!(!compressed_path.exists());
     Ok(())
 }
 

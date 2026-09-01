@@ -107,22 +107,33 @@ pub(super) async fn revert(
 
 async fn persist_replacement(recorder: &RolloutRecorder, path: &Path) -> ThreadStoreResult<()> {
     let persist_error = recorder.persist().await.err();
-    match recorder.shutdown().await {
-        Ok(()) => Ok(()),
-        Err(shutdown_error) => {
-            let message = match persist_error {
-                Some(persist_error) => format!(
-                    "failed to persist replacement rollout: {persist_error}; shutdown retry failed: {shutdown_error}"
-                ),
-                None => format!("failed to shut down replacement rollout: {shutdown_error}"),
-            };
-            match remove_failed_replacement(path).await {
-                Ok(()) => Err(ThreadStoreError::Internal { message }),
-                Err(cleanup_error) => Err(ThreadStoreError::Internal {
-                    message: format!("{message}; cleanup failed: {cleanup_error}"),
-                }),
-            }
-        }
+    let shutdown_error = recorder.shutdown().await.err();
+    let Some(message) = replacement_write_error(persist_error, shutdown_error) else {
+        return Ok(());
+    };
+    match remove_failed_replacement(path).await {
+        Ok(()) => Err(ThreadStoreError::Internal { message }),
+        Err(cleanup_error) => Err(ThreadStoreError::Internal {
+            message: format!("{message}; cleanup failed: {cleanup_error}"),
+        }),
+    }
+}
+
+fn replacement_write_error(
+    persist_error: Option<std::io::Error>,
+    shutdown_error: Option<std::io::Error>,
+) -> Option<String> {
+    match (persist_error, shutdown_error) {
+        (None, None) => None,
+        (Some(persist_error), None) => Some(format!(
+            "failed to persist replacement rollout: {persist_error}"
+        )),
+        (None, Some(shutdown_error)) => Some(format!(
+            "failed to shut down replacement rollout: {shutdown_error}"
+        )),
+        (Some(persist_error), Some(shutdown_error)) => Some(format!(
+            "failed to persist replacement rollout: {persist_error}; shutdown failed: {shutdown_error}"
+        )),
     }
 }
 

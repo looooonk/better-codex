@@ -113,6 +113,14 @@ enum MaterializeMode {
 fn materialize_rollout_blocking(path: &Path, mode: MaterializeMode) -> io::Result<PathBuf> {
     let plain_path = plain_rollout_path(path);
     if plain_path.exists() {
+        if mode == MaterializeMode::Append {
+            let compressed_path = path::compressed_rollout_path(plain_path.as_path());
+            match std::fs::remove_file(compressed_path) {
+                Ok(()) => {}
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err),
+            }
+        }
         metrics::materialize("plain_exists");
         return Ok(plain_path);
     }
