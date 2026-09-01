@@ -10,7 +10,6 @@ use tonic::body::Body;
 use tonic::codegen::http::Request;
 use tonic::codegen::http::Response;
 use tonic::codegen::http::Uri;
-use tower::ServiceExt;
 use tower::service_fn;
 use tower::util::BoxCloneSyncService;
 
@@ -21,24 +20,16 @@ const MAX_ENDPOINT_BYTES: usize = 2_048;
 pub(super) type GrpcTransport = BoxCloneSyncService<Request<Body>, Response<Body>, io::Error>;
 
 pub(super) struct SharedTransport {
-    endpoint: TransportEndpoint,
+    endpoint: String,
+    http_client_factory: HttpClientFactory,
     client: tokio::sync::OnceCell<GrpcClient>,
-}
-
-enum TransportEndpoint {
-    Url {
-        endpoint: String,
-        http_client_factory: HttpClientFactory,
-    },
 }
 
 impl SharedTransport {
     pub(super) fn new(endpoint: String, http_client_factory: HttpClientFactory) -> Self {
         Self {
-            endpoint: TransportEndpoint::Url {
-                endpoint,
-                http_client_factory,
-            },
+            endpoint,
+            http_client_factory,
             client: tokio::sync::OnceCell::new(),
         }
     }
@@ -46,53 +37,42 @@ impl SharedTransport {
     pub(super) async fn client(&self) -> Result<GrpcClient, String> {
         self.client
             .get_or_try_init(|| async {
-                let client = match &self.endpoint {
-                    TransportEndpoint::Url {
-                        endpoint,
-                        http_client_factory,
-                    } => {
-                        let target = validate_endpoint(endpoint)?;
-                        let origin: Uri = target
-                            .as_str()
-                            .parse()
-                            .map_err(|_| "invalid gRPC code-mode host origin".to_string())?;
-                        let endpoint = target.to_string();
-                        let http_client_factory = http_client_factory.clone();
-                        let client = tokio::task::spawn_blocking(move || {
-                            http_client_factory
-                                .build_reqwest_client(
-                                    reqwest::Client::builder()
-                                        .http2_prior_knowledge()
-                                        .redirect(reqwest::redirect::Policy::none()),
-                                    &endpoint,
-                                    ClientRouteClass::Other,
-                                )
-                                .map_err(|error| {
-                                    format!(
-                                        "failed to configure gRPC code-mode host transport: {error}"
-                                    )
-                                })
-                        })
-                        .await
+                let target = validate_endpoint(&self.endpoint)?;
+                let origin: Uri = target
+                    .as_str()
+                    .parse()
+                    .map_err(|_| "invalid gRPC code-mode host origin".to_string())?;
+                let endpoint = target.to_string();
+                let http_client_factory = self.http_client_factory.clone();
+                let client = tokio::task::spawn_blocking(move || {
+                    http_client_factory
+                        .build_reqwest_client(
+                            reqwest::Client::builder()
+                                .http2_prior_knowledge()
+                                .redirect(reqwest::redirect::Policy::none()),
+                            &endpoint,
+                            ClientRouteClass::Other,
+                        )
                         .map_err(|error| {
-                            format!("gRPC code-mode host transport task failed: {error}")
-                        })??;
-                        let transport = service_fn(move |request: Request<Body>| {
-                            let client = client.clone();
-                            async move {
-                                let request = request.map(|body| {
-                                    reqwest::Body::wrap_stream(body.into_data_stream())
-                                });
-                                let request =
-                                    reqwest::Request::try_from(request).map_err(io::Error::other)?;
-                                let response: Response<reqwest::Body> =
-                                    client.execute(request).await.map_err(io::Error::other)?.into();
-                                Ok::<_, io::Error>(response.map(Body::new))
-                            }
-                        });
-                        CodeModeHostClient::with_origin(BoxCloneSyncService::new(transport), origin)
+                            format!("failed to configure gRPC code-mode host transport: {error}")
+                        })
+                })
+                .await
+                .map_err(|error| format!("gRPC code-mode host transport task failed: {error}"))??;
+                let transport = service_fn(move |request: Request<Body>| {
+                    let client = client.clone();
+                    async move {
+                        let request = request
+                            .map(|body| reqwest::Body::wrap_stream(body.into_data_stream()));
+                        let request =
+                            reqwest::Request::try_from(request).map_err(io::Error::other)?;
+                        let response: Response<reqwest::Body> =
+                            client.execute(request).await.map_err(io::Error::other)?.into();
+                        Ok::<_, io::Error>(response.map(Body::new))
                     }
-                };
+                });
+                let client =
+                    CodeModeHostClient::with_origin(BoxCloneSyncService::new(transport), origin);
                 Ok(client
                     .max_decoding_message_size(MAX_FRAME_BYTES)
                     .max_encoding_message_size(MAX_FRAME_BYTES))
