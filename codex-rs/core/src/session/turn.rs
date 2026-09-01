@@ -74,6 +74,8 @@ use codex_analytics::TurnResolvedConfigFact;
 use codex_analytics::build_track_events_context;
 use codex_async_utils::OrCancelExt;
 use codex_core_plugins::RecommendedPluginCandidatesInput;
+use codex_exec_server::FileSystemSandboxContext;
+use codex_exec_server::ResolvedSelectedCapabilityRoot;
 use codex_extension_api::TurnInputContext;
 use codex_extension_api::TurnInputEnvironment;
 use codex_features::Feature;
@@ -157,6 +159,15 @@ pub(crate) async fn run_turn(
 
     // run_turn owns the step used to seed context and make the first sampling request.
     let first_step_context = sess.capture_step_context(Arc::clone(&turn_context)).await;
+    turn_extension_data.insert::<Vec<ResolvedSelectedCapabilityRoot>>(
+        first_step_context.selected_capability_roots.clone(),
+    );
+    if let Some(sandbox_contexts) = first_step_context
+        .extension_data
+        .get::<HashMap<String, FileSystemSandboxContext>>()
+    {
+        turn_extension_data.insert(sandbox_contexts.as_ref().clone());
+    }
     // Keep the exact model-visible state used by this turn and its inline compactions.
     let (mut world_state, display_roots) = tokio::join!(
         sess.record_context_updates_and_set_reference_context_item(first_step_context.as_ref()),

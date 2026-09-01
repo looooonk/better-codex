@@ -9,6 +9,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use crate::catalog::SkillResourceId;
+use crate::aliases::build_catalog_alias_plan;
 use crate::provider::SkillReadRequest;
 
 use super::MAX_HANDLE_BYTES;
@@ -29,9 +30,9 @@ const MAX_READ_RESPONSE_BYTES: usize = 512 * 1024;
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct ReadArgs {
-    authority: SkillToolAuthority,
+    authority: Option<SkillToolAuthority>,
     package: String,
-    resource: String,
+    resource: Option<String>,
     cursor: Option<String>,
 }
 
@@ -40,6 +41,8 @@ struct ReadArgs {
 struct ReadResponse {
     resource: String,
     contents: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skill_root: Option<String>,
     next_cursor: Option<String>,
 }
 
@@ -56,41 +59,70 @@ impl ToolExecutor<ToolCall> for ReadTool {
     fn spec(&self) -> ToolSpec {
         skill_function_tool::<ReadArgs, ReadResponse>(
             TOOL_NAME,
-            "Read one page from a skill resource. Pass the exact authority and package from skills.list or an explicitly selected skill's resource_access metadata, plus its main_resource or a referenced resource beneath that package. Pass next_cursor back as cursor to continue.",
+            "Read one page from a skill. Pass its provided package directly; root aliases are resolved automatically. Omit resource to read SKILL.md; to read another file, use the same package and pass the file's complete skill:// identifier as resource. For executor-backed skills, skill_root is the skill's absolute directory in the executor filesystem and can be used to locate bundled scripts. Legacy authority values are accepted for compatibility. Pass next_cursor back as cursor to continue.",
         )
     }
 
     fn handle(&self, call: ToolCall) -> ToolExecutorFuture<'_> {
         Box::pin(async move {
             let args: ReadArgs = parse_args(&call)?;
-            if let SkillToolAuthority::Executor { id } = &args.authority {
+            if let Some(SkillToolAuthority::Executor { id }) = &args.authority {
                 validate_handle("authority.id", id, MAX_HANDLE_BYTES)?;
             }
             validate_handle("package", &args.package, MAX_HANDLE_BYTES)?;
-            validate_handle("resource", &args.resource, MAX_HANDLE_BYTES)?;
+            if let Some(resource) = args.resource.as_deref() {
+                validate_handle("resource", resource, MAX_HANDLE_BYTES)?;
+            }
 
-            let output_authority = args.authority.selector();
-            let catalog = self.context.catalog(&call.turn_id, output_authority).await;
-            let Some(skill_entry) = catalog.entries.iter().find(|entry| {
-                entry.enabled
-                    && args.authority.matches(&entry.authority)
-                    && entry.id.0 == args.package
-            }) else {
+            let mut candidates = Vec::new();
+            for selector in [
+                super::SkillToolAuthoritySelector::Orchestrator,
+                super::SkillToolAuthoritySelector::Executor,
+            ] {
+                let catalog = self.context.catalog(&call.turn_id, selector).await;
+                let visible_entries = catalog
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.is_model_visible())
+                    .collect::<Vec<_>>();
+                let alias_plan = build_catalog_alias_plan(&visible_entries);
+                candidates.extend(catalog.entries.into_iter().filter(|entry| {
+                    let package_matches = entry.id.0 == args.package
+                        || alias_plan
+                            .as_ref()
+                            .and_then(|plan| plan.shorten(&entry.id.0))
+                            .is_some_and(|alias| alias == args.package);
+                    let authority_matches = args
+                        .authority
+                        .as_ref()
+                        .is_none_or(|authority| authority.matches(&entry.authority));
+                    entry.enabled
+                        && package_matches
+                        && authority_matches
+                        && SkillToolAuthority::from_authority(&entry.authority)
+                            .is_some_and(|authority| authority.selector() == selector)
+                }).map(|entry| (entry, selector)));
+            }
+            let Some((skill_entry, output_authority)) = candidates.pop() else {
                 return Err(FunctionCallError::RespondToModel(
-                    "skill package is not available from the requested authority".to_string(),
+                    "skill package is not available".to_string(),
                 ));
             };
+            if !candidates.is_empty() {
+                return Err(FunctionCallError::RespondToModel(
+                    "skill package is ambiguous; use the complete package locator".to_string(),
+                ));
+            }
 
             let authority = skill_entry.authority.clone();
             let package = skill_entry.id.clone();
             let main_prompt = skill_entry.main_prompt.clone();
-            let requested_resource = if args.resource == main_prompt.as_str() {
-                main_prompt
-            } else {
-                skill_entry
-                    .main_prompt
-                    .bind_environment_package_resource(&package, args.resource.clone())
-                    .unwrap_or_else(|| SkillResourceId::new(args.resource))
+            let requested_resource = match args.resource {
+                None => main_prompt.clone(),
+                Some(resource) if resource == main_prompt.as_str() => main_prompt.clone(),
+                Some(resource) => main_prompt
+                    .bind_environment_package_resource(&package, resource.clone())
+                    .unwrap_or_else(|| SkillResourceId::new(resource)),
             };
             let resolved_executor_roots = self
                 .context
@@ -161,7 +193,20 @@ impl ToolExecutor<ToolCall> for ReadTool {
                     "skills.read cursor is invalid".to_string(),
                 ));
             }
-            let response = page_response(result.resource.as_str(), &result.contents, start)?;
+            let skill_root = if output_authority == super::SkillToolAuthoritySelector::Executor {
+                main_prompt
+                    .environment_path()
+                    .and_then(|(_, path)| path.parent())
+                    .map(|path| path.inferred_native_path_string())
+            } else {
+                None
+            };
+            let response = page_response(
+                result.resource.as_str(),
+                &result.contents,
+                skill_root.as_deref(),
+                start,
+            )?;
             skill_json_output(&response, output_authority)
         })
     }
@@ -170,11 +215,13 @@ impl ToolExecutor<ToolCall> for ReadTool {
 fn page_response(
     resource: &str,
     contents: &str,
+    skill_root: Option<&str>,
     start: usize,
 ) -> Result<ReadResponse, FunctionCallError> {
     let response = |end, next_cursor| ReadResponse {
         resource: resource.to_string(),
         contents: contents[start..end].to_string(),
+        skill_root: skill_root.map(str::to_string),
         next_cursor,
     };
     let complete = response(contents.len(), None);

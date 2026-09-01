@@ -1,8 +1,11 @@
+mod aliases;
 pub mod catalog;
+mod catalog_prompt;
 mod config;
 mod extension;
 mod fragments;
 mod host_prompt;
+mod host_aliases;
 mod host_outcome;
 pub mod host_render;
 mod host_roots;

@@ -13,7 +13,8 @@ use serde_json::json;
 use crate::catalog::SkillCatalog;
 use crate::fragments::AvailableSkillsInstructions;
 use crate::fragments::SkillsUpdate;
-use crate::render::available_skills_fragment;
+use crate::render::SkillRenderReport;
+use crate::render::render_extension_catalog;
 
 pub(crate) const SKILLS_WORLD_STATE_ID: &str = "skills";
 pub(crate) const HOST_SKILLS_WORLD_STATE_ID: &str = "host_skills";
@@ -30,13 +31,18 @@ pub(crate) fn executor_skills_world_state_section(
     catalog: &SkillCatalog,
     include_instructions: bool,
     include_skills_usage_instructions: bool,
-) -> WorldStateSectionContribution {
-    let body = if include_instructions {
-        available_skills_fragment(catalog, include_skills_usage_instructions)
-            .map(|fragment| fragment.body())
+    context_window: Option<i64>,
+) -> (WorldStateSectionContribution, SkillRenderReport) {
+    let (fragment, report) = if include_instructions {
+        render_extension_catalog(
+            catalog,
+            include_skills_usage_instructions,
+            context_window,
+        )
     } else {
-        None
+        (None, SkillRenderReport::default())
     };
+    let body = fragment.map(|fragment| fragment.body());
     let snapshot = json!({
         "body": body,
         "includeInstructions": include_instructions,
@@ -71,12 +77,13 @@ pub(crate) fn executor_skills_world_state_section(
                 && text.trim_start().starts_with(SKILLS_INSTRUCTIONS_OPEN_TAG)
                 && text.trim_end().ends_with(SKILLS_INSTRUCTIONS_CLOSE_TAG)
         });
-    match retained_body {
+    let contribution = match retained_body {
         Some(body) => contribution.with_retained_fragment_matcher(move |role, text| {
             role == "developer" && text.contains(&body)
         }),
         None => contribution,
-    }
+    };
+    (contribution, report)
 }
 pub(crate) fn host_skills_world_state_section(
     host_snapshot: &HostSkillsSnapshot,

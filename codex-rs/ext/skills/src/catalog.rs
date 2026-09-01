@@ -1,3 +1,4 @@
+use codex_protocol::protocol::SkillScope;
 use codex_skills::SkillDependencies;
 use codex_utils_path_uri::PathUri;
 use std::sync::Arc;
@@ -177,6 +178,9 @@ pub struct SkillCatalogEntry {
     pub short_description: Option<String>,
     pub main_prompt: SkillResourceId,
     pub display_path: Option<String>,
+    alias_root: Option<String>,
+    alias_root_order: Option<usize>,
+    prompt_scope: Option<SkillScope>,
     pub dependencies: Option<SkillDependencies>,
     pub enabled: bool,
     pub prompt_visible: bool,
@@ -198,6 +202,9 @@ impl SkillCatalogEntry {
             short_description: None,
             main_prompt,
             display_path: None,
+            alias_root: None,
+            alias_root_order: None,
+            prompt_scope: None,
             dependencies: None,
             enabled: true,
             prompt_visible: true,
@@ -211,6 +218,22 @@ impl SkillCatalogEntry {
 
     pub fn with_display_path(mut self, display_path: impl Into<String>) -> Self {
         self.display_path = Some(display_path.into());
+        self
+    }
+
+    /// Sets the shared locator prefix that may be compacted in model-visible skill catalogs.
+    pub fn with_alias_root(mut self, alias_root: impl Into<String>) -> Self {
+        self.alias_root = Some(alias_root.into());
+        self
+    }
+
+    pub(crate) fn with_alias_root_order(mut self, alias_root_order: usize) -> Self {
+        self.alias_root_order = Some(alias_root_order);
+        self
+    }
+
+    pub(crate) fn with_prompt_scope(mut self, prompt_scope: SkillScope) -> Self {
+        self.prompt_scope = Some(prompt_scope);
         self
     }
 
@@ -237,6 +260,18 @@ impl SkillCatalogEntry {
         self.display_path
             .as_deref()
             .unwrap_or_else(|| self.main_prompt.as_str())
+    }
+
+    pub(crate) fn alias_root(&self) -> Option<&str> {
+        self.alias_root.as_deref()
+    }
+
+    pub(crate) fn alias_root_order(&self) -> Option<usize> {
+        self.alias_root_order
+    }
+
+    pub(crate) fn prompt_scope(&self) -> Option<SkillScope> {
+        self.prompt_scope
     }
 }
 

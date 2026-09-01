@@ -12,10 +12,12 @@ use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
 use codex_skills_extension::SKILLS_INTRO_WITH_ABSOLUTE_PATHS;
 use codex_skills_extension::SkillLoadOutcome;
 use codex_exec_server::EnvironmentManager;
+use codex_exec_server::FileSystemSandboxContext;
 use codex_extension_api::ConversationHistory;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionEventSink;
 use codex_extension_api::ExtensionRegistryBuilder;
+use codex_extension_api::FunctionCallError;
 use codex_extension_api::NoopTurnItemEmitter;
 use codex_extension_api::PreviousWorldStateSection;
 use codex_extension_api::ThreadStartInput;
@@ -606,12 +608,23 @@ async fn skills_list_truncates_catalog_descriptions_in_tool_output() -> TestResu
 
 #[tokio::test]
 async fn step_tools_list_and_read_exact_executor_authority() -> TestResult {
-    let hidden = test_entry(
-        SkillSourceKind::Executor,
-        "root-a",
-        "skill://root-a/explicit-only",
-        "skill://root-a/explicit-only/SKILL.md",
+    let hidden_path = PathUri::parse("file:///skills/root-a/explicit-only/SKILL.md")?;
+    let hidden_skill_root = hidden_path
+        .parent()
+        .ok_or("hidden skill should have a root")?
+        .inferred_native_path_string();
+    let hidden = SkillCatalogEntry::new(
+        SkillPackageId("skill://root-a/explicit-only".to_string()),
+        SkillAuthority::new(SkillSourceKind::Executor, "root-a"),
+        "explicit-only",
+        "Fix lint errors.",
+        SkillResourceId::environment(
+            "skill://root-a/explicit-only/SKILL.md",
+            "local",
+            hidden_path,
+        ),
     )
+    .with_display_path("skill://root-a/explicit-only/SKILL.md")
     .hidden_from_prompt();
     let mut entries = (0..21)
         .map(|index| {
@@ -621,6 +634,7 @@ async fn step_tools_list_and_read_exact_executor_authority() -> TestResult {
                 &format!("skill://root-a/visible-{index}"),
                 &format!("skill://root-a/visible-{index}/SKILL.md"),
             )
+            .with_alias_root("skill://root-a")
         })
         .collect::<Vec<_>>();
     entries.push(hidden);
@@ -738,9 +752,7 @@ async fn step_tools_list_and_read_exact_executor_authority() -> TestResult {
         .ok_or("skills.read tool should be registered")?;
     let read_payload = ToolPayload::Function {
         arguments: serde_json::json!({
-            "authority": {"kind": "executor", "id": "root-a"},
-            "package": "skill://root-a/explicit-only",
-            "resource": "skill://root-a/explicit-only/SKILL.md"
+            "package": "skill://root-a/explicit-only"
         })
         .to_string(),
     };
@@ -765,8 +777,153 @@ async fn step_tools_list_and_read_exact_executor_authority() -> TestResult {
         serde_json::json!({
             "resource": "skill://root-a/explicit-only/SKILL.md",
             "contents": DEFAULT_PROVIDER_SKILL_CONTENTS,
+            "skill_root": hidden_skill_root,
             "next_cursor": null
         })
+    );
+
+    let legacy_payload = ToolPayload::Function {
+        arguments: serde_json::json!({
+            "authority": {"kind": "executor", "id": "root-a"},
+            "package": "skill://root-a/explicit-only",
+            "resource": "skill://root-a/explicit-only/SKILL.md"
+        })
+        .to_string(),
+    };
+    read_tool
+        .handle(ToolCall {
+            turn_id: "turn-1".to_string(),
+            call_id: "call-read-legacy".to_string(),
+            tool_name: read_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload: legacy_payload,
+        })
+        .await?;
+
+    let alias_payload = ToolPayload::Function {
+        arguments: serde_json::json!({"package": "e0/visible-0"}).to_string(),
+    };
+    let alias_output = read_tool
+        .handle(ToolCall {
+            turn_id: "turn-1".to_string(),
+            call_id: "call-read-alias".to_string(),
+            tool_name: read_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload: alias_payload.clone(),
+        })
+        .await?;
+    let alias_response = alias_output
+        .post_tool_use_response("call-read-alias", &alias_payload)
+        .ok_or("skills.read alias should expose structured output")?;
+    assert_eq!(
+        alias_response["resource"],
+        "skill://root-a/visible-0/SKILL.md"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn skills_read_rejects_ambiguous_cross_provider_packages() -> TestResult {
+    let package = "skill://shared/demo";
+    let entry_for = |source, authority: &str| {
+        test_entry(
+            source,
+            authority,
+            package,
+            "skill://shared/demo/SKILL.md",
+        )
+    };
+    let provider = |entry| {
+        Arc::new(StaticSkillProvider {
+            catalog: SkillCatalog {
+                entries: vec![entry],
+                warnings: Vec::new(),
+            },
+            read_requests: Arc::new(Mutex::new(Vec::new())),
+            list_calls: None,
+            fail_first_list: false,
+            read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
+        })
+    };
+    let providers = SkillProviders::new()
+        .with_executor_provider(provider(entry_for(SkillSourceKind::Executor, "root-a")))
+        .with_orchestrator_provider(provider(entry_for(
+            SkillSourceKind::Orchestrator,
+            "codex_apps",
+        )));
+    let mut builder = ExtensionRegistryBuilder::new();
+    install_with_providers(&mut builder, providers, skills_extension_config);
+    let registry = builder.build();
+    let session_store = ExtensionData::new("session");
+    let thread_store = ExtensionData::new("thread");
+    let config = default_config();
+    registry.thread_lifecycle_contributors()[0]
+        .on_thread_start(ThreadStartInput {
+            config: &config,
+            session_source: &SessionSource::Cli,
+            persistent_thread_state_available: true,
+            environments: &[],
+            session_store: &session_store,
+            thread_store: &thread_store,
+        })
+        .await;
+
+    let selected_root = SelectedCapabilityRoot {
+        id: "root-a".to_string(),
+        location: CapabilityRootLocation::Environment {
+            environment_id: "local".to_string(),
+            path: PathUri::parse("file:///skills/root-a")?,
+        },
+    };
+    let environment_manager = EnvironmentManager::default_for_tests();
+    let local = environment_manager
+        .get_environment("local")
+        .ok_or("local environment should exist")?;
+    let resolved = environment_manager
+        .resolve_selected_capability_roots(
+            std::slice::from_ref(&selected_root),
+            &HashMap::from([("local".to_string(), Some(local))]),
+        )
+        .await;
+    let step_store = ExtensionData::new("turn-ambiguous");
+    step_store.insert(resolved);
+    let read_tool = registry.tool_contributors()[0]
+        .tools_for_step(&session_store, &thread_store, &step_store)
+        .into_iter()
+        .find(|tool| tool.tool_name().name == "read")
+        .ok_or("skills.read tool should be registered")?;
+    let payload = ToolPayload::Function {
+        arguments: serde_json::json!({"package": package}).to_string(),
+    };
+
+    let result = read_tool
+        .handle(ToolCall {
+            turn_id: "turn-ambiguous".to_string(),
+            call_id: "call-read-ambiguous".to_string(),
+            tool_name: read_tool.tool_name(),
+            model: "gpt-test".to_string(),
+            truncation_policy: TruncationPolicy::Bytes(1_024),
+            conversation_history: ConversationHistory::default(),
+            turn_item_emitter: Arc::new(NoopTurnItemEmitter),
+            environments: Vec::new(),
+            payload,
+        })
+        .await;
+
+    assert_eq!(
+        Err(FunctionCallError::RespondToModel(
+            "skill package is ambiguous; use the complete package locator".to_string(),
+        )),
+        result.map(|_| ())
     );
 
     Ok(())
@@ -851,26 +1008,43 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
     let read_requests = Arc::new(Mutex::new(Vec::new()));
     let root_a_locator = "skill://root-a/shared/lint-fix/SKILL.md";
     let root_b_locator = "skill://root-b/shared/lint-fix/SKILL.md";
+    let mut entries = [("root-a", root_a_locator), ("root-b", root_b_locator)]
+        .into_iter()
+        .map(|(root_id, locator)| {
+            let entry = SkillCatalogEntry::new(
+                SkillPackageId(locator.to_string()),
+                SkillAuthority::new(SkillSourceKind::Executor, root_id),
+                "lint-fix",
+                "Fix lint errors.",
+                SkillResourceId::new(locator),
+            )
+            .with_display_path(locator);
+            if root_id == "root-b" {
+                entry.hidden_from_prompt()
+            } else {
+                entry
+            }
+        })
+        .collect::<Vec<_>>();
+    let restricted_locator = "skill://root-c/restricted/SKILL.md";
+    entries.push(
+        SkillCatalogEntry::new(
+            SkillPackageId("skill://root-c/restricted".to_string()),
+            SkillAuthority::new(SkillSourceKind::Executor, "root-c"),
+            "restricted",
+            "Read a restricted skill.",
+            SkillResourceId::environment(
+                restricted_locator,
+                "env-1",
+                PathUri::parse("file:///restricted/SKILL.md")?,
+            ),
+        )
+        .with_display_path(restricted_locator)
+        .hidden_from_prompt(),
+    );
     let executor_provider = Arc::new(StaticSkillProvider {
         catalog: SkillCatalog {
-            entries: [("root-a", root_a_locator), ("root-b", root_b_locator)]
-                .into_iter()
-                .map(|(root_id, locator)| {
-                    let entry = SkillCatalogEntry::new(
-                        SkillPackageId(locator.to_string()),
-                        SkillAuthority::new(SkillSourceKind::Executor, root_id),
-                        "lint-fix",
-                        "Fix lint errors.",
-                        SkillResourceId::new(locator),
-                    )
-                    .with_display_path(locator);
-                    if root_id == "root-b" {
-                        entry.hidden_from_prompt()
-                    } else {
-                        entry
-                    }
-                })
-                .collect(),
+            entries,
             warnings: Vec::new(),
         },
         read_requests: Arc::clone(&read_requests),
@@ -952,6 +1126,31 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
             SkillResourceId::new(root_b_locator),
         )],
         read_request_keys(&read_requests)
+    );
+
+    turn_store.insert(HashMap::<String, FileSystemSandboxContext>::new());
+    let restricted_fragments = registry.turn_input_contributors()[0]
+        .contribute(
+            TurnInputContext {
+                turn_id: "turn-1".to_string(),
+                user_input: vec![UserInput::Mention {
+                    name: "restricted".to_string(),
+                    path: restricted_locator.to_string(),
+                }],
+                environments: Vec::new(),
+            },
+            &session_store,
+            &thread_store,
+            &turn_store,
+        )
+        .await;
+    assert!(restricted_fragments.is_empty());
+    assert_eq!(
+        1,
+        read_requests
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
     );
 
     Ok(())

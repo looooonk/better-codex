@@ -41,7 +41,7 @@ use crate::catalog::SkillSourceKind;
 use crate::provider::HostSkillProvider;
 use crate::provider::SkillListQuery;
 use crate::provider::SkillReadRequest;
-use crate::render::available_skills_fragment;
+use crate::render::render_extension_catalog;
 use crate::fragments::SkillInstructions;
 use crate::fragments::SkillResourceAccess;
 use crate::selection::collect_explicit_skill_mentions;
@@ -142,7 +142,15 @@ where
             let include_usage = model_info
                 .as_deref()
                 .is_some_and(|model_info| model_info.include_skills_usage_instructions);
-            available_skills_fragment(&catalog, include_usage)
+            let (fragment, report) = render_extension_catalog(
+                &catalog,
+                include_usage,
+                model_info.as_deref().and_then(ModelInfo::resolved_context_window),
+            );
+            if let Some(warning) = report.warning_message() {
+                self.emit_warning(thread_store.level_id(), warning);
+            }
+            fragment
                 .map(PromptFragment::developer_capability)
                 .into_iter()
                 .collect()
@@ -164,7 +172,11 @@ where
                     SkillListQuery {
                         turn_id: input.turn_id.to_string(),
                         executor_roots: input.ready_selected_capability_roots.to_vec(),
-                        resolved_executor_roots: Vec::new(),
+                        resolved_executor_roots: input
+                            .turn_store
+                            .get::<Vec<ResolvedSelectedCapabilityRoot>>()
+                            .map(|roots| roots.as_ref().clone())
+                            .unwrap_or_default(),
                         host_snapshot: None,
                         include_host_skills: false,
                         include_bundled_skills: config.bundled_skills_enabled,
@@ -181,11 +193,16 @@ where
             let include_usage = model_info
                 .as_deref()
                 .is_some_and(|model_info| model_info.include_skills_usage_instructions);
-            let mut sections = vec![executor_skills_world_state_section(
+            let (executor_section, executor_report) = executor_skills_world_state_section(
                 &catalog,
                 config.include_instructions,
                 include_usage,
-            )];
+                model_info.as_deref().and_then(ModelInfo::resolved_context_window),
+            );
+            if let Some(warning) = executor_report.warning_message() {
+                self.emit_warning(input.turn_id, warning);
+            }
+            let mut sections = vec![executor_section];
             if let Some(host_snapshot) = input.turn_store.get::<HostSkillsSnapshot>()
                 && self.providers.has_host_provider()
             {
@@ -326,7 +343,6 @@ where
                 self.emit_warning(&input.turn_id, warning.clone());
             }
 
-            let selected_entries = collect_explicit_skill_mentions(&input.user_input, &catalog);
             let mut fragments: Vec<Box<dyn ContextualUserFragment + Send>> = Vec::new();
             if config.include_instructions
                 && turn_store.get::<HostSkillsCatalogInWorldState>().is_none()
@@ -339,18 +355,35 @@ where
                 let include_usage = thread_store
                     .get::<ModelInfo>()
                     .is_some_and(|model_info| model_info.include_skills_usage_instructions);
-                if let Some(fragment) = available_skills_fragment(&turn_catalog, include_usage) {
+                let model_info = thread_store.get::<ModelInfo>();
+                let (fragment, report) = render_extension_catalog(
+                    &turn_catalog,
+                    include_usage,
+                    model_info.as_deref().and_then(ModelInfo::resolved_context_window),
+                );
+                if let Some(warning) = report.warning_message() {
+                    self.emit_warning(&input.turn_id, warning.clone());
+                    catalog.warnings.push(warning);
+                }
+                if let Some(fragment) = fragment {
                     fragments.push(Box::new(fragment));
                 }
             }
 
+            let selected_entries = collect_explicit_skill_mentions(&input.user_input, &catalog);
             let mut warnings = catalog.warnings.clone();
             let mut main_prompts_injected = false;
             let mut injected_host_skill_prompts = InjectedHostSkillPrompts::default();
             let mut skill_prompt_budget = ExplicitSkillPromptBudget::default();
             for entry in &selected_entries {
                 match self
-                    .read_main_prompt(entry, host_snapshot.clone(), session_store, &thread_state)
+                    .read_main_prompt(
+                        entry,
+                        host_snapshot.clone(),
+                        session_store,
+                        turn_store,
+                        &thread_state,
+                    )
                     .await
                 {
                     Ok(read_result) => {
@@ -475,8 +508,37 @@ impl<C> SkillsExtension<C> {
         entry: &SkillCatalogEntry,
         host_snapshot: Option<Arc<HostSkillsSnapshot>>,
         session_store: &ExtensionData,
+        turn_store: &ExtensionData,
         thread_state: &SkillsThreadState,
     ) -> Result<SkillReadResult, String> {
+        let resolved_executor_roots = turn_store
+            .get::<Vec<ResolvedSelectedCapabilityRoot>>()
+            .map(|roots| roots.as_ref().clone())
+            .unwrap_or_default();
+        let sandbox_contexts = turn_store.get::<HashMap<String, FileSystemSandboxContext>>();
+        let sandbox = entry
+            .main_prompt
+            .environment_path()
+            .and_then(|(environment_id, _)| {
+                sandbox_contexts
+                    .as_ref()
+                    .and_then(|contexts| contexts.get(environment_id).cloned())
+            });
+        if sandbox_contexts.is_some()
+            && entry.main_prompt.environment_path().is_some()
+            && sandbox.is_none()
+        {
+            return Err("failed to resolve the selected environment sandbox".to_string());
+        }
+        if entry.authority.kind == SkillSourceKind::Executor
+            && entry.main_prompt.environment_path().is_some()
+            && entry.main_prompt.environment_contents().is_none()
+            && !resolved_executor_roots
+                .iter()
+                .any(|root| root.selected_root().id == entry.authority.id)
+        {
+            return Err("selected executor skill is no longer available".to_string());
+        }
         thread_state
             .read_skill(
                 &self.providers,
@@ -484,8 +546,8 @@ impl<C> SkillsExtension<C> {
                     authority: entry.authority.clone(),
                     package: entry.id.clone(),
                     resource: entry.main_prompt.clone(),
-                    resolved_executor_roots: Vec::new(),
-                    sandbox: None,
+                    resolved_executor_roots,
+                    sandbox,
                     host_snapshot,
                     mcp_resources: session_store.get::<McpResourceClient>(),
                 },

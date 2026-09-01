@@ -1,12 +1,14 @@
 use crate::host_render::AvailableSkills;
 use crate::host_render::SKILLS_HOW_TO_USE_WITH_ABSOLUTE_PATHS;
 use crate::host_render::SKILLS_HOW_TO_USE_WITH_ALIASES;
-use crate::host_render::render_available_skills_body;
+use crate::host_render::render_available_skills_body as render_legacy_available_skills_body;
 use codex_extension_api::ContextualUserFragment;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_CLOSE_TAG;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
 use serde::Serialize;
 
+use crate::catalog_prompt::SkillPromptKind;
+use crate::catalog_prompt::render_available_skills_body;
 use crate::host_prompt::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
 use crate::tools::SkillToolAuthority;
 const MAX_SKILL_NAME_BYTES: usize = 256;
@@ -15,6 +17,7 @@ const TRUNCATION_SUFFIX: &str = "\n\n[skill prompt truncated]";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AvailableSkillsInstructions {
+    prompt_kind: Option<SkillPromptKind>,
     skill_root_lines: Vec<String>,
     skill_lines: Vec<String>,
 }
@@ -44,15 +47,21 @@ impl SkillsUpdate {
 
 impl AvailableSkillsInstructions {
     pub(crate) fn from_skill_lines(
+        prompt_kind: SkillPromptKind,
+        skill_root_lines: Vec<String>,
         mut skill_lines: Vec<String>,
         include_skills_usage_instructions: bool,
     ) -> Self {
         if include_skills_usage_instructions {
             skill_lines.push("### How to use skills".to_string());
-            skill_lines.push(SKILLS_HOW_TO_USE_WITH_ABSOLUTE_PATHS.to_string());
+            if let Some(instructions) = prompt_kind.alias_instructions() {
+                skill_lines.push(instructions.to_string());
+            }
+            skill_lines.push(prompt_kind.usage_instructions().to_string());
         }
         Self {
-            skill_root_lines: Vec::new(),
+            prompt_kind: Some(prompt_kind),
+            skill_root_lines,
             skill_lines,
         }
     }
@@ -72,6 +81,7 @@ impl AvailableSkillsInstructions {
             skill_lines.push(instructions.to_string());
         }
         Self {
+            prompt_kind: None,
             skill_root_lines: available.skill_root_lines,
             skill_lines,
         }
@@ -92,7 +102,12 @@ impl ContextualUserFragment for AvailableSkillsInstructions {
     }
 
     fn body(&self) -> String {
-        render_available_skills_body(&self.skill_root_lines, &self.skill_lines)
+        match self.prompt_kind {
+            Some(prompt_kind) => {
+                render_available_skills_body(prompt_kind, &self.skill_root_lines, &self.skill_lines)
+            }
+            None => render_legacy_available_skills_body(&self.skill_root_lines, &self.skill_lines),
+        }
     }
 }
 
