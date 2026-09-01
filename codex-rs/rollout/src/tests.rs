@@ -245,6 +245,70 @@ async fn filesystem_lookup_distinguishes_thread_and_rollout_ids() {
 }
 
 #[tokio::test]
+async fn filesystem_listing_deduplicates_rollout_lineage_across_pages() -> Result<()> {
+    let temp = TempDir::new().expect("temp dir");
+    let home = temp.path();
+    let thread_uuid = Uuid::from_u128(411);
+    let other_uuid = Uuid::from_u128(412);
+    let replacement_uuid = Uuid::from_u128(413);
+    for (timestamp, uuid) in [
+        ("2025-01-03T13-00-00", thread_uuid),
+        ("2025-01-04T13-00-00", other_uuid),
+        ("2025-01-05T13-00-00", thread_uuid),
+    ] {
+        write_session_file(
+            home,
+            timestamp,
+            uuid,
+            /*num_records*/ 1,
+            Some(SessionSource::Cli),
+        )?;
+    }
+    let replacement_source = home.join(format!(
+        "sessions/2025/01/05/rollout-2025-01-05T13-00-00-{thread_uuid}.jsonl"
+    ));
+    let replacement_path = replacement_source.with_file_name(format!(
+        "rollout-2025-01-05T13-00-00-{thread_uuid}_{replacement_uuid}.jsonl"
+    ));
+    fs::rename(replacement_source, replacement_path.as_path())?;
+
+    let first = get_threads(
+        home,
+        /*page_size*/ 1,
+        /*cursor*/ None,
+        ThreadSortKey::CreatedAt,
+        NO_SOURCE_FILTER,
+        /*model_providers*/ None,
+        /*cwd_filters*/ None,
+        TEST_PROVIDER,
+    )
+    .await?;
+    assert_eq!(first.items.len(), 1);
+    assert_eq!(first.items[0].path, replacement_path);
+    let second = get_threads(
+        home,
+        /*page_size*/ 1,
+        first.next_cursor.as_ref(),
+        ThreadSortKey::CreatedAt,
+        NO_SOURCE_FILTER,
+        /*model_providers*/ None,
+        /*cwd_filters*/ None,
+        TEST_PROVIDER,
+    )
+    .await?;
+    assert_eq!(
+        second
+            .items
+            .iter()
+            .filter_map(|item| item.thread_id)
+            .collect::<Vec<_>>(),
+        vec![thread_id_from_uuid(other_uuid)]
+    );
+    assert_eq!(second.next_cursor, None);
+    Ok(())
+}
+
+#[tokio::test]
 async fn read_thread_item_from_rollout_rejects_unknown_canonical_history_mode() {
     let temp = TempDir::new().unwrap();
     let home = temp.path();
