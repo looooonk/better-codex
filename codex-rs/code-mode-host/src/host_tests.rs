@@ -1,3 +1,4 @@
+use codex_code_mode_protocol::CodeModeSessionCellExecutionLimits;
 use codex_code_mode_protocol::host::Capability;
 use codex_code_mode_protocol::host::CapabilitySet;
 use codex_code_mode_protocol::host::ClientHello;
@@ -12,6 +13,7 @@ use codex_code_mode_protocol::host::HostResponse;
 use codex_code_mode_protocol::host::HostToClient;
 use codex_code_mode_protocol::host::ProtocolVersion;
 use codex_code_mode_protocol::host::RequestId;
+use codex_code_mode_protocol::host::SESSION_RESOURCE_LIMITS_CAPABILITY;
 use codex_code_mode_protocol::host::SessionId;
 use codex_code_mode_protocol::host::SupportedProtocolVersions;
 use codex_code_mode_protocol::host::WireExecuteRequest;
@@ -111,6 +113,7 @@ async fn handshake_and_multiple_session_lifecycles_are_ordered() {
                 id: request_id,
                 request: HostRequest::OpenSession {
                     session_id: session_id(id),
+                    cell_execution_limits: None,
                 },
             })
             .await
@@ -160,6 +163,57 @@ async fn handshake_and_multiple_session_lifecycles_are_ordered() {
 }
 
 #[tokio::test]
+async fn session_resource_limits_are_negotiated_when_requested() {
+    let resource_limits_capability =
+        Capability::new(SESSION_RESOURCE_LIMITS_CAPABILITY).expect("resource limits capability");
+
+    for (required, optional) in [
+        (
+            CapabilitySet::try_new([resource_limits_capability.clone()])
+                .expect("required capabilities"),
+            CapabilitySet::empty(),
+        ),
+        (
+            CapabilitySet::empty(),
+            CapabilitySet::try_new([resource_limits_capability.clone()])
+                .expect("optional capabilities"),
+        ),
+    ] {
+        let (host_stream, client_stream) = tokio::io::duplex(/*max_buf_size*/ 1024);
+        let (host_reader, host_writer) = tokio::io::split(host_stream);
+        let (client_reader, client_writer) = tokio::io::split(client_stream);
+        let host = tokio::spawn(run(host_reader, host_writer));
+        let mut reader = FramedReader::new(client_reader);
+        let mut writer = FramedWriter::new(client_writer);
+
+        writer
+            .write(&ClientToHost::ClientHello(
+                ClientHello::new(
+                    SupportedProtocolVersions::try_new([ProtocolVersion::V1])
+                        .expect("supported versions"),
+                    required,
+                    optional,
+                )
+                .expect("client hello"),
+            ))
+            .await
+            .expect("write hello");
+        assert_eq!(
+            reader.read::<HostToClient>().await.expect("host hello"),
+            Some(HostToClient::HostHello(HostHello::new(
+                ProtocolVersion::V1,
+                CapabilitySet::try_new([resource_limits_capability.clone()])
+                    .expect("host capabilities"),
+            )))
+        );
+
+        drop(writer);
+        drop(reader);
+        host.await.expect("host task").expect("host connection");
+    }
+}
+
+#[tokio::test]
 async fn incompatible_or_invalid_handshake_is_rejected() {
     let (host_stream, client_stream) = tokio::io::duplex(/*max_buf_size*/ 1024);
     let (host_reader, host_writer) = tokio::io::split(host_stream);
@@ -195,6 +249,7 @@ async fn incompatible_or_invalid_handshake_is_rejected() {
             id: request_id(/*value*/ 1),
             request: HostRequest::OpenSession {
                 session_id: session_id("session-1"),
+                cell_execution_limits: None,
             },
         })
         .await
@@ -260,6 +315,7 @@ async fn session_id_cannot_be_reused_after_shutdown() {
             request_id(/*value*/ 1),
             HostRequest::OpenSession {
                 session_id: id.clone(),
+                cell_execution_limits: None,
             },
         ),
         (
@@ -285,7 +341,10 @@ async fn session_id_cannot_be_reused_after_shutdown() {
     writer
         .write(&ClientToHost::Request {
             id: request_id(/*value*/ 3),
-            request: HostRequest::OpenSession { session_id: id },
+            request: HostRequest::OpenSession {
+                session_id: id,
+                cell_execution_limits: None,
+            },
         })
         .await
         .expect("reuse session ID");
@@ -374,7 +433,10 @@ async fn execute_request_id_remains_active_until_initial_response() {
     });
     let session_id = session_id("session-1");
     state
-        .open_session(session_id.clone())
+        .open_session(
+            session_id.clone(),
+            CodeModeSessionCellExecutionLimits::default(),
+        )
         .expect("open session");
     let request_id = request_id(/*value*/ 1);
 
@@ -433,7 +495,10 @@ async fn active_cell_limit_rejects_execute_without_disconnecting() {
     };
     let session_id = session_id("session-1");
     state
-        .open_session(session_id.clone())
+        .open_session(
+            session_id.clone(),
+            CodeModeSessionCellExecutionLimits::default(),
+        )
         .expect("open session");
     let request_id = request_id(/*value*/ 1);
 

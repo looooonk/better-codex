@@ -2,6 +2,8 @@ module(name = "codex")
 
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "protobuf", version = "34.0.bcr.1", repo_name = "com_google_protobuf")
+bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "llvm", version = "0.7.9")
 
 # Patch hermetic LLVM for Codex's custom libc++ and Windows gnullvm runtime
@@ -126,6 +128,12 @@ rules_rust.patch(
 )
 use_repo(rules_rust, "rules_rust")
 
+rules_rust_prost = use_extension(
+    "@rules_rs//rs/experimental:rules_rust_prost.bzl",
+    "rules_rust_prost",
+)
+use_repo(rules_rust_prost, "rules_rust_prost")
+
 nightly_rust = use_extension(
     "@rules_rs//rs/experimental:rules_rust_reexported_extensions.bzl",
     "rust",
@@ -217,6 +225,36 @@ crate.from_cargo(
     ],
     use_experimental_platforms = True,
 )
+crate.from_cargo(
+    name = "code_mode_proto_codegen_crates",
+    cargo_lock = "//tools/code-mode-proto-codegen:Cargo.lock",
+    cargo_toml = "//tools/code-mode-proto-codegen:Cargo.toml",
+    platform_triples = [
+        "aarch64-unknown-linux-gnu",
+        "aarch64-unknown-linux-musl",
+        "aarch64-apple-darwin",
+        "aarch64-pc-windows-msvc",
+        "aarch64-pc-windows-gnullvm",
+        "x86_64-unknown-linux-gnu",
+        "x86_64-unknown-linux-musl",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+        "x86_64-pc-windows-gnullvm",
+    ],
+    use_experimental_platforms = True,
+)
+crate.annotation(
+    crate = "protoc-gen-prost",
+    gen_binaries = ["protoc-gen-prost"],
+    repositories = ["code_mode_proto_codegen_crates"],
+    version = "0.5.0",
+)
+crate.annotation(
+    crate = "protoc-gen-tonic",
+    gen_binaries = ["protoc-gen-tonic"],
+    repositories = ["code_mode_proto_codegen_crates"],
+    version = "0.5.0",
+)
 
 bazel_dep(name = "zstd", version = "1.5.7")
 
@@ -256,6 +294,9 @@ crate.annotation(
 inject_repo(crate, "zstd")
 
 use_repo(crate, "argument_comment_lint_crates")
+use_repo(crate, "code_mode_proto_codegen_crates")
+
+register_toolchains("//bazel/toolchains/prost:toolchain")
 
 bazel_dep(name = "bzip2", version = "1.0.8.bcr.3")
 single_version_override(

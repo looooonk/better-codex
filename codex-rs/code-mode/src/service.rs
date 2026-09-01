@@ -4,6 +4,7 @@ use std::time::Duration;
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::CodeModeNestedToolCall;
 use codex_code_mode_protocol::CodeModeSession;
+use codex_code_mode_protocol::CodeModeSessionCellExecutionLimits;
 use codex_code_mode_protocol::CodeModeSessionDelegate;
 use codex_code_mode_protocol::CodeModeSessionProvider;
 use codex_code_mode_protocol::CodeModeSessionProviderFuture;
@@ -28,6 +29,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::session_runtime as runtime;
 use crate::session_runtime::SessionRuntime;
+
+const YIELD_GRACE_PERIOD: Duration = Duration::from_secs(1);
+const MIN_YIELD_TIME_FOR_GRACE: Duration = Duration::from_secs(10);
 
 pub struct NoopCodeModeSessionDelegate;
 
@@ -64,9 +68,19 @@ impl CodeModeSessionProvider for InProcessCodeModeSessionProvider {
         &'a self,
         delegate: Arc<dyn CodeModeSessionDelegate>,
     ) -> CodeModeSessionProviderFuture<'a> {
+        self.create_session_with_limits(delegate, CodeModeSessionCellExecutionLimits::default())
+    }
+
+    fn create_session_with_limits<'a>(
+        &'a self,
+        delegate: Arc<dyn CodeModeSessionDelegate>,
+        limits: CodeModeSessionCellExecutionLimits,
+    ) -> CodeModeSessionProviderFuture<'a> {
         Box::pin(async move {
             let session: Arc<dyn CodeModeSession> =
-                Arc::new(InProcessCodeModeSession::with_delegate(delegate));
+                Arc::new(InProcessCodeModeSession::with_delegate_and_limits(
+                    delegate, limits,
+                ));
             Ok(session)
         })
     }
@@ -74,6 +88,7 @@ impl CodeModeSessionProvider for InProcessCodeModeSessionProvider {
 
 pub struct InProcessCodeModeSession {
     runtime: SessionRuntime<ProtocolDelegate>,
+    cell_execution_limits: CodeModeSessionCellExecutionLimits,
 }
 
 impl InProcessCodeModeSession {
@@ -82,20 +97,36 @@ impl InProcessCodeModeSession {
     }
 
     pub fn with_delegate(delegate: Arc<dyn CodeModeSessionDelegate>) -> Self {
+        Self::with_delegate_and_limits(delegate, CodeModeSessionCellExecutionLimits::default())
+    }
+
+    pub fn with_delegate_and_limits(
+        delegate: Arc<dyn CodeModeSessionDelegate>,
+        cell_execution_limits: CodeModeSessionCellExecutionLimits,
+    ) -> Self {
         Self {
             runtime: SessionRuntime::new(Arc::new(ProtocolDelegate { delegate })),
+            cell_execution_limits: CodeModeSessionCellExecutionLimits {
+                max_heap_size_bytes: None,
+                ..cell_execution_limits
+            },
         }
     }
 
     pub fn with_delegate_and_task_failure_handler(
         delegate: Arc<dyn CodeModeSessionDelegate>,
         task_failure_handler: Arc<dyn Fn(String) + Send + Sync>,
+        cell_execution_limits: CodeModeSessionCellExecutionLimits,
     ) -> Self {
         Self {
             runtime: SessionRuntime::new_with_task_failure_handler(
                 Arc::new(ProtocolDelegate { delegate }),
                 Some(task_failure_handler),
             ),
+            cell_execution_limits: CodeModeSessionCellExecutionLimits {
+                max_heap_size_bytes: None,
+                ..cell_execution_limits
+            },
         }
     }
 
@@ -105,7 +136,7 @@ impl InProcessCodeModeSession {
             .runtime
             .execute(
                 runtime_request(request),
-                runtime::ObserveMode::YieldAfter(Duration::from_millis(yield_time_ms)),
+                runtime::ObserveMode::YieldAfter(self.resolve_yield_timeout(yield_time_ms)),
             )
             .await
             .map_err(|error| error.to_string())?;
@@ -160,7 +191,7 @@ impl InProcessCodeModeSession {
             .runtime
             .begin_observe(
                 &runtime_cell_id,
-                runtime::ObserveMode::YieldAfter(Duration::from_millis(yield_time_ms)),
+                runtime::ObserveMode::YieldAfter(self.resolve_yield_timeout(yield_time_ms)),
             )
             .await
         {
@@ -218,6 +249,20 @@ impl InProcessCodeModeSession {
             .shutdown()
             .await
             .map_err(|error| error.to_string())
+    }
+
+    fn resolve_yield_timeout(&self, yield_time_ms: u64) -> Duration {
+        let yield_time = Duration::from_millis(yield_time_ms);
+        let timeout = if yield_time >= MIN_YIELD_TIME_FOR_GRACE {
+            yield_time.saturating_add(YIELD_GRACE_PERIOD)
+        } else {
+            yield_time
+        };
+
+        self.cell_execution_limits
+            .max_yield_time_ms
+            .map(Duration::from_millis)
+            .map_or(timeout, |limit| timeout.min(limit))
     }
 }
 

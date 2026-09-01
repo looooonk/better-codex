@@ -307,7 +307,7 @@ impl ThreadTraceContext {
         codex_turn_id: impl Into<CodexTurnId>,
         runtime_cell_id: impl Into<String>,
         model_visible_call_id: impl Into<String>,
-        source_js: impl Into<String>,
+        source_js: impl AsRef<str>,
     ) -> CodeCellTraceContext {
         let context = self.code_cell_trace_context(codex_turn_id, runtime_cell_id);
         context.record_started(model_visible_call_id, source_js);

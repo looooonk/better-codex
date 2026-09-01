@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use codex_code_mode_protocol::ExecuteRequest;
 use codex_code_mode_protocol::FunctionCallOutputContentItem;
+use futures::FutureExt;
 use pretty_assertions::assert_eq;
 use serde_json::Value as JsonValue;
 use tokio::sync::mpsc;
@@ -146,10 +147,7 @@ fn spawn_cell_actor_harness_with_host_and_failure_handler<H: CellHost>(
         },
         event_rx,
         command_rx,
-        Observer {
-            mode: initial_observe_mode,
-            response_tx: initial_event_tx,
-        },
+        Observer::new(initial_observe_mode, initial_event_tx),
         task_failure_handler,
     ));
 
@@ -233,9 +231,46 @@ async fn yield_timer_preempts_buffered_runtime_output() {
             },
         ))
         .unwrap();
+    let queued_observation = harness
+        .handle
+        .observe(ObserveMode::YieldAfter(Duration::from_secs(60)));
 
     assert_eq!(
         harness.initial_event_rx.await.unwrap(),
+        Ok(CellEvent::Yielded {
+            content_items: Vec::new(),
+        })
+    );
+    drop(queued_observation);
+
+    let termination = harness.handle.terminate();
+    drop(harness.event_tx);
+    assert_eq!(
+        termination.await,
+        Ok(CellEvent::Terminated {
+            content_items: vec![OutputItem::Text {
+                text: "queued output".to_string(),
+            }],
+        })
+    );
+    harness.task.await.unwrap();
+}
+
+#[tokio::test(start_paused = true)]
+async fn runtime_start_does_not_extend_the_admitted_yield_deadline() {
+    let harness = spawn_cell_actor_harness(ObserveMode::YieldAfter(Duration::from_secs(10)));
+    tokio::time::advance(Duration::from_secs(9)).await;
+    harness.event_tx.send(RuntimeEvent::Started).unwrap();
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_secs(1)).await;
+    tokio::task::yield_now().await;
+
+    assert_eq!(
+        harness
+            .initial_event_rx
+            .now_or_never()
+            .expect("absolute yield deadline should be ready")
+            .unwrap(),
         Ok(CellEvent::Yielded {
             content_items: Vec::new(),
         })
@@ -246,9 +281,7 @@ async fn yield_timer_preempts_buffered_runtime_output() {
     assert_eq!(
         termination.await,
         Ok(CellEvent::Terminated {
-            content_items: vec![OutputItem::Text {
-                text: "queued output".to_string(),
-            }],
+            content_items: Vec::new(),
         })
     );
     harness.task.await.unwrap();

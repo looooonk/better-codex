@@ -1,0 +1,23 @@
+#[cfg(codex_bazel)]
+pub use code_mode_proto::codex::code_mode::v1::*;
+
+#[cfg(not(codex_bazel))]
+tonic::include_proto!("codex.code_mode.v1");
+
+use tonic::transport::Channel;
+
+use self::code_mode_host_client::CodeModeHostClient;
+
+pub const MAX_IDENTIFIER_BYTES: usize = 256;
+pub const MAX_TOOL_ERROR_BYTES: usize = 64 * 1_024;
+
+/// Builds a generated client with the protocol's 64 MiB frame limit in both directions.
+pub fn bounded_code_mode_host_client(channel: Channel) -> CodeModeHostClient<Channel> {
+    CodeModeHostClient::new(channel)
+        .max_decoding_message_size(crate::host::MAX_FRAME_BYTES)
+        .max_encoding_message_size(crate::host::MAX_FRAME_BYTES)
+}
+
+#[cfg(test)]
+#[path = "grpc_tests.rs"]
+mod tests;

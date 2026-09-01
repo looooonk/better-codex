@@ -14,8 +14,12 @@ use tokio_util::task::TaskTracker;
 use crate::ExecServerRuntimePaths;
 use crate::client::http_client::PendingReqwestHttpBodyStream;
 use crate::client::http_client::ReqwestHttpRequestRunner;
+use crate::environment_config::ReadEnvironmentConfigError;
+use crate::environment_config::read_environment_config;
 use crate::protocol::CapabilityRootsDiscoverParams;
 use crate::protocol::CapabilityRootsDiscoverResponse;
+use crate::protocol::EnvironmentConfigReadParams;
+use crate::protocol::EnvironmentConfigReadResponse;
 use crate::protocol::EnvironmentInfo;
 use crate::protocol::ExecParams;
 use crate::protocol::ExecResponse;
@@ -166,6 +170,19 @@ impl ExecServerHandler {
     pub(crate) fn environment_info(&self) -> Result<EnvironmentInfo, JSONRPCErrorError> {
         self.require_initialized_for("environment info")?;
         Ok(EnvironmentInfo::local())
+    }
+
+    pub(crate) async fn environment_config_read(
+        &self,
+        params: EnvironmentConfigReadParams,
+    ) -> Result<EnvironmentConfigReadResponse, JSONRPCErrorError> {
+        self.require_initialized_for("environment config")?;
+        read_environment_config(crate::LOCAL_FS.as_ref(), params)
+            .await
+            .map_err(|error| match error {
+                ReadEnvironmentConfigError::InvalidParams(message) => invalid_params(message),
+                ReadEnvironmentConfigError::Internal(message) => internal_error(message),
+            })
     }
 
     pub(crate) async fn exec_read(

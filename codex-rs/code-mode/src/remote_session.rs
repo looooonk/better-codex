@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering;
 
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::CodeModeSession;
+use codex_code_mode_protocol::CodeModeSessionCellExecutionLimits;
 use codex_code_mode_protocol::CodeModeSessionDelegate;
 use codex_code_mode_protocol::CodeModeSessionProvider;
 use codex_code_mode_protocol::CodeModeSessionProviderFuture;
@@ -75,10 +76,19 @@ impl CodeModeSessionProvider for ProcessOwnedCodeModeSessionProvider {
         &'a self,
         delegate: Arc<dyn CodeModeSessionDelegate>,
     ) -> CodeModeSessionProviderFuture<'a> {
+        self.create_session_with_limits(delegate, CodeModeSessionCellExecutionLimits::default())
+    }
+
+    fn create_session_with_limits<'a>(
+        &'a self,
+        delegate: Arc<dyn CodeModeSessionDelegate>,
+        limits: CodeModeSessionCellExecutionLimits,
+    ) -> CodeModeSessionProviderFuture<'a> {
         Box::pin(async move {
             let Some(process_host) = self.process_host() else {
-                let session: Arc<dyn CodeModeSession> =
-                    Arc::new(crate::InProcessCodeModeSession::with_delegate(delegate));
+                let session: Arc<dyn CodeModeSession> = Arc::new(
+                    crate::InProcessCodeModeSession::with_delegate_and_limits(delegate, limits),
+                );
                 return Ok(session);
             };
 
@@ -90,13 +100,18 @@ impl CodeModeSessionProvider for ProcessOwnedCodeModeSessionProvider {
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner) =
                         ProviderState::InProcess;
-                    let session: Arc<dyn CodeModeSession> =
-                        Arc::new(crate::InProcessCodeModeSession::with_delegate(delegate));
+                    let session: Arc<dyn CodeModeSession> = Arc::new(
+                        crate::InProcessCodeModeSession::with_delegate_and_limits(delegate, limits),
+                    );
                     return Ok(session);
                 }
                 Err(error) => return Err(error.to_string()),
             }
-            let session = ProcessOwnedCodeModeSession::with_process_host(delegate, process_host);
+            let session = ProcessOwnedCodeModeSession::with_process_host(
+                delegate,
+                process_host,
+                limits,
+            );
             session.connection().await?;
             let session: Arc<dyn CodeModeSession> = Arc::new(session);
             Ok(session)
@@ -179,6 +194,7 @@ struct SessionBinding {
 struct SessionInner {
     process_host: Arc<OwnedProcessHost>,
     delegate: Arc<dyn CodeModeSessionDelegate>,
+    limits: CodeModeSessionCellExecutionLimits,
     state: StdMutex<SessionState>,
     next_generation: AtomicU64,
     shutdown_requested: AtomicBool,
@@ -196,17 +212,20 @@ impl ProcessOwnedCodeModeSession {
         Self::with_process_host(
             Arc::new(NoopCodeModeSessionDelegate),
             Arc::new(OwnedProcessHost::new(default_host_program())),
+            CodeModeSessionCellExecutionLimits::default(),
         )
     }
 
     fn with_process_host(
         delegate: Arc<dyn CodeModeSessionDelegate>,
         process_host: Arc<OwnedProcessHost>,
+        limits: CodeModeSessionCellExecutionLimits,
     ) -> Self {
         Self {
             inner: Arc::new(SessionInner {
                 process_host,
                 delegate,
+                limits,
                 state: StdMutex::new(SessionState::New),
                 next_generation: AtomicU64::new(1),
                 shutdown_requested: AtomicBool::new(false),
@@ -297,7 +316,11 @@ impl SessionInner {
         let result = match self.process_host.connection().await {
             Ok(connection) => {
                 let cleanup = connection
-                    .open_session(remote.clone(), Arc::clone(&self.delegate))
+                    .open_session(
+                        remote.clone(),
+                        Arc::clone(&self.delegate),
+                        self.limits.clone(),
+                    )
                     .await;
                 cleanup.map(|cleanup| SessionBinding {
                     connection,

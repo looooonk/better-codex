@@ -15,7 +15,7 @@ use tokio::sync::oneshot::error::TryRecvError;
 use tokio_util::sync::CancellationToken;
 
 use super::HostPeer;
-use super::MAX_PENDING_DELEGATE_CALLS;
+use crate::MAX_PENDING_DELEGATE_CALLS;
 
 fn session_id(value: &str) -> SessionId {
     SessionId::new(value).expect("session ID")

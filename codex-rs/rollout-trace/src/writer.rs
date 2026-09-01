@@ -106,6 +106,28 @@ impl TraceWriter {
         })
     }
 
+    pub(crate) fn write_json_payload_bounded(
+        &self,
+        kind: RawPayloadKind,
+        value: &impl Serialize,
+        maximum_bytes: usize,
+    ) -> Result<RawPayloadRef> {
+        let bytes = redacted_json_bytes_bounded(value, maximum_bytes)?;
+        let mut inner = self.lock_inner();
+        let ordinal = inner.next_payload_ordinal;
+        inner.next_payload_ordinal += 1;
+        let raw_payload_id = format!("raw_payload:{ordinal}");
+        let relative_path = format!("{PAYLOADS_DIR_NAME}/{ordinal}.json");
+        let absolute_path = inner.payloads_dir.join(format!("{ordinal}.json"));
+        std::fs::write(&absolute_path, bytes)
+            .with_context(|| format!("write JSON {}", absolute_path.display()))?;
+        Ok(RawPayloadRef {
+            raw_payload_id,
+            kind,
+            path: relative_path,
+        })
+    }
+
     /// Appends one raw event with no extra envelope context.
     pub fn append(&self, payload: RawTraceEventPayload) -> Result<RawTraceEvent> {
         self.append_with_context(RawTraceEventContext::default(), payload)
@@ -154,6 +176,53 @@ fn write_redacted_json_file(path: &Path, value: &impl Serialize) -> Result<()> {
     let mut value = serde_json::to_value(value)?;
     redact_persisted_json(&mut value);
     write_json_file(path, &value)
+}
+
+fn redacted_json_bytes_bounded(value: &impl Serialize, maximum_bytes: usize) -> Result<Vec<u8>> {
+    let serialized = serialize_json_bounded(value, maximum_bytes)?;
+    let mut value = serde_json::from_slice(&serialized)?;
+    redact_persisted_json(&mut value);
+    serialize_json_bounded(&value, maximum_bytes)
+}
+
+fn serialize_json_bounded(value: &impl Serialize, maximum_bytes: usize) -> Result<Vec<u8>> {
+    let mut output = BoundedBuffer::new(maximum_bytes);
+    serde_json::to_writer(&mut output, value)?;
+    Ok(output.into_inner())
+}
+
+struct BoundedBuffer {
+    bytes: Vec<u8>,
+    maximum_bytes: usize,
+}
+
+impl BoundedBuffer {
+    fn new(maximum_bytes: usize) -> Self {
+        Self {
+            bytes: Vec::with_capacity(maximum_bytes.min(64 * 1_024)),
+            maximum_bytes,
+        }
+    }
+
+    fn into_inner(self) -> Vec<u8> {
+        self.bytes
+    }
+}
+
+impl Write for BoundedBuffer {
+    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
+        if buffer.len() > self.maximum_bytes.saturating_sub(self.bytes.len()) {
+            return Err(std::io::Error::other(
+                "rollout trace payload exceeds its byte limit",
+            ));
+        }
+        self.bytes.extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
 }
 
 pub(crate) fn unix_time_ms() -> i64 {

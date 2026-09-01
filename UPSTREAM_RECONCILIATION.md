@@ -257,6 +257,10 @@ fallback. Exclude old TUI, Windows-only transport/sandbox branches, release/CI, 
 telemetry-only work. Port the shared V8 sandbox invariant from `2e32d958` #36374.
 
 The existing 64 MiB frames and bounded request/cell/session caches are retained.
+The v1 gRPC `max_heap_size_bytes` field remains reserved for wire compatibility
+but is deprecated and rejected before session creation until the embedded runtime
+can enforce it. Better does not yet ship a generated gRPC client that could
+preflight this unsupported limit.
 Prerequisites add per-session limits (`9d00bb01` #37114), stalled-request invalidation
 (`8e3b5d3e` #36830), default yields (`d0c8f422` #37352), executor-local config and
 capability negotiation (`95c7265e` #37408, `646f7c0a` #37654), and deterministic

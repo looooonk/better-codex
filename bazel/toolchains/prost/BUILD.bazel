@@ -1,0 +1,35 @@
+load("@rules_rust_prost//:defs.bzl", "rust_prost_toolchain")
+load("@rules_rust//rust:defs.bzl", "rust_library_group")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library_group(
+    name = "prost_runtime",
+    deps = ["@crates//:prost"],
+)
+
+rust_library_group(
+    name = "tonic_runtime",
+    deps = [
+        ":prost_runtime",
+        "@crates//:tonic",
+        "@crates//:tonic-prost",
+    ],
+)
+
+rust_prost_toolchain(
+    name = "toolchain_impl",
+    compile_well_known_types = False,
+    prost_plugin = "@code_mode_proto_codegen_crates//:protoc-gen-prost-0.5.0__protoc-gen-prost",
+    prost_runtime = ":prost_runtime",
+    prost_types = "@crates//:prost-types-0.14.3",
+    tonic_plugin = "@code_mode_proto_codegen_crates//:protoc-gen-tonic-0.5.0__protoc-gen-tonic",
+    tonic_plugin_flag = "--plugin=protoc-gen-tonic=%s",
+    tonic_runtime = ":tonic_runtime",
+)
+
+toolchain(
+    name = "toolchain",
+    toolchain = ":toolchain_impl",
+    toolchain_type = "@rules_rust_prost//:toolchain_type",
+)

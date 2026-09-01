@@ -24,8 +24,9 @@ use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
 
+use crate::MAX_PENDING_DELEGATE_CALLS;
+
 const CELL_MESSAGE_CAPACITY: usize = 128;
-const MAX_PENDING_DELEGATE_CALLS: usize = 256;
 
 pub(super) struct HostPeer {
     outgoing_tx: mpsc::Sender<EncodedFrame>,

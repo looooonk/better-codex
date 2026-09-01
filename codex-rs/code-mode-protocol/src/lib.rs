@@ -1,4 +1,5 @@
 mod description;
+pub mod grpc;
 pub mod host;
 mod response;
 mod runtime;
@@ -34,6 +35,7 @@ pub use runtime::WaitToPendingOutcome;
 pub use runtime::WaitToPendingRequest;
 pub use session::CellId;
 pub use session::CodeModeSession;
+pub use session::CodeModeSessionCellExecutionLimits;
 pub use session::CodeModeSessionDelegate;
 pub use session::CodeModeSessionProvider;
 pub use session::CodeModeSessionProviderFuture;

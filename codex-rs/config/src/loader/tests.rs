@@ -71,10 +71,21 @@ impl ExecutorFileSystem for TestFileSystem {
 
     fn get_metadata<'a>(
         &'a self,
-        _path: &'a PathUri,
+        path: &'a PathUri,
         _sandbox: Option<&'a FileSystemSandboxContext>,
     ) -> ExecutorFileSystemFuture<'a, FileMetadata> {
-        Box::pin(async move { unimplemented!("test filesystem only supports reads") })
+        Box::pin(async move {
+            let path = path.to_abs_path()?;
+            let metadata = tokio::fs::symlink_metadata(path.as_path()).await?;
+            Ok(FileMetadata {
+                is_directory: metadata.is_dir(),
+                is_file: metadata.is_file(),
+                is_symlink: metadata.file_type().is_symlink(),
+                size: metadata.len(),
+                created_at_ms: 0,
+                modified_at_ms: 0,
+            })
+        })
     }
 
     fn read_directory<'a>(
@@ -330,4 +341,227 @@ model = "gpt-dev"
     )
     .await
     .expect("profile-v2 should allow unrelated legacy profiles in base user config");
+}
+
+#[test]
+fn local_layer_projection_preserves_blockers_and_cloud_position() {
+    let tmp = tempdir().expect("tempdir");
+    let base_dir = AbsolutePathBuf::from_absolute_path(tmp.path()).expect("absolute base");
+    let layer = |source, contents| LocalTomlLayer {
+        source,
+        base_dir: base_dir.clone(),
+        toml: toml::from_str(contents).expect("valid TOML"),
+    };
+    let requirements = LocalTomlLayerStack {
+        layers: Vec::<LocalTomlLayer<RequirementSource>>::new(),
+        cloud_insertion_index: 0,
+    };
+    let layers = LocalConfigLayers {
+        config: LocalTomlLayerStack {
+            layers: vec![
+                layer(
+                    ConfigLayerSource::System {
+                        file: base_dir.join("system.toml"),
+                    },
+                    "ignored=true\n\"literal.key\"=\"literal\"\narray=[1,2]\n[a]\nb=1\nc=2",
+                ),
+                layer(ConfigLayerSource::SessionFlags, "a=2\nonly_user=true"),
+                layer(
+                    ConfigLayerSource::LegacyManagedConfigTomlFromMdm,
+                    "[a]\nunrequested=true",
+                ),
+            ],
+            cloud_insertion_index: 1,
+        },
+        requirements,
+    };
+
+    let only_user = layers
+        .clone()
+        .project(&[vec!["only_user".into()]], &[]);
+    assert_eq!(
+        only_user.config,
+        LocalTomlLayerStack {
+            layers: vec![layer(ConfigLayerSource::SessionFlags, "only_user=true")],
+            cloud_insertion_index: 0,
+        }
+    );
+
+    let projected = layers.project(
+        &[
+            vec!["a".into(), "b".into()],
+            vec!["array".into(), "unused".into()],
+            vec!["literal.key".into()],
+        ],
+        &[],
+    );
+    assert_eq!(
+        projected.config,
+        LocalTomlLayerStack {
+            layers: vec![
+                layer(
+                    ConfigLayerSource::System {
+                        file: base_dir.join("system.toml"),
+                    },
+                    "\"literal.key\"=\"literal\"\narray=[1,2]\n[a]\nb=1",
+                ),
+                layer(ConfigLayerSource::SessionFlags, "a=2"),
+                layer(ConfigLayerSource::LegacyManagedConfigTomlFromMdm, "[a]"),
+            ],
+            cloud_insertion_index: 1,
+        }
+    );
+
+    let mut merged = TomlValue::Table(toml::map::Map::new());
+    for layer in projected.config.layers {
+        merge_toml_values(&mut merged, &layer.toml);
+    }
+    assert_eq!(
+        merged.get("a"),
+        Some(&TomlValue::Table(toml::map::Map::new()))
+    );
+}
+
+#[tokio::test]
+async fn local_layers_preserve_raw_paths_trust_and_managed_auth() {
+    let tmp = tempdir().expect("tempdir");
+    let codex_home = tmp.path().join("codex-home");
+    let project = tmp.path().join("project");
+    let dot_codex = project.join(".codex");
+    let system_dir = tmp.path().join("system");
+    let managed_dir = tmp.path().join("managed");
+    for dir in [&codex_home, &dot_codex, &system_dir, &managed_dir] {
+        std::fs::create_dir_all(dir).expect("create fixture directory");
+    }
+    std::fs::write(project.join(".project-root"), "").expect("write project marker");
+
+    let project_key = TomlValue::String(project_trust_key(&project)).to_string();
+    let user_config = |trust_level| {
+        format!(
+            "project_root_markers=[\".project-root\"]\nmodel_instructions_file=\"./user.md\"\n[projects.{project_key}]\ntrust_level=\"{trust_level}\""
+        )
+    };
+    let user_file = codex_home.join(CONFIG_TOML_FILE);
+    std::fs::write(&user_file, user_config("trusted")).expect("write user config");
+    let system_file = system_dir.join(CONFIG_TOML_FILE);
+    std::fs::write(&system_file, "model_instructions_file=\"./system.md\"")
+        .expect("write system config");
+    std::fs::write(
+        dot_codex.join(CONFIG_TOML_FILE),
+        concat!(
+            "model_instructions_file=\"./project.md\"\n",
+            "openai_base_url=\"https://ignored\"\n",
+            "[tui]\napp_theme=\"dark\"",
+        ),
+    )
+    .expect("write project config");
+    let managed_file = managed_dir.join("managed_config.toml");
+    std::fs::write(
+        &managed_file,
+        concat!(
+            "approval_policy=\"never\"\n",
+            "sandbox_mode=\"workspace-write\"\n",
+            "model_instructions_file=\"./managed.md\"",
+        ),
+    )
+    .expect("write managed config");
+    let requirements_file = managed_dir.join("requirements.toml");
+    std::fs::write(
+        &requirements_file,
+        concat!(
+            "allowed_login_methods=[\"api\"]\n",
+            "allowed_chatgpt_workspaces=[\"workspace-a\"]\n",
+            "allowed_sandbox_modes=[\"read-only\"]\n",
+            "log_dir=\"./logs\"",
+        ),
+    )
+    .expect("write system requirements");
+
+    let mut overrides = LoaderOverrides::with_managed_config_path_for_tests(managed_file);
+    overrides.system_config_path = Some(system_file);
+    overrides.system_requirements_path = Some(requirements_file);
+    let cwd = AbsolutePathBuf::from_absolute_path(&project).expect("absolute cwd");
+    let layers = local::load_local_config_layers_with_overrides(
+        &TestFileSystem,
+        &codex_home,
+        &cwd,
+        &overrides,
+    )
+    .await
+    .expect("load local layers");
+
+    assert_eq!(
+        (
+            layers
+                .config
+                .layers
+                .iter()
+                .map(|layer| layer.base_dir.to_path_buf())
+                .collect::<Vec<_>>(),
+            layers.config.cloud_insertion_index,
+            layers.requirements.cloud_insertion_index,
+        ),
+        (
+            vec![
+                system_dir,
+                codex_home.clone(),
+                dot_codex.clone(),
+                managed_dir,
+            ],
+            1,
+            1,
+        )
+    );
+    let project_toml = &layers.config.layers[2].toml;
+    assert_eq!(
+        (
+            project_toml.get("model_instructions_file"),
+            project_toml.get("openai_base_url"),
+            project_toml
+                .get("tui")
+                .and_then(TomlValue::as_table)
+                .and_then(|tui| tui.get("app_theme")),
+            layers.config.layers[3]
+                .toml
+                .get("model_instructions_file"),
+            layers.requirements.layers[0].toml.clone(),
+            layers.requirements.layers[1].toml.clone(),
+        ),
+        (
+            Some(&TomlValue::String("./project.md".into())),
+            None,
+            None,
+            Some(&TomlValue::String("./managed.md".into())),
+            toml::from_str(concat!(
+                "allowed_login_methods=[\"api\"]\n",
+                "allowed_chatgpt_workspaces=[\"workspace-a\"]\n",
+                "allowed_sandbox_modes=[\"read-only\"]\n",
+                "log_dir=\"./logs\"",
+            ))
+            .expect("system requirements TOML"),
+            toml::from_str(
+                "allowed_approval_policies=[\"never\"]\nallowed_sandbox_modes=[\"read-only\",\"workspace-write\"]"
+            )
+            .expect("legacy requirements TOML"),
+        )
+    );
+
+    std::fs::write(&user_file, user_config("untrusted")).expect("write user config");
+    let layers = local::load_local_config_layers_with_overrides(
+        &TestFileSystem,
+        &codex_home,
+        &cwd,
+        &overrides,
+    )
+    .await
+    .expect("load untrusted local layers");
+    assert_eq!(
+        layers
+            .config
+            .layers
+            .iter()
+            .filter(|layer| matches!(layer.source, ConfigLayerSource::Project { .. }))
+            .count(),
+        0
+    );
 }
