@@ -4,8 +4,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use crate::SkillInjections;
-use crate::build_skill_injections;
 use crate::client::ModelClientSession;
 use crate::client_common::Prompt;
 use crate::client_common::ResponseEvent;
@@ -27,9 +25,6 @@ use crate::hook_runtime::record_pending_input;
 use crate::hook_runtime::run_legacy_after_agent_hook;
 use crate::hook_runtime::run_pending_session_start_hooks;
 use crate::hook_runtime::run_turn_stop_hooks;
-use crate::injection::ToolMentionKind;
-use crate::injection::app_id_from_path;
-use crate::injection::tool_kind_for_path;
 use crate::mcp_skill_dependencies::maybe_prompt_and_install_mcp_dependencies;
 use crate::mcp_tool_exposure::build_mcp_tool_runtimes;
 use crate::mentions::build_connector_slug_counts;
@@ -47,6 +42,7 @@ use crate::session::TurnInput;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
+use crate::skills::emit_explicit_skill_invocations;
 use crate::stream_events_utils::HandleOutputCtx;
 use crate::stream_events_utils::TurnItemContributorPolicy;
 use crate::stream_events_utils::finalize_non_tool_response_item;
@@ -78,8 +74,6 @@ use codex_analytics::TurnResolvedConfigFact;
 use codex_analytics::build_track_events_context;
 use codex_async_utils::OrCancelExt;
 use codex_core_plugins::RecommendedPluginCandidatesInput;
-use codex_core_skills::ExplicitSkillPromptBudget;
-use codex_core_skills::injection::InjectedHostSkillPrompts;
 use codex_extension_api::TurnInputContext;
 use codex_extension_api::TurnInputEnvironment;
 use codex_features::Feature;
@@ -110,6 +104,12 @@ use codex_protocol::protocol::SafetyBufferingEvent;
 use codex_protocol::protocol::TurnDiffEvent;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
+use codex_skills::ToolMentionKind;
+use codex_skills::app_id_from_path;
+use codex_skills::tool_kind_for_path;
+use codex_skills_extension::ExplicitSkillPromptBudget;
+use codex_skills_extension::HostSkillPrompts;
+use codex_skills_extension::InjectedHostSkillPrompts;
 use codex_tools::ToolName;
 use codex_tools::filter_request_plugin_install_discoverable_tools_for_client;
 use codex_utils_stream_parser::AssistantTextChunk;
@@ -648,51 +648,44 @@ async fn build_skills_and_plugins(
     let injected_host_skill_prompts = turn_context
         .extension_data
         .get::<InjectedHostSkillPrompts>();
-    let legacy_mentioned_skills = match &injected_host_skill_prompts {
-        Some(injected) => mentioned_skills
-            .iter()
-            .filter(|skill| !injected.contains_path(&skill.path_to_skills_md.to_string_lossy()))
-            .cloned()
-            .collect(),
-        None => mentioned_skills,
-    };
-    let SkillInjections {
-        items: skill_injections,
-        warnings: skill_warnings,
-    } = build_skill_injections(
-        &legacy_mentioned_skills,
-        Some(skills_outcome),
-        Some(&turn_context.session_telemetry),
-        &sess.services.analytics_events_client,
+    let HostSkillPrompts {
+        fragments,
+        injected: injected_host_skills,
+        warnings: host_skill_warnings,
+    } = turn_context
+        .turn_skills
+        .snapshot
+        .load_skill_prompts(&mentioned_skills)
+        .await;
+    emit_explicit_skill_invocations(
+        sess,
+        turn_context,
+        &mentioned_skills,
+        &injected_host_skills,
         tracking.clone(),
-    )
-    .await;
+    );
 
-    for message in skill_warnings {
+    for message in host_skill_warnings {
         sess.send_event(turn_context, EventMsg::Warning(WarningEvent { message }))
             .await;
     }
 
-    let bounded_skill_items = skill_injections
-        .iter()
-        .map(|skill| {
-            let (instructions, truncated) = crate::context::SkillInstructions::bounded(
-                &skill.name,
-                &skill.path,
-                &skill.contents,
-            );
-            let rendered_bytes = instructions.rendered_bytes();
-            (
-                skill,
-                ContextualUserFragment::into(instructions),
-                rendered_bytes,
-                truncated,
-            )
+    let bounded_skill_items = fragments
+        .into_iter()
+        .zip(injected_host_skills.iter())
+        .filter_map(|(fragment, skill)| {
+            let already_injected = injected_host_skill_prompts.as_ref().is_some_and(|injected| {
+                injected.contains_path(&skill.path_to_skills_md.to_string_lossy())
+            });
+            (!already_injected).then(|| {
+                let rendered_bytes = fragment.render().len();
+                (skill, fragment.into_boxed_response_item(), rendered_bytes)
+            })
         })
         .collect::<Vec<_>>();
     let mut skill_items = bounded_skill_items
         .iter()
-        .map(|(_, item, _, _)| item.clone())
+        .map(|(_, item, _)| item.clone())
         .collect::<Vec<_>>();
     skill_items.extend(extension_injection_items.iter().filter(|item| {
         matches!(
@@ -748,7 +741,7 @@ async fn build_skills_and_plugins(
         .copied()
         .unwrap_or_default();
     let mut injection_items = Vec::new();
-    for (skill, item, rendered_bytes, truncated) in bounded_skill_items {
+    for (skill, item, rendered_bytes) in bounded_skill_items {
         if !skill_prompt_budget.try_reserve(rendered_bytes) {
             let message = format!(
                 "Skill `{}` was omitted because explicit skill prompts exceeded the turn context limit.",
@@ -757,14 +750,6 @@ async fn build_skills_and_plugins(
             sess.send_event(turn_context, EventMsg::Warning(WarningEvent { message }))
                 .await;
             continue;
-        }
-        if truncated {
-            let message = format!(
-                "Skill `{}` exceeded the main prompt context limit and was truncated.",
-                skill.name
-            );
-            sess.send_event(turn_context, EventMsg::Warning(WarningEvent { message }))
-                .await;
         }
         injection_items.push(item);
     }

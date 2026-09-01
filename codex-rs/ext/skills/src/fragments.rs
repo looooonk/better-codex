@@ -7,9 +7,8 @@ use codex_protocol::protocol::SKILLS_INSTRUCTIONS_CLOSE_TAG;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
 use serde::Serialize;
 
+use crate::host_prompt::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
 use crate::tools::SkillToolAuthority;
-
-const MAX_EXPLICIT_SKILL_PROMPT_BYTES: usize = 3_600;
 const MAX_SKILL_NAME_BYTES: usize = 256;
 const MAX_SKILL_PATH_BYTES: usize = 1_024;
 const TRUNCATION_SUFFIX: &str = "\n\n[skill prompt truncated]";
@@ -24,10 +23,10 @@ pub(crate) struct SkillsUpdate(String);
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SkillInstructions {
-    name: String,
-    path: String,
-    contents: String,
-    resource_access: Option<SkillResourceAccess>,
+    pub(crate) name: String,
+    pub(crate) path: String,
+    pub(crate) contents: String,
+    pub(crate) resource_access: Option<SkillResourceAccess>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]

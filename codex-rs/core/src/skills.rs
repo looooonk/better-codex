@@ -3,12 +3,14 @@ use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use codex_analytics::InvocationType;
 use codex_analytics::SkillInvocation;
+use codex_analytics::TrackEventsContext;
 use codex_analytics::build_track_events_context;
 use codex_extension_api::SkillInvocationInput;
 use codex_extension_api::SkillInvocationKind;
 use codex_protocol::protocol::SkillScope;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_plugins::PluginSkillRoot;
+use std::collections::HashSet;
 
 pub use codex_core_skills::SkillError;
 pub use codex_core_skills::SkillLoadOutcome;
@@ -18,9 +20,6 @@ pub use codex_core_skills::build_skill_name_counts;
 pub use codex_core_skills::default_skill_metadata_budget;
 pub use codex_core_skills::detect_implicit_skill_invocation_for_command;
 pub use codex_core_skills::filter_skill_load_outcome_for_product;
-pub use codex_core_skills::injection;
-pub use codex_core_skills::injection::SkillInjections;
-pub use codex_core_skills::injection::build_skill_injections;
 pub use codex_core_skills::model;
 pub use codex_core_skills::render;
 pub use codex_core_skills::render::SkillRenderSideEffects;
@@ -30,6 +29,49 @@ pub use codex_skills::collect_explicit_skill_mentions;
 pub use codex_skills_extension::HostSkillsLoadInput;
 pub use codex_skills_extension::HostSkillsService;
 pub use codex_skills_extension::bundled_skills_enabled_from_stack;
+
+pub(crate) fn emit_explicit_skill_invocations(
+    sess: &Session,
+    turn_context: &TurnContext,
+    mentioned_skills: &[SkillMetadata],
+    injected_skills: &[SkillMetadata],
+    tracking: TrackEventsContext,
+) {
+    let injected_skill_paths = injected_skills
+        .iter()
+        .map(|skill| &skill.path_to_skills_md)
+        .collect::<HashSet<_>>();
+    for skill in mentioned_skills {
+        let status = if injected_skill_paths.contains(&skill.path_to_skills_md) {
+            "ok"
+        } else {
+            "error"
+        };
+        turn_context.session_telemetry.counter(
+            "codex.skill.injected",
+            /*inc*/ 1,
+            &[
+                ("status", status),
+                ("skill", skill.name.as_str()),
+                ("invoke_type", "explicit"),
+            ],
+        );
+    }
+
+    let invocations = injected_skills
+        .iter()
+        .map(|skill| SkillInvocation {
+            skill_name: skill.name.clone(),
+            skill_scope: skill.scope,
+            skill_path: skill.path_to_skills_md.to_path_buf(),
+            plugin_id: skill.plugin_id.clone(),
+            invocation_type: InvocationType::Explicit,
+        })
+        .collect();
+    sess.services
+        .analytics_events_client
+        .track_skill_invocations(tracking, invocations);
+}
 
 pub(crate) fn skills_load_input_from_config(
     config: &Config,

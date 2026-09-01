@@ -1,11 +1,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use codex_core_skills::ExplicitSkillPromptBudget;
 use codex_core_skills::HostSkillsSnapshot;
 use codex_core_skills::default_skill_metadata_budget;
-use codex_core_skills::injection::HostSkillsCatalogInWorldState;
-use codex_core_skills::injection::InjectedHostSkillPrompts;
 use codex_exec_server::ExecutorCapabilityDiscoverySnapshot;
 use codex_exec_server::FileSystemSandboxContext;
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
@@ -34,6 +31,9 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::WarningEvent;
 
 use crate::SkillsExtensionConfig;
+use crate::ExplicitSkillPromptBudget;
+use crate::HostSkillsCatalogInWorldState;
+use crate::InjectedHostSkillPrompts;
 use crate::catalog::SkillCatalog;
 use crate::catalog::SkillCatalogEntry;
 use crate::catalog::SkillReadResult;

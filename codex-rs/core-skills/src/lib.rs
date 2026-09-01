@@ -1,9 +1,7 @@
-pub mod injection;
 pub(crate) mod invocation_utils;
 mod mention_counts;
 pub mod model;
 pub mod render;
-mod skill_instructions;
 
 pub(crate) use invocation_utils::build_implicit_skill_path_indexes;
 pub use invocation_utils::detect_implicit_skill_invocation_for_command;
@@ -23,7 +21,3 @@ pub use render::SkillRenderReport;
 pub use render::build_available_skills;
 pub use render::default_skill_metadata_budget;
 pub use render::render_available_skills_body;
-pub use skill_instructions::ExplicitSkillPromptBudget;
-pub use skill_instructions::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
-pub use skill_instructions::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
-pub use skill_instructions::SkillInstructions;
