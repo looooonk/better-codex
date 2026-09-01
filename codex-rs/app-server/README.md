@@ -162,7 +162,7 @@ Example with notification opt-out:
 - `thread/queue/update` — experimental; replace the input of a pending submission.
 - `thread/queue/delete` — experimental; delete a pending submission and return whether it was removed.
 - `thread/queue/reorder` — experimental; replace the complete pending order. The request must include every pending submission exactly once.
-- `thread/queue/start` — experimental; explicitly start the next or selected submission on a loaded thread. This also resumes a queue paused by an interruption or token-budget abort.
+- `thread/queue/start` — experimental; explicitly start the next or selected submission on a loaded thread. A successful durable claim, including an idempotent already-claimed selection, atomically resumes a queue paused by an interruption or token-budget abort. Invalid selections, empty queues, and pre-existing active claims leave the pause intact. If admission fails after a new claim, the explicit resume remains in effect.
 - `thread/queue/changed` — experimental notification emitted in the subscribed thread event order after a queue mutation or recovered terminal transition. Automatic dispatch occurs only from the thread's idle lifecycle. Interrupted and budget-limited queued turns durably pause further dispatch; other terminal outcomes continue the queue.
 - `thread/settings/updated` — experimental notification emitted to subscribed clients when a loaded thread’s effective next-turn settings change; includes `threadId` and the full `threadSettings`.
 - `thread/status/changed` — notification emitted when a loaded thread’s status changes (`threadId` + new `status`).

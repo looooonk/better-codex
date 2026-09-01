@@ -1,7 +1,6 @@
 use super::*;
 use crate::QueuedSubmissionRecord;
 use crate::QueuedSubmissionAdmissionRejection;
-use crate::QueuedSubmissionState;
 use crate::QueuedSubmissionTerminalStatus;
 use crate::QueueTerminalDisposition;
 use crate::ThreadQueuePauseReason;
@@ -14,7 +13,7 @@ pub const MAX_QUEUED_SUBMISSIONS: usize = 100;
 pub const MAX_QUEUED_INPUT_BYTES: usize = 1024 * 1024;
 pub const MAX_QUEUE_IDENTIFIER_BYTES: usize = 256;
 const TERMINAL_TOMBSTONES_PER_THREAD: i64 = 100;
-const QUEUED_SUBMISSION_COLUMNS: &str =
+pub(super) const QUEUED_SUBMISSION_COLUMNS: &str =
     "id, thread_id, payload_json, payload_digest, client_user_message_id, state, turn_id, admission_rejection, terminal_status";
 
 #[derive(Debug)]
@@ -78,14 +77,6 @@ impl From<anyhow::Error> for ThreadQueueError {
     fn from(error: anyhow::Error) -> Self {
         Self::Storage(error)
     }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum QueueClaimResult {
-    Claimed(QueuedSubmissionRecord),
-    Existing(QueuedSubmissionRecord),
-    Busy(QueuedSubmissionRecord),
-    Empty,
 }
 
 impl StateRuntime {
@@ -405,88 +396,6 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
         Ok(())
     }
 
-    pub async fn claim_queued_submission(
-        &self,
-        thread_id: ThreadId,
-        item_id: Option<&str>,
-        turn_id: &str,
-    ) -> Result<QueueClaimResult, ThreadQueueError> {
-        if let Some(item_id) = item_id {
-            validate_queue_identifier(item_id)?;
-        }
-        if let Some(item_id) = item_id
-            && let Some(existing) = self.queued_submission(thread_id, item_id).await?
-            && existing.state != QueuedSubmissionState::Pending
-        {
-            return Ok(QueueClaimResult::Existing(existing));
-        }
-        if let Some(active) = self.active_queued_submission(thread_id).await? {
-            return Ok(QueueClaimResult::Busy(active));
-        }
-        let now_ms = datetime_to_epoch_millis(Utc::now());
-        let row = if let Some(item_id) = item_id {
-            sqlx::query(&format!(
-                r#"
-UPDATE thread_queue_items
-SET state = 'starting', turn_id = ?, updated_at_ms = ?
-WHERE thread_id = ? AND id = ? AND state = 'pending'
-  AND NOT EXISTS (
-      SELECT 1 FROM thread_queue_items
-      WHERE thread_id = ? AND state IN ('starting', 'inflight')
-  )
-RETURNING {QUEUED_SUBMISSION_COLUMNS}
-                "#
-            ))
-            .bind(turn_id)
-            .bind(now_ms)
-            .bind(thread_id.to_string())
-            .bind(item_id)
-            .bind(thread_id.to_string())
-            .fetch_optional(self.pool.as_ref())
-            .await?
-        } else {
-            sqlx::query(&format!(
-                r#"
-UPDATE thread_queue_items
-SET state = 'starting', turn_id = ?, updated_at_ms = ?
-WHERE id = (
-    SELECT id FROM thread_queue_items
-    WHERE thread_id = ? AND state = 'pending'
-    ORDER BY queue_order, created_at_ms, id LIMIT 1
-)
-  AND state = 'pending'
-  AND NOT EXISTS (
-      SELECT 1 FROM thread_queue_items
-      WHERE thread_id = ? AND state IN ('starting', 'inflight')
-  )
-RETURNING {QUEUED_SUBMISSION_COLUMNS}
-                "#
-            ))
-            .bind(turn_id)
-            .bind(now_ms)
-            .bind(thread_id.to_string())
-            .bind(thread_id.to_string())
-            .fetch_optional(self.pool.as_ref())
-            .await?
-        };
-        if let Some(row) = row {
-            return QueuedSubmissionRecord::try_from_row(&row)
-                .map(QueueClaimResult::Claimed)
-                .map_err(Into::into);
-        }
-        if let Some(item_id) = item_id
-            && let Some(existing) = self.queued_submission(thread_id, item_id).await?
-            && existing.state != QueuedSubmissionState::Pending
-        {
-            return Ok(QueueClaimResult::Existing(existing));
-        }
-        if let Some(active) = self.active_queued_submission(thread_id).await? {
-            Ok(QueueClaimResult::Busy(active))
-        } else {
-            Ok(QueueClaimResult::Empty)
-        }
-    }
-
     pub async fn release_queued_submission_claim(
         &self,
         thread_id: ThreadId,
@@ -590,18 +499,6 @@ WHERE thread_id = ? AND turn_id = ? AND state IN ('starting', 'inflight')
             .map_err(Into::into)
     }
 
-    pub async fn resume_thread_queue(
-        &self,
-        thread_id: ThreadId,
-    ) -> Result<bool, ThreadQueueError> {
-        Ok(sqlx::query("DELETE FROM thread_queue_controls WHERE thread_id = ?")
-            .bind(thread_id.to_string())
-            .execute(self.pool.as_ref())
-            .await?
-            .rows_affected()
-            > 0)
-    }
-
     pub async fn finish_queued_submission(
         &self,
         thread_id: ThreadId,
@@ -663,7 +560,7 @@ WHERE rowid IN (
     }
 }
 
-fn validate_queue_identifier(identifier: &str) -> Result<(), ThreadQueueError> {
+pub(super) fn validate_queue_identifier(identifier: &str) -> Result<(), ThreadQueueError> {
     if identifier.is_empty() || identifier.len() > MAX_QUEUE_IDENTIFIER_BYTES {
         Err(ThreadQueueError::InvalidIdentifier)
     } else {

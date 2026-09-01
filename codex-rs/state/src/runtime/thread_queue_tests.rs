@@ -6,6 +6,32 @@ async fn runtime() -> anyhow::Result<Arc<StateRuntime>> {
     StateRuntime::init(unique_temp_dir(), "test-provider".to_string()).await
 }
 
+async fn pause_queue(
+    runtime: &StateRuntime,
+    thread_id: ThreadId,
+    client_user_message_id: &str,
+    turn_id: &str,
+) -> anyhow::Result<QueuedSubmissionRecord> {
+    let item = runtime
+        .enqueue_queued_submission(thread_id, "paused", client_user_message_id)
+        .await?;
+    assert!(matches!(
+        runtime
+            .claim_queued_submission(thread_id, Some(&item.id), turn_id)
+            .await?,
+        QueueClaimResult::Claimed(_)
+    ));
+    assert!(runtime
+        .finish_queued_submission(
+            thread_id,
+            turn_id,
+            QueuedSubmissionTerminalStatus::Failed,
+            QueueTerminalDisposition::Pause(ThreadQueuePauseReason::Interrupted),
+        )
+        .await?);
+    Ok(item)
+}
+
 #[tokio::test]
 async fn queue_crud_pagination_and_ordering_are_durable() -> anyhow::Result<()> {
     let codex_home = unique_temp_dir();
@@ -425,10 +451,165 @@ async fn hook_rejection_and_pause_state_survive_reopen() -> anyhow::Result<()> {
         reopened_again.thread_queue_pause_reason(thread_id).await?,
         Some(ThreadQueuePauseReason::Interrupted)
     );
-    assert!(reopened_again.resume_thread_queue(thread_id).await?);
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_explicit_claims_preserve_pause_across_reopen() -> anyhow::Result<()> {
+    let codex_home = unique_temp_dir();
+    let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
+
+    let missing_thread = ThreadId::new();
+    pause_queue(&runtime, missing_thread, "pause-missing", "turn-missing-pause").await?;
+    runtime
+        .enqueue_queued_submission(missing_thread, "pending", "pending-missing")
+        .await?;
     assert_eq!(
-        reopened_again.thread_queue_pause_reason(thread_id).await?,
+        runtime
+            .claim_queued_submission_and_resume(
+                missing_thread,
+                Some("missing-item"),
+                "turn-missing",
+            )
+            .await?,
+        QueueClaimAndResumeResult {
+            claim: QueueClaimResult::Empty,
+            resumed: false,
+        }
+    );
+    assert!(matches!(
+        runtime
+            .claim_queued_submission_and_resume(
+                missing_thread,
+                Some(&"x".repeat(MAX_QUEUE_IDENTIFIER_BYTES + 1)),
+                "turn-invalid",
+            )
+            .await,
+        Err(ThreadQueueError::InvalidIdentifier)
+    ));
+
+    let empty_thread = ThreadId::new();
+    pause_queue(&runtime, empty_thread, "pause-empty", "turn-empty-pause").await?;
+    assert_eq!(
+        runtime
+            .claim_queued_submission_and_resume(
+                empty_thread,
+                /*item_id*/ None,
+                "turn-empty",
+            )
+            .await?,
+        QueueClaimAndResumeResult {
+            claim: QueueClaimResult::Empty,
+            resumed: false,
+        }
+    );
+
+    let busy_thread = ThreadId::new();
+    pause_queue(&runtime, busy_thread, "pause-busy", "turn-busy-pause").await?;
+    let active_item = runtime
+        .enqueue_queued_submission(busy_thread, "active", "active-busy")
+        .await?;
+    runtime
+        .enqueue_queued_submission(busy_thread, "pending", "pending-busy")
+        .await?;
+    let active = match runtime
+        .claim_queued_submission(busy_thread, Some(&active_item.id), "turn-active")
+        .await?
+    {
+        QueueClaimResult::Claimed(active) => active,
+        result => anyhow::bail!("expected active claim, got {result:?}"),
+    };
+    assert_eq!(
+        runtime
+            .claim_queued_submission_and_resume(
+                busy_thread,
+                /*item_id*/ None,
+                "turn-busy",
+            )
+            .await?,
+        QueueClaimAndResumeResult {
+            claim: QueueClaimResult::Busy(active),
+            resumed: false,
+        }
+    );
+
+    for thread_id in [missing_thread, empty_thread, busy_thread] {
+        assert_eq!(
+            runtime.thread_queue_pause_reason(thread_id).await?,
+            Some(ThreadQueuePauseReason::Interrupted)
+        );
+    }
+    runtime.close().await;
+
+    let reopened = StateRuntime::init(codex_home, "test-provider".to_string()).await?;
+    for thread_id in [missing_thread, empty_thread, busy_thread] {
+        assert_eq!(
+            reopened.thread_queue_pause_reason(thread_id).await?,
+            Some(ThreadQueuePauseReason::Interrupted)
+        );
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn successful_explicit_claim_keeps_queue_resumed_after_release() -> anyhow::Result<()> {
+    let codex_home = unique_temp_dir();
+    let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
+    let thread_id = ThreadId::new();
+    pause_queue(&runtime, thread_id, "pause-new", "turn-new-pause").await?;
+    let pending = runtime
+        .enqueue_queued_submission(thread_id, "pending", "pending-new")
+        .await?;
+    let outcome = runtime
+        .claim_queued_submission_and_resume(thread_id, Some(&pending.id), "turn-new")
+        .await?;
+    assert!(outcome.resumed);
+    assert!(matches!(
+        outcome.claim,
+        QueueClaimResult::Claimed(ref claimed) if claimed.id == pending.id
+    ));
+    assert!(runtime
+        .release_queued_submission_claim(thread_id, &pending.id, "turn-new")
+        .await?);
+
+    let existing_thread = ThreadId::new();
+    let terminal = pause_queue(
+        &runtime,
+        existing_thread,
+        "pause-existing",
+        "turn-existing",
+    )
+    .await?;
+    let stored_terminal = runtime
+        .queued_submission(existing_thread, &terminal.id)
+        .await?
+        .expect("terminal tombstone should remain");
+    assert_eq!(
+        runtime
+            .claim_queued_submission_and_resume(
+                existing_thread,
+                Some(&terminal.id),
+                "turn-unused",
+            )
+            .await?,
+        QueueClaimAndResumeResult {
+            claim: QueueClaimResult::Existing(stored_terminal),
+            resumed: true,
+        }
+    );
+    runtime.close().await;
+
+    let reopened = StateRuntime::init(codex_home, "test-provider".to_string()).await?;
+    assert_eq!(reopened.thread_queue_pause_reason(thread_id).await?, None);
+    assert_eq!(
+        reopened.thread_queue_pause_reason(existing_thread).await?,
         None
+    );
+    assert_eq!(
+        reopened
+            .list_queued_submissions(thread_id, /*offset*/ 0, /*limit*/ 10)
+            .await?,
+        vec![pending]
     );
     Ok(())
 }

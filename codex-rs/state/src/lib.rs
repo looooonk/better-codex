@@ -82,6 +82,7 @@ pub use runtime::ThreadFilterOptions;
 pub use runtime::MAX_QUEUED_INPUT_BYTES;
 pub use runtime::MAX_QUEUED_SUBMISSIONS;
 pub use runtime::MAX_QUEUE_IDENTIFIER_BYTES;
+pub use runtime::QueueClaimAndResumeResult;
 pub use runtime::QueueClaimResult;
 pub use runtime::ThreadQueueError;
 pub use runtime::ThreadSectionAppearanceUpdate;

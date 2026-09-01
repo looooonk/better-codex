@@ -71,6 +71,7 @@ mod remote_control;
 #[cfg(test)]
 mod test_support;
 mod thread_queue;
+mod thread_queue_claim;
 mod thread_section_order;
 mod thread_section_queries;
 mod thread_sections;
@@ -96,8 +97,9 @@ pub use thread_section_order::ThreadSectionMove;
 pub use thread_queue::MAX_QUEUED_INPUT_BYTES;
 pub use thread_queue::MAX_QUEUED_SUBMISSIONS;
 pub use thread_queue::MAX_QUEUE_IDENTIFIER_BYTES;
-pub use thread_queue::QueueClaimResult;
 pub use thread_queue::ThreadQueueError;
+pub use thread_queue_claim::QueueClaimAndResumeResult;
+pub use thread_queue_claim::QueueClaimResult;
 pub use thread_sections::ThreadSectionAppearanceUpdate;
 pub use threads::ThreadFilterOptions;
 pub use threads::ThreadSectionFilter;

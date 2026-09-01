@@ -249,15 +249,21 @@ impl ThreadQueueService {
         queued_submission_id: Option<&str>,
         trace: Option<W3cTraceContext>,
     ) -> Result<QueueStartResult, QueueStartFailure> {
-        let resumed = self
+        let proposed_turn_id = Uuid::now_v7().to_string();
+        let claim = self
             .state_db()
             .map_err(QueueStartFailure::unchanged)?
-            .resume_thread_queue(thread_id)
+            .claim_queued_submission_and_resume(
+                thread_id,
+                queued_submission_id,
+                &proposed_turn_id,
+            )
             .await
             .map_err(queue_error)
             .map_err(QueueStartFailure::unchanged)?;
+        let resumed = claim.resumed;
         match self
-            .start_claimed(thread_id, thread, queued_submission_id, trace)
+            .start_claim(thread_id, thread, queued_submission_id, trace, claim.claim)
             .await
         {
             Ok(mut started) => {
@@ -286,6 +292,18 @@ impl ThreadQueueService {
             .await
             .map_err(queue_error)
             .map_err(QueueStartFailure::unchanged)?;
+        self.start_claim(thread_id, thread, queued_submission_id, trace, claim)
+            .await
+    }
+
+    async fn start_claim(
+        &self,
+        thread_id: ThreadId,
+        thread: &CodexThread,
+        queued_submission_id: Option<&str>,
+        trace: Option<W3cTraceContext>,
+        claim: QueueClaimResult,
+    ) -> Result<QueueStartResult, QueueStartFailure> {
         let record = match claim {
             QueueClaimResult::Claimed(record) => record,
             QueueClaimResult::Existing(record) => {
