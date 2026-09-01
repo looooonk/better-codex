@@ -462,6 +462,11 @@ impl HostState {
         session_id: SessionId,
         cell_execution_limits: CodeModeSessionCellExecutionLimits,
     ) -> Result<(), String> {
+        if cell_execution_limits.max_heap_size_bytes.is_some() {
+            return Err(
+                "maximum heap size is not supported by the code-mode host".to_string(),
+            );
+        }
         let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
         if sessions.contains_key(&session_id) {
             return Err(format!(

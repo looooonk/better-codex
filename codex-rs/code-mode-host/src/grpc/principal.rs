@@ -6,12 +6,14 @@ use tonic::transport::server::TcpConnectInfo;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum GrpcPrincipal {
+    #[cfg(test)]
     InProcess,
     LoopbackTcp(SocketAddr),
 }
 
 #[derive(Clone, Copy)]
 pub(super) enum PrincipalPolicy {
+    #[cfg(test)]
     InProcess,
     LoopbackTcp,
 }
@@ -19,6 +21,7 @@ pub(super) enum PrincipalPolicy {
 impl PrincipalPolicy {
     pub(super) fn principal<T>(&self, request: &Request<T>) -> Result<GrpcPrincipal, Status> {
         match self {
+            #[cfg(test)]
             Self::InProcess => Ok(GrpcPrincipal::InProcess),
             Self::LoopbackTcp => {
                 let remote_addr = request

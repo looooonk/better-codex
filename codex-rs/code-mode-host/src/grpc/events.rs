@@ -11,8 +11,6 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
-use tonic::Status;
-
 use super::GrpcStream;
 use crate::MAX_ACTIVE_CELLS;
 use crate::MAX_PENDING_DELEGATE_CALLS;

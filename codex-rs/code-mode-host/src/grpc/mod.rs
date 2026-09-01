@@ -42,6 +42,7 @@ pub struct GrpcCodeModeHost {
 }
 
 impl GrpcCodeModeHost {
+    #[cfg(test)]
     fn new() -> Self {
         Self {
             state: Arc::new(GrpcHostState::new()),
@@ -152,7 +153,7 @@ impl GrpcCodeModeHost {
         let request = conversions::execute_request(request)?;
         let cell_permit = self.state.cell_permit()?;
         session.reserve_execution(&execution_id)?;
-        let mut admission = ExecutionAdmission {
+        let admission = ExecutionAdmission {
             session: Arc::clone(&session),
             execution_id: Some(execution_id.clone()),
         };

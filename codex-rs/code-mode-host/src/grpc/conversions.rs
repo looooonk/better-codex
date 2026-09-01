@@ -15,6 +15,7 @@ use tonic::Status;
 
 use super::validation;
 
+#[allow(deprecated)]
 pub(super) fn session_limits(
     limits: Option<proto::SessionCellExecutionLimits>,
 ) -> Result<CodeModeSessionCellExecutionLimits, Status> {

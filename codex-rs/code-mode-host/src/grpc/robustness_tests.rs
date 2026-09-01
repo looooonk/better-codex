@@ -205,6 +205,7 @@ async fn session_shutdown_is_bounded_and_closes_task_admission() {
 }
 
 #[tokio::test]
+#[allow(deprecated)]
 async fn rejects_heap_limit_until_runtime_enforces_it() {
     let host = GrpcCodeModeHost::new();
 
@@ -320,6 +321,16 @@ async fn outbound_stream_error_keeps_execution_admission_armed() {
     );
     drop(stream);
 
+    assert!(
+        session
+            .state
+            .lock()
+            .unwrap()
+            .cells
+            .get("cell-oversized-outcome")
+            .is_some_and(|execution| execution.terminal_observed)
+    );
+    session.close_cell("cell-oversized-outcome");
     assert!(session.state.lock().unwrap().cells.is_empty());
     assert!(host.state.cell_permit().is_ok());
 }
@@ -448,14 +459,22 @@ async fn close_after_tool_reservation_does_not_commit_or_deliver() {
             )
             .await
     });
-    while sender.strong_count() <= baseline_senders {
-        tokio::task::yield_now().await;
-    }
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 2), async {
+        while sender.strong_count() <= baseline_senders {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("tool dispatch must begin reserving subscription capacity");
     let state = session.state.lock().unwrap();
     subscription.next().await.unwrap().unwrap();
-    while sender.capacity() != 0 {
-        tokio::task::yield_now().await;
-    }
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 2), async {
+        while sender.capacity() != 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("tool dispatch must reserve the released subscription capacity");
     session.closed.cancel();
     drop(state);
 
@@ -469,9 +488,14 @@ async fn close_after_tool_reservation_does_not_commit_or_deliver() {
             .is_none_or(|execution| execution.tool_call_sequence == 0)
     );
     drop(state);
-    while let Some(Ok(call)) = subscription.next().await {
-        assert_ne!(call.invocation_id, invocation_id.to_string());
-    }
+    drop(sender);
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 2), async {
+        while let Some(Ok(call)) = subscription.next().await {
+            assert_ne!(call.invocation_id, invocation_id.to_string());
+        }
+    })
+    .await
+    .expect("closed session must close its tool subscription");
     drop(lease);
 }
 

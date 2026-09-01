@@ -18,6 +18,7 @@ use codex_code_mode_protocol::host::SessionId;
 use codex_code_mode_protocol::host::SupportedProtocolVersions;
 use codex_code_mode_protocol::host::WireExecuteRequest;
 use codex_code_mode_protocol::host::WireResult;
+use codex_code_mode_protocol::host::WireSessionCellExecutionLimits;
 use pretty_assertions::assert_eq;
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
@@ -205,6 +206,31 @@ async fn session_resource_limits_are_negotiated_when_requested() {
                 CapabilitySet::try_new([resource_limits_capability.clone()])
                     .expect("host capabilities"),
             )))
+        );
+
+        let id = request_id(/*value*/ 1);
+        writer
+            .write(&ClientToHost::Request {
+                id,
+                request: HostRequest::OpenSession {
+                    session_id: session_id("heap-limit"),
+                    cell_execution_limits: Some(WireSessionCellExecutionLimits {
+                        max_yield_time_ms: Some(1_000),
+                        max_heap_size_bytes: Some(16 * 1_024 * 1_024),
+                    }),
+                },
+            })
+            .await
+            .expect("request unsupported heap limit");
+        assert_eq!(
+            reader.read::<HostToClient>().await.expect("heap rejection"),
+            Some(HostToClient::Response {
+                id,
+                result: WireResult::Err {
+                    message: "maximum heap size is not supported by the code-mode host"
+                        .to_string(),
+                },
+            })
         );
 
         drop(writer);

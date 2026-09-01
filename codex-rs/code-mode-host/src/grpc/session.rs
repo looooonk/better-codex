@@ -482,13 +482,14 @@ impl GrpcSession {
     pub(super) fn close_cell(&self, cell_id: &str) {
         let execution = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            let can_queue_closure = state.pending_closures.len() < MAX_ACTIVE_CELLS;
             match state.cells.get_mut(cell_id) {
                 Some(execution) => {
                     execution.runtime_closed = true;
                     let should_remove = execution.terminal_observed;
                     should_remove.then(|| state.cells.remove(cell_id)).flatten()
                 }
-                None if state.pending_closures.len() < MAX_ACTIVE_CELLS => {
+                None if can_queue_closure => {
                     state.pending_closures.insert(cell_id.to_string());
                     None
                 }
