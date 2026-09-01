@@ -2,6 +2,10 @@
 
 Embed the Codex agent in your workflows and apps.
 
+> **Repository note:** Better Codex retains this upstream-derived SDK as a
+> backend integration surface. Its package name remains unchanged; the primary
+> Better Codex distribution is the full-screen terminal app.
+
 The TypeScript SDK wraps the `codex` CLI from `@openai/codex`. It spawns the CLI and exchanges JSONL events over stdin/stdout.
 
 ## Installation

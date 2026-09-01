@@ -1,6 +1,6 @@
 # Installing and building Better Codex
 
-### System requirements
+## System requirements
 
 | Requirement                 | Details                               |
 | --------------------------- | ------------------------------------- |
@@ -8,7 +8,7 @@
 | Git (optional, recommended) | 2.23+ for built-in PR helpers         |
 | RAM                         | 4-GB minimum (8-GB recommended)       |
 
-### Install a GitHub release
+## Install a GitHub release
 
 The installer downloads the archive for the current CPU from the Better Codex
 GitHub releases page, verifies its SHA-256 checksum, and installs a
@@ -25,10 +25,13 @@ curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/
   | sh -s -- --version 0.1.0-alpha.12
 ```
 
-### Build from source
+## Build from source
+
+Install Git, a C/C++ compiler, CMake, and `pkg-config` in addition to Rust.
+Linux development builds also require `bubblewrap`.
 
 ```bash
-# Clone the repository and navigate to the root of the Cargo workspace.
+# Clone the repository and enter the Cargo workspace.
 git clone https://github.com/looooonk/better-codex.git
 cd better-codex/codex-rs
 
@@ -37,11 +40,9 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 source "$HOME/.cargo/env"
 rustup component add rustfmt
 rustup component add clippy
-# Install helper tools used by the workspace justfile:
+# Install tools used by the workspace helpers.
 cargo install --locked just
-# DotSlash fetches pinned development tools such as buildifier on first use.
 cargo install --locked dotslash
-# Install nextest for the `just test` helper.
 cargo install --locked cargo-nextest
 
 # Build the internal Cargo binary used by Better Codex.
@@ -51,24 +52,26 @@ cargo build
 # named codex internally.
 cargo run --bin codex -- "explain this codebase to me"
 
-# After making changes, use the root justfile helpers (they default to codex-rs):
+# From the repository root, format and lint the crate you changed.
+cd ..
 just fmt
 just fix -p <crate-you-touched>
 
-# Run the relevant tests (project-specific is fastest), for example:
+# Run the relevant crate tests.
 just test -p codex-tui
-# `just test` runs the test suite via nextest:
-just test
-# Avoid `--all-features` for routine local runs because it increases build
-# time and `target/` disk usage by compiling additional feature combinations.
 ```
+
+The root `justfile` runs Rust commands in `codex-rs` automatically. Use the
+complete `just test` suite only when a shared-crate change requires it; routine
+`--all-features` runs consume substantially more build time and disk space.
 
 ## Tracing / verbose logging
 
 Better Codex is written in Rust, so it honors the `RUST_LOG` environment
 variable to configure its logging behavior.
 
-The TUI records diagnostics in bounded local stores by default. Set `log_dir` explicitly to enable a plaintext TUI log for a run:
+The TUI records diagnostics in bounded local stores by default. Set `log_dir`
+explicitly to enable a plaintext TUI log for a run:
 
 ```bash
 better-codex -c log_dir=./.codex-log

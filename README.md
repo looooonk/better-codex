@@ -156,12 +156,15 @@ release while keeping the launcher path stable.
 
 ## Documentation
 
+- [Documentation index](docs/README.md)
+- [Getting started](docs/getting-started.md)
 - [Installation and development setup](docs/install.md)
 - [Configuration](docs/config.md)
 - [Authentication](docs/authentication.md)
 - [Sandboxing and approvals](docs/sandbox.md)
 - [Skills](docs/skills.md)
-- [`AGENTS.md` project instructions](docs/agents_md.md)
+- [Slash commands](docs/slash_commands.md)
+- [Repository guide for contributors](docs/repository-guide.md)
 
 ## Community
 

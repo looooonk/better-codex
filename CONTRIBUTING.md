@@ -44,7 +44,9 @@ source-build walkthrough.
 5. Keep unrelated cleanups in separate pull requests.
 
 Follow the repository conventions in [AGENTS.md](AGENTS.md), including the Rust
-and TUI-specific guidance.
+and TUI-specific guidance. The [repository guide](docs/repository-guide.md)
+maps the main directories, ownership boundaries, generated files, and common
+validation commands.
 
 ## Validate your work
 

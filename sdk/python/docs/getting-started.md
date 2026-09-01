@@ -163,6 +163,6 @@ source .venv/bin/activate
 
 ## Next Stops
 
-- [API reference](https://github.com/openai/codex/blob/main/sdk/python/docs/api-reference.md)
-- [FAQ](https://github.com/openai/codex/blob/main/sdk/python/docs/faq.md)
-- [Runnable examples](https://github.com/openai/codex/blob/main/sdk/python/examples/README.md)
+- [API reference](api-reference.md)
+- [FAQ](faq.md)
+- [Runnable examples](../examples/README.md)
