@@ -17,6 +17,12 @@ pub struct ThreadId {
     pub(crate) uuid: Uuid,
 }
 
+/// Identifier encoded in a rollout filename.
+///
+/// Ordinary rollout files use the thread ID as their rollout ID. Replacement rollouts keep the
+/// thread ID stable while using a distinct rollout ID for the immutable history file.
+pub type RolloutId = ThreadId;
+
 impl ThreadId {
     pub fn new() -> Self {
         Self {

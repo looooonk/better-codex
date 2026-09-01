@@ -13,8 +13,8 @@ use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::MessagePhase;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ItemCompletedEvent;
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
+use codex_rollout::RolloutItem;
+use codex_rollout::RolloutLine;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode;
@@ -145,8 +145,33 @@ ORDER BY rollout_ordinal
         .live_rollout_path(thread_id)
         .await
         .expect("rollout path");
-    let rollout_len = i64::try_from(fs::metadata(rollout_path).expect("rollout metadata").len())
+    let rollout_bytes = fs::read(rollout_path.as_path()).expect("read rollout");
+    let rollout_len = i64::try_from(rollout_bytes.len())
         .expect("rollout length");
+    let first_record_end = i64::try_from(
+        rollout_bytes
+            .split_inclusive(|byte| *byte == b'\n')
+            .next()
+            .expect("session metadata record")
+            .len(),
+    )
+    .expect("record offset");
+    let turn_position = sqlx::query_as::<_, (Option<i64>, Option<i64>, Option<i64>)>(
+        r#"
+SELECT rollout_byte_offset, rollout_end_ordinal, rollout_end_byte_offset
+FROM thread_turns
+WHERE thread_id = ? AND turn_id = ?
+        "#,
+    )
+    .bind(thread_id.to_string())
+    .bind("turn-1")
+    .fetch_one(&pool)
+    .await
+    .expect("read turn rollout position");
+    assert_eq!(
+        turn_position,
+        (Some(first_record_end), Some(4), Some(rollout_len))
+    );
     let projection_state = sqlx::query_as::<_, (i64, i64)>(
         r#"
 SELECT next_rollout_byte_offset, next_rollout_ordinal
@@ -617,6 +642,7 @@ SELECT
 #[tokio::test]
 async fn catch_up_rejects_invalid_complete_suffixes_without_advancing_state() {
     let cases = [
+        ("blank JSONL record", "\n".to_string()),
         (
             "missing ordinal",
             format!(
@@ -762,7 +788,7 @@ async fn sqlite_failure_does_not_fail_durable_jsonl_write() {
 }
 
 #[tokio::test]
-async fn rejected_rollout_line_does_not_poison_projection() {
+async fn rejected_complete_rollout_line_blocks_projection() {
     let home = TempDir::new().expect("temp dir");
     let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
     let thread_id = ThreadId::default();
@@ -771,6 +797,10 @@ async fn rejected_rollout_line_does_not_poison_projection() {
         .persist_thread(thread_id)
         .await
         .expect("persist session metadata");
+    let pool = codex_state::open_thread_history_db(home.path())
+        .await
+        .expect("open thread history db");
+    let before = projection_state(&pool, thread_id).await;
 
     let rollout_path = store
         .live_rollout_path(thread_id)
@@ -797,13 +827,11 @@ async fn rejected_rollout_line_does_not_poison_projection() {
         .expect("queue valid retry");
     recorder.flush().await.expect("flush valid retry");
 
-    super::materialize_to_sqlite(&store, thread_id, rollout_path.as_path())
+    let error = super::materialize_to_sqlite(&store, thread_id, rollout_path.as_path())
         .await
-        .expect("project valid retry after rejected line");
+        .expect_err("reject invalid complete record");
+    assert!(error.to_string().contains("invalid JSON"));
 
-    let pool = codex_state::open_thread_history_db(home.path())
-        .await
-        .expect("open thread history db");
     let projected_turns = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM thread_turns WHERE thread_id = ? AND turn_id = ?",
     )
@@ -812,7 +840,63 @@ async fn rejected_rollout_line_does_not_poison_projection() {
     .fetch_one(&pool)
     .await
     .expect("read projected turns");
-    assert_eq!(projected_turns, 1);
+    assert_eq!(projected_turns, 0);
+    assert_eq!(projection_state(&pool, thread_id).await, before);
+}
+
+#[tokio::test]
+async fn projection_batches_accept_boundary_and_reject_oversized_records() {
+    let home = TempDir::new().expect("temp dir");
+    let rollout_path = home.path().join("bounded.jsonl");
+    let limit = usize::try_from(super::MAX_PROJECTION_BATCH_BYTES).expect("limit fits usize");
+    let boundary = padded_rollout_record(limit, /*ordinal*/ 0);
+    let second = format!("{}\n", rollout_line(Some(1), turn_started("turn-2")));
+    let mut rollout = boundary;
+    rollout.extend_from_slice(second.as_bytes());
+    fs::write(&rollout_path, rollout).expect("write bounded rollout");
+
+    let (first_lines, next_offset, has_more) =
+        super::read_complete_rollout_lines(&rollout_path, /*start_offset*/ 0)
+            .await
+            .expect("read boundary batch");
+    assert_eq!(
+        (first_lines.len(), next_offset, has_more),
+        (1, super::MAX_PROJECTION_BATCH_BYTES, true)
+    );
+    let (second_lines, final_offset, has_more) =
+        super::read_complete_rollout_lines(&rollout_path, next_offset)
+            .await
+            .expect("read second batch");
+    assert_eq!(
+        (second_lines.len(), final_offset, has_more),
+        (
+            1,
+            super::MAX_PROJECTION_BATCH_BYTES
+                + u64::try_from(second.len()).expect("second record length"),
+            false,
+        )
+    );
+
+    let oversized_path = home.path().join("oversized.jsonl");
+    fs::write(
+        &oversized_path,
+        padded_rollout_record(limit + 1, /*ordinal*/ 0),
+    )
+    .expect("write oversized rollout");
+    let error = match super::read_complete_rollout_lines(&oversized_path, /*start_offset*/ 0).await {
+        Ok(_) => panic!("oversized record should fail"),
+        Err(error) => error,
+    };
+    assert!(error.to_string().contains("record exceeds 8388608 byte"));
+
+    let invalid_utf8_path = home.path().join("invalid-utf8.jsonl");
+    fs::write(&invalid_utf8_path, [0xff, b'\n']).expect("write invalid UTF-8 rollout");
+    let error =
+        match super::read_complete_rollout_lines(&invalid_utf8_path, /*start_offset*/ 0).await {
+            Ok(_) => panic!("invalid UTF-8 record should fail"),
+            Err(error) => error,
+        };
+    assert!(error.to_string().contains("invalid UTF-8"));
 }
 
 #[tokio::test]
@@ -1013,6 +1097,14 @@ fn rollout_line(ordinal: Option<u64>, item: RolloutItem) -> String {
         item,
     })
     .expect("serialize rollout line")
+}
+
+fn padded_rollout_record(byte_count: usize, ordinal: u64) -> Vec<u8> {
+    let mut record = rollout_line(Some(ordinal), turn_started("turn-1")).into_bytes();
+    assert!(record.len() < byte_count);
+    record.resize(byte_count - 1, b' ');
+    record.push(b'\n');
+    record
 }
 
 fn append_suffix(rollout_path: &std::path::Path, suffix: &str) {

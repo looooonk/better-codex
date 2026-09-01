@@ -6,16 +6,22 @@ mod list_threads;
 mod live_writer;
 mod model_context;
 mod read_thread;
+mod revert_thread;
+mod rollout_lineage;
+mod rollout_moves;
 mod search_threads;
 mod thread_history;
 mod thread_history_materialization;
+mod thread_rollout_resolver;
 mod unarchive_thread;
 mod update_thread_metadata;
 mod update_thread_metadata_git;
+mod writer_lock;
 
 #[cfg(test)]
 mod test_support;
 
+use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_rollout::RolloutRecorder;
@@ -27,6 +33,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::sync::OnceCell;
 use tokio::sync::OwnedMutexGuard;
+use tokio::sync::OwnedRwLockWriteGuard;
+use tokio::sync::RwLock;
 
 use crate::AppendThreadItemsParams;
 use crate::ArchiveThreadParams;
@@ -40,6 +48,7 @@ use crate::LoadThreadHistoryParams;
 use crate::ReadThreadByRolloutPathParams;
 use crate::ReadThreadParams;
 use crate::ResumeThreadParams;
+use crate::RevertThreadParams;
 use crate::SearchThreadOccurrencesParams;
 use crate::SearchThreadsParams;
 use crate::StoredModelContext;
@@ -54,6 +63,8 @@ use crate::ThreadStoreFuture;
 use crate::ThreadStoreResult;
 use crate::TurnPage;
 use crate::UpdateThreadMetadataParams;
+use crate::local::writer_lock::WriterLockCoordinator;
+use crate::local::writer_lock::WriterLockGuard;
 
 /// Local filesystem/SQLite-backed implementation of [`ThreadStore`].
 ///
@@ -73,35 +84,60 @@ pub struct LocalThreadStore {
     pub(super) config: LocalThreadStoreConfig,
     live_recorders: Arc<Mutex<HashMap<ThreadId, LiveRecorderEntry>>>,
     live_writer_locks: Arc<LiveWriterLocks>,
+    writer_lock_coordinator: Arc<WriterLockCoordinator>,
     state_db: Option<StateDbHandle>,
     thread_history_db: Arc<OnceCell<sqlx::SqlitePool>>,
 }
 
 struct LiveRecorderEntry {
     recorder: RolloutRecorder,
+    rollout_id: RolloutId,
     // Local rollout files are materialized lazily, but metadata updates can arrive before the
     // canonical SessionMeta is durable. Retain the mode captured when live persistence was opened
     // so missing SQLite rows can still be seeded.
     history_mode: ThreadHistoryMode,
+    _writer_lock: WriterLockGuard,
 }
 
 #[derive(Default)]
 struct LiveWriterLocks {
     // Keep per-thread locks after a writer goes idle. Removing one while another caller is about
     // to acquire it could let two operations for the same thread run at once.
-    by_thread: Mutex<HashMap<ThreadId, Arc<Mutex<()>>>>,
+    by_thread: Mutex<HashMap<ThreadId, Arc<ThreadCoordination>>>,
+}
+
+#[derive(Default)]
+struct ThreadCoordination {
+    writer: Arc<Mutex<()>>,
+    lifecycle: Arc<RwLock<()>>,
 }
 
 impl LiveWriterLocks {
-    async fn lock(&self, thread_id: ThreadId) -> OwnedMutexGuard<()> {
-        let lock = self
-            .by_thread
+    async fn coordination(&self, thread_id: ThreadId) -> Arc<ThreadCoordination> {
+        self.by_thread
             .lock()
             .await
             .entry(thread_id)
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone();
-        lock.lock_owned().await
+            .or_default()
+            .clone()
+    }
+
+    async fn lock(&self, thread_id: ThreadId) -> OwnedMutexGuard<()> {
+        self.coordination(thread_id)
+            .await
+            .writer
+            .clone()
+            .lock_owned()
+            .await
+    }
+
+    async fn lock_lifecycle(&self, thread_id: ThreadId) -> OwnedRwLockWriteGuard<()> {
+        self.coordination(thread_id)
+            .await
+            .lifecycle
+            .clone()
+            .write_owned()
+            .await
     }
 }
 
@@ -138,10 +174,12 @@ impl std::fmt::Debug for LocalThreadStore {
 impl LocalThreadStore {
     /// Create a local store using an already initialized state DB handle.
     pub fn new(config: LocalThreadStoreConfig, state_db: Option<StateDbHandle>) -> Self {
+        let writer_lock_coordinator = Arc::new(WriterLockCoordinator::new(&config.codex_home));
         Self {
             config,
             live_recorders: Arc::new(Mutex::new(HashMap::new())),
             live_writer_locks: Arc::new(LiveWriterLocks::default()),
+            writer_lock_coordinator,
             state_db,
             thread_history_db: Arc::new(OnceCell::new()),
         }
@@ -205,7 +243,9 @@ impl LocalThreadStore {
         &self,
         thread_id: ThreadId,
         recorder: RolloutRecorder,
+        rollout_id: RolloutId,
         history_mode: ThreadHistoryMode,
+        writer_lock: WriterLockGuard,
     ) -> ThreadStoreResult<()> {
         match self.live_recorders.lock().await.entry(thread_id) {
             Entry::Occupied(entry) => Err(ThreadStoreError::InvalidRequest {
@@ -214,7 +254,9 @@ impl LocalThreadStore {
             Entry::Vacant(entry) => {
                 entry.insert(LiveRecorderEntry {
                     recorder,
+                    rollout_id,
                     history_mode,
+                    _writer_lock: writer_lock,
                 });
                 Ok(())
             }
@@ -343,6 +385,10 @@ impl ThreadStore for LocalThreadStore {
         Box::pin(model_context::load_latest_model_context(self, params))
     }
 
+    fn revert_thread(&self, params: RevertThreadParams) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async move { revert_thread::revert(self, params).await })
+    }
+
     fn read_thread(&self, params: ReadThreadParams) -> ThreadStoreFuture<'_, StoredThread> {
         Box::pin(async move { read_thread::read_thread(self, params).await })
     }
@@ -422,7 +468,7 @@ mod tests {
     use codex_protocol::protocol::AskForApproval;
     use codex_protocol::protocol::EventMsg;
     use codex_protocol::protocol::ItemCompletedEvent;
-    use codex_protocol::protocol::RolloutItem;
+    use codex_rollout::RolloutItem;
     use codex_protocol::protocol::SandboxPolicy;
     use codex_protocol::protocol::SessionSource;
     use codex_protocol::protocol::ThreadHistoryMode;
@@ -609,7 +655,10 @@ mod tests {
         )
         .await
         .expect("create live thread with inherited context");
-        live_thread.persist().await.expect("persist thread");
+        live_thread
+            .persist()
+            .await
+            .expect("persist thread");
         let inherited_metadata = runtime
             .get_thread(thread_id)
             .await

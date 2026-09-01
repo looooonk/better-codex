@@ -7,7 +7,7 @@ use chrono::NaiveDateTime;
 use chrono::Timelike;
 use chrono::Utc;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::RolloutLine;
+use codex_history::RolloutLine;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::UserMessageEvent;
@@ -142,6 +142,54 @@ async fn reconcile_rollout_preserves_existing_explicit_title() -> anyhow::Result
         .expect("thread should exist");
     assert_eq!(persisted.title, "math");
     assert_eq!(persisted.first_user_message.as_deref(), Some("Hey"));
+    Ok(())
+}
+
+#[tokio::test]
+async fn filesystem_repair_preserves_selected_rollout_path() -> anyhow::Result<()> {
+    let home = TempDir::new().expect("temp dir");
+    let thread_id = ThreadId::new();
+    let old_rollout_id = ThreadId::new();
+    let initial_path = write_rollout_with_user_message(home.path(), thread_id, "Old")?;
+    let old_path = initial_path.with_file_name(format!(
+        "rollout-2026-06-01T14-26-25-{thread_id}_{old_rollout_id}.jsonl"
+    ));
+    std::fs::rename(initial_path, old_path.as_path())?;
+    let selected_path = write_rollout_with_user_message(home.path(), thread_id, "Current")?;
+    let runtime = codex_state::StateRuntime::init(
+        home.path().to_path_buf(),
+        "test-provider".to_string(),
+    )
+    .await?;
+    let selected_metadata =
+        metadata::extract_metadata_from_rollout(selected_path.as_path(), "test-provider")
+            .await?
+            .metadata;
+    runtime.upsert_thread(&selected_metadata).await?;
+
+    read_repair_rollout_path(
+        Some(runtime.as_ref()),
+        Some(thread_id),
+        /*archived_only*/ None,
+        old_path.as_path(),
+    )
+    .await;
+    assert_eq!(
+        runtime.get_thread(thread_id).await?,
+        Some(selected_metadata.clone())
+    );
+
+    reconcile_rollout(
+        Some(runtime.as_ref()),
+        old_path.as_path(),
+        "test-provider",
+        /*builder*/ None,
+        &[],
+        /*archived_only*/ None,
+        /*new_thread_memory_mode*/ None,
+    )
+    .await;
+    assert_eq!(runtime.get_thread(thread_id).await?, Some(selected_metadata));
     Ok(())
 }
 

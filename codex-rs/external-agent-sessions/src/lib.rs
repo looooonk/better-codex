@@ -6,7 +6,7 @@ mod ledger;
 mod records;
 mod title;
 
-use codex_protocol::protocol::RolloutItem;
+use codex_history::RolloutItem;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;

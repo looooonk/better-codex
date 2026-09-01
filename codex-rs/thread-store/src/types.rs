@@ -14,7 +14,7 @@ use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::GitInfo;
 use codex_protocol::protocol::MultiAgentVersion;
-use codex_protocol::protocol::RolloutItem;
+use codex_rollout::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode as MemoryMode;
@@ -173,6 +173,15 @@ pub struct StoredModelContext {
     pub thread_id: ThreadId,
     /// Persisted rollout items in replay order.
     pub items: Vec<RolloutItem>,
+}
+
+/// Parameters for reverting a paginated thread's durable history.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RevertThreadParams {
+    /// Stable logical thread to revert.
+    pub thread_id: ThreadId,
+    /// First turn excluded from the retained history.
+    pub before_turn_id: String,
 }
 
 /// Parameters for reading a thread summary and optionally its replay history.

@@ -8,6 +8,7 @@ use crate::event_mapping::is_contextual_dev_message_content;
 use crate::session::turn_context::TurnContext;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
@@ -37,7 +38,7 @@ use std::sync::LazyLock;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ContextManager {
     /// The oldest items are at the beginning of the vector.
-    items: Vec<ResponseItem>,
+    items: Vec<ResponseItemEnvelope>,
     /// Bumped whenever history is rewritten, such as compaction or rollback.
     history_version: u64,
     token_info: Option<TokenUsageInfo>,
@@ -91,9 +92,9 @@ impl ContextManager {
     ) -> (Vec<Box<dyn ContextualUserFragment>>, Option<WorldStateItem>) {
         let snapshot = world_state.snapshot();
         let fragments =
-            world_state.render_history_diff(self.world_state_baseline.as_ref(), &self.items);
+            world_state.render_history_diff(self.world_state_baseline.as_ref(), self.raw_items());
         let rollout_item = self.world_state_baseline.as_ref().map_or_else(
-            || Some(WorldStateItem::full(snapshot.clone().into_value())),
+            || Some(WorldStateItem::full(snapshot.clone().into_object())),
             |previous| {
                 snapshot
                     .merge_patch_from(previous)
@@ -130,7 +131,7 @@ impl ContextManager {
             }
 
             let processed = self.process_item(item_ref, policy);
-            self.items.push(processed);
+            self.items.push(ResponseItemEnvelope::new(processed));
         }
     }
 
@@ -140,16 +141,29 @@ impl ContextManager {
     pub(crate) fn for_prompt(mut self, input_modalities: &[InputModality]) -> Vec<ResponseItem> {
         self.normalize_history(input_modalities);
         self.items
+            .into_iter()
+            .map(ResponseItemEnvelope::into_item)
+            .collect()
     }
 
-    /// Returns raw items in the history.
-    pub(crate) fn raw_items(&self) -> &[ResponseItem] {
+    /// Iterates over raw response items without exposing their history envelopes.
+    pub(crate) fn raw_items(
+        &self,
+    ) -> impl Clone + ExactSizeIterator<Item = &ResponseItem> + DoubleEndedIterator {
+        self.items.iter().map(|envelope| &envelope.item)
+    }
+
+    /// Returns annotated history items without cloning their response payloads.
+    pub(crate) fn annotated_items(&self) -> &[ResponseItemEnvelope] {
         &self.items
     }
 
     /// Returns raw items in the history and consumes the snapshot.
     pub(crate) fn into_raw_items(self) -> Vec<ResponseItem> {
         self.items
+            .into_iter()
+            .map(ResponseItemEnvelope::into_item)
+            .collect()
     }
 
     pub(crate) fn history_version(&self) -> u64 {
@@ -177,7 +191,7 @@ impl ContextManager {
         let items_tokens = self
             .items
             .iter()
-            .map(estimate_item_token_count)
+            .map(|envelope| estimate_item_token_count(&envelope.item))
             .fold(0i64, i64::saturating_add);
 
         Some(base_tokens.saturating_add(items_tokens))
@@ -191,12 +205,16 @@ impl ContextManager {
             // If the removed item participates in a call/output pair, also remove
             // its corresponding counterpart to keep the invariants intact without
             // running a full normalization pass.
-            normalize::remove_corresponding_for(&mut self.items, &removed);
+            normalize::remove_corresponding_for(&mut self.items, &removed.item);
             self.world_state_baseline = None;
         }
     }
 
     pub(crate) fn replace(&mut self, items: Vec<ResponseItem>) {
+        self.replace_annotated(items.into_iter().map(ResponseItemEnvelope::new).collect());
+    }
+
+    pub(crate) fn replace_annotated(&mut self, items: Vec<ResponseItemEnvelope>) {
         self.items = items;
         self.history_version = self.history_version.saturating_add(1);
         self.world_state_baseline = None;
@@ -205,13 +223,16 @@ impl ContextManager {
     /// Replace image content in the last turn if it originated from a tool output.
     /// Returns true when a tool image was replaced, false otherwise.
     pub(crate) fn replace_last_turn_images(&mut self, placeholder: &str) -> bool {
-        let Some(index) = self.items.iter().rposition(|item| {
-            matches!(item, ResponseItem::FunctionCallOutput { .. }) || is_user_turn_boundary(item)
+        let Some(index) = self.items.iter().rposition(|envelope| {
+            matches!(
+                &envelope.item,
+                ResponseItem::FunctionCallOutput { .. }
+            ) || is_user_turn_boundary(&envelope.item)
         }) else {
             return false;
         };
 
-        match &mut self.items[index] {
+        match &mut self.items[index].item {
             ResponseItem::FunctionCallOutput { output, .. } => {
                 let Some(content_items) = output.content_items_mut() else {
                     return false;
@@ -260,7 +281,7 @@ impl ContextManager {
         let snapshot = self.items.clone();
         let user_positions = user_message_positions(&snapshot);
         let Some(&first_instruction_turn_idx) = user_positions.first() else {
-            self.replace(snapshot);
+            self.replace_annotated(snapshot);
             return;
         };
 
@@ -274,7 +295,7 @@ impl ContextManager {
         cut_idx =
             self.trim_pre_turn_context_updates(&snapshot, first_instruction_turn_idx, cut_idx);
 
-        self.replace(snapshot[..cut_idx].to_vec());
+        self.replace_annotated(snapshot[..cut_idx].to_vec());
     }
 
     pub(crate) fn update_token_info(
@@ -291,35 +312,41 @@ impl ContextManager {
 
     fn get_non_last_reasoning_items_tokens(&self) -> i64 {
         // Get reasoning items excluding all the ones after the last instruction boundary.
-        let Some(last_user_index) = self.items.iter().rposition(is_user_turn_boundary) else {
+        let Some(last_user_index) = self
+            .items
+            .iter()
+            .rposition(|envelope| is_user_turn_boundary(&envelope.item))
+        else {
             return 0;
         };
 
         self.items
             .iter()
             .take(last_user_index)
-            .filter(|item| {
+            .filter(|envelope| {
                 matches!(
-                    item,
+                    &envelope.item,
                     ResponseItem::Reasoning {
                         encrypted_content: Some(_),
                         ..
                     }
                 )
             })
-            .map(estimate_item_token_count)
+            .map(|envelope| estimate_item_token_count(&envelope.item))
             .fold(0i64, i64::saturating_add)
     }
 
     // These are local items added after the most recent model-emitted item.
     // They are not reflected in `last_token_usage.total_tokens`.
-    fn items_after_last_model_generated_item(&self) -> &[ResponseItem] {
+    fn items_after_last_model_generated_item(
+        &self,
+    ) -> impl Clone + ExactSizeIterator<Item = &ResponseItem> + DoubleEndedIterator {
         let start = self
             .items
             .iter()
-            .rposition(is_model_generated_item)
+            .rposition(|envelope| is_model_generated_item(&envelope.item))
             .map_or(self.items.len(), |index| index.saturating_add(1));
-        &self.items[start..]
+        self.items[start..].iter().map(|envelope| &envelope.item)
     }
 
     /// When true, the server already accounted for past reasoning tokens and
@@ -332,7 +359,6 @@ impl ContextManager {
             .unwrap_or(0);
         let items_after_last_model_generated_tokens = self
             .items_after_last_model_generated_item()
-            .iter()
             .map(estimate_item_token_count)
             .fold(0i64, i64::saturating_add);
         if server_reasoning_included {
@@ -346,7 +372,6 @@ impl ContextManager {
 
     pub(crate) fn estimated_tokens_after_last_model_generated_item(&self) -> i64 {
         self.items_after_last_model_generated_item()
-            .iter()
             .map(estimate_item_token_count)
             .fold(0i64, i64::saturating_add)
     }
@@ -433,12 +458,12 @@ impl ContextManager {
     /// reinjection.
     fn trim_pre_turn_context_updates(
         &mut self,
-        snapshot: &[ResponseItem],
+        snapshot: &[ResponseItemEnvelope],
         first_instruction_turn_idx: usize,
         mut cut_idx: usize,
     ) -> usize {
         while cut_idx > first_instruction_turn_idx {
-            match &snapshot[cut_idx - 1] {
+            match &snapshot[cut_idx - 1].item {
                 ResponseItem::Message { role, content, .. }
                     if role == "developer" && is_contextual_dev_message_content(content) =>
                 {
@@ -767,10 +792,10 @@ fn is_inter_agent_instruction_content(content: &[ContentItem]) -> bool {
     InterAgentCommunication::is_message_content(content)
 }
 
-fn user_message_positions(items: &[ResponseItem]) -> Vec<usize> {
+fn user_message_positions(items: &[ResponseItemEnvelope]) -> Vec<usize> {
     let mut positions = Vec::new();
-    for (idx, item) in items.iter().enumerate() {
-        if is_user_turn_boundary(item) {
+    for (idx, envelope) in items.iter().enumerate() {
+        if is_user_turn_boundary(&envelope.item) {
             positions.push(idx);
         }
     }

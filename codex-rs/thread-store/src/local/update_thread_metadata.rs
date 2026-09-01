@@ -4,15 +4,12 @@ use std::path::PathBuf;
 use chrono::Utc;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::GitInfo;
-use codex_protocol::protocol::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode;
-use codex_rollout::ARCHIVED_SESSIONS_SUBDIR;
+use codex_rollout::RolloutItem;
 use codex_rollout::append_rollout_item_to_path;
 use codex_rollout::append_thread_name;
-use codex_rollout::find_archived_thread_path_by_id_str;
-use codex_rollout::find_thread_path_by_id_str;
 use codex_rollout::read_session_meta_line;
 use codex_state::ThreadMetadataBuilder;
 use tracing::warn;
@@ -21,6 +18,9 @@ use super::LocalThreadStore;
 use super::helpers::git_info_from_parts;
 use super::helpers::permission_profile_to_metadata_value;
 use super::live_writer;
+use super::thread_rollout_resolver;
+use super::thread_rollout_resolver::ResolvedThreadRollout;
+use super::thread_rollout_resolver::RolloutLocation;
 use super::update_thread_metadata_git::resolve_git_info_update;
 use crate::GitInfoPatch;
 use crate::ReadThreadParams;
@@ -118,8 +118,7 @@ pub(super) async fn update_thread_metadata(
     if live_writer::rollout_path(store, thread_id).await.is_ok() {
         live_writer::persist_thread(store, thread_id).await?;
     }
-    let mut resolved_rollout_path =
-        resolve_rollout_path(store, thread_id, params.include_archived).await?;
+    let mut resolved_rollout = resolve_rollout(store, thread_id, params.include_archived).await?;
     let name = patch.name.clone();
     let git_info = patch.git_info.clone();
     let resolved_git_info = match git_info {
@@ -127,7 +126,7 @@ pub(super) async fn update_thread_metadata(
             resolve_git_info_update(
                 store,
                 thread_id,
-                resolved_rollout_path.as_path(),
+                resolved_rollout.path.as_path(),
                 git_info,
                 patch.memory_mode.map(memory_mode_as_str),
             )
@@ -136,8 +135,8 @@ pub(super) async fn update_thread_metadata(
         None => None,
     };
     if let Some(memory_mode) = patch.memory_mode {
-        apply_thread_memory_mode(resolved_rollout_path.as_path(), thread_id, memory_mode).await?;
-        refresh_resolved_rollout_path(&mut resolved_rollout_path).await;
+        apply_thread_memory_mode(resolved_rollout.path.as_path(), thread_id, memory_mode).await?;
+        refresh_resolved_rollout_path(&mut resolved_rollout).await;
     }
 
     if let Some(name) = name {
@@ -154,7 +153,7 @@ pub(super) async fn update_thread_metadata(
 
     if let Some(git_info) = resolved_git_info.as_ref() {
         apply_thread_git_info_to_rollout(
-            resolved_rollout_path.as_path(),
+            resolved_rollout.path.as_path(),
             thread_id,
             &git_info.sha,
             &git_info.branch,
@@ -162,11 +161,11 @@ pub(super) async fn update_thread_metadata(
             git_info.memory_mode.as_deref(),
         )
         .await?;
-        refresh_resolved_rollout_path(&mut resolved_rollout_path).await;
+        refresh_resolved_rollout_path(&mut resolved_rollout).await;
     }
 
     let mut sqlite_patch = patch;
-    sqlite_patch.rollout_path = Some(resolved_rollout_path);
+    sqlite_patch.rollout_path = Some(resolved_rollout.path);
     if let Some(git_info) = resolved_git_info {
         sqlite_patch.git_info = Some(GitInfoPatch {
             sha: Some(git_info.sha),
@@ -185,9 +184,9 @@ pub(super) async fn update_thread_metadata(
     .await
 }
 
-async fn refresh_resolved_rollout_path(resolved: &mut PathBuf) {
-    if let Some(path) = codex_rollout::existing_rollout_path(resolved.as_path()).await {
-        *resolved = path;
+async fn refresh_resolved_rollout_path(resolved: &mut ResolvedThreadRollout) {
+    if let Some(path) = codex_rollout::existing_rollout_path(resolved.path.as_path()).await {
+        resolved.path = path;
     }
 }
 
@@ -218,9 +217,9 @@ async fn apply_metadata_update(
             let advance_recency_at = patch.advance_recency_at;
             let updates_git_info = patch.git_info.is_some();
             if existing.is_none() && rollout_path.is_none() {
-                let resolved = resolve_rollout_path(store, thread_id, include_archived).await?;
-                rollout_path_archived = rollout_path_is_archived(store, resolved.as_path());
-                rollout_path = Some(resolved);
+                let resolved = resolve_rollout(store, thread_id, include_archived).await?;
+                rollout_path_archived = resolved.location == RolloutLocation::Archived;
+                rollout_path = Some(resolved.path);
             }
             let mut metadata = match existing.clone() {
                 Some(metadata) => metadata,
@@ -641,49 +640,23 @@ fn memory_mode_as_str(mode: ThreadMemoryMode) -> &'static str {
     }
 }
 
-async fn resolve_rollout_path(
+async fn resolve_rollout(
     store: &LocalThreadStore,
     thread_id: ThreadId,
     include_archived: bool,
-) -> ThreadStoreResult<PathBuf> {
-    if let Ok(path) = live_writer::rollout_path(store, thread_id).await {
-        return Ok(path);
-    }
-
-    let state_db_ctx = store.state_db().await;
-    let active_path = find_thread_path_by_id_str(
-        store.config.codex_home.as_path(),
-        &thread_id.to_string(),
-        state_db_ctx.as_deref(),
-    )
-    .await
-    .map_err(|err| ThreadStoreError::InvalidRequest {
-        message: format!("failed to locate thread id {thread_id}: {err}"),
-    })?;
-    if let Some(path) = active_path {
-        return Ok(path);
-    }
-    if !include_archived {
-        return Err(ThreadStoreError::InvalidRequest {
-            message: format!("thread not found: {thread_id}"),
-        });
-    }
-    find_archived_thread_path_by_id_str(
-        store.config.codex_home.as_path(),
-        &thread_id.to_string(),
-        state_db_ctx.as_deref(),
-    )
-    .await
-    .map_err(|err| ThreadStoreError::InvalidRequest {
-        message: format!("failed to locate archived thread id {thread_id}: {err}"),
-    })?
-    .ok_or_else(|| ThreadStoreError::InvalidRequest {
+) -> ThreadStoreResult<ResolvedThreadRollout> {
+    let resolved = if include_archived {
+        thread_rollout_resolver::resolve_current_including_archived(store, thread_id).await?
+    } else {
+        thread_rollout_resolver::resolve_current(store, thread_id).await?
+    };
+    resolved.ok_or_else(|| ThreadStoreError::InvalidRequest {
         message: format!("thread not found: {thread_id}"),
     })
 }
 
 fn rollout_path_is_archived(store: &LocalThreadStore, path: &Path) -> bool {
-    path.starts_with(store.config.codex_home.join(ARCHIVED_SESSIONS_SUBDIR))
+    super::helpers::rollout_path_is_archived(store.config.codex_home.as_path(), path)
 }
 
 #[cfg(test)]

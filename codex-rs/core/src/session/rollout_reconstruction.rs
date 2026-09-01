@@ -358,13 +358,15 @@ impl Session {
                         // prompt shape.
                         // TODO(ccunningham): if we drop support for None replacement_history compaction items,
                         // we can get rid of this second loop entirely and just build `history` directly in the first loop.
-                        let user_messages = compact::collect_user_messages(history.raw_items());
-                        let rebuilt = compact::build_compacted_history(
+                        let user_messages = compact::collect_annotated_user_messages(
+                            history.annotated_items(),
+                        );
+                        let rebuilt = compact::build_annotated_compacted_history(
                             Vec::new(),
                             &user_messages,
                             &compacted.message,
                         );
-                        history.replace(rebuilt);
+                        history.replace_annotated(rebuilt);
                     }
                 }
                 RolloutItem::EventMsg(EventMsg::ThreadRolledBack(rollback)) => {
@@ -398,23 +400,14 @@ impl Session {
             match item {
                 RolloutItem::Compacted(_) => world_state_baseline = None,
                 RolloutItem::WorldState(world_state) if world_state.full => {
-                    world_state_baseline = match serde_json::from_value(world_state.state.clone()) {
-                        Ok(snapshot) => Some(snapshot),
-                        Err(err) => {
-                            tracing::warn!(%err, "failed to restore world-state snapshot");
-                            None
-                        }
-                    };
+                    world_state_baseline = Some(WorldStateSnapshot::from(&world_state.state));
                 }
                 RolloutItem::WorldState(world_state) => {
                     let Some(baseline) = world_state_baseline.as_mut() else {
                         tracing::warn!("ignored world-state patch without a full snapshot");
                         continue;
                     };
-                    if let Err(err) = baseline.apply_merge_patch(&world_state.state) {
-                        tracing::warn!(%err, "failed to apply world-state patch");
-                        world_state_baseline = None;
-                    }
+                    baseline.apply_merge_patch(&world_state.state);
                 }
                 RolloutItem::SessionMeta(_)
                 | RolloutItem::ResponseItem(_)

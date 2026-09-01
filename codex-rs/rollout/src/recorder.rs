@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use chrono::SecondsFormat;
+use codex_protocol::RolloutId;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
@@ -52,6 +53,7 @@ use super::list::parse_timestamp_uuid_from_filename;
 use super::metadata;
 use super::ordinal::RolloutOrdinalState;
 use super::ordinal::ordinal_state_for_rollout;
+use super::rollout_file_name::RolloutFileName;
 use super::sanitizer::potentially_contains_sensitive_material;
 use super::sanitizer::redact_persisted_json;
 use super::session_index::find_thread_names_by_ids;
@@ -61,11 +63,12 @@ use crate::state_db::StateDbHandle;
 use codex_git_utils::collect_git_info;
 use codex_git_utils::get_git_repo_root;
 use codex_protocol::protocol::GitInfo as ProtocolGitInfo;
-use codex_protocol::protocol::InitialHistory;
+use codex_history::InitialHistory;
+use codex_protocol::protocol::HistoryPosition;
 use codex_protocol::protocol::MultiAgentVersion;
-use codex_protocol::protocol::ResumedHistory;
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
+use codex_history::ResumedHistory;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::protocol::SessionContextWindow;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
@@ -96,6 +99,7 @@ pub enum RolloutRecorderParams {
     Create {
         session_id: SessionId,
         conversation_id: ThreadId,
+        rollout_id_override: Option<RolloutId>,
         forked_from_id: Option<ThreadId>,
         parent_thread_id: Option<ThreadId>,
         source: Box<SessionSource>,
@@ -106,6 +110,7 @@ pub enum RolloutRecorderParams {
         selected_capability_roots: Vec<SelectedCapabilityRoot>,
         multi_agent_version: Option<MultiAgentVersion>,
         history_mode: ThreadHistoryMode,
+        history_base: Option<HistoryPosition>,
         subagent_history_start_ordinal: Option<u64>,
         initial_window_id: Option<String>,
     },
@@ -190,6 +195,7 @@ impl RolloutRecorderParams {
         Self::Create {
             session_id: conversation_id.into(),
             conversation_id,
+            rollout_id_override: None,
             forked_from_id,
             parent_thread_id,
             source: Box::new(source),
@@ -200,6 +206,7 @@ impl RolloutRecorderParams {
             selected_capability_roots: Vec::new(),
             multi_agent_version: None,
             history_mode: Default::default(),
+            history_base: None,
             subagent_history_start_ordinal: None,
             initial_window_id: None,
         }
@@ -208,6 +215,18 @@ impl RolloutRecorderParams {
     pub fn with_session_id(mut self, session_id: SessionId) -> Self {
         if let Self::Create { session_id: id, .. } = &mut self {
             *id = session_id;
+        }
+        self
+    }
+
+    /// Selects a distinct immutable rollout ID while preserving the thread ID.
+    pub fn with_rollout_id(mut self, rollout_id: RolloutId) -> Self {
+        if let Self::Create {
+            rollout_id_override,
+            ..
+        } = &mut self
+        {
+            *rollout_id_override = Some(rollout_id);
         }
         self
     }
@@ -246,6 +265,16 @@ impl RolloutRecorderParams {
         } = &mut self
         {
             *mode = history_mode;
+        }
+        self
+    }
+
+    pub fn with_history_base(mut self, history_base: Option<HistoryPosition>) -> Self {
+        if let Self::Create {
+            history_base: base, ..
+        } = &mut self
+        {
+            *base = history_base;
         }
         self
     }
@@ -783,6 +812,7 @@ impl RolloutRecorder {
             RolloutRecorderParams::Create {
                 session_id,
                 conversation_id,
+                rollout_id_override,
                 forked_from_id,
                 parent_thread_id,
                 source,
@@ -793,11 +823,17 @@ impl RolloutRecorder {
                 selected_capability_roots,
                 multi_agent_version,
                 history_mode,
+                history_base,
                 subagent_history_start_ordinal,
                 initial_window_id,
             } => {
-                let ordinal_state = RolloutOrdinalState::for_new_rollout(history_mode);
-                let log_file_info = precompute_log_file_info(config, conversation_id)?;
+                let ordinal_state =
+                    RolloutOrdinalState::for_new_rollout(history_mode, history_base);
+                let log_file_info = precompute_log_file_info(
+                    config,
+                    conversation_id,
+                    rollout_id_override,
+                )?;
                 let path = log_file_info.path.clone();
                 let thread_id = log_file_info.conversation_id;
                 let started_at = log_file_info.timestamp;
@@ -834,7 +870,7 @@ impl RolloutRecorder {
                     selected_capability_roots,
                     memory_mode: (!config.generate_memories()).then_some("disabled".to_string()),
                     history_mode,
-                    history_base: None,
+                    history_base,
                     subagent_history_start_ordinal,
                     multi_agent_version,
                     context_window: initial_window_id.map(SessionContextWindow::new),
@@ -1003,7 +1039,7 @@ impl RolloutRecorder {
                 if !is_token_count_event {
                     redact_persisted_json(&mut value);
                 }
-                serde_json::from_value::<RolloutLine>(value)
+                crate::decode_rollout_line(value)
             } else {
                 match serde_json::from_str::<RolloutLine>(&line) {
                     Ok(rollout_line)
@@ -1034,7 +1070,7 @@ impl RolloutRecorder {
                             reject_unknown_thread_history_mode(&value)?;
                         }
                         redact_persisted_json(&mut value);
-                        serde_json::from_value::<RolloutLine>(value)
+                        crate::decode_rollout_line(value)
                     }
                     Ok(rollout_line) => Ok(rollout_line),
                     Err(direct_err) => match serde_json::from_str::<Value>(&line) {
@@ -1047,7 +1083,7 @@ impl RolloutRecorder {
                                 reject_unknown_thread_history_mode(&value)?;
                             }
                             redact_persisted_json(&mut value);
-                            serde_json::from_value::<RolloutLine>(value)
+                            crate::decode_rollout_line(value)
                         }
                         Err(_) => Err(direct_err),
                     },
@@ -1582,7 +1618,7 @@ struct LogFileInfo {
     /// Full path to the rollout file.
     path: PathBuf,
 
-    /// Session ID (also embedded in filename).
+    /// Thread ID embedded before any replacement rollout ID.
     conversation_id: ThreadId,
 
     /// Timestamp for the start of the session.
@@ -1592,6 +1628,7 @@ struct LogFileInfo {
 fn precompute_log_file_info(
     config: &impl RolloutConfigView,
     conversation_id: ThreadId,
+    rollout_id_override: Option<RolloutId>,
 ) -> std::io::Result<LogFileInfo> {
     // Resolve ~/.codex/sessions/YYYY/MM/DD path.
     let timestamp = OffsetDateTime::now_local()
@@ -1602,15 +1639,10 @@ fn precompute_log_file_info(
     dir.push(format!("{:02}", u8::from(timestamp.month())));
     dir.push(format!("{:02}", timestamp.day()));
 
-    // Custom format for YYYY-MM-DDThh-mm-ss. Use `-` instead of `:` for
-    // compatibility with filesystems that do not allow colons in filenames.
-    let format: &[FormatItem] =
-        format_description!("[year]-[month]-[day]T[hour]-[minute]-[second]");
-    let date_str = timestamp
-        .format(format)
+    let rollout_id = rollout_id_override.unwrap_or(conversation_id);
+    let filename = RolloutFileName::new(timestamp, conversation_id, rollout_id)
+        .render()
         .map_err(|e| IoError::other(format!("failed to format timestamp: {e}")))?;
-
-    let filename = format!("rollout-{date_str}-{conversation_id}.jsonl");
 
     let path = dir.join(filename);
 

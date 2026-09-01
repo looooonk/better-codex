@@ -1,5 +1,5 @@
 use crate::protocol::EventMsg;
-use crate::protocol::RolloutItem;
+use codex_history::RolloutItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::ThreadHistoryMode;

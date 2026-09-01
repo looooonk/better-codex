@@ -16,6 +16,7 @@ use crate::LoadThreadHistoryParams;
 use crate::ReadThreadByRolloutPathParams;
 use crate::ReadThreadParams;
 use crate::ResumeThreadParams;
+use crate::RevertThreadParams;
 use crate::SearchThreadOccurrencesParams;
 use crate::SearchThreadsParams;
 use crate::StoredModelContext;
@@ -31,6 +32,15 @@ use crate::UpdateThreadMetadataParams;
 
 /// Future returned by [`ThreadStore`] operations.
 pub type ThreadStoreFuture<'a, T> = Pin<Box<dyn Future<Output = ThreadStoreResult<T>> + Send + 'a>>;
+
+/// Why thread persistence is being requested.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PersistContext {
+    /// Standard persistence makes the thread and all queued items durable and readable.
+    Standard,
+    /// A turn is about to begin sampling after its input has been recorded.
+    TurnStart,
+}
 
 /// Storage-neutral thread persistence boundary.
 pub trait ThreadStore: Any + Send + Sync {
@@ -59,6 +69,20 @@ pub trait ThreadStore: Any + Send + Sync {
 
     /// Materializes the thread if persistence is lazy, then persists all queued items.
     fn persist_thread(&self, thread_id: ThreadId) -> ThreadStoreFuture<'_, ()>;
+
+    /// Persists a thread with additional lifecycle context.
+    ///
+    /// Turn-start persistence may complete in the background only when it is enqueued before
+    /// returning, fenced by subsequent flush, standard-persist, or shutdown operations, and
+    /// failures surface through those operations. Existing stores retain standard behavior by
+    /// default.
+    fn persist_thread_with_context(
+        &self,
+        thread_id: ThreadId,
+        _context: PersistContext,
+    ) -> ThreadStoreFuture<'_, ()> {
+        self.persist_thread(thread_id)
+    }
 
     /// Flushes all queued items and returns once they are durable/readable.
     fn flush_thread(&self, thread_id: ThreadId) -> ThreadStoreFuture<'_, ()>;
@@ -89,6 +113,15 @@ pub trait ThreadStore: Any + Send + Sync {
         Box::pin(async {
             Err(ThreadStoreError::Unsupported {
                 operation: "load_latest_model_context",
+            })
+        })
+    }
+
+    /// Selects a new immutable rollout head that excludes the requested turn and its suffix.
+    fn revert_thread(&self, _params: RevertThreadParams) -> ThreadStoreFuture<'_, ()> {
+        Box::pin(async {
+            Err(ThreadStoreError::Unsupported {
+                operation: "revert_thread",
             })
         })
     }

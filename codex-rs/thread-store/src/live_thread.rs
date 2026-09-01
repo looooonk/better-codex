@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use codex_protocol::ThreadId;
-use codex_protocol::protocol::RolloutItem;
+use codex_rollout::RolloutItem;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_rollout::RolloutPersistenceTelemetry;
@@ -15,6 +15,7 @@ use crate::AppendThreadItemsParams;
 use crate::CreateThreadParams;
 use crate::LoadThreadHistoryParams;
 use crate::LocalThreadStore;
+use crate::PersistContext;
 use crate::ReadThreadParams;
 use crate::ResumeThreadParams;
 use crate::StoredThread;
@@ -37,6 +38,8 @@ pub struct LiveThread {
     history_mode: ThreadHistoryMode,
     thread_store: Arc<dyn ThreadStore>,
     metadata_sync: Arc<Mutex<ThreadMetadataSync>>,
+    // A rejected batch cannot be reconstructed, so clones share a sticky fail-closed latch.
+    canonical_append_failure: Arc<Mutex<Option<String>>>,
     persistence_telemetry: RolloutPersistenceTelemetry,
 }
 
@@ -103,6 +106,7 @@ impl LiveThread {
             history_mode,
             thread_store,
             metadata_sync: Arc::new(Mutex::new(metadata_sync)),
+            canonical_append_failure: Arc::new(Mutex::new(None)),
             persistence_telemetry: RolloutPersistenceTelemetry::new(thread_id),
         })
     }
@@ -177,6 +181,7 @@ impl LiveThread {
             history_mode,
             thread_store,
             metadata_sync: Arc::new(Mutex::new(metadata_sync)),
+            canonical_append_failure: Arc::new(Mutex::new(None)),
             persistence_telemetry: RolloutPersistenceTelemetry::new(thread_id),
         })
     }
@@ -227,12 +232,20 @@ impl LiveThread {
         } else {
             (persisted_rollout_items(raw_items, self.history_mode), None)
         };
-        self.thread_store
+        if let Err(err) = self
+            .thread_store
             .append_items(AppendThreadItemsParams {
                 thread_id: self.thread_id,
                 items: raw_items.to_vec(),
             })
-            .await?;
+            .await
+        {
+            let mut failure = self.canonical_append_failure.lock().await;
+            if failure.is_none() {
+                *failure = Some(err.to_string());
+            }
+            return Err(err);
+        }
         if let Some(measurement) = measurement.as_ref() {
             self.persistence_telemetry
                 .record_batch(raw_items, measurement);
@@ -241,7 +254,24 @@ impl LiveThread {
     }
 
     pub async fn persist(&self) -> ThreadStoreResult<()> {
-        self.thread_store.persist_thread(self.thread_id).await?;
+        self.persist_with_context(PersistContext::Standard).await
+    }
+
+    pub async fn persist_with_context(&self, context: PersistContext) -> ThreadStoreResult<()> {
+        if context == PersistContext::TurnStart {
+            self.flush_pending_metadata_update_for_existing_history()
+                .await?;
+        }
+        self.thread_store
+            .persist_thread_with_context(self.thread_id, context)
+            .await?;
+        if context == PersistContext::TurnStart
+            && let Some(message) = self.canonical_append_failure.lock().await.clone()
+        {
+            return Err(ThreadStoreError::Internal {
+                message: format!("canonical thread append failed before turn start: {message}"),
+            });
+        }
         self.flush_pending_metadata_update().await
     }
 
@@ -252,9 +282,19 @@ impl LiveThread {
     }
 
     pub async fn shutdown(&self) -> ThreadStoreResult<()> {
-        self.flush_pending_metadata_update_for_existing_history()
-            .await?;
-        self.thread_store.shutdown_thread(self.thread_id).await
+        let metadata_result = self
+            .flush_pending_metadata_update_for_existing_history()
+            .await;
+        let shutdown_result = self.thread_store.shutdown_thread(self.thread_id).await;
+        match (metadata_result, shutdown_result) {
+            (Err(metadata_error), Err(shutdown_error)) => Err(ThreadStoreError::Internal {
+                message: format!(
+                    "thread metadata update failed: {metadata_error}; thread shutdown failed: {shutdown_error}"
+                ),
+            }),
+            (Err(metadata_error), Ok(())) => Err(metadata_error),
+            (Ok(()), result) => result,
+        }
     }
 
     pub async fn discard(&self) -> ThreadStoreResult<()> {

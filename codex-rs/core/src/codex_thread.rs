@@ -26,7 +26,7 @@ use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::Op;
-use codex_protocol::protocol::RolloutItem;
+use codex_history::RolloutItem;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
@@ -39,6 +39,7 @@ use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::TurnEnvironmentSelections;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::user_input::UserInput;
+use codex_thread_store::PersistContext;
 use codex_thread_store::StoredThread;
 use codex_thread_store::StoredThreadHistory;
 use codex_thread_store::ThreadMetadataPatch;
@@ -136,6 +137,22 @@ impl ThreadConfigSnapshot {
             &self.permission_profile,
             self.cwd().as_path(),
         )
+    }
+
+    fn into_thread_settings_overrides(self) -> CodexThreadSettingsOverrides {
+        CodexThreadSettingsOverrides {
+            environments: Some(self.environments),
+            profile_workspace_roots: Some(self.profile_workspace_roots),
+            approval_policy: Some(self.approval_policy),
+            approvals_reviewer: Some(self.approvals_reviewer),
+            permission_profile: Some(self.permission_profile),
+            active_permission_profile: self.active_permission_profile,
+            summary: self.reasoning_summary,
+            service_tier: Some(self.service_tier),
+            collaboration_mode: Some(self.collaboration_mode),
+            personality: self.personality,
+            ..Default::default()
+        }
     }
 }
 
@@ -242,7 +259,10 @@ impl CodexThread {
 
     #[doc(hidden)]
     pub async fn ensure_rollout_materialized(&self) {
-        self.codex.session.ensure_rollout_materialized().await;
+        self.codex
+            .session
+            .ensure_rollout_materialized(PersistContext::Standard)
+            .await;
     }
 
     #[doc(hidden)]
@@ -360,6 +380,17 @@ impl CodexThread {
     ) -> ConstraintResult<ThreadConfigSnapshot> {
         let updates = self.thread_settings_update(overrides).await;
         self.codex.session.preview_settings(&updates).await
+    }
+
+    /// Restores effective mutable settings captured from another loaded runtime.
+    pub async fn restore_thread_settings(
+        &self,
+        snapshot: ThreadConfigSnapshot,
+    ) -> ConstraintResult<()> {
+        let updates = self
+            .thread_settings_update(snapshot.into_thread_settings_overrides())
+            .await;
+        self.codex.session.update_settings(updates).await
     }
 
     async fn thread_settings_update(
@@ -594,6 +625,15 @@ impl CodexThread {
 
     pub async fn config(&self) -> Arc<crate::config::Config> {
         self.codex.session.get_config().await
+    }
+
+    /// Returns whether this runtime accepts OpenAI form elicitation requests.
+    pub fn supports_openai_form_elicitation(&self) -> bool {
+        self.codex
+            .session
+            .services
+            .supports_openai_form_elicitation
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Resolves the MCP runtime configuration using this thread's extension data.

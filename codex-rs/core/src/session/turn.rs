@@ -112,6 +112,7 @@ use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
 use codex_tools::ToolName;
 use codex_tools::filter_request_plugin_install_discoverable_tools_for_client;
+use codex_thread_store::PersistContext;
 use codex_utils_stream_parser::AssistantTextChunk;
 use codex_utils_stream_parser::AssistantTextStreamParser;
 use codex_utils_stream_parser::ProposedPlanSegment;
@@ -179,21 +180,30 @@ pub(crate) async fn run_turn(
         return Ok(None);
     }
     let mut can_drain_pending_input = input.is_empty();
-    if run_hooks_and_record_inputs(&sess, &turn_context, &input).await {
+    if run_hooks_and_record_inputs(&sess, &turn_context, &input, PersistContext::TurnStart).await? {
         return Ok(None);
     }
 
     sess.merge_connector_selection(explicitly_enabled_connectors.clone())
         .await;
-    for response_item in injection_items {
-        sess.record_conversation_items(&turn_context, std::slice::from_ref(&response_item))
+    for response_item in &injection_items {
+        sess.record_conversation_items(&turn_context, std::slice::from_ref(response_item))
             .await;
+    }
+    if !injection_items.is_empty() {
+        sess.try_ensure_rollout_materialized(PersistContext::Standard)
+            .await?;
     }
 
     track_turn_resolved_config_analytics(&sess, &turn_context, &input).await;
 
     let prepared_history = sess.clone_history().await;
-    let turn_items = prepared_history.raw_items()[turn_items_start..].to_vec();
+    let turn_items = prepared_history
+        .annotated_items()
+        .iter()
+        .skip(turn_items_start)
+        .cloned()
+        .collect();
     drop(prepared_history);
     let initial_context_injection = InitialContextInjection::AfterSummary {
         step_context: Arc::clone(&first_step_context),
@@ -245,6 +255,7 @@ pub(crate) async fn run_turn(
     // 2. After auto-compact, when model/tool continuation needs to resume before any steer.
 
     let mut next_step_context = Some(first_step_context);
+    let mut sampling_started = false;
     loop {
         // Note that pending_input would be something like a message the user
         // submitted through the UI while the model was running. Though the UI
@@ -255,7 +266,18 @@ pub(crate) async fn run_turn(
             Vec::new()
         };
 
-        if run_hooks_and_record_inputs(&sess, &turn_context, &pending_input).await {
+        if run_hooks_and_record_inputs(
+            &sess,
+            &turn_context,
+            &pending_input,
+            if sampling_started {
+                PersistContext::Standard
+            } else {
+                PersistContext::TurnStart
+            },
+        )
+        .await?
+        {
             break;
         }
 
@@ -272,6 +294,7 @@ pub(crate) async fn run_turn(
             Some(step_context) => step_context,
             None => sess.capture_step_context(Arc::clone(&turn_context)).await,
         };
+        sampling_started = true;
         let sampling_request_result: CodexResult<_> = async {
             super::time_reminder::maybe_record_current_time_reminder(
                 sess.as_ref(),
@@ -527,11 +550,12 @@ async fn turn_diff_display_roots(turn_context: &TurnContext) -> Vec<(String, Pat
 }
 
 #[instrument(level = "trace", skip_all)]
-async fn run_hooks_and_record_inputs(
+pub(super) async fn run_hooks_and_record_inputs(
     sess: &Arc<Session>,
     turn_context: &Arc<TurnContext>,
     input: &[TurnInput],
-) -> bool {
+    persist_context: PersistContext,
+) -> CodexResult<bool> {
     let mut blocked_input = false;
     let mut accepted_user_input = false;
     for input_item in input {
@@ -548,11 +572,12 @@ async fn run_hooks_and_record_inputs(
                 turn_context,
                 input_item.clone(),
                 hook_outcome.additional_contexts,
+                persist_context,
             )
-            .await;
+            .await?;
         }
     }
-    blocked_input && !accepted_user_input
+    Ok(blocked_input && !accepted_user_input)
 }
 
 #[instrument(level = "trace", skip_all)]
@@ -2606,8 +2631,10 @@ async fn try_run_sampling_request(
     outcome
 }
 
-pub(crate) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -> Option<String> {
-    for item in responses.iter().rev() {
+pub(crate) fn get_last_assistant_message_from_turn<'a>(
+    responses: impl DoubleEndedIterator<Item = &'a ResponseItem>,
+) -> Option<String> {
+    for item in responses.rev() {
         if let Some(message) = last_assistant_message_from_item(item, /*plan_mode*/ false) {
             return Some(message);
         }

@@ -9,8 +9,9 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AgentMessageEvent;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
+use codex_protocol::protocol::HistoryPosition;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
@@ -729,6 +730,105 @@ async fn recorder_materializes_on_flush_with_pending_items() -> std::io::Result<
 }
 
 #[tokio::test]
+async fn replacement_rollout_path_preserves_thread_identity() -> std::io::Result<()> {
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let thread_id = ThreadId::new();
+    let rollout_id = ThreadId::new();
+    let recorder = RolloutRecorder::new(
+        &config,
+        RolloutRecorderParams::new(
+            thread_id,
+            /*forked_from_id*/ None,
+            /*parent_thread_id*/ None,
+            SessionSource::Exec,
+            /*thread_source*/ None,
+            "test_originator".to_string(),
+            BaseInstructions::default(),
+            Vec::new(),
+        )
+        .with_rollout_id(rollout_id),
+    )
+    .await?;
+    let selected_path = recorder.rollout_path().to_path_buf();
+    let expected_suffix = format!("-{thread_id}_{rollout_id}.jsonl");
+    assert!(
+        selected_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.ends_with(expected_suffix.as_str()))
+    );
+
+    recorder.persist().await?;
+    assert_eq!(recorder.rollout_path(), selected_path.as_path());
+    assert_eq!(
+        crate::rollout_id_from_path(selected_path.as_path()),
+        Some(rollout_id)
+    );
+    let RolloutItem::SessionMeta(meta) = &read_rollout_lines(selected_path.as_path())?[0].item
+    else {
+        panic!("first rollout item should be session metadata");
+    };
+    assert_eq!(meta.meta.id, thread_id);
+
+    recorder.shutdown().await
+}
+
+#[tokio::test]
+async fn referenced_paginated_rollout_starts_at_history_cutoff_and_resumes() -> std::io::Result<()>
+{
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let history_base = HistoryPosition {
+        thread_id: ThreadId::new(),
+        end_ordinal_exclusive: 41,
+        end_byte_offset: 1,
+    };
+    let recorder = RolloutRecorder::new(
+        &config,
+        RolloutRecorderParams::new(
+            ThreadId::new(),
+            /*forked_from_id*/ None,
+            /*parent_thread_id*/ None,
+            SessionSource::Exec,
+            /*thread_source*/ None,
+            "test_originator".to_string(),
+            BaseInstructions::default(),
+            Vec::new(),
+        )
+        .with_history_mode(ThreadHistoryMode::Paginated)
+        .with_history_base(Some(history_base)),
+    )
+    .await?;
+    let rollout_path = recorder.rollout_path().to_path_buf();
+    recorder.persist().await?;
+    recorder.shutdown().await?;
+
+    let resumed =
+        RolloutRecorder::new(&config, RolloutRecorderParams::resume(rollout_path.clone())).await?;
+    resumed
+        .record_canonical_items(&[agent_message_item("first child record")])
+        .await?;
+    resumed.flush().await?;
+    resumed.shutdown().await?;
+
+    let resumed =
+        RolloutRecorder::new(&config, RolloutRecorderParams::resume(rollout_path.clone())).await?;
+    resumed
+        .record_canonical_items(&[agent_message_item("second child record")])
+        .await?;
+    resumed.flush().await?;
+    assert_eq!(
+        read_rollout_lines(&rollout_path)?
+            .into_iter()
+            .map(|line| line.ordinal)
+            .collect::<Vec<_>>(),
+        vec![Some(41), Some(42), Some(43)]
+    );
+    resumed.shutdown().await
+}
+
+#[tokio::test]
 async fn recorder_omits_ordinals_from_legacy_rollouts() -> std::io::Result<()> {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
@@ -1071,7 +1171,7 @@ async fn list_threads_db_disabled_does_not_skip_paginated_items() -> std::io::Re
 }
 
 #[tokio::test]
-async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Result<()> {
+async fn list_threads_db_enabled_omits_missing_selected_path() -> std::io::Result<()> {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
 
@@ -1097,7 +1197,7 @@ async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Resul
         .expect("valid datetime");
     let mut builder = codex_state::ThreadMetadataBuilder::new(
         thread_id,
-        stale_path,
+        stale_path.clone(),
         created_at,
         SessionSource::Cli,
     );
@@ -1131,18 +1231,18 @@ async fn list_threads_db_enabled_drops_missing_rollout_paths() -> std::io::Resul
         .find_rollout_path_by_id(thread_id, Some(false))
         .await
         .expect("state db lookup should succeed");
-    assert_eq!(stored_path, None);
+    assert_eq!(stored_path, Some(stale_path));
     Ok(())
 }
 
 #[tokio::test]
-async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Result<()> {
+async fn list_threads_db_enabled_preserves_selected_rollout_path() -> std::io::Result<()> {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
 
     let uuid = Uuid::from_u128(9011);
     let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
-    let real_path = write_session_file(home.path(), "2025-01-03T13-00-00", uuid)?;
+    let _real_path = write_session_file(home.path(), "2025-01-03T13-00-00", uuid)?;
     let stale_path = home.path().join(format!(
         "sessions/2099/01/01/rollout-2099-01-01T00-00-00-{uuid}.jsonl"
     ));
@@ -1163,7 +1263,7 @@ async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Resul
         .expect("valid datetime");
     let mut builder = codex_state::ThreadMetadataBuilder::new(
         thread_id,
-        stale_path,
+        stale_path.clone(),
         created_at,
         SessionSource::Cli,
     );
@@ -1192,14 +1292,13 @@ async fn list_threads_db_enabled_repairs_stale_rollout_paths() -> std::io::Resul
         /*search_term*/ None,
     )
     .await?;
-    assert_eq!(page.items.len(), 1);
-    assert_eq!(page.items[0].path, real_path);
+    assert_eq!(page.items.len(), 0);
 
-    let repaired_path = runtime
+    let selected_path = runtime
         .find_rollout_path_by_id(thread_id, Some(false))
         .await
         .expect("state db lookup should succeed");
-    assert_eq!(repaired_path, Some(real_path));
+    assert_eq!(selected_path, Some(stale_path));
     Ok(())
 }
 

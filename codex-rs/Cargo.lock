@@ -1878,6 +1878,7 @@ version = "0.1.0-alpha.12"
 dependencies = [
  "anyhow",
  "codex-core",
+ "codex-history",
  "codex-protocol",
  "core_test_support",
  "pretty_assertions",
@@ -2137,6 +2138,7 @@ dependencies = [
  "clap",
  "codex-experimental-api-macros",
  "codex-extension-items",
+ "codex-history",
  "codex-protocol",
  "codex-secrets",
  "codex-shell-command",
@@ -2375,6 +2377,7 @@ dependencies = [
  "codex-execpolicy",
  "codex-features",
  "codex-git-utils",
+ "codex-history",
  "codex-home",
  "codex-install-context",
  "codex-login",
@@ -2698,6 +2701,7 @@ dependencies = [
  "codex-feedback",
  "codex-file-system",
  "codex-git-utils",
+ "codex-history",
  "codex-home",
  "codex-hooks",
  "codex-http-client",
@@ -2806,6 +2810,7 @@ dependencies = [
  "codex-extension-api",
  "codex-features",
  "codex-home",
+ "codex-history",
  "codex-image-generation-extension",
  "codex-login",
  "codex-model-provider-info",
@@ -2914,6 +2919,7 @@ dependencies = [
  "codex-core",
  "codex-feedback",
  "codex-git-utils",
+ "codex-history",
  "codex-login",
  "codex-model-provider-info",
  "codex-otel",
@@ -3085,6 +3091,7 @@ version = "0.1.0-alpha.12"
 dependencies = [
  "chrono",
  "codex-app-server-protocol",
+ "codex-history",
  "codex-protocol",
  "codex-utils-output-truncation",
  "serde",
@@ -3193,6 +3200,7 @@ dependencies = [
  "codex-analytics",
  "codex-core",
  "codex-extension-api",
+ "codex-history",
  "codex-otel",
  "codex-protocol",
  "codex-state",
@@ -3237,6 +3245,20 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "codex-history"
+version = "0.1.0-alpha.12"
+dependencies = [
+ "anyhow",
+ "codex-protocol",
+ "codex-utils-absolute-path",
+ "pretty_assertions",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "ts-rs",
 ]
 
 [[package]]
@@ -3920,6 +3942,7 @@ dependencies = [
  "chrono",
  "codex-file-search",
  "codex-git-utils",
+ "codex-history",
  "codex-otel",
  "codex-protocol",
  "codex-secrets",
@@ -4080,6 +4103,7 @@ dependencies = [
  "chrono",
  "clap",
  "codex-git-utils",
+ "codex-history",
  "codex-protocol",
  "dirs",
  "libsqlite3-sys",

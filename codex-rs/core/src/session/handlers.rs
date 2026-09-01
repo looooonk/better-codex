@@ -39,7 +39,7 @@ use codex_protocol::protocol::RealtimeConversationListVoicesResponseEvent;
 use codex_protocol::protocol::RealtimeVoicesList;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::ReviewRequest;
-use codex_protocol::protocol::RolloutItem;
+use codex_history::RolloutItem;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_protocol::protocol::ThreadRolledBackEvent;
 use codex_protocol::protocol::ThreadSettingsAppliedEvent;
@@ -636,7 +636,6 @@ pub async fn shutdown(sess: &Arc<Session>, sub_id: String) -> bool {
     let history = sess.clone_history().await;
     let turn_count = history
         .raw_items()
-        .iter()
         .filter(|item| is_user_turn_boundary(item))
         .count();
     sess.services.session_telemetry.counter(

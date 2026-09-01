@@ -52,6 +52,7 @@ use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::WarningEvent;
+use codex_thread_store::PersistContext;
 
 use codex_features::Feature;
 use codex_protocol::error::CodexErr;
@@ -617,13 +618,17 @@ impl Session {
                     )
                     .await;
                 } else {
-                    record_pending_input(
+                    if let Err(err) = record_pending_input(
                         self,
                         &turn_context,
                         pending_input_item,
                         hook_outcome.additional_contexts,
+                        PersistContext::Standard,
                     )
-                    .await;
+                    .await
+                    {
+                        warn!(%err, "failed to persist pending input after task end");
+                    }
                 }
             }
         }

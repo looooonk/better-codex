@@ -1,12 +1,14 @@
 use std::borrow::Cow;
 
 use sqlx::Row;
+use sqlx::SqlitePool;
 use sqlx::migrate::Migration;
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::SqlitePoolOptions;
 
 use super::STATE_MIGRATOR;
 use super::repair_legacy_recency_migration_version;
+use super::runtime_state_migrator;
 
 fn migrator_through(version: i64) -> Migrator {
     Migrator {
@@ -24,6 +26,37 @@ fn migrator_through(version: i64) -> Migrator {
         create_schemas: STATE_MIGRATOR.create_schemas.clone(),
         no_tx: STATE_MIGRATOR.no_tx,
     }
+}
+
+async fn insert_migration_thread(pool: &SqlitePool, id: &str, recency_at_ms: i64) {
+    let recency_at = recency_at_ms / 1000;
+    sqlx::query(
+        r#"
+INSERT INTO threads (
+    id, rollout_path, created_at, updated_at, created_at_ms, updated_at_ms,
+    recency_at, recency_at_ms, source, model_provider, cwd, title, preview,
+    sandbox_policy, approval_mode
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind(id)
+    .bind(format!("/tmp/{id}.jsonl"))
+    .bind(recency_at)
+    .bind(recency_at)
+    .bind(recency_at_ms)
+    .bind(recency_at_ms)
+    .bind(recency_at)
+    .bind(recency_at_ms)
+    .bind("cli")
+    .bind("openai")
+    .bind("/tmp")
+    .bind("")
+    .bind("visible")
+    .bind("read-only")
+    .bind("on-request")
+    .execute(pool)
+    .await
+    .expect("migration fixture thread should insert");
 }
 
 #[tokio::test]
@@ -195,4 +228,364 @@ async fn repairs_recency_migration_that_was_applied_as_version_38() {
         .map(|migration| (migration.version, migration.checksum.to_vec()))
         .collect::<Vec<_>>();
     assert_eq!(applied, expected);
+}
+
+#[tokio::test]
+async fn legacy_pinning_and_section_membership_remain_independent() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory database should open");
+    migrator_through(/*version*/ 43)
+        .run(&pool)
+        .await
+        .expect("legacy pin migration should apply");
+    insert_migration_thread(
+        &pool,
+        "00000000-0000-0000-0000-000000000041",
+        /*recency_at_ms*/ 1_700_000_041_000,
+    )
+    .await;
+    sqlx::query("UPDATE threads SET is_pinned = 1 WHERE id = ?")
+        .bind("00000000-0000-0000-0000-000000000041")
+        .execute(&pool)
+        .await
+        .expect("legacy pin should update");
+
+    migrator_through(/*version*/ 45)
+        .run(&pool)
+        .await
+        .expect("section migration should apply");
+    insert_migration_thread(
+        &pool,
+        "00000000-0000-0000-0000-000000000042",
+        /*recency_at_ms*/ 1_700_000_042_000,
+    )
+    .await;
+    sqlx::query("UPDATE threads SET thread_section_id = ? WHERE id = ?")
+        .bind(crate::PINNED_THREAD_SECTION_ID)
+        .bind("00000000-0000-0000-0000-000000000042")
+        .execute(&pool)
+        .await
+        .expect("section membership should update");
+
+    STATE_MIGRATOR
+        .run(&pool)
+        .await
+        .expect("remaining migrations should apply");
+    let rows = sqlx::query_as::<_, (String, i64, Option<String>, Option<i64>, Option<i64>)>(
+        "SELECT id, is_pinned, thread_section_id, section_position, section_entered_at_ms FROM threads ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("pin and section state should load");
+    assert_eq!(
+        rows,
+        vec![
+            (
+                "00000000-0000-0000-0000-000000000041".to_string(),
+                1,
+                None,
+                None,
+                None,
+            ),
+            (
+                "00000000-0000-0000-0000-000000000042".to_string(),
+                0,
+                Some(crate::PINNED_THREAD_SECTION_ID.to_string()),
+                Some(1_000_000),
+                Some(1_700_000_042_000),
+            ),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn section_order_migration_backfills_stable_ranks_and_usable_index() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory database should open");
+    migrator_through(/*version*/ 45)
+        .run(&pool)
+        .await
+        .expect("pre-order migrations should apply");
+    for (id, recency_at_ms) in [
+        ("00000000-0000-0000-0000-000000000051", 2_000),
+        ("00000000-0000-0000-0000-000000000052", 2_000),
+        ("00000000-0000-0000-0000-000000000053", 1_000),
+    ] {
+        insert_migration_thread(&pool, id, recency_at_ms).await;
+        sqlx::query("UPDATE threads SET thread_section_id = ? WHERE id = ?")
+            .bind(crate::PINNED_THREAD_SECTION_ID)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .expect("section membership should update");
+    }
+    insert_migration_thread(
+        &pool,
+        "00000000-0000-0000-0000-000000000054",
+        /*recency_at_ms*/ 3_000,
+    )
+    .await;
+
+    migrator_through(/*version*/ 46)
+        .run(&pool)
+        .await
+        .expect("section order migration should apply");
+    let sectioned = sqlx::query_as::<_, (String, i64, i64)>(
+        "SELECT id, section_position, section_entered_at_ms FROM threads WHERE thread_section_id = ? ORDER BY section_position",
+    )
+    .bind(crate::PINNED_THREAD_SECTION_ID)
+    .fetch_all(&pool)
+    .await
+    .expect("backfilled section order should load");
+    assert_eq!(
+        sectioned,
+        vec![
+            (
+                "00000000-0000-0000-0000-000000000052".to_string(),
+                1_000_000,
+                2_000,
+            ),
+            (
+                "00000000-0000-0000-0000-000000000051".to_string(),
+                2_000_000,
+                2_000,
+            ),
+            (
+                "00000000-0000-0000-0000-000000000053".to_string(),
+                3_000_000,
+                1_000,
+            ),
+        ]
+    );
+    assert_eq!(
+        sqlx::query_as::<_, (Option<i64>, Option<i64>)>(
+            "SELECT section_position, section_entered_at_ms FROM threads WHERE id = ?",
+        )
+        .bind("00000000-0000-0000-0000-000000000054")
+        .fetch_one(&pool)
+        .await
+        .expect("unsectioned order should load"),
+        (None, None)
+    );
+    let query_plan = sqlx::query(
+        "EXPLAIN QUERY PLAN SELECT id FROM threads WHERE archived = 0 AND thread_section_id = ? AND preview <> '' ORDER BY section_position ASC, id ASC LIMIT 10",
+    )
+    .bind(crate::PINNED_THREAD_SECTION_ID)
+    .fetch_all(&pool)
+    .await
+    .expect("section order query plan should load");
+    assert!(query_plan.iter().any(|row| {
+        row.get::<String, _>("detail")
+            .contains("idx_threads_section_position")
+    }));
+}
+
+#[tokio::test]
+async fn migration_preserves_better_agent_jobs_without_claiming_upstream_0042() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory database should open");
+    migrator_through(/*version*/ 41)
+        .run(&pool)
+        .await
+        .expect("Better migrations through 0041 should apply");
+
+    sqlx::query(
+        r#"
+INSERT INTO agent_jobs (
+    id, name, status, instruction, input_headers_json, input_csv_path,
+    output_csv_path, created_at, updated_at, max_runtime_seconds
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind("job-1")
+    .bind("durable job")
+    .bind("running")
+    .bind("keep processing")
+    .bind("[]")
+    .bind("/tmp/input.csv")
+    .bind("/tmp/output.csv")
+    .bind(1_700_000_000_i64)
+    .bind(1_700_000_100_i64)
+    .bind(300_i64)
+    .execute(&pool)
+    .await
+    .expect("legacy job should insert");
+    sqlx::query(
+        r#"
+INSERT INTO agent_job_items (
+    job_id, item_id, row_index, row_json, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind("job-1")
+    .bind("item-1")
+    .bind(7_i64)
+    .bind(r#"{"prompt":"persist me"}"#)
+    .bind("pending")
+    .bind(1_700_000_000_i64)
+    .bind(1_700_000_100_i64)
+    .execute(&pool)
+    .await
+    .expect("legacy job item should insert");
+
+    STATE_MIGRATOR
+        .run(&pool)
+        .await
+        .expect("current migrations should preserve Better agent jobs");
+
+    let job = sqlx::query_as::<_, (String, String, i64, Option<i64>)>(
+        "SELECT name, status, auto_export, max_runtime_seconds FROM agent_jobs WHERE id = ?",
+    )
+    .bind("job-1")
+    .fetch_one(&pool)
+    .await
+    .expect("preserved job should load");
+    assert_eq!(
+        job,
+        (
+            "durable job".to_string(),
+            "running".to_string(),
+            1,
+            Some(300),
+        )
+    );
+    let item = sqlx::query_as::<_, (String, i64, String, String)>(
+        "SELECT item_id, row_index, row_json, status FROM agent_job_items WHERE job_id = ?",
+    )
+    .bind("job-1")
+    .fetch_one(&pool)
+    .await
+    .expect("preserved job item should load");
+    assert_eq!(
+        item,
+        (
+            "item-1".to_string(),
+            7,
+            r#"{"prompt":"persist me"}"#.to_string(),
+            "pending".to_string(),
+        )
+    );
+    assert!(
+        STATE_MIGRATOR
+            .migrations
+            .iter()
+            .all(|migration| migration.version != 42)
+    );
+}
+
+#[tokio::test]
+async fn runtime_migration_restores_agent_jobs_after_upstream_0042() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory database should open");
+    let mut upstream_migrations = STATE_MIGRATOR
+        .migrations
+        .iter()
+        .filter(|migration| migration.version <= 48)
+        .cloned()
+        .collect::<Vec<_>>();
+    let predecessor = upstream_migrations
+        .iter()
+        .find(|migration| migration.version == 41)
+        .expect("migration 0041 should exist");
+    let migration_type = predecessor.migration_type;
+    let no_tx = predecessor.no_tx;
+    upstream_migrations.push(Migration::new(
+        42,
+        Cow::Borrowed("drop agent jobs"),
+        migration_type,
+        Cow::Borrowed("DROP TABLE IF EXISTS agent_job_items;\nDROP TABLE IF EXISTS agent_jobs;\n"),
+        no_tx,
+    ));
+    upstream_migrations.sort_by_key(|migration| migration.version);
+    Migrator::with_migrations(upstream_migrations)
+        .run(&pool)
+        .await
+        .expect("upstream migrations through 0048 should apply");
+
+    let dropped_tables = sqlx::query_scalar::<_, i64>(
+        r#"
+SELECT COUNT(*) FROM sqlite_master
+WHERE type = 'table' AND name IN ('agent_jobs', 'agent_job_items')
+        "#,
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("dropped tables should be inspected");
+    assert_eq!(dropped_tables, 0);
+
+    runtime_state_migrator()
+        .run(&pool)
+        .await
+        .expect("runtime migration should tolerate 0042 and apply 0049");
+    sqlx::query(
+        r#"
+INSERT INTO agent_jobs (
+    id, name, status, instruction, input_headers_json, input_csv_path,
+    output_csv_path, created_at, updated_at, max_runtime_seconds
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind("job-restored")
+    .bind("restored job")
+    .bind("pending")
+    .bind("resume processing")
+    .bind("[]")
+    .bind("/tmp/input.csv")
+    .bind("/tmp/output.csv")
+    .bind(1_700_000_200_i64)
+    .bind(1_700_000_200_i64)
+    .bind(600_i64)
+    .execute(&pool)
+    .await
+    .expect("restored agent job schema should accept current rows");
+    sqlx::query(
+        r#"
+INSERT INTO agent_job_items (
+    job_id, item_id, row_index, row_json, status, created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, ?)
+        "#,
+    )
+    .bind("job-restored")
+    .bind("item-restored")
+    .bind(0_i64)
+    .bind("{}")
+    .bind("pending")
+    .bind(1_700_000_200_i64)
+    .bind(1_700_000_200_i64)
+    .execute(&pool)
+    .await
+    .expect("restored agent job item schema should accept current rows");
+
+    let restored = sqlx::query_as::<_, (String, Option<i64>, String)>(
+        r#"
+SELECT jobs.name, jobs.max_runtime_seconds, items.item_id
+FROM agent_jobs AS jobs
+JOIN agent_job_items AS items ON items.job_id = jobs.id
+WHERE jobs.id = ?
+        "#,
+    )
+    .bind("job-restored")
+    .fetch_one(&pool)
+    .await
+    .expect("restored job should load");
+    assert_eq!(
+        restored,
+        (
+            "restored job".to_string(),
+            Some(600),
+            "item-restored".to_string(),
+        )
+    );
 }

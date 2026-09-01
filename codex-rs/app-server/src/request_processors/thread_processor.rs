@@ -781,7 +781,7 @@ impl ThreadRequestProcessor {
             .map(|response| Some(response.into()))
     }
 
-    async fn load_thread(
+    pub(super) async fn load_thread(
         &self,
         thread_id: &str,
     ) -> Result<(ThreadId, Arc<CodexThread>), JSONRPCErrorError> {
@@ -808,7 +808,7 @@ impl ThreadRequestProcessor {
             })
     }
 
-    async fn set_app_server_client_info(
+    pub(super) async fn set_app_server_client_info(
         thread: &CodexThread,
         app_server_client_name: Option<String>,
         app_server_client_version: Option<String>,
@@ -905,7 +905,7 @@ impl ThreadRequestProcessor {
         }
     }
 
-    async fn ensure_conversation_listener(
+    pub(super) async fn ensure_conversation_listener(
         &self,
         conversation_id: ThreadId,
         connection_id: ConnectionId,
@@ -920,7 +920,7 @@ impl ThreadRequestProcessor {
         .await
     }
 
-    async fn ensure_listener_task_running(
+    pub(super) async fn ensure_listener_task_running(
         &self,
         conversation_id: ThreadId,
         conversation: Arc<CodexThread>,
@@ -1080,7 +1080,7 @@ impl ThreadRequestProcessor {
         }
     }
 
-    async fn request_trace_context(
+    pub(super) async fn request_trace_context(
         &self,
         request_id: &ConnectionRequestId,
     ) -> Option<codex_protocol::protocol::W3cTraceContext> {
@@ -1451,7 +1451,7 @@ impl ThreadRequestProcessor {
                     archive_thread_ids.push(thread_id);
                 }
             }
-            Err(err) => return Err(thread_store_archive_error("archive", err)),
+            Err(err) => return Err(thread_store_mutation_error("archive", err)),
         }
         for descendant_thread_id in thread_ids.into_iter().skip(1) {
             match self
@@ -1493,7 +1493,7 @@ impl ThreadRequestProcessor {
             Ok(()) => {
                 archived_thread_ids.push(parent_thread_id.to_string());
             }
-            Err(err) => return Err(thread_store_archive_error("archive", err)),
+            Err(err) => return Err(thread_store_mutation_error("archive", err)),
         }
 
         for descendant_thread_id in descendant_thread_ids.iter().rev().copied() {
@@ -1758,7 +1758,7 @@ impl ThreadRequestProcessor {
             .thread_store
             .unarchive_thread(StoreArchiveThreadParams { thread_id })
             .await
-            .map_err(|err| thread_store_archive_error("unarchive", err))?;
+            .map_err(|err| thread_store_mutation_error("unarchive", err))?;
         let (mut thread, _) =
             thread_from_stored_thread(stored_thread, fallback_provider.as_str(), &self.config.cwd);
 
@@ -3693,7 +3693,7 @@ impl ThreadRequestProcessor {
         ))
     }
 
-    async fn load_resume_initial_history_from_stored_thread(
+    pub(super) async fn load_resume_initial_history_from_stored_thread(
         &self,
         stored_thread: StoredThread,
     ) -> Result<(InitialHistory, StoredThread), JSONRPCErrorError> {
@@ -3729,7 +3729,7 @@ impl ThreadRequestProcessor {
         Ok((history, stored_thread))
     }
 
-    async fn read_stored_thread_for_resume(
+    pub(super) async fn read_stored_thread_for_resume(
         &self,
         thread_id: &str,
         path: Option<&PathBuf>,
@@ -3759,6 +3759,32 @@ impl ThreadRequestProcessor {
         };
 
         let stored_thread = result.map_err(thread_store_resume_read_error)?;
+        if let Some(requested_path) = path
+            && matches!(stored_thread.history_mode, ThreadHistoryMode::Paginated)
+        {
+            let current_thread = self
+                .thread_store
+                .read_thread(StoreReadThreadParams {
+                    thread_id: stored_thread.thread_id,
+                    include_archived: true,
+                    include_history: false,
+                })
+                .await
+                .map_err(thread_store_resume_read_error)?;
+            if let Some(current_path) = current_thread.rollout_path.as_ref()
+                && !path_utils::paths_match_after_normalization(
+                    codex_rollout::plain_rollout_path(requested_path).as_path(),
+                    codex_rollout::plain_rollout_path(current_path).as_path(),
+                )
+            {
+                return Err(invalid_request(format!(
+                    "cannot resume paginated thread {} with stale path: requested {}, current {}; omit path and resume by thread id",
+                    stored_thread.thread_id,
+                    requested_path.display(),
+                    current_path.display()
+                )));
+            }
+        }
         if stored_thread.archived_at.is_some() {
             let thread_id = stored_thread.thread_id;
             return Err(invalid_request(format!(
@@ -3824,7 +3850,7 @@ impl ThreadRequestProcessor {
             .map_err(thread_store_resume_read_error)
     }
 
-    async fn load_thread_from_resume_source_or_send_internal(
+    pub(super) async fn load_thread_from_resume_source_or_send_internal(
         &self,
         thread_id: ThreadId,
         thread: &CodexThread,
@@ -4922,9 +4948,14 @@ pub(super) fn core_thread_write_error(operation: &str, err: CodexErr) -> JSONRPC
     }
 }
 
-fn thread_store_archive_error(operation: &str, err: ThreadStoreError) -> JSONRPCErrorError {
+pub(super) fn thread_store_mutation_error(
+    operation: &str,
+    err: ThreadStoreError,
+) -> JSONRPCErrorError {
     match err {
-        ThreadStoreError::InvalidRequest { message } => invalid_request(message),
+        ThreadStoreError::InvalidRequest { message } | ThreadStoreError::Conflict { message } => {
+            invalid_request(message)
+        }
         ThreadStoreError::Unsupported {
             operation: unsupported_operation,
         } => unsupported_thread_store_operation(unsupported_operation),

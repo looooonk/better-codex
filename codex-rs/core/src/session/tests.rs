@@ -4,6 +4,7 @@ use crate::agents_md_manager::AgentsMdManager;
 use crate::codex_thread::TryStartTurnIfIdleRejectionReason;
 use crate::config::ConfigBuilder;
 use crate::config::ConfigOverrides;
+use crate::config::ThreadStoreConfig;
 use crate::config::test_config;
 use crate::context::ContextualUserFragment;
 use crate::context::TurnAborted;
@@ -119,11 +120,11 @@ use codex_protocol::models::InternalChatMessageMetadataPassthrough;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::CodexErrorInfo;
-use codex_protocol::protocol::CompactedItem;
+use codex_history::CompactedItem;
 use codex_protocol::protocol::ConversationAudioParams;
 use codex_protocol::protocol::CreditsSnapshot;
 use codex_protocol::protocol::GranularApprovalConfig;
-use codex_protocol::protocol::InitialHistory;
+use codex_history::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::NetworkApprovalProtocol;
@@ -133,8 +134,8 @@ use codex_protocol::protocol::RealtimeAudioFrame;
 use codex_protocol::protocol::RealtimeConversationListVoicesResponseEvent;
 use codex_protocol::protocol::RealtimeVoice;
 use codex_protocol::protocol::RealtimeVoicesList;
-use codex_protocol::protocol::ResumedHistory;
-use codex_protocol::protocol::RolloutItem;
+use codex_history::ResumedHistory;
+use codex_history::RolloutItem;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SkillScope;
@@ -518,6 +519,10 @@ fn test_model_client_session() -> crate::client::ModelClientSession {
         HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
     )
     .new_session()
+}
+
+pub(super) fn raw_history_items(history: &ContextManager) -> Vec<ResponseItem> {
+    history.raw_items().cloned().collect()
 }
 
 fn developer_input_texts(items: &[ResponseItem]) -> Vec<&str> {
@@ -1753,7 +1758,7 @@ async fn record_initial_history_reconstructs_resumed_transcript() {
         .await;
 
     let history = session.state.lock().await.clone_history();
-    assert_eq!(expected, history.raw_items());
+    assert_eq!(expected, raw_history_items(&history));
 }
 
 #[tokio::test]
@@ -1769,7 +1774,8 @@ async fn record_conversation_items_stamps_history_metadata_and_preserves_existin
         .await;
 
     let recorded = session.clone_history().await;
-    let [recorded_fresh, recorded_existing] = recorded.raw_items() else {
+    let recorded_items = raw_history_items(&recorded);
+    let [recorded_fresh, recorded_existing] = recorded_items.as_slice() else {
         panic!("expected two recorded items");
     };
     assert_eq!(recorded_fresh.turn_id(), Some(turn_context.sub_id.as_str()));
@@ -1839,7 +1845,8 @@ async fn record_inter_agent_communication_sets_turn_id_in_rollout_and_resume() {
         .await;
 
     let live_history = session.clone_history().await;
-    let [expected_item] = live_history.raw_items() else {
+    let live_items = raw_history_items(&live_history);
+    let [expected_item] = live_items.as_slice() else {
         panic!("expected one inter-agent message");
     };
     assert_eq!(expected_item.turn_id(), Some(turn_context.sub_id.as_str()));
@@ -1889,8 +1896,8 @@ async fn record_inter_agent_communication_sets_turn_id_in_rollout_and_resume() {
         .record_initial_history(InitialHistory::Resumed(resumed))
         .await;
     assert_eq!(
-        resumed_session.clone_history().await.raw_items(),
-        std::slice::from_ref(&expected_item)
+        raw_history_items(&resumed_session.clone_history().await),
+        vec![expected_item]
     );
 }
 
@@ -1919,7 +1926,8 @@ async fn record_inter_agent_communication_preserves_item_id_in_rollout_and_resum
         .await;
 
     let live_history = session.clone_history().await;
-    let [live_item] = live_history.raw_items() else {
+    let live_items = raw_history_items(&live_history);
+    let [live_item] = live_items.as_slice() else {
         panic!("expected exactly one live history item");
     };
     let live_item_id = live_item
@@ -1957,7 +1965,8 @@ async fn record_inter_agent_communication_preserves_item_id_in_rollout_and_resum
         .record_initial_history(InitialHistory::Resumed(resumed))
         .await;
     let resumed_history = resumed_session.clone_history().await;
-    let [resumed_item] = resumed_history.raw_items() else {
+    let resumed_items = raw_history_items(&resumed_history);
+    let [resumed_item] = resumed_items.as_slice() else {
         panic!("expected exactly one resumed history item");
     };
     assert_eq!(
@@ -2003,7 +2012,10 @@ async fn prepares_image_failures_before_history_insertion() {
         .await;
 
     let history = session.state.lock().await.clone_history();
-    let id = history.raw_items()[0]
+    let id = history
+        .raw_items()
+        .next()
+        .expect("history should contain one item")
         .id()
         .expect("history item should have an ID");
     let uuid = id
@@ -2031,7 +2043,10 @@ async fn prepares_image_failures_before_history_insertion() {
         },
         internal_chat_message_metadata_passthrough: None,
     }];
-    assert_eq!(strip_metadata_from_items(history.raw_items()), expected);
+    assert_eq!(
+        strip_metadata_from_items(&raw_history_items(&history)),
+        expected
+    );
 }
 
 #[tokio::test]
@@ -2066,8 +2081,8 @@ async fn prepares_resumed_history_before_installing_it() {
         .await;
 
     assert_eq!(
-        session.state.lock().await.clone_history().raw_items(),
-        &[ResponseItem::Message {
+        raw_history_items(&session.state.lock().await.clone_history()),
+        vec![ResponseItem::Message {
             id: None,
             role: "user".to_string(),
             content: vec![
@@ -2161,7 +2176,7 @@ async fn record_initial_history_new_defers_initial_context_until_first_turn() {
     session.record_initial_history(InitialHistory::New).await;
 
     let history = session.clone_history().await;
-    assert_eq!(history.raw_items().to_vec(), Vec::<ResponseItem>::new());
+    assert_eq!(raw_history_items(&history), Vec::<ResponseItem>::new());
     assert!(session.reference_context_item().await.is_none());
     assert_eq!(session.previous_turn_settings().await, None);
 }
@@ -2196,7 +2211,7 @@ async fn resumed_history_injects_initial_context_on_first_context_update_only() 
         .await;
 
     let history_before_seed = session.state.lock().await.clone_history();
-    assert_eq!(expected, history_before_seed.raw_items());
+    assert_eq!(expected, raw_history_items(&history_before_seed));
 
     let step_context = StepContext::for_test(Arc::clone(&turn_context));
     session
@@ -2205,15 +2220,15 @@ async fn resumed_history_injects_initial_context_on_first_context_update_only() 
     let initial_context = build_initial_context(&session, &turn_context).await;
     expected.extend(initial_context);
     let history_after_seed = session.clone_history().await;
-    assert_eq!(expected, history_after_seed.raw_items());
+    assert_eq!(expected, raw_history_items(&history_after_seed));
 
     session
         .record_context_updates_and_set_reference_context_item(&step_context)
         .await;
     let history_after_second_seed = session.clone_history().await;
     assert_eq!(
-        history_after_seed.raw_items(),
-        history_after_second_seed.raw_items()
+        raw_history_items(&history_after_seed),
+        raw_history_items(&history_after_second_seed)
     );
 }
 
@@ -2811,7 +2826,7 @@ async fn record_initial_history_reconstructs_forked_transcript() {
         .await;
 
     let history = session.state.lock().await.clone_history();
-    assert_eq!(expected, history.raw_items());
+    assert_eq!(expected, raw_history_items(&history));
 }
 
 #[tokio::test]
@@ -2837,13 +2852,8 @@ async fn start_new_context_window_assigns_and_persists_item_ids() {
         .await;
 
     let live_history = session.clone_history().await;
-    assert!(!live_history.raw_items().is_empty());
-    assert!(
-        live_history
-            .raw_items()
-            .iter()
-            .all(|item| item.id().is_some())
-    );
+    assert!(live_history.raw_items().next().is_some());
+    assert!(live_history.raw_items().all(|item| item.id().is_some()));
 
     session.flush_rollout().await.expect("rollout should flush");
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
@@ -2864,8 +2874,8 @@ async fn start_new_context_window_assigns_and_persists_item_ids() {
         | RolloutItem::EventMsg(_) => None,
     });
     assert_eq!(
-        persisted_replacement_history.map(Vec::as_slice),
-        Some(live_history.raw_items())
+        persisted_replacement_history.cloned(),
+        Some(raw_history_items(&live_history))
     );
 }
 
@@ -2894,7 +2904,8 @@ async fn record_initial_history_assigns_and_persists_id_for_forked_response_item
         .await;
 
     let live_history = session.clone_history().await;
-    let [live_item] = live_history.raw_items() else {
+    let live_items = raw_history_items(&live_history);
+    let [live_item] = live_items.as_slice() else {
         panic!("expected one forked response item");
     };
     let live_item_id = live_item
@@ -2903,7 +2914,7 @@ async fn record_initial_history_assigns_and_persists_id_for_forked_response_item
         .to_string();
     assert!(live_item_id.starts_with("msg_"));
     expected_item.set_id(live_item.id().cloned());
-    assert_eq!(live_history.raw_items(), &[expected_item]);
+    assert_eq!(raw_history_items(&live_history), vec![expected_item]);
 
     session.flush_rollout().await.expect("rollout should flush");
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
@@ -3149,7 +3160,7 @@ async fn record_initial_history_forked_hydrates_previous_turn_settings() {
             realtime_active: Some(turn_context.realtime_active),
         })
     );
-    assert_eq!(history.raw_items(), &[]);
+    assert_eq!(raw_history_items(&history), Vec::<ResponseItem>::new());
     assert_eq!(
         serde_json::to_value(session.reference_context_item().await)
             .expect("serialize fork reference context item"),
@@ -3216,7 +3227,7 @@ async fn thread_rollback_drops_last_turn_from_history() {
     expected.extend(turn_1);
 
     let history = sess.clone_history().await;
-    assert_eq!(expected, history.raw_items());
+    assert_eq!(expected, raw_history_items(&history));
     assert_eq!(sess.previous_turn_settings().await, None);
     assert!(sess.reference_context_item().await.is_none());
     assert!(
@@ -3267,7 +3278,7 @@ async fn thread_rollback_clears_history_when_num_turns_exceeds_existing_turns() 
     assert_eq!(rollback_event.num_turns, 99);
 
     let history = sess.clone_history().await;
-    assert_eq!(initial_context, history.raw_items());
+    assert_eq!(initial_context, raw_history_items(&history));
 }
 
 #[tokio::test]
@@ -3289,7 +3300,10 @@ async fn thread_rollback_fails_without_persisted_thread_history() {
         error_event.codex_error_info,
         Some(CodexErrorInfo::ThreadRollbackFailed)
     );
-    assert_eq!(sess.clone_history().await.raw_items(), initial_context);
+    assert_eq!(
+        raw_history_items(&sess.clone_history().await),
+        initial_context
+    );
 }
 
 #[tokio::test]
@@ -3399,7 +3413,7 @@ async fn thread_rollback_recomputes_previous_turn_settings_and_reference_context
     assert_eq!(rollback_event.num_turns, 1);
 
     assert_eq!(
-        sess.clone_history().await.raw_items(),
+        raw_history_items(&sess.clone_history().await),
         vec![turn_one_user, turn_one_assistant]
     );
     assert_eq!(
@@ -3554,7 +3568,10 @@ async fn thread_rollback_restores_cleared_reference_context_item_after_compactio
     let rollback_event = wait_for_thread_rolled_back(&rx).await;
     assert_eq!(rollback_event.num_turns, 1);
 
-    assert_eq!(sess.clone_history().await.raw_items(), compacted_history);
+    assert_eq!(
+        raw_history_items(&sess.clone_history().await),
+        compacted_history
+    );
     assert!(sess.reference_context_item().await.is_none());
     assert_eq!(
         sess.state.lock().await.auto_compact_window_ids(),
@@ -3675,7 +3692,7 @@ async fn thread_rollback_persists_marker_and_replays_cumulatively() {
     assert_eq!(second_rollback.num_turns, 1);
 
     assert_eq!(
-        sess.clone_history().await.raw_items(),
+        raw_history_items(&sess.clone_history().await),
         vec![
             user_message("turn 1 user"),
             assistant_message("turn 1 assistant")
@@ -3714,7 +3731,7 @@ async fn thread_rollback_fails_when_turn_in_progress() {
     );
 
     let history = sess.clone_history().await;
-    assert_eq!(initial_context, history.raw_items());
+    assert_eq!(initial_context, raw_history_items(&history));
 }
 
 #[tokio::test]
@@ -3735,7 +3752,7 @@ async fn thread_rollback_fails_when_num_turns_is_zero() {
     );
 
     let history = sess.clone_history().await;
-    assert_eq!(initial_context, history.raw_items());
+    assert_eq!(initial_context, raw_history_items(&history));
 }
 
 #[tokio::test]
@@ -4127,6 +4144,109 @@ async fn wait_for_thread_rollback_failed(rx: &async_channel::Receiver<Event>) ->
     }
 }
 
+#[tokio::test]
+async fn turn_start_persistence_failure_stops_before_sampling() {
+    let (mut session, turn_context) = make_session_and_context().await;
+    attach_thread_persistence(&mut session).await;
+    session
+        .live_thread()
+        .expect("live thread")
+        .discard()
+        .await
+        .expect("discard live writer");
+    let session = Arc::new(session);
+    let turn_context = Arc::new(turn_context);
+    let input = vec![TurnInput::UserInput {
+        content: vec![UserInput::Text {
+            text: "durable before sampling".to_string(),
+            text_elements: Vec::new(),
+        }],
+        client_id: None,
+    }];
+
+    let error = super::turn::run_hooks_and_record_inputs(
+        &session,
+        &turn_context,
+        &input,
+        PersistContext::TurnStart,
+    )
+    .await
+    .expect_err("turn-start persistence failure should stop the turn");
+
+    assert!(matches!(error, CodexErr::Io(_)));
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn idle_turn_persistence_failure_stops_before_sampling() -> anyhow::Result<()> {
+    let server = start_mock_server().await;
+    let test = test_codex().build(&server).await?;
+    let session = &test.codex.codex.session;
+    session
+        .live_thread()
+        .expect("live thread")
+        .discard()
+        .await
+        .expect("discard live writer");
+
+    session
+        .try_start_turn_if_idle(vec![user_message("queued idle input")])
+        .await
+        .expect("idle turn should start");
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let response_requests = server
+        .received_requests()
+        .await
+        .expect("mock server requests")
+        .into_iter()
+        .filter(|request| request.url.path().ends_with("/responses"))
+        .count();
+    assert_eq!(response_requests, 0);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rejected_idle_turn_append_stops_before_sampling_when_persist_succeeds()
+-> anyhow::Result<()> {
+    let server = start_mock_server().await;
+    let store_id = format!("failed-append-{}", Uuid::new_v4());
+    let store = codex_thread_store::InMemoryThreadStore::for_id(store_id.clone());
+    store
+        .fail_appends_for_testing("canonical append rejected")
+        .await;
+    let mut builder = test_codex().with_config(move |config| {
+        config.experimental_thread_store = ThreadStoreConfig::InMemory { id: store_id };
+    });
+    let test = builder.build(&server).await?;
+
+    test.codex
+        .codex
+        .session
+        .try_start_turn_if_idle(vec![user_message("queued idle input")])
+        .await
+        .expect("idle turn should start");
+    wait_for_event(&test.codex, |event| {
+        matches!(event, EventMsg::TurnComplete(_))
+    })
+    .await;
+
+    let response_requests = server
+        .received_requests()
+        .await
+        .expect("mock server requests")
+        .into_iter()
+        .filter(|request| request.url.path().ends_with("/responses"))
+        .count();
+    assert_eq!(response_requests, 0);
+    let calls = store.calls().await;
+    assert!(calls.append_items > 0);
+    assert!(calls.persist_thread > 0);
+    Ok(())
+}
+
 async fn attach_thread_persistence(session: &mut Session) -> PathBuf {
     let config = session.get_config().await;
     let live_thread = LiveThread::create(
@@ -4161,7 +4281,9 @@ async fn attach_thread_persistence(session: &mut Session) -> PathBuf {
     .await
     .expect("create thread persistence");
     session.services.live_thread = Some(live_thread);
-    session.ensure_rollout_materialized().await;
+    session
+        .ensure_rollout_materialized(PersistContext::Standard)
+        .await;
     session
         .flush_rollout()
         .await
@@ -8264,7 +8386,7 @@ async fn record_context_update_items(
         .record_context_updates_and_set_reference_context_item(&current_step)
         .await;
     let history = session.clone_history().await;
-    history.raw_items()[previous_len..].to_vec()
+    history.raw_items().skip(previous_len).cloned().collect()
 }
 
 #[tokio::test]
@@ -8560,7 +8682,8 @@ async fn record_context_updates_includes_turn_context_fragments_on_steady_state_
         .await;
 
     let history = session.clone_history().await;
-    let developer_messages = developer_message_texts(history.raw_items());
+    let history_items = raw_history_items(&history);
+    let developer_messages = developer_message_texts(&history_items);
     assert!(
         developer_messages
             .iter()
@@ -9029,7 +9152,7 @@ async fn record_context_updates_and_set_reference_context_item_injects_full_cont
         .await;
     let history = session.clone_history().await;
     let initial_context = build_initial_context(&session, &turn_context).await;
-    assert_eq!(history.raw_items().to_vec(), initial_context);
+    assert_eq!(raw_history_items(&history), initial_context);
 
     let current_context = session.reference_context_item().await;
     assert_eq!(
@@ -9079,7 +9202,7 @@ async fn record_context_updates_and_set_reference_context_item_reinjects_full_co
     let mut expected_history = vec![compacted_summary];
     let initial_context = build_initial_context(&session, &turn_context).await;
     expected_history.extend(initial_context);
-    assert_eq!(history.raw_items().to_vec(), expected_history);
+    assert_eq!(raw_history_items(&history), expected_history);
 }
 
 #[tokio::test]
@@ -9123,7 +9246,7 @@ async fn record_context_updates_and_set_reference_context_item_persists_baseline
         .await;
 
     assert_eq!(
-        session.clone_history().await.raw_items().to_vec(),
+        raw_history_items(&session.clone_history().await),
         retained_world_state
     );
     assert_eq!(
@@ -9132,7 +9255,9 @@ async fn record_context_updates_and_set_reference_context_item_persists_baseline
         serde_json::to_value(Some(turn_context.to_turn_context_item()))
             .expect("serialize expected context item")
     );
-    session.ensure_rollout_materialized().await;
+    session
+        .ensure_rollout_materialized(PersistContext::Standard)
+        .await;
     session.flush_rollout().await.expect("rollout should flush");
 
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
@@ -9170,7 +9295,9 @@ async fn record_context_updates_and_set_reference_context_item_persists_split_fi
     session
         .record_context_updates_and_set_reference_context_item(&step_context)
         .await;
-    session.ensure_rollout_materialized().await;
+    session
+        .ensure_rollout_materialized(PersistContext::Standard)
+        .await;
     session.flush_rollout().await.expect("rollout should flush");
 
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
@@ -9257,7 +9384,9 @@ async fn record_context_updates_and_set_reference_context_item_persists_full_rei
     session
         .record_context_updates_and_set_reference_context_item(&step_context)
         .await;
-    session.ensure_rollout_materialized().await;
+    session
+        .ensure_rollout_materialized(PersistContext::Standard)
+        .await;
     session.flush_rollout().await.expect("rollout should flush");
 
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
@@ -9831,7 +9960,7 @@ async fn task_finish_emits_turn_item_lifecycle_for_leftover_pending_user_input()
         internal_chat_message_metadata_passthrough: None,
     };
     assert!(
-        strip_metadata_from_items(history.raw_items())
+        strip_metadata_from_items(&raw_history_items(&history))
             .into_iter()
             .map(|mut item| {
                 item.set_id(/*new_id*/ None);
@@ -10608,7 +10737,7 @@ async fn abort_review_task_emits_exited_then_aborted_and_records_history() {
     let history = sess.clone_history().await;
     // Verify the `<turn_aborted>` marker is still recorded in history for the model.
     assert!(
-        history.raw_items().iter().any(|item| {
+        history.raw_items().any(|item| {
             let ResponseItem::Message { role, content, .. } = item else {
                 return false;
             };

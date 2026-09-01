@@ -48,11 +48,11 @@ use codex_protocol::error::Result as CodexResult;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::InitialHistory;
+use codex_history::InitialHistory;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::Op;
-use codex_protocol::protocol::ResumedHistory;
-use codex_protocol::protocol::RolloutItem;
+use codex_history::ResumedHistory;
+use codex_history::RolloutItem;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
@@ -918,6 +918,23 @@ impl ThreadManager {
     /// Returns the thread if the thread was found and removed.
     pub async fn remove_thread(&self, thread_id: &ThreadId) -> Option<Arc<CodexThread>> {
         self.state.threads.write().await.remove(thread_id)
+    }
+
+    /// Removes a thread only if the ID still maps to the expected runtime.
+    pub async fn remove_thread_if_matches(
+        &self,
+        thread_id: &ThreadId,
+        expected: &Arc<CodexThread>,
+    ) -> Option<Arc<CodexThread>> {
+        let mut threads = self.state.threads.write().await;
+        if threads
+            .get(thread_id)
+            .is_some_and(|thread| Arc::ptr_eq(thread, expected))
+        {
+            threads.remove(thread_id)
+        } else {
+            None
+        }
     }
 
     /// Tries to shut down all tracked threads concurrently within the provided timeout.

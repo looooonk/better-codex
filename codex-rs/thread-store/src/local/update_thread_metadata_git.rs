@@ -2,7 +2,7 @@ use std::path::Path;
 
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::GitInfo;
-use codex_protocol::protocol::RolloutItem;
+use codex_rollout::RolloutItem;
 use codex_rollout::RolloutRecorder;
 
 use super::LocalThreadStore;

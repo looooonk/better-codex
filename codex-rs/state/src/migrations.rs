@@ -9,12 +9,13 @@ pub(crate) static GOALS_MIGRATOR: Migrator = sqlx::migrate!("./goals_migrations"
 pub(crate) static MEMORIES_MIGRATOR: Migrator = sqlx::migrate!("./memory_migrations");
 pub(crate) static THREAD_HISTORY_MIGRATOR: Migrator = sqlx::migrate!("./thread_history_migrations");
 
-/// Allow an older Codex binary to open a database that has already been
-/// migrated by a newer binary running in parallel.
+/// Allow the runtime to open a database containing compatible migration
+/// versions that are not embedded in this binary.
 ///
-/// We intentionally ignore applied migration versions that are newer than the
-/// embedded migration set. Known migration versions are still validated by
-/// checksum, so this only relaxes the "database is ahead of me" case.
+/// We intentionally ignore applied migration versions that are absent from the
+/// embedded migration set. This covers both newer databases and compatible
+/// fork-specific gaps such as upstream migration 0042. Embedded versions are
+/// still validated by checksum.
 fn runtime_migrator(base: &'static Migrator) -> Migrator {
     Migrator {
         migrations: Cow::Borrowed(base.migrations.as_ref()),

@@ -8,10 +8,10 @@ use codex_exec_server::REMOTE_ENVIRONMENT_ID;
 use codex_features::Feature;
 use codex_home::CodexHomeUserInstructionsProvider;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::InitialHistory;
+use codex_history::InitialHistory;
 use codex_protocol::protocol::Op;
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -121,9 +121,9 @@ fn remove_agents_md_world_state_section(rollout_path: &Path) -> Result<()> {
         .into_iter()
         .map(|mut line| {
             if let RolloutItem::WorldState(world_state) = &mut line.item
-                && let Some(state) = world_state.state.as_object_mut()
+                && world_state.state.remove("agents_md").is_some()
             {
-                removed_section |= state.remove("agents_md").is_some();
+                removed_section = true;
             }
             serde_json::to_string(&line)
         })

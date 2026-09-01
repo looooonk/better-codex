@@ -49,6 +49,7 @@ impl ShellState {
                 let refresh_session_list = matches!(
                     &notification,
                     ServerNotification::ThreadStarted(_)
+                        | ServerNotification::ThreadReverted(_)
                         | ServerNotification::ThreadArchived(_)
                         | ServerNotification::ThreadDeleted(_)
                         | ServerNotification::ThreadUnarchived(_)
@@ -511,6 +512,7 @@ impl ShellState {
                 }
             }
             ServerNotification::ProcessOutputDelta(_)
+            | ServerNotification::ThreadReverted(_)
             | ServerNotification::ProcessExited(_)
             | ServerNotification::FileChangeOutputDelta(_)
             | ServerNotification::HookStarted(_)

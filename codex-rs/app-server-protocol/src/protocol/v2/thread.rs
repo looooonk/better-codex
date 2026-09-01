@@ -1090,6 +1090,30 @@ pub struct ThreadRollbackResponse {
     pub thread: Thread,
 }
 
+/// Replace a paginated thread's durable history with the prefix before one turn.
+///
+/// This only changes persisted conversation history. It does not revert local file changes.
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadRevertParams {
+    pub thread_id: String,
+    /// Turn excluded from the replacement history, together with every later turn.
+    pub before_turn_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadRevertResponse {
+    /// Updated loaded thread metadata. Hydrate retained history through `thread/turns/list`.
+    pub thread: Thread,
+    /// Cursor for hydrating retained turns backwards through `thread/turns/list`.
+    pub turns_backwards_cursor: Option<String>,
+    /// Cursor for hydrating retained items backwards through `thread/items/list`.
+    pub items_backwards_cursor: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS, ExperimentalApi)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
@@ -1569,6 +1593,13 @@ pub struct ThreadUnarchivedNotification {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ThreadClosedNotification {
+    pub thread_id: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadRevertedNotification {
     pub thread_id: String,
 }
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

@@ -7,12 +7,13 @@ use std::time::SystemTime;
 
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::InitialHistory;
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
+use codex_history::InitialHistory;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::UserMessageEvent;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
@@ -80,6 +81,51 @@ async fn read_session_meta_line_stops_before_invalid_utf8_compressed_tail() -> a
     assert_eq!(session_meta.meta.id, thread_id);
     assert!(!rollout_path.exists());
     assert!(compressed_rollout_path(&rollout_path).exists());
+    Ok(())
+}
+
+#[tokio::test]
+async fn boundary_ordinals_use_decompressed_jsonl_offsets() -> anyhow::Result<()> {
+    let home = TempDir::new()?;
+    let uuid = Uuid::from_u128(170);
+    let thread_id = ThreadId::from_string(&uuid.to_string())?;
+    let rollout_path = rollout_path(home.path(), "2025-01-03T12-00-00", uuid);
+    let records = [
+        RolloutLine {
+            timestamp: "2025-01-03T12:00:00Z".to_string(),
+            ordinal: Some(0),
+            item: RolloutItem::SessionMeta(SessionMetaLine {
+                meta: SessionMeta {
+                    id: thread_id,
+                    history_mode: ThreadHistoryMode::Paginated,
+                    ..Default::default()
+                },
+                git: None,
+            }),
+        },
+        RolloutLine {
+            timestamp: "2025-01-03T12:00:01Z".to_string(),
+            ordinal: Some(1),
+            item: RolloutItem::EventMsg(EventMsg::ShutdownComplete),
+        },
+    ];
+    let first = serde_json::to_string(&records[0])?;
+    fs::write(
+        rollout_path.as_path(),
+        format!("{first}\n{}\n", serde_json::to_string(&records[1])?),
+    )?;
+    compress_now(rollout_path.as_path())?;
+
+    assert_eq!(
+        rollout_ordinals_at_boundary(
+            rollout_path.as_path(),
+            u64::try_from(first.len() + 1)?,
+        )
+        .await?,
+        (0, Some(1))
+    );
+    assert!(!rollout_path.exists());
+    assert!(compressed_rollout_path(rollout_path.as_path()).exists());
     Ok(())
 }
 
@@ -233,6 +279,30 @@ async fn append_rollout_item_materializes_compressed_rollout() -> anyhow::Result
     assert_eq!(loaded_thread_id, Some(thread_id));
     assert_eq!(parse_errors, 0);
     assert_eq!(items.len(), 3);
+    Ok(())
+}
+
+#[tokio::test]
+async fn reference_materialization_preserves_compressed_rollout() -> anyhow::Result<()> {
+    let home = TempDir::new()?;
+    let uuid = Uuid::from_u128(20);
+    let thread_id = ThreadId::from_string(&uuid.to_string())?;
+    let rollout_path = rollout_path(home.path(), "2025-01-03T12-00-00", uuid);
+    write_rollout(&rollout_path, thread_id, "immutable reference")?;
+    let expected = fs::read(&rollout_path)?;
+    compress_now(&rollout_path)?;
+    let compressed_path = compressed_rollout_path(&rollout_path);
+
+    assert_eq!(
+        materialize_rollout_for_reference(compressed_path.as_path()).await?,
+        rollout_path
+    );
+    assert_eq!(fs::read(&rollout_path)?, expected);
+    assert!(compressed_path.exists());
+
+    materialize_rollout_for_append(rollout_path.as_path()).await?;
+
+    assert!(!compressed_path.exists());
     Ok(())
 }
 

@@ -1,3 +1,4 @@
+use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
 use codex_protocol::protocol::ThreadHistoryMode;
 use serde::Deserialize;
@@ -7,6 +8,10 @@ use sqlx::Row;
 use sqlx::Sqlite;
 
 use super::super::LocalThreadStore;
+use super::super::rollout_lineage::RolloutLineage;
+use super::super::thread_rollout_resolver;
+use super::MAX_THREAD_HISTORY_INPUT_BYTES;
+use super::MAX_THREAD_HISTORY_PAGE_SIZE;
 use super::thread_history_error;
 use crate::ItemPage;
 use crate::ListItemsParams;
@@ -42,6 +47,7 @@ pub(super) enum CursorScope {
 }
 
 struct StoredTurnRow {
+    rollout_id: RolloutId,
     turn_id: String,
     rollout_ordinal: i64,
     status: StoredTurnStatus,
@@ -62,20 +68,21 @@ pub(in crate::local) async fn list_turns(
     store: &LocalThreadStore,
     params: ListTurnsParams,
 ) -> ThreadStoreResult<TurnPage> {
-    validate_thread_for_paginated_reads(
+    let limit = page_limit(params.page_size)?;
+    let scope = CursorScope::Turns;
+    let cursor = parse_cursor(params.cursor.as_deref(), params.thread_id, &scope)?;
+    let lineage = prepare_lineage_for_paginated_reads(
         store,
         params.thread_id,
         params.include_archived,
         "list_turns",
     )
     .await?;
-    let scope = CursorScope::Turns;
-    let cursor = parse_cursor(params.cursor.as_deref(), params.thread_id, &scope)?;
     let pool = store.thread_history_db().await?;
-    let limit = page_limit(params.page_size)?;
     let mut query = QueryBuilder::<Sqlite>::new(
         r#"
 SELECT
+    thread_id AS source_rollout_id,
     turn_id,
     rollout_ordinal,
     status,
@@ -86,10 +93,15 @@ SELECT
     first_user_item_id,
     final_agent_item_id
 FROM thread_turns
-WHERE thread_id =
+WHERE
         "#,
     );
-    query.push_bind(params.thread_id.to_string());
+    push_lineage_filter(
+        &mut query,
+        &lineage,
+        "thread_id",
+        "rollout_ordinal",
+    )?;
     push_pagination_clause(&mut query, params.sort_direction, cursor.as_ref(), limit);
     let rows = query
         .build()
@@ -115,7 +127,7 @@ WHERE thread_id =
         let items = match params.items_view {
             StoredTurnItemsView::NotLoaded => Vec::new(),
             StoredTurnItemsView::Summary => {
-                load_summary_items(pool, params.thread_id, &turn).await?
+                load_summary_items(pool, turn.rollout_id, &turn).await?
             }
         };
         stored_turns.push(StoredTurn {
@@ -141,25 +153,30 @@ pub(in crate::local) async fn list_items(
     store: &LocalThreadStore,
     params: ListItemsParams,
 ) -> ThreadStoreResult<ItemPage> {
-    validate_thread_for_paginated_reads(
+    let limit = page_limit(params.page_size)?;
+    let scope = CursorScope::Items;
+    let cursor = parse_cursor(params.cursor.as_deref(), params.thread_id, &scope)?;
+    let lineage = prepare_lineage_for_paginated_reads(
         store,
         params.thread_id,
         params.include_archived,
         "list_items",
     )
     .await?;
-    let scope = CursorScope::Items;
-    let cursor = parse_cursor(params.cursor.as_deref(), params.thread_id, &scope)?;
     let pool = store.thread_history_db().await?;
-    let limit = page_limit(params.page_size)?;
     let mut query = QueryBuilder::<Sqlite>::new(
         r#"
 SELECT turn_id, item_id, rollout_ordinal, created_at_ms, item_json
 FROM thread_items
-WHERE thread_id =
+WHERE
         "#,
     );
-    query.push_bind(params.thread_id.to_string());
+    push_lineage_filter(
+        &mut query,
+        &lineage,
+        "thread_id",
+        "rollout_ordinal",
+    )?;
     if let Some(turn_id) = params.turn_id.as_deref() {
         query.push(" AND turn_id = ").push_bind(turn_id);
     }
@@ -191,12 +208,12 @@ WHERE thread_id =
     })
 }
 
-pub(super) async fn validate_thread_for_paginated_reads(
+pub(super) async fn prepare_lineage_for_paginated_reads(
     store: &LocalThreadStore,
     thread_id: ThreadId,
     include_archived: bool,
     operation: &'static str,
-) -> ThreadStoreResult<()> {
+) -> ThreadStoreResult<RolloutLineage> {
     let Some(state_db) = store.state_db().await else {
         return Err(ThreadStoreError::Unsupported { operation });
     };
@@ -215,16 +232,84 @@ pub(super) async fn validate_thread_for_paginated_reads(
             message: format!("thread {thread_id} is archived"),
         });
     }
-    match metadata.history_mode {
-        ThreadHistoryMode::Legacy => Err(ThreadStoreError::Unsupported { operation }),
-        ThreadHistoryMode::Paginated => Ok(()),
+    if metadata.history_mode == ThreadHistoryMode::Legacy {
+        return Err(ThreadStoreError::Unsupported { operation });
     }
+    let resolved = if include_archived {
+        thread_rollout_resolver::resolve_current_including_archived(store, thread_id).await?
+    } else {
+        thread_rollout_resolver::resolve_current(store, thread_id).await?
+    };
+    resolved.ok_or_else(|| ThreadStoreError::InvalidRequest {
+        message: format!("no selected rollout found for thread {thread_id}"),
+    })?;
+    let lineage = store
+        .resolve_rollout_lineage_for_reference(thread_id)
+        .await?;
+    for segment in lineage.segments() {
+        super::super::thread_history_materialization::materialize_to_sqlite(
+            store,
+            segment.rollout_id(),
+            segment.rollout_path.as_path(),
+        )
+        .await?;
+    }
+    Ok(lineage)
+}
+
+pub(super) fn push_lineage_filter(
+    query: &mut QueryBuilder<Sqlite>,
+    lineage: &RolloutLineage,
+    thread_id_column: &'static str,
+    rollout_ordinal_column: &'static str,
+) -> ThreadStoreResult<()> {
+    if lineage.segments().is_empty() {
+        return Err(ThreadStoreError::Internal {
+            message: "paginated rollout lineage is empty".to_string(),
+        });
+    }
+    query.push(" (");
+    for (index, segment) in lineage.segments().iter().enumerate() {
+        if index > 0 {
+            query.push(" OR ");
+        }
+        query
+            .push("(")
+            .push(thread_id_column)
+            .push(" = ")
+            .push_bind(segment.rollout_id().to_string())
+            .push(" AND ")
+            .push(rollout_ordinal_column)
+            .push(" >= ")
+            .push_bind(sqlite_ordinal(segment.start_ordinal())?);
+        if let Some(end_ordinal) = segment.end_ordinal() {
+            query
+                .push(" AND ")
+                .push(rollout_ordinal_column)
+                .push(" < ")
+                .push_bind(sqlite_ordinal(end_ordinal)?);
+        }
+        query.push(")");
+    }
+    query.push(")");
+    Ok(())
+}
+
+fn sqlite_ordinal(ordinal: u64) -> ThreadStoreResult<i64> {
+    i64::try_from(ordinal).map_err(|_| ThreadStoreError::Internal {
+        message: "rollout ordinal exceeds SQLite integer range".to_string(),
+    })
 }
 
 fn page_limit(page_size: usize) -> ThreadStoreResult<i64> {
     if page_size == 0 {
         return Err(ThreadStoreError::InvalidRequest {
             message: "page size must be positive".to_string(),
+        });
+    }
+    if page_size > MAX_THREAD_HISTORY_PAGE_SIZE {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!("page size cannot exceed {MAX_THREAD_HISTORY_PAGE_SIZE}"),
         });
     }
     let limit = page_size
@@ -245,6 +330,11 @@ fn parse_cursor(
     let Some(cursor) = cursor else {
         return Ok(None);
     };
+    if cursor.len() > MAX_THREAD_HISTORY_INPUT_BYTES {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!("cursor cannot exceed {MAX_THREAD_HISTORY_INPUT_BYTES} bytes"),
+        });
+    }
     let cursor_value: HistoryCursor =
         serde_json::from_str(cursor).map_err(|_| invalid_cursor(cursor))?;
     if cursor_value.thread_id != thread_id || &cursor_value.scope != scope {
@@ -345,7 +435,13 @@ fn stored_turn_row(row: sqlx::sqlite::SqliteRow) -> ThreadStoreResult<StoredTurn
         .map(serde_json::from_str)
         .transpose()
         .map_err(thread_history_error)?;
+    let rollout_id = row.try_get::<String, _>("source_rollout_id")?;
     Ok(StoredTurnRow {
+        rollout_id: ThreadId::from_string(rollout_id.as_str()).map_err(|err| {
+            ThreadStoreError::Internal {
+                message: format!("invalid stored rollout id: {err}"),
+            }
+        })?,
         turn_id: row.try_get("turn_id")?,
         rollout_ordinal: row.try_get("rollout_ordinal")?,
         status,
@@ -360,7 +456,7 @@ fn stored_turn_row(row: sqlx::sqlite::SqliteRow) -> ThreadStoreResult<StoredTurn
 
 async fn load_summary_items(
     pool: &sqlx::SqlitePool,
-    thread_id: ThreadId,
+    rollout_id: RolloutId,
     turn: &StoredTurnRow,
 ) -> ThreadStoreResult<Vec<StoredThreadItem>> {
     let rows = sqlx::query(
@@ -373,7 +469,7 @@ WHERE thread_id = ?
 ORDER BY rollout_ordinal ASC
         "#,
     )
-    .bind(thread_id.to_string())
+    .bind(rollout_id.to_string())
     .bind(turn.turn_id.as_str())
     .bind(turn.first_user_item_id.as_deref())
     .bind(turn.final_agent_item_id.as_deref())

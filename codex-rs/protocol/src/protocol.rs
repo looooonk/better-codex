@@ -10,7 +10,6 @@ use std::ops::Mul;
 use std::path::Path;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use strum_macros::EnumIter;
@@ -63,6 +62,7 @@ use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
 use serde::de::Error as _;
+use serde_json::Map;
 use serde_json::Value;
 use serde_with::serde_as;
 use strum_macros::Display;
@@ -2514,230 +2514,6 @@ pub struct ConversationPathResponseEvent {
     pub path: PathBuf,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub struct ResumedHistory {
-    pub conversation_id: ThreadId,
-    pub history: Arc<Vec<RolloutItem>>,
-    pub rollout_path: Option<PathBuf>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
-pub enum InitialHistory {
-    New,
-    Cleared,
-    Resumed(ResumedHistory),
-    Forked(Vec<RolloutItem>),
-}
-
-impl InitialHistory {
-    pub fn scan_rollout_items(&self, mut predicate: impl FnMut(&RolloutItem) -> bool) -> bool {
-        match self {
-            InitialHistory::New | InitialHistory::Cleared => false,
-            InitialHistory::Resumed(resumed) => resumed.history.iter().any(&mut predicate),
-            InitialHistory::Forked(items) => items.iter().any(predicate),
-        }
-    }
-
-    pub fn forked_from_id(&self) -> Option<ThreadId> {
-        match self {
-            InitialHistory::New | InitialHistory::Cleared => None,
-            InitialHistory::Resumed(resumed) => {
-                resumed.history.iter().find_map(|item| match item {
-                    RolloutItem::SessionMeta(meta_line) => meta_line.meta.forked_from_id,
-                    _ => None,
-                })
-            }
-            InitialHistory::Forked(items) => items.iter().find_map(|item| match item {
-                RolloutItem::SessionMeta(meta_line) => Some(meta_line.meta.id),
-                _ => None,
-            }),
-        }
-    }
-
-    pub fn session_cwd(&self) -> Option<PathBuf> {
-        match self {
-            InitialHistory::New | InitialHistory::Cleared => None,
-            InitialHistory::Resumed(resumed) => session_cwd_from_items(&resumed.history),
-            InitialHistory::Forked(items) => session_cwd_from_items(items),
-        }
-    }
-
-    pub fn get_rollout_items(&self) -> &[RolloutItem] {
-        match self {
-            InitialHistory::New | InitialHistory::Cleared => &[],
-            InitialHistory::Resumed(resumed) => &resumed.history,
-            InitialHistory::Forked(items) => items,
-        }
-    }
-
-    pub fn get_event_msgs(&self) -> Option<Vec<EventMsg>> {
-        match self {
-            InitialHistory::New | InitialHistory::Cleared => None,
-            InitialHistory::Resumed(resumed) => Some(
-                resumed
-                    .history
-                    .iter()
-                    .filter_map(|ri| match ri {
-                        RolloutItem::EventMsg(ev) => Some(ev.clone()),
-                        _ => None,
-                    })
-                    .collect(),
-            ),
-            InitialHistory::Forked(items) => Some(
-                items
-                    .iter()
-                    .filter_map(|ri| match ri {
-                        RolloutItem::EventMsg(ev) => Some(ev.clone()),
-                        _ => None,
-                    })
-                    .collect(),
-            ),
-        }
-    }
-
-    pub fn get_base_instructions(&self) -> Option<BaseInstructions> {
-        // TODO: SessionMeta should (in theory) always be first in the history, so we can probably only check the first item?
-        match self {
-            InitialHistory::New | InitialHistory::Cleared => None,
-            InitialHistory::Resumed(resumed) => {
-                resumed.history.iter().find_map(|item| match item {
-                    RolloutItem::SessionMeta(meta_line) => meta_line.meta.base_instructions.clone(),
-                    _ => None,
-                })
-            }
-            InitialHistory::Forked(items) => items.iter().find_map(|item| match item {
-                RolloutItem::SessionMeta(meta_line) => meta_line.meta.base_instructions.clone(),
-                _ => None,
-            }),
-        }
-    }
-
-    pub fn get_dynamic_tools(&self) -> Option<Vec<DynamicToolSpec>> {
-        match self {
-            InitialHistory::New | InitialHistory::Cleared => None,
-            InitialHistory::Resumed(resumed) => {
-                resumed.history.iter().find_map(|item| match item {
-                    RolloutItem::SessionMeta(meta_line) => meta_line.meta.dynamic_tools.clone(),
-                    _ => None,
-                })
-            }
-            InitialHistory::Forked(items) => items.iter().find_map(|item| match item {
-                RolloutItem::SessionMeta(meta_line) => meta_line.meta.dynamic_tools.clone(),
-                _ => None,
-            }),
-        }
-    }
-
-    pub fn get_selected_capability_roots(&self) -> Vec<SelectedCapabilityRoot> {
-        self.get_session_meta()
-            .map(|meta| meta.selected_capability_roots.clone())
-            .unwrap_or_default()
-    }
-
-    pub fn get_multi_agent_version(&self) -> Option<MultiAgentVersion> {
-        match self {
-            InitialHistory::New | InitialHistory::Cleared => None,
-            InitialHistory::Resumed(resumed) => {
-                multi_agent_version_from_items(&resumed.history, Some(resumed.conversation_id))
-            }
-            InitialHistory::Forked(items) => {
-                multi_agent_version_from_items(items, /*thread_id*/ None)
-            }
-        }
-    }
-
-    pub fn get_history_mode(&self, default_history_mode: ThreadHistoryMode) -> ThreadHistoryMode {
-        match self {
-            InitialHistory::New | InitialHistory::Cleared => default_history_mode,
-            // Forks copy their source rollout items as-is, so they must keep
-            // the source format instead of converting to the destination default.
-            InitialHistory::Resumed(_) | InitialHistory::Forked(_) => self
-                .get_session_meta()
-                .map(|meta| meta.history_mode)
-                .unwrap_or(default_history_mode),
-        }
-    }
-
-    pub fn get_latest_effective_multi_agent_mode(&self) -> Option<MultiAgentMode> {
-        let items = match self {
-            InitialHistory::New | InitialHistory::Cleared => return None,
-            InitialHistory::Resumed(resumed) => &resumed.history,
-            InitialHistory::Forked(items) => items,
-        };
-        items
-            .iter()
-            .rev()
-            .find_map(|item| match item {
-                RolloutItem::TurnContext(turn_context) => Some(turn_context),
-                RolloutItem::SessionMeta(_)
-                | RolloutItem::ResponseItem(_)
-                | RolloutItem::InterAgentCommunication(_)
-                | RolloutItem::InterAgentCommunicationMetadata { .. }
-                | RolloutItem::Compacted(_)
-                | RolloutItem::WorldState(_)
-                | RolloutItem::SecurityRiskScore(_)
-                | RolloutItem::EventMsg(_) => None,
-            })
-            .and_then(|turn_context| turn_context.multi_agent_mode.clone())
-    }
-
-    pub fn get_resumed_session_sources(&self) -> Option<(SessionSource, Option<ThreadSource>)> {
-        let meta = self.get_resumed_session_meta()?;
-        Some((meta.source.clone(), meta.thread_source.clone()))
-    }
-
-    pub fn get_resumed_thread_source(&self) -> Option<ThreadSource> {
-        self.get_resumed_session_meta()
-            .and_then(|meta| meta.thread_source.clone())
-    }
-
-    pub fn get_session_originator(&self) -> Option<String> {
-        self.get_session_meta()
-            .map(|meta| meta.originator.clone())
-            .filter(|originator| !originator.is_empty())
-    }
-
-    pub fn get_resumed_parent_thread_id(&self) -> Option<ThreadId> {
-        self.get_resumed_session_meta()
-            .and_then(|meta| meta.parent_thread_id)
-    }
-
-    fn get_session_meta(&self) -> Option<&SessionMeta> {
-        match self {
-            InitialHistory::New | InitialHistory::Cleared => None,
-            InitialHistory::Resumed(resumed) => {
-                resumed.history.iter().find_map(|item| match item {
-                    RolloutItem::SessionMeta(meta_line) => Some(&meta_line.meta),
-                    _ => None,
-                })
-            }
-            InitialHistory::Forked(items) => items.iter().find_map(|item| match item {
-                RolloutItem::SessionMeta(meta_line) => Some(&meta_line.meta),
-                _ => None,
-            }),
-        }
-    }
-
-    fn get_resumed_session_meta(&self) -> Option<&SessionMeta> {
-        match self {
-            InitialHistory::New | InitialHistory::Cleared | InitialHistory::Forked(_) => None,
-            InitialHistory::Resumed(resumed) => {
-                resumed.history.iter().find_map(|item| match item {
-                    RolloutItem::SessionMeta(meta_line) => Some(&meta_line.meta),
-                    _ => None,
-                })
-            }
-        }
-    }
-}
-
-fn session_cwd_from_items(items: &[RolloutItem]) -> Option<PathBuf> {
-    items.iter().find_map(|item| match item {
-        RolloutItem::SessionMeta(meta_line) => Some(meta_line.meta.cwd.clone()),
-        _ => None,
-    })
-}
-
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, JsonSchema, TS, Default)]
 #[serde(rename_all = "lowercase")]
 #[ts(rename_all = "lowercase")]
@@ -2990,34 +2766,6 @@ impl fmt::Display for InternalSessionSource {
     }
 }
 
-fn multi_agent_version_from_items(
-    items: &[RolloutItem],
-    thread_id: Option<ThreadId>,
-) -> Option<MultiAgentVersion> {
-    let session_meta_version = items.iter().rev().find_map(|item| match item {
-        RolloutItem::SessionMeta(meta_line)
-            if thread_id.is_none_or(|thread_id| meta_line.meta.id == thread_id) =>
-        {
-            meta_line.meta.multi_agent_version
-        }
-        _ => None,
-    });
-
-    session_meta_version.or_else(|| {
-        items.iter().rev().find_map(|item| match item {
-            RolloutItem::TurnContext(turn_context) => turn_context.multi_agent_version,
-            RolloutItem::SessionMeta(_)
-            | RolloutItem::ResponseItem(_)
-            | RolloutItem::InterAgentCommunication(_)
-            | RolloutItem::InterAgentCommunicationMetadata { .. }
-            | RolloutItem::Compacted(_)
-            | RolloutItem::WorldState(_)
-            | RolloutItem::SecurityRiskScore(_)
-            | RolloutItem::EventMsg(_) => None,
-        })
-    })
-}
-
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "snake_case")]
 #[ts(rename_all = "snake_case")]
@@ -3039,9 +2787,13 @@ impl SessionContextWindow {
     }
 }
 
-/// Exclusive position in another thread's paginated rollout history.
+/// Exclusive position in another rollout's paginated history.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, JsonSchema, TS)]
 pub struct HistoryPosition {
+    /// Rollout ID for the immutable prefix file.
+    ///
+    /// This field predates replacement rollouts and retains its source-compatible name. Ordinary
+    /// rollouts use their thread ID here; replacement rollouts use their distinct rollout ID.
     pub thread_id: ThreadId,
     /// First rollout ordinal not included from the prefix file.
     pub end_ordinal_exclusive: u64,
@@ -3182,72 +2934,21 @@ impl<'de> Deserialize<'de> for SessionMetaLine {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, TS)]
-#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
-pub enum RolloutItem {
-    SessionMeta(SessionMetaLine),
-    ResponseItem(ResponseItem),
-    /// Legacy delivery item reconstructed as a model-visible `agent_message`.
-    InterAgentCommunication(InterAgentCommunication),
-    /// Local delivery metadata that is not part of the Responses API item.
-    InterAgentCommunicationMetadata {
-        trigger_turn: bool,
-    },
-    Compacted(CompactedItem),
-    TurnContext(TurnContextItem),
-    WorldState(WorldStateItem),
-    SecurityRiskScore(crate::security_risk::SecurityRiskScore),
-    EventMsg(EventMsg),
-}
-
 /// Persisted comparison state used to resume model-visible world-state diffing.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema, TS)]
 pub struct WorldStateItem {
     /// Full snapshots establish a new baseline; patches update the current baseline.
     pub full: bool,
-    pub state: Value,
+    pub state: Map<String, Value>,
 }
 
 impl WorldStateItem {
-    pub fn full(state: Value) -> Self {
+    pub fn full(state: Map<String, Value>) -> Self {
         Self { full: true, state }
     }
 
-    pub fn patch(state: Value) -> Self {
+    pub fn patch(state: Map<String, Value>) -> Self {
         Self { full: false, state }
-    }
-}
-
-#[derive(Serialize, Clone, Debug, PartialEq, JsonSchema, TS)]
-pub struct CompactedItem {
-    pub message: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub replacement_history: Option<Vec<ResponseItem>>,
-    /// Monotonic position of this context window within the thread.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub window_number: Option<u64>,
-    /// UUIDv7 identity of the first context window in this thread's window chain.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub first_window_id: Option<String>,
-    /// UUIDv7 identity of the context window immediately before this one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub previous_window_id: Option<String>,
-    /// UUIDv7 identity of this context window.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub window_id: Option<String>,
-}
-
-impl From<CompactedItem> for ResponseItem {
-    fn from(value: CompactedItem) -> Self {
-        ResponseItem::Message {
-            id: None,
-            role: "assistant".to_string(),
-            content: vec![ContentItem::OutputText {
-                text: value.message,
-            }],
-            phase: None,
-            internal_chat_message_metadata_passthrough: None,
-        }
     }
 }
 
@@ -3376,15 +3077,6 @@ impl Mul<f64> for TruncationPolicy {
             }
         }
     }
-}
-
-#[derive(Serialize, Deserialize, Clone, JsonSchema)]
-pub struct RolloutLine {
-    pub timestamp: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ordinal: Option<u64>,
-    #[serde(flatten)]
-    pub item: RolloutItem,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, JsonSchema, TS)]
@@ -4388,6 +4080,22 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
     use tempfile::TempDir;
+
+    #[test]
+    fn world_state_items_require_object_state() -> Result<()> {
+        let value = json!({
+            "full": true,
+            "state": {"environment": {"status": "ready"}},
+        });
+        let item = serde_json::from_value::<WorldStateItem>(value.clone())?;
+
+        assert_eq!(serde_json::to_value(item)?, value);
+        assert!(
+            serde_json::from_value::<WorldStateItem>(json!({"full": false, "state": []}))
+                .is_err()
+        );
+        Ok(())
+    }
 
     #[test]
     fn feature_thread_source_serializes_as_its_app_owned_label() -> Result<()> {
@@ -5813,49 +5521,6 @@ mod tests {
     }
 
     #[test]
-    fn copied_history_uses_persisted_history_mode() -> Result<()> {
-        let thread_id = ThreadId::from_string("00000000-0000-0000-0000-000000000001")?;
-        let session_meta = RolloutItem::SessionMeta(SessionMetaLine {
-            meta: SessionMeta {
-                session_id: thread_id.into(),
-                id: thread_id,
-                history_mode: ThreadHistoryMode::Legacy,
-                ..SessionMeta::default()
-            },
-            git: None,
-        });
-        let history = InitialHistory::Resumed(ResumedHistory {
-            conversation_id: thread_id,
-            history: Arc::new(vec![session_meta.clone()]),
-            rollout_path: None,
-        });
-
-        assert_eq!(
-            history.get_history_mode(ThreadHistoryMode::Paginated),
-            ThreadHistoryMode::Legacy
-        );
-        assert_eq!(
-            InitialHistory::Forked(vec![session_meta])
-                .get_history_mode(ThreadHistoryMode::Paginated),
-            ThreadHistoryMode::Legacy
-        );
-        assert_eq!(
-            InitialHistory::New.get_history_mode(ThreadHistoryMode::Paginated),
-            ThreadHistoryMode::Paginated
-        );
-        assert_eq!(
-            InitialHistory::Resumed(ResumedHistory {
-                conversation_id: thread_id,
-                history: Arc::new(Vec::new()),
-                rollout_path: None,
-            })
-            .get_history_mode(ThreadHistoryMode::Paginated),
-            ThreadHistoryMode::Paginated
-        );
-        Ok(())
-    }
-
-    #[test]
     fn turn_context_item_deserializes_without_network() -> Result<()> {
         let item: TurnContextItem = serde_json::from_value(json!({
             "cwd": test_path_buf("/tmp"),
@@ -5882,85 +5547,6 @@ mod tests {
         }))?;
 
         assert_eq!(item.approval_policy, AskForApproval::OnRequest);
-        Ok(())
-    }
-
-    #[test]
-    fn multi_agent_version_uses_newest_present_session_meta_value() -> Result<()> {
-        let thread_id = ThreadId::from_string("67e55044-10b1-426f-9247-bb680e5fe0c8")?;
-        let older_meta = SessionMetaLine {
-            meta: SessionMeta {
-                session_id: thread_id.into(),
-                id: thread_id,
-                multi_agent_version: Some(MultiAgentVersion::V2),
-                ..Default::default()
-            },
-            git: None,
-        };
-        let newer_meta_without_version = SessionMetaLine {
-            meta: SessionMeta {
-                session_id: thread_id.into(),
-                id: thread_id,
-                multi_agent_version: None,
-                ..Default::default()
-            },
-            git: None,
-        };
-
-        assert_eq!(
-            multi_agent_version_from_items(
-                &[
-                    RolloutItem::SessionMeta(older_meta),
-                    RolloutItem::SessionMeta(newer_meta_without_version),
-                ],
-                Some(thread_id),
-            ),
-            Some(MultiAgentVersion::V2)
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn latest_effective_multi_agent_mode_uses_latest_turn_context_even_when_unset() -> Result<()> {
-        let turn_context_item = |multi_agent_mode| -> Result<RolloutItem> {
-            let mut value = json!({
-                "cwd": test_path_buf("/tmp"),
-                "approval_policy": "never",
-                "sandbox_policy": { "type": "danger-full-access" },
-                "model": "gpt-5",
-                "summary": "auto",
-            });
-            value["multi_agent_mode"] = serde_json::to_value(multi_agent_mode)?;
-            Ok(RolloutItem::TurnContext(serde_json::from_value(value)?))
-        };
-
-        assert_eq!(
-            InitialHistory::Forked(vec![
-                turn_context_item(Some(MultiAgentMode::Proactive))?,
-                turn_context_item(/*multi_agent_mode*/ None)?,
-            ])
-            .get_latest_effective_multi_agent_mode(),
-            None
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn latest_effective_multi_agent_mode_maps_legacy_none_to_empty_custom() -> Result<()> {
-        let value = json!({
-            "cwd": test_path_buf("/tmp"),
-            "approval_policy": "never",
-            "sandbox_policy": { "type": "danger-full-access" },
-            "model": "gpt-5",
-            "multi_agent_mode": "none",
-            "summary": "auto",
-        });
-        let item = RolloutItem::TurnContext(serde_json::from_value(value)?);
-
-        assert_eq!(
-            InitialHistory::Forked(vec![item]).get_latest_effective_multi_agent_mode(),
-            Some(MultiAgentMode::Custom(String::new()))
-        );
         Ok(())
     }
 

@@ -346,7 +346,7 @@ mod tests {
             .clone_history()
             .await
             .raw_items()
-            .first()
+            .next()
             .cloned()
             .expect("history item");
         let raw_history_event = rx.recv().await.expect("history raw response item event");

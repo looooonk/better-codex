@@ -2,7 +2,7 @@ use crate::model::ThreadMetadata;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::RolloutItem;
+use codex_history::RolloutItem;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::TurnContextItem;
 use codex_protocol::protocol::UserMessageEvent;
@@ -166,7 +166,7 @@ mod tests {
     use codex_protocol::protocol::AskForApproval;
     use codex_protocol::protocol::EventMsg;
     use codex_protocol::protocol::ItemCompletedEvent;
-    use codex_protocol::protocol::RolloutItem;
+    use codex_history::RolloutItem;
     use codex_protocol::protocol::SandboxPolicy;
     use codex_protocol::protocol::SessionMeta;
     use codex_protocol::protocol::SessionMetaLine;
@@ -606,6 +606,9 @@ mod tests {
             tokens_used: 1,
             first_user_message: None,
             archived_at: None,
+            section: None,
+            section_position: None,
+            section_entered_at: None,
             git_sha: None,
             git_branch: None,
             git_origin_url: None,

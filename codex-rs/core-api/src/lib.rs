@@ -100,7 +100,7 @@ pub use codex_protocol::models::PermissionProfile;
 pub use codex_protocol::openai_models::ModelPreset;
 pub use codex_protocol::protocol::AskForApproval;
 pub use codex_protocol::protocol::EventMsg;
-pub use codex_protocol::protocol::InitialHistory;
+pub use codex_history::InitialHistory;
 pub use codex_protocol::protocol::McpServerRefreshConfig;
 pub use codex_protocol::protocol::Op;
 pub use codex_protocol::protocol::SessionConfiguredEvent;

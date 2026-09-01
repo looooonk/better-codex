@@ -2,6 +2,7 @@
 
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::ResponseItem;
+use codex_history::ResponseItemEnvelope;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -116,7 +117,18 @@ impl SessionState {
         items: Vec<ResponseItem>,
         reference_context_item: Option<TurnContextItem>,
     ) {
-        self.history.replace(items);
+        self.replace_annotated_history(
+            items.into_iter().map(ResponseItemEnvelope::new).collect(),
+            reference_context_item,
+        );
+    }
+
+    pub(crate) fn replace_annotated_history(
+        &mut self,
+        items: Vec<ResponseItemEnvelope>,
+        reference_context_item: Option<TurnContextItem>,
+    ) {
+        self.history.replace_annotated(items);
         self.history
             .set_reference_context_item(reference_context_item);
         self.auto_compact_window.clear_prefill();

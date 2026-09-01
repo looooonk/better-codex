@@ -10,12 +10,17 @@ use pulldown_cmark::Parser;
 use pulldown_cmark::TagEnd;
 use serde::Deserialize;
 use serde::Serialize;
+use sqlx::QueryBuilder;
 use sqlx::Row;
+use sqlx::Sqlite;
 
 use super::super::LocalThreadStore;
 use super::read::CursorScope;
+use super::read::prepare_lineage_for_paginated_reads;
+use super::read::push_lineage_filter;
 use super::read::serialize_cursor;
-use super::read::validate_thread_for_paginated_reads;
+use super::MAX_THREAD_HISTORY_INPUT_BYTES;
+use super::MAX_THREAD_OCCURRENCE_PAGE_SIZE;
 use super::thread_history_error;
 use crate::SearchTextRange;
 use crate::SearchThreadOccurrencesParams;
@@ -26,6 +31,10 @@ use crate::ThreadStoreResult;
 
 const SNIPPET_CONTEXT_BEFORE_CHARS: usize = 48;
 const SNIPPET_CONTEXT_AFTER_CHARS: usize = 96;
+
+#[cfg(test)]
+#[path = "search_tests.rs"]
+mod tests;
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -48,17 +57,8 @@ pub(in crate::local) async fn search_thread_occurrences(
     store: &LocalThreadStore,
     params: SearchThreadOccurrencesParams,
 ) -> ThreadStoreResult<ThreadOccurrenceSearchPage> {
-    if params.search_term.trim().is_empty() {
-        return Err(ThreadStoreError::InvalidRequest {
-            message: "thread/searchOccurrences requires search_term".to_string(),
-        });
-    }
-    if params.page_size == 0 {
-        return Err(ThreadStoreError::InvalidRequest {
-            message: "thread/searchOccurrences requires page_size greater than zero".to_string(),
-        });
-    }
-    validate_thread_for_paginated_reads(
+    validate_search_request(&params)?;
+    let lineage = prepare_lineage_for_paginated_reads(
         store,
         params.thread_id,
         /*include_archived*/ true,
@@ -75,7 +75,7 @@ pub(in crate::local) async fn search_thread_occurrences(
         .map_or(0, |cursor| cursor.next_rollout_ordinal);
     let matcher = LiteralMatcher::new(params.search_term.as_str());
     let pool = store.thread_history_db().await?;
-    let mut rows = sqlx::query(
+    let mut query = QueryBuilder::<Sqlite>::new(
         r#"
 SELECT turn_id, item_id, rollout_ordinal, item_json, turn_rollout_ordinal
 FROM (
@@ -89,9 +89,20 @@ FROM (
     JOIN thread_turns AS turns
       ON turns.thread_id = items.thread_id
      AND turns.turn_id = items.turn_id
-    WHERE items.thread_id = ?
-      AND items.item_type = 'userMessage'
-      AND items.rollout_ordinal >= ?
+    WHERE
+        "#,
+    );
+    push_lineage_filter(
+        &mut query,
+        &lineage,
+        "items.thread_id",
+        "items.rollout_ordinal",
+    )?;
+    query
+        .push(" AND items.item_type = 'userMessage' AND items.rollout_ordinal >= ")
+        .push_bind(next_rollout_ordinal)
+        .push(
+            r#"
 
     UNION ALL
 
@@ -106,18 +117,25 @@ FROM (
       ON items.thread_id = turns.thread_id
      AND items.turn_id = turns.turn_id
      AND items.item_id = turns.final_agent_item_id
-    WHERE turns.thread_id = ?
-      AND turns.final_agent_item_id IS NOT NULL
-      AND items.rollout_ordinal >= ?
+    WHERE
+            "#,
+        );
+    push_lineage_filter(
+        &mut query,
+        &lineage,
+        "turns.thread_id",
+        "items.rollout_ordinal",
+    )?;
+    query
+        .push(" AND turns.final_agent_item_id IS NOT NULL AND items.rollout_ordinal >= ")
+        .push_bind(next_rollout_ordinal)
+        .push(
+            r#"
 )
 ORDER BY rollout_ordinal ASC
         "#,
-    )
-    .bind(params.thread_id.to_string())
-    .bind(next_rollout_ordinal)
-    .bind(params.thread_id.to_string())
-    .bind(next_rollout_ordinal)
-    .fetch(pool);
+        );
+    let mut rows = query.build().fetch(pool);
 
     let mut items = Vec::with_capacity(params.page_size);
     while let Some(row) = rows.try_next().await.map_err(thread_history_error)? {
@@ -180,6 +198,59 @@ ORDER BY rollout_ordinal ASC
     })
 }
 
+fn validate_search_request(params: &SearchThreadOccurrencesParams) -> ThreadStoreResult<()> {
+    if params.search_term.len() > MAX_THREAD_HISTORY_INPUT_BYTES {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!(
+                "thread/searchOccurrences search_term cannot exceed {MAX_THREAD_HISTORY_INPUT_BYTES} bytes"
+            ),
+        });
+    }
+    if params.search_term.trim().is_empty() {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: "thread/searchOccurrences requires search_term".to_string(),
+        });
+    }
+    let max_cursor = serde_json::to_string(&SearchCursor {
+        thread_id: params.thread_id,
+        search_term: params.search_term.clone(),
+        next_rollout_ordinal: i64::MAX,
+        next_occurrence_index: usize::MAX,
+    })
+    .map_err(thread_history_error)?;
+    if max_cursor.len() > MAX_THREAD_HISTORY_INPUT_BYTES {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!(
+                "thread/searchOccurrences search_term cannot produce a cursor larger than {MAX_THREAD_HISTORY_INPUT_BYTES} bytes"
+            ),
+        });
+    }
+    if params.page_size == 0 {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: "thread/searchOccurrences requires page_size greater than zero".to_string(),
+        });
+    }
+    if params.page_size > MAX_THREAD_OCCURRENCE_PAGE_SIZE {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!(
+                "thread/searchOccurrences page_size cannot exceed {MAX_THREAD_OCCURRENCE_PAGE_SIZE}"
+            ),
+        });
+    }
+    if params
+        .cursor
+        .as_ref()
+        .is_some_and(|cursor| cursor.len() > MAX_THREAD_HISTORY_INPUT_BYTES)
+    {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!(
+                "thread/searchOccurrences cursor cannot exceed {MAX_THREAD_HISTORY_INPUT_BYTES} bytes"
+            ),
+        });
+    }
+    Ok(())
+}
+
 fn candidate_row(row: sqlx::sqlite::SqliteRow) -> ThreadStoreResult<CandidateRow> {
     let rollout_ordinal = row.try_get::<i64, _>("rollout_ordinal")?;
     let turn_rollout_ordinal = row.try_get::<i64, _>("turn_rollout_ordinal")?;
@@ -205,6 +276,13 @@ fn parse_cursor(
     let Some(cursor) = cursor else {
         return Ok(None);
     };
+    if cursor.len() > MAX_THREAD_HISTORY_INPUT_BYTES {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!(
+                "thread/searchOccurrences cursor cannot exceed {MAX_THREAD_HISTORY_INPUT_BYTES} bytes"
+            ),
+        });
+    }
     let cursor_value: SearchCursor =
         serde_json::from_str(cursor).map_err(|_| invalid_cursor(cursor))?;
     if cursor_value.thread_id != thread_id
@@ -217,7 +295,15 @@ fn parse_cursor(
 }
 
 fn serialize_cursor_for_search(cursor: SearchCursor) -> ThreadStoreResult<String> {
-    serde_json::to_string(&cursor).map_err(thread_history_error)
+    let cursor = serde_json::to_string(&cursor).map_err(thread_history_error)?;
+    if cursor.len() > MAX_THREAD_HISTORY_INPUT_BYTES {
+        return Err(ThreadStoreError::Internal {
+            message: format!(
+                "thread/searchOccurrences cursor exceeds {MAX_THREAD_HISTORY_INPUT_BYTES} byte limit"
+            ),
+        });
+    }
+    Ok(cursor)
 }
 
 fn invalid_cursor(cursor: &str) -> ThreadStoreError {

@@ -79,6 +79,19 @@ fn accepts_valid_json_at_eof() -> std::io::Result<()> {
 }
 
 #[test]
+fn scans_only_the_prefix_before_an_explicit_end() -> std::io::Result<()> {
+    let first = b"{\"value\":\"first\"}\n";
+    let second = b"{\"value\":\"second\"}\n";
+    let input = [first.as_slice(), second.as_slice()].concat();
+    let mut scanner = ReverseJsonlScanner::new_at(
+        Cursor::new(input),
+        u64::try_from(first.len()).expect("prefix length"),
+    )?;
+
+    assert_records(&mut scanner, &["first"])
+}
+
+#[test]
 fn rejects_invalid_json_at_eof_and_continues_scanning() -> std::io::Result<()> {
     let input = b"{\"value\":\"first\"}\n{\"value\":";
     let mut scanner = ReverseJsonlScanner::new(Cursor::new(input))?;

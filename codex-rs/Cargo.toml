@@ -41,6 +41,7 @@ members = [
     "core-api",
     "core-plugins",
     "core-skills",
+    "history",
     "hooks",
     "http-client",
     "secrets",
@@ -202,6 +203,7 @@ codex-file-search = { path = "file-search" }
 codex-file-watcher = { path = "file-watcher" }
 codex-git-utils = { path = "git-utils" }
 codex-hooks = { path = "hooks" }
+codex-history = { path = "history" }
 codex-keyring-store = { path = "keyring-store" }
 codex-linux-sandbox = { path = "linux-sandbox" }
 codex-lmstudio = { path = "lmstudio" }

@@ -16,6 +16,7 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::fs::PermissionsExt;
 
 const COMPRESSED_SUFFIX: &str = ".zst";
+const MAX_BOUNDARY_RECORD_BYTES: usize = 8 * 1024 * 1024;
 const MAX_NOT_FOUND_RETRIES: usize = 3;
 const OPEN_ROLLOUT_LINE_READER_RETRY_DELAY: Duration = Duration::from_millis(50);
 const TEMP_SUFFIX: &str = ".tmp";
@@ -57,6 +58,21 @@ pub async fn open_rollout_line_reader(path: &Path) -> io::Result<RolloutLineRead
     reader::open_once(path).await
 }
 
+/// Returns the ordinals immediately before and after a decompressed JSONL byte boundary.
+pub(crate) async fn rollout_ordinals_at_boundary(
+    path: &Path,
+    end_byte_offset: u64,
+) -> io::Result<(u64, Option<u64>)> {
+    let path = path::existing_rollout_path(path)
+        .await
+        .unwrap_or_else(|| path.to_path_buf());
+    tokio::task::spawn_blocking(move || {
+        reader::rollout_ordinals_at_boundary(path.as_path(), end_byte_offset)
+    })
+    .await
+    .map_err(io::Error::other)?
+}
+
 /// Returns the compressed `.jsonl.zst` path for a rollout path.
 #[cfg(test)]
 pub(crate) fn compressed_rollout_path(path: &Path) -> PathBuf {
@@ -66,15 +82,45 @@ pub(crate) fn compressed_rollout_path(path: &Path) -> PathBuf {
 /// Materializes a compressed rollout back to plain `.jsonl` for async append paths.
 pub(crate) async fn materialize_rollout_for_append(path: &Path) -> io::Result<PathBuf> {
     let path = path.to_path_buf();
-    tokio::task::spawn_blocking(move || materialize_rollout_for_append_blocking(path.as_path()))
-        .await
-        .map_err(io::Error::other)?
+    tokio::task::spawn_blocking(move || {
+        materialize_rollout_blocking(path.as_path(), MaterializeMode::Append)
+    })
+    .await
+    .map_err(io::Error::other)?
 }
 
 /// Materializes a compressed rollout back to plain `.jsonl` for blocking append paths.
 pub(crate) fn materialize_rollout_for_append_blocking(path: &Path) -> io::Result<PathBuf> {
+    materialize_rollout_blocking(path, MaterializeMode::Append)
+}
+
+/// Materializes a plain reference while preserving the selected compressed representation.
+pub(crate) async fn materialize_rollout_for_reference(path: &Path) -> io::Result<PathBuf> {
+    let path = path.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        materialize_rollout_blocking(path.as_path(), MaterializeMode::Reference)
+    })
+    .await
+    .map_err(io::Error::other)?
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum MaterializeMode {
+    Append,
+    Reference,
+}
+
+fn materialize_rollout_blocking(path: &Path, mode: MaterializeMode) -> io::Result<PathBuf> {
     let plain_path = plain_rollout_path(path);
     if plain_path.exists() {
+        if mode == MaterializeMode::Append {
+            let compressed_path = path::compressed_rollout_path(plain_path.as_path());
+            match std::fs::remove_file(compressed_path) {
+                Ok(()) => {}
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err),
+            }
+        }
         metrics::materialize("plain_exists");
         return Ok(plain_path);
     }
@@ -104,10 +150,12 @@ pub(crate) fn materialize_rollout_for_append_blocking(path: &Path) -> io::Result
             Err(_) => persist_temp_file_noclobber(temp_path.as_path(), plain_path.as_path())?,
         }
         let _ = std::fs::remove_file(temp_path.as_path());
-        match std::fs::remove_file(compressed_path.as_path()) {
-            Ok(()) => {}
-            Err(err) if err.kind() == io::ErrorKind::NotFound => {}
-            Err(err) => return Err(err),
+        if mode == MaterializeMode::Append {
+            match std::fs::remove_file(compressed_path.as_path()) {
+                Ok(()) => {}
+                Err(err) if err.kind() == io::ErrorKind::NotFound => {}
+                Err(err) => return Err(err),
+            }
         }
         Ok(())
     })();
@@ -979,6 +1027,7 @@ mod reader {
 
     use super::RolloutLineReader;
     use super::RolloutLineReaderInner;
+    use super::MAX_BOUNDARY_RECORD_BYTES;
     use super::path;
     use tokio::io::AsyncBufReadExt;
 
@@ -1004,6 +1053,94 @@ mod reader {
         Ok(RolloutLineReader {
             inner: RolloutLineReaderInner::Plain(tokio::io::BufReader::new(file).lines()),
         })
+    }
+
+    pub(super) fn rollout_ordinals_at_boundary(
+        path: &Path,
+        end_byte_offset: u64,
+    ) -> io::Result<(u64, Option<u64>)> {
+        if end_byte_offset == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "rollout boundary has no preceding record",
+            ));
+        }
+        let input = File::open(path)?;
+        let input: Box<dyn Read> = if path::is_compressed_rollout_path(path) {
+            Box::new(zstd::stream::read::Decoder::new(input)?)
+        } else {
+            Box::new(input)
+        };
+        let mut reader = io::BufReader::new(input);
+        let mut offset = 0u64;
+        loop {
+            let line = read_bounded_record(&mut reader)?;
+            let Some(line) = line else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "rollout boundary is past the final record",
+                ));
+            };
+            offset = offset
+                .checked_add(u64::try_from(line.len()).map_err(io::Error::other)?)
+                .ok_or_else(|| io::Error::other("rollout byte offset overflow"))?;
+            if offset < end_byte_offset {
+                continue;
+            }
+            if offset > end_byte_offset {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "rollout boundary is inside a JSONL record",
+                ));
+            }
+            let previous = parse_paginated_ordinal(path, line.as_slice())?;
+            let next = read_bounded_record(&mut reader)?
+                .map(|line| parse_paginated_ordinal(path, line.as_slice()))
+                .transpose()?;
+            return Ok((previous, next));
+        }
+    }
+
+    fn read_bounded_record<R: BufRead>(reader: &mut R) -> io::Result<Option<Vec<u8>>> {
+        let mut line = Vec::new();
+        let limit = u64::try_from(MAX_BOUNDARY_RECORD_BYTES)
+            .map_err(io::Error::other)?
+            .saturating_add(1);
+        let mut bounded = (&mut *reader).take(limit);
+        let read = bounded.read_until(b'\n', &mut line)?;
+        if read == 0 {
+            return Ok(None);
+        }
+        if line.len() > MAX_BOUNDARY_RECORD_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "rollout record exceeds boundary validation limit",
+            ));
+        }
+        if line.last() != Some(&b'\n') {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "rollout record is not newline terminated",
+            ));
+        }
+        Ok(Some(line))
+    }
+
+    fn parse_paginated_ordinal(path: &Path, line: &[u8]) -> io::Result<u64> {
+        serde_json::from_slice::<codex_history::RolloutLine>(line)
+            .map_err(|err| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("failed to parse rollout record at {}: {err}", path.display()),
+                )
+            })?
+            .ordinal
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("paginated rollout record at {} has no ordinal", path.display()),
+                )
+            })
     }
 }
 

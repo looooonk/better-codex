@@ -65,7 +65,7 @@ pub(super) async fn run_remote_compact_v2_attempt(
             });
     }
 
-    let trace_input_history = history.raw_items().to_vec();
+    let trace_input_history = history.raw_items().cloned().collect();
     let prompt_input = history.for_prompt(&turn_context.model_info.input_modalities);
     let tool_router = built_tools(
         sess.as_ref(),

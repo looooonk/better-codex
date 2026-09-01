@@ -120,7 +120,7 @@ use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::RawResponseItemEvent;
-use codex_protocol::protocol::RolloutItem;
+use codex_history::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadHistoryMode;
@@ -151,6 +151,7 @@ use codex_thread_store::CreateThreadParams;
 use codex_thread_store::LiveThread;
 use codex_thread_store::LiveThreadInitGuard;
 use codex_thread_store::LocalThreadStore;
+use codex_thread_store::PersistContext;
 use codex_thread_store::ReadThreadParams;
 use codex_thread_store::ResumeThreadParams;
 use codex_thread_store::ThreadPersistenceMetadata;
@@ -362,13 +363,14 @@ use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::CodexErrorInfo;
-use codex_protocol::protocol::CompactedItem;
+use codex_history::CompactedItem;
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::protocol::DeprecationNoticeEvent;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExecApprovalRequestEvent;
-use codex_protocol::protocol::InitialHistory;
+use codex_history::InitialHistory;
 use codex_protocol::protocol::McpServerRefreshConfig;
 use codex_protocol::protocol::ModelRerouteEvent;
 use codex_protocol::protocol::ModelRerouteReason;
@@ -1217,15 +1219,21 @@ impl Session {
         }
     }
 
-    pub(crate) async fn try_ensure_rollout_materialized(&self) -> std::io::Result<()> {
+    pub(crate) async fn try_ensure_rollout_materialized(
+        &self,
+        context: PersistContext,
+    ) -> std::io::Result<()> {
         if let Some(live_thread) = self.live_thread() {
-            live_thread.persist().await.map_err(std::io::Error::other)?;
+            live_thread
+                .persist_with_context(context)
+                .await
+                .map_err(std::io::Error::other)?;
         }
         Ok(())
     }
 
-    pub(crate) async fn ensure_rollout_materialized(&self) {
-        if let Err(e) = self.try_ensure_rollout_materialized().await {
+    pub(crate) async fn ensure_rollout_materialized(&self, context: PersistContext) {
+        if let Err(e) = self.try_ensure_rollout_materialized(context).await {
             warn!("failed to materialize thread persistence: {e}");
         }
     }
@@ -1417,7 +1425,8 @@ impl Session {
                 }
 
                 // Forked threads should remain file-backed immediately after startup.
-                self.ensure_rollout_materialized().await;
+                self.ensure_rollout_materialized(PersistContext::Standard)
+                    .await;
 
                 // Flush after seeding history and any persisted rollout copy.
                 if !is_subagent {
@@ -3309,9 +3318,31 @@ impl Session {
         world_state_baseline: Option<Arc<WorldState>>,
         compacted_item: CompactedItem,
     ) {
-        let items = Self::assign_missing_response_item_ids(Cow::Owned(items)).into_owned();
+        self.replace_annotated_compacted_history(
+            items.into_iter().map(ResponseItemEnvelope::new).collect(),
+            reference_context_item,
+            world_state_baseline,
+            compacted_item,
+        )
+        .await;
+    }
+
+    pub(crate) async fn replace_annotated_compacted_history(
+        &self,
+        mut items: Vec<ResponseItemEnvelope>,
+        reference_context_item: Option<TurnContextItem>,
+        world_state_baseline: Option<Arc<WorldState>>,
+        compacted_item: CompactedItem,
+    ) {
+        for envelope in &mut items {
+            Self::assign_missing_response_item_id(&mut envelope.item);
+        }
+        let raw_items = items
+            .iter()
+            .map(|envelope| envelope.item.clone())
+            .collect();
         let compacted_item = CompactedItem {
-            replacement_history: Some(items.clone()),
+            replacement_history: Some(raw_items),
             ..compacted_item
         };
         // Compaction starts a new history window, so its WorldState baseline must be full.
@@ -3321,10 +3352,10 @@ impl Session {
             let mut state = self.state.lock().await;
             persist_reference_context_item =
                 state.reference_context_item() != reference_context_item;
-            state.replace_history(items, reference_context_item.clone());
+            state.replace_annotated_history(items, reference_context_item.clone());
             if let Some(world_state) = world_state_baseline {
                 let snapshot = world_state.snapshot();
-                world_state_item = Some(WorldStateItem::full(snapshot.clone().into_value()));
+                world_state_item = Some(WorldStateItem::full(snapshot.clone().into_object()));
                 state.history.set_world_state_baseline(snapshot);
             }
         }
@@ -3811,7 +3842,7 @@ impl Session {
         &self,
         step_context: &StepContext,
         world_state: Arc<WorldState>,
-        preserved_turn_items: Vec<ResponseItem>,
+        preserved_turn_items: Vec<ResponseItemEnvelope>,
     ) -> u64 {
         let turn_context = step_context.turn.as_ref();
         let window = {
@@ -3819,12 +3850,15 @@ impl Session {
             state.start_new_context_window()
         };
         let (window_number, window_ids) = window;
-        let mut context_items = self
+        let mut context_items: Vec<ResponseItemEnvelope> = self
             .build_reset_initial_context_for_step(step_context, world_state.as_ref())
-            .await;
+            .await
+            .into_iter()
+            .map(ResponseItemEnvelope::new)
+            .collect();
         context_items.extend(preserved_turn_items);
         let turn_context_item = turn_context.to_turn_context_item();
-        self.replace_compacted_history(
+        self.replace_annotated_compacted_history(
             context_items,
             Some(turn_context_item),
             Some(world_state),
@@ -3892,7 +3926,7 @@ impl Session {
                 .set_world_state_baseline(snapshot.clone());
             (
                 context_items,
-                Some(WorldStateItem::full(snapshot.into_value())),
+                Some(WorldStateItem::full(snapshot.into_object())),
             )
         } else {
             // Steady-state path: append only built-in context diffs here; turn-scoped extension
@@ -4119,7 +4153,6 @@ impl Session {
         let turn_item = TurnItem::UserMessage(user_message_item);
         self.emit_turn_item_started(turn_context, &turn_item).await;
         self.emit_turn_item_completed(turn_context, turn_item).await;
-        self.ensure_rollout_materialized().await;
     }
 
     pub(crate) async fn notify_stream_error(
@@ -4258,7 +4291,8 @@ impl Session {
     }
 
     pub(crate) async fn hook_transcript_path(&self) -> Option<PathBuf> {
-        self.ensure_rollout_materialized().await;
+        self.ensure_rollout_materialized(PersistContext::Standard)
+            .await;
         match self.current_rollout_path().await {
             Ok(path) => path,
             Err(err) => {

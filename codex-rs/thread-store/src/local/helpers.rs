@@ -28,6 +28,12 @@ use crate::StoredThread;
 use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
 
+#[derive(Clone, Copy)]
+pub(super) enum RolloutCollection {
+    Active,
+    Archived,
+}
+
 pub(super) fn scoped_rollout_path(
     root: PathBuf,
     rollout_path: &Path,
@@ -66,6 +72,55 @@ pub(super) fn rollout_path_is_archived(codex_home: &Path, path: &Path) -> bool {
             .any(|component| component.as_os_str() == OsStr::new(ARCHIVED_SESSIONS_SUBDIR))
 }
 
+pub(super) async fn rollout_paths_for_thread(
+    codex_home: &Path,
+    selected_path: &Path,
+    thread_id: ThreadId,
+    collection: RolloutCollection,
+) -> ThreadStoreResult<Vec<PathBuf>> {
+    let (root, root_name, paths) = match collection {
+        RolloutCollection::Active => (
+            codex_home.join(codex_rollout::SESSIONS_SUBDIR),
+            "sessions",
+            codex_rollout::find_thread_paths_by_id(codex_home, thread_id).await,
+        ),
+        RolloutCollection::Archived => (
+            codex_home.join(codex_rollout::ARCHIVED_SESSIONS_SUBDIR),
+            "archived",
+            codex_rollout::find_archived_thread_paths_by_id(codex_home, thread_id).await,
+        ),
+    };
+    let mut paths = paths.map_err(|err| ThreadStoreError::InvalidRequest {
+        message: format!("failed to locate thread id {thread_id}: {err}"),
+    })?;
+    let plain_selected = codex_rollout::plain_rollout_path(selected_path);
+    for path in [
+        selected_path.to_path_buf(),
+        plain_selected.clone(),
+        plain_selected.with_extension("jsonl.zst"),
+    ] {
+        match path.try_exists() {
+            Ok(true) => paths.push(path),
+            Ok(false) => {}
+            Err(err) => {
+                return Err(ThreadStoreError::Internal {
+                    message: format!("failed to inspect rollout path `{}`: {err}", path.display()),
+                });
+            }
+        }
+    }
+
+    let mut canonical_paths = Vec::with_capacity(paths.len());
+    for path in paths {
+        let canonical_path = scoped_rollout_path(root.clone(), path.as_path(), root_name)?;
+        matching_rollout_file_name(canonical_path.as_path(), thread_id, path.as_path())?;
+        canonical_paths.push(canonical_path);
+    }
+    canonical_paths.sort();
+    canonical_paths.dedup();
+    Ok(canonical_paths)
+}
+
 pub(super) fn matching_rollout_file_name(
     rollout_path: &Path,
     thread_id: ThreadId,
@@ -79,6 +134,18 @@ pub(super) fn matching_rollout_file_name(
             ),
         });
     };
+    if let Some(file_thread_id) = codex_rollout::thread_id_from_rollout_path(rollout_path) {
+        return if file_thread_id == thread_id {
+            Ok(file_name)
+        } else {
+            Err(ThreadStoreError::InvalidRequest {
+                message: format!(
+                    "rollout path `{}` does not match thread id {thread_id}",
+                    display_path.display()
+                ),
+            })
+        };
+    }
     let required_plain_suffix = format!("{thread_id}.jsonl");
     let required_compressed_suffix = format!("{required_plain_suffix}.zst");
     let file_name_str = file_name.to_string_lossy();
@@ -103,24 +170,6 @@ pub(super) fn touch_modified_time(path: &Path) -> std::io::Result<()> {
 pub(super) fn set_modified_time(path: &Path, modified: SystemTime) -> std::io::Result<()> {
     let times = FileTimes::new().set_modified(modified);
     OpenOptions::new().append(true).open(path)?.set_times(times)
-}
-
-pub(super) fn file_move_error_with_rollback(
-    moved_path: &Path,
-    original_path: &Path,
-    operation: &str,
-    cause: impl std::fmt::Display,
-) -> ThreadStoreError {
-    let message = format!("failed to {operation} thread: {cause}");
-    match std::fs::rename(moved_path, original_path) {
-        Ok(()) => ThreadStoreError::Internal { message },
-        Err(rollback_err) => ThreadStoreError::Internal {
-            message: format!(
-                "{message}; failed to restore rollout to {}: {rollback_err}",
-                original_path.display()
-            ),
-        },
-    }
 }
 
 pub(super) fn stored_thread_from_rollout_item(
@@ -301,6 +350,9 @@ pub(super) fn git_info_from_parts(
 }
 
 fn thread_id_from_rollout_path(path: &Path) -> Option<ThreadId> {
+    if let Some(thread_id) = codex_rollout::thread_id_from_rollout_path(path) {
+        return Some(thread_id);
+    }
     let file_name = path.file_name()?.to_str()?;
     let file_name = file_name.strip_suffix(".zst").unwrap_or(file_name);
     let stem = file_name.strip_suffix(".jsonl")?;
@@ -343,6 +395,36 @@ mod tests {
             Some(
                 compressed_path.with_file_name(format!("rollout-2025-01-03T12-00-00-{uuid}.jsonl"))
             )
+        );
+    }
+
+    #[test]
+    fn replacement_rollout_file_name_matches_logical_thread() {
+        let thread_id = ThreadId::new();
+        let rollout_id = ThreadId::new();
+        let file_name = format!(
+            "rollout-2026-08-11T18-42-07-{thread_id}_{rollout_id}.jsonl.zst"
+        );
+        let path = PathBuf::from(file_name.as_str());
+
+        assert_eq!(
+            matching_rollout_file_name(path.as_path(), thread_id, path.as_path())
+                .expect("matching logical thread"),
+            OsStr::new(file_name.as_str())
+        );
+        assert!(matching_rollout_file_name(path.as_path(), rollout_id, path.as_path()).is_err());
+    }
+
+    #[test]
+    fn noncanonical_legacy_rollout_file_name_remains_accepted() {
+        let thread_id = ThreadId::new();
+        let file_name = format!("legacy-prefix-{thread_id}.jsonl");
+        let path = PathBuf::from(file_name.as_str());
+
+        assert_eq!(
+            matching_rollout_file_name(path.as_path(), thread_id, path.as_path())
+                .expect("matching legacy thread"),
+            OsStr::new(file_name.as_str())
         );
     }
 }

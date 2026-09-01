@@ -10,7 +10,7 @@ use chrono::Utc;
 use codex_protocol::ThreadId;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
-use codex_protocol::protocol::RolloutItem;
+use codex_rollout::RolloutItem;
 use codex_protocol::protocol::SessionContextWindow;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
@@ -24,6 +24,7 @@ use crate::CreateThreadParams;
 use crate::DeleteThreadParams;
 use crate::ListThreadsParams;
 use crate::LoadThreadHistoryParams;
+use crate::PersistContext;
 use crate::ReadThreadByRolloutPathParams;
 use crate::ReadThreadParams;
 use crate::ResumeThreadParams;
@@ -57,7 +58,62 @@ mod tests {
     use crate::ThreadPersistenceMetadata;
     use crate::ThreadSortKey;
     use codex_protocol::models::BaseInstructions;
+    use codex_protocol::models::ContentItem;
+    use codex_protocol::models::ResponseItem;
     use codex_protocol::protocol::SessionSource;
+
+    #[tokio::test]
+    async fn turn_start_persist_surfaces_latched_append_failure() {
+        let store = Arc::new(InMemoryThreadStore::default());
+        let thread_id = ThreadId::new();
+        let live_thread = crate::LiveThread::create(
+            store.clone(),
+            create_thread_params(thread_id, ThreadHistoryMode::Legacy),
+        )
+        .await
+        .expect("create live thread");
+        store.fail_appends_for_testing("append rejected").await;
+
+        let append_error = live_thread
+            .append_items(&[RolloutItem::ResponseItem(ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "must be durable".to_string(),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            })])
+            .await
+            .expect_err("append should fail");
+        assert_eq!(
+            append_error.to_string(),
+            "thread-store internal error: append rejected"
+        );
+
+        let persist_error = live_thread
+            .persist_with_context(PersistContext::TurnStart)
+            .await
+            .expect_err("successful store persist must not hide append failure");
+        assert_eq!(
+            persist_error.to_string(),
+            "thread-store internal error: canonical thread append failed before turn start: thread-store internal error: append rejected"
+        );
+        let retry_error = live_thread
+            .persist_with_context(PersistContext::TurnStart)
+            .await
+            .expect_err("an unrecoverable rejected append must keep the thread fail-closed");
+        assert_eq!(retry_error.to_string(), persist_error.to_string());
+        assert_eq!(
+            store.calls().await,
+            InMemoryThreadStoreCalls {
+                create_thread: 1,
+                append_items: 1,
+                persist_thread: 2,
+                ..Default::default()
+            }
+        );
+    }
 
     #[tokio::test]
     async fn default_turn_pagination_methods_return_unsupported() {
@@ -392,6 +448,7 @@ pub struct InMemoryThreadStore {
 #[derive(Default)]
 struct InMemoryThreadStoreState {
     calls: InMemoryThreadStoreCalls,
+    append_failure: Option<String>,
     created_threads: HashMap<ThreadId, CreateThreadParams>,
     histories: HashMap<ThreadId, Vec<RolloutItem>>,
     metadata_updates: HashMap<ThreadId, ThreadMetadataPatch>,
@@ -418,6 +475,12 @@ impl InMemoryThreadStore {
     /// Returns the calls observed by this store.
     pub async fn calls(&self) -> InMemoryThreadStoreCalls {
         self.state.lock().await.calls.clone()
+    }
+
+    /// Configures this test/debug store to reject canonical appends.
+    #[doc(hidden)]
+    pub async fn fail_appends_for_testing(&self, message: impl Into<String>) {
+        self.state.lock().await.append_failure = Some(message.into());
     }
 
     async fn create_thread(&self, params: CreateThreadParams) -> ThreadStoreResult<()> {
@@ -488,6 +551,9 @@ impl InMemoryThreadStore {
             return Ok(());
         }
         state.calls.append_items += 1;
+        if let Some(message) = state.append_failure.clone() {
+            return Err(ThreadStoreError::Internal { message });
+        }
         state
             .histories
             .entry(params.thread_id)

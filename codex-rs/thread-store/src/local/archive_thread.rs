@@ -2,9 +2,10 @@ use chrono::Utc;
 use codex_rollout::find_thread_path_by_id_str;
 
 use super::LocalThreadStore;
-use super::helpers::file_move_error_with_rollback;
-use super::helpers::matching_rollout_file_name;
+use super::helpers::RolloutCollection;
+use super::helpers::rollout_paths_for_thread;
 use super::helpers::scoped_rollout_path;
+use super::rollout_moves::move_rollouts;
 use crate::ArchiveThreadParams;
 use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
@@ -14,6 +15,10 @@ pub(super) async fn archive_thread(
     params: ArchiveThreadParams,
 ) -> ThreadStoreResult<()> {
     let thread_id = params.thread_id;
+    let _lifecycle_guard = store.live_writer_locks.lock_lifecycle(thread_id).await;
+    let _live_writer_guard = store.live_writer_locks.lock(thread_id).await;
+    store.ensure_live_recorder_absent(thread_id).await?;
+    let _writer_lock = store.writer_lock_coordinator.acquire(thread_id)?;
     let state_db_ctx = store.state_db().await;
     let rollout_path = find_thread_path_by_id_str(
         store.config.codex_home.as_path(),
@@ -33,38 +38,44 @@ pub(super) async fn archive_thread(
         rollout_path.as_path(),
         "sessions",
     )?;
-    let file_name = matching_rollout_file_name(
+    let rollout_paths = rollout_paths_for_thread(
+        store.config.codex_home.as_path(),
         canonical_rollout_path.as_path(),
         thread_id,
-        rollout_path.as_path(),
-    )?;
+        RolloutCollection::Active,
+    )
+    .await?;
 
     let archive_folder = store
         .config
         .codex_home
         .join(codex_rollout::ARCHIVED_SESSIONS_SUBDIR);
-    std::fs::create_dir_all(&archive_folder).map_err(|err| ThreadStoreError::Internal {
-        message: format!("failed to archive thread: {err}"),
-    })?;
-    let archived_path = archive_folder.join(&file_name);
-    std::fs::rename(&canonical_rollout_path, &archived_path).map_err(|err| {
-        ThreadStoreError::Internal {
-            message: format!("failed to archive thread: {err}"),
+    let mut archived_path = None;
+    let mut moves = Vec::with_capacity(rollout_paths.len());
+    for source in rollout_paths {
+        let file_name = source.file_name().ok_or_else(|| ThreadStoreError::InvalidRequest {
+            message: format!("rollout path `{}` missing file name", source.display()),
+        })?;
+        let destination = archive_folder.join(file_name);
+        if source == canonical_rollout_path {
+            archived_path = Some(destination.clone());
         }
+        moves.push((source, destination));
+    }
+    let archived_path = archived_path.ok_or_else(|| ThreadStoreError::Internal {
+        message: "selected rollout missing from archive set".to_string(),
     })?;
+    let pending_moves = move_rollouts(moves, "archive")?;
 
     if let Some(ctx) = state_db_ctx {
-        ctx.mark_archived(thread_id, archived_path.as_path(), Utc::now())
+        if let Err(err) = ctx
+            .mark_archived(thread_id, archived_path.as_path(), Utc::now())
             .await
-            .map_err(|err| {
-                file_move_error_with_rollback(
-                    archived_path.as_path(),
-                    canonical_rollout_path.as_path(),
-                    "archive",
-                    err,
-                )
-            })?;
+        {
+            return Err(pending_moves.fail(format!("failed to archive thread: {err}")));
+        }
     }
+    pending_moves.commit();
     Ok(())
 }
 
@@ -94,6 +105,13 @@ mod tests {
         let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
         let active_path =
             write_session_file(home.path(), "2025-01-03T12-00-00", uuid).expect("session file");
+        let replacement_source = write_session_file(home.path(), "2025-01-03T13-00-00", uuid)
+            .expect("replacement source");
+        let rollout_id = Uuid::from_u128(208);
+        let selected_path = replacement_source.with_file_name(format!(
+            "rollout-2025-01-03T13-00-00-{thread_id}_{rollout_id}.jsonl"
+        ));
+        std::fs::rename(replacement_source, &selected_path).expect("replacement rollout");
 
         store
             .archive_thread(ArchiveThreadParams { thread_id })
@@ -101,10 +119,16 @@ mod tests {
             .expect("archive thread");
 
         assert!(!active_path.exists());
-        let archived_path = home
+        assert!(!selected_path.exists());
+        let archived_original_path = home
             .path()
             .join(ARCHIVED_SESSIONS_SUBDIR)
             .join(active_path.file_name().expect("file name"));
+        let archived_path = home
+            .path()
+            .join(ARCHIVED_SESSIONS_SUBDIR)
+            .join(selected_path.file_name().expect("file name"));
+        assert!(archived_original_path.exists());
         assert!(archived_path.exists());
 
         let archived = store
@@ -193,6 +217,13 @@ mod tests {
         let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
         let active_path =
             write_session_file(home.path(), "2025-01-03T12-00-00", uuid).expect("session file");
+        let replacement_source = write_session_file(home.path(), "2025-01-03T13-00-00", uuid)
+            .expect("replacement source");
+        let selected_path = replacement_source.with_file_name(format!(
+            "rollout-2025-01-03T13-00-00-{thread_id}_{}.jsonl",
+            Uuid::from_u128(210)
+        ));
+        std::fs::rename(replacement_source, &selected_path).expect("replacement rollout");
         let runtime = codex_state::StateRuntime::init(
             home.path().to_path_buf(),
             config.default_model_provider_id.clone(),
@@ -202,7 +233,7 @@ mod tests {
         let store = LocalThreadStore::new(config.clone(), Some(runtime.clone()));
         let mut builder = codex_state::ThreadMetadataBuilder::new(
             thread_id,
-            active_path.clone(),
+            selected_path.clone(),
             Utc::now(),
             SessionSource::Cli,
         );
@@ -222,11 +253,19 @@ mod tests {
 
         assert!(matches!(error, ThreadStoreError::Internal { .. }));
         assert!(active_path.exists());
+        assert!(selected_path.exists());
         assert!(
             !home
                 .path()
                 .join(ARCHIVED_SESSIONS_SUBDIR)
                 .join(active_path.file_name().expect("file name"))
+                .exists()
+        );
+        assert!(
+            !home
+                .path()
+                .join(ARCHIVED_SESSIONS_SUBDIR)
+                .join(selected_path.file_name().expect("file name"))
                 .exists()
         );
     }

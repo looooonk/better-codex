@@ -38,6 +38,19 @@ SELECT
     threads.tokens_used,
     threads.first_user_message,
     threads.archived_at,
+    threads.thread_section_id AS section,
+    (
+        SELECT thread_sections.name
+        FROM thread_sections
+        WHERE thread_sections.id = threads.thread_section_id
+    ) AS section_name,
+    (
+        SELECT thread_sections.appearance
+        FROM thread_sections
+        WHERE thread_sections.id = threads.thread_section_id
+    ) AS section_appearance,
+    threads.section_position,
+    threads.section_entered_at_ms,
     threads.git_sha,
     threads.git_branch,
     threads.git_origin_url
@@ -357,6 +370,23 @@ ON CONFLICT(child_thread_id) DO NOTHING
             .map(PathBuf::from))
     }
 
+    /// Swap one thread's rollout path only when it still matches the expected path.
+    pub async fn replace_rollout_path_if_current(
+        &self,
+        id: ThreadId,
+        expected: &Path,
+        replacement: &Path,
+    ) -> anyhow::Result<bool> {
+        let result =
+            sqlx::query("UPDATE threads SET rollout_path = ? WHERE id = ? AND rollout_path = ?")
+                .bind(replacement.display().to_string())
+                .bind(id.to_string())
+                .bind(expected.display().to_string())
+                .execute(self.pool.as_ref())
+                .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
     /// Find the newest thread whose user-facing title exactly matches `title`.
     #[allow(clippy::too_many_arguments)]
     pub async fn find_thread_by_exact_title(
@@ -377,6 +407,7 @@ ON CONFLICT(child_thread_id) DO NOTHING
                 allowed_sources,
                 model_providers,
                 cwd_filters: None,
+                section: ThreadSectionFilter::All,
                 anchor: None,
                 sort_key: crate::SortKey::UpdatedAt,
                 sort_direction: SortDirection::Desc,
@@ -446,6 +477,14 @@ ON CONFLICT(child_thread_id) DO NOTHING
         filters: ThreadFilterOptions<'_>,
         relation_filter: Option<crate::ThreadRelationFilter>,
     ) -> anyhow::Result<crate::ThreadsPage> {
+        if filters.sort_key == SortKey::SectionPosition {
+            let ThreadSectionFilter::Section(section_id) = filters.section else {
+                anyhow::bail!(
+                    "section position sorting requires ThreadSectionFilter::Section(section_id)"
+                );
+            };
+            self.repair_thread_section_ordering(section_id).await?;
+        }
         let limit = page_size.saturating_add(1);
 
         let mut builder = QueryBuilder::<Sqlite>::new("");
@@ -493,6 +532,9 @@ ON CONFLICT(child_thread_id) DO NOTHING
         model_providers: Option<&[String]>,
         archived_only: bool,
     ) -> anyhow::Result<Vec<ThreadId>> {
+        if sort_key == crate::SortKey::SectionPosition {
+            anyhow::bail!("section position sorting requires a section filter");
+        }
         let mut builder = QueryBuilder::<Sqlite>::new("SELECT threads.id FROM threads");
         push_thread_filters(
             &mut builder,
@@ -501,19 +543,26 @@ ON CONFLICT(child_thread_id) DO NOTHING
                 allowed_sources,
                 model_providers,
                 cwd_filters: None,
+                section: ThreadSectionFilter::All,
                 anchor,
                 sort_key,
                 sort_direction: SortDirection::Desc,
                 search_term: None,
             },
-            sort_key == crate::SortKey::RecencyAt,
+            matches!(
+                sort_key,
+                crate::SortKey::RecencyAt | crate::SortKey::SectionPosition
+            ),
         );
         push_thread_order_and_limit(
             &mut builder,
             sort_key,
             SortDirection::Desc,
             OrderByIndex::Enabled,
-            sort_key == crate::SortKey::RecencyAt,
+            matches!(
+                sort_key,
+                crate::SortKey::RecencyAt | crate::SortKey::SectionPosition
+            ),
             limit,
         );
 
@@ -536,6 +585,7 @@ ON CONFLICT(child_thread_id) DO NOTHING
         &self,
         metadata: &crate::ThreadMetadata,
     ) -> anyhow::Result<bool> {
+        validate_thread_section_metadata(metadata)?;
         let updated_at = self.allocate_thread_updated_at(metadata.updated_at)?;
         let recency_at = self.allocate_thread_recency_at(metadata.recency_at)?;
         let preview = metadata_preview(metadata);
@@ -570,11 +620,14 @@ INSERT INTO threads (
     first_user_message,
     archived,
     archived_at,
+    thread_section_id,
+    section_position,
+    section_entered_at_ms,
     git_sha,
     git_branch,
     git_origin_url,
     memory_mode
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO NOTHING
             "#,
         )
@@ -616,6 +669,9 @@ ON CONFLICT(id) DO NOTHING
         .bind(metadata.first_user_message.as_deref().unwrap_or_default())
         .bind(metadata.archived_at.is_some())
         .bind(metadata.archived_at.map(datetime_to_epoch_seconds))
+        .bind(metadata.section.as_ref().map(|section| section.id.as_str()))
+        .bind(metadata.section_position)
+        .bind(metadata.section_entered_at.map(datetime_to_epoch_millis))
         .bind(metadata.git_sha.as_deref())
         .bind(metadata.git_branch.as_deref())
         .bind(metadata.git_origin_url.as_deref())
@@ -802,6 +858,7 @@ WHERE id = ?
         metadata: &crate::ThreadMetadata,
         creation_memory_mode: Option<&str>,
     ) -> anyhow::Result<()> {
+        validate_thread_section_metadata(metadata)?;
         let updated_at = self.allocate_thread_updated_at(metadata.updated_at)?;
         let insert_recency_at = self.allocate_thread_recency_at(metadata.recency_at)?;
         let preview = metadata_preview(metadata);
@@ -839,11 +896,14 @@ INSERT INTO threads (
     first_user_message,
     archived,
     archived_at,
+    thread_section_id,
+    section_position,
+    section_entered_at_ms,
     git_sha,
     git_branch,
     git_origin_url,
     memory_mode
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(id) DO UPDATE SET
     rollout_path = excluded.rollout_path,
     created_at = excluded.created_at,
@@ -914,6 +974,9 @@ ON CONFLICT(id) DO UPDATE SET
         .bind(metadata.first_user_message.as_deref().unwrap_or_default())
         .bind(metadata.archived_at.is_some())
         .bind(metadata.archived_at.map(datetime_to_epoch_seconds))
+        .bind(metadata.section.as_ref().map(|section| section.id.as_str()))
+        .bind(metadata.section_position)
+        .bind(metadata.section_entered_at.map(datetime_to_epoch_millis))
         .bind(metadata.git_sha.as_deref())
         .bind(metadata.git_branch.as_deref())
         .bind(metadata.git_origin_url.as_deref())
@@ -1226,8 +1289,11 @@ WITH RECURSIVE subtree(child_thread_id, parent_thread_id) AS (
         ),
         None => builder.push(" FROM threads"),
     };
-    let include_thread_id_tiebreaker =
-        relation_filter.is_some() || filters.sort_key == SortKey::RecencyAt;
+    let include_thread_id_tiebreaker = relation_filter.is_some()
+        || matches!(
+            filters.sort_key,
+            SortKey::RecencyAt | SortKey::SectionPosition
+        );
     push_thread_filters(builder, filters, include_thread_id_tiebreaker);
     match relation_filter {
         Some(crate::ThreadRelationFilter::DirectChildrenOf(parent_thread_id)) => {
@@ -1288,6 +1354,19 @@ SELECT
     threads.tokens_used,
     threads.first_user_message,
     threads.archived_at,
+    threads.thread_section_id AS section,
+    (
+        SELECT thread_sections.name
+        FROM thread_sections
+        WHERE thread_sections.id = threads.thread_section_id
+    ) AS section_name,
+    (
+        SELECT thread_sections.appearance
+        FROM thread_sections
+        WHERE thread_sections.id = threads.thread_section_id
+    ) AS section_appearance,
+    threads.section_position,
+    threads.section_entered_at_ms,
     threads.git_sha,
     threads.git_branch,
     threads.git_origin_url
@@ -1316,11 +1395,22 @@ fn thread_spawn_parent_thread_id_from_source_str(source: &str) -> Option<ThreadI
 }
 
 #[derive(Clone, Copy)]
+pub enum ThreadSectionFilter<'a> {
+    /// Include threads regardless of section membership.
+    All,
+    /// Include only threads without a section.
+    Unsectioned,
+    /// Include only threads in the identified section.
+    Section(&'a str),
+}
+
+#[derive(Clone, Copy)]
 pub struct ThreadFilterOptions<'a> {
     pub archived_only: bool,
     pub allowed_sources: &'a [String],
     pub model_providers: Option<&'a [String]>,
     pub cwd_filters: Option<&'a [PathBuf]>,
+    pub section: ThreadSectionFilter<'a>,
     pub anchor: Option<&'a crate::Anchor>,
     pub sort_key: SortKey,
     pub sort_direction: SortDirection,
@@ -1337,6 +1427,7 @@ pub(super) fn push_thread_filters<'a>(
         allowed_sources,
         model_providers,
         cwd_filters,
+        section,
         anchor,
         sort_key,
         sort_direction,
@@ -1349,6 +1440,16 @@ pub(super) fn push_thread_filters<'a>(
         builder.push(" AND threads.archived = 0");
     }
     builder.push(" AND threads.preview <> ''");
+    match section {
+        ThreadSectionFilter::Section(section) => {
+            builder.push(" AND threads.thread_section_id = ");
+            builder.push_bind(section);
+        }
+        ThreadSectionFilter::Unsectioned => {
+            builder.push(" AND threads.thread_section_id IS NULL");
+        }
+        ThreadSectionFilter::All => {}
+    }
     if !allowed_sources.is_empty() {
         builder.push(" AND threads.source IN (");
         let mut separated = builder.separated(", ");
@@ -1396,6 +1497,7 @@ pub(super) fn push_thread_filters<'a>(
             SortKey::CreatedAt => "threads.created_at_ms",
             SortKey::UpdatedAt => "threads.updated_at_ms",
             SortKey::RecencyAt => "threads.recency_at_ms",
+            SortKey::SectionPosition => "threads.section_position",
         };
         let operator = match sort_direction {
             SortDirection::Asc => ">",
@@ -1444,6 +1546,7 @@ pub(super) fn push_thread_order_and_limit(
         SortKey::CreatedAt => "threads.created_at_ms",
         SortKey::UpdatedAt => "threads.updated_at_ms",
         SortKey::RecencyAt => "threads.recency_at_ms",
+        SortKey::SectionPosition => "threads.section_position",
     };
     let order_direction = match sort_direction {
         SortDirection::Asc => "ASC",
@@ -1475,6 +1578,20 @@ fn metadata_preview(metadata: &crate::ThreadMetadata) -> &str {
         .unwrap_or_default()
 }
 
+fn validate_thread_section_metadata(metadata: &crate::ThreadMetadata) -> anyhow::Result<()> {
+    match (
+        metadata.section.as_ref(),
+        metadata.section_position,
+        metadata.section_entered_at,
+    ) {
+        (None, None, None) | (Some(_), Some(_), Some(_)) => Ok(()),
+        _ => anyhow::bail!(
+            "thread {} has incomplete section ordering metadata: section, section_position, and section_entered_at must all be set or all be absent",
+            metadata.id
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1492,6 +1609,63 @@ mod tests {
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use std::path::PathBuf;
+
+    #[tokio::test]
+    async fn rollout_path_compare_and_swap_rejects_stale_and_replayed_updates() {
+        let codex_home = unique_temp_dir();
+        let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string())
+            .await
+            .expect("state db should initialize");
+        let thread_id = ThreadId::new();
+        let original_path = codex_home.join("original.jsonl");
+        let replacement_path = codex_home.join("replacement.jsonl");
+        let replay_path = codex_home.join("replay.jsonl");
+        let metadata = test_thread_metadata(&codex_home, thread_id, original_path.clone());
+        runtime
+            .upsert_thread(&metadata)
+            .await
+            .expect("insert thread metadata");
+
+        assert!(
+            !runtime
+                .replace_rollout_path_if_current(
+                    thread_id,
+                    replacement_path.as_path(),
+                    replay_path.as_path(),
+                )
+                .await
+                .expect("reject stale swap")
+        );
+        assert!(
+            runtime
+                .replace_rollout_path_if_current(
+                    thread_id,
+                    original_path.as_path(),
+                    replacement_path.as_path(),
+                )
+                .await
+                .expect("apply current swap")
+        );
+        assert!(
+            !runtime
+                .replace_rollout_path_if_current(
+                    thread_id,
+                    original_path.as_path(),
+                    replay_path.as_path(),
+                )
+                .await
+                .expect("reject replayed swap")
+        );
+        assert_eq!(
+            runtime
+                .get_thread(thread_id)
+                .await
+                .expect("read metadata")
+                .expect("thread metadata")
+                .rollout_path,
+            replacement_path
+        );
+    }
 
     #[tokio::test]
     async fn upsert_thread_keeps_creation_memory_mode_for_existing_rows() {
@@ -1819,6 +1993,7 @@ mod tests {
                     allowed_sources: &[],
                     model_providers: Some(&model_providers),
                     cwd_filters: None,
+                    section: ThreadSectionFilter::All,
                     anchor: Some(&anchor),
                     sort_key: SortKey::UpdatedAt,
                     sort_direction: SortDirection::Asc,
@@ -1847,6 +2022,7 @@ mod tests {
                     allowed_sources: &[],
                     model_providers: Some(&model_providers),
                     cwd_filters: None,
+                    section: ThreadSectionFilter::All,
                     anchor: page.next_anchor.as_ref(),
                     sort_key: SortKey::UpdatedAt,
                     sort_direction: SortDirection::Asc,
@@ -1900,6 +2076,7 @@ mod tests {
                     allowed_sources: &[],
                     model_providers: None,
                     cwd_filters: Some(cwd_filters.as_slice()),
+                    section: ThreadSectionFilter::All,
                     anchor: None,
                     sort_key: SortKey::UpdatedAt,
                     sort_direction: SortDirection::Desc,
@@ -1932,6 +2109,7 @@ mod tests {
                     allowed_sources: &[],
                     model_providers: None,
                     cwd_filters: Some(cwd_filters.as_slice()),
+                    section: ThreadSectionFilter::All,
                     anchor: first_page.next_anchor.as_ref(),
                     sort_key: SortKey::UpdatedAt,
                     sort_direction: SortDirection::Desc,
@@ -1957,6 +2135,7 @@ mod tests {
                     allowed_sources: &[],
                     model_providers: None,
                     cwd_filters: Some(&[]),
+                    section: ThreadSectionFilter::All,
                     anchor: None,
                     sort_key: SortKey::UpdatedAt,
                     sort_direction: SortDirection::Desc,
@@ -2021,6 +2200,7 @@ mod tests {
                         allowed_sources: &[],
                         model_providers: Some(&model_providers),
                         cwd_filters,
+                        section: ThreadSectionFilter::All,
                         anchor,
                         sort_key,
                         sort_direction: SortDirection::Desc,
@@ -2114,6 +2294,7 @@ mod tests {
                 allowed_sources: &[],
                 model_providers: None,
                 cwd_filters: None,
+                section: ThreadSectionFilter::All,
                 anchor: None,
                 sort_key: SortKey::CreatedAt,
                 sort_direction: SortDirection::Desc,
@@ -2142,6 +2323,7 @@ mod tests {
             allowed_sources: &[],
             model_providers: None,
             cwd_filters: None,
+            section: ThreadSectionFilter::All,
             anchor,
             sort_key: SortKey::CreatedAt,
             sort_direction: SortDirection::Desc,
@@ -2786,6 +2968,7 @@ mod tests {
                     allowed_sources: &[],
                     model_providers: None,
                     cwd_filters: None,
+                    section: ThreadSectionFilter::All,
                     anchor: None,
                     sort_key: SortKey::RecencyAt,
                     sort_direction: SortDirection::Desc,
@@ -2818,6 +3001,7 @@ mod tests {
                     allowed_sources: &[],
                     model_providers: None,
                     cwd_filters: None,
+                    section: ThreadSectionFilter::All,
                     anchor: first_page.next_anchor.as_ref(),
                     sort_key: SortKey::RecencyAt,
                     sort_direction: SortDirection::Desc,
@@ -2850,6 +3034,7 @@ mod tests {
                     allowed_sources: &[],
                     model_providers: None,
                     cwd_filters: None,
+                    section: ThreadSectionFilter::All,
                     anchor: second_page.next_anchor.as_ref(),
                     sort_key: SortKey::RecencyAt,
                     sort_direction: SortDirection::Desc,

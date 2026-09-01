@@ -9,7 +9,7 @@ use anyhow::Context;
 use chrono::DateTime;
 use chrono::Utc;
 use codex_protocol::ThreadId;
-use codex_protocol::protocol::RolloutItem;
+use codex_history::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 pub use codex_state::LogEntry;
 use codex_state::ThreadMetadataBuilder;
@@ -401,6 +401,7 @@ pub async fn list_threads_db(
         allowed_sources: allowed_sources.as_slice(),
         model_providers: model_providers.as_deref(),
         cwd_filters: normalized_cwd_filters.as_deref(),
+        section: codex_state::ThreadSectionFilter::All,
         anchor: anchor.as_ref(),
         sort_key: match sort_key {
             ThreadSortKey::CreatedAt => codex_state::SortKey::CreatedAt,
@@ -435,13 +436,13 @@ pub async fn list_threads_db(
                     item.rollout_path = existing_path;
                     valid_items.push(item);
                 } else {
+                    // Omit unavailable paths without discarding the recorder's selected identity.
                     warn!(
                         "state db list_threads returned stale rollout path for thread {}: {}",
                         item.id,
                         item.rollout_path.display()
                     );
                     warn!("state db discrepancy during list_threads_db: stale_db_path_dropped");
-                    let _ = ctx.delete_thread(item.id).await;
                 }
             }
             page.items = valid_items;
@@ -528,7 +529,15 @@ pub async fn reconcile_rollout(
     let mut metadata = outcome.metadata;
     let memory_mode = outcome.memory_mode.unwrap_or_else(|| "enabled".to_string());
     metadata.cwd = normalize_cwd_for_state_db(&metadata.cwd);
-    if let Ok(Some(existing_metadata)) = ctx.get_thread(metadata.id).await {
+    let existing_metadata = ctx.get_thread(metadata.id).await.ok().flatten();
+    // A filesystem scan cannot choose among immutable rollouts owned by one thread.
+    if existing_metadata
+        .as_ref()
+        .is_some_and(|existing| existing.rollout_path.as_path() != rollout_path)
+    {
+        return;
+    }
+    if let Some(existing_metadata) = existing_metadata {
         metadata.prefer_existing_git_info(&existing_metadata);
         metadata.prefer_existing_explicit_title(&existing_metadata);
     }
@@ -576,6 +585,10 @@ pub async fn read_repair_rollout_path(
     if let Some(thread_id) = thread_id
         && let Ok(Some(metadata)) = ctx.get_thread(thread_id).await
     {
+        // The recorder-selected path remains authoritative for an existing row.
+        if metadata.rollout_path.as_path() != rollout_path {
+            return;
+        }
         saw_existing_metadata = true;
         let mut repaired = metadata.clone();
         repaired.rollout_path = rollout_path.to_path_buf();

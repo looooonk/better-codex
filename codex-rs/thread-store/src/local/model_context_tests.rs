@@ -10,11 +10,12 @@ use codex_protocol::models::AgentMessageInputContent;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AskForApproval;
-use codex_protocol::protocol::CompactedItem;
+use codex_rollout::CompactedItem;
 use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::HistoryPosition;
 use codex_protocol::protocol::ItemCompletedEvent;
-use codex_protocol::protocol::RolloutItem;
-use codex_protocol::protocol::RolloutLine;
+use codex_rollout::RolloutItem;
+use codex_rollout::RolloutLine;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::TurnCompleteEvent;
@@ -245,6 +246,85 @@ async fn ignores_contextual_user_messages_when_selecting_turn_context() {
     }));
 }
 
+#[tokio::test]
+async fn replays_replacement_lineage_with_canonical_head_metadata() {
+    let home = TempDir::new().expect("temp dir");
+    let uuid = Uuid::from_u128(/*v*/ 1100);
+    let thread_id = codex_protocol::ThreadId::from_string(&uuid.to_string()).expect("thread id");
+    let root_path = write_paginated_rollout(
+        home.path(),
+        "2025-01-03T13-01-00",
+        uuid,
+        [user_message("root message")],
+    );
+    let middle_id = codex_protocol::RolloutId::new();
+    let middle_path = write_replacement_rollout(
+        home.path(),
+        "2025-01-03T13-01-01",
+        uuid,
+        middle_id,
+        [user_message("middle message")],
+    );
+    set_history_base(
+        middle_path.as_path(),
+        HistoryPosition {
+            thread_id,
+            end_ordinal_exclusive: 2,
+            end_byte_offset: std::fs::metadata(root_path)
+                .expect("root metadata")
+                .len(),
+        },
+    );
+    let head_id = codex_protocol::RolloutId::new();
+    let head_path = write_replacement_rollout(
+        home.path(),
+        "2025-01-03T13-01-02",
+        uuid,
+        head_id,
+        [user_message("head message")],
+    );
+    set_history_base(
+        head_path.as_path(),
+        HistoryPosition {
+            thread_id: middle_id,
+            end_ordinal_exclusive: 4,
+            end_byte_offset: std::fs::metadata(middle_path)
+                .expect("middle metadata")
+                .len(),
+        },
+    );
+    let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
+
+    let context = store
+        .load_latest_model_context(LoadThreadHistoryParams {
+            thread_id,
+            include_archived: false,
+        })
+        .await
+        .expect("load replacement lineage");
+
+    assert!(matches!(
+        context.items.first(),
+        Some(RolloutItem::SessionMeta(meta)) if meta.meta.id == thread_id
+    ));
+    assert_eq!(
+        context
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                RolloutItem::ResponseItem(ResponseItem::Message { content, .. }) => {
+                    content.first().and_then(|content| match content {
+                        ContentItem::InputText { text } => Some(text.as_str()),
+                        _ => None,
+                    })
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>(),
+        vec!["root message", "middle message", "head message"]
+    );
+}
+
 fn write_paginated_rollout<const N: usize>(
     home: &Path,
     timestamp: &str,
@@ -256,6 +336,38 @@ fn write_paginated_rollout<const N: usize>(
             .expect("write session file");
     append_items(path.as_path(), items);
     path
+}
+
+fn write_replacement_rollout<const N: usize>(
+    home: &Path,
+    timestamp: &str,
+    uuid: Uuid,
+    rollout_id: codex_protocol::RolloutId,
+    items: [RolloutItem; N],
+) -> PathBuf {
+    let path = write_paginated_rollout(home, timestamp, uuid, items);
+    let replacement = path.with_file_name(format!(
+        "rollout-{timestamp}-{}_{rollout_id}.jsonl",
+        uuid
+    ));
+    std::fs::rename(path, replacement.as_path()).expect("rename replacement rollout");
+    replacement
+}
+
+fn set_history_base(path: &Path, history_base: HistoryPosition) {
+    let contents = std::fs::read_to_string(path).expect("read rollout");
+    let mut lines = contents.lines();
+    let mut head: serde_json::Value =
+        serde_json::from_str(lines.next().expect("session metadata")).expect("parse metadata");
+    head["payload"]["history_base"] =
+        serde_json::to_value(history_base).expect("serialize history base");
+    let mut updated = serde_json::to_string(&head).expect("serialize metadata");
+    for line in lines {
+        updated.push('\n');
+        updated.push_str(line);
+    }
+    updated.push('\n');
+    std::fs::write(path, updated).expect("write history base");
 }
 
 async fn assert_reverse_scan_matches_full_history(path: &Path) {

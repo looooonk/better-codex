@@ -10,11 +10,11 @@ use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::session::turn_context::TurnContext;
 use codex_analytics::CompactionTrigger;
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
 use codex_protocol::items::TurnItem;
-use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::TurnStartedEvent;
 
@@ -87,7 +87,7 @@ async fn run_compact_task_inner(
     sess: &Arc<Session>,
     step_context: Arc<StepContext>,
     world_state: Arc<WorldState>,
-    preserved_turn_items: Vec<ResponseItem>,
+    preserved_turn_items: Vec<ResponseItemEnvelope>,
     trigger: CompactionTrigger,
 ) -> CodexResult<()> {
     let turn_context = &step_context.turn;
