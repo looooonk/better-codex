@@ -549,6 +549,7 @@ pub(crate) use process_exec_processor::ProcessExecRequestProcessor;
 pub(crate) use remote_control_processor::RemoteControlRequestProcessor;
 pub(crate) use search::SearchRequestProcessor;
 pub(crate) use thread_goal_processor::ThreadGoalRequestProcessor;
+pub(crate) use thread_queue_service::ThreadQueueService;
 pub(crate) use thread_processor::ThreadRequestProcessor;
 pub(crate) use turn_processor::TurnRequestProcessor;
 pub(crate) use windows_sandbox_processor::WindowsSandboxRequestProcessor;
@@ -652,6 +653,8 @@ mod request_errors;
 mod thread_delete;
 mod thread_goal_processor;
 mod thread_lifecycle;
+mod thread_queue_service;
+mod thread_queue_support;
 mod thread_resume_redaction;
 mod thread_summary;
 
