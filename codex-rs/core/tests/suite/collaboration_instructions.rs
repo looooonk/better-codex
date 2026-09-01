@@ -713,6 +713,7 @@ async fn resume_replays_collaboration_instructions() -> Result<()> {
         })
         .await?;
     wait_for_event(&initial.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+    initial.codex.shutdown_and_wait().await?;
 
     let resumed = builder.resume(&server, home, rollout_path).await?;
     resumed

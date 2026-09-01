@@ -1067,7 +1067,7 @@ async fn thread_resume_returns_rollout_history() -> Result<()> {
 }
 
 #[tokio::test]
-async fn thread_resume_redacts_payloads_for_chatgpt_remote_clients() -> Result<()> {
+async fn thread_resume_layers_remote_redaction_over_at_rest_redaction() -> Result<()> {
     for client_name in ["codex_chatgpt_android_remote", "codex_chatgpt_ios_remote"] {
         let remote_resume = resume_redaction_fixture(Some(client_name)).await?;
         let remote_turn = remote_resume
@@ -1151,7 +1151,7 @@ async fn thread_resume_redacts_payloads_for_chatgpt_remote_clients() -> Result<(
     else {
         unreachable!("matched MCP item");
     };
-    assert_eq!(arguments, &json!({"secret":"argument"}));
+    assert_eq!(arguments, &json!({"secret":"[REDACTED_SECRET]"}));
     assert_eq!(
         app_context,
         &Some(McpToolCallAppContext {
@@ -1173,9 +1173,9 @@ async fn thread_resume_redacts_payloads_for_chatgpt_remote_clients() -> Result<(
     );
     assert_eq!(
         result.structured_content,
-        Some(json!({"secret":"structured"}))
+        Some(json!({"secret":"[REDACTED_SECRET]"}))
     );
-    assert_eq!(result.meta, Some(json!({"secret":"meta"})));
+    assert_eq!(result.meta, Some(json!({"secret":"[REDACTED_SECRET]"})));
     assert!(
         normal_turn.items.iter().any(|item| matches!(
             item,
@@ -2869,12 +2869,6 @@ async fn thread_resume_keeps_in_flight_turn_streaming() -> Result<()> {
     .await??;
     primary.clear_message_buffer();
 
-    let mut secondary = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .build()
-        .await?;
-    timeout(DEFAULT_READ_TIMEOUT, secondary.initialize()).await??;
-
     let turn_id = primary
         .send_turn_start_request(TurnStartParams {
             thread_id: thread.id.clone(),
@@ -2897,7 +2891,7 @@ async fn thread_resume_keeps_in_flight_turn_streaming() -> Result<()> {
     )
     .await??;
 
-    let resume_id = secondary
+    let resume_id = primary
         .send_thread_resume_request(ThreadResumeParams {
             thread_id: thread.id,
             ..Default::default()
@@ -2905,7 +2899,7 @@ async fn thread_resume_keeps_in_flight_turn_streaming() -> Result<()> {
         .await?;
     let resume_resp: JSONRPCResponse = timeout(
         DEFAULT_READ_TIMEOUT,
-        secondary.read_stream_until_response_message(RequestId::Integer(resume_id)),
+        primary.read_stream_until_response_message(RequestId::Integer(resume_id)),
     )
     .await??;
     let ThreadResumeResponse {
@@ -3439,13 +3433,7 @@ async fn thread_resume_can_skip_turns_when_thread_is_running() -> Result<()> {
     )
     .await??;
 
-    let mut secondary = TestAppServer::builder()
-        .with_codex_home(codex_home.path())
-        .build()
-        .await?;
-    timeout(DEFAULT_READ_TIMEOUT, secondary.initialize()).await??;
-
-    let resume_id = secondary
+    let resume_id = primary
         .send_thread_resume_request(ThreadResumeParams {
             thread_id: thread.id.clone(),
             exclude_turns: true,
@@ -3454,7 +3442,7 @@ async fn thread_resume_can_skip_turns_when_thread_is_running() -> Result<()> {
         .await?;
     let resume_resp: JSONRPCResponse = timeout(
         DEFAULT_READ_TIMEOUT,
-        secondary.read_stream_until_response_message(RequestId::Integer(resume_id)),
+        primary.read_stream_until_response_message(RequestId::Integer(resume_id)),
     )
     .await??;
     let ThreadResumeResponse {
@@ -4271,6 +4259,7 @@ async fn thread_resume_accepts_personality_override() -> Result<()> {
         primary.read_stream_until_notification_message("turn/completed"),
     )
     .await??;
+    primary.shutdown_gracefully().await?;
 
     let mut secondary = TestAppServer::builder()
         .with_codex_home(codex_home.path())

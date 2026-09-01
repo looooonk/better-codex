@@ -163,6 +163,7 @@ use core_test_support::responses::mount_sse_once;
 use core_test_support::responses::sse;
 use core_test_support::responses::start_mock_server;
 use core_test_support::responses::strip_metadata_from_items;
+use core_test_support::responses::strip_response_item_ids;
 use core_test_support::test_codex::local;
 use core_test_support::test_codex::test_codex;
 use core_test_support::test_path_buf;
@@ -1773,8 +1774,10 @@ async fn record_initial_history_reconstructs_resumed_transcript() {
 #[tokio::test]
 async fn record_conversation_items_stamps_history_metadata_and_preserves_existing_values() {
     let (session, turn_context) = make_session_and_context().await;
-    let fresh_item = user_message("fresh");
+    let mut fresh_item = user_message("fresh");
+    fresh_item.set_id(Some(ResponseItemId::with_suffix("msg", "fresh")));
     let mut existing_item = user_message("existing");
+    existing_item.set_id(Some(ResponseItemId::with_suffix("msg", "existing")));
     existing_item.set_turn_id_if_missing("older-turn");
     existing_item.set_create_time_if_missing(serde_json::Number::from(123));
 
@@ -1796,7 +1799,6 @@ async fn record_conversation_items_stamps_history_metadata_and_preserves_existin
         panic!("expected stamped user message metadata");
     };
     assert!(fresh_metadata.create_time.is_some());
-    existing_item.set_id(recorded_existing.id().cloned());
     assert_eq!(recorded_existing, &existing_item);
 }
 
@@ -1915,9 +1917,7 @@ async fn record_inter_agent_communication_preserves_item_id_in_rollout_and_resum
     let (mut session, turn_context, _rx) = make_session_and_context_with_auth_and_config_and_rx(
         CodexAuth::from_api_key("Test API Key"),
         Vec::new(),
-        |config| {
-            let _ = config.features.enable(Feature::ItemIds);
-        },
+        |_| {},
     )
     .await;
     let rollout_path =
@@ -1966,9 +1966,7 @@ async fn record_inter_agent_communication_preserves_item_id_in_rollout_and_resum
         make_session_and_context_with_auth_and_config_and_rx(
             CodexAuth::from_api_key("Test API Key"),
             Vec::new(),
-            |config| {
-                let _ = config.features.enable(Feature::ItemIds);
-            },
+            |_| {},
         )
         .await;
     resumed_session
@@ -2026,9 +2024,7 @@ async fn prepares_image_failures_before_history_insertion() {
     let (session, turn_context, _rx) = make_session_and_context_with_auth_and_config_and_rx(
         CodexAuth::from_api_key("Test API Key"),
         Vec::new(),
-        |config| {
-            let _ = config.features.enable(Feature::ItemIds);
-        },
+        |_| {},
     )
     .await;
     let item = ResponseItem::FunctionCallOutput {
@@ -2266,7 +2262,10 @@ async fn resumed_history_injects_initial_context_on_first_context_update_only() 
     let initial_context = build_initial_context(&session, &turn_context).await;
     expected.extend(initial_context);
     let history_after_seed = session.clone_history().await;
-    assert_eq!(expected, raw_history_items(&history_after_seed));
+    assert_eq!(
+        strip_response_item_ids(&expected),
+        strip_response_item_ids(&raw_history_items(&history_after_seed))
+    );
 
     session
         .record_context_updates_and_set_reference_context_item(&step_context)
@@ -2872,7 +2871,10 @@ async fn record_initial_history_reconstructs_forked_transcript() {
         .await;
 
     let history = session.state.lock().await.clone_history();
-    assert_eq!(expected, raw_history_items(&history));
+    assert_eq!(
+        strip_response_item_ids(&expected),
+        strip_response_item_ids(&raw_history_items(&history))
+    );
 }
 
 #[tokio::test]
@@ -2880,9 +2882,7 @@ async fn start_new_context_window_assigns_and_persists_item_ids() {
     let (mut session, turn_context, _rx) = make_session_and_context_with_auth_and_config_and_rx(
         CodexAuth::from_api_key("Test API Key"),
         Vec::new(),
-        |config| {
-            let _ = config.features.enable(Feature::ItemIds);
-        },
+        |_| {},
     )
     .await;
     let rollout_path =
@@ -2935,9 +2935,7 @@ async fn record_initial_history_assigns_and_persists_id_for_forked_response_item
     let (mut session, _turn_context, _rx) = make_session_and_context_with_auth_and_config_and_rx(
         CodexAuth::from_api_key("Test API Key"),
         Vec::new(),
-        |config| {
-            let _ = config.features.enable(Feature::ItemIds);
-        },
+        |_| {},
     )
     .await;
     let rollout_path =
@@ -3341,6 +3339,7 @@ async fn thread_rollback_fails_without_persisted_thread_history() {
     let initial_context = build_initial_context(&sess, &tc).await;
     sess.record_conversation_items(tc.as_ref(), &initial_context)
         .await;
+    let history_before_rollback = sess.clone_history().await;
 
     handlers::thread_rollback(&sess, "sub-1".to_string(), /*num_turns*/ 1).await;
 
@@ -3355,7 +3354,7 @@ async fn thread_rollback_fails_without_persisted_thread_history() {
     );
     assert_eq!(
         raw_history_items(&sess.clone_history().await),
-        initial_context
+        raw_history_items(&history_before_rollback)
     );
 }
 
@@ -3775,6 +3774,7 @@ async fn thread_rollback_fails_when_turn_in_progress() {
     let initial_context = build_initial_context(&sess, &tc).await;
     sess.record_conversation_items(tc.as_ref(), &initial_context)
         .await;
+    let history_before_rollback = sess.clone_history().await;
 
     *sess.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
     handlers::thread_rollback(&sess, "sub-1".to_string(), /*num_turns*/ 1).await;
@@ -3786,7 +3786,10 @@ async fn thread_rollback_fails_when_turn_in_progress() {
     );
 
     let history = sess.clone_history().await;
-    assert_eq!(initial_context, raw_history_items(&history));
+    assert_eq!(
+        raw_history_items(&history_before_rollback),
+        raw_history_items(&history)
+    );
 }
 
 #[tokio::test]
@@ -3796,6 +3799,7 @@ async fn thread_rollback_fails_when_num_turns_is_zero() {
     let initial_context = build_initial_context(&sess, &tc).await;
     sess.record_conversation_items(tc.as_ref(), &initial_context)
         .await;
+    let history_before_rollback = sess.clone_history().await;
 
     handlers::thread_rollback(&sess, "sub-1".to_string(), /*num_turns*/ 0).await;
 
@@ -3807,7 +3811,10 @@ async fn thread_rollback_fails_when_num_turns_is_zero() {
     );
 
     let history = sess.clone_history().await;
-    assert_eq!(initial_context, raw_history_items(&history));
+    assert_eq!(
+        raw_history_items(&history_before_rollback),
+        raw_history_items(&history)
+    );
 }
 
 #[tokio::test]
@@ -9208,7 +9215,10 @@ async fn record_context_updates_and_set_reference_context_item_injects_full_cont
         .await;
     let history = session.clone_history().await;
     let initial_context = build_initial_context(&session, &turn_context).await;
-    assert_eq!(raw_history_items(&history), initial_context);
+    assert_eq!(
+        strip_response_item_ids(&raw_history_items(&history)),
+        strip_response_item_ids(&initial_context)
+    );
 
     let current_context = session.reference_context_item().await;
     assert_eq!(
@@ -9258,7 +9268,10 @@ async fn record_context_updates_and_set_reference_context_item_reinjects_full_co
     let mut expected_history = vec![compacted_summary];
     let initial_context = build_initial_context(&session, &turn_context).await;
     expected_history.extend(initial_context);
-    assert_eq!(raw_history_items(&history), expected_history);
+    assert_eq!(
+        strip_response_item_ids(&raw_history_items(&history)),
+        strip_response_item_ids(&expected_history)
+    );
 }
 
 #[tokio::test]
@@ -10016,13 +10029,8 @@ async fn task_finish_emits_turn_item_lifecycle_for_leftover_pending_user_input()
         internal_chat_message_metadata_passthrough: None,
     };
     assert!(
-        strip_metadata_from_items(&raw_history_items(&history))
-            .into_iter()
-            .map(|mut item| {
-                item.set_id(/*new_id*/ None);
-                item
-            })
-            .any(|item| item == expected),
+        strip_response_item_ids(&strip_metadata_from_items(&raw_history_items(&history)))
+            .contains(&expected),
         "expected pending input to be persisted into history on turn completion"
     );
 

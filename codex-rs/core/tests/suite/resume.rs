@@ -52,7 +52,7 @@ async fn resume_until_initial_messages(
             );
         }
 
-        drop(resumed);
+        resumed.codex.shutdown_and_wait().await?;
         tokio::time::sleep(poll_interval).await;
     }
 }
@@ -98,6 +98,7 @@ async fn resume_includes_initial_messages_from_rollout_events() -> Result<()> {
         .await?;
 
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    codex.shutdown_and_wait().await?;
 
     let resumed = resume_until_initial_messages(
         &mut builder,
@@ -184,6 +185,7 @@ async fn resume_includes_initial_messages_from_reasoning_events() -> Result<()> 
         .await?;
 
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+    codex.shutdown_and_wait().await?;
 
     let resumed = resume_until_initial_messages(
         &mut builder,
@@ -280,6 +282,7 @@ async fn resume_switches_models_preserves_base_instructions() -> Result<()> {
         .and_then(|v| v.as_str())
         .unwrap_or_default()
         .to_string();
+    codex.shutdown_and_wait().await?;
 
     let resumed_mock = mount_sse_sequence(
         &server,
@@ -408,6 +411,7 @@ async fn resume_model_switch_is_not_duplicated_after_pre_turn_override() -> Resu
         .await?;
     wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
     let _ = initial_mock.single_request();
+    codex.shutdown_and_wait().await?;
 
     let resumed_mock = mount_sse_once(
         &server,

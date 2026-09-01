@@ -34,6 +34,7 @@ use core_test_support::hooks::trust_discovered_hooks;
 use core_test_support::responses;
 use core_test_support::responses::ev_reasoning_item;
 use core_test_support::responses::mount_models_once;
+use core_test_support::responses::strip_response_item_ids_from_json;
 use core_test_support::skip_if_no_network;
 use core_test_support::test_codex::local_selections;
 use core_test_support::test_codex::test_codex;
@@ -1225,6 +1226,7 @@ async fn multiple_auto_compact_per_task_runs_after_token_limit_hit() {
         values
             .iter()
             .filter_map(|value| {
+                let value = strip_response_item_ids_from_json(value.clone());
                 if value
                     .get("type")
                     .and_then(|ty| ty.as_str())
@@ -1251,9 +1253,9 @@ async fn multiple_auto_compact_per_task_runs_after_token_limit_hit() {
                     return None;
                 }
                 if role == Some("user") {
-                    return strip_agents_parts_from_user_message(value);
+                    return strip_agents_parts_from_user_message(&value);
                 }
-                Some(value.clone())
+                Some(value)
             })
             .collect()
     }
@@ -2061,6 +2063,7 @@ async fn auto_compact_runs_after_resume_when_token_usage_is_over_limit() {
         compact_mock.requests().is_empty(),
         "remote compaction should not run before the next user message"
     );
+    initial.codex.shutdown_and_wait().await.unwrap();
 
     let mut resume_builder = test_codex().with_config(move |config| {
         set_test_compact_prompt(config);
@@ -4075,7 +4078,8 @@ async fn auto_compact_allows_multiple_attempts_when_interleaved_with_other_turn_
     let mut builder = test_codex().with_config(move |config| {
         config.model_provider = model_provider;
         set_test_compact_prompt(config);
-        config.model_auto_compact_token_limit = Some(200);
+        // Leave enough headroom for per-item request metadata before the second compaction.
+        config.model_auto_compact_token_limit = Some(300);
     });
     let codex = builder.build(&server).await.unwrap().codex;
 

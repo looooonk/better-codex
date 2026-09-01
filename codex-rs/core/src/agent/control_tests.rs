@@ -47,6 +47,7 @@ use codex_thread_store::LocalThreadStoreConfig;
 use codex_thread_store::PersistContext;
 use codex_thread_store::ThreadStore;
 use codex_utils_path_uri::PathUri;
+use core_test_support::responses::strip_response_item_ids;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use tokio::time::Duration;
@@ -1139,35 +1140,23 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
     let mut expected_final_answer =
         assistant_message("parent final answer", Some(MessagePhase::FinalAnswer));
     expected_final_answer.set_turn_id_if_missing(&turn_context.sub_id);
-    expected_final_answer.set_id(history_items[1].id().cloned());
-    let child_hint_metadata = match &history_items[2] {
-        ResponseItem::Message {
-            internal_chat_message_metadata_passthrough: Some(metadata),
-            ..
-        } => {
-            assert!(metadata.create_time.is_some());
-            metadata.clone()
-        }
-        _ => panic!("expected child hint message"),
-    };
-    let mut expected_child_hint = ResponseItem::Message {
+    let expected_child_hint = ResponseItem::Message {
         id: None,
         role: "developer".to_string(),
         content: vec![ContentItem::InputText {
             text: "Child subagent guidance.".to_string(),
         }],
         phase: None,
-        internal_chat_message_metadata_passthrough: Some(child_hint_metadata),
+        internal_chat_message_metadata_passthrough: None,
     };
-    expected_child_hint.set_id(history_items[2].id().cloned());
     let expected_history = [
         expected_parent_seed,
         expected_final_answer,
         expected_child_hint,
     ];
     assert_eq!(
-        history_items,
-        expected_history,
+        strip_response_item_ids(&history_items),
+        strip_response_item_ids(&expected_history),
         "full-history forked child history should replace parent usage hints with the child subagent hint while filtering non-final assistant/tool chatter"
     );
     assert_eq!(

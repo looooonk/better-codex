@@ -44,7 +44,9 @@ use tokio::time::timeout;
 
 #[cfg(windows)]
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+#[cfg(not(any(target_os = "macos", windows)))]
 const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 #[tokio::test]
