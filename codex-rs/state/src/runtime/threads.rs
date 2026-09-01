@@ -1113,6 +1113,10 @@ WHERE id = ?
             self.thread_goals
                 .delete_thread_goal_in_transaction(*thread_id, &mut goals_tx)
                 .await?;
+            sqlx::query("DELETE FROM thread_queue_items WHERE thread_id = ?")
+                .bind(thread_id_string)
+                .execute(&mut *state_tx)
+                .await?;
         }
 
         let now = Utc::now().timestamp();

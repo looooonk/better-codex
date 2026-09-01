@@ -1,0 +1,523 @@
+use super::*;
+use crate::QueuedSubmissionRecord;
+use crate::QueuedSubmissionState;
+use crate::QueuedSubmissionTerminalStatus;
+use std::fmt;
+use uuid::Uuid;
+
+pub const MAX_QUEUED_SUBMISSIONS: usize = 100;
+pub const MAX_QUEUED_INPUT_BYTES: usize = 1024 * 1024;
+const TERMINAL_TOMBSTONES_PER_THREAD: i64 = 100;
+const QUEUED_SUBMISSION_COLUMNS: &str =
+    "id, thread_id, payload_json, client_user_message_id, state, turn_id, terminal_status";
+
+#[derive(Debug)]
+pub enum ThreadQueueError {
+    QueueFull,
+    InputBytesExceeded,
+    InvalidReorder,
+    Storage(anyhow::Error),
+}
+
+impl fmt::Display for ThreadQueueError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::QueueFull => write!(
+                formatter,
+                "queue cannot contain more than {MAX_QUEUED_SUBMISSIONS} submissions"
+            ),
+            Self::InputBytesExceeded => write!(
+                formatter,
+                "queued input cannot exceed {MAX_QUEUED_INPUT_BYTES} bytes per thread"
+            ),
+            Self::InvalidReorder => write!(
+                formatter,
+                "queue reorder must include every pending submission exactly once"
+            ),
+            Self::Storage(error) => write!(formatter, "queue storage failed: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for ThreadQueueError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Storage(error) => Some(error.as_ref()),
+            Self::QueueFull | Self::InputBytesExceeded | Self::InvalidReorder => None,
+        }
+    }
+}
+
+impl From<sqlx::Error> for ThreadQueueError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Storage(error.into())
+    }
+}
+
+impl From<anyhow::Error> for ThreadQueueError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Storage(error)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum QueueClaimResult {
+    Claimed(QueuedSubmissionRecord),
+    Existing(QueuedSubmissionRecord),
+    Busy(QueuedSubmissionRecord),
+    Empty,
+}
+
+impl StateRuntime {
+    pub async fn enqueue_queued_submission(
+        &self,
+        thread_id: ThreadId,
+        payload: &str,
+        client_user_message_id: &str,
+    ) -> Result<QueuedSubmissionRecord, ThreadQueueError> {
+        if let Some(existing) = self
+            .queued_submission_by_client_message_id(thread_id, client_user_message_id)
+            .await?
+        {
+            return Ok(existing);
+        }
+        let id = Uuid::now_v7().to_string();
+        let now_ms = datetime_to_epoch_millis(Utc::now());
+        let row = sqlx::query(&format!(
+            r#"
+INSERT INTO thread_queue_items (
+    id, thread_id, payload_json, client_user_message_id, queue_order,
+    state, turn_id, terminal_status, created_at_ms, updated_at_ms
+)
+SELECT ?, ?, ?, ?,
+       COALESCE((
+           SELECT MAX(queue_order) FROM thread_queue_items
+           WHERE thread_id = ? AND state != 'terminal'
+       ), -1) + 1,
+       'pending', NULL, NULL, ?, ?
+WHERE (SELECT COUNT(*) FROM thread_queue_items WHERE thread_id = ? AND state = 'pending') < ?
+  AND COALESCE((
+      SELECT SUM(length(CAST(payload_json AS BLOB)))
+      FROM thread_queue_items WHERE thread_id = ? AND state = 'pending'
+  ), 0) + ? <= ?
+RETURNING {QUEUED_SUBMISSION_COLUMNS}
+            "#
+        ))
+        .bind(&id)
+        .bind(thread_id.to_string())
+        .bind(payload)
+        .bind(client_user_message_id)
+        .bind(thread_id.to_string())
+        .bind(now_ms)
+        .bind(now_ms)
+        .bind(thread_id.to_string())
+        .bind(i64::try_from(MAX_QUEUED_SUBMISSIONS).map_err(anyhow::Error::from)?)
+        .bind(thread_id.to_string())
+        .bind(i64::try_from(payload.len()).map_err(anyhow::Error::from)?)
+        .bind(i64::try_from(MAX_QUEUED_INPUT_BYTES).map_err(anyhow::Error::from)?)
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        if let Some(row) = row {
+            return QueuedSubmissionRecord::try_from_row(&row).map_err(Into::into);
+        }
+        let (count, bytes): (i64, i64) = sqlx::query_as(
+            r#"
+SELECT COUNT(*), COALESCE(SUM(length(CAST(payload_json AS BLOB))), 0)
+FROM thread_queue_items WHERE thread_id = ? AND state = 'pending'
+            "#,
+        )
+        .bind(thread_id.to_string())
+        .fetch_one(self.pool.as_ref())
+        .await?;
+        if count >= i64::try_from(MAX_QUEUED_SUBMISSIONS).map_err(anyhow::Error::from)? {
+            Err(ThreadQueueError::QueueFull)
+        } else if bytes + i64::try_from(payload.len()).map_err(anyhow::Error::from)?
+            > i64::try_from(MAX_QUEUED_INPUT_BYTES).map_err(anyhow::Error::from)?
+        {
+            Err(ThreadQueueError::InputBytesExceeded)
+        } else {
+            Err(ThreadQueueError::Storage(anyhow::anyhow!(
+                "queue admission changed concurrently"
+            )))
+        }
+    }
+
+    pub async fn queued_submission_by_client_message_id(
+        &self,
+        thread_id: ThreadId,
+        client_user_message_id: &str,
+    ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
+        let row = sqlx::query(&format!(
+            "SELECT {QUEUED_SUBMISSION_COLUMNS} FROM thread_queue_items WHERE thread_id = ? AND client_user_message_id = ?"
+        ))
+        .bind(thread_id.to_string())
+        .bind(client_user_message_id)
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        row.as_ref()
+            .map(QueuedSubmissionRecord::try_from_row)
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    pub async fn list_queued_submissions(
+        &self,
+        thread_id: ThreadId,
+        offset: usize,
+        limit: usize,
+    ) -> Result<Vec<QueuedSubmissionRecord>, ThreadQueueError> {
+        let rows = sqlx::query(&format!(
+            r#"
+SELECT {QUEUED_SUBMISSION_COLUMNS}
+FROM thread_queue_items
+WHERE thread_id = ? AND state = 'pending'
+ORDER BY queue_order, created_at_ms, id
+LIMIT ? OFFSET ?
+            "#
+        ))
+        .bind(thread_id.to_string())
+        .bind(i64::try_from(limit).map_err(anyhow::Error::from)?)
+        .bind(i64::try_from(offset).map_err(anyhow::Error::from)?)
+        .fetch_all(self.pool.as_ref())
+        .await?;
+        rows.iter()
+            .map(QueuedSubmissionRecord::try_from_row)
+            .collect::<anyhow::Result<Vec<_>>>()
+            .map_err(Into::into)
+    }
+
+    pub async fn queued_submission(
+        &self,
+        thread_id: ThreadId,
+        item_id: &str,
+    ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
+        let row = sqlx::query(&format!(
+            "SELECT {QUEUED_SUBMISSION_COLUMNS} FROM thread_queue_items WHERE thread_id = ? AND id = ?"
+        ))
+        .bind(thread_id.to_string())
+        .bind(item_id)
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        row.as_ref()
+            .map(QueuedSubmissionRecord::try_from_row)
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    pub async fn active_queued_submission(
+        &self,
+        thread_id: ThreadId,
+    ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
+        let row = sqlx::query(&format!(
+            r#"
+SELECT {QUEUED_SUBMISSION_COLUMNS}
+FROM thread_queue_items
+WHERE thread_id = ? AND state IN ('starting', 'inflight')
+ORDER BY updated_at_ms DESC LIMIT 1
+            "#
+        ))
+        .bind(thread_id.to_string())
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        row.as_ref()
+            .map(QueuedSubmissionRecord::try_from_row)
+            .transpose()
+            .map_err(Into::into)
+    }
+
+    pub async fn update_queued_submission(
+        &self,
+        thread_id: ThreadId,
+        item_id: &str,
+        payload: &str,
+    ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
+        let row = sqlx::query(&format!(
+            r#"
+UPDATE thread_queue_items
+SET payload_json = ?, updated_at_ms = ?
+WHERE thread_id = ? AND id = ? AND state = 'pending'
+  AND COALESCE((
+      SELECT SUM(length(CAST(payload_json AS BLOB)))
+      FROM thread_queue_items
+      WHERE thread_id = ? AND state = 'pending' AND id <> ?
+  ), 0) + ? <= ?
+RETURNING {QUEUED_SUBMISSION_COLUMNS}
+            "#
+        ))
+        .bind(payload)
+        .bind(datetime_to_epoch_millis(Utc::now()))
+        .bind(thread_id.to_string())
+        .bind(item_id)
+        .bind(thread_id.to_string())
+        .bind(item_id)
+        .bind(i64::try_from(payload.len()).map_err(anyhow::Error::from)?)
+        .bind(i64::try_from(MAX_QUEUED_INPUT_BYTES).map_err(anyhow::Error::from)?)
+        .fetch_optional(self.pool.as_ref())
+        .await?;
+        if let Some(row) = row {
+            return QueuedSubmissionRecord::try_from_row(&row)
+                .map(Some)
+                .map_err(Into::into);
+        }
+        let pending = sqlx::query_scalar::<_, i64>(
+            "SELECT 1 FROM thread_queue_items WHERE thread_id = ? AND id = ? AND state = 'pending'",
+        )
+        .bind(thread_id.to_string())
+        .bind(item_id)
+        .fetch_optional(self.pool.as_ref())
+        .await?
+        .is_some();
+        if pending {
+            Err(ThreadQueueError::InputBytesExceeded)
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub async fn delete_queued_submission(
+        &self,
+        thread_id: ThreadId,
+        item_id: &str,
+    ) -> Result<bool, ThreadQueueError> {
+        Ok(sqlx::query(
+            "DELETE FROM thread_queue_items WHERE thread_id = ? AND id = ? AND state = 'pending'",
+        )
+        .bind(thread_id.to_string())
+        .bind(item_id)
+        .execute(self.pool.as_ref())
+        .await?
+        .rows_affected()
+            > 0)
+    }
+
+    pub async fn reorder_queued_submissions(
+        &self,
+        thread_id: ThreadId,
+        item_ids: &[String],
+    ) -> Result<(), ThreadQueueError> {
+        let mut transaction = self.pool.begin().await?;
+        let rows = sqlx::query_as::<_, (String, i64)>(
+            "SELECT id, queue_order FROM thread_queue_items WHERE thread_id = ? AND state = 'pending' ORDER BY queue_order, id",
+        )
+        .bind(thread_id.to_string())
+        .fetch_all(transaction.as_mut())
+        .await?;
+        let mut expected = rows.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
+        let mut requested = item_ids.to_vec();
+        expected.sort();
+        requested.sort();
+        if expected != requested || requested.windows(2).any(|pair| pair[0] == pair[1]) {
+            transaction.rollback().await?;
+            return Err(ThreadQueueError::InvalidReorder);
+        }
+        let max_order = sqlx::query_scalar::<_, Option<i64>>(
+            "SELECT MAX(queue_order) FROM thread_queue_items WHERE thread_id = ? AND state != 'terminal'",
+        )
+        .bind(thread_id.to_string())
+        .fetch_one(transaction.as_mut())
+        .await?
+        .unwrap_or(-1);
+        let temporary_base = max_order
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("queue order overflow"))?;
+        let mut available_orders = rows
+            .into_iter()
+            .map(|(_, queue_order)| queue_order)
+            .collect::<Vec<_>>();
+        available_orders.sort_unstable();
+        for (index, item_id) in item_ids.iter().enumerate() {
+            let temporary_order = temporary_base
+                .checked_add(i64::try_from(index).map_err(anyhow::Error::from)?)
+                .ok_or_else(|| anyhow::anyhow!("queue order overflow"))?;
+            sqlx::query(
+                "UPDATE thread_queue_items SET queue_order = ?, updated_at_ms = ? WHERE thread_id = ? AND id = ? AND state = 'pending'",
+            )
+            .bind(temporary_order)
+            .bind(datetime_to_epoch_millis(Utc::now()))
+            .bind(thread_id.to_string())
+            .bind(item_id)
+            .execute(transaction.as_mut())
+            .await?;
+        }
+        for (item_id, queue_order) in item_ids.iter().zip(available_orders) {
+            sqlx::query(
+                "UPDATE thread_queue_items SET queue_order = ? WHERE thread_id = ? AND id = ? AND state = 'pending'",
+            )
+            .bind(queue_order)
+            .bind(thread_id.to_string())
+            .bind(item_id)
+            .execute(transaction.as_mut())
+            .await?;
+        }
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub async fn claim_queued_submission(
+        &self,
+        thread_id: ThreadId,
+        item_id: Option<&str>,
+        turn_id: &str,
+    ) -> Result<QueueClaimResult, ThreadQueueError> {
+        if let Some(item_id) = item_id
+            && let Some(existing) = self.queued_submission(thread_id, item_id).await?
+            && existing.state != QueuedSubmissionState::Pending
+        {
+            return Ok(QueueClaimResult::Existing(existing));
+        }
+        if let Some(active) = self.active_queued_submission(thread_id).await? {
+            return Ok(QueueClaimResult::Busy(active));
+        }
+        let now_ms = datetime_to_epoch_millis(Utc::now());
+        let row = if let Some(item_id) = item_id {
+            sqlx::query(&format!(
+                r#"
+UPDATE thread_queue_items
+SET state = 'starting', turn_id = ?, updated_at_ms = ?
+WHERE thread_id = ? AND id = ? AND state = 'pending'
+  AND NOT EXISTS (
+      SELECT 1 FROM thread_queue_items
+      WHERE thread_id = ? AND state IN ('starting', 'inflight')
+  )
+RETURNING {QUEUED_SUBMISSION_COLUMNS}
+                "#
+            ))
+            .bind(turn_id)
+            .bind(now_ms)
+            .bind(thread_id.to_string())
+            .bind(item_id)
+            .bind(thread_id.to_string())
+            .fetch_optional(self.pool.as_ref())
+            .await?
+        } else {
+            sqlx::query(&format!(
+                r#"
+UPDATE thread_queue_items
+SET state = 'starting', turn_id = ?, updated_at_ms = ?
+WHERE id = (
+    SELECT id FROM thread_queue_items
+    WHERE thread_id = ? AND state = 'pending'
+    ORDER BY queue_order, created_at_ms, id LIMIT 1
+)
+  AND state = 'pending'
+  AND NOT EXISTS (
+      SELECT 1 FROM thread_queue_items
+      WHERE thread_id = ? AND state IN ('starting', 'inflight')
+  )
+RETURNING {QUEUED_SUBMISSION_COLUMNS}
+                "#
+            ))
+            .bind(turn_id)
+            .bind(now_ms)
+            .bind(thread_id.to_string())
+            .bind(thread_id.to_string())
+            .fetch_optional(self.pool.as_ref())
+            .await?
+        };
+        if let Some(row) = row {
+            return QueuedSubmissionRecord::try_from_row(&row)
+                .map(QueueClaimResult::Claimed)
+                .map_err(Into::into);
+        }
+        if let Some(item_id) = item_id
+            && let Some(existing) = self.queued_submission(thread_id, item_id).await?
+            && existing.state != QueuedSubmissionState::Pending
+        {
+            return Ok(QueueClaimResult::Existing(existing));
+        }
+        if let Some(active) = self.active_queued_submission(thread_id).await? {
+            Ok(QueueClaimResult::Busy(active))
+        } else {
+            Ok(QueueClaimResult::Empty)
+        }
+    }
+
+    pub async fn release_queued_submission_claim(
+        &self,
+        thread_id: ThreadId,
+        item_id: &str,
+        turn_id: &str,
+    ) -> Result<bool, ThreadQueueError> {
+        Ok(sqlx::query(
+            r#"
+UPDATE thread_queue_items
+SET state = 'pending', turn_id = NULL,
+    updated_at_ms = ?
+WHERE thread_id = ? AND id = ? AND turn_id = ? AND state = 'starting'
+            "#,
+        )
+        .bind(datetime_to_epoch_millis(Utc::now()))
+        .bind(thread_id.to_string())
+        .bind(item_id)
+        .bind(turn_id)
+        .execute(self.pool.as_ref())
+        .await?
+        .rows_affected()
+            > 0)
+    }
+
+    pub async fn mark_queued_submission_inflight(
+        &self,
+        thread_id: ThreadId,
+        turn_id: &str,
+    ) -> Result<bool, ThreadQueueError> {
+        Ok(sqlx::query(
+            r#"
+UPDATE thread_queue_items SET state = 'inflight', updated_at_ms = ?
+WHERE thread_id = ? AND turn_id = ? AND state = 'starting'
+            "#,
+        )
+        .bind(datetime_to_epoch_millis(Utc::now()))
+        .bind(thread_id.to_string())
+        .bind(turn_id)
+        .execute(self.pool.as_ref())
+        .await?
+        .rows_affected()
+            > 0)
+    }
+
+    pub async fn finish_queued_submission(
+        &self,
+        thread_id: ThreadId,
+        turn_id: &str,
+        status: QueuedSubmissionTerminalStatus,
+    ) -> Result<bool, ThreadQueueError> {
+        let changed = sqlx::query(
+            r#"
+UPDATE thread_queue_items
+SET state = 'terminal', terminal_status = ?, updated_at_ms = ?
+WHERE thread_id = ? AND turn_id = ? AND state IN ('starting', 'inflight')
+            "#,
+        )
+        .bind(status.as_str())
+        .bind(datetime_to_epoch_millis(Utc::now()))
+        .bind(thread_id.to_string())
+        .bind(turn_id)
+        .execute(self.pool.as_ref())
+        .await?
+        .rows_affected()
+            > 0;
+        if changed {
+            sqlx::query(
+                r#"
+DELETE FROM thread_queue_items
+WHERE rowid IN (
+    SELECT rowid FROM thread_queue_items
+    WHERE thread_id = ? AND state = 'terminal'
+    ORDER BY updated_at_ms DESC, id DESC
+    LIMIT -1 OFFSET ?
+)
+                "#,
+            )
+            .bind(thread_id.to_string())
+            .bind(TERMINAL_TOMBSTONES_PER_THREAD)
+            .execute(self.pool.as_ref())
+            .await?;
+        }
+        Ok(changed)
+    }
+}
+
+#[cfg(test)]
+#[path = "thread_queue_tests.rs"]
+mod tests;
