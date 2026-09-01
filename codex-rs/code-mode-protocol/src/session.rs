@@ -138,11 +138,6 @@ pub trait CodeModeSession: Send + Sync {
 /// Implementations may share a remote host process across all sessions created
 /// by one provider.
 pub trait CodeModeSessionProvider: Send + Sync {
-    /// Reports whether this provider can execute code without starting its host.
-    fn availability(&self) -> Result<(), String> {
-        Ok(())
-    }
-
     fn create_session<'a>(
         &'a self,
         delegate: Arc<dyn CodeModeSessionDelegate>,
