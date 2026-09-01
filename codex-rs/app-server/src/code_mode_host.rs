@@ -1,10 +1,12 @@
 use std::ffi::OsStr;
+use std::ffi::OsString;
 use std::net::IpAddr;
 
 use clap::Args;
 use clap::builder::TypedValueParser;
 use clap::error::ErrorKind;
 use url::Url;
+use codex_code_mode::GrpcCodeModeHostCapability;
 
 const MAX_HOST_URL_BYTES: usize = 2_048;
 
@@ -18,6 +20,15 @@ pub struct AppServerCodeModeHostArgs {
         value_parser = RedactedHostUrlParser
     )]
     pub code_mode_host: Option<Url>,
+
+    /// Read the server-issued code-mode host capability from this environment variable.
+    #[arg(
+        long = "code-mode-host-token-env",
+        value_name = "ENV",
+        requires = "code_mode_host",
+        value_parser = parse_env_name
+    )]
+    pub code_mode_host_token_env: Option<String>,
 }
 
 /// Process-scoped transport used to reach the code-mode host.
@@ -28,13 +39,48 @@ pub enum CodeModeHostTransport {
     Local,
     /// Share an HTTP/2 gRPC connection to the specified host.
     Grpc(Url),
+    /// Share a capability-authenticated HTTP/2 gRPC connection.
+    AuthenticatedGrpc {
+        url: Url,
+        capability: GrpcCodeModeHostCapability,
+    },
 }
 
-impl From<AppServerCodeModeHostArgs> for CodeModeHostTransport {
-    fn from(args: AppServerCodeModeHostArgs) -> Self {
-        match args.code_mode_host {
-            Some(url) => Self::Grpc(url),
-            None => Self::Local,
+impl AppServerCodeModeHostArgs {
+    /// Resolves the process transport and reads any capability from its named environment.
+    pub fn try_into_transport(self) -> Result<CodeModeHostTransport, String> {
+        self.resolve_with(std::env::var_os)
+    }
+
+    fn resolve_with(
+        self,
+        lookup: impl FnOnce(&str) -> Option<OsString>,
+    ) -> Result<CodeModeHostTransport, String> {
+        match (self.code_mode_host, self.code_mode_host_token_env) {
+            (None, None) => Ok(CodeModeHostTransport::Local),
+            (None, Some(_)) => Err(
+                "code-mode host capability environment requires --code-mode-host".to_string(),
+            ),
+            (Some(url), None) if matches!(url.scheme(), "unix" | "https") => {
+                Ok(CodeModeHostTransport::Grpc(url))
+            }
+            (Some(_), None) => Err(
+                "plaintext HTTP code-mode hosts require --code-mode-host-token-env".to_string(),
+            ),
+            (Some(url), Some(environment)) => {
+                let value = lookup(&environment).ok_or_else(|| {
+                    format!("code-mode host capability environment {environment} is not set")
+                })?;
+                let value = value.into_string().map_err(|_| {
+                    format!(
+                        "code-mode host capability environment {environment} is not valid UTF-8"
+                    )
+                })?;
+                let capability = GrpcCodeModeHostCapability::new(value).map_err(|_| {
+                    format!("code-mode host capability environment {environment} is invalid")
+                })?;
+                Ok(CodeModeHostTransport::AuthenticatedGrpc { url, capability })
+            }
         }
     }
 }
@@ -43,9 +89,31 @@ impl CodeModeHostTransport {
     pub(crate) fn validate(&self) -> Result<(), String> {
         match self {
             Self::Local => Ok(()),
-            Self::Grpc(url) => parse_host_url(url.as_str()).map(|_| ()),
+            Self::Grpc(url) => {
+                let url = parse_host_url(url.as_str())?;
+                if !matches!(url.scheme(), "unix" | "https") {
+                    return Err(
+                        "plaintext HTTP code-mode hosts require a server-issued capability"
+                            .to_string(),
+                    );
+                }
+                Ok(())
+            }
+            Self::AuthenticatedGrpc { url, .. } => parse_host_url(url.as_str()).map(|_| ()),
         }
     }
+}
+
+fn parse_env_name(value: &str) -> Result<String, String> {
+    let valid = value.len() <= 256
+        && value
+            .bytes()
+            .enumerate()
+            .all(|(index, byte)| byte == b'_' || byte.is_ascii_alphanumeric() && (index > 0 || !byte.is_ascii_digit()));
+    if !valid || value.is_empty() {
+        return Err("code-mode host capability environment name is invalid".to_string());
+    }
+    Ok(value.to_string())
 }
 
 #[derive(Clone)]

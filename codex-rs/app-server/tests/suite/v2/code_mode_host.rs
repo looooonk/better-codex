@@ -48,10 +48,15 @@ async fn app_server_shares_grpc_code_mode_host_across_threads() -> Result<()> {
         .stdout
         .take()
         .context("gRPC code-mode host stdout was not captured")?;
-    let host_url = timeout(READ_TIMEOUT, BufReader::new(stdout).lines().next_line())
+    let mut host_output = BufReader::new(stdout).lines();
+    let host_url = timeout(READ_TIMEOUT, host_output.next_line())
         .await
         .context("timed out waiting for gRPC code-mode host URL")??
         .context("gRPC code-mode host exited before publishing its URL")?;
+    let host_capability = timeout(READ_TIMEOUT, host_output.next_line())
+        .await
+        .context("timed out waiting for gRPC code-mode host capability")??
+        .context("gRPC code-mode host exited before publishing its capability")?;
 
     let model_server = responses::start_mock_server().await;
     let response_mock = responses::mount_sse_sequence(
@@ -100,7 +105,13 @@ async fn app_server_shares_grpc_code_mode_host_across_threads() -> Result<()> {
     let original_config = std::fs::read_to_string(codex_home.path().join("config.toml"))?;
     let mut app_server = TestAppServer::builder()
         .with_codex_home(codex_home.path())
-        .with_args(&["--code-mode-host", &host_url])
+        .with_args(&[
+            "--code-mode-host",
+            &host_url,
+            "--code-mode-host-token-env",
+            "CODE_MODE_HOST_TOKEN",
+        ])
+        .with_env_overrides(&[("CODE_MODE_HOST_TOKEN", Some(&host_capability))])
         .build()
         .await?;
     timeout(READ_TIMEOUT, app_server.initialize()).await??;

@@ -567,6 +567,21 @@ pub async fn run_main_with_transport_options(
                     ),
                 ))
             }
+            CodeModeHostTransport::AuthenticatedGrpc { url, capability } => {
+                if !config.features.enabled(Feature::CodeModeHost) {
+                    return Err(std::io::Error::new(
+                        ErrorKind::InvalidInput,
+                        "remote code-mode host requires the code_mode_host feature to be enabled",
+                    ));
+                }
+                Some(Arc::new(
+                    GrpcCodeModeSessionProvider::with_http_client_factory_and_capability(
+                        url.to_string(),
+                        config.http_client_factory(),
+                        capability.clone(),
+                    ),
+                ))
+            }
         };
 
     let otel = codex_core::otel_init::build_provider(

@@ -1,5 +1,7 @@
 use pretty_assertions::assert_eq;
+use std::ffi::OsString;
 use url::Url;
+use codex_code_mode::GrpcCodeModeHostCapability;
 
 use super::AppServerCodeModeHostArgs;
 use super::CodeModeHostTransport;
@@ -55,29 +57,63 @@ fn grpc_host_rejects_components_without_disclosing_them() {
 #[test]
 fn omitted_host_selects_local_transport() {
     assert_eq!(
-        CodeModeHostTransport::from(AppServerCodeModeHostArgs::default()),
-        CodeModeHostTransport::Local
+        AppServerCodeModeHostArgs::default().resolve_with(|_| None),
+        Ok(CodeModeHostTransport::Local)
     );
 }
 
 #[test]
-fn explicit_host_selects_grpc_transport() {
+fn endpoint_only_https_selects_trusted_grpc_transport() {
     let url = Url::parse("https://example.test").expect("test endpoint should parse");
     assert_eq!(
-        CodeModeHostTransport::from(AppServerCodeModeHostArgs {
+        AppServerCodeModeHostArgs {
             code_mode_host: Some(url.clone()),
-        }),
-        CodeModeHostTransport::Grpc(url)
+            code_mode_host_token_env: None,
+        }
+        .resolve_with(|_| None),
+        Ok(CodeModeHostTransport::Grpc(url))
     );
+}
+
+#[test]
+fn explicit_host_selects_capability_authenticated_grpc_transport() {
+    let url = Url::parse("https://example.test").expect("test endpoint should parse");
+    let raw_capability = "a1".repeat(32);
+    let capability = GrpcCodeModeHostCapability::new(raw_capability.clone()).unwrap();
+    let transport = AppServerCodeModeHostArgs {
+            code_mode_host: Some(url.clone()),
+            code_mode_host_token_env: Some("CODE_MODE_TOKEN".to_string()),
+        }
+        .resolve_with(|name| {
+            assert_eq!(name, "CODE_MODE_TOKEN");
+            Some(OsString::from(raw_capability.clone()))
+        });
+    assert_eq!(
+        transport,
+        Ok(CodeModeHostTransport::AuthenticatedGrpc { url, capability })
+    );
+    assert!(!format!("{transport:?}").contains(&raw_capability));
+}
+
+#[test]
+fn http_host_requires_a_valid_capability_without_disclosing_it() {
+    let args = AppServerCodeModeHostArgs {
+        code_mode_host: Some(Url::parse("http://127.0.0.1:8765").unwrap()),
+        code_mode_host_token_env: Some("CODE_MODE_TOKEN".to_string()),
+    };
+    let error = args
+        .resolve_with(|_| Some(OsString::from("super-secret")))
+        .unwrap_err();
+    assert!(!error.contains("super-secret"));
 }
 
 #[test]
 fn programmatic_transport_selection_is_revalidated() {
     let transport = CodeModeHostTransport::Grpc(
-        Url::parse("http://example.test:8765").expect("test endpoint should parse"),
+        Url::parse("http://127.0.0.1:8765").expect("test endpoint should parse"),
     );
     assert_eq!(
         transport.validate(),
-        Err("plaintext code-mode hosts must use a loopback IP address".to_string())
+        Err("plaintext HTTP code-mode hosts require a server-issued capability".to_string())
     );
 }

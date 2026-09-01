@@ -1124,7 +1124,9 @@ async fn cli_main(
                     };
                     let auth = auth.try_into_settings()?;
                     let runtime_options = codex_app_server::AppServerRuntimeOptions {
-                        code_mode_host_transport: code_mode_host.into(),
+                        code_mode_host_transport: code_mode_host
+                            .try_into_transport()
+                            .map_err(anyhow::Error::msg)?,
                         remote_control_startup_mode: match (remote_control, remote_control_disabled)
                         {
                             (true, _) => {
@@ -3976,6 +3978,8 @@ mod tests {
                 "app-server",
                 "--code-mode-host",
                 "https://code-mode.example:45123",
+                "--code-mode-host-token-env",
+                "CODE_MODE_TOKEN",
             ]
             .as_ref(),
         );
@@ -3985,6 +3989,13 @@ mod tests {
                 url::Url::parse("https://code-mode.example:45123")
                     .expect("test endpoint should parse")
             )
+        );
+        assert_eq!(
+            app_server
+                .code_mode_host
+                .code_mode_host_token_env
+                .as_deref(),
+            Some("CODE_MODE_TOKEN")
         );
     }
 

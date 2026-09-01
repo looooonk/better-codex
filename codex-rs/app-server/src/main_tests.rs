@@ -43,6 +43,8 @@ fn app_server_accepts_process_scoped_code_mode_host() {
         "codex-app-server",
         "--code-mode-host",
         "http://127.0.0.1:45123",
+        "--code-mode-host-token-env",
+        "CODE_MODE_TOKEN",
         "--listen",
         "off",
     ])
@@ -51,6 +53,10 @@ fn app_server_accepts_process_scoped_code_mode_host() {
     assert_eq!(
         args.code_mode_host.code_mode_host,
         Some(Url::parse("http://127.0.0.1:45123").expect("test endpoint should parse"))
+    );
+    assert_eq!(
+        args.code_mode_host.code_mode_host_token_env.as_deref(),
+        Some("CODE_MODE_TOKEN")
     );
 }
 

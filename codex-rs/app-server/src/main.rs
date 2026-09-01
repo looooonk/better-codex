@@ -86,7 +86,9 @@ fn main() -> anyhow::Result<()> {
         let transport = listen;
         let auth = auth.try_into_settings()?;
         let mut runtime_options = AppServerRuntimeOptions::default();
-        runtime_options.code_mode_host_transport = code_mode_host.into();
+        runtime_options.code_mode_host_transport = code_mode_host
+            .try_into_transport()
+            .map_err(anyhow::Error::msg)?;
         #[cfg(debug_assertions)]
         if disable_plugin_startup_tasks_for_tests {
             runtime_options.plugin_startup_tasks = PluginStartupTasks::Skip;
