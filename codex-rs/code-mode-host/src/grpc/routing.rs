@@ -3,7 +3,7 @@ use std::sync::PoisonError;
 
 use codex_code_mode_protocol::CodeModeNestedToolCall;
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
 use prost::Message;
@@ -19,11 +19,12 @@ use super::GrpcStream;
 use super::conversions;
 use super::session::GrpcSession;
 use super::session::PendingInvocation;
+use super::session::ToolByteReservation;
 use super::session::ToolSubscription;
 use super::validation;
 use crate::OUTGOING_CHANNEL_CAPACITY;
 
-const MAX_SUBSCRIPTIONS: usize = OUTGOING_CHANNEL_CAPACITY;
+pub(crate) const MAX_SUBSCRIPTIONS_PER_SESSION: usize = 2;
 
 impl GrpcSession {
     pub(super) fn subscribe(
@@ -37,7 +38,7 @@ impl GrpcSession {
         if self.closed.is_cancelled() {
             return Err(Status::cancelled("code-mode session is closed"));
         }
-        if state.subscriptions.len() >= MAX_SUBSCRIPTIONS {
+        if state.subscriptions.len() >= MAX_SUBSCRIPTIONS_PER_SESSION {
             return Err(Status::resource_exhausted(
                 "code-mode session has too many tool subscriptions",
             ));
@@ -90,7 +91,9 @@ impl GrpcSession {
                 .retain(|subscription| subscription.id != id);
             return Err(Status::cancelled("code-mode session is closed"));
         }
-        Ok(Box::pin(ReceiverStream::new(receiver)))
+        Ok(Box::pin(
+            ReceiverStream::new(receiver).map(|call| Ok(call.message)),
+        ))
     }
 
     pub(super) async fn dispatch_tool(
@@ -100,6 +103,29 @@ impl GrpcSession {
         invocation_id: Uuid,
         input_json: Option<Vec<u8>>,
         response: oneshot::Sender<Result<JsonValue, String>>,
+        cancellation: &CancellationToken,
+    ) -> Result<(), String> {
+        let reservation = self.reserve_tool_bytes(MAX_APPLICATION_MESSAGE_BYTES)?;
+        self.dispatch_tool_reserved(
+            invocation,
+            execution_id,
+            invocation_id,
+            input_json,
+            response,
+            reservation,
+            cancellation,
+        )
+        .await
+    }
+
+    pub(super) async fn dispatch_tool_reserved(
+        &self,
+        invocation: CodeModeNestedToolCall,
+        execution_id: String,
+        invocation_id: Uuid,
+        input_json: Option<Vec<u8>>,
+        response: oneshot::Sender<Result<JsonValue, String>>,
+        reservation: ToolByteReservation,
         cancellation: &CancellationToken,
     ) -> Result<(), String> {
         let cell_id = invocation.cell_id.to_string();
@@ -147,12 +173,11 @@ impl GrpcSession {
             input_json,
             sequence,
         };
-        if message.encoded_len() > MAX_FRAME_BYTES {
+        if message.encoded_len() > MAX_APPLICATION_MESSAGE_BYTES {
             return Err(format!(
-                "code-mode tool invocation exceeds the {MAX_FRAME_BYTES}-byte gRPC message limit"
+                "code-mode tool invocation exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
             ));
         }
-
         let mut reservations =
             subscriptions
                 .into_iter()
@@ -196,11 +221,12 @@ impl GrpcSession {
                 "code-mode execution tool-call sequence was exhausted".to_string()
             })?;
             message.sequence = sequence;
-            if message.encoded_len() > MAX_FRAME_BYTES {
+            if message.encoded_len() > MAX_APPLICATION_MESSAGE_BYTES {
                 return Err(format!(
-                    "code-mode tool invocation exceeds the {MAX_FRAME_BYTES}-byte gRPC message limit"
+                    "code-mode tool invocation exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
                 ));
             }
+            let reservation = reservation.retain(message.encoded_len().max(1))?;
             execution.tool_call_sequence = sequence;
             state.pending_invocations.insert(
                 invocation_id,
@@ -211,7 +237,7 @@ impl GrpcSession {
             );
             state.seen_invocations.remember(invocation_id);
             state.next_subscription = (subscription_index + 1) % state.subscriptions.len();
-            permit.send(Ok(message));
+            permit.send(self.buffered_tool_call(message, reservation));
             return Ok(());
         }
     }

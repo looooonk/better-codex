@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use prost::Message;
 use futures::StreamExt;
 use tokio::sync::OwnedSemaphorePermit;
@@ -16,8 +16,8 @@ use crate::MAX_ACTIVE_CELLS;
 use crate::MAX_PENDING_DELEGATE_CALLS;
 
 const MAX_BUFFERED_CONTROL_EVENTS: usize = MAX_PENDING_DELEGATE_CALLS * 2 + MAX_ACTIVE_CELLS;
-pub(super) const MAX_SESSION_EVENT_BYTES: usize = MAX_FRAME_BYTES;
-pub(super) const MAX_HOST_EVENT_BYTES: usize = MAX_FRAME_BYTES * 4;
+pub(super) const MAX_SESSION_EVENT_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES;
+pub(super) const MAX_HOST_EVENT_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES * 4;
 
 #[derive(Clone)]
 pub(super) struct EventSender {
@@ -110,23 +110,19 @@ impl EventSender {
         cancellation: &CancellationToken,
     ) -> Result<(), String> {
         let (message, bytes) = validate_event(event)?;
-        let event_permit = tokio::select! {
-            biased;
-            _ = self.closed.cancelled() => {
-                return Err("code-mode session event stream is closed".to_string());
-            }
-            _ = cancellation.cancelled() => {
-                return Err("code-mode session event was cancelled".to_string());
-            }
-            permit = Arc::clone(&self.event_permits).acquire_owned() => permit
-                .map_err(|_| "code-mode session event queue is closed".to_string())?,
-        };
-        let session_byte_permit = self
-            .acquire_bytes(Arc::clone(&self.session_byte_permits), bytes, cancellation)
-            .await?;
-        let host_byte_permit = self
-            .acquire_bytes(Arc::clone(&self.host_byte_permits), bytes, cancellation)
-            .await?;
+        if self.closed.is_cancelled() {
+            return Err("code-mode session event stream is closed".to_string());
+        }
+        if cancellation.is_cancelled() {
+            return Err("code-mode session event was cancelled".to_string());
+        }
+        let (event_permit, session_byte_permit, host_byte_permit) = (|| {
+            Ok((
+                try_acquire(&self.event_permits, /*count*/ 1)?,
+                try_acquire(&self.session_byte_permits, bytes)?,
+                try_acquire(&self.host_byte_permits, bytes)?,
+            ))
+        })()?;
         self.enqueue(
             message,
             event_permit,
@@ -164,25 +160,6 @@ impl EventSender {
             host_byte_permit,
             cell_permit,
         )
-    }
-
-    async fn acquire_bytes(
-        &self,
-        permits: Arc<Semaphore>,
-        bytes: u32,
-        cancellation: &CancellationToken,
-    ) -> Result<OwnedSemaphorePermit, String> {
-        tokio::select! {
-            biased;
-            _ = self.closed.cancelled() => {
-                Err("code-mode session event stream is closed".to_string())
-            }
-            _ = cancellation.cancelled() => {
-                Err("code-mode session event was cancelled".to_string())
-            }
-            permit = permits.acquire_many_owned(bytes) => permit
-                .map_err(|_| "code-mode session event byte budget is closed".to_string()),
-        }
     }
 
     fn enqueue(
@@ -224,9 +201,9 @@ fn try_acquire(permits: &Arc<Semaphore>, count: u32) -> Result<OwnedSemaphorePer
 fn validate_event(event: proto::session_event::Event) -> Result<(proto::SessionEvent, u32), String> {
     let message = proto::SessionEvent { event: Some(event) };
     let encoded_len = message.encoded_len();
-    if encoded_len > MAX_FRAME_BYTES {
+    if encoded_len > MAX_APPLICATION_MESSAGE_BYTES {
         return Err(format!(
-            "code-mode session event exceeds the {MAX_FRAME_BYTES}-byte gRPC message limit"
+            "code-mode session event exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
         ));
     }
     let bytes = u32::try_from(encoded_len)
