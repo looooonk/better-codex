@@ -101,3 +101,221 @@ async fn queue_enforces_item_and_total_input_limits() -> anyhow::Result<()> {
     ));
     Ok(())
 }
+
+#[tokio::test]
+async fn queue_claims_are_idempotent_and_cas_guarded() -> anyhow::Result<()> {
+    let runtime = runtime().await?;
+    let thread_id = ThreadId::new();
+    let first = runtime
+        .enqueue_queued_submission(thread_id, "first", "client-1")
+        .await?;
+    let second = runtime
+        .enqueue_queued_submission(thread_id, "second", "client-2")
+        .await?;
+
+    let claimed = runtime
+        .claim_queued_submission(thread_id, Some(&first.id), "turn-1")
+        .await?;
+    assert!(matches!(claimed, QueueClaimResult::Claimed(ref item) if item.id == first.id));
+    assert!(matches!(
+        runtime
+            .claim_queued_submission(thread_id, Some(&first.id), "turn-other")
+            .await?,
+        QueueClaimResult::Existing(ref item) if item.turn_id.as_deref() == Some("turn-1")
+    ));
+    assert!(matches!(
+        runtime
+            .claim_queued_submission(thread_id, Some(&second.id), "turn-2")
+            .await?,
+        QueueClaimResult::Busy(ref item) if item.id == first.id
+    ));
+    assert!(
+        !runtime
+            .release_queued_submission_claim(thread_id, &first.id, "wrong-turn")
+            .await?
+    );
+    assert!(
+        runtime
+            .mark_queued_submission_inflight(thread_id, "turn-1")
+            .await?
+    );
+    assert!(
+        runtime
+            .finish_queued_submission(
+                thread_id,
+                "turn-1",
+                QueuedSubmissionTerminalStatus::Completed,
+            )
+            .await?
+    );
+    assert!(matches!(
+        runtime
+            .claim_queued_submission(thread_id, Some(&first.id), "turn-other")
+            .await?,
+        QueueClaimResult::Existing(ref item)
+            if item.state == QueuedSubmissionState::Terminal
+                && item.turn_id.as_deref() == Some("turn-1")
+    ));
+    Ok(())
+}
+
+#[tokio::test]
+async fn deleting_thread_removes_its_queue() -> anyhow::Result<()> {
+    let runtime = runtime().await?;
+    let thread_id = ThreadId::new();
+    let codex_home = runtime.codex_home().to_path_buf();
+    runtime
+        .upsert_thread(&crate::runtime::test_support::test_thread_metadata(
+            codex_home.as_path(),
+            thread_id,
+            codex_home.clone(),
+        ))
+        .await?;
+    runtime
+        .enqueue_queued_submission(thread_id, "queued", "client")
+        .await?;
+
+    assert_eq!(runtime.delete_thread(thread_id).await?, 1);
+    assert!(
+        runtime
+            .list_queued_submissions(thread_id, /*offset*/ 0, /*limit*/ 10)
+            .await?
+            .is_empty()
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn invalid_reorder_keeps_existing_order() -> anyhow::Result<()> {
+    let runtime = runtime().await?;
+    let thread_id = ThreadId::new();
+    let first = runtime
+        .enqueue_queued_submission(thread_id, "first", "client-1")
+        .await?;
+    let second = runtime
+        .enqueue_queued_submission(thread_id, "second", "client-2")
+        .await?;
+    assert!(matches!(
+        runtime
+            .reorder_queued_submissions(thread_id, std::slice::from_ref(&first.id))
+            .await,
+        Err(ThreadQueueError::InvalidReorder)
+    ));
+    assert_eq!(
+        runtime
+            .list_queued_submissions(thread_id, /*offset*/ 0, /*limit*/ 10)
+            .await?
+            .into_iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>(),
+        vec![first.id, second.id]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn reorder_fails_closed_when_temporary_order_overflows() -> anyhow::Result<()> {
+    let runtime = runtime().await?;
+    let thread_id = ThreadId::new();
+    let first = runtime
+        .enqueue_queued_submission(thread_id, "first", "client-1")
+        .await?;
+    let second = runtime
+        .enqueue_queued_submission(thread_id, "second", "client-2")
+        .await?;
+    sqlx::query(
+        r#"
+UPDATE thread_queue_items
+SET queue_order = CASE id WHEN ? THEN ? WHEN ? THEN ? END
+WHERE thread_id = ? AND id IN (?, ?)
+        "#,
+    )
+    .bind(&first.id)
+    .bind(i64::MAX - 2)
+    .bind(&second.id)
+    .bind(i64::MAX - 1)
+    .bind(thread_id.to_string())
+    .bind(&first.id)
+    .bind(&second.id)
+    .execute(runtime.pool.as_ref())
+    .await?;
+
+    assert!(matches!(
+        runtime
+            .reorder_queued_submissions(thread_id, &[first.id.clone(), second.id.clone()])
+            .await,
+        Err(ThreadQueueError::Storage(_))
+    ));
+    assert_eq!(
+        runtime
+            .list_queued_submissions(thread_id, /*offset*/ 0, /*limit*/ 10)
+            .await?
+            .into_iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>(),
+        vec![first.id, second.id]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn reorder_uses_collision_free_slots_and_release_restores_position() -> anyhow::Result<()> {
+    let runtime = runtime().await?;
+    let thread_id = ThreadId::new();
+    let first = runtime
+        .enqueue_queued_submission(thread_id, "first", "client-1")
+        .await?;
+    let second = runtime
+        .enqueue_queued_submission(thread_id, "second", "client-2")
+        .await?;
+    let third = runtime
+        .enqueue_queued_submission(thread_id, "third", "client-3")
+        .await?;
+    assert!(runtime
+        .delete_queued_submission(thread_id, &first.id)
+        .await?);
+
+    runtime
+        .reorder_queued_submissions(thread_id, &[third.id.clone(), second.id.clone()])
+        .await?;
+    assert!(matches!(
+        runtime
+            .claim_queued_submission(thread_id, Some(&third.id), "turn-3")
+            .await?,
+        QueueClaimResult::Claimed(_)
+    ));
+    assert!(runtime
+        .release_queued_submission_claim(thread_id, &third.id, "turn-3")
+        .await?);
+    assert_eq!(
+        runtime
+            .list_queued_submissions(thread_id, /*offset*/ 0, /*limit*/ 10)
+            .await?
+            .into_iter()
+            .map(|item| item.id)
+            .collect::<Vec<_>>(),
+        vec![third.id, second.id]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn enqueue_retry_reuses_stable_submission_id() -> anyhow::Result<()> {
+    let runtime = runtime().await?;
+    let thread_id = ThreadId::new();
+    let first = runtime
+        .enqueue_queued_submission(thread_id, "first", "client-1")
+        .await?;
+    let retry = runtime
+        .enqueue_queued_submission(thread_id, "first", "client-1")
+        .await?;
+
+    assert_eq!(retry, first);
+    assert_eq!(
+        runtime
+            .list_queued_submissions(thread_id, /*offset*/ 0, /*limit*/ 10)
+            .await?,
+        vec![first]
+    );
+    Ok(())
+}
