@@ -175,6 +175,40 @@ pub(super) enum QueueRecoveryOutcome {
     NotStarted,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum QueueRecoveryAction {
+    Retry,
+    Finish {
+        status: QueuedSubmissionTerminalStatus,
+        disposition: QueueTerminalDisposition,
+    },
+}
+
+pub(super) fn queue_recovery_action(
+    state: QueuedSubmissionState,
+    outcome: QueueRecoveryOutcome,
+) -> QueueRecoveryAction {
+    match outcome {
+        QueueRecoveryOutcome::NotStarted if state == QueuedSubmissionState::Starting => {
+            QueueRecoveryAction::Retry
+        }
+        QueueRecoveryOutcome::Completed(status) => QueueRecoveryAction::Finish {
+            status,
+            disposition: QueueTerminalDisposition::Continue,
+        },
+        QueueRecoveryOutcome::Aborted(reason) => QueueRecoveryAction::Finish {
+            status: QueuedSubmissionTerminalStatus::Interrupted,
+            disposition: terminal_disposition(&reason),
+        },
+        QueueRecoveryOutcome::Incomplete | QueueRecoveryOutcome::NotStarted => {
+            QueueRecoveryAction::Finish {
+                status: QueuedSubmissionTerminalStatus::Interrupted,
+                disposition: QueueTerminalDisposition::Pause(ThreadQueuePauseReason::Interrupted),
+            }
+        }
+    }
+}
+
 pub(super) fn queue_recovery_outcome(
     items: &[RolloutItem],
     turn_id: &str,
@@ -195,7 +229,8 @@ pub(super) fn queue_recovery_outcome(
                 input_persisted = true;
             }
             EventMsg::TurnComplete(event) if event.turn_id == turn_id => {
-                let failed = admission_rejection.is_some() || event.error.is_some();
+                let failed =
+                    admission_rejection.is_some() || event.error.is_some() || !input_persisted;
                 return QueueRecoveryOutcome::Completed(if failed {
                     QueuedSubmissionTerminalStatus::Failed
                 } else {

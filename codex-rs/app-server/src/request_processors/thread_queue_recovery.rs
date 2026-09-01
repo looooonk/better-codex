@@ -16,8 +16,9 @@ use codex_thread_store::LoadThreadHistoryParams;
 use tokio::sync::oneshot;
 
 use super::thread_queue_service::ThreadQueueService;
-use super::thread_queue_support::QueueRecoveryOutcome;
+use super::thread_queue_support::QueueRecoveryAction;
 use super::thread_queue_support::queue_error;
+use super::thread_queue_support::queue_recovery_action;
 use super::thread_queue_support::queue_recovery_outcome;
 use super::thread_queue_support::terminal_disposition;
 
@@ -166,23 +167,28 @@ impl ThreadQueueService {
             .turn_id
             .as_deref()
             .ok_or_else(|| internal_error("active queued submission is missing its turn id"))?;
-        let disposition = match queue_recovery_outcome(
-            &history.items,
-            turn_id,
-            &active.client_user_message_id,
-            active.admission_rejection,
-        ) {
-            QueueRecoveryOutcome::Completed(status) => {
-                Some((status, QueueTerminalDisposition::Continue))
+        let action = queue_recovery_action(
+            active.state,
+            queue_recovery_outcome(
+                &history.items,
+                turn_id,
+                &active.client_user_message_id,
+                active.admission_rejection,
+            ),
+        );
+        let QueueRecoveryAction::Finish {
+            status,
+            disposition,
+        } = action
+        else {
+            if self
+                .state_db()?
+                .release_queued_submission_claim(thread_id, &active.id, turn_id)
+                .await
+                .map_err(queue_error)?
+            {
+                self.notify_changed(thread_id).await;
             }
-            QueueRecoveryOutcome::Aborted(reason) => Some((
-                QueuedSubmissionTerminalStatus::Interrupted,
-                terminal_disposition(&reason),
-            )),
-            QueueRecoveryOutcome::Incomplete | QueueRecoveryOutcome::NotStarted => None,
-        };
-        let Some((status, disposition)) = disposition else {
-            tracing::info!(%thread_id, %turn_id, "retaining queued turn claim without terminal evidence");
             return Ok(());
         };
         if self

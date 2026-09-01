@@ -231,6 +231,7 @@ impl ThreadQueueRequestProcessor {
                         .send_response_as(request_id, response.into())
                         .await;
                 }
+                self.service.wake_if_loaded(thread_id).await;
             }
             Err(failure) => {
                 self.service

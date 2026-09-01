@@ -157,7 +157,7 @@ Example with notification opt-out:
 - `thread/goal/clear` — clear the current persisted goal for a materialized thread; returns whether a goal was removed and emits `thread/goal/cleared` when state changes.
 - `thread/goal/updated` — notification emitted whenever a thread goal changes; includes the full current goal.
 - `thread/goal/cleared` — notification emitted whenever a thread goal is removed.
-- `thread/queue/add` — experimental; durably append user input with a required idempotent `clientUserMessageId`. Reusing that id with identical input returns the existing submission; reusing it with different input is rejected.
+- `thread/queue/add` — experimental; durably append user input with a required idempotent `clientUserMessageId`. Reusing a retained id with identical input returns the existing submission; reusing it with different input is rejected. Each thread retains its 100 most recent terminal idempotency tombstones after scrubbing their input payloads.
 - `thread/queue/list` — experimental; page pending submissions in dispatch order with `cursor` and `limit`.
 - `thread/queue/update` — experimental; replace the input of a pending submission.
 - `thread/queue/delete` — experimental; delete a pending submission and return whether it was removed.

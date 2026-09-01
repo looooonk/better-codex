@@ -615,6 +615,105 @@ async fn successful_explicit_claim_keeps_queue_resumed_after_release() -> anyhow
 }
 
 #[tokio::test]
+async fn crash_window_recovery_transitions_are_idempotent_across_reopens() -> anyhow::Result<()> {
+    let codex_home = unique_temp_dir();
+    let runtime = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
+    let retry_thread = ThreadId::new();
+    let retry_item = runtime
+        .enqueue_queued_submission(retry_thread, "retry", "client-retry")
+        .await?;
+    assert!(matches!(
+        runtime
+            .claim_queued_submission(retry_thread, Some(&retry_item.id), "turn-retry")
+            .await?,
+        QueueClaimResult::Claimed(_)
+    ));
+
+    let interrupted_thread = ThreadId::new();
+    let interrupted_item = runtime
+        .enqueue_queued_submission(interrupted_thread, "started", "client-started")
+        .await?;
+    assert!(matches!(
+        runtime
+            .claim_queued_submission(
+                interrupted_thread,
+                Some(&interrupted_item.id),
+                "turn-started",
+            )
+            .await?,
+        QueueClaimResult::Claimed(_)
+    ));
+    assert!(
+        runtime
+            .mark_queued_submission_inflight(interrupted_thread, "turn-started")
+            .await?
+    );
+    runtime.close().await;
+
+    let reopened = StateRuntime::init(codex_home.clone(), "test-provider".to_string()).await?;
+    assert!(
+        reopened
+            .release_queued_submission_claim(retry_thread, &retry_item.id, "turn-retry")
+            .await?
+    );
+    assert!(
+        !reopened
+            .release_queued_submission_claim(retry_thread, &retry_item.id, "turn-retry")
+            .await?
+    );
+    assert!(
+        reopened
+            .finish_queued_submission(
+                interrupted_thread,
+                "turn-started",
+                QueuedSubmissionTerminalStatus::Interrupted,
+                QueueTerminalDisposition::Pause(ThreadQueuePauseReason::Interrupted),
+            )
+            .await?
+    );
+    assert!(
+        !reopened
+            .finish_queued_submission(
+                interrupted_thread,
+                "turn-started",
+                QueuedSubmissionTerminalStatus::Interrupted,
+                QueueTerminalDisposition::Pause(ThreadQueuePauseReason::Interrupted),
+            )
+            .await?
+    );
+    reopened.close().await;
+
+    let reopened_again = StateRuntime::init(codex_home, "test-provider".to_string()).await?;
+    assert_eq!(
+        reopened_again
+            .list_queued_submissions(retry_thread, /*offset*/ 0, /*limit*/ 10)
+            .await?,
+        vec![retry_item]
+    );
+    let recovered = reopened_again
+        .queued_submission(interrupted_thread, &interrupted_item.id)
+        .await?
+        .expect("interrupted tombstone should remain");
+    assert_eq!(
+        recovered,
+        QueuedSubmissionRecord {
+            payload: "[]".to_string(),
+            state: QueuedSubmissionState::Terminal,
+            turn_id: Some("turn-started".to_string()),
+            terminal_status: Some(QueuedSubmissionTerminalStatus::Interrupted),
+            ..interrupted_item
+        }
+    );
+    assert_eq!(
+        reopened_again
+            .thread_queue_pause_reason(interrupted_thread)
+            .await?,
+        Some(ThreadQueuePauseReason::Interrupted)
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn queue_rejects_unbounded_identifiers() -> anyhow::Result<()> {
     let runtime = runtime().await?;
     let thread_id = ThreadId::new();

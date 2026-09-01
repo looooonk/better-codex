@@ -74,6 +74,15 @@ fn recovery_distinguishes_unpersisted_inflight_and_terminal_work() {
     );
     assert_eq!(
         queue_recovery_outcome(
+            &[started(), completed(/*error*/ None)],
+            "turn-1",
+            "client-1",
+            /*admission_rejection*/ None,
+        ),
+        QueueRecoveryOutcome::Completed(QueuedSubmissionTerminalStatus::Failed)
+    );
+    assert_eq!(
+        queue_recovery_outcome(
             &[
                 started(),
                 user_message(),
@@ -90,6 +99,35 @@ fn recovery_distinguishes_unpersisted_inflight_and_terminal_work() {
             /*admission_rejection*/ None,
         ),
         QueueRecoveryOutcome::Aborted(TurnAbortReason::Interrupted)
+    );
+}
+
+#[test]
+fn recovery_retries_only_definitely_unstarted_claims() {
+    assert_eq!(
+        queue_recovery_action(
+            QueuedSubmissionState::Starting,
+            QueueRecoveryOutcome::NotStarted,
+        ),
+        QueueRecoveryAction::Retry
+    );
+    let interrupted = QueueRecoveryAction::Finish {
+        status: QueuedSubmissionTerminalStatus::Interrupted,
+        disposition: QueueTerminalDisposition::Pause(ThreadQueuePauseReason::Interrupted),
+    };
+    assert_eq!(
+        queue_recovery_action(
+            QueuedSubmissionState::Starting,
+            QueueRecoveryOutcome::Incomplete,
+        ),
+        interrupted
+    );
+    assert_eq!(
+        queue_recovery_action(
+            QueuedSubmissionState::Inflight,
+            QueueRecoveryOutcome::NotStarted,
+        ),
+        interrupted
     );
 }
 
