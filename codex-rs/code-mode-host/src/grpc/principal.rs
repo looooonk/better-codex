@@ -1,14 +1,14 @@
-use std::net::SocketAddr;
-
+use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use tonic::Request;
 use tonic::Status;
 use tonic::transport::server::TcpConnectInfo;
+use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum GrpcPrincipal {
     #[cfg(test)]
     InProcess,
-    LoopbackTcp(SocketAddr),
+    LoopbackClient(Uuid),
 }
 
 #[derive(Clone, Copy)]
@@ -38,7 +38,17 @@ impl PrincipalPolicy {
                         "code-mode gRPC is restricted to loopback callers",
                     ));
                 }
-                Ok(GrpcPrincipal::LoopbackTcp(remote_addr))
+                let client_id = request
+                    .metadata()
+                    .get(CLIENT_ID_METADATA_KEY)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| Uuid::parse_str(value).ok())
+                    .ok_or_else(|| {
+                        Status::unauthenticated(
+                            "code-mode gRPC requests require a valid client identity",
+                        )
+                    })?;
+                Ok(GrpcPrincipal::LoopbackClient(client_id))
             }
         }
     }

@@ -10,6 +10,7 @@ use self::code_mode_host_client::CodeModeHostClient;
 
 pub const MAX_IDENTIFIER_BYTES: usize = 256;
 pub const MAX_TOOL_ERROR_BYTES: usize = 64 * 1_024;
+pub const CLIENT_ID_METADATA_KEY: &str = "x-codex-code-mode-client-id";
 
 /// Builds a generated client with the protocol's 64 MiB frame limit in both directions.
 pub fn bounded_code_mode_host_client(channel: Channel) -> CodeModeHostClient<Channel> {

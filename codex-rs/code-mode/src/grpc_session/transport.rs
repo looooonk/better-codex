@@ -2,6 +2,7 @@ use std::io;
 use std::net::IpAddr;
 
 use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
+use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
 use codex_http_client::ClientRouteClass;
 use codex_http_client::HttpClientFactory;
@@ -12,6 +13,7 @@ use tonic::codegen::http::Response;
 use tonic::codegen::http::Uri;
 use tower::service_fn;
 use tower::util::BoxCloneSyncService;
+use uuid::Uuid;
 
 use super::GrpcClient;
 
@@ -22,6 +24,7 @@ pub(super) type GrpcTransport = BoxCloneSyncService<Request<Body>, Response<Body
 pub(super) struct SharedTransport {
     endpoint: String,
     http_client_factory: HttpClientFactory,
+    client_id: Uuid,
     client: tokio::sync::OnceCell<GrpcClient>,
 }
 
@@ -30,6 +33,7 @@ impl SharedTransport {
         Self {
             endpoint,
             http_client_factory,
+            client_id: Uuid::new_v4(),
             client: tokio::sync::OnceCell::new(),
         }
     }
@@ -43,6 +47,7 @@ impl SharedTransport {
                     .parse()
                     .map_err(|_| "invalid gRPC code-mode host origin".to_string())?;
                 let endpoint = target.to_string();
+                let client_id = self.client_id;
                 let http_client_factory = self.http_client_factory.clone();
                 let client = tokio::task::spawn_blocking(move || {
                     http_client_factory
@@ -59,9 +64,13 @@ impl SharedTransport {
                 })
                 .await
                 .map_err(|error| format!("gRPC code-mode host transport task failed: {error}"))??;
-                let transport = service_fn(move |request: Request<Body>| {
+                let transport = service_fn(move |mut request: Request<Body>| {
                     let client = client.clone();
                     async move {
+                        let client_id = client_id.to_string().parse().map_err(io::Error::other)?;
+                        request
+                            .headers_mut()
+                            .insert(CLIENT_ID_METADATA_KEY, client_id);
                         let request = request
                             .map(|body| reqwest::Body::wrap_stream(body.into_data_stream()));
                         let request =

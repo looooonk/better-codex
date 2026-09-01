@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use codex_code_mode_protocol::grpc as proto;
 use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
 use codex_code_mode_protocol::grpc::bounded_code_mode_host_client;
+use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use pretty_assertions::assert_eq;
 use tokio_util::sync::CancellationToken;
 use tonic::Code;
@@ -43,9 +44,24 @@ async fn connect(endpoint: &str) -> CodeModeHostClient<Channel> {
     bounded_code_mode_host_client(channel)
 }
 
-async fn open_session(client: &mut CodeModeHostClient<Channel>) -> (String, tonic::Streaming<proto::SessionEvent>) {
+fn identified_request<T>(client_id: Uuid, message: T) -> Request<T> {
+    let mut request = Request::new(message);
+    request.metadata_mut().insert(
+        CLIENT_ID_METADATA_KEY,
+        client_id.to_string().parse().unwrap(),
+    );
+    request
+}
+
+async fn open_session(
+    client: &mut CodeModeHostClient<Channel>,
+    client_id: Uuid,
+) -> (String, tonic::Streaming<proto::SessionEvent>) {
     let mut events = client
-        .open_session(proto::OpenSessionRequest::default())
+        .open_session(identified_request(
+            client_id,
+            proto::OpenSessionRequest::default(),
+        ))
         .await
         .unwrap()
         .into_inner();
@@ -60,11 +76,12 @@ async fn open_session(client: &mut CodeModeHostClient<Channel>) -> (String, toni
 async fn canonical_transport_accepts_messages_above_tonic_default() {
     let (endpoint, shutdown, server) = start_server().await;
     let mut client = connect(&endpoint).await;
-    let (session_id, mut events) = open_session(&mut client).await;
+    let client_id = Uuid::new_v4();
+    let (session_id, mut events) = open_session(&mut client, client_id).await;
     let oversized_json = serde_json::to_vec(&"x".repeat(5 * 1_024 * 1_024)).unwrap();
 
     let error = client
-        .complete_tool_call(proto::CompleteToolCallRequest {
+        .complete_tool_call(identified_request(client_id, proto::CompleteToolCallRequest {
             session_id: session_id.clone(),
             invocation_id: Uuid::new_v4().to_string(),
             outcome: Some(proto::complete_tool_call_request::Outcome::Succeeded(
@@ -72,13 +89,13 @@ async fn canonical_transport_accepts_messages_above_tonic_default() {
                     output_json: oversized_json,
                 },
             )),
-        })
+        }))
         .await
         .unwrap_err();
     assert_eq!(error.code(), Code::NotFound);
 
     let mut execution = client
-        .execute(proto::ExecuteRequest {
+        .execute(identified_request(client_id, proto::ExecuteRequest {
             session_id: session_id.clone(),
             execution_id: "large-notification".to_string(),
             tool_call_id: "outer-call".to_string(),
@@ -86,7 +103,7 @@ async fn canonical_transport_accepts_messages_above_tonic_default() {
             enabled_tools: Vec::new(),
             yield_time_ms: Some(60_000),
             max_output_tokens: None,
-        })
+        }))
         .await
         .unwrap()
         .into_inner();
@@ -101,10 +118,10 @@ async fn canonical_transport_accepts_messages_above_tonic_default() {
     assert_eq!(notification.text.len(), 5 * 1_024 * 1_024);
 
     client
-        .acknowledge_notification(proto::AcknowledgeNotificationRequest {
+        .acknowledge_notification(identified_request(client_id, proto::AcknowledgeNotificationRequest {
             session_id: session_id.clone(),
             notification_id: notification.notification_id,
-        })
+        }))
         .await
         .unwrap();
     assert!(matches!(
@@ -121,7 +138,7 @@ async fn canonical_transport_accepts_messages_above_tonic_default() {
         Some(proto::session_event::Event::CellClosed(_))
     ));
     client
-        .close_session(proto::CloseSessionRequest { session_id })
+        .close_session(identified_request(client_id, proto::CloseSessionRequest { session_id }))
         .await
         .unwrap();
     shutdown.cancel();
@@ -129,21 +146,24 @@ async fn canonical_transport_accepts_messages_above_tonic_default() {
 }
 
 #[tokio::test]
-async fn sessions_are_bound_to_their_tcp_connection() {
+async fn sessions_are_bound_to_client_identity_across_tcp_connections() {
     let (endpoint, shutdown, server) = start_server().await;
     let mut owner = connect(&endpoint).await;
     let mut other = connect(&endpoint).await;
-    let (session_id, _events) = open_session(&mut owner).await;
+    let mut reconnected_owner = connect(&endpoint).await;
+    let owner_id = Uuid::new_v4();
+    let other_id = Uuid::new_v4();
+    let (session_id, _events) = open_session(&mut owner, owner_id).await;
 
     let error = other
-        .close_session(proto::CloseSessionRequest {
+        .close_session(identified_request(other_id, proto::CloseSessionRequest {
             session_id: session_id.clone(),
-        })
+        }))
         .await
         .unwrap_err();
     assert_eq!(error.code(), Code::PermissionDenied);
-    owner
-        .close_session(proto::CloseSessionRequest { session_id })
+    reconnected_owner
+        .close_session(identified_request(owner_id, proto::CloseSessionRequest { session_id }))
         .await
         .unwrap();
 
@@ -165,5 +185,22 @@ fn loopback_policy_rejects_non_loopback_peers() {
             .unwrap_err()
             .code(),
         Code::PermissionDenied
+    );
+}
+
+#[test]
+fn loopback_policy_rejects_missing_client_identity() {
+    let mut request = Request::new(());
+    request.extensions_mut().insert(TcpConnectInfo {
+        local_addr: Some("127.0.0.1:4000".parse::<SocketAddr>().unwrap()),
+        remote_addr: Some("127.0.0.1:5000".parse::<SocketAddr>().unwrap()),
+    });
+
+    assert_eq!(
+        PrincipalPolicy::LoopbackTcp
+            .principal(&request)
+            .unwrap_err()
+            .code(),
+        Code::Unauthenticated
     );
 }
