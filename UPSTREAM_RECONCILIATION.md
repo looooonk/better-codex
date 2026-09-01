@@ -21,8 +21,8 @@ the previously recorded `636e505c5cd809bdce37314f77130ffb4e45c46b`.
 The selected semantic ports and Better-specific adaptations are integrated into a
 single consolidation history. The history includes the independent indexed-copy
 feature and every implementation stream that had been split across the five
-upstream-checkpoint branches. The old branches are recovery landmarks only until
-their guarded deletion; they are not work that must be resumed.
+upstream-checkpoint branches. The old branches were recovery landmarks before
+their guarded deletion; all are represented in `main` and none must be resumed.
 
 The integrated families are managed authentication and redaction; live approval
 and Guardian hardening; bounded MCP 2026 negotiation, runtime, plugins, and unified
@@ -365,10 +365,10 @@ normalization, and queue admission/recovery. The app-server gate had one transie
 zsh subprocess initialization timeout under parallel load; its configured retry
 passed, and the exact case passed alone. There were no final test failures.
 
-The final generated-artifact pass regenerates the config schema and stable and
-experimental app-server schemas, verifies the Bazel lock, and confirms that no
-Cargo dependency change requires lock regeneration before the workspace fix pass
-and `just fmt`.
+The final generated-artifact pass regenerated the config schema and stable and
+experimental app-server schemas, verified the Bazel lock, and confirmed that no
+Cargo dependency change required lock regeneration. The workspace fix pass and
+`just fmt` then completed successfully.
 
 The complete workspace `just test` was not run. `AGENTS.md` requires explicit
 user approval for that suite, and approval was not given. Focused suites are the
@@ -383,8 +383,10 @@ SHA-256
 The bundle was verified with all nine pre-consolidation refs and is retained after
 branch cleanup.
 
-Once focused validation, generated artifacts, formatting, ancestry, and remote-tip
-guards pass, the candidate fast-forwards `main`. Deleting the six exact non-`main`
-GitHub branches, removing the clean auxiliary worktrees, and deleting the exact
-local non-`main` branches is the final operational step. No old branch is needed to
-continue the implementation after that point.
+After focused validation, generated artifacts, formatting, ancestry, and
+remote-tip guards passed, candidate
+`be7c1b4f23abc2cdbbff31f0002912c74577c79f` fast-forwarded `main`. The six exact
+non-`main` GitHub branches were deleted atomically with leases, the 12 clean
+auxiliary worktrees were removed without force, and all 14 exact local non-`main`
+branches were deleted in one reference transaction. Final verification found one
+local branch, one GitHub branch, and one worktree: `main`.

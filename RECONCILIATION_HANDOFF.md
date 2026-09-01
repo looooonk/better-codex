@@ -35,10 +35,9 @@ The formerly separate implementation streams are integrated into one history:
   app-server routing.
 
 The independent response-copy feature branch and all five upstream-checkpoint
-branches are represented in the consolidated ancestry. Their old branch
-names are no longer implementation dependencies and are removed only after the
-candidate is validated, pushed to `main`, and rechecked against their recorded
-remote tips.
+branches are represented in the consolidated ancestry. Their old branch names
+were removed after the candidate was validated, pushed to `main`, and rechecked
+against their recorded remote tips.
 
 ## Preserved Better Codex boundaries
 
@@ -126,13 +125,13 @@ rewritten during repository cleanup.
 ## Final repository operation
 
 After the focused gates, generated artifacts, format checks, and ancestry checks
-pass, the consolidation candidate fast-forwards `main` and is pushed to GitHub.
-The recorded remote tips are re-read immediately before deletion so concurrent
-updates cannot be discarded. The final operational step is deleting the six
-non-`main` GitHub branches, removing the clean auxiliary worktrees, and deleting
-the exact local non-`main` branch names.
+passed, consolidation candidate `be7c1b4f23abc2cdbbff31f0002912c74577c79f`
+fast-forwarded `main` and was pushed to GitHub with an exact lease. The recorded
+remote tips were re-read immediately before an atomic deletion of the six
+non-`main` GitHub branches. The 12 clean auxiliary worktrees and 14 exact local
+non-`main` branch names were then removed.
 
-Completion means all of the following are true:
+Post-cutover verification confirmed all of the following:
 
 - local `main`, `origin/main`, and GitHub `main` resolve to the same commit;
 - every former local and remote branch tip is an ancestor of `main`;
