@@ -51,7 +51,8 @@ mod transport;
 
 const MAX_IN_FLIGHT_REQUESTS: usize = 256;
 const MAX_ACTIVE_CELLS: usize = 128;
-const MAX_PENDING_DELEGATE_CALLS: usize = 256;
+const MAX_PENDING_DELEGATE_CALLS: usize =
+    codex_code_mode_protocol::host::MAX_PENDING_DELEGATE_CALLS;
 const MAX_RECENT_REQUEST_IDS: usize = 4096;
 const MAX_RECENT_SESSION_IDS: usize = 4096;
 const OUTGOING_CHANNEL_CAPACITY: usize = 128;
