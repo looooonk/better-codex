@@ -138,6 +138,22 @@ impl ThreadConfigSnapshot {
             self.cwd().as_path(),
         )
     }
+
+    fn into_thread_settings_overrides(self) -> CodexThreadSettingsOverrides {
+        CodexThreadSettingsOverrides {
+            environments: Some(self.environments),
+            profile_workspace_roots: Some(self.profile_workspace_roots),
+            approval_policy: Some(self.approval_policy),
+            approvals_reviewer: Some(self.approvals_reviewer),
+            permission_profile: Some(self.permission_profile),
+            active_permission_profile: self.active_permission_profile,
+            summary: self.reasoning_summary,
+            service_tier: Some(self.service_tier),
+            collaboration_mode: Some(self.collaboration_mode),
+            personality: self.personality,
+            ..Default::default()
+        }
+    }
 }
 
 /// Thread settings overrides that app-server validates before starting a turn.
@@ -364,6 +380,17 @@ impl CodexThread {
     ) -> ConstraintResult<ThreadConfigSnapshot> {
         let updates = self.thread_settings_update(overrides).await;
         self.codex.session.preview_settings(&updates).await
+    }
+
+    /// Restores effective mutable settings captured from another loaded runtime.
+    pub async fn restore_thread_settings(
+        &self,
+        snapshot: ThreadConfigSnapshot,
+    ) -> ConstraintResult<()> {
+        let updates = self
+            .thread_settings_update(snapshot.into_thread_settings_overrides())
+            .await;
+        self.codex.session.update_settings(updates).await
     }
 
     async fn thread_settings_update(
@@ -598,6 +625,15 @@ impl CodexThread {
 
     pub async fn config(&self) -> Arc<crate::config::Config> {
         self.codex.session.get_config().await
+    }
+
+    /// Returns whether this runtime accepts OpenAI form elicitation requests.
+    pub fn supports_openai_form_elicitation(&self) -> bool {
+        self.codex
+            .session
+            .services
+            .supports_openai_form_elicitation
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Resolves the MCP runtime configuration using this thread's extension data.
