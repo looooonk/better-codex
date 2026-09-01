@@ -15,6 +15,7 @@ use codex_exec_server::FileSystemSandboxContext;
 use codex_extension_api::ConversationHistory;
 use codex_extension_api::ExtensionData;
 use codex_extension_api::ExtensionEventSink;
+use codex_extension_api::ExtensionMetrics;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_extension_api::FunctionCallError;
 use codex_extension_api::NoopTurnItemEmitter;
@@ -35,6 +36,10 @@ use codex_protocol::protocol::SkillScope;
 use codex_protocol::protocol::TruncationPolicy;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::user_input::UserInput;
+use codex_otel::THREAD_SKILLS_DESCRIPTION_TRUNCATED_CHARS_METRIC;
+use codex_otel::THREAD_SKILLS_ENABLED_TOTAL_METRIC;
+use codex_otel::THREAD_SKILLS_KEPT_TOTAL_METRIC;
+use codex_otel::THREAD_SKILLS_TRUNCATED_METRIC;
 use codex_skills::SkillMetadata;
 use codex_skills_extension::SkillProviders;
 use codex_skills_extension::SkillsExtensionConfig;
@@ -120,6 +125,7 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
             environments: &[],
             ready_selected_capability_roots: &[],
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &turn_store,
@@ -187,6 +193,7 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
             environments: &[],
             ready_selected_capability_roots: &[],
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &oversized_turn_store,
@@ -198,6 +205,125 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
     assert!(bounded_body.chars().count() <= 9_024);
 
     std::fs::remove_dir_all(codex_home)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn host_world_state_records_metrics_only_on_publish_and_change() -> TestResult {
+    let mut builder = ExtensionRegistryBuilder::new();
+    install(&mut builder, skills_extension_config);
+    let registry = builder.build();
+    let metrics = Arc::new(RecordingMetrics::default());
+    let session_store = ExtensionData::new("session");
+    let thread_store = ExtensionData::new("thread");
+    let config = default_config();
+    registry.thread_lifecycle_contributors()[0]
+        .on_thread_start(ThreadStartInput {
+            config: &config,
+            session_source: &SessionSource::Cli,
+            persistent_thread_state_available: true,
+            environments: &[],
+            session_store: &session_store,
+            thread_store: &thread_store,
+        })
+        .await;
+
+    let skill = |name: &str| SkillMetadata {
+            name: name.to_string(),
+            description: format!("{name} skill."),
+            short_description: None,
+            interface: None,
+            dependencies: None,
+            policy: None,
+            path_to_skills_md: AbsolutePathBuf::try_from(
+                test_codex_home().join(format!("skills/{name}/SKILL.md")),
+            )
+            .expect("test skill path should be absolute"),
+            scope: SkillScope::User,
+            plugin_id: None,
+    };
+    let mut outcome = SkillLoadOutcome::default();
+    outcome.skills.push(skill("demo"));
+    let turn_store = ExtensionData::new("turn-1");
+    turn_store.insert(HostSkillsSnapshot::new(Arc::new(outcome.clone())));
+
+    let sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-1",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            executor_capability_discovery: None,
+            extension_metrics: Some(metrics.clone()),
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &turn_store,
+        })
+        .await;
+    let host_section = sections
+        .iter()
+        .find(|section| section.id() == "host_skills")
+        .ok_or("host section")?;
+    let published_snapshot = host_section.snapshot().clone();
+    assert!(
+        host_section
+            .render_diff(PreviousWorldStateSection::Absent)
+            .is_some()
+    );
+    assert_eq!(metrics.samples(), expected_catalog_samples(1));
+
+    let sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-1",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            executor_capability_discovery: None,
+            extension_metrics: Some(metrics.clone()),
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &turn_store,
+        })
+        .await;
+    let host_section = sections
+        .iter()
+        .find(|section| section.id() == "host_skills")
+        .ok_or("host section")?;
+    assert!(
+        host_section
+            .render_diff(PreviousWorldStateSection::Known(&published_snapshot))
+            .is_none()
+    );
+    assert_eq!(metrics.samples(), expected_catalog_samples(1));
+
+    outcome.skills.push(skill("other"));
+    turn_store.insert(HostSkillsSnapshot::new(Arc::new(outcome)));
+    let sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-1",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            executor_capability_discovery: None,
+            extension_metrics: Some(metrics.clone()),
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &turn_store,
+        })
+        .await;
+    let host_section = sections
+        .iter()
+        .find(|section| section.id() == "host_skills")
+        .ok_or("host section")?;
+    assert!(
+        host_section
+            .render_diff(PreviousWorldStateSection::Known(&published_snapshot))
+            .is_some()
+    );
+    let mut expected = expected_catalog_samples(1);
+    expected.extend(expected_catalog_samples(2));
+    assert_eq!(metrics.samples(), expected);
+
     Ok(())
 }
 
@@ -349,6 +475,7 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
             environments: std::slice::from_ref(&turn_environment),
             ready_selected_capability_roots: &selected_roots,
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &turn_store,
@@ -402,6 +529,7 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
             environments: &[],
             ready_selected_capability_roots: &[],
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &unavailable_turn_store,
@@ -425,6 +553,7 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
             environments: &[turn_environment],
             ready_selected_capability_roots: &selected_roots,
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &restored_turn_store,
@@ -453,6 +582,7 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
             environments: &[],
             ready_selected_capability_roots: &selected_roots,
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &listing_disabled_turn_store,
@@ -532,6 +662,7 @@ async fn default_context_truncates_catalog_descriptions() -> TestResult {
             environments: &[],
             ready_selected_capability_roots: &[],
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &turn_store,
@@ -997,6 +1128,7 @@ async fn orchestrator_catalog_snapshot_caches_failure() -> TestResult {
             environments: &[],
             ready_selected_capability_roots: &[],
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &turn_store,
@@ -1123,6 +1255,7 @@ async fn root_qualified_locator_selects_only_the_matching_executor_skill() -> Te
             }],
             ready_selected_capability_roots: &selected_roots,
             executor_capability_discovery: None,
+            extension_metrics: None,
             session_store: &session_store,
             thread_store: &thread_store,
             turn_store: &turn_store,
@@ -1279,6 +1412,57 @@ impl ExtensionEventSink for ChannelEventSink {
     fn emit(&self, event: Event) {
         let _ = self.0.send(event);
     }
+}
+
+#[derive(Default)]
+struct RecordingMetrics {
+    samples: Mutex<Vec<(String, i64, Vec<(String, String)>)>>,
+}
+
+impl RecordingMetrics {
+    fn samples(&self) -> Vec<(String, i64, Vec<(String, String)>)> {
+        self.samples
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl ExtensionMetrics for RecordingMetrics {
+    fn histogram(&self, name: &str, value: i64, tags: &[(&str, &str)]) {
+        self.samples
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .push((
+                name.to_string(),
+                value,
+                tags.iter()
+                    .map(|(key, value)| ((*key).to_string(), (*value).to_string()))
+                    .collect(),
+            ));
+    }
+}
+
+fn expected_catalog_samples(count: i64) -> Vec<(String, i64, Vec<(String, String)>)> {
+    let tags = vec![("catalog_surface".to_string(), "host_world_state".to_string())];
+    vec![
+        (
+            THREAD_SKILLS_ENABLED_TOTAL_METRIC.to_string(),
+            count,
+            tags.clone(),
+        ),
+        (
+            THREAD_SKILLS_KEPT_TOTAL_METRIC.to_string(),
+            count,
+            tags.clone(),
+        ),
+        (THREAD_SKILLS_TRUNCATED_METRIC.to_string(), 0, tags.clone()),
+        (
+            THREAD_SKILLS_DESCRIPTION_TRUNCATED_CHARS_METRIC.to_string(),
+            0,
+            tags,
+        ),
+    ]
 }
 
 impl SkillProvider for StaticSkillProvider {

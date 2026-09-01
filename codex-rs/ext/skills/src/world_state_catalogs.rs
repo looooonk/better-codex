@@ -21,6 +21,8 @@ use crate::render::SkillMetadataBudget;
 use crate::render::SkillRenderReport;
 use crate::render::render_combined_available_skills;
 use crate::render::skill_metadata_budget;
+use crate::render_observability::CatalogSurface;
+use crate::render_observability::record_catalog_render;
 use crate::sources::SkillProviders;
 use crate::state::EmittedCatalogBudgetWarnings;
 use crate::state::ExecutorSkillsStepState;
@@ -70,6 +72,16 @@ enum CatalogKind {
     Executor,
     Orchestrator,
     Host,
+}
+
+impl CatalogKind {
+    fn metrics_surface(self) -> CatalogSurface {
+        match self {
+            Self::Executor => CatalogSurface::ExecutorWorldState,
+            Self::Orchestrator => CatalogSurface::OrchestratorWorldState,
+            Self::Host => CatalogSurface::HostWorldState,
+        }
+    }
 }
 
 pub(crate) struct CatalogContext<'a> {
@@ -270,7 +282,7 @@ impl<'a> CatalogContext<'a> {
             .and_then(|rendered| rendered.into_fragment(self.include_usage))
             .map(|fragment| fragment.body());
         let include_instructions = self.config.include_instructions;
-        let on_render = self.catalog_render_callback(catalog.status, report.clone());
+        let on_render = self.catalog_render_callback(catalog.kind, catalog.status, report.clone());
 
         match catalog.kind {
             CatalogKind::Executor => {
@@ -291,9 +303,11 @@ impl<'a> CatalogContext<'a> {
 
     fn catalog_render_callback(
         &self,
+        kind: CatalogKind,
         status: CatalogStatus,
         report: SkillRenderReport,
     ) -> CatalogRenderCallback {
+        let extension_metrics = self.input.extension_metrics.clone();
         let event_sink = Arc::clone(&self.event_sink);
         let emitted_warnings = Arc::clone(&self.emitted_warnings);
         let turn_id = self.input.turn_id.to_string();
@@ -302,7 +316,12 @@ impl<'a> CatalogContext<'a> {
             if status != CatalogStatus::Enabled {
                 return;
             }
-            trace_budget_pressure(budget, &report);
+            record_catalog_render(
+                extension_metrics.as_deref(),
+                kind.metrics_surface(),
+                budget,
+                &report,
+            );
             if let Some(message) = report.warning_message()
                 && emitted_warnings.insert(&message)
             {
@@ -325,18 +344,4 @@ fn emit_warning(event_sink: &dyn ExtensionEventSink, turn_id: &str, message: Str
         id: turn_id.to_string(),
         msg: EventMsg::Warning(WarningEvent { message }),
     });
-}
-
-fn trace_budget_pressure(budget: SkillMetadataBudget, report: &SkillRenderReport) {
-    if report.omitted_count > 0 || report.truncated_description_chars > 0 {
-        tracing::info!(
-            budget_limit = budget.limit(),
-            total_skills = report.total_count,
-            included_skills = report.included_count,
-            omitted_skills = report.omitted_count,
-            truncated_description_chars_per_skill = report.average_truncated_description_chars(),
-            truncated_skill_descriptions = report.truncated_description_count,
-            "truncated skill metadata to fit skills context budget"
-        );
-    }
 }

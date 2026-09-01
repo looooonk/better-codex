@@ -15,6 +15,7 @@ mod host_snapshot;
 mod loader;
 pub mod provider;
 mod render;
+mod render_observability;
 mod selection;
 mod sources;
 mod state;

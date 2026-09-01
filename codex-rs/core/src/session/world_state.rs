@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::session::Session;
 use super::step_context::StepContext;
 use crate::connectors;
@@ -103,6 +105,9 @@ impl Session {
             .iter()
             .map(|root| root.selected_root().clone())
             .collect::<Vec<_>>();
+        let extension_metrics = super::extension_metrics::from_session_telemetry(
+            turn_context.session_telemetry.clone(),
+        );
         for contributor in self.services.extensions.context_contributors() {
             for section in contributor
                 .contribute_world_state(WorldStateContributionInput {
@@ -113,6 +118,7 @@ impl Session {
                     executor_capability_discovery: step_context
                         .executor_capability_discovery
                         .as_deref(),
+                    extension_metrics: Some(Arc::clone(&extension_metrics)),
                     session_store: &self.services.session_extension_data,
                     thread_store: &self.services.thread_extension_data,
                     turn_store: turn_context.extension_data.as_ref(),
