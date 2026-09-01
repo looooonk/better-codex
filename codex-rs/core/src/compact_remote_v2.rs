@@ -7,10 +7,11 @@ use crate::client_common::ResponseEvent;
 use crate::compact::CompactionAnalyticsAttempt;
 use crate::compact::CompactionAnalyticsDetails;
 use crate::compact::InitialContextInjection;
+use crate::compact::build_compaction_initial_context;
 use crate::compact::compaction_status_from_result;
+use crate::compact::place_annotated_compaction_context;
 use crate::compact_model_fallback::record_model_fallback;
 use crate::compact_model_fallback::should_retry_with_current_model;
-use crate::compact_remote::process_compacted_history;
 use crate::compact_remote::should_keep_compacted_history_item;
 use crate::hook_runtime::PostCompactHookOutcome;
 use crate::hook_runtime::PreCompactHookOutcome;
@@ -27,6 +28,8 @@ use codex_analytics::CompactionImplementation;
 use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
 use codex_analytics::CompactionTrigger;
+use codex_features::Feature;
+use codex_history::CodexHarnessMetadata;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
@@ -34,6 +37,7 @@ use codex_protocol::items::TurnItem;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_history::CompactedItem;
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TruncationPolicy;
@@ -51,7 +55,7 @@ use attempt::run_remote_compact_v2_attempt;
 
 // Mirror the current /responses/compact retained-message default while the
 // server-side path remains the reference implementation.
-const RETAINED_MESSAGE_TOKEN_BUDGET: usize = 64_000;
+pub(crate) const RETAINED_MESSAGE_TOKEN_BUDGET: usize = 64_000;
 // Compact attempts can run much longer than normal turns, so keep the per-transport
 // retry budget smaller than the general Responses stream retry budget.
 const MAX_REMOTE_COMPACTION_V2_STREAM_RETRIES: u64 = 2;
@@ -268,6 +272,7 @@ async fn run_remote_compact_task_inner_impl(
     let RemoteCompactV2Attempt {
         trace_input_history,
         prompt_input,
+        prompt_input_metadata,
         compaction_output,
         token_usage,
         owned_client_session: _owned_client_session,
@@ -279,33 +284,51 @@ async fn run_remote_compact_task_inner_impl(
         analytics_details.cached_input_tokens = Some(token_usage.cached_input_tokens);
         analytics_details.cache_write_input_tokens = Some(token_usage.cache_write_input_tokens);
     }
-    let (compacted_history, retained_images) =
-        build_v2_compacted_history(&prompt_input, compaction_output);
+    let (mut compacted_history, retained_images) = build_v2_compacted_history(
+        prompt_input,
+        prompt_input_metadata,
+        compaction_output,
+        sess.enabled(Feature::RetainClientDeveloperMessages),
+    );
     analytics_details.retained_image_count = Some(retained_images);
     let (new_window_number, new_window_ids) = sess.advance_auto_compact_window().await;
-    let (new_history, world_state_baseline) = process_compacted_history(
+    let (initial_context, world_state_baseline) = build_compaction_initial_context(
         sess.as_ref(),
         compaction_turn_context.as_ref(),
-        compacted_history,
         &initial_context_injection,
     )
     .await;
+    compacted_history.retain(|envelope| {
+        should_keep_compacted_history_item(&envelope.item)
+            || (sess.enabled(Feature::RetainClientDeveloperMessages)
+                && is_client_authored_developer_message(envelope))
+    });
+    let new_history = place_annotated_compaction_context(
+        compacted_history,
+        initial_context,
+        compaction_turn_context.as_ref(),
+        &initial_context_injection,
+    );
 
     let reference_context_item =
         initial_context_injection.reference_context_item(compaction_turn_context.as_ref());
     let compacted_item = CompactedItem {
         message: String::new(),
-        replacement_history: Some(new_history.clone()),
+        replacement_history: None,
         window_number: Some(new_window_number),
         first_window_id: Some(new_window_ids.first_window_id.to_string()),
         previous_window_id: new_window_ids.previous_window_id.map(|id| id.to_string()),
         window_id: Some(new_window_ids.window_id.to_string()),
     };
+    let trace_replacement_history = new_history
+        .iter()
+        .map(|envelope| envelope.item.clone())
+        .collect::<Vec<_>>();
     compaction_trace.record_installed(&CompactionCheckpointTracePayload {
         input_history: &trace_input_history,
-        replacement_history: &new_history,
+        replacement_history: &trace_replacement_history,
     });
-    sess.replace_compacted_history(
+    sess.replace_annotated_compacted_history(
         new_history,
         reference_context_item,
         world_state_baseline,
@@ -436,23 +459,38 @@ async fn collect_compaction_output(
 }
 
 fn build_v2_compacted_history(
-    prompt_input: &[ResponseItem],
+    prompt_input: Vec<ResponseItem>,
+    prompt_input_metadata: Vec<Option<CodexHarnessMetadata>>,
     compaction_output: ResponseItem,
-) -> (Vec<ResponseItem>, usize) {
+    retain_client_developer_messages: bool,
+) -> (Vec<ResponseItemEnvelope>, usize) {
+    let prompt_input = prompt_input
+        .into_iter()
+        .zip(prompt_input_metadata)
+        .map(|(item, metadata)| ResponseItemEnvelope { item, metadata });
     let retained = prompt_input
-        .iter()
-        .filter(|item| is_retained_for_remote_compaction_v2(item))
-        .filter(|item| should_keep_compacted_history_item(item))
-        .cloned()
+        .filter(|item| is_retained_for_remote_compaction_v2(&item.item))
+        .filter(|item| {
+            should_keep_compacted_history_item(&item.item)
+                || (retain_client_developer_messages
+                    && is_client_authored_developer_message(item))
+        })
         .collect::<Vec<_>>();
     let mut retained =
         truncate_retained_messages_for_remote_compaction(retained, RETAINED_MESSAGE_TOKEN_BUDGET);
     let retained_image_count = retained
         .iter()
-        .map(retained_input_image_count)
+        .map(|envelope| retained_input_image_count(&envelope.item))
         .sum::<usize>();
-    retained.push(compaction_output);
+    retained.push(ResponseItemEnvelope::new(compaction_output));
     (retained, retained_image_count)
+}
+
+pub(crate) fn is_client_authored_developer_message(item: &ResponseItemEnvelope) -> bool {
+    item.metadata
+        .as_ref()
+        .is_some_and(|metadata| metadata.client_authored)
+        && matches!(&item.item, ResponseItem::Message { role, .. } if role == "developer")
 }
 
 fn is_retained_for_remote_compaction_v2(item: &ResponseItem) -> bool {
@@ -474,10 +512,10 @@ fn retained_input_image_count(item: &ResponseItem) -> usize {
         .count()
 }
 
-fn truncate_retained_messages_for_remote_compaction(
-    items: Vec<ResponseItem>,
+pub(crate) fn truncate_retained_messages_for_remote_compaction(
+    items: Vec<ResponseItemEnvelope>,
     max_tokens: usize,
-) -> Vec<ResponseItem> {
+) -> Vec<ResponseItemEnvelope> {
     let mut remaining = max_tokens;
     let mut truncated_reversed = Vec::with_capacity(items.len());
     for item in items.into_iter().rev() {
@@ -485,7 +523,7 @@ fn truncate_retained_messages_for_remote_compaction(
             continue;
         }
 
-        let token_count = message_text_token_count(&item).max(1);
+        let token_count = message_text_token_count(&item.item).max(1);
         if token_count <= remaining {
             truncated_reversed.push(item);
             remaining = remaining.saturating_sub(token_count);
@@ -517,9 +555,10 @@ fn message_text_token_count(item: &ResponseItem) -> usize {
 }
 
 fn truncate_message_text_to_token_budget(
-    item: ResponseItem,
+    mut envelope: ResponseItemEnvelope,
     max_tokens: usize,
-) -> Option<ResponseItem> {
+) -> Option<ResponseItemEnvelope> {
+    let item = envelope.item;
     let ResponseItem::Message {
         id,
         role,
@@ -528,7 +567,8 @@ fn truncate_message_text_to_token_budget(
         internal_chat_message_metadata_passthrough: metadata,
     } = item
     else {
-        return Some(item);
+        envelope.item = item;
+        return Some(envelope);
     };
 
     let mut remaining = max_tokens;
@@ -561,13 +601,14 @@ fn truncate_message_text_to_token_budget(
         return None;
     }
 
-    Some(ResponseItem::Message {
+    envelope.item = ResponseItem::Message {
         id,
         role,
         content: truncated_content,
         phase,
         internal_chat_message_metadata_passthrough: metadata,
-    })
+    };
+    Some(envelope)
 }
 
 #[cfg(test)]
@@ -589,6 +630,25 @@ mod tests {
             phase,
             internal_chat_message_metadata_passthrough: None,
         }
+    }
+
+    fn annotated(items: Vec<ResponseItem>) -> Vec<ResponseItemEnvelope> {
+        items.into_iter().map(ResponseItemEnvelope::new).collect()
+    }
+
+    fn raw(items: Vec<ResponseItemEnvelope>) -> Vec<ResponseItem> {
+        items
+            .into_iter()
+            .map(ResponseItemEnvelope::into_item)
+            .collect()
+    }
+
+    fn build_test_history(
+        input: Vec<ResponseItem>,
+        output: ResponseItem,
+    ) -> (Vec<ResponseItemEnvelope>, usize) {
+        let metadata = vec![None; input.len()];
+        build_v2_compacted_history(input, metadata, output, false)
     }
 
     fn response_stream(events: Vec<CodexResult<ResponseEvent>>) -> ResponseStream {
@@ -633,10 +693,10 @@ mod tests {
             internal_chat_message_metadata_passthrough: None,
         };
 
-        let (history, _) = build_v2_compacted_history(&input, output.clone());
+        let (history, _) = build_test_history(input, output.clone());
 
         assert_eq!(
-            history,
+            raw(history),
             vec![message("user", "user", /*phase*/ None), output]
         );
     }
@@ -662,9 +722,9 @@ mod tests {
             internal_chat_message_metadata_passthrough: None,
         };
 
-        let (history, _) = build_v2_compacted_history(&input, output.clone());
+        let (history, _) = build_test_history(input, output.clone());
 
-        assert_eq!(history, vec![old, new, output]);
+        assert_eq!(raw(history), vec![old, new, output]);
     }
 
     #[test]
@@ -694,7 +754,7 @@ mod tests {
             internal_chat_message_metadata_passthrough: None,
         };
 
-        let (_, retained_image_count) = build_v2_compacted_history(&input, output);
+        let (_, retained_image_count) = build_test_history(input, output);
 
         assert_eq!(retained_image_count, 2);
     }
@@ -710,10 +770,13 @@ mod tests {
         ];
 
         let truncated =
-            truncate_retained_messages_for_remote_compaction(retained, /*max_tokens*/ 3);
+            truncate_retained_messages_for_remote_compaction(
+                annotated(retained),
+                /*max_tokens*/ 3,
+            );
 
         assert_eq!(
-            truncated,
+            raw(truncated),
             vec![
                 message("user", "midd…1 tokens truncated…1234", /*phase*/ None),
                 new,
@@ -743,10 +806,13 @@ mod tests {
         };
 
         let truncated =
-            truncate_retained_messages_for_remote_compaction(vec![item], /*max_tokens*/ 3);
+            truncate_retained_messages_for_remote_compaction(
+                annotated(vec![item]),
+                /*max_tokens*/ 3,
+            );
 
         assert_eq!(
-            truncated,
+            raw(truncated),
             vec![ResponseItem::Message {
                 id: None,
                 role: "user".to_string(),
@@ -788,9 +854,12 @@ mod tests {
         ];
 
         let truncated =
-            truncate_retained_messages_for_remote_compaction(retained, /*max_tokens*/ 2);
+            truncate_retained_messages_for_remote_compaction(
+                annotated(retained),
+                /*max_tokens*/ 2,
+            );
 
-        assert_eq!(truncated, vec![image_only_message, newest]);
+        assert_eq!(raw(truncated), vec![image_only_message, newest]);
     }
 
     #[test]
@@ -809,9 +878,12 @@ mod tests {
         let retained = vec![image_only_message, newest.clone()];
 
         let truncated =
-            truncate_retained_messages_for_remote_compaction(retained, /*max_tokens*/ 1);
+            truncate_retained_messages_for_remote_compaction(
+                annotated(retained),
+                /*max_tokens*/ 1,
+            );
 
-        assert_eq!(truncated, vec![newest]);
+        assert_eq!(raw(truncated), vec![newest]);
     }
 
     #[tokio::test]

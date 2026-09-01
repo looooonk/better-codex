@@ -1,7 +1,7 @@
 use crate::state::ActiveTurn;
 use crate::state::MailboxDeliveryPhase;
 use crate::state::TurnState;
-use codex_protocol::models::ResponseItem;
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::user_input::UserInput;
 use std::collections::VecDeque;
@@ -15,7 +15,7 @@ pub(crate) enum TurnInput {
         content: Vec<UserInput>,
         client_id: Option<String>,
     },
-    ResponseItem(ResponseItem),
+    ResponseItem(ResponseItemEnvelope),
     InterAgentCommunication(InterAgentCommunication),
 }
 

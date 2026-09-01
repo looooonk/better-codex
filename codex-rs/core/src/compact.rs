@@ -27,6 +27,7 @@ use codex_analytics::CompactionStatus;
 use codex_analytics::CompactionStrategy;
 use codex_analytics::CompactionTrigger;
 use codex_analytics::now_unix_seconds;
+use codex_features::Feature;
 use codex_history::CodexHarnessMetadata;
 use codex_history::CompactedItem;
 use codex_history::ResponseItemEnvelope;
@@ -140,7 +141,7 @@ pub(crate) fn place_compaction_context(
     .collect()
 }
 
-fn place_annotated_compaction_context(
+pub(crate) fn place_annotated_compaction_context(
     mut compacted_history: Vec<ResponseItemEnvelope>,
     initial_context: Vec<ResponseItem>,
     turn_context: &TurnContext,
@@ -418,9 +419,27 @@ async fn run_compact_task_inner_impl(
         get_last_assistant_message_from_turn(history_snapshot.raw_items()).unwrap_or_default();
     let summary_text = format!("{SUMMARY_PREFIX}\n{summary_suffix}");
     let user_messages = collect_annotated_user_messages(history_items);
+    let retained_client_developer_messages =
+        if sess.enabled(Feature::RetainClientDeveloperMessages) {
+            crate::compact_remote_v2::truncate_retained_messages_for_remote_compaction(
+                history_items
+                    .iter()
+                    .filter(|item| {
+                        crate::compact_remote_v2::is_client_authored_developer_message(item)
+                    })
+                    .cloned()
+                    .collect(),
+                crate::compact_remote_v2::RETAINED_MESSAGE_TOKEN_BUDGET,
+            )
+        } else {
+            Vec::new()
+        };
 
-    let mut new_history =
-        build_annotated_compacted_history(Vec::new(), &user_messages, &summary_text);
+    let mut new_history = build_annotated_compacted_history(
+        retained_client_developer_messages,
+        &user_messages,
+        &summary_text,
+    );
     if let Some(summary_item) = new_history.last_mut() {
         // This replacement history skips `record_conversation_items`; only the appended summary
         // belongs to this compaction turn.

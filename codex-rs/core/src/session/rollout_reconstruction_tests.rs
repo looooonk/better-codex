@@ -155,9 +155,9 @@ async fn record_initial_history_ignores_security_risk_scores() {
         .record_initial_history(InitialHistory::Resumed(ResumedHistory {
             conversation_id: ThreadId::default(),
             history: Arc::new(vec![
-                RolloutItem::ResponseItem(user.clone()),
+                RolloutItem::ResponseItem(user.clone().into()),
                 RolloutItem::SecurityRiskScore(security_risk),
-                RolloutItem::ResponseItem(assistant.clone()),
+                RolloutItem::ResponseItem(assistant.clone().into()),
             ]),
             rollout_path: Some(PathBuf::from("/tmp/resume.jsonl")),
         }))
@@ -182,6 +182,7 @@ async fn record_initial_history_restores_world_state_baseline() {
     let mut world_state_items = expected_history
         .iter()
         .cloned()
+        .map(Into::into)
         .map(RolloutItem::ResponseItem)
         .collect::<Vec<_>>();
     world_state_items.push(RolloutItem::WorldState(WorldStateItem::full(
@@ -385,8 +386,8 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_com
         RolloutItem::WorldState(WorldStateItem::full(object!({
             "test": {"environment": "first"}
         }))),
-        RolloutItem::ResponseItem(turn_one_user.clone()),
-        RolloutItem::ResponseItem(turn_one_assistant.clone()),
+        RolloutItem::ResponseItem(turn_one_user.clone().into()),
+        RolloutItem::ResponseItem(turn_one_assistant.clone().into()),
         RolloutItem::EventMsg(EventMsg::TurnComplete(
             codex_protocol::protocol::TurnCompleteEvent {
                 turn_id: first_turn_id,
@@ -421,8 +422,8 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_com
         RolloutItem::WorldState(WorldStateItem::patch(object!({
             "test": {"environment": "rolled-back"}
         }))),
-        RolloutItem::ResponseItem(turn_two_user),
-        RolloutItem::ResponseItem(turn_two_assistant),
+        RolloutItem::ResponseItem(turn_two_user.into()),
+        RolloutItem::ResponseItem(turn_two_assistant.into()),
         RolloutItem::EventMsg(EventMsg::TurnComplete(
             codex_protocol::protocol::TurnCompleteEvent {
                 turn_id: rolled_back_turn_id,
@@ -444,7 +445,11 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_com
         .await;
 
     assert_eq!(
-        reconstructed.history,
+        reconstructed
+            .history
+            .into_iter()
+            .map(codex_history::ResponseItemEnvelope::into_item)
+            .collect::<Vec<_>>(),
         vec![turn_one_user, turn_one_assistant]
     );
     assert_eq!(
@@ -502,8 +507,8 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_inc
             },
         )),
         RolloutItem::TurnContext(first_context_item.clone()),
-        RolloutItem::ResponseItem(turn_one_user.clone()),
-        RolloutItem::ResponseItem(turn_one_assistant.clone()),
+        RolloutItem::ResponseItem(turn_one_user.clone().into()),
+        RolloutItem::ResponseItem(turn_one_assistant.clone().into()),
         RolloutItem::EventMsg(EventMsg::TurnComplete(
             codex_protocol::protocol::TurnCompleteEvent {
                 turn_id: first_turn_id,
@@ -534,7 +539,7 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_inc
                 ..Default::default()
             },
         )),
-        RolloutItem::ResponseItem(turn_two_user),
+        RolloutItem::ResponseItem(turn_two_user.into()),
         RolloutItem::EventMsg(EventMsg::ThreadRolledBack(
             codex_protocol::protocol::ThreadRolledBackEvent { num_turns: 1 },
         )),
@@ -545,7 +550,11 @@ async fn reconstruct_history_rollback_keeps_history_and_metadata_in_sync_for_inc
         .await;
 
     assert_eq!(
-        reconstructed.history,
+        reconstructed
+            .history
+            .into_iter()
+            .map(codex_history::ResponseItemEnvelope::into_item)
+            .collect::<Vec<_>>(),
         vec![turn_one_user, turn_one_assistant]
     );
     assert_eq!(
@@ -601,8 +610,8 @@ async fn reconstruct_history_rollback_skips_non_user_turns_for_history_and_metad
             },
         )),
         RolloutItem::TurnContext(first_context_item.clone()),
-        RolloutItem::ResponseItem(turn_one_user.clone()),
-        RolloutItem::ResponseItem(turn_one_assistant.clone()),
+        RolloutItem::ResponseItem(turn_one_user.clone().into()),
+        RolloutItem::ResponseItem(turn_one_assistant.clone().into()),
         RolloutItem::EventMsg(EventMsg::TurnComplete(
             codex_protocol::protocol::TurnCompleteEvent {
                 turn_id: first_turn_id,
@@ -633,8 +642,8 @@ async fn reconstruct_history_rollback_skips_non_user_turns_for_history_and_metad
                 ..Default::default()
             },
         )),
-        RolloutItem::ResponseItem(turn_two_user),
-        RolloutItem::ResponseItem(turn_two_assistant),
+        RolloutItem::ResponseItem(turn_two_user.into()),
+        RolloutItem::ResponseItem(turn_two_assistant.into()),
         RolloutItem::EventMsg(EventMsg::TurnComplete(
             codex_protocol::protocol::TurnCompleteEvent {
                 turn_id: second_turn_id,
@@ -655,7 +664,7 @@ async fn reconstruct_history_rollback_skips_non_user_turns_for_history_and_metad
                 collaboration_mode_kind: ModeKind::Default,
             },
         )),
-        RolloutItem::ResponseItem(standalone_assistant),
+        RolloutItem::ResponseItem(standalone_assistant.into()),
         RolloutItem::EventMsg(EventMsg::TurnComplete(
             codex_protocol::protocol::TurnCompleteEvent {
                 turn_id: standalone_turn_id,
@@ -677,7 +686,11 @@ async fn reconstruct_history_rollback_skips_non_user_turns_for_history_and_metad
         .await;
 
     assert_eq!(
-        reconstructed.history,
+        reconstructed
+            .history
+            .into_iter()
+            .map(codex_history::ResponseItemEnvelope::into_item)
+            .collect::<Vec<_>>(),
         vec![turn_one_user, turn_one_assistant]
     );
     assert_eq!(
@@ -733,8 +746,8 @@ async fn reconstruct_history_rollback_counts_inter_agent_assistant_turns() {
             },
         )),
         RolloutItem::TurnContext(first_context_item.clone()),
-        RolloutItem::ResponseItem(user_message("turn 1 user")),
-        RolloutItem::ResponseItem(assistant_message("turn 1 assistant")),
+        RolloutItem::ResponseItem(user_message("turn 1 user").into()),
+        RolloutItem::ResponseItem(assistant_message("turn 1 assistant").into()),
         RolloutItem::EventMsg(EventMsg::TurnComplete(
             codex_protocol::protocol::TurnCompleteEvent {
                 turn_id: first_turn_id,
@@ -756,8 +769,8 @@ async fn reconstruct_history_rollback_counts_inter_agent_assistant_turns() {
             },
         )),
         RolloutItem::TurnContext(assistant_turn_context),
-        RolloutItem::ResponseItem(assistant_instruction),
-        RolloutItem::ResponseItem(assistant_reply),
+        RolloutItem::ResponseItem(assistant_instruction.into()),
+        RolloutItem::ResponseItem(assistant_reply.into()),
         RolloutItem::EventMsg(EventMsg::TurnComplete(
             codex_protocol::protocol::TurnCompleteEvent {
                 turn_id: assistant_turn_id,
@@ -779,7 +792,11 @@ async fn reconstruct_history_rollback_counts_inter_agent_assistant_turns() {
         .await;
 
     assert_eq!(
-        reconstructed.history,
+        reconstructed
+            .history
+            .into_iter()
+            .map(codex_history::ResponseItemEnvelope::into_item)
+            .collect::<Vec<_>>(),
         vec![
             user_message("turn 1 user"),
             assistant_message("turn 1 assistant")
@@ -830,8 +847,8 @@ async fn reconstruct_history_rollback_clears_history_and_metadata_when_exceeding
             },
         )),
         RolloutItem::TurnContext(only_context_item),
-        RolloutItem::ResponseItem(user_message("only user")),
-        RolloutItem::ResponseItem(assistant_message("only assistant")),
+        RolloutItem::ResponseItem(user_message("only user").into()),
+        RolloutItem::ResponseItem(assistant_message("only assistant").into()),
         RolloutItem::EventMsg(EventMsg::TurnComplete(
             codex_protocol::protocol::TurnCompleteEvent {
                 turn_id: only_turn_id,
@@ -1233,8 +1250,8 @@ async fn reconstruct_history_legacy_compaction_without_replacement_history_does_
  {
     let (session, turn_context) = make_session_and_context().await;
     let rollout_items = vec![
-        RolloutItem::ResponseItem(user_message("before compact")),
-        RolloutItem::ResponseItem(assistant_message("assistant reply")),
+        RolloutItem::ResponseItem(user_message("before compact").into()),
+        RolloutItem::ResponseItem(assistant_message("assistant reply").into()),
         RolloutItem::Compacted(CompactedItem {
             message: "legacy summary".to_string(),
             replacement_history: None,
@@ -1250,7 +1267,11 @@ async fn reconstruct_history_legacy_compaction_without_replacement_history_does_
         .await;
 
     assert_eq!(
-        reconstructed.history,
+        reconstructed
+            .history
+            .into_iter()
+            .map(codex_history::ResponseItemEnvelope::into_item)
+            .collect::<Vec<_>>(),
         vec![
             user_message("before compact"),
             user_message("legacy summary"),
@@ -1269,7 +1290,7 @@ async fn reconstruct_history_legacy_compaction_without_replacement_history_clear
         .clone()
         .expect("turn context should have turn_id");
     let rollout_items = vec![
-        RolloutItem::ResponseItem(user_message("before compact")),
+        RolloutItem::ResponseItem(user_message("before compact").into()),
         RolloutItem::Compacted(CompactedItem {
             message: "legacy summary".to_string(),
             replacement_history: None,

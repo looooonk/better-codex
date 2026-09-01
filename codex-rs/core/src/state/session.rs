@@ -88,6 +88,14 @@ impl SessionState {
         self.history.record_items(items, policy);
     }
 
+    pub(crate) fn record_annotated_items(
+        &mut self,
+        items: &[ResponseItemEnvelope],
+        policy: TruncationPolicy,
+    ) {
+        self.history.record_annotated_items(items, policy);
+    }
+
     pub(crate) fn previous_turn_settings(&self) -> Option<PreviousTurnSettings> {
         self.previous_turn_settings.clone()
     }
