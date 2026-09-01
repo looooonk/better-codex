@@ -5,12 +5,12 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
-use codex_core_skills::HostSkillsSnapshot;
-use codex_core_skills::SKILLS_INTRO_WITH_ABSOLUTE_PATHS;
-use codex_core_skills::SkillLoadOutcome;
 use codex_skills_extension::HostSkillsCatalogInWorldState;
+use codex_skills_extension::HostSkillsSnapshot;
 use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
 use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
+use codex_skills_extension::SKILLS_INTRO_WITH_ABSOLUTE_PATHS;
+use codex_skills_extension::SkillLoadOutcome;
 use codex_exec_server::EnvironmentManager;
 use codex_extension_api::ConversationHistory;
 use codex_extension_api::ExtensionData;

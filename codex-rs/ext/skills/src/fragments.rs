@@ -1,7 +1,7 @@
-use codex_core_skills::AvailableSkills;
-use codex_core_skills::SKILLS_HOW_TO_USE_WITH_ABSOLUTE_PATHS;
-use codex_core_skills::SKILLS_HOW_TO_USE_WITH_ALIASES;
-use codex_core_skills::render_available_skills_body;
+use crate::host_render::AvailableSkills;
+use crate::host_render::SKILLS_HOW_TO_USE_WITH_ABSOLUTE_PATHS;
+use crate::host_render::SKILLS_HOW_TO_USE_WITH_ALIASES;
+use crate::host_render::render_available_skills_body;
 use codex_extension_api::ContextualUserFragment;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_CLOSE_TAG;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;

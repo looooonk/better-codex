@@ -37,7 +37,7 @@ use crate::loader::HostSkillRoot;
 use crate::loader::MAX_CONCURRENT_ROOT_SCANS;
 use crate::loader::load_and_merge_host_skill_roots;
 
-async fn load_roots(roots: Vec<HostSkillRoot>) -> codex_core_skills::SkillLoadOutcome {
+async fn load_roots(roots: Vec<HostSkillRoot>) -> crate::SkillLoadOutcome {
     load_and_merge_host_skill_roots(
         roots,
         &Semaphore::new(MAX_CONCURRENT_ROOT_SCANS),

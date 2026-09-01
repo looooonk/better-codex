@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
 use codex_extension_api::ContextualUserFragment;
-use codex_core_skills::HostSkillsSnapshot;
 use codex_skills::SkillMetadata;
 use codex_skills::normalize_skill_path;
 
+use crate::HostSkillsSnapshot;
 use crate::fragments::SkillInstructions;
 
 pub const MAX_EXPLICIT_SKILL_PROMPT_BYTES: usize = 3_600;

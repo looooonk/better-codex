@@ -59,7 +59,6 @@ pub(crate) fn available_skills_fragment(
         include_skills_usage_instructions,
     ))
 }
-
 pub(crate) fn truncate_catalog_skill_description(description: &str) -> Cow<'_, str> {
     if description
         .char_indices()

@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use codex_core_skills::HostSkillsSnapshot;
-use codex_core_skills::default_skill_metadata_budget;
 use codex_exec_server::ExecutorCapabilityDiscoverySnapshot;
 use codex_exec_server::FileSystemSandboxContext;
 use codex_exec_server::LOCAL_ENVIRONMENT_ID;
@@ -33,7 +31,9 @@ use codex_protocol::protocol::WarningEvent;
 use crate::SkillsExtensionConfig;
 use crate::ExplicitSkillPromptBudget;
 use crate::HostSkillsCatalogInWorldState;
+use crate::HostSkillsSnapshot;
 use crate::InjectedHostSkillPrompts;
+use crate::default_skill_metadata_budget;
 use crate::catalog::SkillCatalog;
 use crate::catalog::SkillCatalogEntry;
 use crate::catalog::SkillReadResult;
@@ -138,8 +138,9 @@ where
             for warning in &catalog.warnings {
                 self.emit_warning(thread_store.level_id(), warning.clone());
             }
-            let include_usage = thread_store
-                .get::<ModelInfo>()
+            let model_info = thread_store.get::<ModelInfo>();
+            let include_usage = model_info
+                .as_deref()
                 .is_some_and(|model_info| model_info.include_skills_usage_instructions);
             available_skills_fragment(&catalog, include_usage)
                 .map(PromptFragment::developer_capability)

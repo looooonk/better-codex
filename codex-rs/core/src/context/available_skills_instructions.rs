@@ -1,7 +1,7 @@
-use codex_core_skills::AvailableSkills;
-use codex_core_skills::SKILLS_HOW_TO_USE_WITH_ABSOLUTE_PATHS;
-use codex_core_skills::SKILLS_HOW_TO_USE_WITH_ALIASES;
-use codex_core_skills::render_available_skills_body;
+use codex_skills_extension::host_render::AvailableSkills;
+use codex_skills_extension::host_render::SKILLS_HOW_TO_USE_WITH_ABSOLUTE_PATHS;
+use codex_skills_extension::host_render::SKILLS_HOW_TO_USE_WITH_ALIASES;
+use codex_skills_extension::host_render::render_available_skills_body;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_CLOSE_TAG;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
 
@@ -13,7 +13,6 @@ pub struct AvailableSkillsInstructions {
     skill_root_lines: Vec<String>,
     skill_lines: Vec<String>,
 }
-
 impl AvailableSkillsInstructions {
     /// Creates a skills context fragment from pre-rendered catalog lines.
     pub fn from_skill_lines(skill_lines: Vec<String>) -> Self {

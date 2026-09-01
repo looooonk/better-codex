@@ -1,5 +1,6 @@
-use codex_core_skills::SkillLoadOutcome;
 use codex_skills::SkillMetadata;
+
+use crate::SkillLoadOutcome;
 
 use crate::catalog::SkillAuthority;
 use crate::catalog::SkillCatalog;
@@ -81,7 +82,7 @@ impl SkillProvider for HostSkillProvider {
     }
 }
 
-fn catalog_from_outcome(outcome: &SkillLoadOutcome) -> SkillCatalog {
+pub(crate) fn catalog_from_outcome(outcome: &SkillLoadOutcome) -> SkillCatalog {
     let mut catalog = SkillCatalog {
         entries: Vec::new(),
         warnings: outcome

@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use codex_core_skills::SkillLoadOutcome;
 use codex_exec_server::ExecutorFileSystem;
 use codex_protocol::protocol::Product;
 use codex_protocol::protocol::SkillScope;
@@ -12,6 +11,8 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_plugins::PluginSkillRoot;
 use futures::StreamExt;
 use tokio::sync::Semaphore;
+
+use crate::SkillLoadOutcome;
 
 use super::HostSkillRoot;
 use super::MAX_CONCURRENT_ROOT_SCANS;

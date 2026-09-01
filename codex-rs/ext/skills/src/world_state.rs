@@ -1,7 +1,7 @@
-use codex_core_skills::HostSkillsSnapshot;
-use codex_core_skills::SkillMetadataBudget;
-use codex_core_skills::build_available_skills;
-use codex_core_skills::render::SkillRenderSideEffects;
+use crate::HostSkillsSnapshot;
+use crate::host_render::SkillMetadataBudget;
+use crate::host_render::build_available_skills;
+use crate::host_render::SkillRenderSideEffects;
 use codex_extension_api::ContextualUserFragment;
 use codex_extension_api::PreviousWorldStateSection;
 use codex_extension_api::RenderedWorldStateFragment;
@@ -78,7 +78,6 @@ pub(crate) fn executor_skills_world_state_section(
         None => contribution,
     }
 }
-
 pub(crate) fn host_skills_world_state_section(
     host_snapshot: &HostSkillsSnapshot,
     include_instructions: bool,

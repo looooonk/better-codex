@@ -93,3 +93,23 @@ fn skill_script_run_resolves_relative_paths_from_workdir() {
 
     assert_eq!(found.map(|skill| skill.name), Some("test-skill".to_string()));
 }
+
+#[test]
+fn skill_script_run_resolves_absolute_paths_from_any_workdir() {
+    let skill_path = test_path_buf("/tmp/skill-test/SKILL.md").abs();
+    let scripts = canonicalize_if_exists(&test_path_buf("/tmp/skill-test/scripts").abs());
+    let lookup = TestLookup {
+        scripts: HashMap::from([(scripts, skill(skill_path))]),
+        ..Default::default()
+    };
+    let tokens = vec![
+        "python3".to_string(),
+        test_path_buf("/tmp/skill-test/scripts/fetch_comments.py")
+            .display()
+            .to_string(),
+    ];
+
+    let found = detect_skill_script_run(&lookup, &tokens, &test_path_buf("/tmp/other").abs());
+
+    assert_eq!(found.map(|skill| skill.name), Some("test-skill".to_string()));
+}

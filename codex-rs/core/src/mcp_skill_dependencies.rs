@@ -18,7 +18,7 @@ use tracing::warn;
 use crate::SkillMetadata;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
-use crate::skills::model::SkillToolDependency;
+use codex_skills::SkillToolDependency;
 use codex_mcp::ElicitationReviewerHandle;
 use codex_mcp::McpOAuthLoginSupport;
 use codex_mcp::McpPermissionPromptAutoApproveContext;
