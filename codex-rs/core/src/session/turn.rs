@@ -192,6 +192,11 @@ pub(crate) async fn run_turn(
     };
 
     if run_pending_session_start_hooks(&sess, &turn_context).await {
+        if let Some(reply) = admission_reply {
+            reply.send(QueuedTurnStartSubmission::NotSubmitted {
+                reason: QueuedTurnStartRejectionReason::RejectedByHook,
+            });
+        }
         return Ok(None);
     }
     let mut can_drain_pending_input = input.is_empty();

@@ -6,6 +6,8 @@ use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::protocol::UserMessageEvent;
+use codex_utils_string::approx_bytes_for_tokens;
+use codex_utils_string::approx_token_count;
 use pretty_assertions::assert_eq;
 use std::path::PathBuf;
 
@@ -145,6 +147,100 @@ fn payload_validation_rejects_nondurable_or_unbounded_input() {
         prepare_payload(&[UserInput::Text {
             text: "x".repeat(MAX_USER_INPUT_TEXT_CHARS + 1),
             text_elements: Vec::new(),
+        }])
+        .is_err()
+    );
+}
+
+#[test]
+fn payload_validation_caps_aggregate_queued_text_tokens() {
+    let empty_payload = prepare_payload(&[
+        UserInput::Text {
+            text: String::new(),
+            text_elements: Vec::new(),
+        },
+        UserInput::Text {
+            text: String::new(),
+            text_elements: Vec::new(),
+        },
+    ])
+    .expect("empty text blocks fit");
+    let available_text_bytes =
+        approx_bytes_for_tokens(MAX_QUEUED_INPUT_PAYLOAD_TOKENS) - empty_payload.len();
+    let first = "x".repeat(available_text_bytes / 2);
+    let second = "y".repeat(available_text_bytes - first.len());
+    let payload = prepare_payload(&[
+        UserInput::Text {
+            text: first.clone(),
+            text_elements: Vec::new(),
+        },
+        UserInput::Text {
+            text: second.clone(),
+            text_elements: Vec::new(),
+        },
+    ])
+    .expect("aggregate text at the payload token limit fits");
+    assert_eq!(
+        approx_token_count(&payload),
+        MAX_QUEUED_INPUT_PAYLOAD_TOKENS
+    );
+
+    assert!(
+        prepare_payload(&[
+            UserInput::Text {
+                text: first,
+                text_elements: Vec::new(),
+            },
+            UserInput::Text {
+                text: format!("{second}x"),
+                text_elements: Vec::new(),
+            },
+        ])
+        .is_err()
+    );
+}
+
+#[test]
+fn payload_validation_rejects_single_oversized_multibyte_text_item() {
+    let oversized = "\u{1f642}".repeat(MAX_QUEUED_INPUT_PAYLOAD_TOKENS + 1);
+    assert!(approx_token_count(&oversized) > MAX_QUEUED_INPUT_PAYLOAD_TOKENS);
+    assert!(
+        prepare_payload(&[UserInput::Text {
+            text: oversized,
+            text_elements: Vec::new(),
+        }])
+        .is_err()
+    );
+}
+
+#[test]
+fn payload_validation_caps_inline_image_data_urls() {
+    const DATA_URL_PREFIX: &str = "data:image/png;base64,";
+
+    let empty_payload = prepare_payload(&[UserInput::Image {
+        url: DATA_URL_PREFIX.to_string(),
+        detail: None,
+    }])
+    .expect("empty inline image fits");
+    let available_data_bytes =
+        approx_bytes_for_tokens(MAX_QUEUED_INPUT_PAYLOAD_TOKENS) - empty_payload.len();
+    let encoded_len = available_data_bytes - available_data_bytes % 4;
+    let encoded = "A".repeat(encoded_len);
+    let accepted_url = format!("{DATA_URL_PREFIX}{encoded}");
+    let payload = prepare_payload(&[UserInput::Image {
+        url: accepted_url.clone(),
+        detail: None,
+    }])
+    .expect("inline image at the payload token limit fits");
+    assert_eq!(
+        approx_token_count(&payload),
+        MAX_QUEUED_INPUT_PAYLOAD_TOKENS
+    );
+
+    assert!(
+        prepare_payload(&[UserInput::Image {
+            url: format!("{accepted_url}AAAA"),
+            detail: None,
         }])
         .is_err()
     );

@@ -24,7 +24,6 @@ use super::thread_queue_support::terminal_disposition;
 
 #[derive(Clone)]
 enum ObservedQueueEvent {
-    Started { turn_id: String },
     Completed { turn_id: String, failed: bool },
     Aborted { turn_id: String, reason: TurnAbortReason },
 }
@@ -37,9 +36,6 @@ impl ThreadQueueService {
         event: &EventMsg,
     ) {
         let observed = match event {
-            EventMsg::TurnStarted(event) => ObservedQueueEvent::Started {
-                turn_id: event.turn_id.clone(),
-            },
             EventMsg::TurnComplete(event) => ObservedQueueEvent::Completed {
                 turn_id: event.turn_id.clone(),
                 failed: event.error.is_some(),
@@ -75,14 +71,6 @@ impl ThreadQueueService {
             return;
         };
         match event {
-            ObservedQueueEvent::Started { turn_id } => {
-                if let Err(error) = state_db
-                    .mark_queued_submission_inflight(thread_id, &turn_id)
-                    .await
-                {
-                    tracing::warn!(%thread_id, %error, "failed to mark queued turn inflight");
-                }
-            }
             ObservedQueueEvent::Completed { turn_id, failed } => {
                 if !flush_terminal_rollout(&thread, thread_id).await {
                     return;

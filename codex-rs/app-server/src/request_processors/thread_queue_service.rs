@@ -362,7 +362,8 @@ impl ThreadQueueService {
             Ok(QueuedTurnStartSubmission::NotSubmitted { reason }) => {
                 match reason {
                     QueuedTurnStartRejectionReason::Busy
-                    | QueuedTurnStartRejectionReason::PendingTriggerTurn => {
+                    | QueuedTurnStartRejectionReason::PendingTriggerTurn
+                    | QueuedTurnStartRejectionReason::FailedBeforePersistence => {
                         self.state_db()
                             .map_err(QueueStartFailure::changed)?
                             .release_queued_submission_claim(thread_id, &record.id, &turn_id)
@@ -390,9 +391,22 @@ impl ThreadQueueService {
                     "queued submission was not started: {reason:?}"
                 ))))
             }
-            Err(error) => Err(QueueStartFailure::changed(internal_error(format!(
-                "failed to admit queued submission: {error}"
-            )))),
+            Err(error) => {
+                let admission_error =
+                    internal_error(format!("failed to admit queued submission: {error}"));
+                let released = self
+                    .state_db()
+                    .map_err(QueueStartFailure::changed)?
+                    .release_queued_submission_claim(thread_id, &record.id, &turn_id)
+                    .await
+                    .map_err(queue_error)
+                    .map_err(QueueStartFailure::changed)?;
+                Err(if released {
+                    QueueStartFailure::unchanged(admission_error)
+                } else {
+                    QueueStartFailure::changed(admission_error)
+                })
+            }
         }
     }
 }

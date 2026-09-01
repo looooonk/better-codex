@@ -192,6 +192,7 @@ pub enum QueuedTurnStartRejectionReason {
     PendingTriggerTurn,
     Busy,
     RejectedByHook,
+    FailedBeforePersistence,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -244,6 +245,16 @@ impl fmt::Debug for QueuedTurnStartReply {
 impl PartialEq for QueuedTurnStartReply {
     fn eq(&self, other: &Self) -> bool {
         std::sync::Arc::ptr_eq(&self.sender, &other.sender)
+    }
+}
+
+impl Drop for QueuedTurnStartReply {
+    fn drop(&mut self) {
+        if std::sync::Arc::strong_count(&self.sender) == 1 {
+            self.send(QueuedTurnStartSubmission::NotSubmitted {
+                reason: QueuedTurnStartRejectionReason::FailedBeforePersistence,
+            });
+        }
     }
 }
 
@@ -4147,6 +4158,26 @@ mod tests {
     use std::path::PathBuf;
     use tempfile::NamedTempFile;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn queued_turn_start_reply_rejects_when_last_sender_drops() {
+        let (reply, mut receiver) = QueuedTurnStartReply::channel();
+        let last_reply = reply.clone();
+        drop(reply);
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+        ));
+
+        drop(last_reply);
+
+        assert_eq!(
+            receiver.await.expect("fallback admission reply"),
+            QueuedTurnStartSubmission::NotSubmitted {
+                reason: QueuedTurnStartRejectionReason::FailedBeforePersistence,
+            }
+        );
+    }
 
     #[test]
     fn world_state_items_require_object_state() -> Result<()> {

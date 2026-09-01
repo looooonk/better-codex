@@ -2,10 +2,10 @@ use super::TurnInput;
 use super::session::Session;
 use crate::state::ActiveTurn;
 use crate::tasks::RegularTask;
-use codex_protocol::user_input::UserInput;
 use codex_protocol::protocol::QueuedTurnStartRejectionReason;
 use codex_protocol::protocol::QueuedTurnStartReply;
 use codex_protocol::protocol::QueuedTurnStartSubmission;
+use codex_protocol::user_input::UserInput;
 use std::sync::Arc;
 
 impl Session {
@@ -47,6 +47,20 @@ impl Session {
         let turn_context = self.new_default_turn_with_sub_id(turn_id).await;
         self.maybe_emit_model_warnings_for_turn(turn_context.as_ref())
             .await;
+        self.refresh_mcp_servers_if_requested(
+            &turn_context,
+            Some(self.mcp_elicitation_reviewer()),
+        )
+        .await;
+        self.clear_connector_selection().await;
+        if self.input_queue.has_trigger_turn_mailbox_items().await {
+            self.clear_reserved_idle_turn(&turn_state).await;
+            self.maybe_start_turn_for_pending_work().await;
+            reply.send(QueuedTurnStartSubmission::NotSubmitted {
+                reason: QueuedTurnStartRejectionReason::PendingTriggerTurn,
+            });
+            return;
+        }
         let still_reserved = {
             let active_turn = self.active_turn.lock().await;
             active_turn.as_ref().is_some_and(|active_turn| {
@@ -62,7 +76,6 @@ impl Session {
         }
 
         turn_context.session_telemetry.user_prompt(&items);
-        self.clear_connector_selection().await;
         self.start_task(
             turn_context,
             vec![TurnInput::UserInput {

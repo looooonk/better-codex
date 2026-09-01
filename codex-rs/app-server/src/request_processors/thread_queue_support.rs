@@ -23,11 +23,13 @@ use codex_state::QueuedSubmissionState;
 use codex_state::QueuedSubmissionTerminalStatus;
 use codex_state::ThreadQueueError;
 use codex_state::ThreadQueuePauseReason;
+use codex_utils_string::approx_token_count;
 
 use super::turn_processor::validate_user_input_image_urls;
 
 pub(super) const QUEUE_LIST_DEFAULT_LIMIT: usize = 25;
 pub(super) const QUEUE_LIST_MAX_LIMIT: usize = 100;
+pub(super) const MAX_QUEUED_INPUT_PAYLOAD_TOKENS: usize = 9_000;
 const DIRECT_INPUT_TO_MULTI_AGENT_V2_SUBAGENT_ERROR: &str =
     "direct app-server input is not allowed for multi-agent v2 sub-agents";
 const DIRECT_INPUT_TO_UNLOADED_SUBAGENT_ERROR: &str =
@@ -72,14 +74,20 @@ pub(super) fn prepare_payload(input: &[UserInput]) -> Result<String, JSONRPCErro
             "queued text exceeds the {MAX_USER_INPUT_TEXT_CHARS} character limit"
         )));
     }
-    serde_json::to_string(
+    let payload = serde_json::to_string(
         &input
             .iter()
             .cloned()
             .map(UserInput::into_core)
             .collect::<Vec<_>>(),
     )
-    .map_err(|error| internal_error(format!("failed to serialize queued input: {error}")))
+    .map_err(|error| internal_error(format!("failed to serialize queued input: {error}")))?;
+    if approx_token_count(&payload) > MAX_QUEUED_INPUT_PAYLOAD_TOKENS {
+        return Err(invalid_params(format!(
+            "queued input exceeds the {MAX_QUEUED_INPUT_PAYLOAD_TOKENS} approximate-token payload limit"
+        )));
+    }
+    Ok(payload)
 }
 
 pub(super) fn queued_core_input(
