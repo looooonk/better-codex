@@ -250,3 +250,7 @@ fn thread_store_io_error(err: std::io::Error) -> ThreadStoreError {
         message: err.to_string(),
     }
 }
+
+#[cfg(test)]
+#[path = "revert_thread_tests.rs"]
+mod tests;
