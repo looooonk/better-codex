@@ -11,6 +11,7 @@ use crate::responses_metadata::CompactionTurnMetadata;
 use crate::session::session::Session;
 use crate::session::step_context::StepContext;
 use crate::session::turn::built_tools;
+use codex_history::CodexHarnessMetadata;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
@@ -23,6 +24,7 @@ use tracing::info;
 pub(super) struct RemoteCompactV2Attempt {
     pub(super) trace_input_history: Vec<ResponseItem>,
     pub(super) prompt_input: Vec<ResponseItem>,
+    pub(super) prompt_input_metadata: Vec<Option<CodexHarnessMetadata>>,
     pub(super) compaction_output: ResponseItem,
     pub(super) token_usage: Option<TokenUsage>,
     /// Keeps a session created for standalone compaction alive through lifecycle completion.
@@ -66,7 +68,11 @@ pub(super) async fn run_remote_compact_v2_attempt(
     }
 
     let trace_input_history = history.raw_items().cloned().collect();
-    let prompt_input = history.for_prompt(&turn_context.model_info.input_modalities);
+    let (prompt_input, prompt_input_metadata): (Vec<_>, Vec<_>) = history
+        .for_prompt_annotated(&turn_context.model_info.input_modalities)
+        .into_iter()
+        .map(|envelope| (envelope.item, envelope.metadata))
+        .unzip();
     let tool_router = built_tools(
         sess.as_ref(),
         step_context.as_ref(),
@@ -132,6 +138,7 @@ pub(super) async fn run_remote_compact_v2_attempt(
     Ok(RemoteCompactV2Attempt {
         trace_input_history,
         prompt_input,
+        prompt_input_metadata,
         compaction_output,
         token_usage,
         owned_client_session,

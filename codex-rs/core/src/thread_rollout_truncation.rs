@@ -22,7 +22,7 @@ pub(crate) fn initial_history_has_prior_user_turns(conversation_history: &Initia
 
 fn rollout_item_is_user_turn_boundary(item: &RolloutItem) -> bool {
     match item {
-        RolloutItem::ResponseItem(item) => is_user_turn_boundary(item),
+        RolloutItem::ResponseItem(item) => is_user_turn_boundary(&item.item),
         RolloutItem::InterAgentCommunication(_) => true,
         _ => false,
     }
@@ -40,9 +40,10 @@ pub(crate) fn user_message_positions_in_rollout(items: &[RolloutItem]) -> Vec<us
     let mut user_positions = Vec::new();
     for (idx, item) in items.iter().enumerate() {
         match item {
-            RolloutItem::ResponseItem(item @ ResponseItem::Message { .. })
-                if matches!(
-                    event_mapping::parse_turn_item(item),
+            RolloutItem::ResponseItem(envelope)
+                if matches!(envelope.item, ResponseItem::Message { .. })
+                    && matches!(
+                    event_mapping::parse_turn_item(&envelope.item),
                     Some(TurnItem::UserMessage(_))
                 ) =>
             {
@@ -76,17 +77,19 @@ pub(crate) fn fork_turn_positions_in_rollout(items: &[RolloutItem]) -> Vec<usize
     for (idx, item) in items.iter().enumerate() {
         match item {
             RolloutItem::ResponseItem(item) => {
-                let has_delivery_metadata = matches!(item, ResponseItem::AgentMessage { .. })
+                let has_delivery_metadata = matches!(item.item, ResponseItem::AgentMessage { .. })
                     && idx.checked_sub(1).is_some_and(|previous_idx| {
                         matches!(
                             items.get(previous_idx),
                             Some(RolloutItem::InterAgentCommunicationMetadata { .. })
                         )
                     });
-                if is_user_turn_boundary(item) && !has_delivery_metadata {
+                if is_user_turn_boundary(&item.item) && !has_delivery_metadata {
                     rollback_turn_positions.push(idx);
                 }
-                if is_real_user_message_boundary(item) || is_trigger_turn_boundary(item) {
+                if is_real_user_message_boundary(&item.item)
+                    || is_trigger_turn_boundary(&item.item)
+                {
                     fork_turn_positions.push(idx);
                 }
             }

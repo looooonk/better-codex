@@ -312,7 +312,10 @@ async fn replays_replacement_lineage_with_canonical_head_metadata() {
             .items
             .iter()
             .filter_map(|item| match item {
-                RolloutItem::ResponseItem(ResponseItem::Message { content, .. }) => {
+                RolloutItem::ResponseItem(codex_history::ResponseItemEnvelope {
+                    item: ResponseItem::Message { content, .. },
+                    ..
+                }) => {
                     content.first().and_then(|content| match content {
                         ContentItem::InputText { text } => Some(text.as_str()),
                         _ => None,
@@ -444,7 +447,8 @@ fn user_message(message: &str) -> RolloutItem {
         }],
         phase: None,
         internal_chat_message_metadata_passthrough: None,
-    })
+    }
+    .into())
 }
 
 fn contextual_user_message() -> RolloutItem {
@@ -477,7 +481,8 @@ fn agent_message(message: &str) -> RolloutItem {
             text: message.to_string(),
         }],
         internal_chat_message_metadata_passthrough: None,
-    })
+    }
+    .into())
 }
 
 fn turn_context(root: &Path, turn_id: &str) -> RolloutItem {

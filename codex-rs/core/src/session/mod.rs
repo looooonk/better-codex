@@ -1465,11 +1465,20 @@ impl Session {
         // installing it, so legacy media is processed once for this resume or fork and
         // will be processed again if the rollout is reconstructed in a future session.
         // This meets media preparation requirements without modifying persisted rollouts.
-        prepare_image_response_items(&mut history);
-        prepare_audio_response_items(&mut history);
+        let (mut prepared_history, metadata): (Vec<_>, Vec<_>) = history
+            .into_iter()
+            .map(|envelope| (envelope.item, envelope.metadata))
+            .unzip();
+        prepare_image_response_items(&mut prepared_history);
+        prepare_audio_response_items(&mut prepared_history);
+        history = prepared_history
+            .into_iter()
+            .zip(metadata)
+            .map(|(item, metadata)| ResponseItemEnvelope { item, metadata })
+            .collect();
         {
             let mut state = self.state.lock().await;
-            state.replace_history(history, reference_context_item);
+            state.replace_annotated_history(history, reference_context_item);
             if let Some(world_state) = world_state_baseline {
                 state.history.set_world_state_baseline(world_state);
             }
@@ -3097,7 +3106,7 @@ impl Session {
     fn assign_missing_rollout_response_item_ids(items: &mut [RolloutItem]) {
         for item in items {
             if let RolloutItem::ResponseItem(response_item) = item {
-                Self::assign_missing_response_item_id(response_item);
+                Self::assign_missing_response_item_id(&mut response_item.item);
             }
         }
     }
@@ -3118,17 +3127,38 @@ impl Session {
         items: &[ResponseItem],
     ) {
         let items = self.prepare_conversation_items_for_history(turn_context, items);
-        let items = items.as_ref();
+        self.record_prepared_annotated_conversation_items(
+            turn_context,
+            items.iter().cloned().map(ResponseItemEnvelope::new).collect(),
+        )
+        .await;
+    }
+
+    pub(crate) async fn record_prepared_annotated_conversation_items(
+        &self,
+        turn_context: &TurnContext,
+        items: Vec<ResponseItemEnvelope>,
+    ) {
+        let raw_items = items
+            .iter()
+            .map(|envelope| envelope.item.clone())
+            .collect::<Vec<_>>();
         {
             let mut state = self.state.lock().await;
-            state.current_time_reminder.note_recorded_items(items);
-            state.record_items(
-                items.iter(),
+            state.current_time_reminder.note_recorded_items(&raw_items);
+            state.record_annotated_items(
+                &items,
                 turn_context.model_info.truncation_policy.into(),
             );
         }
-        self.persist_rollout_response_items(items).await;
-        self.send_raw_response_items(turn_context, items).await;
+        self.persist_rollout_items(
+            &items
+                .into_iter()
+                .map(RolloutItem::ResponseItem)
+                .collect::<Vec<_>>(),
+        )
+        .await;
+        self.send_raw_response_items(turn_context, &raw_items).await;
     }
 
     pub(crate) async fn record_step_world_state_if_changed(
@@ -3235,7 +3265,7 @@ impl Session {
             RolloutItem::InterAgentCommunicationMetadata {
                 trigger_turn: communication.trigger_turn,
             },
-            RolloutItem::ResponseItem(response_item),
+            RolloutItem::ResponseItem(response_item.into()),
         ])
         .await;
         self.send_raw_response_items(turn_context, items).await;
@@ -3337,12 +3367,8 @@ impl Session {
         for envelope in &mut items {
             Self::assign_missing_response_item_id(&mut envelope.item);
         }
-        let raw_items = items
-            .iter()
-            .map(|envelope| envelope.item.clone())
-            .collect();
         let compacted_item = CompactedItem {
-            replacement_history: Some(raw_items),
+            replacement_history: Some(items.clone()),
             ..compacted_item
         };
         // Compaction starts a new history window, so its WorldState baseline must be full.
@@ -3381,6 +3407,7 @@ impl Session {
         let rollout_items: Vec<RolloutItem> = items
             .iter()
             .cloned()
+            .map(ResponseItemEnvelope::new)
             .map(RolloutItem::ResponseItem)
             .collect();
         self.persist_rollout_items(&rollout_items).await;
@@ -3845,6 +3872,23 @@ impl Session {
         preserved_turn_items: Vec<ResponseItemEnvelope>,
     ) -> u64 {
         let turn_context = step_context.turn.as_ref();
+        let retained_client_developer_messages =
+            if self.enabled(Feature::RetainClientDeveloperMessages) {
+                let history = self.clone_history().await;
+                crate::compact_remote_v2::truncate_retained_messages_for_remote_compaction(
+                    history
+                        .annotated_items()
+                        .iter()
+                        .filter(|item| {
+                            crate::compact_remote_v2::is_client_authored_developer_message(item)
+                        })
+                        .cloned()
+                        .collect(),
+                    crate::compact_remote_v2::RETAINED_MESSAGE_TOKEN_BUDGET,
+                )
+            } else {
+                Vec::new()
+            };
         let window = {
             let mut state = self.state.lock().await;
             state.start_new_context_window()
@@ -3856,6 +3900,7 @@ impl Session {
             .into_iter()
             .map(ResponseItemEnvelope::new)
             .collect();
+        context_items.extend(retained_client_developer_messages);
         context_items.extend(preserved_turn_items);
         let turn_context_item = turn_context.to_turn_context_item();
         self.replace_annotated_compacted_history(
@@ -4240,6 +4285,7 @@ impl Session {
         let mut pending_input = additional_context_input
             .into_iter()
             .map(ResponseItem::from)
+            .map(|item| self.annotate_client_response_item(item))
             .map(TurnInput::ResponseItem)
             .collect::<Vec<_>>();
         pending_input.push(TurnInput::UserInput {

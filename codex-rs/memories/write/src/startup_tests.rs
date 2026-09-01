@@ -750,7 +750,8 @@ async fn seed_stage1_candidate(
             }],
             phase: None,
             internal_chat_message_metadata_passthrough: None,
-        }),
+        }
+        .into()),
     };
     let jsonl = serde_json::to_string(&line)?;
     tokio::fs::write(&rollout_path, format!("{jsonl}\n")).await?;

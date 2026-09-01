@@ -8,20 +8,24 @@ use serde::Deserialize;
 use serde::Serialize;
 
 /// A model-history item with room for history-only metadata.
+///
+/// Persistence keeps the response item intact and stores its metadata separately.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ResponseItemEnvelope {
     pub item: ResponseItem,
     pub metadata: Option<CodexHarnessMetadata>,
 }
 
-/// Metadata owned by the Codex harness and kept separate from provider payloads.
-///
-/// This intentionally has no fields yet. Keeping it closed prevents history metadata from
-/// becoming an untyped extension point.
+/// Metadata owned by the Codex harness and persisted with a response item.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, Eq, JsonSchema)]
-pub struct CodexHarnessMetadata {}
+pub struct CodexHarnessMetadata {
+    /// Whether a developer message was supplied by an app-server client.
+    #[serde(default)]
+    pub client_authored: bool,
+}
 
 impl ResponseItemEnvelope {
+    /// Wraps a raw Responses API item for persisted history.
     pub fn new(item: ResponseItem) -> Self {
         Self {
             item,
@@ -29,8 +33,15 @@ impl ResponseItemEnvelope {
         }
     }
 
+    /// Unwraps the raw Responses API item.
     pub fn into_item(self) -> ResponseItem {
         self.item
+    }
+}
+
+impl From<ResponseItem> for ResponseItemEnvelope {
+    fn from(item: ResponseItem) -> Self {
+        Self::new(item)
     }
 }
 

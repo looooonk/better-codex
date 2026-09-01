@@ -9,6 +9,7 @@ use crate::session::turn_context::TurnContext;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use codex_history::ResponseItemEnvelope;
+use codex_history::CodexHarnessMetadata;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
@@ -124,14 +125,38 @@ impl ContextManager {
         I: IntoIterator,
         I::Item: std::ops::Deref<Target = ResponseItem>,
     {
-        for item in items {
+        self.record_items_with_metadata(items.into_iter().map(|item| (item, None)), policy);
+    }
+
+    pub(crate) fn record_annotated_items(
+        &mut self,
+        items: &[ResponseItemEnvelope],
+        policy: TruncationPolicy,
+    ) {
+        self.record_items_with_metadata(
+            items
+                .iter()
+                .map(|envelope| (&envelope.item, envelope.metadata.as_ref())),
+            policy,
+        );
+    }
+
+    fn record_items_with_metadata<'a, I, T>(&mut self, items: I, policy: TruncationPolicy)
+    where
+        I: IntoIterator<Item = (T, Option<&'a CodexHarnessMetadata>)>,
+        T: Deref<Target = ResponseItem>,
+    {
+        for (item, metadata) in items {
             let item_ref = item.deref();
             if !is_api_message(item_ref) {
                 continue;
             }
 
             let processed = self.process_item(item_ref, policy);
-            self.items.push(ResponseItemEnvelope::new(processed));
+            self.items.push(ResponseItemEnvelope {
+                item: processed,
+                metadata: metadata.cloned(),
+            });
         }
     }
 
@@ -139,11 +164,18 @@ impl ContextManager {
     /// normalization and drops un-suited items. Unsupported image and audio content
     /// is stripped from messages and tool outputs according to `input_modalities`.
     pub(crate) fn for_prompt(mut self, input_modalities: &[InputModality]) -> Vec<ResponseItem> {
-        self.normalize_history(input_modalities);
-        self.items
+        self.for_prompt_annotated(input_modalities)
             .into_iter()
             .map(ResponseItemEnvelope::into_item)
             .collect()
+    }
+
+    pub(crate) fn for_prompt_annotated(
+        mut self,
+        input_modalities: &[InputModality],
+    ) -> Vec<ResponseItemEnvelope> {
+        self.normalize_history(input_modalities);
+        self.items
     }
 
     /// Iterates over raw response items without exposing their history envelopes.
@@ -160,10 +192,14 @@ impl ContextManager {
 
     /// Returns raw items in the history and consumes the snapshot.
     pub(crate) fn into_raw_items(self) -> Vec<ResponseItem> {
-        self.items
+        self.into_annotated_items()
             .into_iter()
             .map(ResponseItemEnvelope::into_item)
             .collect()
+    }
+
+    pub(crate) fn into_annotated_items(self) -> Vec<ResponseItemEnvelope> {
+        self.items
     }
 
     pub(crate) fn history_version(&self) -> u64 {

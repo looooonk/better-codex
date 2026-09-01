@@ -2413,7 +2413,8 @@ async fn conversation_startup_context_current_thread_selects_many_turns_by_budge
                     content: vec![ContentItem::InputText { text: user_turn }],
                     phase: None,
                     internal_chat_message_metadata_passthrough: None,
-                }),
+                }
+                .into()),
                 RolloutItem::ResponseItem(ResponseItem::Message {
                     id: None,
                     role: "assistant".to_string(),
@@ -2422,7 +2423,8 @@ async fn conversation_startup_context_current_thread_selects_many_turns_by_budge
                     }],
                     phase: None,
                     internal_chat_message_metadata_passthrough: None,
-                }),
+                }
+                .into()),
             ]
         })
         .collect::<Vec<_>>();

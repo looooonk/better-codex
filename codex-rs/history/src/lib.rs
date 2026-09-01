@@ -3,6 +3,7 @@
 mod envelope;
 mod initial;
 mod persisted;
+mod persisted_wire;
 
 pub use envelope::CodexHarnessMetadata;
 pub use envelope::ResponseItemEnvelope;

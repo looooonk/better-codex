@@ -1610,7 +1610,8 @@ async fn test_updated_at_uses_file_mtime() -> Result<()> {
                 }],
                 phase: None,
                 internal_chat_message_metadata_passthrough: None,
-            }),
+            }
+            .into()),
         };
         writeln!(file, "{}", serde_json::to_string(&response_line)?)?;
     }

@@ -738,7 +738,8 @@ mod tests {
                     call_id: "call-1".to_string(),
                     output: FunctionCallOutputPayload::from_text("tool output".to_string()),
                     internal_chat_message_metadata_passthrough: None,
-                }),
+                }
+                .into()),
                 RolloutItem::EventMsg(EventMsg::TokenCount(
                     codex_protocol::protocol::TokenCountEvent {
                         info: None,

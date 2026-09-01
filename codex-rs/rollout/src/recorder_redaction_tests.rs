@@ -18,7 +18,8 @@ fn function_call() -> RolloutItem {
         arguments: format!(r#"{{"authorization":"Bearer {SECRET}"}}"#),
         call_id: "call-function".to_string(),
         internal_chat_message_metadata_passthrough: None,
-    })
+    }
+    .into())
 }
 
 fn curl_user_call() -> RolloutItem {
@@ -36,7 +37,8 @@ fn curl_user_call() -> RolloutItem {
             user: None,
         }),
         internal_chat_message_metadata_passthrough: None,
-    })
+    }
+    .into())
 }
 
 #[tokio::test]
@@ -65,7 +67,8 @@ async fn jsonl_writer_redacts_copies_without_mutating_live_items() -> std::io::R
                 user: None,
             }),
             internal_chat_message_metadata_passthrough: None,
-        }),
+        }
+        .into()),
         function_call(),
         RolloutItem::ResponseItem(ResponseItem::CustomToolCall {
             id: None,
@@ -75,7 +78,8 @@ async fn jsonl_writer_redacts_copies_without_mutating_live_items() -> std::io::R
             namespace: None,
             input: format!(r#"{{"apiKey":"{SECRET}"}}"#),
             internal_chat_message_metadata_passthrough: None,
-        }),
+        }
+        .into()),
     ];
 
     for item in &items {
@@ -111,7 +115,8 @@ async fn old_unsanitized_rollout_replays_redacted_and_preserves_encrypted_conten
             },
         ]),
         internal_chat_message_metadata_passthrough: None,
-    });
+    }
+    .into());
     let lines = [function_call(), curl_user_call(), output]
         .into_iter()
         .map(|item| {
@@ -137,7 +142,10 @@ async fn old_unsanitized_rollout_replays_redacted_and_preserves_encrypted_conten
     assert!(!serialized.contains("short-secret"));
     assert!(!serialized.contains(SECRET));
     assert!(serialized.contains("[REDACTED_SECRET]"));
-    let RolloutItem::ResponseItem(ResponseItem::FunctionCallOutput { output, .. }) = &items[2]
+    let RolloutItem::ResponseItem(codex_history::ResponseItemEnvelope {
+        item: ResponseItem::FunctionCallOutput { output, .. },
+        ..
+    }) = &items[2]
     else {
         panic!("expected function call output");
     };

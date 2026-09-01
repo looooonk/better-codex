@@ -23,6 +23,7 @@ use codex_analytics::CompactionImplementation;
 use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
 use codex_analytics::CompactionTrigger;
+use codex_features::Feature;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
@@ -275,7 +276,7 @@ async fn run_remote_compact_task_inner_impl(
         initial_context_injection.reference_context_item(compaction_turn_context.as_ref());
     let compacted_item = CompactedItem {
         message: String::new(),
-        replacement_history: Some(new_history.clone()),
+        replacement_history: None,
         window_number: Some(new_window_number),
         first_window_id: Some(new_window_ids.first_window_id.to_string()),
         previous_window_id: new_window_ids.previous_window_id.map(|id| id.to_string()),
@@ -288,7 +289,28 @@ async fn run_remote_compact_task_inner_impl(
         input_history: &trace_input_history,
         replacement_history: &new_history,
     });
-    sess.replace_compacted_history(
+    let retained_client_developer_messages =
+        if sess.enabled(Feature::RetainClientDeveloperMessages) {
+            let history = sess.clone_history().await;
+            crate::compact_remote_v2::truncate_retained_messages_for_remote_compaction(
+                history
+                    .annotated_items()
+                    .iter()
+                    .filter(|item| {
+                        crate::compact_remote_v2::is_client_authored_developer_message(item)
+                    })
+                    .cloned()
+                    .collect(),
+                crate::compact_remote_v2::RETAINED_MESSAGE_TOKEN_BUDGET,
+            )
+        } else {
+            Vec::new()
+        };
+    let new_history = retained_client_developer_messages
+        .into_iter()
+        .chain(new_history.into_iter().map(codex_history::ResponseItemEnvelope::new))
+        .collect();
+    sess.replace_annotated_compacted_history(
         new_history,
         reference_context_item,
         world_state_baseline,
