@@ -13,6 +13,7 @@ use codex_code_mode::CodeModeSessionProvider;
 use codex_code_mode::ExecuteRequest;
 use codex_code_mode::FunctionCallOutputContentItem;
 use codex_code_mode::GrpcCodeModeSessionProvider;
+use codex_code_mode::GrpcCodeModeHostCapability;
 use codex_code_mode::NotificationFuture;
 use codex_code_mode::NoopCodeModeSessionDelegate;
 use codex_code_mode::RuntimeResponse;
@@ -42,7 +43,15 @@ use tower::Service;
 use uuid::Uuid;
 
 use super::loopback_grpc_service;
+use super::authenticated_loopback_grpc_service;
 use super::principal::PrincipalPolicy;
+
+const TEST_CAPABILITY: &str =
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+fn capability() -> GrpcCodeModeHostCapability {
+    GrpcCodeModeHostCapability::new(TEST_CAPABILITY).unwrap()
+}
 
 #[derive(Debug, Eq, PartialEq)]
 enum DelegateEvent {
@@ -168,6 +177,23 @@ async fn start_server() -> (
     (endpoint, shutdown, server)
 }
 
+async fn start_authenticated_server() -> (
+    String,
+    CancellationToken,
+    tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+) {
+    let incoming = TcpIncoming::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let endpoint = format!("http://{}", incoming.local_addr().unwrap());
+    let shutdown = CancellationToken::new();
+    let server_shutdown = shutdown.clone();
+    let server = tokio::spawn(
+        Server::builder()
+            .add_service(authenticated_loopback_grpc_service(TEST_CAPABILITY.into()))
+            .serve_with_incoming_shutdown(incoming, server_shutdown.cancelled_owned()),
+    );
+    (endpoint, shutdown, server)
+}
+
 async fn start_server_with_delayed_acknowledgement(
     committed: mpsc::Sender<()>,
     release: Arc<Notify>,
@@ -183,7 +209,7 @@ async fn start_server_with_delayed_acknowledgement(
     let server = tokio::spawn(
         Server::builder()
             .layer(DelayAcknowledgementLayer { committed, release })
-            .add_service(loopback_grpc_service())
+            .add_service(authenticated_loopback_grpc_service(TEST_CAPABILITY.into()))
             .serve_with_incoming_shutdown(incoming, server_shutdown.cancelled_owned()),
     );
     (endpoint, shutdown, server)
@@ -196,6 +222,17 @@ async fn connect(endpoint: &str) -> CodeModeHostClient<Channel> {
         .await
         .unwrap();
     bounded_code_mode_host_client(channel)
+}
+
+async fn connect_with_oversized_test_encoding(endpoint: &str) -> CodeModeHostClient<Channel> {
+    let channel = Endpoint::from_shared(endpoint.to_string())
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+    CodeModeHostClient::new(channel)
+        .max_decoding_message_size(proto::MAX_APPLICATION_MESSAGE_BYTES)
+        .max_encoding_message_size(6 * 1_024 * 1_024)
 }
 
 fn identified_request<T>(client_id: Uuid, message: T) -> Request<T> {
@@ -258,11 +295,31 @@ async fn assert_provider_executes(provider: GrpcCodeModeSessionProvider) {
 }
 
 #[tokio::test]
-async fn canonical_transport_accepts_messages_above_tonic_default() {
+async fn canonical_transport_applies_the_application_cap_above_tonic_default() {
     let (endpoint, shutdown, server) = start_server().await;
-    let mut client = connect(&endpoint).await;
+    let mut client = connect_with_oversized_test_encoding(&endpoint).await;
     let client_id = Uuid::new_v4();
     let (session_id, mut events) = open_session(&mut client, client_id).await;
+    let repeated = client
+        .execute(identified_request(
+            client_id,
+            proto::ExecuteRequest {
+                session_id: session_id.clone(),
+                execution_id: "repeated-tools".to_string(),
+                tool_call_id: "outer-call".to_string(),
+                source: String::new(),
+                enabled_tools: vec![
+                    proto::ToolDefinition::default();
+                    super::validation::MAX_TOOL_DEFINITIONS + 1
+                ],
+                yield_time_ms: None,
+                max_output_tokens: None,
+            },
+        ))
+        .await
+        .unwrap_err();
+    assert_eq!(repeated.code(), Code::ResourceExhausted);
+    assert_eq!(repeated.message(), "code-mode-request-exhausted");
     let oversized_json = serde_json::to_vec(&"x".repeat(5 * 1_024 * 1_024)).unwrap();
 
     let error = client
@@ -277,14 +334,15 @@ async fn canonical_transport_accepts_messages_above_tonic_default() {
         }))
         .await
         .unwrap_err();
-    assert_eq!(error.code(), Code::NotFound);
+    assert_eq!(error.code(), Code::ResourceExhausted);
+    assert_eq!(error.message(), "code-mode-request-exhausted");
 
     let mut execution = client
         .execute(identified_request(client_id, proto::ExecuteRequest {
             session_id: session_id.clone(),
-            execution_id: "large-notification".to_string(),
+            execution_id: "bounded-notification".to_string(),
             tool_call_id: "outer-call".to_string(),
-            source: r#"notify("x".repeat(5 * 1024 * 1024)); text("done");"#.to_string(),
+            source: r#"notify("bounded"); text("done");"#.to_string(),
             enabled_tools: Vec::new(),
             yield_time_ms: Some(60_000),
             max_output_tokens: None,
@@ -300,7 +358,7 @@ async fn canonical_transport_accepts_messages_above_tonic_default() {
     let Some(proto::session_event::Event::Notification(notification)) = notification.event else {
         panic!("expected notification event");
     };
-    assert_eq!(notification.text.len(), 5 * 1_024 * 1_024);
+    assert_eq!(notification.text, "bounded");
 
     client
         .acknowledge_notification(identified_request(client_id, proto::AcknowledgeNotificationRequest {
@@ -401,9 +459,9 @@ async fn unix_socket_endpoints_support_grpc_code_mode_sessions() {
 
 #[tokio::test]
 async fn production_provider_acknowledges_notifications_before_cell_closure() {
-    let (endpoint, shutdown, server) = start_server().await;
+    let (endpoint, shutdown, server) = start_authenticated_server().await;
     let (events, mut event_rx) = mpsc::channel(/*buffer*/ 4);
-    let session = GrpcCodeModeSessionProvider::new(endpoint)
+    let session = GrpcCodeModeSessionProvider::with_capability(endpoint, capability())
         .create_session(Arc::new(RecordingDelegate {
             events,
             hold_notifications: false,
@@ -453,9 +511,9 @@ async fn production_provider_acknowledges_notifications_before_cell_closure() {
 
 #[tokio::test]
 async fn production_provider_cancels_pending_notifications_on_termination() {
-    let (endpoint, shutdown, server) = start_server().await;
+    let (endpoint, shutdown, server) = start_authenticated_server().await;
     let (events, mut event_rx) = mpsc::channel(/*buffer*/ 4);
-    let session = GrpcCodeModeSessionProvider::new(endpoint)
+    let session = GrpcCodeModeSessionProvider::with_capability(endpoint, capability())
         .create_session(Arc::new(RecordingDelegate {
             events,
             hold_notifications: true,
@@ -512,7 +570,7 @@ async fn accepted_acknowledgement_retires_after_concurrent_termination() {
     let (endpoint, shutdown, server) =
         start_server_with_delayed_acknowledgement(committed_tx, Arc::clone(&release)).await;
     let (events, mut event_rx) = mpsc::channel(/*buffer*/ 4);
-    let session = GrpcCodeModeSessionProvider::new(endpoint)
+    let session = GrpcCodeModeSessionProvider::with_capability(endpoint, capability())
         .create_session(Arc::new(RecordingDelegate {
             events,
             hold_notifications: false,
@@ -571,7 +629,7 @@ fn loopback_policy_rejects_non_loopback_peers() {
     });
 
     assert_eq!(
-        PrincipalPolicy::LocalTransport
+        PrincipalPolicy::TrustedLocalTransport
             .principal(&request)
             .unwrap_err()
             .code(),
@@ -588,7 +646,7 @@ fn loopback_policy_rejects_missing_client_identity() {
     });
 
     assert_eq!(
-        PrincipalPolicy::LocalTransport
+        PrincipalPolicy::TrustedLocalTransport
             .principal(&request)
             .unwrap_err()
             .code(),

@@ -1,15 +1,17 @@
 use std::io;
+use std::future::Future as _;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::Ordering;
 use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 
 use anyhow::Context as _;
 use anyhow::Result;
-use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
 use futures::Stream;
 use futures::StreamExt;
 use tokio::io::AsyncRead;
@@ -18,29 +20,66 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
+use tokio::time::Sleep;
 use tonic::transport::Server;
 use tonic::transport::server::Connected;
 use tonic::transport::server::TcpConnectInfo;
 use tonic::transport::server::TcpIncoming;
-use tower::limit::GlobalConcurrencyLimitLayer;
 use url::Url;
+use uuid::Uuid;
 
-use crate::loopback_grpc_service;
+use crate::grpc::authenticated_loopback_grpc_service;
 use crate::run_stdio;
+use crate::grpc::session::MAX_OPEN_GRPC_SESSIONS;
+use crate::grpc::routing::MAX_SUBSCRIPTIONS_PER_SESSION;
+use crate::transport_admission::MAX_DECODED_REQUEST_BYTES;
+use crate::transport_admission::MAX_OUTBOUND_RESPONSE_BYTES;
+use crate::transport_admission::MAX_RAW_REQUEST_ALLOCATION_BYTES;
+use crate::transport_admission::MAX_STREAMING_RESPONSES;
+use crate::transport_admission::MAX_UNARY_RESPONSES;
+use crate::transport_admission::MAX_OPEN_RESPONSES;
+use crate::transport_admission::MAX_SUBSCRIBE_RESPONSES;
 
-const MAX_ACCEPTED_CONNECTIONS: usize = 16;
-const MAX_CONCURRENT_STREAMS_PER_CONNECTION: u32 = 64;
-const MAX_CONCURRENT_REQUESTS_PER_CONNECTION: usize = 4;
-const MAX_GLOBAL_DECODING_REQUESTS: usize = 4;
-const MAX_AGGREGATE_DECODING_BYTES: usize = 256 * 1_024 * 1_024;
+const MAX_ACCEPTED_CONNECTIONS: usize = 8;
+const MAX_CONCURRENT_STREAMS_PER_CONNECTION: u32 = 32;
+const MAX_AGGREGATE_TRANSPORT_BYTES: usize = 256 * 1_024 * 1_024;
 const HTTP2_STREAM_WINDOW_BYTES: u32 = 64 * 1_024;
-const HTTP2_CONNECTION_WINDOW_BYTES: u32 = 1_024 * 1_024;
-const HTTP2_MAX_HEADER_BYTES: u32 = 16 * 1_024;
+const HTTP2_CONNECTION_WINDOW_BYTES: u32 = 512 * 1_024;
+const HTTP2_MAX_HEADER_BYTES: u32 = 8 * 1_024;
 const HTTP2_MAX_FRAME_BYTES: u32 = 16 * 1_024;
 const CONNECTION_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(/*secs*/ 30);
 const CONNECTION_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 10);
+const CONNECTION_FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
-const _: () = assert!(MAX_GLOBAL_DECODING_REQUESTS * MAX_FRAME_BYTES <= MAX_AGGREGATE_DECODING_BYTES);
+const MAX_HTTP2_CONNECTION_WINDOW_BYTES: usize =
+    MAX_ACCEPTED_CONNECTIONS * HTTP2_CONNECTION_WINDOW_BYTES as usize;
+const MAX_HTTP2_STREAM_WINDOW_BYTES: usize = MAX_ACCEPTED_CONNECTIONS
+    * MAX_CONCURRENT_STREAMS_PER_CONNECTION as usize
+    * HTTP2_STREAM_WINDOW_BYTES as usize;
+const MAX_HTTP2_HEADER_BYTES: usize = MAX_ACCEPTED_CONNECTIONS
+    * MAX_CONCURRENT_STREAMS_PER_CONNECTION as usize
+    * HTTP2_MAX_HEADER_BYTES as usize;
+const RESERVED_CONTROL_STREAMS: usize = MAX_UNARY_RESPONSES;
+const _: () = assert!(
+    MAX_RAW_REQUEST_ALLOCATION_BYTES
+        + MAX_DECODED_REQUEST_BYTES
+        + MAX_OUTBOUND_RESPONSE_BYTES
+        + MAX_HTTP2_CONNECTION_WINDOW_BYTES
+        + MAX_HTTP2_STREAM_WINDOW_BYTES
+        + MAX_HTTP2_HEADER_BYTES
+        + crate::grpc::events::MAX_HOST_EVENT_BYTES
+        + crate::grpc::session::MAX_HOST_TOOL_BYTES
+        <= MAX_AGGREGATE_TRANSPORT_BYTES
+);
+const _: () = assert!(
+    MAX_STREAMING_RESPONSES + RESERVED_CONTROL_STREAMS
+        <= MAX_CONCURRENT_STREAMS_PER_CONNECTION as usize
+);
+const _: () = assert!(MAX_OPEN_GRPC_SESSIONS <= MAX_OPEN_RESPONSES);
+const _: () = assert!(
+    MAX_OPEN_GRPC_SESSIONS * MAX_SUBSCRIPTIONS_PER_SESSION
+        <= MAX_SUBSCRIBE_RESPONSES
+);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ListenTransport {
@@ -99,22 +138,31 @@ async fn run_grpc(address: SocketAddr) -> Result<()> {
     let local_address = incoming
         .local_addr()
         .context("failed to read code-mode gRPC listener address")?;
+    let capability: Arc<str> = format!(
+        "{}{}",
+        Uuid::new_v4().simple(),
+        Uuid::new_v4().simple()
+    )
+    .into();
     let mut stdout = tokio::io::stdout();
     stdout
         .write_all(format!("http://{local_address}\n").as_bytes())
         .await
         .context("failed to publish code-mode gRPC endpoint")?;
     stdout
+        .write_all(capability.as_bytes())
+        .await
+        .context("failed to publish code-mode gRPC capability")?;
+    stdout
+        .write_all(b"\n")
+        .await
+        .context("failed to terminate code-mode gRPC capability")?;
+    stdout
         .flush()
         .await
         .context("failed to flush code-mode gRPC endpoint")?;
 
     Server::builder()
-        .layer(GlobalConcurrencyLimitLayer::new(
-            MAX_GLOBAL_DECODING_REQUESTS,
-        ))
-        .concurrency_limit_per_connection(MAX_CONCURRENT_REQUESTS_PER_CONNECTION)
-        .load_shed(/*enabled*/ true)
         .max_concurrent_streams(Some(MAX_CONCURRENT_STREAMS_PER_CONNECTION))
         .initial_stream_window_size(Some(HTTP2_STREAM_WINDOW_BYTES))
         .initial_connection_window_size(Some(HTTP2_CONNECTION_WINDOW_BYTES))
@@ -125,7 +173,7 @@ async fn run_grpc(address: SocketAddr) -> Result<()> {
         .http2_max_local_error_reset_streams(/*max*/ Some(16))
         .http2_max_header_list_size(Some(HTTP2_MAX_HEADER_BYTES))
         .max_frame_size(Some(HTTP2_MAX_FRAME_BYTES))
-        .add_service(loopback_grpc_service())
+        .add_service(authenticated_loopback_grpc_service(capability))
         .serve_with_incoming(bounded_incoming(incoming))
         .await
         .context("code-mode gRPC listener failed")
@@ -140,6 +188,10 @@ fn bounded_incoming(
         let next = incoming.next().await?;
         let item = next.map(|stream| BoundedTcpConnection {
             stream,
+            authenticated: Arc::new(AtomicBool::new(false)),
+            first_byte_timeout: Some(Box::pin(tokio::time::sleep(
+                CONNECTION_FIRST_BYTE_TIMEOUT,
+            ))),
             _permit: permit,
         });
         Some((item, (incoming, permits)))
@@ -148,6 +200,8 @@ fn bounded_incoming(
 
 struct BoundedTcpConnection {
     stream: TcpStream,
+    authenticated: Arc<AtomicBool>,
+    first_byte_timeout: Option<Pin<Box<Sleep>>>,
     _permit: OwnedSemaphorePermit,
 }
 
@@ -157,6 +211,18 @@ impl AsyncRead for BoundedTcpConnection {
         cx: &mut Context<'_>,
         buffer: &mut tokio::io::ReadBuf<'_>,
     ) -> Poll<io::Result<()>> {
+        if self.authenticated.load(Ordering::Acquire) {
+            self.first_byte_timeout = None;
+        } else if self
+            .first_byte_timeout
+            .as_mut()
+            .is_some_and(|timeout| timeout.as_mut().poll(cx).is_ready())
+        {
+            return Poll::Ready(Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "code-mode gRPC connection was not authorized in time",
+            )));
+        }
         Pin::new(&mut self.stream).poll_read(cx, buffer)
     }
 }
@@ -195,10 +261,29 @@ impl AsyncWrite for BoundedTcpConnection {
 }
 
 impl Connected for BoundedTcpConnection {
-    type ConnectInfo = TcpConnectInfo;
+    type ConnectInfo = BoundedConnectInfo;
 
     fn connect_info(&self) -> Self::ConnectInfo {
-        self.stream.connect_info()
+        BoundedConnectInfo {
+            tcp: self.stream.connect_info(),
+            authenticated: Arc::clone(&self.authenticated),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct BoundedConnectInfo {
+    tcp: TcpConnectInfo,
+    authenticated: Arc<AtomicBool>,
+}
+
+impl BoundedConnectInfo {
+    pub(crate) fn remote_addr(&self) -> Option<SocketAddr> {
+        self.tcp.remote_addr()
+    }
+
+    pub(crate) fn authenticate(&self) {
+        self.authenticated.store(true, Ordering::Release);
     }
 }
 
