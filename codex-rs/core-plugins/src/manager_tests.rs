@@ -2536,7 +2536,6 @@ async fn skills_service_reuses_skills_parsed_during_plugin_load() {
         codex_home_abs.clone(),
         plugin_outcome.effective_plugin_skill_roots(),
         config.config_layer_stack.clone(),
-        /*bundled_skills_enabled*/ false,
     )
     .with_plugin_skill_snapshots(plugin_skill_snapshots);
     let skills_service = HostSkillsService::new(

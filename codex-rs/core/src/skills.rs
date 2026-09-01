@@ -26,7 +26,7 @@ pub use codex_skills_extension::HostSkillsLoadInput;
 pub use codex_skills_extension::HostSkillsService;
 pub use codex_skills_extension::SkillLoadOutcome;
 pub use codex_skills_extension::SkillRenderSideEffects;
-pub use codex_skills_extension::bundled_skills_enabled_from_stack;
+pub use codex_config::bundled_skills_enabled_from_stack;
 
 pub mod model {
     pub use codex_skills::SkillDependencies;
@@ -94,7 +94,6 @@ pub(crate) fn skills_load_input_from_config(
         config.cwd.clone(),
         effective_skill_roots,
         config.config_layer_stack.clone(),
-        config.bundled_skills_enabled(),
     )
 }
 

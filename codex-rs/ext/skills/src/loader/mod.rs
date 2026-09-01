@@ -7,8 +7,10 @@ mod namespace;
 
 pub(crate) use environment::load_environment_skills_from_discovery;
 pub(crate) use environment::load_environment_skills_from_root;
-pub use host::HostSkillRoot;
+pub(crate) use host::HostSkillRoot;
+pub(crate) use host::HostSkillRootSnapshot;
 pub(crate) use host_merge::load_and_merge_host_skill_roots;
+pub(crate) use host_merge::load_and_merge_host_skill_roots_with_request_snapshots;
 
 pub(super) const SKILLS_FILENAME: &str = "SKILL.md";
 pub(super) const SKILLS_METADATA_DIR: &str = "agents";

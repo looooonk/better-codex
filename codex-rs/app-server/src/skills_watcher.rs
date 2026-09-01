@@ -15,7 +15,6 @@ use codex_file_watcher::Receiver;
 use codex_file_watcher::ThrottledWatchReceiver;
 use codex_file_watcher::WatchPath;
 use codex_file_watcher::WatchRegistration;
-use codex_protocol::protocol::SkillScope;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_skills::system_cache_root_dir;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -93,22 +92,26 @@ impl SkillsWatcher {
         thread_manager: &ThreadManager,
         environments: &[TurnEnvironmentSelection],
     ) -> WatchRegistration {
-        let Some(environment_selection) = environments.first() else {
-            return WatchRegistration::default();
-        };
-        let Some(environment) = thread_manager
-            .environment_manager()
-            .get_environment(&environment_selection.environment_id)
-        else {
-            warn!(
-                "failed to register skills watcher for unknown environment `{}`",
-                environment_selection.environment_id
-            );
-            return WatchRegistration::default();
-        };
-        if environment.is_remote() {
-            return WatchRegistration::default();
+        let mut local_environment = None;
+        for selection in environments {
+            match thread_manager
+                .environment_manager()
+                .get_environment(&selection.environment_id)
+            {
+                Some(environment) if !environment.is_remote() => {
+                    local_environment = Some(environment);
+                    break;
+                }
+                Some(_) => {}
+                None => warn!(
+                    "failed to register skills watcher for unknown environment `{}`",
+                    selection.environment_id
+                ),
+            }
         }
+        let Some(environment) = local_environment else {
+            return WatchRegistration::default();
+        };
 
         let plugins_input = config.plugins_config_input();
         let plugins_manager = thread_manager.plugins_manager();
@@ -117,18 +120,14 @@ impl SkillsWatcher {
             config.cwd.clone(),
             plugin_outcome.effective_plugin_skill_roots(),
             config.config_layer_stack.clone(),
-            config.bundled_skills_enabled(),
         );
         let roots = thread_manager
             .skills_service()
-            .skill_roots_for_config(&skills_input, Some(environment.get_filesystem()))
+            .watchable_skill_root_paths(&skills_input, environment.get_filesystem())
             .await
             .into_iter()
-            // Plugin roots have explicit lifecycle invalidation; generated system skills are
-            // installed before this watcher starts.
-            .filter(|root| root.plugin_id().is_none() && root.scope != SkillScope::System)
-            .map(|root| WatchPath {
-                path: root.path.into_path_buf(),
+            .map(|path| WatchPath {
+                path: path.into_path_buf(),
                 recursive: true,
             })
             .collect();

@@ -233,7 +233,6 @@ async fn skill_loading_and_reads_use_the_supplied_executor_file_system() {
                 cwd,
                 Vec::new(),
                 config_layer_stack,
-                /*bundled_skills_enabled*/ false,
             ),
             Some(Arc::new(SyntheticFileSystem {
                 alias_root: PathUri::from_abs_path(&alias_root),
