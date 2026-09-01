@@ -64,6 +64,7 @@ codex-utils-pty = { workspace = true }
 codex-backend-client = { workspace = true }
 codex-file-search = { workspace = true }
 codex-chatgpt = { workspace = true }
+codex-code-mode = { workspace = true }
 codex-login = { workspace = true }
 codex-image-generation-extension = { workspace = true }
 codex-memories-extension = { workspace = true }
@@ -107,6 +108,7 @@ tokio-util = { workspace = true }
 tracing = { workspace = true, features = ["log"] }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json"] }
 uuid = { workspace = true, features = ["serde", "v7"] }
+url = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 codex-windows-sandbox = { workspace = true }
@@ -139,6 +141,5 @@ shlex = { workspace = true }
 tar = { workspace = true }
 tokio-tungstenite = { workspace = true }
 tracing-opentelemetry = { workspace = true }
-url = { workspace = true }
 wiremock = { workspace = true }
 zstd = { workspace = true }
