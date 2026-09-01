@@ -2497,7 +2497,7 @@ async fn remote_compact_persists_replacement_history_in_rollout() -> Result<()> 
         {
             let has_compaction_item = replacement_history.iter().any(|item| {
                 matches!(
-                    item,
+                    &item.item,
                     ResponseItem::Compaction {
                         encrypted_content, ..
                     }
@@ -2506,7 +2506,7 @@ async fn remote_compact_persists_replacement_history_in_rollout() -> Result<()> 
             });
             let has_compacted_assistant_note = replacement_history.iter().any(|item| {
                 matches!(
-                    item,
+                    &item.item,
                     ResponseItem::Message { role, content, .. }
                         if role == "assistant"
                             && content.iter().any(|part| matches!(
@@ -2517,7 +2517,7 @@ async fn remote_compact_persists_replacement_history_in_rollout() -> Result<()> 
             });
             let has_permissions_developer_message = replacement_history.iter().any(|item| {
                 matches!(
-                    item,
+                    &item.item,
                     ResponseItem::Message { role, content, .. }
                         if role == "developer"
                             && content.iter().any(|part| matches!(

@@ -1685,7 +1685,14 @@ async fn reconstruct_history_matches_live_compactions() {
         .reconstruct_history_from_rollout(reconstruction_turn.as_ref(), &rollout_items)
         .await;
 
-    assert_eq!(expected, reconstructed.history);
+    assert_eq!(
+        expected,
+        reconstructed
+            .history
+            .into_iter()
+            .map(|item| item.item)
+            .collect::<Vec<_>>()
+    );
     assert_eq!(2, reconstructed.window_number);
     assert_eq!(
         reconstructed
@@ -1711,7 +1718,7 @@ async fn reconstruct_history_uses_replacement_history_verbatim() {
         }),
     };
     let replacement_history = vec![
-        summary_item.clone(),
+        summary_item.clone().into(),
         ResponseItem::Message {
             id: None,
             role: "developer".to_string(),
@@ -1720,7 +1727,8 @@ async fn reconstruct_history_uses_replacement_history_verbatim() {
             }],
             phase: None,
             internal_chat_message_metadata_passthrough: None,
-        },
+        }
+        .into(),
     ];
     let first_window_id = Uuid::now_v7();
     let previous_window_id = Uuid::now_v7();
@@ -2912,7 +2920,12 @@ async fn start_new_context_window_assigns_and_persists_item_ids() {
         | RolloutItem::EventMsg(_) => None,
     });
     assert_eq!(
-        persisted_replacement_history.cloned(),
+        persisted_replacement_history.map(|items| {
+            items
+                .iter()
+                .map(|item| item.item.clone())
+                .collect::<Vec<_>>()
+        }),
         Some(raw_history_items(&live_history))
     );
 }
@@ -4221,8 +4234,13 @@ async fn turn_start_persistence_failure_stops_before_sampling() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn idle_turn_persistence_failure_stops_before_sampling() -> anyhow::Result<()> {
     let server = start_mock_server().await;
-    let test = test_codex().build(&server).await?;
-    let session = &test.codex.codex.session;
+    let (mut session, _turn_context, rx) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        |config| config.model_provider.base_url = Some(server.uri()),
+    )
+    .await;
+    attach_thread_persistence(Arc::get_mut(&mut session).expect("unique session")).await;
     session
         .live_thread()
         .expect("live thread")
@@ -4234,10 +4252,7 @@ async fn idle_turn_persistence_failure_stops_before_sampling() -> anyhow::Result
         .try_start_turn_if_idle(vec![user_message("queued idle input")])
         .await
         .expect("idle turn should start");
-    wait_for_event(&test.codex, |event| {
-        matches!(event, EventMsg::TurnComplete(_))
-    })
-    .await;
+    recv_terminal_event(&rx, TerminalEventKind::TurnComplete).await;
 
     let response_requests = server
         .received_requests()
@@ -4254,26 +4269,28 @@ async fn idle_turn_persistence_failure_stops_before_sampling() -> anyhow::Result
 async fn rejected_idle_turn_append_stops_before_sampling_when_persist_succeeds()
 -> anyhow::Result<()> {
     let server = start_mock_server().await;
+    let server_uri = server.uri();
     let store_id = format!("failed-append-{}", Uuid::new_v4());
     let store = codex_thread_store::InMemoryThreadStore::for_id(store_id.clone());
     store
         .fail_appends_for_testing("canonical append rejected")
         .await;
-    let mut builder = test_codex().with_config(move |config| {
-        config.experimental_thread_store = ThreadStoreConfig::InMemory { id: store_id };
-    });
-    let test = builder.build(&server).await?;
+    let (mut session, _turn_context, rx) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        move |config| {
+            config.model_provider.base_url = Some(server_uri);
+            config.experimental_thread_store = ThreadStoreConfig::InMemory { id: store_id };
+        },
+    )
+    .await;
+    attach_thread_persistence(Arc::get_mut(&mut session).expect("unique session")).await;
 
-    test.codex
-        .codex
-        .session
+    session
         .try_start_turn_if_idle(vec![user_message("queued idle input")])
         .await
         .expect("idle turn should start");
-    wait_for_event(&test.codex, |event| {
-        matches!(event, EventMsg::TurnComplete(_))
-    })
-    .await;
+    recv_terminal_event(&rx, TerminalEventKind::TurnComplete).await;
 
     let response_requests = server
         .received_requests()
@@ -4334,7 +4351,7 @@ async fn attach_thread_persistence(session: &mut Session) -> PathBuf {
         .current_rollout_path()
         .await
         .expect("load rollout path")
-        .expect("thread should have rollout path")
+        .unwrap_or_default()
 }
 
 fn text_block(s: &str) -> serde_json::Value {
@@ -7808,10 +7825,7 @@ where
         network_approval: Arc::clone(&network_approval),
         state_db: state_db.clone(),
         live_thread: None,
-        thread_store: Arc::new(codex_thread_store::LocalThreadStore::new(
-            codex_thread_store::LocalThreadStoreConfig::from_config(config.as_ref()),
-            state_db,
-        )),
+        thread_store: crate::thread_manager::thread_store_from_config(config.as_ref(), state_db),
         attestation_provider: None,
         time_provider: Arc::new(crate::current_time::SystemTimeProvider),
         model_client: ModelClient::new(

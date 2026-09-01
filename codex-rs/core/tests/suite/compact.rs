@@ -356,7 +356,7 @@ fn replacement_history_from_rollout(path: &Path) -> Result<Vec<Value>> {
             replacement_history = Some(
                 items
                     .into_iter()
-                    .map(serde_json::to_value)
+                    .map(|item| serde_json::to_value(item.item))
                     .collect::<std::result::Result<Vec<_>, _>>()?,
             );
         }

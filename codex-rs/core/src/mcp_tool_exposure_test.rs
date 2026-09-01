@@ -10,6 +10,7 @@ use codex_mcp::ToolInfo;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_tools::ToolExposure;
+use codex_tools::ToolExecutor;
 use codex_tools::ToolName;
 use pretty_assertions::assert_eq;
 use rmcp::model::JsonObject;

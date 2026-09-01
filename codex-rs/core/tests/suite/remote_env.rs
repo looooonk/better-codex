@@ -1034,20 +1034,17 @@ async fn deferred_executor_compaction_preserves_then_updates_environment_once() 
         vec![true, true, false]
     );
     assert_eq!(
-        world_state_items[0]
-            .state
+        Value::Object(world_state_items[0].state.clone())
             .pointer("/environments/environments/remote/status"),
         Some(&json!("starting"))
     );
     assert_eq!(
-        world_state_items[2]
-            .state
+        Value::Object(world_state_items[2].state.clone())
             .pointer("/environments/environments/remote/status"),
         Some(&json!("available"))
     );
     assert_eq!(
-        world_state_items[2]
-            .state
+        Value::Object(world_state_items[2].state.clone())
             .pointer("/environments/environments/remote/shell"),
         Some(&json!("zsh"))
     );

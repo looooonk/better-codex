@@ -213,8 +213,15 @@ async fn record_initial_history_ignores_security_risk_scores() {
         .await;
 
     assert_eq!(
-        session.state.lock().await.clone_history().raw_items(),
-        &[user, assistant]
+        session
+            .state
+            .lock()
+            .await
+            .clone_history()
+            .raw_items()
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![user, assistant]
     );
 }
 

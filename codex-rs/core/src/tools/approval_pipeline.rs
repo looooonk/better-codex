@@ -33,6 +33,7 @@ use codex_features::Feature;
 use codex_hooks::PermissionRequestDecision;
 use codex_otel::ToolDecisionSource;
 use codex_protocol::error::CodexErr;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::NetworkPolicyRuleAction;
 use codex_protocol::protocol::ReviewDecision;
@@ -462,7 +463,12 @@ async fn request_guardian_v2_approval_loop(
     ctx: &ApprovalContext,
     deadline: Instant,
 ) -> ApprovalReviewResult {
-    let history = session.clone_history().await.raw_items().to_vec();
+    let history: Vec<ResponseItem> = session
+        .clone_history()
+        .await
+        .raw_items()
+        .cloned()
+        .collect();
     for _ in 0..MAX_REVIEWER_REROUTES {
         if ctx.cancellation_token.is_cancelled() {
             return ApprovalReviewResult::Cancelled;

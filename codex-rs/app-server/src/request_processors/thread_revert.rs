@@ -243,7 +243,7 @@ impl ThreadRequestProcessor {
             )
             .await
             .map_err(internal_error)?;
-        self.thread_watch_manager.upsert_thread(&thread.id).await;
+        self.thread_watch_manager.upsert_thread(thread.clone()).await;
         let thread_status = self
             .thread_watch_manager
             .loaded_status_for_thread(&thread.id)

@@ -24,7 +24,6 @@ use crate::CreateThreadParams;
 use crate::DeleteThreadParams;
 use crate::ListThreadsParams;
 use crate::LoadThreadHistoryParams;
-use crate::PersistContext;
 use crate::ReadThreadByRolloutPathParams;
 use crate::ReadThreadParams;
 use crate::ResumeThreadParams;
@@ -53,6 +52,7 @@ mod tests {
     use super::*;
     use crate::ListItemsParams;
     use crate::ListTurnsParams;
+    use crate::PersistContext;
     use crate::SortDirection;
     use crate::StoredTurnItemsView;
     use crate::ThreadPersistenceMetadata;

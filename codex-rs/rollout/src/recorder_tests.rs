@@ -623,7 +623,7 @@ async fn load_rollout_items_filters_legacy_ghost_snapshots_from_compaction_histo
         .expect("replacement history");
     assert_eq!(replacement_history.len(), 1);
     assert!(matches!(
-        &replacement_history[0],
+        &replacement_history[0].item,
         ResponseItem::Message { .. }
     ));
 

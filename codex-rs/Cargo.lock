@@ -4863,6 +4863,7 @@ dependencies = [
  "codex-exec-server",
  "codex-extension-api",
  "codex-features",
+ "codex-history",
  "codex-home",
  "codex-hooks",
  "codex-login",

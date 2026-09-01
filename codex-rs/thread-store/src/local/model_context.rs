@@ -15,6 +15,7 @@ use serde_json::Value;
 use super::LocalThreadStore;
 use super::read_thread;
 use super::rollout_lineage::RolloutLineage;
+#[cfg(test)]
 use super::rollout_lineage::RolloutLineageSegment;
 use super::thread_rollout_resolver;
 use crate::LoadThreadHistoryParams;

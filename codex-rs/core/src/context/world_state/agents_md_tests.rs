@@ -3,6 +3,7 @@ use crate::context::world_state::WorldState;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use pretty_assertions::assert_eq;
+use serde_json::Value;
 use serde_json::json;
 
 #[test]

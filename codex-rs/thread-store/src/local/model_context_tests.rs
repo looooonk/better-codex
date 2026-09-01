@@ -312,10 +312,10 @@ async fn replays_replacement_lineage_with_canonical_head_metadata() {
             .items
             .iter()
             .filter_map(|item| match item {
-                RolloutItem::ResponseItem(codex_history::ResponseItemEnvelope {
-                    item: ResponseItem::Message { content, .. },
-                    ..
-                }) => {
+                RolloutItem::ResponseItem(envelope) => {
+                    let ResponseItem::Message { content, .. } = &envelope.item else {
+                        return None;
+                    };
                     content.first().and_then(|content| match content {
                         ContentItem::InputText { text } => Some(text.as_str()),
                         _ => None,
@@ -513,7 +513,12 @@ fn turn_context(root: &Path, turn_id: &str) -> RolloutItem {
 fn compacted(message: &str, replacement_history: Option<Vec<ResponseItem>>) -> RolloutItem {
     RolloutItem::Compacted(CompactedItem {
         message: message.to_string(),
-        replacement_history,
+        replacement_history: replacement_history.map(|items| {
+            items
+                .into_iter()
+                .map(Into::into)
+                .collect()
+        }),
         window_number: Some(1),
         first_window_id: None,
         previous_window_id: None,
