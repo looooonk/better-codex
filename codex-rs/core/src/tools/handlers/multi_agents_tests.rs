@@ -2764,7 +2764,8 @@ async fn resume_agent_restores_closed_agent_and_accepts_send_input() {
                 }],
                 phase: None,
                 internal_chat_message_metadata_passthrough: None,
-            })]),
+            }
+            .into())]),
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
             /*parent_trace*/ None,
             /*supports_openai_form_elicitation*/ false,

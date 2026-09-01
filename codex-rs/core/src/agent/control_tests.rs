@@ -1299,14 +1299,16 @@ async fn spawn_agent_fork_strips_parent_usage_hints_from_compacted_history() {
         .persist_rollout_items(&[
             RolloutItem::Compacted(CompactedItem {
                 message: String::new(),
-                replacement_history: Some(replacement_history),
+                replacement_history: Some(
+                    replacement_history.into_iter().map(Into::into).collect(),
+                ),
                 window_number: None,
                 first_window_id: None,
                 previous_window_id: None,
                 window_id: None,
             }),
             RolloutItem::TurnContext(turn_context.to_turn_context_item()),
-            RolloutItem::ResponseItem(spawn_agent_call(&parent_spawn_call_id)),
+            RolloutItem::ResponseItem(spawn_agent_call(&parent_spawn_call_id).into()),
         ])
         .await;
     parent_thread

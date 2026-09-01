@@ -336,7 +336,7 @@ fn rollout_item_contains_message_text(item: &RolloutItem, needle: &str) -> bool 
     let RolloutItem::ResponseItem(response_item) = item else {
         return false;
     };
-    response_item_contains_message_text(response_item, needle)
+    response_item_contains_message_text(&response_item.item, needle)
 }
 
 fn response_item_contains_message_text(item: &ResponseItem, needle: &str) -> bool {

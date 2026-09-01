@@ -21,7 +21,7 @@ pub fn apply_rollout_item(
         RolloutItem::SessionMeta(meta_line) => apply_session_meta_from_item(metadata, meta_line),
         RolloutItem::TurnContext(turn_ctx) => apply_turn_context(metadata, turn_ctx),
         RolloutItem::EventMsg(event) => apply_event_msg(metadata, event),
-        RolloutItem::ResponseItem(item) => apply_response_item(metadata, item),
+        RolloutItem::ResponseItem(item) => apply_response_item(metadata, &item.item),
         RolloutItem::InterAgentCommunication(_)
         | RolloutItem::InterAgentCommunicationMetadata { .. } => {}
         RolloutItem::Compacted(_) => {}
@@ -195,7 +195,8 @@ mod tests {
             }],
             phase: None,
             internal_chat_message_metadata_passthrough: None,
-        });
+        }
+        .into());
 
         apply_rollout_item(&mut metadata, &item, "test-provider");
 

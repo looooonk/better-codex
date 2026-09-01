@@ -511,7 +511,8 @@ async fn synthetic_call_output_id_is_stable_across_resumes() -> anyhow::Result<(
                 arguments: "{}".to_string(),
                 call_id: function_call_id.to_string(),
                 internal_chat_message_metadata_passthrough: None,
-            }),
+            }
+            .into()),
         },
     ];
     let tmpdir = TempDir::new()?;
@@ -1031,7 +1032,7 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
         RolloutLine {
             timestamp: "2024-01-01T00:00:01.000Z".to_string(),
             ordinal: None,
-            item: RolloutItem::ResponseItem(legacy_custom_tool_call),
+            item: RolloutItem::ResponseItem(legacy_custom_tool_call.into()),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:02.000Z".to_string(),
@@ -1042,7 +1043,8 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
                 name: None,
                 output: FunctionCallOutputPayload::from_text("legacy js_repl stdout".to_string()),
                 internal_chat_message_metadata_passthrough: None,
-            }),
+            }
+            .into()),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:03.000Z".to_string(),
@@ -1056,7 +1058,8 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
                 }],
                 phase: None,
                 internal_chat_message_metadata_passthrough: None,
-            }),
+            }
+            .into()),
         },
     ];
 
@@ -1178,7 +1181,8 @@ async fn resume_replays_image_tool_outputs_with_detail() {
                 arguments: "{\"path\":\"/tmp/example.png\"}".to_string(),
                 call_id: function_call_id.to_string(),
                 internal_chat_message_metadata_passthrough: None,
-            }),
+            }
+            .into()),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:01.500Z".to_string(),
@@ -1193,7 +1197,8 @@ async fn resume_replays_image_tool_outputs_with_detail() {
                     },
                 ]),
                 internal_chat_message_metadata_passthrough: None,
-            }),
+            }
+            .into()),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:02.000Z".to_string(),
@@ -1206,7 +1211,8 @@ async fn resume_replays_image_tool_outputs_with_detail() {
                 namespace: None,
                 input: "console.log('image flow')".to_string(),
                 internal_chat_message_metadata_passthrough: None,
-            }),
+            }
+            .into()),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:02.500Z".to_string(),
@@ -1222,7 +1228,8 @@ async fn resume_replays_image_tool_outputs_with_detail() {
                     },
                 ]),
                 internal_chat_message_metadata_passthrough: None,
-            }),
+            }
+            .into()),
         },
     ];
 

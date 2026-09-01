@@ -3688,6 +3688,7 @@ impl ThreadRequestProcessor {
             history
                 .iter()
                 .cloned()
+                .map(Into::into)
                 .map(RolloutItem::ResponseItem)
                 .collect(),
         ))
@@ -5148,7 +5149,7 @@ fn preview_from_rollout_items(items: &[RolloutItem]) -> String {
     items
         .iter()
         .find_map(|item| match item {
-            RolloutItem::ResponseItem(item) => match codex_core::parse_turn_item(item) {
+            RolloutItem::ResponseItem(item) => match codex_core::parse_turn_item(&item.item) {
                 Some(codex_protocol::items::TurnItem::UserMessage(user)) => Some(user.message()),
                 _ => None,
             },

@@ -35,7 +35,8 @@ fn retained_message(text: &str) -> RolloutItem {
         }],
         phase: None,
         internal_chat_message_metadata_passthrough: None,
-    })
+    }
+    .into())
 }
 
 fn turn_started(turn_id: &str) -> RolloutItem {
@@ -106,7 +107,7 @@ fn thread_sampling_is_stable_and_selects_whole_threads() {
 #[test]
 fn mixed_batch_reports_exact_policy_counts_and_bytes() {
     let kept = retained_message("hello");
-    let dropped = RolloutItem::ResponseItem(ResponseItem::Other);
+    let dropped = RolloutItem::ResponseItem(ResponseItem::Other.into());
     let items = vec![kept.clone(), dropped.clone()];
 
     let (persisted, measurement) =
@@ -157,7 +158,7 @@ fn turn_measurements_span_batches_and_include_items_before_start() {
         retained_message("first prompt"),
         turn_started("turn-1"),
         retained_message("first response"),
-        RolloutItem::ResponseItem(ResponseItem::Other),
+        RolloutItem::ResponseItem(ResponseItem::Other.into()),
         turn_complete("turn-1"),
     ];
     let second_turn = vec![

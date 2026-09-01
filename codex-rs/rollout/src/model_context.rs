@@ -141,7 +141,7 @@ impl ModelContextScan {
             }
             RolloutItem::ResponseItem(response_item) => {
                 self.active_segment.has_user_turn |=
-                    response_item_counts_as_user_turn(response_item);
+                    response_item_counts_as_user_turn(&response_item.item);
             }
             RolloutItem::InterAgentCommunication(_) => {
                 self.active_segment.has_user_turn = true;

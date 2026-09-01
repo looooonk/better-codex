@@ -226,7 +226,10 @@ async fn review_op_emits_lifecycle_and_review_output() {
         }
         let v: serde_json::Value = serde_json::from_str(line).expect("jsonl line");
         let rl: RolloutLine = serde_json::from_value(v).expect("rollout line");
-        if let RolloutItem::ResponseItem(ResponseItem::Message { role, content, .. }) = rl.item {
+        if let RolloutItem::ResponseItem(codex_history::ResponseItemEnvelope {
+            item: ResponseItem::Message { role, content, .. },
+            ..
+        }) = rl.item {
             if role == "user" {
                 for c in content {
                     if let ContentItem::InputText { text } = c {
@@ -804,7 +807,10 @@ async fn review_input_isolated_from_parent_history() {
         }
         let v: serde_json::Value = serde_json::from_str(line).expect("jsonl line");
         let rl: RolloutLine = serde_json::from_value(v).expect("rollout line");
-        if let RolloutItem::ResponseItem(ResponseItem::Message { role, content, .. }) = rl.item
+        if let RolloutItem::ResponseItem(codex_history::ResponseItemEnvelope {
+            item: ResponseItem::Message { role, content, .. },
+            ..
+        }) = rl.item
             && role == "user"
         {
             for c in content {

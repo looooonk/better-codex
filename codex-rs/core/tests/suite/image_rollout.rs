@@ -38,15 +38,17 @@ fn find_user_message_with_image(text: &str) -> Option<ResponseItem> {
             Ok(rollout) => rollout,
             Err(_) => continue,
         };
-        if let RolloutItem::ResponseItem(ResponseItem::Message { role, content, .. }) =
-            &rollout.item
+        if let RolloutItem::ResponseItem(codex_history::ResponseItemEnvelope {
+            item: ResponseItem::Message { role, content, .. },
+            ..
+        }) = &rollout.item
             && role == "user"
             && content
                 .iter()
                 .any(|span| matches!(span, ContentItem::InputImage { .. }))
             && let RolloutItem::ResponseItem(item) = rollout.item.clone()
         {
-            return Some(item);
+            return Some(item.into_item());
         }
     }
     None

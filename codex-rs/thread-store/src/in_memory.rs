@@ -83,7 +83,8 @@ mod tests {
                 }],
                 phase: None,
                 internal_chat_message_metadata_passthrough: None,
-            })])
+            }
+            .into())])
             .await
             .expect_err("append should fail");
         assert_eq!(

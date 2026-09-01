@@ -240,15 +240,16 @@ fn truncates_rollout_from_start_before_nth_user_only() {
     let rollout: Vec<RolloutItem> = items
         .iter()
         .cloned()
+        .map(Into::into)
         .map(RolloutItem::ResponseItem)
         .collect();
 
     let truncated =
         truncate_rollout_before_nth_user_message_from_start(&rollout, /*n_from_start*/ 1);
     let expected = vec![
-        RolloutItem::ResponseItem(items[0].clone()),
-        RolloutItem::ResponseItem(items[1].clone()),
-        RolloutItem::ResponseItem(items[2].clone()),
+        RolloutItem::ResponseItem(items[0].clone().into()),
+        RolloutItem::ResponseItem(items[1].clone().into()),
+        RolloutItem::ResponseItem(items[2].clone().into()),
     ];
     assert_eq!(
         serde_json::to_value(&truncated).unwrap(),
@@ -266,9 +267,9 @@ fn truncates_rollout_from_start_before_nth_user_only() {
 #[test]
 fn truncation_max_keeps_full_rollout() {
     let rollout = vec![
-        RolloutItem::ResponseItem(user_msg("u1")),
-        RolloutItem::ResponseItem(assistant_msg("a1")),
-        RolloutItem::ResponseItem(user_msg("u2")),
+        RolloutItem::ResponseItem(user_msg("u1").into()),
+        RolloutItem::ResponseItem(assistant_msg("a1").into()),
+        RolloutItem::ResponseItem(user_msg("u2").into()),
     ];
 
     let truncated = truncate_rollout_before_nth_user_message_from_start(&rollout, usize::MAX);
@@ -282,17 +283,17 @@ fn truncation_max_keeps_full_rollout() {
 #[test]
 fn truncates_rollout_from_start_applies_thread_rollback_markers() {
     let rollout_items = vec![
-        RolloutItem::ResponseItem(user_msg("u1")),
-        RolloutItem::ResponseItem(assistant_msg("a1")),
-        RolloutItem::ResponseItem(user_msg("u2")),
-        RolloutItem::ResponseItem(assistant_msg("a2")),
+        RolloutItem::ResponseItem(user_msg("u1").into()),
+        RolloutItem::ResponseItem(assistant_msg("a1").into()),
+        RolloutItem::ResponseItem(user_msg("u2").into()),
+        RolloutItem::ResponseItem(assistant_msg("a2").into()),
         RolloutItem::EventMsg(EventMsg::ThreadRolledBack(ThreadRolledBackEvent {
             num_turns: 1,
         })),
-        RolloutItem::ResponseItem(user_msg("u3")),
-        RolloutItem::ResponseItem(assistant_msg("a3")),
-        RolloutItem::ResponseItem(user_msg("u4")),
-        RolloutItem::ResponseItem(assistant_msg("a4")),
+        RolloutItem::ResponseItem(user_msg("u3").into()),
+        RolloutItem::ResponseItem(assistant_msg("a3").into()),
+        RolloutItem::ResponseItem(user_msg("u4").into()),
+        RolloutItem::ResponseItem(assistant_msg("a4").into()),
     ];
 
     // Effective user history after applying rollback(1) is: u1, u3, u4.
@@ -324,6 +325,7 @@ async fn ignores_session_prefix_messages_when_truncating_rollout_from_start() {
     let rollout_items: Vec<RolloutItem> = items
         .iter()
         .cloned()
+        .map(Into::into)
         .map(RolloutItem::ResponseItem)
         .collect();
 
@@ -332,10 +334,10 @@ async fn ignores_session_prefix_messages_when_truncating_rollout_from_start() {
         /*n_from_start*/ 1,
     );
     let expected: Vec<RolloutItem> = vec![
-        RolloutItem::ResponseItem(items[0].clone()),
-        RolloutItem::ResponseItem(items[1].clone()),
-        RolloutItem::ResponseItem(items[2].clone()),
-        RolloutItem::ResponseItem(items[3].clone()),
+        RolloutItem::ResponseItem(items[0].clone().into()),
+        RolloutItem::ResponseItem(items[1].clone().into()),
+        RolloutItem::ResponseItem(items[2].clone().into()),
+        RolloutItem::ResponseItem(items[3].clone().into()),
     ];
 
     assert_eq!(
@@ -347,20 +349,22 @@ async fn ignores_session_prefix_messages_when_truncating_rollout_from_start() {
 #[test]
 fn truncates_rollout_to_last_n_fork_turns_counts_trigger_turn_messages() {
     let rollout = vec![
-        RolloutItem::ResponseItem(user_msg("u1")),
-        RolloutItem::ResponseItem(assistant_msg("a1")),
+        RolloutItem::ResponseItem(user_msg("u1").into()),
+        RolloutItem::ResponseItem(assistant_msg("a1").into()),
         RolloutItem::ResponseItem(inter_agent_msg(
             "queued message",
             /*trigger_turn*/ false,
-        )),
-        RolloutItem::ResponseItem(assistant_msg("a2")),
+        )
+        .into()),
+        RolloutItem::ResponseItem(assistant_msg("a2").into()),
         RolloutItem::ResponseItem(inter_agent_msg(
             "triggered task",
             /*trigger_turn*/ true,
-        )),
-        RolloutItem::ResponseItem(assistant_msg("a3")),
-        RolloutItem::ResponseItem(user_msg("u2")),
-        RolloutItem::ResponseItem(assistant_msg("a4")),
+        )
+        .into()),
+        RolloutItem::ResponseItem(assistant_msg("a3").into()),
+        RolloutItem::ResponseItem(user_msg("u2").into()),
+        RolloutItem::ResponseItem(assistant_msg("a4").into()),
     ];
 
     let truncated = truncate_rollout_to_last_n_fork_turns(&rollout, /*n_from_end*/ 2);
@@ -375,12 +379,12 @@ fn truncates_rollout_to_last_n_fork_turns_counts_trigger_turn_messages() {
 #[test]
 fn fork_turn_positions_use_inter_agent_delivery_metadata() {
     let rollout = vec![
-        RolloutItem::ResponseItem(user_msg("user task")),
+        RolloutItem::ResponseItem(user_msg("user task").into()),
         inter_agent_communication("queued during user turn", /*trigger_turn*/ false),
-        RolloutItem::ResponseItem(assistant_msg("first answer")),
+        RolloutItem::ResponseItem(assistant_msg("first answer").into()),
         inter_agent_communication("follow-up task", /*trigger_turn*/ true),
-        RolloutItem::ResponseItem(assistant_msg("second answer")),
-        RolloutItem::ResponseItem(user_msg("next user task")),
+        RolloutItem::ResponseItem(assistant_msg("second answer").into()),
+        RolloutItem::ResponseItem(user_msg("next user task").into()),
     ];
 
     assert_eq!(fork_turn_positions_in_rollout(&rollout), vec![0, 3, 5]);
@@ -403,16 +407,16 @@ fn fork_turn_positions_use_canonical_agent_messages_and_delivery_metadata() {
         /*trigger_turn*/ true,
     );
     let mut rollout = vec![
-        RolloutItem::ResponseItem(user_msg("user task")),
+        RolloutItem::ResponseItem(user_msg("user task").into()),
         RolloutItem::InterAgentCommunicationMetadata {
             trigger_turn: false,
         },
-        RolloutItem::ResponseItem(queued.to_model_input_item()),
-        RolloutItem::ResponseItem(assistant_msg("first answer")),
+        RolloutItem::ResponseItem(queued.to_model_input_item().into()),
+        RolloutItem::ResponseItem(assistant_msg("first answer").into()),
         RolloutItem::InterAgentCommunicationMetadata { trigger_turn: true },
-        RolloutItem::ResponseItem(triggered.to_model_input_item()),
-        RolloutItem::ResponseItem(assistant_msg("second answer")),
-        RolloutItem::ResponseItem(user_msg("next user task")),
+        RolloutItem::ResponseItem(triggered.to_model_input_item().into()),
+        RolloutItem::ResponseItem(assistant_msg("second answer").into()),
+        RolloutItem::ResponseItem(user_msg("next user task").into()),
     ];
 
     assert_eq!(fork_turn_positions_in_rollout(&rollout), vec![0, 4, 7]);
@@ -429,9 +433,9 @@ fn fork_turn_positions_use_canonical_agent_messages_and_delivery_metadata() {
 #[test]
 fn truncates_rollout_to_last_n_fork_turns_drops_startup_prefix_even_when_under_limit() {
     let rollout = vec![
-        RolloutItem::ResponseItem(developer_msg("startup developer context")),
-        RolloutItem::ResponseItem(user_msg("current task")),
-        RolloutItem::ResponseItem(assistant_msg("answer")),
+        RolloutItem::ResponseItem(developer_msg("startup developer context").into()),
+        RolloutItem::ResponseItem(user_msg("current task").into()),
+        RolloutItem::ResponseItem(assistant_msg("answer").into()),
     ];
 
     let truncated = truncate_rollout_to_last_n_fork_turns(&rollout, /*n_from_end*/ 2);
@@ -446,18 +450,19 @@ fn truncates_rollout_to_last_n_fork_turns_drops_startup_prefix_even_when_under_l
 #[test]
 fn truncates_rollout_to_last_n_fork_turns_applies_thread_rollback_markers() {
     let rollout = vec![
-        RolloutItem::ResponseItem(user_msg("u1")),
-        RolloutItem::ResponseItem(assistant_msg("a1")),
+        RolloutItem::ResponseItem(user_msg("u1").into()),
+        RolloutItem::ResponseItem(assistant_msg("a1").into()),
         RolloutItem::ResponseItem(inter_agent_msg(
             "triggered task",
             /*trigger_turn*/ true,
-        )),
-        RolloutItem::ResponseItem(assistant_msg("a2")),
+        )
+        .into()),
+        RolloutItem::ResponseItem(assistant_msg("a2").into()),
         RolloutItem::EventMsg(EventMsg::ThreadRolledBack(ThreadRolledBackEvent {
             num_turns: 1,
         })),
-        RolloutItem::ResponseItem(user_msg("u2")),
-        RolloutItem::ResponseItem(assistant_msg("a3")),
+        RolloutItem::ResponseItem(user_msg("u2").into()),
+        RolloutItem::ResponseItem(assistant_msg("a3").into()),
     ];
 
     let truncated = truncate_rollout_to_last_n_fork_turns(&rollout, /*n_from_end*/ 2);
@@ -471,15 +476,16 @@ fn truncates_rollout_to_last_n_fork_turns_applies_thread_rollback_markers() {
 #[test]
 fn fork_turn_positions_ignore_zero_turn_rollback_markers() {
     let rollout = vec![
-        RolloutItem::ResponseItem(user_msg("u1")),
+        RolloutItem::ResponseItem(user_msg("u1").into()),
         RolloutItem::ResponseItem(inter_agent_msg(
             "triggered task",
             /*trigger_turn*/ true,
-        )),
+        )
+        .into()),
         RolloutItem::EventMsg(EventMsg::ThreadRolledBack(ThreadRolledBackEvent {
             num_turns: 0,
         })),
-        RolloutItem::ResponseItem(user_msg("u2")),
+        RolloutItem::ResponseItem(user_msg("u2").into()),
     ];
 
     assert_eq!(fork_turn_positions_in_rollout(&rollout), vec![0, 1, 3]);
@@ -488,18 +494,19 @@ fn fork_turn_positions_ignore_zero_turn_rollback_markers() {
 #[test]
 fn truncates_rollout_to_last_n_fork_turns_discards_trigger_boundaries_in_rolled_back_suffix() {
     let rollout = vec![
-        RolloutItem::ResponseItem(user_msg("u1")),
-        RolloutItem::ResponseItem(user_msg("u2")),
+        RolloutItem::ResponseItem(user_msg("u1").into()),
+        RolloutItem::ResponseItem(user_msg("u2").into()),
         RolloutItem::ResponseItem(inter_agent_msg(
             "triggered task",
             /*trigger_turn*/ true,
-        )),
-        RolloutItem::ResponseItem(assistant_msg("a1")),
+        )
+        .into()),
+        RolloutItem::ResponseItem(assistant_msg("a1").into()),
         RolloutItem::EventMsg(EventMsg::ThreadRolledBack(ThreadRolledBackEvent {
             num_turns: 1,
         })),
-        RolloutItem::ResponseItem(user_msg("u3")),
-        RolloutItem::ResponseItem(assistant_msg("a2")),
+        RolloutItem::ResponseItem(user_msg("u3").into()),
+        RolloutItem::ResponseItem(assistant_msg("a2").into()),
     ];
 
     let truncated = truncate_rollout_to_last_n_fork_turns(&rollout, /*n_from_end*/ 2);
@@ -515,21 +522,23 @@ fn truncates_rollout_to_last_n_fork_turns_discards_trigger_boundaries_in_rolled_
 #[test]
 fn truncates_rollout_to_last_n_fork_turns_discards_rolled_back_assistant_instruction_turns() {
     let rollout = vec![
-        RolloutItem::ResponseItem(user_msg("u1")),
-        RolloutItem::ResponseItem(assistant_msg("a1")),
+        RolloutItem::ResponseItem(user_msg("u1").into()),
+        RolloutItem::ResponseItem(assistant_msg("a1").into()),
         RolloutItem::ResponseItem(inter_agent_msg(
             "triggered task 1",
             /*trigger_turn*/ true,
-        )),
-        RolloutItem::ResponseItem(assistant_msg("a2")),
+        )
+        .into()),
+        RolloutItem::ResponseItem(assistant_msg("a2").into()),
         RolloutItem::EventMsg(EventMsg::ThreadRolledBack(ThreadRolledBackEvent {
             num_turns: 1,
         })),
         RolloutItem::ResponseItem(inter_agent_msg(
             "triggered task 2",
             /*trigger_turn*/ true,
-        )),
-        RolloutItem::ResponseItem(assistant_msg("a3")),
+        )
+        .into()),
+        RolloutItem::ResponseItem(assistant_msg("a3").into()),
     ];
 
     let truncated = truncate_rollout_to_last_n_fork_turns(&rollout, /*n_from_end*/ 1);
@@ -544,13 +553,14 @@ fn truncates_rollout_to_last_n_fork_turns_discards_rolled_back_assistant_instruc
 #[test]
 fn truncates_rollout_to_last_n_fork_turns_keeps_full_rollout_when_n_is_large() {
     let rollout = vec![
-        RolloutItem::ResponseItem(user_msg("u1")),
-        RolloutItem::ResponseItem(assistant_msg("a1")),
+        RolloutItem::ResponseItem(user_msg("u1").into()),
+        RolloutItem::ResponseItem(assistant_msg("a1").into()),
         RolloutItem::ResponseItem(inter_agent_msg(
             "triggered task",
             /*trigger_turn*/ true,
-        )),
-        RolloutItem::ResponseItem(assistant_msg("a2")),
+        )
+        .into()),
+        RolloutItem::ResponseItem(assistant_msg("a2").into()),
     ];
 
     let truncated = truncate_rollout_to_last_n_fork_turns(&rollout, /*n_from_end*/ 10);
