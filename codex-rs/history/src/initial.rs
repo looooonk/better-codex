@@ -12,21 +12,19 @@ use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadSource;
-use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
-use ts_rs::TS;
 
 use crate::RolloutItem;
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResumedHistory {
     pub conversation_id: ThreadId,
     pub history: Arc<Vec<RolloutItem>>,
     pub rollout_path: Option<PathBuf>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, TS)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub enum InitialHistory {
     New,
     Cleared,

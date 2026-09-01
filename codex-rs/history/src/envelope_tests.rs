@@ -18,12 +18,16 @@ fn accessors_preserve_response_item() {
         internal_chat_message_metadata_passthrough: None,
     };
     let mut envelope = ResponseItemEnvelope::new(expected_item.clone());
-    envelope.metadata = Some(CodexHarnessMetadata::default());
+    envelope.metadata = Some(CodexHarnessMetadata {
+        client_authored: true,
+    });
 
     assert_eq!(&*envelope, &expected_item);
     assert_eq!(
         envelope.metadata,
-        Some(CodexHarnessMetadata::default())
+        Some(CodexHarnessMetadata {
+            client_authored: true,
+        })
     );
     let borrowed: &ResponseItem = envelope.borrow();
     assert_eq!(borrowed, &expected_item);

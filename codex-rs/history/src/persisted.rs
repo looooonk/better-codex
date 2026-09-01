@@ -9,13 +9,17 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
-use ts_rs::TS;
+use serde::Serializer;
+use serde::de::Error as _;
 
-#[derive(Serialize, Deserialize, Debug, Clone, JsonSchema, TS)]
-#[serde(tag = "type", content = "payload", rename_all = "snake_case")]
+use crate::ResponseItemEnvelope;
+use crate::persisted_wire::CompactedItemWire;
+use crate::persisted_wire::RolloutItemWire;
+
+#[derive(Debug, Clone)]
 pub enum RolloutItem {
     SessionMeta(SessionMetaLine),
-    ResponseItem(ResponseItem),
+    ResponseItem(ResponseItemEnvelope),
     /// Legacy delivery item reconstructed as a model-visible `agent_message`.
     InterAgentCommunication(InterAgentCommunication),
     /// Local delivery metadata that is not part of the Responses API item.
@@ -27,23 +31,59 @@ pub enum RolloutItem {
     EventMsg(EventMsg),
 }
 
-#[derive(Serialize, Clone, Debug, PartialEq, JsonSchema, TS)]
+impl Serialize for RolloutItem {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        RolloutItemWire::from(self).serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for RolloutItem {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        RolloutItemWire::deserialize(deserializer).map(Into::into)
+    }
+}
+
+impl JsonSchema for RolloutItem {
+    fn schema_name() -> String {
+        "RolloutItem".to_string()
+    }
+
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::RolloutItem"))
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {
+        RolloutItemWire::json_schema(generator)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct CompactedItem {
     pub message: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub replacement_history: Option<Vec<ResponseItem>>,
+    pub replacement_history: Option<Vec<ResponseItemEnvelope>>,
     /// Monotonic position of this context window within the thread.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_number: Option<u64>,
     /// UUIDv7 identity of the first context window in this thread's window chain.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_window_id: Option<String>,
     /// UUIDv7 identity of the context window immediately before this one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub previous_window_id: Option<String>,
     /// UUIDv7 identity of this context window.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_id: Option<String>,
+}
+
+impl Serialize for CompactedItem {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        CompactedItemWire::from(self).serialize(serializer)
+    }
 }
 
 impl From<CompactedItem> for ResponseItem {
@@ -67,47 +107,24 @@ impl<'de> Deserialize<'de> for CompactedItem {
     where
         D: Deserializer<'de>,
     {
-        let serialized = SerializedCompactedItem::deserialize(deserializer)?;
-        let mut window_number = serialized.window_number;
-        let window_id = match serialized.window_id {
-            Some(SerializedWindowId::Id(window_id)) => Some(window_id),
-            Some(SerializedWindowId::LegacyWindowNumber(legacy_window_number)) => {
-                window_number.get_or_insert(legacy_window_number);
-                None
-            }
-            None => None,
-        };
-        Ok(Self {
-            message: serialized.message,
-            replacement_history: serialized.replacement_history,
-            window_number,
-            first_window_id: serialized.first_window_id,
-            previous_window_id: serialized.previous_window_id,
-            window_id,
-        })
+        CompactedItemWire::deserialize(deserializer)?
+            .try_into()
+            .map_err(D::Error::custom)
     }
 }
 
-#[derive(Deserialize)]
-struct SerializedCompactedItem {
-    message: String,
-    #[serde(default)]
-    replacement_history: Option<Vec<ResponseItem>>,
-    #[serde(default)]
-    window_number: Option<u64>,
-    #[serde(default)]
-    first_window_id: Option<String>,
-    #[serde(default)]
-    previous_window_id: Option<String>,
-    #[serde(default)]
-    window_id: Option<SerializedWindowId>,
-}
+impl JsonSchema for CompactedItem {
+    fn schema_name() -> String {
+        "CompactedItem".to_string()
+    }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum SerializedWindowId {
-    Id(String),
-    LegacyWindowNumber(u64),
+    fn schema_id() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed(concat!(module_path!(), "::CompactedItem"))
+    }
+
+    fn json_schema(generator: &mut schemars::SchemaGenerator) -> schemars::schema::Schema {
+        CompactedItemWire::json_schema(generator)
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, JsonSchema)]
