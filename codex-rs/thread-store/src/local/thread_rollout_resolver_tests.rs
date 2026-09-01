@@ -106,3 +106,51 @@ async fn unreadable_replacement_rollout_cannot_claim_a_thread() {
         )
     );
 }
+
+#[tokio::test]
+async fn mismatched_paginated_selection_does_not_fall_back_to_an_ordinary_sibling() {
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let thread_id = id(405);
+    let other_thread_id = id(406);
+    let ordinary_path = write_session_file_with_history_mode(
+        home.path(),
+        "2025-01-03T12-00-00",
+        Uuid::from_u128(405),
+        ThreadHistoryMode::Paginated,
+    )
+    .expect("ordinary rollout");
+    let mismatched_path = write_session_file_with_history_mode(
+        home.path(),
+        "2025-01-03T13-00-00",
+        Uuid::from_u128(406),
+        ThreadHistoryMode::Paginated,
+    )
+    .expect("mismatched rollout");
+    let runtime = codex_state::StateRuntime::init(
+        config.sqlite_home.clone(),
+        config.default_model_provider_id.clone(),
+    )
+    .await
+    .expect("state runtime");
+    let mut builder = ThreadMetadataBuilder::new(
+        thread_id,
+        mismatched_path.clone(),
+        Utc::now(),
+        SessionSource::Cli,
+    );
+    builder.history_mode = ThreadHistoryMode::Paginated;
+    runtime
+        .upsert_thread(&builder.build(config.default_model_provider_id.as_str()))
+        .await
+        .expect("seed mismatched selection");
+    let store = LocalThreadStore::new(config, Some(runtime));
+
+    let error = resolve_current(&store, thread_id)
+        .await
+        .expect_err("paginated selection must fail closed");
+
+    assert!(matches!(error, ThreadStoreError::InvalidRequest { .. }));
+    assert!(error.to_string().contains(&other_thread_id.to_string()));
+    assert!(ordinary_path.exists());
+}
