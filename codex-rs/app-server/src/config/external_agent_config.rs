@@ -25,6 +25,7 @@ use codex_external_agent_sessions::ExternalAgentSessionMigration;
 use codex_external_agent_sessions::detect_recent_sessions;
 use codex_plugin::PluginId;
 use codex_protocol::protocol::Product;
+use codex_skills_extension::HostSkillsService;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -34,10 +35,19 @@ use std::fs;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 use toml::Value as TomlValue;
 
 const EXTERNAL_AGENT_CONFIG_DETECT_METRIC: &str = "codex.external_agent_config.detect";
 const EXTERNAL_AGENT_CONFIG_IMPORT_METRIC: &str = "codex.external_agent_config.import";
+
+fn plugins_manager_for_config(config: &Config) -> PluginsManager {
+    let skill_root_loader = Arc::new(HostSkillsService::new(
+        config.codex_home.clone(),
+        /*bundled_skills_enabled*/ false,
+    ));
+    PluginsManager::new(config.codex_home.to_path_buf(), skill_root_loader)
+}
 const EXTERNAL_AGENT_DIR: &str = ".claude";
 const EXTERNAL_AGENT_CONFIG_MD: &str = "CLAUDE.md";
 const EXTERNAL_AGENT_KNOWN_MARKETPLACES_PATH: &str = "plugins/known_marketplaces.json";
@@ -711,10 +721,9 @@ impl ExternalAgentConfigService {
                         })
                         .map(|plugins| plugins.into_keys().collect::<HashSet<_>>())
                         .unwrap_or_default();
-                    let configured_marketplace_plugins = configured_marketplace_plugins(
-                        &config,
-                        &PluginsManager::new(self.codex_home.clone()),
-                    )?;
+                    let plugins_manager = plugins_manager_for_config(&config);
+                    let configured_marketplace_plugins =
+                        configured_marketplace_plugins(&config, &plugins_manager)?;
                     if let Some(item) = self.detect_plugin_migration(
                         source_settings.as_path(),
                         repo_root.unwrap_or(self.external_agent_home.as_path()),
@@ -902,7 +911,7 @@ impl ExternalAgentConfigService {
             .map_err(|err| io::Error::other(format!("failed to load config: {err}")))?;
         let requirements = config.config_layer_stack.requirements().clone();
         let mut outcome = PluginImportOutcome::default();
-        let plugins_manager = PluginsManager::new(self.codex_home.clone())
+        let plugins_manager = plugins_manager_for_config(&config)
             .with_plugin_install_source(PluginInstallSource::ExternalAgentMigration);
         if let Some(analytics_events_client) = self.analytics_events_client.clone() {
             plugins_manager.set_analytics_events_client(analytics_events_client);

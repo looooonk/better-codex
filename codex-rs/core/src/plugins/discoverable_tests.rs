@@ -6,7 +6,6 @@ use codex_core_plugins::remote::REMOTE_GLOBAL_MARKETPLACE_NAME;
 use codex_core_plugins::remote::RemotePluginServiceConfig;
 use codex_core_plugins::remote::fetch_and_cache_global_remote_plugin_catalog;
 use codex_core_plugins::startup_sync::curated_plugins_repo_path;
-use codex_protocol::protocol::Product;
 use codex_tools::DiscoverablePluginInfo;
 use pretty_assertions::assert_eq;
 use tempfile::tempdir;
@@ -24,11 +23,8 @@ async fn list_discoverable_plugins_with_auth(
     auth: Option<&codex_login::CodexAuth>,
     loaded_plugin_app_connector_ids: &[String],
 ) -> anyhow::Result<Vec<DiscoverablePluginInfo>> {
-    let plugins_manager = PluginsManager::new_with_options(
-        config.codex_home.to_path_buf(),
-        Some(Product::Codex),
-        auth.map(codex_login::CodexAuth::api_auth_mode),
-    );
+    let plugins_manager = super::plugins_manager_for_config(config);
+    plugins_manager.set_auth_mode(auth.map(codex_login::CodexAuth::api_auth_mode));
     list_discoverable_plugins_with_manager_and_auth(
         config,
         &plugins_manager,
@@ -218,7 +214,7 @@ plugins = true
     let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
     let mut config = load_plugins_config(codex_home.path()).await;
     config.chatgpt_base_url = format!("{}/backend-api", server.uri());
-    let plugins_manager = PluginsManager::new(config.codex_home.to_path_buf());
+    let plugins_manager = super::plugins_manager_for_config(&config);
     fetch_and_cache_global_remote_plugin_catalog(
         codex_home.path(),
         &RemotePluginServiceConfig {

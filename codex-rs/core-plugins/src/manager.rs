@@ -10,7 +10,7 @@ use crate::loader::load_plugin_apps_from_manifest;
 use crate::loader::load_plugin_hooks;
 use crate::loader::load_plugin_hooks_from_layer_stack;
 use crate::loader::load_plugin_mcp_servers_from_manifest;
-use crate::loader::load_plugin_skills_with_discovery_mode;
+use crate::loader::load_plugin_skill_inventory;
 use crate::loader::load_plugins_from_layer_stack;
 use crate::loader::log_plugin_load_errors;
 use crate::loader::materialize_marketplace_plugin_source;
@@ -85,6 +85,7 @@ use codex_protocol::protocol::HookEventName;
 use codex_protocol::protocol::Product;
 use codex_skills::SkillConfigRules;
 use codex_skills::SkillMetadata;
+use codex_skills::SkillRootLoader;
 use codex_skills::SkillRootSnapshots;
 use codex_tools::DiscoverablePluginInfo;
 use codex_tools::DiscoverableTool;
@@ -379,6 +380,7 @@ pub struct PluginsManager {
     // Keep the cache auth-independent so auth changes only need to resolve capabilities again.
     loaded_plugins_cache: RwLock<LoadedPluginsCache>,
     loaded_plugins_load_semaphore: Semaphore,
+    skill_root_loader: Arc<dyn SkillRootLoader<PluginSkillRoot>>,
     tool_suggest_metadata_cache: ToolSuggestMetadataCache,
     remote_installed_plugins_cache: RwLock<Option<Vec<RemoteInstalledPlugin>>>,
     remote_installed_plugins_cache_refresh_state: RwLock<RemoteInstalledPluginsCacheRefreshState>,
@@ -427,14 +429,23 @@ impl PluginLoadCacheKey {
 }
 
 impl PluginsManager {
-    pub fn new(codex_home: PathBuf) -> Self {
-        Self::new_with_options(codex_home, Some(Product::Codex), /*auth_mode*/ None)
+    pub fn new(
+        codex_home: PathBuf,
+        skill_root_loader: Arc<dyn SkillRootLoader<PluginSkillRoot>>,
+    ) -> Self {
+        Self::new_with_options(
+            codex_home,
+            Some(Product::Codex),
+            /*auth_mode*/ None,
+            skill_root_loader,
+        )
     }
 
     pub fn new_with_options(
         codex_home: PathBuf,
         restriction_product: Option<Product>,
         auth_mode: Option<AuthMode>,
+        skill_root_loader: Arc<dyn SkillRootLoader<PluginSkillRoot>>,
     ) -> Self {
         // Product restrictions are enforced at marketplace admission time for a given CODEX_HOME:
         // listing, install, and curated refresh all consult this restriction context before new
@@ -455,6 +466,7 @@ impl PluginsManager {
             non_curated_cache_refresh_state: RwLock::new(NonCuratedCacheRefreshState::default()),
             loaded_plugins_cache: RwLock::new(LoadedPluginsCache::default()),
             loaded_plugins_load_semaphore: Semaphore::new(/*permits*/ 1),
+            skill_root_loader,
             tool_suggest_metadata_cache: ToolSuggestMetadataCache::new(),
             remote_installed_plugins_cache: RwLock::new(None),
             remote_installed_plugins_cache_refresh_state: RwLock::new(
@@ -597,6 +609,7 @@ impl PluginsManager {
             Some(&plugin_skill_snapshots),
             self.restriction_product,
             remote_global_catalog_active,
+            self.skill_root_loader.as_ref(),
         )
         .await;
         log_plugin_load_errors(&plugins);
@@ -682,6 +695,7 @@ impl PluginsManager {
             /*plugin_skill_snapshots*/ None,
             self.restriction_product,
             self.remote_global_catalog_active(config),
+            self.skill_root_loader.as_ref(),
         )
         .await;
         self.resolve_loaded_plugins_for_auth(plugins)
@@ -1731,7 +1745,12 @@ impl PluginsManager {
     ) -> Result<PluginCapabilitySummary, MarketplaceError> {
         let fragment = self
             .tool_suggest_metadata_cache
-            .metadata_for_plugin(marketplace_name, plugin, self.restriction_product)
+            .metadata_for_plugin(
+                marketplace_name,
+                plugin,
+                self.restriction_product,
+                self.skill_root_loader.as_ref(),
+            )
             .await?;
         Ok(fragment.project(skill_config_rules, self.auth_mode()))
     }
@@ -1906,18 +1925,19 @@ impl PluginsManager {
             manifest.interface.clone(),
             marketplace_category,
         );
-        let resolved_skills = load_plugin_skills_with_discovery_mode(
+        let resolved_skills = load_plugin_skill_inventory(
             &source_path,
             &plugin_id,
             &manifest,
             self.restriction_product,
-            &codex_core_skills::config_rules::skill_config_rules_from_stack(
-                &config.config_layer_stack,
-            ),
             /*plugin_skill_snapshots*/ None,
             manifest_format.skill_discovery_mode(),
+            self.skill_root_loader.as_ref(),
         )
-        .await;
+        .await
+        .resolve(&codex_core_skills::config_rules::skill_config_rules_from_stack(
+            &config.config_layer_stack,
+        ));
         let plugin_data_root = self
             .store
             .plugin_data_root_for_source(&plugin_id, source_path.as_path());

@@ -420,9 +420,14 @@ enabled = false
         .await
         .expect("custom role should apply");
 
-    let plugins_manager = Arc::new(PluginsManager::new(home.path().to_path_buf()));
-    let skills_service =
-        HostSkillsService::new(home.path().abs(), /*bundled_skills_enabled*/ true);
+    let skills_service = Arc::new(HostSkillsService::new(
+        home.path().abs(),
+        /*bundled_skills_enabled*/ true,
+    ));
+    let plugins_manager = Arc::new(PluginsManager::new(
+        home.path().to_path_buf(),
+        skills_service.clone(),
+    ));
     let plugins_input = config.plugins_config_input();
     let plugin_outcome = plugins_manager.plugins_for_config(&plugins_input).await;
     let effective_skill_roots = plugin_outcome.effective_plugin_skill_roots();

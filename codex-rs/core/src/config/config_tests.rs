@@ -68,7 +68,6 @@ use codex_config::types::TuiNotificationSettings;
 use codex_config::types::TuiPetAnchor;
 use codex_config::types::WindowsSandboxModeToml;
 use codex_config::types::WindowsToml;
-use codex_core_plugins::PluginsManager;
 use codex_exec_server::LOCAL_FS;
 use codex_features::Feature;
 use codex_features::FeaturesToml;
@@ -4980,7 +4979,7 @@ async fn rebuild_preserving_session_layers_refreshes_plugin_derived_mcp_config()
     let config = thread_config
         .rebuild_preserving_session_layers(&refreshed_config)
         .await?;
-    let plugins_manager = PluginsManager::new(codex_home.path().to_path_buf());
+    let plugins_manager = crate::plugins::plugins_manager_for_config(&config);
     let mcp_config = config.to_mcp_config(&plugins_manager).await;
     let configured_servers = mcp_config.mcp_server_catalog.configured_servers();
 
@@ -5042,7 +5041,7 @@ enabled = true
         .codex_home(codex_home.path().to_path_buf())
         .build()
         .await?;
-    let plugins_manager = PluginsManager::new(codex_home.path().to_path_buf());
+    let plugins_manager = crate::plugins::plugins_manager_for_config(&config);
     let mcp_config = config.to_mcp_config(&plugins_manager).await;
     let configured_servers = mcp_config.mcp_server_catalog.configured_servers();
 
@@ -5110,7 +5109,7 @@ url = "https://sample.example/mcp"
         )
         .build()
         .await?;
-    let plugins_manager = PluginsManager::new(codex_home.path().to_path_buf());
+    let plugins_manager = crate::plugins::plugins_manager_for_config(&config);
     let mcp_config = config.to_mcp_config(&plugins_manager).await;
     let configured_servers = mcp_config.mcp_server_catalog.configured_servers();
 
@@ -5212,7 +5211,7 @@ enabled = true
         )
         .build()
         .await?;
-    let plugins_manager = PluginsManager::new(codex_home.path().to_path_buf());
+    let plugins_manager = crate::plugins::plugins_manager_for_config(&config);
     let mcp_config = config.to_mcp_config(&plugins_manager).await;
     let configured_servers = mcp_config.mcp_server_catalog.configured_servers();
 
@@ -6152,7 +6151,7 @@ async fn to_mcp_config_preserves_apps_feature_from_config() -> std::io::Result<(
         codex_home.abs(),
     )
     .await?;
-    let plugins_manager = PluginsManager::new(codex_home.path().to_path_buf());
+    let plugins_manager = crate::plugins::plugins_manager_for_config(&config);
 
     config.apps_mcp_product_sku = Some("tpp".to_string());
     let mcp_config = config.to_mcp_config(&plugins_manager).await;
@@ -6179,7 +6178,7 @@ async fn to_mcp_config_flows_mcp_tool_prefix_from_feature() -> std::io::Result<(
         codex_home.abs(),
     )
     .await?;
-    let plugins_manager = PluginsManager::new(codex_home.path().to_path_buf());
+    let plugins_manager = crate::plugins::plugins_manager_for_config(&config);
 
     let mcp_config = config.to_mcp_config(&plugins_manager).await;
     assert!(mcp_config.prefix_mcp_tool_names);
@@ -6200,7 +6199,7 @@ async fn to_mcp_config_flows_mcp_2026_feature_from_config() -> std::io::Result<(
         codex_home.abs(),
     )
     .await?;
-    let plugins_manager = PluginsManager::new(codex_home.path().to_path_buf());
+    let plugins_manager = crate::plugins::plugins_manager_for_config(&config);
 
     let mcp_config = config.to_mcp_config(&plugins_manager).await;
     assert_eq!(mcp_config.protocol_mode, codex_mcp::McpProtocolMode::Legacy);
@@ -6224,7 +6223,7 @@ async fn to_mcp_config_preserves_auth_elicitation_feature_from_config() -> std::
         codex_home.abs(),
     )
     .await?;
-    let plugins_manager = PluginsManager::new(codex_home.path().to_path_buf());
+    let plugins_manager = crate::plugins::plugins_manager_for_config(&config);
 
     let mcp_config = config.to_mcp_config(&plugins_manager).await;
     assert_eq!(

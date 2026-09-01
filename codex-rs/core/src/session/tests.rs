@@ -5147,7 +5147,7 @@ async fn session_new_fails_when_zsh_fork_enabled_without_packaged_zsh() {
 
     let (tx_event, _rx_event) = async_channel::unbounded();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.to_path_buf()));
+    let plugins_manager = Arc::new(crate::plugins::plugins_manager_for_config(&config));
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_service = Arc::new(HostSkillsService::new(
         config.codex_home.clone(),
@@ -5305,7 +5305,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
             .expect("primary environment")
             .environment,
     );
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.to_path_buf()));
+    let plugins_manager = Arc::new(crate::plugins::plugins_manager_for_config(&config));
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_service = Arc::new(HostSkillsService::new(
         config.codex_home.clone(),
@@ -5534,7 +5534,7 @@ async fn make_session_with_config_and_rx(
 
     let (tx_event, rx_event) = async_channel::unbounded();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.to_path_buf()));
+    let plugins_manager = Arc::new(crate::plugins::plugins_manager_for_config(&config));
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_service = Arc::new(HostSkillsService::new(
         config.codex_home.clone(),
@@ -5641,7 +5641,7 @@ async fn make_session_with_history_source_and_agent_control_and_rx(
 
     let (tx_event, rx_event) = async_channel::unbounded();
     let (agent_status_tx, _agent_status_rx) = watch::channel(AgentStatus::PendingInit);
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.to_path_buf()));
+    let plugins_manager = Arc::new(crate::plugins::plugins_manager_for_config(&config));
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_service = Arc::new(HostSkillsService::new(
         config.codex_home.clone(),
@@ -7440,7 +7440,7 @@ where
             .expect("primary environment")
             .environment,
     );
-    let plugins_manager = Arc::new(PluginsManager::new(config.codex_home.to_path_buf()));
+    let plugins_manager = Arc::new(crate::plugins::plugins_manager_for_config(&config));
     let mcp_manager = Arc::new(McpManager::new(Arc::clone(&plugins_manager)));
     let skills_service = Arc::new(HostSkillsService::new(
         config.codex_home.clone(),
