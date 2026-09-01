@@ -24,6 +24,8 @@ pub use codex_skills_extension::default_skill_metadata_budget;
 pub use codex_skills_extension::filter_skill_load_outcome_for_product;
 pub use codex_skills_extension::HostSkillsLoadInput;
 pub use codex_skills_extension::HostSkillsService;
+pub use codex_skills_extension::HostSkillsLoadInput as SkillsLoadInput;
+pub use codex_skills_extension::HostSkillsService as SkillsService;
 pub use codex_skills_extension::SkillLoadOutcome;
 pub use codex_skills_extension::SkillRenderSideEffects;
 pub use codex_config::bundled_skills_enabled_from_stack;
