@@ -33,7 +33,6 @@ use crate::ExplicitSkillPromptBudget;
 use crate::HostSkillsCatalogInWorldState;
 use crate::HostSkillsSnapshot;
 use crate::InjectedHostSkillPrompts;
-use crate::default_skill_metadata_budget;
 use crate::catalog::SkillCatalog;
 use crate::catalog::SkillCatalogEntry;
 use crate::catalog::SkillReadResult;
@@ -47,12 +46,14 @@ use crate::fragments::SkillResourceAccess;
 use crate::selection::collect_explicit_skill_mentions;
 use crate::sources::SkillProviders;
 use crate::state::ExecutorSkillsStepState;
+use crate::state::EmittedCatalogBudgetWarnings;
+use crate::state::HostSkillsStepState;
 use crate::state::SkillsThreadState;
 use crate::state::SkillsTurnState;
 use crate::tools::skill_tools;
 use crate::tools::SkillToolAuthority;
-use crate::world_state::executor_skills_world_state_section;
-use crate::world_state::host_skills_world_state_section;
+use crate::world_state_catalogs::CatalogContext;
+use crate::world_state_catalogs::CatalogStatus;
 
 struct SkillsExtension<C> {
     providers: SkillProviders,
@@ -128,7 +129,7 @@ where
                         host_snapshot: None,
                         include_host_skills: false,
                         include_bundled_skills: config.bundled_skills_enabled,
-                        include_orchestrator_skills: thread_state.orchestrator_skills_enabled(),
+                        include_orchestrator_skills: false,
                         mcp_resources: session_store.get::<McpResourceClient>(),
                         executor_capability_discovery: None,
                     },
@@ -162,66 +163,22 @@ where
         input: WorldStateContributionInput<'a>,
     ) -> ExtensionFuture<'a, Vec<WorldStateSectionContribution>> {
         Box::pin(async move {
-            let Some(thread_state) = input.thread_store.get::<SkillsThreadState>() else {
+            let Some(context) =
+                CatalogContext::new(&self.providers, Arc::clone(&self.event_sink), input)
+            else {
                 return Vec::new();
             };
-            let config = thread_state.config();
-            let catalog = thread_state
-                .executor_catalog_snapshot(
-                    &self.providers,
-                    SkillListQuery {
-                        turn_id: input.turn_id.to_string(),
-                        executor_roots: input.ready_selected_capability_roots.to_vec(),
-                        resolved_executor_roots: input
-                            .turn_store
-                            .get::<Vec<ResolvedSelectedCapabilityRoot>>()
-                            .map(|roots| roots.as_ref().clone())
-                            .unwrap_or_default(),
-                        host_snapshot: None,
-                        include_host_skills: false,
-                        include_bundled_skills: config.bundled_skills_enabled,
-                        include_orchestrator_skills: false,
-                        mcp_resources: input.session_store.get::<McpResourceClient>(),
-                        executor_capability_discovery: input.executor_capability_discovery.cloned(),
-                    },
-                )
-                .await;
-            input
-                .turn_store
-                .insert(ExecutorSkillsStepState(catalog.clone()));
-            let model_info = input.thread_store.get::<ModelInfo>();
-            let include_usage = model_info
-                .as_deref()
-                .is_some_and(|model_info| model_info.include_skills_usage_instructions);
-            let (executor_section, executor_report) = executor_skills_world_state_section(
-                &catalog,
-                config.include_instructions,
-                include_usage,
-                model_info.as_deref().and_then(ModelInfo::resolved_context_window),
-            );
-            if let Some(warning) = executor_report.warning_message() {
-                self.emit_warning(input.turn_id, warning);
-            }
-            let mut sections = vec![executor_section];
-            if let Some(host_snapshot) = input.turn_store.get::<HostSkillsSnapshot>()
-                && self.providers.has_host_provider()
-            {
-                input.turn_store.insert(HostSkillsCatalogInWorldState);
-                sections.push(host_skills_world_state_section(
-                    &host_snapshot,
-                    config.include_instructions,
-                    include_usage,
-                    default_skill_metadata_budget(
-                        model_info
-                            .as_deref()
-                            .and_then(|model_info| model_info.context_window),
-                    ),
-                ));
-            }
-            sections
+            let catalogs = context.discover_catalogs().await;
+            context
+                .render_catalogs(catalogs)
+                .into_iter()
+                .filter(|catalog| catalog.status != CatalogStatus::Unavailable)
+                .map(|catalog| context.build_world_state_section(catalog))
+                .collect()
         })
     }
 }
+
 
 impl<C> ToolContributor for SkillsExtension<C>
 where
@@ -338,9 +295,16 @@ where
                 .get::<ExecutorSkillsStepState>()
                 .map(|executor_skills| executor_skills.0.clone())
                 .unwrap_or_default();
+            if let Some(host_skills) = turn_store.get::<HostSkillsStepState>() {
+                catalog.extend(host_skills.0.clone());
+            }
             catalog.extend(self.list_skills(query, &thread_state).await);
+            let emitted_catalog_warnings =
+                turn_store.get_or_init(EmittedCatalogBudgetWarnings::default);
             for warning in &catalog.warnings {
-                self.emit_warning(&input.turn_id, warning.clone());
+                if emitted_catalog_warnings.insert(warning) {
+                    self.emit_warning(&input.turn_id, warning.clone());
+                }
             }
 
             let mut fragments: Vec<Box<dyn ContextualUserFragment + Send>> = Vec::new();
@@ -362,7 +326,9 @@ where
                     model_info.as_deref().and_then(ModelInfo::resolved_context_window),
                 );
                 if let Some(warning) = report.warning_message() {
-                    self.emit_warning(&input.turn_id, warning.clone());
+                    if emitted_catalog_warnings.insert(&warning) {
+                        self.emit_warning(&input.turn_id, warning.clone());
+                    }
                     catalog.warnings.push(warning);
                 }
                 if let Some(fragment) = fragment {

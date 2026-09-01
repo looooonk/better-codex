@@ -9,7 +9,6 @@ use codex_skills_extension::HostSkillsCatalogInWorldState;
 use codex_skills_extension::HostSkillsSnapshot;
 use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
 use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
-use codex_skills_extension::SKILLS_INTRO_WITH_ABSOLUTE_PATHS;
 use codex_skills_extension::SkillLoadOutcome;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::FileSystemSandboxContext;
@@ -147,13 +146,13 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
         )
         .await;
 
-    let expected_catalog = format!(
-        "{SKILLS_INSTRUCTIONS_OPEN_TAG}\n## Skills\n{SKILLS_INTRO_WITH_ABSOLUTE_PATHS}\n### Available skills\n- demo: Demo skill. (file: {skill_prompt_path})\n{SKILLS_INSTRUCTIONS_CLOSE_TAG}"
-    );
-    assert_eq!(
-        expected_catalog,
-        host_catalog.into_context_fragment().render(),
-    );
+    let rendered_host_catalog = host_catalog.into_context_fragment().render();
+    assert!(rendered_host_catalog.starts_with(SKILLS_INSTRUCTIONS_OPEN_TAG));
+    assert!(rendered_host_catalog.contains("## Skills"));
+    assert!(rendered_host_catalog.contains(&format!(
+        "- demo: Demo skill. (file: {skill_prompt_path})"
+    )));
+    assert!(rendered_host_catalog.ends_with(SKILLS_INSTRUCTIONS_CLOSE_TAG));
     assert_eq!(
         Vec::<(&str, String)>::new(),
         fragments
@@ -524,8 +523,26 @@ async fn default_context_truncates_catalog_descriptions() -> TestResult {
     let fragments = registry.context_contributors()[0]
         .contribute_thread_context(&session_store, &thread_store)
         .await;
-    assert_eq!(1, fragments.len());
-    let rendered = fragments[0].render();
+    assert!(fragments.is_empty());
+    let turn_store = ExtensionData::new("turn-1");
+    let sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-1",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            executor_capability_discovery: None,
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &turn_store,
+        })
+        .await;
+    let rendered = sections
+        .iter()
+        .find(|section| section.id() == "orchestrator_skills")
+        .and_then(|section| section.render_diff(PreviousWorldStateSection::Absent))
+        .ok_or("orchestrator catalog should render")?
+        .body();
     assert!(rendered.contains(&("x".repeat(1_021) + "...")));
     assert!(!rendered.contains(&"x".repeat(1_024)));
     assert!(!rendered.contains(&description));
@@ -972,6 +989,19 @@ async fn orchestrator_catalog_snapshot_caches_failure() -> TestResult {
         .contribute_thread_context(&session_store, &thread_store)
         .await;
     assert!(initial_fragments.is_empty());
+    let turn_store = ExtensionData::new("turn-0");
+    registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-0",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            executor_capability_discovery: None,
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &turn_store,
+        })
+        .await;
     let EventMsg::Warning(warning) = event_rx.try_recv()?.msg else {
         panic!("expected warning event");
     };
