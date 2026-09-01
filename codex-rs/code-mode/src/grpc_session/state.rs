@@ -83,9 +83,10 @@ impl RecentIds {
 pub(super) struct SessionState {
     executions: HashMap<String, ExecutionRecord>,
     invocations: HashMap<String, ActiveCallback>,
-    notifications: usize,
+    notifications: HashMap<String, ActiveCallback>,
     seen_invocations: RecentIds,
     cancelled_invocations: RecentIds,
+    seen_notifications: RecentIds,
     failure: Option<String>,
     closed: bool,
 }
@@ -211,7 +212,7 @@ impl SessionState {
                 "code-mode tool {tool_name} is not enabled for this execution"
             )));
         }
-        if self.invocations.len() + self.notifications >= MAX_PENDING_DELEGATE_CALLS {
+        if self.invocations.len() + self.notifications.len() >= MAX_PENDING_DELEGATE_CALLS {
             return Ok(CallbackAdmission::Rejected(
                 "code-mode host exceeded its pending delegate callback limit".to_string(),
             ));
@@ -232,8 +233,13 @@ impl SessionState {
         notification: &grpc::Notification,
     ) -> Result<CallbackAdmission, String> {
         self.require_open()?;
-        Uuid::parse_str(&notification.notification_id)
+        let notification_id = Uuid::parse_str(&notification.notification_id)
             .map_err(|_| "code-mode notification ID must be a UUID".to_string())?;
+        if self.notifications.contains_key(&notification.notification_id)
+            || self.seen_notifications.contains(&notification_id)
+        {
+            return Err("code-mode notification ID was reused".to_string());
+        }
         super::validate_identifier(&notification.call_id, "notification call ID")?;
         self.check_cell_ownership(&notification.execution_id, &notification.cell_id)?;
         let Some(execution) = self.executions.get_mut(&notification.execution_id) else {
@@ -246,23 +252,53 @@ impl SessionState {
         if execution.closed {
             return Ok(CallbackAdmission::Closed);
         }
-        if self.invocations.len() + self.notifications >= MAX_PENDING_DELEGATE_CALLS {
+        if self.invocations.len() + self.notifications.len() >= MAX_PENDING_DELEGATE_CALLS {
             return Ok(CallbackAdmission::Rejected(
                 "code-mode host exceeded its pending delegate callback limit".to_string(),
             ));
         }
+        let cancellation = execution.cancellation.child_token();
         execution.notifications += 1;
-        self.notifications += 1;
-        Ok(CallbackAdmission::Active(
-            execution.cancellation.child_token(),
-        ))
+        self.seen_notifications.remember(notification_id);
+        self.notifications.insert(
+            notification.notification_id.clone(),
+            ActiveCallback {
+                execution_id: notification.execution_id.clone(),
+                cancellation: cancellation.clone(),
+            },
+        );
+        Ok(CallbackAdmission::Active(cancellation))
     }
 
-    pub(super) fn finish_notification(&mut self, execution_id: &str) -> Option<CellId> {
-        let execution = self.executions.get_mut(execution_id)?;
+    pub(super) fn finish_notification(&mut self, notification_id: &str) -> Option<CellId> {
+        let execution_id = self.notifications.get(notification_id)?.execution_id.clone();
+        let execution = self.executions.get_mut(&execution_id)?;
         execution.notifications = execution.notifications.checked_sub(1)?;
-        self.notifications -= 1;
-        self.close_execution_if_ready(execution_id)
+        self.notifications.remove(notification_id);
+        self.close_execution_if_ready(&execution_id)
+    }
+
+    pub(super) fn cancel_notification(
+        &mut self,
+        notification_id: &str,
+    ) -> Result<Option<CellId>, String> {
+        let parsed = Uuid::parse_str(notification_id)
+            .map_err(|_| "code-mode notification cancellation ID must be a UUID".to_string())?;
+        let Some(callback) = self.notifications.remove(notification_id) else {
+            return if self.seen_notifications.contains(&parsed) {
+                Ok(None)
+            } else {
+                Err("code-mode host cancelled an unknown notification".to_string())
+            };
+        };
+        callback.cancellation.cancel();
+        let Some(execution) = self.executions.get_mut(&callback.execution_id) else {
+            return Ok(None);
+        };
+        execution.notifications = execution.notifications.checked_sub(1).ok_or_else(|| {
+            "code-mode notification cancellation underflowed its execution".to_string()
+        })?;
+        Ok(self.close_execution_if_ready(&callback.execution_id))
     }
 
     pub(super) fn cancel_notifications(&self, cell_id: &CellId) {
@@ -323,7 +359,9 @@ impl SessionState {
         }
         self.closed = true;
         self.failure = failure;
-        self.notifications = 0;
+        for (_, notification) in self.notifications.drain() {
+            notification.cancellation.cancel();
+        }
         for (_, callback) in self.invocations.drain() {
             callback.cancellation.cancel();
         }
@@ -351,7 +389,14 @@ impl SessionState {
 
     pub(super) fn remove_execution(&mut self, execution_id: &str) -> Option<CellId> {
         let execution = self.executions.remove(execution_id)?;
-        self.notifications -= execution.notifications;
+        self.notifications.retain(|_, notification| {
+            if notification.execution_id == execution_id {
+                notification.cancellation.cancel();
+                false
+            } else {
+                true
+            }
+        });
         execution.cancellation.cancel();
         self.revoke_execution_callbacks(execution_id);
         execution.cell_id

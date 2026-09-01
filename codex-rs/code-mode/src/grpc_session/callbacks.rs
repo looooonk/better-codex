@@ -90,7 +90,15 @@ impl SessionInner {
             grpc::session_event::Event::Notification(notification) => {
                 self.handle_notification(notification)
             }
-            grpc::session_event::Event::NotificationCancelled(_) => Ok(()),
+            grpc::session_event::Event::NotificationCancelled(cancelled) => {
+                let cell = self
+                    .state
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .cancel_notification(&cancelled.notification_id)?;
+                self.report_closed_cell(cell);
+                Ok(())
+            }
             grpc::session_event::Event::CellClosed(closed) => {
                 let cell = self
                     .state
@@ -219,7 +227,7 @@ impl SessionInner {
                 return Ok(());
             }
         };
-        let execution_id = notification.execution_id;
+        let notification_id = notification.notification_id;
         let inner = Arc::clone(self);
         // Delegate callbacks stay outside the tracked session tasks so shutdown can cancel
         // them without waiting for arbitrary delegate work to complete.
@@ -231,7 +239,7 @@ impl SessionInner {
                         notification.call_id,
                         CellId::new(notification.cell_id),
                         notification.text,
-                        cancellation,
+                        cancellation.clone(),
                     )
                     .await
             })
@@ -239,6 +247,7 @@ impl SessionInner {
             let result = tokio::select! {
                 biased;
                 _ = inner.stopped.cancelled() => return,
+                _ = cancellation.cancelled() => return,
                 result = callback => result,
             };
             match result {
@@ -246,11 +255,45 @@ impl SessionInner {
                 Ok(Err(error)) => warn!("code-mode notification delegate failed: {error}"),
                 Err(_) => warn!("code-mode notification delegate panicked"),
             }
-            let cell = inner
-                .state
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .finish_notification(&execution_id);
+            let mut client = inner.client();
+            let request = grpc::AcknowledgeNotificationRequest {
+                session_id: inner.id.clone(),
+                notification_id: notification_id.clone(),
+            };
+            let acknowledgement = tokio::select! {
+                biased;
+                _ = inner.stopped.cancelled() => return,
+                _ = cancellation.cancelled() => return,
+                acknowledgement = deadline::acknowledge_notification(
+                    &inner,
+                    client.acknowledge_notification(request),
+                ) => acknowledgement,
+            };
+            let cell = match acknowledgement {
+                Ok(deadline::NotificationAcknowledgement::Accepted) => inner
+                    .state
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .finish_notification(&notification_id),
+                Ok(deadline::NotificationAcknowledgement::Retired) => match inner
+                    .state
+                    .lock()
+                    .unwrap_or_else(PoisonError::into_inner)
+                    .cancel_notification(&notification_id)
+                {
+                    Ok(cell) => cell,
+                    Err(error) => {
+                        inner.fail(error);
+                        return;
+                    }
+                },
+                Err(error) => {
+                    if !cancellation.is_cancelled() && !inner.stopped.is_cancelled() {
+                        inner.fail(error);
+                    }
+                    return;
+                }
+            };
             inner.report_closed_cell(cell);
         });
         Ok(())

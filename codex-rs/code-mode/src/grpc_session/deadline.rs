@@ -7,6 +7,11 @@ use super::SessionInner;
 const TRANSPORT_TIMEOUT: Duration = Duration::from_secs(60);
 const MAX_ERROR_BYTES: usize = 512;
 
+pub(super) enum NotificationAcknowledgement {
+    Accepted,
+    Retired,
+}
+
 pub(super) async fn startup<T, E: Display>(
     operation: &str,
     request: impl Future<Output = Result<T, E>>,
@@ -35,6 +40,32 @@ pub(super) async fn request<T>(
     match result {
         Ok(value) => Ok(value),
         Err(RequestError::Failed(error)) => Err(failure(operation, error)),
+        Err(RequestError::TimedOut(reason)) => {
+            session.fail(reason.clone());
+            Err(reason)
+        }
+    }
+}
+
+pub(super) async fn acknowledge_notification<T>(
+    session: &SessionInner,
+    request: impl Future<Output = Result<T, tonic::Status>>,
+) -> Result<NotificationAcknowledgement, String> {
+    let result = tokio::select! {
+        biased;
+        _ = session.stopped.cancelled() => {
+            return Err("gRPC code-mode session closed".to_string());
+        }
+        result = enforce("notification acknowledgement", Duration::ZERO, request) => result,
+    };
+    match result {
+        Ok(_) => Ok(NotificationAcknowledgement::Accepted),
+        Err(RequestError::Failed(error)) if error.code() == tonic::Code::AlreadyExists => {
+            Ok(NotificationAcknowledgement::Retired)
+        }
+        Err(RequestError::Failed(error)) => {
+            Err(failure("notification acknowledgement", error))
+        }
         Err(RequestError::TimedOut(reason)) => {
             session.fail(reason.clone());
             Err(reason)

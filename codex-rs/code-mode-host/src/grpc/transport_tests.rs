@@ -1,10 +1,24 @@
 use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
 
+use codex_code_mode::CellId;
+use codex_code_mode::CodeModeNestedToolCall;
+use codex_code_mode::CodeModeSessionDelegate;
+use codex_code_mode::CodeModeSessionProvider;
+use codex_code_mode::ExecuteRequest;
+use codex_code_mode::FunctionCallOutputContentItem;
+use codex_code_mode::GrpcCodeModeSessionProvider;
+use codex_code_mode::NotificationFuture;
+use codex_code_mode::RuntimeResponse;
+use codex_code_mode::ToolInvocationFuture;
 use codex_code_mode_protocol::grpc as proto;
 use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
 use codex_code_mode_protocol::grpc::bounded_code_mode_host_client;
 use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use pretty_assertions::assert_eq;
+use tokio::sync::mpsc;
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 use tonic::Code;
 use tonic::Request;
@@ -17,6 +31,57 @@ use uuid::Uuid;
 
 use super::loopback_grpc_service;
 use super::principal::PrincipalPolicy;
+
+#[derive(Debug, Eq, PartialEq)]
+enum DelegateEvent {
+    Notification(String),
+    NotificationCancelled,
+    CellClosed(CellId),
+}
+
+struct RecordingDelegate {
+    events: mpsc::Sender<DelegateEvent>,
+    hold_notifications: bool,
+}
+
+impl CodeModeSessionDelegate for RecordingDelegate {
+    fn invoke_tool<'a>(
+        &'a self,
+        _invocation: CodeModeNestedToolCall,
+        _cancellation_token: CancellationToken,
+    ) -> ToolInvocationFuture<'a> {
+        Box::pin(async { Err("unexpected tool call".to_string()) })
+    }
+
+    fn notify<'a>(
+        &'a self,
+        _call_id: String,
+        _cell_id: CellId,
+        text: String,
+        cancellation_token: CancellationToken,
+    ) -> NotificationFuture<'a> {
+        Box::pin(async move {
+            self.events
+                .send(DelegateEvent::Notification(text))
+                .await
+                .map_err(|_| "delegate event receiver closed".to_string())?;
+            if self.hold_notifications {
+                cancellation_token.cancelled().await;
+                self.events
+                    .send(DelegateEvent::NotificationCancelled)
+                    .await
+                    .map_err(|_| "delegate event receiver closed".to_string())?;
+            }
+            Ok(())
+        })
+    }
+
+    fn cell_closed(&self, cell_id: &CellId) {
+        let _ = self
+            .events
+            .try_send(DelegateEvent::CellClosed(cell_id.clone()));
+    }
+}
 
 async fn start_server() -> (
     String,
@@ -167,6 +232,112 @@ async fn sessions_are_bound_to_client_identity_across_tcp_connections() {
         .await
         .unwrap();
 
+    shutdown.cancel();
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn production_provider_acknowledges_notifications_before_cell_closure() {
+    let (endpoint, shutdown, server) = start_server().await;
+    let (events, mut event_rx) = mpsc::channel(/*buffer*/ 4);
+    let session = GrpcCodeModeSessionProvider::new(endpoint)
+        .create_session(Arc::new(RecordingDelegate {
+            events,
+            hold_notifications: false,
+        }))
+        .await
+        .unwrap();
+    let started = session
+        .execute(ExecuteRequest {
+            tool_call_id: "outer-call".to_string(),
+            enabled_tools: Vec::new(),
+            source: r#"notify("notice"); text("done");"#.to_string(),
+            yield_time_ms: Some(1_000),
+            max_output_tokens: None,
+        })
+        .await
+        .unwrap();
+    let cell_id = started.cell_id.clone();
+
+    assert_eq!(
+        timeout(Duration::from_secs(/*secs*/ 5), started.initial_response())
+            .await
+            .unwrap(),
+        Ok(RuntimeResponse::Result {
+            cell_id: cell_id.clone(),
+            content_items: vec![FunctionCallOutputContentItem::InputText {
+                text: "done".to_string(),
+            }],
+            error_text: None,
+        })
+    );
+    assert_eq!(
+        timeout(Duration::from_secs(/*secs*/ 5), event_rx.recv())
+            .await
+            .unwrap(),
+        Some(DelegateEvent::Notification("notice".to_string()))
+    );
+    assert_eq!(
+        timeout(Duration::from_secs(/*secs*/ 5), event_rx.recv())
+            .await
+            .unwrap(),
+        Some(DelegateEvent::CellClosed(cell_id))
+    );
+    session.shutdown().await.unwrap();
+    shutdown.cancel();
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn production_provider_cancels_pending_notifications_on_termination() {
+    let (endpoint, shutdown, server) = start_server().await;
+    let (events, mut event_rx) = mpsc::channel(/*buffer*/ 4);
+    let session = GrpcCodeModeSessionProvider::new(endpoint)
+        .create_session(Arc::new(RecordingDelegate {
+            events,
+            hold_notifications: true,
+        }))
+        .await
+        .unwrap();
+    let started = session
+        .execute(ExecuteRequest {
+            tool_call_id: "outer-call".to_string(),
+            enabled_tools: Vec::new(),
+            source: r#"notify("pending"); await new Promise(() => {});"#.to_string(),
+            yield_time_ms: Some(1),
+            max_output_tokens: None,
+        })
+        .await
+        .unwrap();
+    let cell_id = started.cell_id.clone();
+
+    assert_eq!(
+        timeout(Duration::from_secs(/*secs*/ 5), event_rx.recv())
+            .await
+            .unwrap(),
+        Some(DelegateEvent::Notification("pending".to_string()))
+    );
+    assert!(matches!(
+        timeout(Duration::from_secs(/*secs*/ 5), started.initial_response())
+            .await
+            .unwrap()
+            .unwrap(),
+        RuntimeResponse::Yielded { .. }
+    ));
+    assert!(session.terminate(cell_id.clone()).await.is_ok());
+    assert_eq!(
+        timeout(Duration::from_secs(/*secs*/ 5), event_rx.recv())
+            .await
+            .unwrap(),
+        Some(DelegateEvent::NotificationCancelled)
+    );
+    assert_eq!(
+        timeout(Duration::from_secs(/*secs*/ 5), event_rx.recv())
+            .await
+            .unwrap(),
+        Some(DelegateEvent::CellClosed(cell_id))
+    );
+    session.shutdown().await.unwrap();
     shutdown.cancel();
     server.await.unwrap().unwrap();
 }

@@ -102,7 +102,7 @@ fn cell_closure_drains_notifications_and_cancels_tool_callbacks() {
         None
     );
     assert_eq!(
-        state.finish_notification("execution"),
+        state.finish_notification(&Uuid::from_u128(1).to_string()),
         Some(CellId::new("cell".to_string()))
     );
     assert!(notification_cancellation.is_cancelled());
@@ -461,7 +461,10 @@ fn notifications_and_tools_share_the_pending_delegate_limit() {
             if error == "code-mode host exceeded its pending delegate callback limit"
     ));
     assert_eq!(state.require_open(), Ok(()));
-    assert_eq!(state.finish_notification("execution"), None);
+    assert_eq!(
+        state.finish_notification(&Uuid::from_u128(1).to_string()),
+        None
+    );
     assert!(matches!(
         state.admit_invocation(&tool_call("execution", /*invocation_id*/ 2)),
         Ok(CallbackAdmission::Active(_))
@@ -484,7 +487,50 @@ fn terminated_cells_cancel_pending_notifications() {
     state.cancel_notifications(&CellId::new("cell".to_string()));
 
     assert!(cancellation.is_cancelled());
-    assert_eq!(state.finish_notification("execution"), None);
+    assert_eq!(
+        state.finish_notification(&Uuid::from_u128(1).to_string()),
+        None
+    );
+}
+
+#[test]
+fn notification_cancellation_is_exact_and_duplicate_safe() {
+    let mut state = SessionState::default();
+    state
+        .begin_execution(&request("execution"))
+        .expect("register execution");
+    let first = notification("execution", /*notification_id*/ 1);
+    let second = notification("execution", /*notification_id*/ 2);
+    let CallbackAdmission::Active(first_cancellation) = state
+        .admit_notification(&first)
+        .expect("admit first notification")
+    else {
+        panic!("first notification was not admitted");
+    };
+    let CallbackAdmission::Active(second_cancellation) = state
+        .admit_notification(&second)
+        .expect("admit second notification")
+    else {
+        panic!("second notification was not admitted");
+    };
+
+    assert_eq!(
+        state.cancel_notification(&first.notification_id),
+        Ok(None)
+    );
+    assert!(first_cancellation.is_cancelled());
+    assert!(!second_cancellation.is_cancelled());
+    assert_eq!(
+        state.cancel_notification(&first.notification_id),
+        Ok(None)
+    );
+    assert_eq!(
+        state
+            .admit_notification(&first)
+            .err(),
+        Some("code-mode notification ID was reused".to_string())
+    );
+    assert_eq!(state.finish_notification(&second.notification_id), None);
 }
 
 #[test]
