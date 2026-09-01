@@ -820,13 +820,13 @@ impl Session {
                 false
             }
         };
-        if cleared_active_turn {
-            self.emit_thread_idle_lifecycle_if_idle().await;
-        }
         // Regular items were flushed before this terminal event was appended; buffering
         // thread writers may not flush it without another explicit barrier.
         if let Err(err) = self.flush_rollout().await {
             warn!("failed to flush rollout after emitting terminal turn event: {err}");
+        }
+        if cleared_active_turn {
+            self.emit_thread_idle_lifecycle_if_idle().await;
         }
         if cleared_active_turn {
             self.maybe_start_turn_for_pending_work().await;

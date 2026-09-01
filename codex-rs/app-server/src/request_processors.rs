@@ -211,6 +211,7 @@ use codex_app_server_protocol::ThreadGoalSetParams;
 use codex_app_server_protocol::ThreadGoalSetResponse;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
+use codex_app_server_protocol::ThreadQueueChangedNotification;
 use codex_app_server_protocol::ThreadHistoryBuilder;
 #[cfg(test)]
 use codex_app_server_protocol::ThreadHistoryMode;
@@ -653,6 +654,7 @@ mod request_errors;
 mod thread_delete;
 mod thread_goal_processor;
 mod thread_lifecycle;
+mod thread_queue_recovery;
 mod thread_queue_service;
 mod thread_queue_support;
 mod thread_resume_redaction;

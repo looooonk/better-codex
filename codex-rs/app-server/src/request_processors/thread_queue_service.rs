@@ -9,6 +9,7 @@ use crate::outgoing_message::OutgoingMessageSender;
 use crate::request_serialization::RequestSerializationAccess;
 use crate::request_serialization::RequestSerializationQueueKey;
 use crate::request_serialization::RequestSerializationQueues;
+use crate::thread_state::ThreadListenerCommand;
 use crate::thread_state::ThreadStateManager;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::JSONRPCErrorError;
@@ -136,7 +137,20 @@ impl ThreadQueueService {
         self.notify_changed(thread_id).await;
     }
 
-    pub(crate) async fn notify_changed(&self, _thread_id: ThreadId) {}
+    pub(crate) async fn notify_changed(&self, thread_id: ThreadId) {
+        let Some(command_tx) = self
+            .thread_state_manager
+            .current_listener_command_tx(thread_id)
+        else {
+            return;
+        };
+        if command_tx
+            .send(ThreadListenerCommand::EmitThreadQueueChanged)
+            .is_err()
+        {
+            tracing::debug!(%thread_id, "thread queue notification listener is closed");
+        }
+    }
 
     pub(super) async fn wake_if_loaded(&self, thread_id: ThreadId) {
         let Some(thread_manager) = self.thread_manager.upgrade() else {
@@ -150,6 +164,10 @@ impl ThreadQueueService {
     pub(super) async fn schedule_dispatch(&self, thread_id: ThreadId) {
         let service = self.clone();
         self.enqueue_background(thread_id, async move {
+            if let Err(error) = service.recover(thread_id).await {
+                tracing::warn!(%thread_id, message = %error.message, "failed to recover thread queue");
+                return;
+            }
             if let Err(error) = service.dispatch_next(thread_id).await {
                 tracing::warn!(%thread_id, message = %error.message, "failed to dispatch thread queue");
             }

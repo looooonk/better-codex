@@ -37,6 +37,7 @@ use crate::request_processors::ProcessExecRequestProcessor;
 use crate::request_processors::RemoteControlRequestProcessor;
 use crate::request_processors::SearchRequestProcessor;
 use crate::request_processors::ThreadGoalRequestProcessor;
+use crate::request_processors::ThreadQueueService;
 use crate::request_processors::ThreadRequestProcessor;
 use crate::request_processors::TurnRequestProcessor;
 use crate::request_processors::WindowsSandboxRequestProcessor;
@@ -248,6 +249,7 @@ impl MessageProcessor {
         // affect per-thread behavior, but they must not move newly started,
         // resumed, or forked threads to a different persistence backend/root.
         let thread_store = codex_core::thread_store_from_config(config.as_ref(), state_db.clone());
+        let request_serialization_queues = RequestSerializationQueues::default();
         let environment_manager_for_requests = Arc::clone(&environment_manager);
         let environment_manager_for_extensions = Arc::clone(&environment_manager);
         let restriction_product = session_source.restriction_product();
@@ -258,7 +260,17 @@ impl MessageProcessor {
             ),
         );
         let goal_service = Arc::new(GoalService::new());
+        let thread_queue_service_cell = OnceLock::new();
         let thread_manager = Arc::new_cyclic(|thread_manager| {
+            let thread_queue_service = Arc::new(ThreadQueueService::new(
+                thread_manager.clone(),
+                Arc::clone(&thread_store),
+                outgoing.clone(),
+                state_db.clone(),
+                request_serialization_queues.clone(),
+                thread_state_manager.clone(),
+            ));
+            let _ = thread_queue_service_cell.set(Arc::clone(&thread_queue_service));
             ThreadManager::new(
                 config.as_ref(),
                 auth_manager.clone(),
@@ -279,6 +291,9 @@ impl MessageProcessor {
                         environment_manager: Arc::clone(&environment_manager_for_extensions),
                         executor_skill_provider: Arc::clone(&executor_skill_provider),
                         thread_store: Arc::clone(&thread_store),
+                        thread_queue_service: state_db
+                            .as_ref()
+                            .map(|_| Arc::clone(&thread_queue_service)),
                     },
                 ),
                 Arc::new(CodexHomeUserInstructionsProvider::new(
@@ -298,6 +313,10 @@ impl MessageProcessor {
                 )),
             )
         });
+        let thread_queue_service = thread_queue_service_cell
+            .get()
+            .cloned()
+            .expect("thread manager construction initializes its queue service");
         let models_manager = thread_manager.get_models_manager();
         let models_refresh_worker =
             crate::models_refresh_worker::spawn(&models_manager, config.http_client_factory());
@@ -313,7 +332,6 @@ impl MessageProcessor {
         let workspace_settings_cache =
             Arc::new(workspace_settings::WorkspaceSettingsCache::default());
         let app_list_shutdown_token = CancellationToken::new();
-        let request_serialization_queues = RequestSerializationQueues::default();
         let config_processor = ConfigRequestProcessor::new(
             outgoing.clone(),
             config_manager.clone(),
@@ -425,6 +443,7 @@ impl MessageProcessor {
             state_db.clone(),
             log_db,
             Arc::clone(&skills_watcher),
+            Arc::clone(&thread_queue_service),
             config_warnings,
         );
         let turn_processor = TurnRequestProcessor::new(
@@ -440,6 +459,7 @@ impl MessageProcessor {
             thread_watch_manager,
             thread_list_state_permit,
             Arc::clone(&skills_watcher),
+            thread_queue_service,
         );
         if matches!(plugin_startup_tasks, crate::PluginStartupTasks::Start) {
             // Keep plugin startup warmups aligned at app-server startup.

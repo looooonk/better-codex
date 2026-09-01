@@ -391,6 +391,7 @@ pub(crate) struct ThreadRequestProcessor {
     pub(super) log_db: Option<LogDbLayer>,
     pub(super) background_tasks: TaskTracker,
     pub(super) skills_watcher: Arc<SkillsWatcher>,
+    pub(super) thread_queue_service: Arc<ThreadQueueService>,
     pub(super) initial_config_warnings: Arc<Vec<ConfigWarningNotification>>,
 }
 
@@ -423,6 +424,7 @@ impl ThreadRequestProcessor {
         state_db: Option<StateDbHandle>,
         log_db: Option<LogDbLayer>,
         skills_watcher: Arc<SkillsWatcher>,
+        thread_queue_service: Arc<ThreadQueueService>,
         initial_config_warnings: Vec<ConfigWarningNotification>,
     ) -> Self {
         Self {
@@ -442,6 +444,7 @@ impl ThreadRequestProcessor {
             log_db,
             background_tasks: TaskTracker::new(),
             skills_watcher,
+            thread_queue_service,
             initial_config_warnings: Arc::new(initial_config_warnings),
         }
     }
@@ -902,6 +905,7 @@ impl ThreadRequestProcessor {
             fallback_model_provider: self.config.model_provider_id.clone(),
             codex_home: self.config.codex_home.to_path_buf(),
             skills_watcher: Arc::clone(&self.skills_watcher),
+            thread_queue_service: Arc::clone(&self.thread_queue_service),
         }
     }
 
@@ -1015,6 +1019,7 @@ impl ThreadRequestProcessor {
             fallback_model_provider: self.config.model_provider_id.clone(),
             codex_home: self.config.codex_home.to_path_buf(),
             skills_watcher: Arc::clone(&self.skills_watcher),
+            thread_queue_service: Arc::clone(&self.thread_queue_service),
         };
         let request_trace = request_context.request_trace();
         let config_manager = self.config_manager.clone();
