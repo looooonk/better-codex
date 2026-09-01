@@ -1,5 +1,6 @@
 use super::*;
 use crate::runtime::test_support::unique_temp_dir;
+use crate::QueuedSubmissionState;
 use pretty_assertions::assert_eq;
 
 async fn runtime() -> anyhow::Result<Arc<StateRuntime>> {

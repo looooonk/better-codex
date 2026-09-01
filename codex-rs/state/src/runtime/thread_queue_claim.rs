@@ -7,6 +7,7 @@ use crate::QueuedSubmissionRecord;
 use crate::QueuedSubmissionState;
 use chrono::Utc;
 use codex_protocol::ThreadId;
+use sqlx::AssertSqlSafe;
 use sqlx::Sqlite;
 use sqlx::SqliteConnection;
 
@@ -104,7 +105,7 @@ impl StateRuntime {
         }
         let now_ms = datetime_to_epoch_millis(Utc::now());
         let row = if let Some(item_id) = item_id {
-            sqlx::query(&format!(
+            sqlx::query(AssertSqlSafe(format!(
                 r#"
 UPDATE thread_queue_items
 SET state = 'starting', turn_id = ?, updated_at_ms = ?
@@ -115,7 +116,7 @@ WHERE thread_id = ? AND id = ? AND state = 'pending'
   )
 RETURNING {QUEUED_SUBMISSION_COLUMNS}
                 "#
-            ))
+            )))
             .bind(turn_id)
             .bind(now_ms)
             .bind(thread_id.to_string())
@@ -124,7 +125,7 @@ RETURNING {QUEUED_SUBMISSION_COLUMNS}
             .fetch_optional(transaction.as_mut())
             .await?
         } else {
-            sqlx::query(&format!(
+            sqlx::query(AssertSqlSafe(format!(
                 r#"
 UPDATE thread_queue_items
 SET state = 'starting', turn_id = ?, updated_at_ms = ?
@@ -140,7 +141,7 @@ WHERE id = (
   )
 RETURNING {QUEUED_SUBMISSION_COLUMNS}
                 "#
-            ))
+            )))
             .bind(turn_id)
             .bind(now_ms)
             .bind(thread_id.to_string())
@@ -222,9 +223,9 @@ async fn queued_submission_on_connection(
     thread_id: ThreadId,
     item_id: &str,
 ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
-    let row = sqlx::query(&format!(
+    let row = sqlx::query(AssertSqlSafe(format!(
         "SELECT {QUEUED_SUBMISSION_COLUMNS} FROM thread_queue_items WHERE thread_id = ? AND id = ?"
-    ))
+    )))
     .bind(thread_id.to_string())
     .bind(item_id)
     .fetch_optional(&mut *connection)
@@ -239,14 +240,14 @@ async fn active_queued_submission_on_connection(
     connection: &mut SqliteConnection,
     thread_id: ThreadId,
 ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
-    let row = sqlx::query(&format!(
+    let row = sqlx::query(AssertSqlSafe(format!(
         r#"
 SELECT {QUEUED_SUBMISSION_COLUMNS}
 FROM thread_queue_items
 WHERE thread_id = ? AND state IN ('starting', 'inflight')
 ORDER BY updated_at_ms DESC LIMIT 1
         "#
-    ))
+    )))
     .bind(thread_id.to_string())
     .fetch_optional(&mut *connection)
     .await?;

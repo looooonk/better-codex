@@ -167,7 +167,7 @@ pub(super) fn terminal_disposition(reason: &TurnAbortReason) -> QueueTerminalDis
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub(super) enum QueueRecoveryOutcome {
     Completed(QueuedSubmissionTerminalStatus),
     Aborted(TurnAbortReason),

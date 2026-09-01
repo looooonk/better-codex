@@ -6,6 +6,7 @@ use crate::QueueTerminalDisposition;
 use crate::ThreadQueuePauseReason;
 use sha2::Digest;
 use sha2::Sha256;
+use sqlx::AssertSqlSafe;
 use std::fmt;
 use uuid::Uuid;
 
@@ -103,7 +104,7 @@ impl StateRuntime {
         }
         let id = Uuid::now_v7().to_string();
         let now_ms = datetime_to_epoch_millis(Utc::now());
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(AssertSqlSafe(format!(
             r#"
 INSERT INTO thread_queue_items (
     id, thread_id, payload_json, payload_digest, client_user_message_id, queue_order,
@@ -123,7 +124,7 @@ WHERE (SELECT COUNT(*) FROM thread_queue_items WHERE thread_id = ? AND state != 
 ON CONFLICT(thread_id, client_user_message_id) DO NOTHING
 RETURNING {QUEUED_SUBMISSION_COLUMNS}
             "#
-        ))
+        )))
         .bind(&id)
         .bind(thread_id.to_string())
         .bind(payload)
@@ -180,9 +181,9 @@ FROM thread_queue_items WHERE thread_id = ? AND state != 'terminal'
         client_user_message_id: &str,
     ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
         validate_queue_identifier(client_user_message_id)?;
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(AssertSqlSafe(format!(
             "SELECT {QUEUED_SUBMISSION_COLUMNS} FROM thread_queue_items WHERE thread_id = ? AND client_user_message_id = ?"
-        ))
+        )))
         .bind(thread_id.to_string())
         .bind(client_user_message_id)
         .fetch_optional(self.pool.as_ref())
@@ -199,7 +200,7 @@ FROM thread_queue_items WHERE thread_id = ? AND state != 'terminal'
         offset: usize,
         limit: usize,
     ) -> Result<Vec<QueuedSubmissionRecord>, ThreadQueueError> {
-        let rows = sqlx::query(&format!(
+        let rows = sqlx::query(AssertSqlSafe(format!(
             r#"
 SELECT {QUEUED_SUBMISSION_COLUMNS}
 FROM thread_queue_items
@@ -207,7 +208,7 @@ WHERE thread_id = ? AND state = 'pending'
 ORDER BY queue_order, created_at_ms, id
 LIMIT ? OFFSET ?
             "#
-        ))
+        )))
         .bind(thread_id.to_string())
         .bind(i64::try_from(limit).map_err(anyhow::Error::from)?)
         .bind(i64::try_from(offset).map_err(anyhow::Error::from)?)
@@ -225,9 +226,9 @@ LIMIT ? OFFSET ?
         item_id: &str,
     ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
         validate_queue_identifier(item_id)?;
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(AssertSqlSafe(format!(
             "SELECT {QUEUED_SUBMISSION_COLUMNS} FROM thread_queue_items WHERE thread_id = ? AND id = ?"
-        ))
+        )))
         .bind(thread_id.to_string())
         .bind(item_id)
         .fetch_optional(self.pool.as_ref())
@@ -242,14 +243,14 @@ LIMIT ? OFFSET ?
         &self,
         thread_id: ThreadId,
     ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(AssertSqlSafe(format!(
             r#"
 SELECT {QUEUED_SUBMISSION_COLUMNS}
 FROM thread_queue_items
 WHERE thread_id = ? AND state IN ('starting', 'inflight')
 ORDER BY updated_at_ms DESC LIMIT 1
             "#
-        ))
+        )))
         .bind(thread_id.to_string())
         .fetch_optional(self.pool.as_ref())
         .await?;
@@ -269,7 +270,7 @@ ORDER BY updated_at_ms DESC LIMIT 1
         if payload.len() > MAX_QUEUED_INPUT_BYTES {
             return Err(ThreadQueueError::InputBytesExceeded);
         }
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(AssertSqlSafe(format!(
             r#"
 UPDATE thread_queue_items
 SET payload_json = ?, payload_digest = ?, updated_at_ms = ?
@@ -281,7 +282,7 @@ WHERE thread_id = ? AND id = ? AND state = 'pending'
   ), 0) + ? <= ?
 RETURNING {QUEUED_SUBMISSION_COLUMNS}
             "#
-        ))
+        )))
         .bind(payload)
         .bind(queue_payload_digest(payload))
         .bind(datetime_to_epoch_millis(Utc::now()))
@@ -469,9 +470,9 @@ WHERE thread_id = ? AND turn_id = ? AND state IN ('starting', 'inflight')
         thread_id: ThreadId,
         turn_id: &str,
     ) -> Result<Option<QueuedSubmissionRecord>, ThreadQueueError> {
-        let row = sqlx::query(&format!(
+        let row = sqlx::query(AssertSqlSafe(format!(
             "SELECT {QUEUED_SUBMISSION_COLUMNS} FROM thread_queue_items WHERE thread_id = ? AND turn_id = ?"
-        ))
+        )))
         .bind(thread_id.to_string())
         .bind(turn_id)
         .fetch_optional(self.pool.as_ref())

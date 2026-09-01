@@ -4101,6 +4101,7 @@ dependencies = [
  "pretty_assertions",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "sqlx",
  "strum 0.27.2",
  "tokio",
