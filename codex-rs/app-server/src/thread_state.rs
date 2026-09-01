@@ -63,6 +63,8 @@ pub(crate) enum ThreadListenerCommand {
     EmitThreadGoalSnapshot {
         state_db: StateDbHandle,
     },
+    // Queue notifications share the listener FIFO with subscribed thread events.
+    EmitThreadQueueChanged,
     // ResolveServerRequest is used to notify the client that the request has been resolved.
     // It is executed in the thread listener's context to ensure that the resolved notification is ordered with regard to the request itself.
     ResolveServerRequest {

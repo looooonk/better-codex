@@ -22,6 +22,12 @@ pub use model::LogEntry;
 pub use model::LogQuery;
 pub use model::LogRow;
 pub use model::Phase2JobClaimOutcome;
+pub use model::QueuedSubmissionRecord;
+pub use model::QueuedSubmissionAdmissionRejection;
+pub use model::QueuedSubmissionState;
+pub use model::QueuedSubmissionTerminalStatus;
+pub use model::QueueTerminalDisposition;
+pub use model::ThreadQueuePauseReason;
 /// Preferred entrypoint: owns configuration and metrics.
 pub use runtime::StateRuntime;
 
@@ -73,6 +79,12 @@ pub use runtime::RemoteControlEnrollmentRecord;
 pub use runtime::RuntimeDbBackup;
 pub use runtime::RuntimeDbPath;
 pub use runtime::ThreadFilterOptions;
+pub use runtime::MAX_QUEUED_INPUT_BYTES;
+pub use runtime::MAX_QUEUED_SUBMISSIONS;
+pub use runtime::MAX_QUEUE_IDENTIFIER_BYTES;
+pub use runtime::QueueClaimAndResumeResult;
+pub use runtime::QueueClaimResult;
+pub use runtime::ThreadQueueError;
 pub use runtime::ThreadSectionAppearanceUpdate;
 pub use runtime::ThreadSectionFilter;
 pub use runtime::ThreadSectionMove;

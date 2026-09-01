@@ -523,20 +523,10 @@ impl ShellState {
                 }
                 let finished_queued_edit = self.composer.finish_queued_message_edit();
                 if finished_queued_edit {
-                    if self.active_turn_id.is_none() && self.composer.has_queued_messages() {
-                        self.submit_next_queued_message(app_server);
-                    }
                     return Ok(false);
                 }
                 let prompt = self.composer.submission_text();
                 let prompt_is_empty = prompt.trim().is_empty();
-                if self.active_turn_id.is_none()
-                    && self.composer.has_queued_messages()
-                    && prompt_is_empty
-                {
-                    self.submit_next_queued_message(app_server);
-                    return Ok(false);
-                }
                 if prompt_is_empty && self.dashboard_visible {
                     match self.dashboard_route {
                         DashboardRoute::Sessions => self.session_list.focused = true,
@@ -636,7 +626,7 @@ impl ShellState {
             KeyCode::Tab => {
                 self.slash_command_popup.reset();
                 if self.active_turn_id.is_some() && key_hint::plain(KeyCode::Tab).is_press(key) {
-                    self.composer.queue_current_message();
+                    self.queue_current_message(app_server);
                 } else {
                     let result = self.composer.insert_str("    ");
                     self.report_composer_insert(result);

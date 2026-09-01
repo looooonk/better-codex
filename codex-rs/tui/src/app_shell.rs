@@ -1667,9 +1667,7 @@ impl ShellState {
         let response = match result {
             Ok(response) => response,
             Err(err) => {
-                if submission != TurnSubmission::Queued {
-                    self.composer.restore_failed_submission(&prompt);
-                }
+                self.composer.restore_failed_submission(&prompt);
                 self.report_action_error("failed to submit turn", err);
                 return;
             }
@@ -1684,14 +1682,7 @@ impl ShellState {
         );
         self.status = "thinking".to_string();
         self.clear_streaming_transcript();
-        match submission {
-            TurnSubmission::Queued => {
-                self.composer.confirm_next_queued_message(&prompt);
-            }
-            TurnSubmission::Initial | TurnSubmission::Interactive => {
-                self.composer.remember_submission(&prompt);
-            }
-        }
+        self.composer.remember_submission(&prompt);
         self.record_active_turn_started(response.turn.id.clone());
         self.record_safety_buffering_turn(response.turn.id, params);
         if submission == TurnSubmission::Initial {

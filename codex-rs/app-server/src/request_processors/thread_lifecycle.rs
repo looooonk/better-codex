@@ -14,6 +14,7 @@ pub(super) struct ListenerTaskContext {
     pub(super) fallback_model_provider: String,
     pub(super) codex_home: PathBuf,
     pub(super) skills_watcher: Arc<SkillsWatcher>,
+    pub(super) thread_queue_service: Arc<ThreadQueueService>,
 }
 
 struct UnloadingState {
@@ -271,6 +272,7 @@ pub(super) async fn ensure_listener_task_running(
         thread_list_state_permit,
         fallback_model_provider,
         codex_home,
+        thread_queue_service,
         ..
     } = listener_task_context;
     let outgoing_for_task = Arc::clone(&outgoing);
@@ -316,6 +318,13 @@ pub(super) async fn ensure_listener_task_running(
                         thread_state.track_current_turn_event(&event.id, &event.msg);
                         thread_state.experimental_raw_events
                     };
+                    let queue_terminal_event = matches!(
+                        &event.msg,
+                        EventMsg::TurnComplete(_) | EventMsg::TurnAborted(_)
+                    );
+                    thread_queue_service
+                        .observe_event(conversation.clone(), conversation_id, &event.msg)
+                        .await;
                     if matches!(
                         &event.msg,
                         EventMsg::RawResponseItem(_) | EventMsg::RawResponseCompleted(_)
@@ -351,6 +360,9 @@ pub(super) async fn ensure_listener_task_running(
                             .take_shutdown_drain_waiter()
                     {
                         let _ = completion_tx.send(());
+                    }
+                    if queue_terminal_event {
+                        conversation.emit_thread_idle_lifecycle_if_idle().await;
                     }
                 }
                 unloading_watchers_open = unloading_state.wait_for_unloading_trigger() => {
@@ -508,6 +520,22 @@ pub(super) async fn handle_thread_listener_command(
         }
         ThreadListenerCommand::EmitThreadGoalSnapshot { state_db } => {
             send_thread_goal_snapshot_notification(outgoing, conversation_id, &state_db).await;
+        }
+        ThreadListenerCommand::EmitThreadQueueChanged => {
+            let subscribed_connection_ids = thread_state_manager
+                .subscribed_connection_ids(conversation_id)
+                .await;
+            ThreadScopedOutgoingMessageSender::new(
+                Arc::clone(outgoing),
+                subscribed_connection_ids,
+                conversation_id,
+            )
+            .send_server_notification(ServerNotification::ThreadQueueChanged(
+                ThreadQueueChangedNotification {
+                    thread_id: conversation_id.to_string(),
+                },
+            ))
+            .await;
         }
         ThreadListenerCommand::ResolveServerRequest {
             request_id,
@@ -755,9 +783,7 @@ pub(super) async fn handle_pending_thread_resume_request(
         .await;
     // App-server owns resume response and snapshot ordering, so wait until
     // replay completes before letting extensions react to the idle thread.
-    if pending.emit_thread_goal_update {
-        conversation.emit_thread_idle_lifecycle_if_idle().await;
-    }
+    conversation.emit_thread_idle_lifecycle_if_idle().await;
 }
 
 pub(super) async fn send_thread_goal_snapshot_notification(

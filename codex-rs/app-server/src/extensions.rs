@@ -27,6 +27,7 @@ use codex_rollout::state_db::StateDbHandle;
 use codex_thread_store::ThreadStore;
 
 use crate::outgoing_message::OutgoingMessageSender;
+use crate::request_processors::ThreadQueueService;
 use crate::thread_state::ThreadListenerCommand;
 use crate::thread_state::ThreadStateManager;
 
@@ -41,6 +42,7 @@ pub(crate) struct ThreadExtensionDependencies {
     pub(crate) executor_skill_provider: Arc<dyn codex_skills_extension::SkillProvider>,
     /// Process-scoped persistence backend for extensions that need stored thread history.
     pub(crate) thread_store: Arc<dyn ThreadStore>,
+    pub(crate) thread_queue_service: Option<Arc<ThreadQueueService>>,
 }
 
 pub(crate) fn thread_extensions<S>(
@@ -60,8 +62,12 @@ where
         environment_manager,
         executor_skill_provider,
         thread_store: _thread_store,
+        thread_queue_service,
     } = dependencies;
     let mut builder = ExtensionRegistryBuilder::<Config>::with_event_sink(event_sink);
+    if let Some(thread_queue_service) = thread_queue_service {
+        builder.thread_lifecycle_contributor(thread_queue_service);
+    }
     if let Some(state_db) = state_db {
         codex_goal_extension::install_with_backend(
             &mut builder,

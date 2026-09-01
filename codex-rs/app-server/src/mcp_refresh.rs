@@ -240,6 +240,7 @@ mod tests {
                         environment_manager: Arc::clone(&environment_manager),
                         executor_skill_provider: Arc::clone(&executor_skill_provider),
                         thread_store: Arc::clone(&thread_store),
+                        thread_queue_service: None,
                     },
                 ),
                 Arc::new(CodexHomeUserInstructionsProvider::new(

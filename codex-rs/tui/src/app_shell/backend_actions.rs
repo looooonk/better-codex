@@ -4,6 +4,7 @@ use super::backend::AppShellTurnStart;
 use super::settings::SettingsUpdate;
 use crate::app_server_session::AppServerStartedThread;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::ThreadQueueAddResponse;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_protocol::ThreadId;
 use color_eyre::Result;
@@ -28,7 +29,6 @@ pub(super) enum ActionGroup {
 pub(super) enum TurnSubmission {
     Initial,
     Interactive,
-    Queued,
 }
 
 #[derive(Debug)]
@@ -74,6 +74,10 @@ pub(super) enum BackendActionResult {
     Settings {
         update: SettingsUpdate,
         result: Result<()>,
+    },
+    QueueAdd {
+        prompt: String,
+        result: Result<ThreadQueueAddResponse>,
     },
     TurnStart {
         params: AppShellTurnStart,
@@ -272,6 +276,16 @@ impl ShellState {
             BackendActionResult::Settings { update, result } => {
                 self.complete_settings_update(update, result)
             }
+            BackendActionResult::QueueAdd { prompt, result } => match result {
+                Ok(_) => {
+                    self.composer.remember_submission(&prompt);
+                    self.status = "message queued".to_string();
+                }
+                Err(err) => {
+                    self.composer.restore_failed_submission(&prompt);
+                    self.report_action_error("failed to queue message", err);
+                }
+            },
         }
     }
 

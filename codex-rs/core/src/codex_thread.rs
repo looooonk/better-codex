@@ -37,6 +37,8 @@ use codex_protocol::protocol::ThreadSource;
 use codex_protocol::protocol::TokenUsageInfo;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::TurnEnvironmentSelections;
+use codex_protocol::protocol::QueuedTurnStartReply;
+use codex_protocol::protocol::QueuedTurnStartSubmission;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::user_input::UserInput;
 use codex_thread_store::PersistContext;
@@ -349,6 +351,36 @@ impl CodexThread {
         items: Vec<ResponseItem>,
     ) -> Result<(), TryStartTurnIfIdleError> {
         self.codex.session.try_start_turn_if_idle(items).await
+    }
+
+    /// Starts a durable queued submission without steering or replacing active work.
+    ///
+    /// The caller supplies the stable turn and client-message IDs that were committed
+    /// with the queued submission before admission.
+    pub async fn start_queued_turn(
+        &self,
+        turn_id: String,
+        items: Vec<codex_protocol::user_input::UserInput>,
+        client_user_message_id: String,
+        trace: Option<W3cTraceContext>,
+    ) -> CodexResult<QueuedTurnStartSubmission> {
+        let (reply, receiver) = QueuedTurnStartReply::channel();
+        let op = Op::StartQueuedTurn { items, reply };
+        self.codex
+            .session
+            .services
+            .agent_control
+            .ensure_execution_capacity_for_op(self.session_configured.thread_id, &op)
+            .await?;
+        self.codex
+            .submit_with_id(Submission {
+                id: turn_id,
+                op,
+                client_user_message_id: Some(client_user_message_id),
+                trace,
+            })
+            .await?;
+        receiver.await.map_err(|_| CodexErr::InternalAgentDied)
     }
 
     pub async fn set_app_server_client_info(

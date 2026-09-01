@@ -9,11 +9,14 @@ use codex_app_server_protocol::ThreadDeleteParams;
 use codex_app_server_protocol::ThreadDeleteResponse;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
+use codex_app_server_protocol::ThreadQueueAddParams;
+use codex_app_server_protocol::ThreadQueueAddResponse;
 use codex_app_server_protocol::ThreadSetNameParams;
 use codex_app_server_protocol::ThreadSetNameResponse;
 use codex_app_server_protocol::ThreadSourceKind;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
+use codex_app_server_protocol::UserInput;
 use codex_protocol::ThreadId;
 use color_eyre::Result;
 
@@ -133,6 +136,25 @@ pub(super) async fn start_turn(
                 output_schema: params.output_schema,
                 collaboration_mode: params.collaboration_mode,
                 multi_agent_mode: None,
+            },
+        })
+        .await
+        .map_err(Into::into)
+}
+
+pub(super) async fn queue_message(
+    request_handle: AppServerRequestHandle,
+    thread_id: ThreadId,
+    input: Vec<UserInput>,
+    client_user_message_id: String,
+) -> Result<ThreadQueueAddResponse> {
+    request_handle
+        .request_typed(ClientRequest::ThreadQueueAdd {
+            request_id: app_shell_request_id("app-shell-thread-queue-add"),
+            params: ThreadQueueAddParams {
+                thread_id: thread_id.to_string(),
+                input,
+                client_user_message_id,
             },
         })
         .await
