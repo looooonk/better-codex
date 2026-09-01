@@ -17,7 +17,25 @@ fn completion_size_includes_the_protobuf_envelope() {
         completion.outcome,
         Some(grpc::complete_tool_call_request::Outcome::Failed(grpc::ToolCallFailed {
             message,
-        })) if message.contains("encoded bytes exceeds the gRPC message limit")
+        })) if message.contains("application limit")
+    ));
+}
+
+
+#[test]
+fn oversized_delegate_values_are_not_materialized_as_json_buffers() {
+    let completion = request_with_maximum(
+        "session",
+        "invocation",
+        Ok(serde_json::Value::String("x".repeat(2_000))),
+        /*maximum_message_bytes*/ 1_000,
+    );
+
+    assert!(matches!(
+        completion.outcome,
+        Some(grpc::complete_tool_call_request::Outcome::Failed(grpc::ToolCallFailed {
+            message,
+        })) if message.contains("byte limit")
     ));
 }
 #[test]

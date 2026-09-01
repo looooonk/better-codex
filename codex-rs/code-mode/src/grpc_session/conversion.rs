@@ -7,15 +7,20 @@ use codex_code_mode_protocol::ImageDetail;
 use codex_code_mode_protocol::RuntimeResponse;
 use codex_code_mode_protocol::ToolDefinition;
 use codex_code_mode_protocol::WaitOutcome;
+use codex_code_mode_protocol::encode_bounded_json;
 use codex_code_mode_protocol::grpc;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
+use codex_code_mode_protocol::parse_bounded_json;
+use codex_code_mode_protocol::MAX_JSON_BYTES;
 use codex_protocol::ToolName;
+use prost::Message;
 
 pub(super) fn execute_request(
     session_id: &str,
     execution_id: String,
     request: ExecuteRequest,
 ) -> Result<grpc::ExecuteRequest, String> {
-    Ok(grpc::ExecuteRequest {
+    let request = grpc::ExecuteRequest {
         session_id: session_id.to_string(),
         execution_id,
         tool_call_id: request.tool_call_id,
@@ -31,7 +36,14 @@ pub(super) fn execute_request(
             .map(u64::try_from)
             .transpose()
             .map_err(|error| format!("invalid code-mode output token limit: {error}"))?,
-    })
+    };
+    let encoded_len = request.encoded_len();
+    if encoded_len > MAX_APPLICATION_MESSAGE_BYTES {
+        return Err(format!(
+            "code-mode execution request of {encoded_len} encoded bytes exceeds the {MAX_APPLICATION_MESSAGE_BYTES}-byte application limit"
+        ));
+    }
+    Ok(request)
 }
 
 fn tool_definition(definition: ToolDefinition) -> Result<grpc::ToolDefinition, String> {
@@ -48,12 +60,12 @@ fn tool_definition(definition: ToolDefinition) -> Result<grpc::ToolDefinition, S
         },
         input_schema_json: definition
             .input_schema
-            .map(|schema| serde_json::to_vec(&schema))
+            .map(|schema| encode_bounded_json(&schema, MAX_JSON_BYTES))
             .transpose()
             .map_err(|error| format!("failed to encode code-mode tool input schema: {error}"))?,
         output_schema_json: definition
             .output_schema
-            .map(|schema| serde_json::to_vec(&schema))
+            .map(|schema| encode_bounded_json(&schema, MAX_JSON_BYTES))
             .transpose()
             .map_err(|error| format!("failed to encode code-mode tool output schema: {error}"))?,
     })
@@ -75,7 +87,7 @@ pub(super) fn tool_call(call: grpc::ToolCall) -> Result<CodeModeNestedToolCall, 
     };
     let input = call
         .input_json
-        .map(|input| serde_json::from_slice(&input))
+        .map(|input| parse_bounded_json(&input))
         .transpose()
         .map_err(|error| format!("code-mode tool invocation contains invalid JSON: {error}"))?;
 

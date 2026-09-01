@@ -4,7 +4,7 @@ use codex_code_mode_protocol::ImageDetail;
 use codex_code_mode_protocol::RuntimeResponse;
 use codex_code_mode_protocol::WaitOutcome;
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::host::MAX_FRAME_BYTES;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use pretty_assertions::assert_eq;
 use tonic::Code;
 
@@ -117,7 +117,7 @@ fn rejects_oversized_text_and_image_outcomes_for_streams_and_unary_responses() {
         error_text: None,
     };
 
-    let text = "x".repeat(MAX_FRAME_BYTES);
+    let text = "x".repeat(MAX_APPLICATION_MESSAGE_BYTES);
     assert_eq!(
         super::execute_event(response(FunctionCallOutputContentItem::InputText { text }))
             .expect_err("oversized execution event")
@@ -125,7 +125,10 @@ fn rejects_oversized_text_and_image_outcomes_for_streams_and_unary_responses() {
         Code::ResourceExhausted
     );
 
-    let image_url = format!("data:image/png;base64,{}", "A".repeat(MAX_FRAME_BYTES));
+    let image_url = format!(
+        "data:image/png;base64,{}",
+        "A".repeat(MAX_APPLICATION_MESSAGE_BYTES)
+    );
     assert_eq!(
         super::wait_response(WaitOutcome::LiveCell(response(
             FunctionCallOutputContentItem::InputImage {
@@ -162,15 +165,18 @@ fn enforces_tool_count_and_description_bounds() {
         max_output_tokens: None,
     };
 
-    assert!(
-        execute_request(request(vec![definition.clone(); MAX_TOOL_DEFINITIONS])).is_ok()
-    );
+    let count_definition = proto::ToolDefinition {
+        description: String::new(),
+        ..definition.clone()
+    };
+    assert!(execute_request(request(vec![count_definition.clone(); MAX_TOOL_DEFINITIONS])).is_ok());
     assert_eq!(
-        execute_request(request(vec![definition.clone(); MAX_TOOL_DEFINITIONS + 1]))
+        execute_request(request(vec![count_definition; MAX_TOOL_DEFINITIONS + 1]))
             .unwrap_err()
             .code(),
         Code::InvalidArgument
     );
+    assert!(execute_request(request(vec![definition.clone()])).is_ok());
     assert_eq!(
         execute_request(request(vec![proto::ToolDefinition {
             description: "x".repeat(MAX_TOOL_DESCRIPTION_BYTES + 1),
