@@ -92,24 +92,21 @@ impl SkillsWatcher {
         thread_manager: &ThreadManager,
         environments: &[TurnEnvironmentSelection],
     ) -> WatchRegistration {
-        let mut local_environment = None;
-        for selection in environments {
-            match thread_manager
-                .environment_manager()
-                .get_environment(&selection.environment_id)
-            {
-                Some(environment) if !environment.is_remote() => {
-                    local_environment = Some(environment);
-                    break;
+        let Some(environment) = first_local_environment(
+            environments,
+            |environment_id| {
+                let environment = thread_manager
+                    .environment_manager()
+                    .get_environment(environment_id);
+                if environment.is_none() {
+                    warn!(
+                        "failed to register skills watcher for unknown environment `{environment_id}`"
+                    );
                 }
-                Some(_) => {}
-                None => warn!(
-                    "failed to register skills watcher for unknown environment `{}`",
-                    selection.environment_id
-                ),
-            }
-        }
-        let Some(environment) = local_environment else {
+                environment
+            },
+            |environment| environment.is_remote(),
+        ) else {
             return WatchRegistration::default();
         };
 
@@ -172,3 +169,17 @@ impl SkillsWatcher {
         });
     }
 }
+
+fn first_local_environment<T>(
+    environments: &[TurnEnvironmentSelection],
+    mut resolve: impl FnMut(&str) -> Option<T>,
+    mut is_remote: impl FnMut(&T) -> bool,
+) -> Option<T> {
+    environments.iter().find_map(|selection| {
+        resolve(&selection.environment_id).filter(|environment| !is_remote(environment))
+    })
+}
+
+#[cfg(test)]
+#[path = "skills_watcher_tests.rs"]
+mod tests;
