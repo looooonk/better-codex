@@ -263,7 +263,6 @@ impl SessionInner {
             let acknowledgement = tokio::select! {
                 biased;
                 _ = inner.stopped.cancelled() => return,
-                _ = cancellation.cancelled() => return,
                 acknowledgement = deadline::acknowledge_notification(
                     &inner,
                     client.acknowledge_notification(request),

@@ -1,5 +1,9 @@
+use std::future::Future;
 use std::net::SocketAddr;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::Context;
+use std::task::Poll;
 use std::time::Duration;
 
 use codex_code_mode::CellId;
@@ -19,6 +23,7 @@ use codex_code_mode_protocol::grpc::bounded_code_mode_host_client;
 use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use pretty_assertions::assert_eq;
 use tokio::sync::mpsc;
+use tokio::sync::Notify;
 use tokio::time::timeout;
 #[cfg(unix)]
 use tokio::net::UnixListener;
@@ -32,6 +37,8 @@ use tonic::transport::Endpoint;
 use tonic::transport::Server;
 use tonic::transport::server::TcpConnectInfo;
 use tonic::transport::server::TcpIncoming;
+use tower::Layer;
+use tower::Service;
 use uuid::Uuid;
 
 use super::loopback_grpc_service;
@@ -47,6 +54,62 @@ enum DelegateEvent {
 struct RecordingDelegate {
     events: mpsc::Sender<DelegateEvent>,
     hold_notifications: bool,
+}
+
+#[derive(Clone)]
+struct DelayAcknowledgementLayer {
+    committed: mpsc::Sender<()>,
+    release: Arc<Notify>,
+}
+
+impl<S> Layer<S> for DelayAcknowledgementLayer {
+    type Service = DelayAcknowledgement<S>;
+
+    fn layer(&self, inner: S) -> Self::Service {
+        DelayAcknowledgement {
+            inner,
+            committed: self.committed.clone(),
+            release: Arc::clone(&self.release),
+        }
+    }
+}
+
+#[derive(Clone)]
+struct DelayAcknowledgement<S> {
+    inner: S,
+    committed: mpsc::Sender<()>,
+    release: Arc<Notify>,
+}
+
+impl<S, B> Service<tonic::codegen::http::Request<B>> for DelayAcknowledgement<S>
+where
+    S: Service<tonic::codegen::http::Request<B>> + Send + 'static,
+    S::Future: Send + 'static,
+    S::Response: Send + 'static,
+    S::Error: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, request: tonic::codegen::http::Request<B>) -> Self::Future {
+        let delay = request.uri().path().ends_with("/AcknowledgeNotification");
+        let response = self.inner.call(request);
+        let committed = self.committed.clone();
+        let release = Arc::clone(&self.release);
+        Box::pin(async move {
+            let response = response.await?;
+            if delay {
+                let _ = committed.send(()).await;
+                release.notified().await;
+            }
+            Ok(response)
+        })
+    }
 }
 
 impl CodeModeSessionDelegate for RecordingDelegate {
@@ -99,6 +162,27 @@ async fn start_server() -> (
     let server_shutdown = shutdown.clone();
     let server = tokio::spawn(
         Server::builder()
+            .add_service(loopback_grpc_service())
+            .serve_with_incoming_shutdown(incoming, server_shutdown.cancelled_owned()),
+    );
+    (endpoint, shutdown, server)
+}
+
+async fn start_server_with_delayed_acknowledgement(
+    committed: mpsc::Sender<()>,
+    release: Arc<Notify>,
+) -> (
+    String,
+    CancellationToken,
+    tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+) {
+    let incoming = TcpIncoming::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let endpoint = format!("http://{}", incoming.local_addr().unwrap());
+    let shutdown = CancellationToken::new();
+    let server_shutdown = shutdown.clone();
+    let server = tokio::spawn(
+        Server::builder()
+            .layer(DelayAcknowledgementLayer { committed, release })
             .add_service(loopback_grpc_service())
             .serve_with_incoming_shutdown(incoming, server_shutdown.cancelled_owned()),
     );
@@ -416,6 +500,63 @@ async fn production_provider_cancels_pending_notifications_on_termination() {
             .unwrap(),
         Some(DelegateEvent::CellClosed(cell_id))
     );
+    session.shutdown().await.unwrap();
+    shutdown.cancel();
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn accepted_acknowledgement_retires_after_concurrent_termination() {
+    let (committed_tx, mut committed_rx) = mpsc::channel(/*buffer*/ 1);
+    let release = Arc::new(Notify::new());
+    let (endpoint, shutdown, server) =
+        start_server_with_delayed_acknowledgement(committed_tx, Arc::clone(&release)).await;
+    let (events, mut event_rx) = mpsc::channel(/*buffer*/ 4);
+    let session = GrpcCodeModeSessionProvider::new(endpoint)
+        .create_session(Arc::new(RecordingDelegate {
+            events,
+            hold_notifications: false,
+        }))
+        .await
+        .unwrap();
+    let started = session
+        .execute(ExecuteRequest {
+            tool_call_id: "outer-call".to_string(),
+            enabled_tools: Vec::new(),
+            source: r#"notify("pending"); await new Promise(() => {});"#.to_string(),
+            yield_time_ms: Some(1),
+            max_output_tokens: None,
+        })
+        .await
+        .unwrap();
+    let cell_id = started.cell_id.clone();
+
+    assert_eq!(
+        timeout(Duration::from_secs(/*secs*/ 5), event_rx.recv())
+            .await
+            .unwrap(),
+        Some(DelegateEvent::Notification("pending".to_string()))
+    );
+    timeout(Duration::from_secs(/*secs*/ 5), committed_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        timeout(Duration::from_secs(/*secs*/ 5), started.initial_response())
+            .await
+            .unwrap()
+            .unwrap(),
+        RuntimeResponse::Yielded { .. }
+    ));
+    assert!(session.terminate(cell_id.clone()).await.is_ok());
+    release.notify_one();
+    assert_eq!(
+        timeout(Duration::from_secs(/*secs*/ 5), event_rx.recv())
+            .await
+            .unwrap(),
+        Some(DelegateEvent::CellClosed(cell_id))
+    );
+
     session.shutdown().await.unwrap();
     shutdown.cancel();
     server.await.unwrap().unwrap();
