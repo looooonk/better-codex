@@ -1,10 +1,12 @@
 use super::ShellState;
 use super::backend::AppShellBackend;
 use super::backend::AppShellTurnStart;
+use super::queued_messages::QueueMutation;
+use super::queued_messages::QueueRpcResponse;
 use super::settings::SettingsUpdate;
 use crate::app_server_session::AppServerStartedThread;
 use codex_app_server_protocol::RequestId;
-use codex_app_server_protocol::ThreadQueueAddResponse;
+use codex_app_server_protocol::QueuedSubmission;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_protocol::ThreadId;
 use color_eyre::Result;
@@ -23,6 +25,8 @@ pub(super) enum ActionGroup {
     Settings,
     TurnStart,
     UserInput,
+    QueueHydration,
+    QueueMutation,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,9 +79,14 @@ pub(super) enum BackendActionResult {
         update: SettingsUpdate,
         result: Result<()>,
     },
-    QueueAdd {
-        prompt: String,
-        result: Result<ThreadQueueAddResponse>,
+    QueueHydration {
+        thread_id: ThreadId,
+        result: Result<Vec<QueuedSubmission>>,
+    },
+    QueueMutation {
+        thread_id: ThreadId,
+        mutation: QueueMutation,
+        result: Result<QueueRpcResponse>,
     },
     TurnStart {
         params: AppShellTurnStart,
@@ -276,16 +285,14 @@ impl ShellState {
             BackendActionResult::Settings { update, result } => {
                 self.complete_settings_update(update, result)
             }
-            BackendActionResult::QueueAdd { prompt, result } => match result {
-                Ok(_) => {
-                    self.composer.remember_submission(&prompt);
-                    self.status = "message queued".to_string();
-                }
-                Err(err) => {
-                    self.composer.restore_failed_submission(&prompt);
-                    self.report_action_error("failed to queue message", err);
-                }
-            },
+            BackendActionResult::QueueHydration { thread_id, result } => {
+                self.complete_queue_hydration(app_server, thread_id, result)
+            }
+            BackendActionResult::QueueMutation {
+                thread_id,
+                mutation,
+                result,
+            } => self.complete_queue_mutation(app_server, thread_id, mutation, result),
         }
     }
 

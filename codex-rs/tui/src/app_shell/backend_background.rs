@@ -1,5 +1,7 @@
 use super::backend::AppShellTurnStart;
 use super::backend::app_shell_request_id;
+use super::queued_messages::QueueRpc;
+use super::queued_messages::QueueRpcResponse;
 use crate::app_server_session::turn_permissions_overrides;
 use codex_app_server_client::AppServerRequestHandle;
 use codex_app_server_protocol::ClientRequest;
@@ -11,12 +13,21 @@ use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
 use codex_app_server_protocol::ThreadQueueAddParams;
 use codex_app_server_protocol::ThreadQueueAddResponse;
+use codex_app_server_protocol::ThreadQueueDeleteParams;
+use codex_app_server_protocol::ThreadQueueDeleteResponse;
+use codex_app_server_protocol::ThreadQueueListParams;
+use codex_app_server_protocol::ThreadQueueListResponse;
+use codex_app_server_protocol::ThreadQueueReorderParams;
+use codex_app_server_protocol::ThreadQueueReorderResponse;
+use codex_app_server_protocol::ThreadQueueStartParams;
+use codex_app_server_protocol::ThreadQueueStartResponse;
+use codex_app_server_protocol::ThreadQueueUpdateParams;
+use codex_app_server_protocol::ThreadQueueUpdateResponse;
 use codex_app_server_protocol::ThreadSetNameParams;
 use codex_app_server_protocol::ThreadSetNameResponse;
 use codex_app_server_protocol::ThreadSourceKind;
 use codex_app_server_protocol::TurnStartParams;
 use codex_app_server_protocol::TurnStartResponse;
-use codex_app_server_protocol::UserInput;
 use codex_protocol::ThreadId;
 use color_eyre::Result;
 
@@ -142,23 +153,111 @@ pub(super) async fn start_turn(
         .map_err(Into::into)
 }
 
-pub(super) async fn queue_message(
+pub(super) async fn list_queued_messages(
     request_handle: AppServerRequestHandle,
     thread_id: ThreadId,
-    input: Vec<UserInput>,
-    client_user_message_id: String,
-) -> Result<ThreadQueueAddResponse> {
-    request_handle
-        .request_typed(ClientRequest::ThreadQueueAdd {
-            request_id: app_shell_request_id("app-shell-thread-queue-add"),
-            params: ThreadQueueAddParams {
-                thread_id: thread_id.to_string(),
-                input,
-                client_user_message_id,
-            },
-        })
-        .await
-        .map_err(Into::into)
+) -> Result<Vec<codex_app_server_protocol::QueuedSubmission>> {
+    let mut data = Vec::new();
+    let mut cursor = None;
+    loop {
+        let response: ThreadQueueListResponse = request_handle
+            .request_typed(ClientRequest::ThreadQueueList {
+                request_id: app_shell_request_id("app-shell-thread-queue-list"),
+                params: ThreadQueueListParams {
+                    thread_id: thread_id.to_string(),
+                    cursor,
+                    limit: Some(100),
+                },
+            })
+            .await?;
+        data.extend(response.data);
+        let Some(next_cursor) = response.next_cursor else {
+            return Ok(data);
+        };
+        cursor = Some(next_cursor);
+    }
+}
+
+pub(super) async fn mutate_queue(
+    request_handle: AppServerRequestHandle,
+    thread_id: ThreadId,
+    rpc: QueueRpc,
+) -> Result<QueueRpcResponse> {
+    let thread_id = thread_id.to_string();
+    match rpc {
+        QueueRpc::Add {
+            input,
+            client_user_message_id,
+        } => {
+            let response: ThreadQueueAddResponse = request_handle
+                .request_typed(ClientRequest::ThreadQueueAdd {
+                    request_id: app_shell_request_id("app-shell-thread-queue-add"),
+                    params: ThreadQueueAddParams {
+                        thread_id,
+                        input,
+                        client_user_message_id,
+                    },
+                })
+                .await?;
+            Ok(QueueRpcResponse::Added(response.queued_submission))
+        }
+        QueueRpc::Update {
+            queued_submission_id,
+            input,
+        } => {
+            let response: ThreadQueueUpdateResponse = request_handle
+                .request_typed(ClientRequest::ThreadQueueUpdate {
+                    request_id: app_shell_request_id("app-shell-thread-queue-update"),
+                    params: ThreadQueueUpdateParams {
+                        thread_id,
+                        queued_submission_id,
+                        input,
+                    },
+                })
+                .await?;
+            Ok(QueueRpcResponse::Updated(response.queued_submission))
+        }
+        QueueRpc::Delete {
+            queued_submission_id,
+        } => {
+            let response: ThreadQueueDeleteResponse = request_handle
+                .request_typed(ClientRequest::ThreadQueueDelete {
+                    request_id: app_shell_request_id("app-shell-thread-queue-delete"),
+                    params: ThreadQueueDeleteParams {
+                        thread_id,
+                        queued_submission_id,
+                    },
+                })
+                .await?;
+            Ok(QueueRpcResponse::Deleted(response.deleted))
+        }
+        QueueRpc::Reorder {
+            queued_submission_ids,
+        } => {
+            let _: ThreadQueueReorderResponse = request_handle
+                .request_typed(ClientRequest::ThreadQueueReorder {
+                    request_id: app_shell_request_id("app-shell-thread-queue-reorder"),
+                    params: ThreadQueueReorderParams {
+                        thread_id,
+                        queued_submission_ids,
+                    },
+                })
+                .await?;
+            Ok(QueueRpcResponse::Reordered)
+        }
+        QueueRpc::Start => {
+            let response: ThreadQueueStartResponse = request_handle
+                .request_typed(ClientRequest::ThreadQueueStart {
+                    request_id: app_shell_request_id("app-shell-thread-queue-start"),
+                    params: ThreadQueueStartParams {
+                        thread_id,
+                        queued_submission_id: None,
+                    },
+                })
+                .await?;
+            Ok(QueueRpcResponse::Started(response.turn))
+        }
+    }
 }
 
 fn all_thread_source_kinds() -> Vec<ThreadSourceKind> {

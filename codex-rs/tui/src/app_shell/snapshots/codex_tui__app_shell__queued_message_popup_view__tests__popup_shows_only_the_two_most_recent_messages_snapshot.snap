@@ -12,7 +12,7 @@ expression: rendered
 │◆ QUEUED  3                                                           │    │
 │   2  second queued message                                           │    ┃
 │   3  newest queued message continued                                 │    ┃
-│Click a message to edit   Alt+↑↓ navigate                             │    ┃
+│Click to edit   Alt+↑↓ navigate   Shift+Alt+↑↓ reorder                │    ┃
 ╰──────────────────────────────────────────────────────────────────────╯
 ╭────────────────────────────────────────────────────────────────────────────╮
 │◆ MESSAGE  1:15                                                             │

@@ -191,6 +191,7 @@ use login_method_availability::LoginMethodAvailability;
 use mcp_management::McpManagementState;
 use navigation::DashboardRoute;
 use plugin_management::PluginManagementState;
+use queued_messages::DurableQueueState;
 use reasoning_ripple::ReasoningRipple;
 use render::draw_shell;
 use safety_buffering::SafetyBufferingState;
@@ -343,6 +344,7 @@ pub(crate) async fn run(
     let has_initial_prompt = pending_initial_prompt.is_some();
     draw_shell(tui, &shell)?;
     shell.start_initial_dashboard_hydration(&app_server);
+    shell.request_queue_hydration(&app_server);
     if !has_initial_prompt {
         shell.start_initial_goal_hydration(&app_server);
     }
@@ -954,6 +956,7 @@ struct ShellState {
     deferred_unsubscribe_thread_ids: Vec<ThreadId>,
     subscription_cleanup_task: Option<JoinHandle<()>>,
     backend_actions: backend_actions::BackendActions,
+    queue_state: DurableQueueState,
     subagent_activity: VecDeque<ToolActivity>,
     latest_diff: Option<DiffSummary>,
     workspace_git_status: Option<WorkspaceGitStatus>,
@@ -1094,6 +1097,7 @@ impl ShellState {
             deferred_unsubscribe_thread_ids: Vec::new(),
             subscription_cleanup_task: None,
             backend_actions: backend_actions::BackendActions::default(),
+            queue_state: DurableQueueState::default(),
             subagent_activity: VecDeque::new(),
             latest_diff: None,
             workspace_git_status: None,
@@ -2742,6 +2746,7 @@ impl ShellState {
             deferred_unsubscribe_thread_ids: Vec::new(),
             subscription_cleanup_task: None,
             backend_actions: backend_actions::BackendActions::default(),
+            queue_state: DurableQueueState::default(),
             subagent_activity: VecDeque::new(),
             latest_diff: Some(DiffSummary {
                 files: 3,
@@ -3017,6 +3022,7 @@ pub mod bench_support {
             deferred_unsubscribe_thread_ids: Vec::new(),
             subscription_cleanup_task: None,
             backend_actions: backend_actions::BackendActions::default(),
+            queue_state: DurableQueueState::default(),
             subagent_activity: VecDeque::new(),
             latest_diff: Some(DiffSummary {
                 files: 4,

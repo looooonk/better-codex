@@ -37,6 +37,7 @@ impl ShellState {
                 self.diff_store.mark_history_truncated();
                 self.refresh_open_diff_view();
                 self.mark_workspace_status_refresh_due();
+                self.request_queue_hydration(app_server);
             }
             AppServerEvent::ServerNotification(notification) => {
                 if let ServerNotification::ExternalAgentConfigImportCompleted(notification) =
@@ -57,9 +58,17 @@ impl ShellState {
                 if refresh_session_list {
                     self.invalidate_session_list_refresh();
                 }
+                let refresh_queue = matches!(
+                    &notification,
+                    ServerNotification::ThreadQueueChanged(changed)
+                        if changed.thread_id == self.thread_id.to_string()
+                );
                 self.handle_notification(notification);
                 if refresh_session_list {
                     self.start_session_list_refresh(app_server);
+                }
+                if refresh_queue {
+                    self.request_queue_hydration(app_server);
                 }
             }
             AppServerEvent::ServerRequest(request) => {
@@ -578,7 +587,10 @@ impl ShellState {
         }
         match super::PendingInteractiveRequest::from_request(&request) {
             Ok(Some(pending)) => match self.receive_interactive_request(pending) {
-                Ok(()) => Ok(()),
+                Ok(()) => {
+                    self.sync_composer_queue_edits(app_server);
+                    Ok(())
+                }
                 Err(pending) => {
                     self.reject_request_with_message(
                         app_server,

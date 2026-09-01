@@ -6004,7 +6004,7 @@ fn completed_extension_items_render_as_successful_tools() {
 }
 
 #[tokio::test]
-async fn safety_buffering_retry_forks_before_turn_and_preserves_steered_input() {
+async fn safety_buffering_retry_preserves_steered_input_and_notices_queued_follow_ups() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let source_thread_id = shell.thread_id;
@@ -6040,7 +6040,16 @@ async fn safety_buffering_retry_forks_before_turn_and_preserves_steered_input() 
     ]);
     source_thread.turns = vec![prior_turn, interrupted_turn];
     let mut backend = RecordingBackend::with_threads(vec![source_thread]);
+    backend.extend_queued_submissions(
+        source_thread_id,
+        [
+            queued_submission("queue-1", "client-1", "first queued"),
+            queued_submission("queue-2", "client-2", "second queued"),
+        ],
+    );
     shell.transcript.clear();
+    shell.request_queue_hydration(&backend);
+    complete_backend_actions(&mut shell, &backend).await;
 
     shell.submit_prompt(&backend, "Explain the request".to_string());
     complete_backend_actions(&mut shell, &backend).await;
@@ -6053,7 +6062,7 @@ async fn safety_buffering_retry_forks_before_turn_and_preserves_steered_input() 
         ),
     ));
     shell.composer.set_text("Keep this unsent draft");
-    let composer_before_retry = shell.composer.clone();
+    let composer_before_retry = shell.composer.clone_without_queue();
 
     shell
         .handle_key(key_char('r'), &config, &mut backend)
@@ -6119,6 +6128,13 @@ async fn safety_buffering_retry_forks_before_turn_and_preserves_steered_input() 
     );
     assert_eq!(shell.active_turn_id.as_deref(), Some("turn-submit"));
     assert_eq!(shell.composer, composer_before_retry);
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::System
+            && line.text
+                == format!(
+                    "2 queued follow-ups remain on the previous session {source_thread_id}. Open Sessions to return to it."
+                )
+    }));
     assert!(shell.safety_buffering_modal_lines().is_none());
     insta::assert_snapshot!(
         "safety_buffering_retry_fork",
@@ -6129,6 +6145,64 @@ async fn safety_buffering_retry_forks_before_turn_and_preserves_steered_input() 
             ),
         )
     );
+}
+
+#[tokio::test]
+async fn safety_buffering_retry_waits_for_pending_queued_adds() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let source_thread_id = shell.thread_id;
+    let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let mut backend = RecordingBackend {
+        queue_add_gate: Some(Arc::clone(&gate)),
+        ..RecordingBackend::default()
+    };
+
+    shell.submit_prompt(&backend, "Explain the request".to_string());
+    complete_backend_actions(&mut shell, &backend).await;
+    backend.clear_calls();
+
+    for message in ["first queued", "second queued"] {
+        shell.composer.set_text(message);
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("queued message should be accepted");
+    }
+    wait_for_backend_calls(&mut shell, &backend, /*count*/ 1).await;
+    shell.handle_notification(ServerNotification::ModelSafetyBufferingUpdated(
+        safety_buffering_notification(
+            &shell,
+            "turn-submit",
+            /*show_buffering_ui*/ true,
+            Some("faster-model"),
+        ),
+    ));
+
+    shell
+        .handle_key(key_char('r'), &config, &mut backend)
+        .await
+        .expect("retry key should be handled");
+
+    assert_eq!(shell.thread_id, source_thread_id);
+    assert_eq!(shell.composer.queued_count(), 2);
+    assert!(shell.safety_buffering_modal_lines().is_some());
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [RecordedBackendCall::QueueAdd { prompt, .. }] if prompt == "first queued"
+    ));
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Status
+            && line.text == "wait for queued message changes to finish before retrying"
+    }));
+
+    gate.add_permits(/*n*/ 2);
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(backend.queued_submissions_for(source_thread_id).len(), 2);
 }
 
 #[tokio::test]
@@ -10929,16 +11003,8 @@ async fn tab_queues_multiple_messages_only_during_an_active_turn() {
             .expect("Tab should queue the message");
     }
 
-    assert_eq!(shell.composer.queued_count(), 0);
+    assert_eq!(shell.composer.queued_count(), 2);
     assert_eq!(shell.composer.text(), "");
-    assert_eq!(backend.calls().len(), 2);
-    assert!(matches!(
-        backend.calls().as_slice(),
-        [
-            RecordedBackendCall::QueueAdd { prompt: first, .. },
-            RecordedBackendCall::QueueAdd { prompt: second, .. }
-        ] if first == "first queued" && second == "second queued"
-    ));
     insta::assert_snapshot!(
         "durable_queued_messages_pending",
         render_shell(
@@ -10948,6 +11014,14 @@ async fn tab_queues_multiple_messages_only_during_an_active_turn() {
             ),
         )
     );
+    complete_backend_actions(&mut shell, &backend).await;
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [
+            RecordedBackendCall::QueueAdd { prompt: first, .. },
+            RecordedBackendCall::QueueAdd { prompt: second, .. }
+        ] if first == "first queued" && second == "second queued"
+    ));
 
     shell.active_turn_id = None;
     shell.composer.set_text("draft");
@@ -10960,9 +11034,436 @@ async fn tab_queues_multiple_messages_only_during_an_active_turn() {
         .await
         .expect("idle Tab should indent the draft");
 
-    assert_eq!(shell.composer.queued_count(), 0);
+    assert_eq!(shell.composer.queued_count(), 2);
     assert_eq!(shell.composer.text(), "draft    ");
     assert_eq!(backend.calls().len(), 2);
+}
+
+#[tokio::test]
+async fn rapid_queued_adds_wait_for_the_previous_add_before_reaching_the_backend() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.clear();
+    let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let backend = RecordingBackend {
+        queue_add_gate: Some(Arc::clone(&gate)),
+        ..RecordingBackend::default()
+    };
+
+    for message in ["first", "second"] {
+        shell.composer.set_text(message);
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+                &config,
+                &mut backend.clone(),
+            )
+            .await
+            .expect("queue add should remain responsive");
+    }
+    wait_for_backend_calls(&mut shell, &backend, /*count*/ 1).await;
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [RecordedBackendCall::QueueAdd { prompt, .. }] if prompt == "first"
+    ));
+
+    gate.add_permits(/*n*/ 1);
+    wait_for_backend_calls(&mut shell, &backend, /*count*/ 2).await;
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [
+            RecordedBackendCall::QueueAdd { prompt: first, .. },
+            RecordedBackendCall::QueueAdd { prompt: second, .. }
+        ] if first == "first" && second == "second"
+    ));
+    gate.add_permits(/*n*/ 1);
+    complete_backend_actions(&mut shell, &backend).await;
+}
+
+#[tokio::test]
+async fn ambiguous_queued_add_retries_with_the_same_client_message_id() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.clear();
+    let mut backend = RecordingBackend::default();
+    backend.fail_next_queue_add("response lost");
+    shell.composer.set_text("retry me");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("queue add should be accepted");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    let calls = backend.calls();
+    let [
+        RecordedBackendCall::QueueAdd {
+            client_user_message_id: first,
+            ..
+        },
+        RecordedBackendCall::QueueAdd {
+            client_user_message_id: second,
+            ..
+        },
+    ] = calls.as_slice()
+    else {
+        panic!("expected an add and one idempotent retry");
+    };
+    assert_eq!(first, second);
+    assert_eq!(
+        backend.queued_submissions_for(shell.thread_id).len(),
+        1
+    );
+    assert_eq!(shell.composer.queued_count(), 1);
+}
+
+#[tokio::test]
+async fn exhausted_ambiguous_queued_add_reconciles_before_starting_it() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.clear();
+    let mut backend = RecordingBackend::default();
+    backend.fail_next_queue_add("first response lost");
+    backend.fail_next_queue_add("second response lost");
+    shell.composer.set_text("recover me");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("queue add should be accepted");
+    shell.active_turn_id = None;
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("queued start should wait for add recovery");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    let calls = backend.calls();
+    let [
+        RecordedBackendCall::QueueAdd {
+            client_user_message_id: first,
+            ..
+        },
+        RecordedBackendCall::QueueAdd {
+            client_user_message_id: second,
+            ..
+        },
+        RecordedBackendCall::QueueList(_),
+        RecordedBackendCall::QueueStart(_),
+        RecordedBackendCall::QueueList(_),
+    ] = calls.as_slice()
+    else {
+        panic!("expected two idempotent adds, reconciliation, start, and refresh");
+    };
+    assert_eq!(first, second);
+    assert_eq!(shell.composer.text(), "");
+    assert_eq!(shell.composer.queued_count(), 0);
+    assert_eq!(shell.active_turn_id.as_deref(), Some("turn-queued"));
+}
+
+#[tokio::test]
+async fn absent_queued_add_restores_latest_edit_and_cancels_pending_start() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.clear();
+    let mut backend = RecordingBackend::default();
+    backend.fail_next_queue_add_before_commit("first add failed");
+    backend.fail_next_queue_add_before_commit("second add failed");
+    shell.composer.set_text("original");
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Up, KeyModifiers::ALT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    shell.composer.set_text("latest edit");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    shell.active_turn_id = None;
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("start should wait behind add recovery");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [
+            RecordedBackendCall::QueueAdd { .. },
+            RecordedBackendCall::QueueAdd { .. },
+            RecordedBackendCall::QueueList(_),
+        ]
+    ));
+    assert_eq!(shell.composer.text(), "latest edit");
+    assert_eq!(shell.composer.queued_count(), 0);
+    assert_eq!(shell.active_turn_id, None);
+}
+
+#[tokio::test]
+async fn failed_queued_update_reconciles_and_cancels_a_pending_start() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    backend.extend_queued_submissions(
+        shell.thread_id,
+        [queued_submission("queue-1", "client-1", "original")],
+    );
+    shell.request_queue_hydration(&backend);
+    complete_backend_actions(&mut shell, &backend).await;
+    backend.clear_calls();
+    backend.fail_next_queue_update("update failed");
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.clear();
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Up, KeyModifiers::ALT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    shell.composer.set_text("optimistic update");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    shell.active_turn_id = None;
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("start should wait behind the update");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [
+            RecordedBackendCall::QueueUpdate { prompt, .. },
+            RecordedBackendCall::QueueList(_),
+        ] if prompt == "optimistic update"
+    ));
+    assert_eq!(queued_message_texts(&shell), vec!["original"]);
+    assert_eq!(shell.active_turn_id, None);
+}
+
+#[tokio::test]
+async fn failed_queued_update_preserves_unsaved_edit_of_cancelled_add() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    backend.extend_queued_submissions(
+        shell.thread_id,
+        [queued_submission("queue-1", "client-1", "original")],
+    );
+    shell.request_queue_hydration(&backend);
+    complete_backend_actions(&mut shell, &backend).await;
+    backend.clear_calls();
+    backend.fail_next_queue_update("update failed");
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.clear();
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Up, KeyModifiers::ALT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    shell.composer.set_text("optimistic update");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    shell.composer.set_text("pending add");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Up, KeyModifiers::ALT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    shell.composer.set_text("live unsaved edit");
+
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [
+            RecordedBackendCall::QueueUpdate { .. },
+            RecordedBackendCall::QueueList(_),
+        ]
+    ));
+    assert_eq!(queued_message_texts(&shell), vec!["original"]);
+    assert_eq!(shell.composer.text(), "live unsaved edit");
+    assert_eq!(shell.composer.queued_edit_position(), None);
+}
+
+#[tokio::test]
+async fn queued_start_waits_until_failed_delete_reconciliation_finishes() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    backend.extend_queued_submissions(
+        shell.thread_id,
+        [
+            queued_submission("queue-1", "client-1", "first"),
+            queued_submission("queue-2", "client-2", "second"),
+        ],
+    );
+    shell.request_queue_hydration(&backend);
+    complete_backend_actions(&mut shell, &backend).await;
+    backend.clear_calls();
+    let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let add_gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    backend.queue_list_gate = Some(Arc::clone(&gate));
+    backend.queue_add_gate = Some(Arc::clone(&add_gate));
+    backend.fail_next_queue_delete("delete failed");
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.clear();
+
+    for _ in 0..2 {
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Up, KeyModifiers::ALT),
+                &config,
+                &mut backend,
+            )
+            .await
+            .unwrap();
+    }
+    shell.composer.clear();
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    wait_for_backend_calls(&mut shell, &backend, /*count*/ 2).await;
+    shell.active_turn_id = None;
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("start should be blocked during reconciliation");
+
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [
+            RecordedBackendCall::QueueDelete { .. },
+            RecordedBackendCall::QueueList(_),
+        ]
+    ));
+    assert_eq!(shell.active_turn_id, None);
+
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.set_text("third");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("add should wait behind reconciliation");
+    gate.add_permits(/*n*/ 1);
+    wait_for_backend_calls(&mut shell, &backend, /*count*/ 3).await;
+    gate.add_permits(/*n*/ 1);
+    wait_for_backend_calls(&mut shell, &backend, /*count*/ 4).await;
+    add_gate.add_permits(/*n*/ 1);
+    wait_for_backend_calls(&mut shell, &backend, /*count*/ 5).await;
+    shell.active_turn_id = None;
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("start should wait for the post-add hydration");
+
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [
+            RecordedBackendCall::QueueDelete { .. },
+            RecordedBackendCall::QueueList(_),
+            RecordedBackendCall::QueueList(_),
+            RecordedBackendCall::QueueAdd { prompt, .. },
+            RecordedBackendCall::QueueList(_),
+        ] if prompt == "third"
+    ));
+
+    gate.add_permits(/*n*/ 1);
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(
+        queued_message_texts(&shell),
+        vec!["first", "second", "third"]
+    );
 }
 
 #[tokio::test]
@@ -11061,7 +11562,10 @@ async fn alt_arrows_traverse_queued_messages_without_selecting_the_transcript() 
     assert_eq!(shell.composer.text(), "ordinary draft");
     assert_eq!(shell.composer.queued_edit_position(), None);
     assert_eq!(shell.composer.queued_count(), 3);
-    assert_eq!(backend.calls(), Vec::new());
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::QueueList(shell.thread_id)]
+    );
 }
 
 #[tokio::test]
@@ -11088,45 +11592,174 @@ async fn deleting_the_only_queued_edit_does_not_submit_the_restored_draft() {
     assert_eq!(shell.composer.queued_count(), 0);
     assert_eq!(shell.composer.queued_edit_position(), None);
     assert_eq!(shell.composer.text(), "ordinary draft");
-    assert_eq!(backend.calls(), Vec::new());
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::QueueList(shell.thread_id)]
+    );
 }
 
 #[tokio::test]
-async fn completed_turn_does_not_dispatch_the_retired_composer_queue() {
+async fn queued_messages_hydrate_on_attach_and_queue_changed_notification() {
     let mut shell = ShellState::snapshot_fixture();
-    let mut backend = RecordingBackend::default();
-    shell.active_turn_id = Some("turn-current".to_string());
     shell.composer.clear();
-    queue_messages(&mut shell.composer, &["first queued", "second queued"]);
-    shell.composer.set_text("ordinary draft");
-    assert!(shell.composer.edit_previous_queued_message());
-    shell.composer.insert_str(" updated");
+    let mut backend = RecordingBackend::default();
+    backend.extend_queued_submissions(
+        shell.thread_id,
+        [queued_submission("queue-1", "client-1", "first")],
+    );
 
+    shell.request_queue_hydration(&backend);
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(queued_message_texts(&shell), vec!["first"]);
+
+    backend.extend_queued_submissions(
+        shell.thread_id,
+        [queued_submission("queue-2", "client-2", "second")],
+    );
+    let thread_id = shell.thread_id.to_string();
     shell
         .handle_app_server_event(
             &mut backend,
-            turn_completed_event(shell.thread_id, "turn-current", TurnStatus::Completed),
+            AppServerEvent::ServerNotification(ServerNotification::ThreadQueueChanged(
+                codex_app_server_protocol::ThreadQueueChangedNotification { thread_id },
+            )),
         )
         .await
-        .expect("completion should not submit a composer-local queued message");
+        .expect("queue notification should be handled");
     complete_backend_actions(&mut shell, &backend).await;
 
-    assert_eq!(shell.composer.text(), "second queued updated");
-    assert_eq!(shell.composer.queued_count(), 2);
-    assert_eq!(shell.active_turn_id, None);
-    assert_eq!(backend.calls(), Vec::new());
+    assert_eq!(queued_message_texts(&shell), vec!["first", "second"]);
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::QueueList(shell.thread_id),
+            RecordedBackendCall::QueueList(shell.thread_id),
+        ]
+    );
 }
 
 #[tokio::test]
-async fn idle_enter_does_not_resume_the_retired_composer_queue() {
+async fn lagged_events_rehydrate_queued_messages() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    let mut backend = RecordingBackend::default();
+    backend.extend_queued_submissions(
+        shell.thread_id,
+        [queued_submission("queue-1", "client-1", "recovered")],
+    );
+
+    shell
+        .handle_app_server_event(&mut backend, AppServerEvent::Lagged { skipped: 1 })
+        .await
+        .expect("lag event should be handled");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(queued_message_texts(&shell), vec!["recovered"]);
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::QueueList(shell.thread_id)]
+    );
+}
+
+#[tokio::test]
+async fn queued_hydration_completion_defers_when_editing_started_after_lookup() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.composer.clear();
+    let backend = RecordingBackend::default();
+    let thread_id = shell.thread_id;
+    shell.complete_queue_hydration(
+        &backend,
+        thread_id,
+        Ok(vec![queued_submission("queue-1", "client-1", "first")]),
+    );
+    assert!(shell.composer.edit_previous_queued_message());
+    shell.composer.set_text("first edited locally");
+
+    shell.complete_queue_hydration(
+        &backend,
+        thread_id,
+        Ok(vec![queued_submission(
+            "queue-2",
+            "client-2",
+            "stale hydration",
+        )]),
+    );
+
+    assert_eq!(shell.composer.text(), "first edited locally");
+    assert_eq!(shell.composer.queued_edit_position(), Some((1, 1)));
+    assert_eq!(queued_message_texts(&shell), vec!["first"]);
+    assert!(backend.calls().is_empty());
+}
+
+#[tokio::test]
+async fn session_switch_hydrates_after_an_old_queued_mutation_finishes() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    shell.active_turn_id = Some("turn-active".to_string());
+    shell.composer.clear();
+    let old_thread_id = shell.thread_id;
+    let replacement_id = test_thread_id("01900000-0000-7000-8000-000000000414");
+    let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let mut backend = RecordingBackend {
+        queue_add_gate: Some(Arc::clone(&gate)),
+        ..RecordingBackend::default()
+    };
+    shell.composer.set_text("old thread message");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Tab, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("queue add should remain pending");
+    wait_for_backend_calls(&mut shell, &backend, /*count*/ 1).await;
+
+    shell.replace_started_session(started_thread(
+        "replacement",
+        replacement_id,
+        /*forked_from_id*/ None,
+    ));
+    shell.request_queue_hydration(&backend);
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [RecordedBackendCall::QueueAdd {
+            thread_id,
+            prompt,
+            ..
+        }] if *thread_id == old_thread_id && prompt == "old thread message"
+    ));
+
+    gate.add_permits(/*n*/ 1);
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [
+            RecordedBackendCall::QueueAdd { thread_id, .. },
+            RecordedBackendCall::QueueList(hydrated_thread_id),
+        ] if *thread_id == old_thread_id && *hydrated_thread_id == replacement_id
+    ));
+    assert_eq!(queued_message_texts(&shell), Vec::<String>::new());
+}
+
+#[tokio::test]
+async fn interrupted_queued_messages_are_resumed_explicitly_with_idle_enter() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
+    backend.extend_queued_submissions(
+        shell.thread_id,
+        [
+            queued_submission("queue-1", "client-1", "first queued"),
+            queued_submission("queue-2", "client-2", "second queued"),
+        ],
+    );
+    shell.request_queue_hydration(&backend);
+    complete_backend_actions(&mut shell, &backend).await;
+    backend.clear_calls();
     shell.active_turn_id = Some("turn-current".to_string());
     shell.composer.clear();
-    queue_messages(&mut shell.composer, &["first queued", "second queued"]);
-    assert!(shell.composer.edit_previous_queued_message());
-    shell.composer.set_text("edited second");
 
     shell
         .handle_app_server_event(
@@ -11134,7 +11767,7 @@ async fn idle_enter_does_not_resume_the_retired_composer_queue() {
             turn_completed_event(shell.thread_id, "turn-current", TurnStatus::Interrupted),
         )
         .await
-        .expect("interruption should leave the retired composer queue inert");
+        .expect("interruption should be handled");
 
     assert_eq!(backend.calls(), Vec::new());
     assert_eq!(shell.composer.queued_count(), 2);
@@ -11147,12 +11780,176 @@ async fn idle_enter_does_not_resume_the_retired_composer_queue() {
             &mut backend,
         )
         .await
-        .expect("idle Enter should only finish the retired queue edit");
+        .expect("idle Enter should resume the durable queue");
     complete_backend_actions(&mut shell, &backend).await;
     assert_eq!(shell.composer.queued_edit_position(), None);
-    assert_eq!(shell.composer.queued_count(), 2);
+    assert_eq!(shell.composer.queued_count(), 1);
     assert_eq!(shell.composer.text(), "");
-    assert_eq!(backend.calls(), Vec::new());
+    assert_eq!(shell.active_turn_id.as_deref(), Some("turn-queued"));
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::QueueStart(shell.thread_id),
+            RecordedBackendCall::QueueList(shell.thread_id),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn in_flight_queued_start_is_deduplicated_and_preserves_the_edited_row() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let mut backend = RecordingBackend {
+        queue_start_gate: Some(Arc::clone(&gate)),
+        ..RecordingBackend::default()
+    };
+    backend.extend_queued_submissions(
+        shell.thread_id,
+        [
+            queued_submission("queue-1", "client-1", "first"),
+            queued_submission("queue-2", "client-2", "second"),
+        ],
+    );
+    shell.request_queue_hydration(&backend);
+    complete_backend_actions(&mut shell, &backend).await;
+    backend.clear_calls();
+    shell.active_turn_id = None;
+    shell.composer.clear();
+
+    for _ in 0..2 {
+        shell
+            .handle_key(
+                KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+                &config,
+                &mut backend,
+            )
+            .await
+            .expect("idle Enter should request the queued start once");
+    }
+    wait_for_backend_calls(&mut shell, &backend, /*count*/ 1).await;
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Up, KeyModifiers::ALT),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("the next queued row should remain editable");
+    shell.composer.set_text("second edited");
+
+    gate.add_permits(/*n*/ 1);
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(queued_message_texts(&shell), vec!["first", "second"]);
+    assert_eq!(shell.composer.text(), "second edited");
+    assert_eq!(shell.composer.queued_edit_position(), Some((2, 2)));
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::QueueStart(shell.thread_id)]
+    );
+
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .expect("saving the surviving row should update that row");
+    complete_backend_actions(&mut shell, &backend).await;
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::QueueStart(shell.thread_id),
+            RecordedBackendCall::QueueUpdate {
+                thread_id: shell.thread_id,
+                queued_submission_id: "queue-2".to_string(),
+                prompt: "second edited".to_string(),
+            },
+            RecordedBackendCall::QueueList(shell.thread_id),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn queued_message_popup_edits_deletes_and_reorders_through_durable_rpcs() {
+    let config = test_config().await;
+    let mut shell = ShellState::snapshot_fixture();
+    let mut backend = RecordingBackend::default();
+    backend.extend_queued_submissions(
+        shell.thread_id,
+        [
+            queued_submission("queue-1", "client-1", "first"),
+            queued_submission("queue-2", "client-2", "second"),
+            queued_submission("queue-3", "client-3", "third"),
+        ],
+    );
+    shell.request_queue_hydration(&backend);
+    complete_backend_actions(&mut shell, &backend).await;
+    backend.clear_calls();
+    shell.active_turn_id = Some("turn-current".to_string());
+    shell.composer.clear();
+    let alt_up = KeyEvent::new(KeyCode::Up, KeyModifiers::ALT);
+
+    shell.handle_key(alt_up, &config, &mut backend).await.unwrap();
+    shell.composer.set_text("third updated");
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    complete_backend_actions(&mut shell, &backend).await;
+
+    shell.handle_key(alt_up, &config, &mut backend).await.unwrap();
+    shell.handle_key(alt_up, &config, &mut backend).await.unwrap();
+    shell.composer.clear();
+    shell
+        .handle_key(
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    complete_backend_actions(&mut shell, &backend).await;
+
+    shell.handle_key(alt_up, &config, &mut backend).await.unwrap();
+    shell
+        .handle_key(
+            KeyEvent::new(
+                KeyCode::Up,
+                KeyModifiers::SHIFT | KeyModifiers::ALT,
+            ),
+            &config,
+            &mut backend,
+        )
+        .await
+        .unwrap();
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert_eq!(
+        backend.calls(),
+        vec![
+            RecordedBackendCall::QueueUpdate {
+                thread_id: shell.thread_id,
+                queued_submission_id: "queue-3".to_string(),
+                prompt: "third updated".to_string(),
+            },
+            RecordedBackendCall::QueueDelete {
+                thread_id: shell.thread_id,
+                queued_submission_id: "queue-2".to_string(),
+            },
+            RecordedBackendCall::QueueReorder {
+                thread_id: shell.thread_id,
+                queued_submission_ids: vec!["queue-3".to_string(), "queue-1".to_string()],
+            },
+        ]
+    );
+    assert_eq!(queued_message_texts(&shell), vec!["third updated", "first"]);
 }
 
 #[tokio::test]
@@ -12522,6 +13319,21 @@ async fn complete_backend_actions(shell: &mut ShellState, backend: &RecordingBac
     })
     .await
     .expect("background action should complete");
+}
+
+async fn wait_for_backend_calls(
+    shell: &mut ShellState,
+    backend: &RecordingBackend,
+    count: usize,
+) {
+    tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
+        while backend.calls().len() < count {
+            tokio::task::yield_now().await;
+            shell.poll_backend_actions(backend).await;
+        }
+    })
+    .await
+    .expect("backend call should arrive");
 }
 
 async fn press_plain_key(
@@ -14519,6 +15331,53 @@ async fn session_switch_preserves_nonempty_composer_draft() {
     );
 }
 
+#[tokio::test]
+async fn session_switch_preserves_an_empty_unsaved_queued_edit() {
+    let config = test_config().await;
+    let target_id = test_thread_id("01900000-0000-7000-8000-000000000408");
+    let mut shell = ShellState::snapshot_fixture();
+    let source_id = shell.thread_id;
+    let mut backend = RecordingBackend::with_threads(vec![thread_fixture(
+        target_id,
+        Some("switch target"),
+        "switch preview",
+    )]);
+    backend.extend_queued_submissions(
+        source_id,
+        [queued_submission("queue-1", "client-1", "keep me")],
+    );
+    shell.request_queue_hydration(&backend);
+    complete_backend_actions(&mut shell, &backend).await;
+    backend.clear_calls();
+    shell.composer.clear();
+    assert!(shell.composer.edit_previous_queued_message());
+    shell.composer.clear();
+    shell.session_list.focused = true;
+    refresh_session_list(&mut shell, &backend).await;
+
+    shell
+        .handle_session_list_key(key_char('r'), &config, &mut backend)
+        .await
+        .expect("queued-edit-blocked session switch should remain interactive");
+
+    assert_eq!(shell.thread_id, source_id);
+    assert_eq!(shell.composer.text(), "");
+    assert_eq!(shell.composer.queued_edit_position(), Some((1, 1)));
+    assert_eq!(queued_message_texts(&shell), vec!["keep me"]);
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::Status
+            && line.text == "finish the queued message edit before switching sessions"
+    }));
+    assert_eq!(
+        backend.calls(),
+        vec![RecordedBackendCall::ThreadList {
+            archived: Some(false),
+            search_term: None,
+            cursor: None,
+        }]
+    );
+}
+
 #[test]
 fn replacing_session_hydrates_agent_history_without_child_chat_in_transcript() {
     let root_id = test_thread_id("01900000-0000-7000-8000-000000000411");
@@ -15904,6 +16763,21 @@ struct RecordingBackend {
     login_response: Arc<Mutex<LoginAccountResponse>>,
     turn_start_error: Arc<Mutex<Option<String>>>,
     turn_start_gate: Option<Arc<tokio::sync::Semaphore>>,
+    queue_list_gate: Option<Arc<tokio::sync::Semaphore>>,
+    queue_add_gate: Option<Arc<tokio::sync::Semaphore>>,
+    queue_start_gate: Option<Arc<tokio::sync::Semaphore>>,
+    queue_add_precommit_errors: Arc<Mutex<VecDeque<String>>>,
+    queue_add_errors: Arc<Mutex<VecDeque<String>>>,
+    queue_update_errors: Arc<Mutex<VecDeque<String>>>,
+    queue_delete_errors: Arc<Mutex<VecDeque<String>>>,
+    queued_submissions: Arc<
+        Mutex<
+            HashMap<
+                codex_protocol::ThreadId,
+                Vec<codex_app_server_protocol::QueuedSubmission>,
+            >,
+        >,
+    >,
     action_error: Arc<Mutex<Option<String>>>,
     thread_settings_error: Arc<Mutex<Option<String>>>,
     config_values: Arc<Mutex<HashMap<String, serde_json::Value>>>,
@@ -15936,6 +16810,14 @@ impl Default for RecordingBackend {
             login_response: Arc::new(Mutex::new(LoginAccountResponse::ApiKey {})),
             turn_start_error: Arc::new(Mutex::new(None)),
             turn_start_gate: None,
+            queue_list_gate: None,
+            queue_add_gate: None,
+            queue_start_gate: None,
+            queue_add_precommit_errors: Arc::new(Mutex::new(VecDeque::new())),
+            queue_add_errors: Arc::new(Mutex::new(VecDeque::new())),
+            queue_update_errors: Arc::new(Mutex::new(VecDeque::new())),
+            queue_delete_errors: Arc::new(Mutex::new(VecDeque::new())),
+            queued_submissions: Arc::new(Mutex::new(HashMap::new())),
             action_error: Arc::new(Mutex::new(None)),
             thread_settings_error: Arc::new(Mutex::new(None)),
             config_values: Arc::new(Mutex::new(HashMap::new())),
@@ -15985,6 +16867,35 @@ impl RecordingBackend {
             .clone()
     }
 
+    fn clear_calls(&self) {
+        self.calls.lock().expect("call log should lock").clear();
+    }
+
+    fn extend_queued_submissions(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+        submissions: impl IntoIterator<Item = codex_app_server_protocol::QueuedSubmission>,
+    ) {
+        self.queued_submissions
+            .lock()
+            .expect("queued submissions should lock")
+            .entry(thread_id)
+            .or_default()
+            .extend(submissions);
+    }
+
+    fn queued_submissions_for(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> Vec<codex_app_server_protocol::QueuedSubmission> {
+        self.queued_submissions
+            .lock()
+            .expect("queued submissions should lock")
+            .get(&thread_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     fn call_log(&self) -> Arc<Mutex<Vec<RecordedBackendCall>>> {
         Arc::clone(&self.calls)
     }
@@ -16030,6 +16941,34 @@ impl RecordingBackend {
             .turn_start_error
             .lock()
             .expect("turn-start error should lock") = Some(message.to_string());
+    }
+
+    fn fail_next_queue_add(&self, message: &str) {
+        self.queue_add_errors
+            .lock()
+            .expect("queue-add errors should lock")
+            .push_back(message.to_string());
+    }
+
+    fn fail_next_queue_add_before_commit(&self, message: &str) {
+        self.queue_add_precommit_errors
+            .lock()
+            .expect("queue-add precommit errors should lock")
+            .push_back(message.to_string());
+    }
+
+    fn fail_next_queue_update(&self, message: &str) {
+        self.queue_update_errors
+            .lock()
+            .expect("queue-update errors should lock")
+            .push_back(message.to_string());
+    }
+
+    fn fail_next_queue_delete(&self, message: &str) {
+        self.queue_delete_errors
+            .lock()
+            .expect("queue-delete errors should lock")
+            .push_back(message.to_string());
     }
 
     fn fail_next_action(&self, message: &str) {
@@ -16154,11 +17093,26 @@ enum RecordedBackendCall {
         effort: Option<ReasoningEffort>,
         collaboration_mode: Option<CollaborationMode>,
     },
+    QueueList(codex_protocol::ThreadId),
     QueueAdd {
         thread_id: codex_protocol::ThreadId,
         prompt: String,
         client_user_message_id: String,
     },
+    QueueUpdate {
+        thread_id: codex_protocol::ThreadId,
+        queued_submission_id: String,
+        prompt: String,
+    },
+    QueueDelete {
+        thread_id: codex_protocol::ThreadId,
+        queued_submission_id: String,
+    },
+    QueueReorder {
+        thread_id: codex_protocol::ThreadId,
+        queued_submission_ids: Vec<String>,
+    },
+    QueueStart(codex_protocol::ThreadId),
     Compact(codex_protocol::ThreadId),
     Interrupt {
         thread_id: codex_protocol::ThreadId,
@@ -17023,29 +17977,198 @@ impl backend::AppShellBackend for RecordingBackend {
         async move { backend.turn_start(params).await }
     }
 
-    fn thread_queue_add_in_background(
+    fn thread_queue_list_in_background(
         &self,
         thread_id: codex_protocol::ThreadId,
-        input: Vec<codex_app_server_protocol::UserInput>,
-        client_user_message_id: String,
     ) -> impl std::future::Future<
-        Output = color_eyre::Result<codex_app_server_protocol::ThreadQueueAddResponse>,
+        Output = color_eyre::Result<Vec<codex_app_server_protocol::QueuedSubmission>>,
     > + Send
     + 'static {
-        let prompt = format_user_inputs(&input);
-        self.push(RecordedBackendCall::QueueAdd {
-            thread_id,
-            prompt,
-            client_user_message_id: client_user_message_id.clone(),
-        });
+        self.push(RecordedBackendCall::QueueList(thread_id));
+        let submissions = self
+            .queued_submissions
+            .lock()
+            .expect("queued submissions should lock")
+            .get(&thread_id)
+            .cloned()
+            .unwrap_or_default();
+        let gate = self.queue_list_gate.clone();
         async move {
-            Ok(codex_app_server_protocol::ThreadQueueAddResponse {
-                queued_submission: codex_app_server_protocol::QueuedSubmission {
-                    id: "queued-submission".to_string(),
+            if let Some(gate) = gate {
+                gate.acquire_owned()
+                    .await
+                    .expect("queue-list gate should remain open")
+                    .forget();
+            }
+            Ok(submissions)
+        }
+    }
+
+    fn thread_queue_mutate_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+        rpc: queued_messages::QueueRpc,
+    ) -> impl std::future::Future<
+        Output = color_eyre::Result<queued_messages::QueueRpcResponse>,
+    > + Send
+    + 'static {
+        let backend = self.clone();
+        async move {
+            match rpc {
+                queued_messages::QueueRpc::Add {
                     input,
                     client_user_message_id,
-                },
-            })
+                } => {
+                    backend.push(RecordedBackendCall::QueueAdd {
+                        thread_id,
+                        prompt: format_user_inputs(&input),
+                        client_user_message_id: client_user_message_id.clone(),
+                    });
+                    if let Some(gate) = backend.queue_add_gate.clone() {
+                        gate.acquire_owned()
+                            .await
+                            .expect("queue-add gate should remain open")
+                            .forget();
+                    }
+                    if let Some(error) = backend
+                        .queue_add_precommit_errors
+                        .lock()
+                        .expect("queue-add precommit errors should lock")
+                        .pop_front()
+                    {
+                        return Err(color_eyre::eyre::eyre!(error));
+                    }
+                    let submission = {
+                        let mut submissions = backend
+                            .queued_submissions
+                            .lock()
+                            .expect("queued submissions should lock");
+                        let submissions = submissions.entry(thread_id).or_default();
+                        submissions
+                            .iter()
+                            .find(|submission| {
+                                submission.client_user_message_id == client_user_message_id
+                            })
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                let submission = codex_app_server_protocol::QueuedSubmission {
+                                    id: format!("queued-{client_user_message_id}"),
+                                    input,
+                                    client_user_message_id,
+                                };
+                                submissions.push(submission.clone());
+                                submission
+                            })
+                    };
+                    if let Some(error) = backend
+                        .queue_add_errors
+                        .lock()
+                        .expect("queue-add errors should lock")
+                        .pop_front()
+                    {
+                        return Err(color_eyre::eyre::eyre!(error));
+                    }
+                    Ok(queued_messages::QueueRpcResponse::Added(submission))
+                }
+                queued_messages::QueueRpc::Update {
+                    queued_submission_id,
+                    input,
+                } => {
+                    backend.push(RecordedBackendCall::QueueUpdate {
+                        thread_id,
+                        queued_submission_id: queued_submission_id.clone(),
+                        prompt: format_user_inputs(&input),
+                    });
+                    if let Some(error) = backend
+                        .queue_update_errors
+                        .lock()
+                        .expect("queue-update errors should lock")
+                        .pop_front()
+                    {
+                        return Err(color_eyre::eyre::eyre!(error));
+                    }
+                    let mut submissions = backend
+                        .queued_submissions
+                        .lock()
+                        .expect("queued submissions should lock");
+                    let submissions = submissions.entry(thread_id).or_default();
+                    let submission = submissions
+                        .iter_mut()
+                        .find(|submission| submission.id == queued_submission_id)
+                        .expect("queued submission should exist");
+                    submission.input = input;
+                    Ok(queued_messages::QueueRpcResponse::Updated(
+                        submission.clone(),
+                    ))
+                }
+                queued_messages::QueueRpc::Delete {
+                    queued_submission_id,
+                } => {
+                    backend.push(RecordedBackendCall::QueueDelete {
+                        thread_id,
+                        queued_submission_id: queued_submission_id.clone(),
+                    });
+                    if let Some(error) = backend
+                        .queue_delete_errors
+                        .lock()
+                        .expect("queue-delete errors should lock")
+                        .pop_front()
+                    {
+                        return Err(color_eyre::eyre::eyre!(error));
+                    }
+                    let mut submissions = backend
+                        .queued_submissions
+                        .lock()
+                        .expect("queued submissions should lock");
+                    let submissions = submissions.entry(thread_id).or_default();
+                    let before = submissions.len();
+                    submissions.retain(|submission| submission.id != queued_submission_id);
+                    Ok(queued_messages::QueueRpcResponse::Deleted(
+                        submissions.len() != before,
+                    ))
+                }
+                queued_messages::QueueRpc::Reorder {
+                    queued_submission_ids,
+                } => {
+                    backend.push(RecordedBackendCall::QueueReorder {
+                        thread_id,
+                        queued_submission_ids: queued_submission_ids.clone(),
+                    });
+                    let mut submissions = backend
+                        .queued_submissions
+                        .lock()
+                        .expect("queued submissions should lock");
+                    let submissions = submissions.entry(thread_id).or_default();
+                    submissions.sort_by_key(|submission| {
+                        queued_submission_ids
+                            .iter()
+                            .position(|id| id == &submission.id)
+                            .unwrap_or(usize::MAX)
+                    });
+                    Ok(queued_messages::QueueRpcResponse::Reordered)
+                }
+                queued_messages::QueueRpc::Start => {
+                    backend.push(RecordedBackendCall::QueueStart(thread_id));
+                    if let Some(gate) = backend.queue_start_gate.clone() {
+                        gate.acquire_owned()
+                            .await
+                            .expect("queue-start gate should remain open")
+                            .forget();
+                    }
+                    let mut submissions = backend
+                        .queued_submissions
+                        .lock()
+                        .expect("queued submissions should lock");
+                    let submissions = submissions.entry(thread_id).or_default();
+                    if !submissions.is_empty() {
+                        submissions.remove(/*index*/ 0);
+                    }
+                    Ok(queued_messages::QueueRpcResponse::Started(test_turn(
+                        "turn-queued",
+                        TurnStatus::InProgress,
+                    )))
+                }
+            }
         }
     }
 
@@ -17452,6 +18575,29 @@ fn queue_messages(composer: &mut ComposerState, messages: &[&str]) {
         composer.set_text(*message);
         assert!(composer.queue_current_message());
     }
+}
+
+fn queued_submission(
+    id: &str,
+    client_user_message_id: &str,
+    text: &str,
+) -> codex_app_server_protocol::QueuedSubmission {
+    codex_app_server_protocol::QueuedSubmission {
+        id: id.to_string(),
+        input: vec![ApiUserInput::Text {
+            text: text.to_string(),
+            text_elements: Vec::new(),
+        }],
+        client_user_message_id: client_user_message_id.to_string(),
+    }
+}
+
+fn queued_message_texts(shell: &ShellState) -> Vec<String> {
+    shell
+        .composer
+        .queued_messages()
+        .map(|(_index, text)| text.to_string())
+        .collect()
 }
 
 fn test_turn(id: &str, status: TurnStatus) -> Turn {

@@ -37,15 +37,46 @@ struct ComposerDraft {
     draft_before_history: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct QueuedMessage {
+    id: Option<String>,
+    client_user_message_id: String,
+    text: String,
+    editable: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct QueuedMessageIdentity {
+    pub(super) id: Option<String>,
+    pub(super) client_user_message_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum QueueEdit {
+    Update {
+        id: Option<String>,
+        client_user_message_id: String,
+        text: String,
+    },
+    Delete {
+        id: Option<String>,
+        client_user_message_id: String,
+    },
+    Reorder {
+        order: Vec<QueuedMessageIdentity>,
+    },
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct ComposerState {
     input: EditableText,
     history: VecDeque<String>,
     history_index: Option<usize>,
     draft_before_history: String,
-    queued: VecDeque<String>,
+    queued: VecDeque<QueuedMessage>,
     queued_index: Option<usize>,
     draft_before_queue: Option<ComposerDraft>,
+    queue_edits: VecDeque<QueueEdit>,
 }
 
 impl ComposerState {
@@ -152,138 +183,6 @@ impl ComposerState {
         *self = Self::default();
     }
 
-    pub(super) fn queue_current_message(&mut self) -> bool {
-        if self.queued_index.is_some() {
-            return self.finish_queued_message_edit();
-        }
-        let message = self.submission_text();
-        if message.trim().is_empty() {
-            return false;
-        }
-
-        self.queued.push_back(message);
-        self.clear();
-        true
-    }
-
-    pub(super) fn has_queued_messages(&self) -> bool {
-        !self.queued.is_empty()
-    }
-
-    pub(super) fn queued_count(&self) -> usize {
-        self.queued.len()
-    }
-
-    pub(super) fn queued_messages(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = (usize, &str)> + ExactSizeIterator {
-        self.queued
-            .iter()
-            .enumerate()
-            .map(|(index, message)| (index, message.as_str()))
-    }
-
-    pub(super) fn queued_edit_position(&self) -> Option<(usize, usize)> {
-        self.queued_index
-            .map(|index| (index.saturating_add(1), self.queued.len()))
-    }
-
-    pub(super) fn edit_queued_message(&mut self, mut index: usize) -> bool {
-        if index >= self.queued.len() {
-            return false;
-        }
-        match self.queued_index {
-            Some(current) if current == index => return true,
-            Some(current) => {
-                if self.save_queued_message_edit() && current < index {
-                    index = index.saturating_sub(1);
-                }
-            }
-            None => {
-                self.draft_before_queue = Some(ComposerDraft {
-                    input: self.input.clone(),
-                    history_index: self.history_index,
-                    draft_before_history: self.draft_before_history.clone(),
-                });
-            }
-        }
-        self.select_queued_message(index);
-        true
-    }
-
-    pub(super) fn edit_previous_queued_message(&mut self) -> bool {
-        if self.queued.is_empty() {
-            return false;
-        }
-
-        let index = if let Some(index) = self.queued_index {
-            self.save_queued_message_edit();
-            if self.queued.is_empty() {
-                self.restore_queue_draft();
-                return true;
-            }
-            index
-                .saturating_sub(1)
-                .min(self.queued.len().saturating_sub(1))
-        } else {
-            self.draft_before_queue = Some(ComposerDraft {
-                input: self.input.clone(),
-                history_index: self.history_index,
-                draft_before_history: self.draft_before_history.clone(),
-            });
-            self.queued.len() - 1
-        };
-        self.select_queued_message(index);
-        true
-    }
-
-    pub(super) fn edit_next_queued_message(&mut self) -> bool {
-        let Some(index) = self.queued_index else {
-            return false;
-        };
-        let removed = self.save_queued_message_edit();
-        let next = if removed {
-            index
-        } else {
-            index.saturating_add(1)
-        };
-        if next < self.queued.len() {
-            self.select_queued_message(next);
-        } else {
-            self.restore_queue_draft();
-        }
-        true
-    }
-
-    pub(super) fn finish_queued_message_edit(&mut self) -> bool {
-        if self.queued_index.is_none() {
-            return false;
-        }
-        self.save_queued_message_edit();
-        self.restore_queue_draft();
-        true
-    }
-
-    fn restore_queue_draft(&mut self) {
-        self.queued_index = None;
-        let draft = self.draft_before_queue.take().unwrap_or_default();
-        self.input = draft.input;
-        self.history_index = draft.history_index;
-        self.draft_before_history = draft.draft_before_history;
-    }
-
-    pub(super) fn prepare_next_queued_message(&mut self) -> Option<String> {
-        self.finish_queued_message_edit();
-        self.queued.front().cloned()
-    }
-
-    pub(super) fn confirm_next_queued_message(&mut self, message: &str) {
-        if self.queued.front().map(String::as_str) == Some(message) {
-            self.queued.pop_front();
-        }
-        self.remember_submission(message);
-    }
-
     pub(super) fn set_text(&mut self, text: impl Into<String>) {
         self.input.set_text(text);
         self.clear_history_recall();
@@ -350,32 +249,14 @@ impl ComposerState {
         }
     }
 
-    fn select_queued_message(&mut self, index: usize) {
-        self.queued_index = Some(index);
-        if let Some(message) = self.queued.get(index).cloned() {
-            self.set_text(message);
-        }
-    }
-
-    fn save_queued_message_edit(&mut self) -> bool {
-        let Some(index) = self.queued_index else {
-            return false;
-        };
-        let message = self.submission_text();
-        if message.trim().is_empty() {
-            return self.queued.remove(index).is_some();
-        }
-        if let Some(queued) = self.queued.get_mut(index) {
-            *queued = message;
-        }
-        false
-    }
-
     fn clear_history_recall(&mut self) {
         self.history_index = None;
         self.draft_before_history.clear();
     }
 }
+
+#[path = "composer_queue.rs"]
+mod queue;
 
 #[path = "composer_history.rs"]
 mod history;

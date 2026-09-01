@@ -427,16 +427,36 @@ impl ShellState {
         }
         let edit_previous_queued = key_hint::alt(KeyCode::Up).is_press(key);
         let edit_next_queued = key_hint::alt(KeyCode::Down).is_press(key);
+        let reorder_previous_queued = key.modifiers == (KeyModifiers::ALT | KeyModifiers::SHIFT)
+            && key.code == KeyCode::Up;
+        let reorder_next_queued = key.modifiers == (KeyModifiers::ALT | KeyModifiers::SHIFT)
+            && key.code == KeyCode::Down;
+        if self.composer.queued_edit_position().is_some()
+            && (reorder_previous_queued || reorder_next_queued)
+        {
+            self.composer.reorder_queued_message(if reorder_previous_queued {
+                -1
+            } else {
+                1
+            });
+            self.sync_composer_queue_edits(app_server);
+            return Ok(false);
+        }
         if self.composer.has_queued_messages() && (edit_previous_queued || edit_next_queued) {
             self.session_list.focused = false;
             self.settings.focused = false;
             self.agents_focused = false;
             self.clear_transcript_selection();
-            if edit_previous_queued {
+            let editing = if edit_previous_queued {
                 self.composer.edit_previous_queued_message();
+                self.composer.queued_edit_position().is_some()
             } else {
-                self.composer.edit_next_queued_message();
+                self.composer.edit_next_queued_message()
+            };
+            if !editing {
+                self.push_status("structured queued messages cannot be edited");
             }
+            self.sync_composer_queue_edits(app_server);
             return Ok(false);
         }
         if self.transcript_selection.is_some()
@@ -523,10 +543,18 @@ impl ShellState {
                 }
                 let finished_queued_edit = self.composer.finish_queued_message_edit();
                 if finished_queued_edit {
+                    self.sync_composer_queue_edits(app_server);
                     return Ok(false);
                 }
                 let prompt = self.composer.submission_text();
                 let prompt_is_empty = prompt.trim().is_empty();
+                if prompt_is_empty
+                    && self.active_turn_id.is_none()
+                    && self.composer.has_queued_messages()
+                {
+                    self.start_queued_message(app_server);
+                    return Ok(false);
+                }
                 if prompt_is_empty && self.dashboard_visible {
                     match self.dashboard_route {
                         DashboardRoute::Sessions => self.session_list.focused = true,
@@ -625,7 +653,14 @@ impl ShellState {
             }
             KeyCode::Tab => {
                 self.slash_command_popup.reset();
-                if self.active_turn_id.is_some() && key_hint::plain(KeyCode::Tab).is_press(key) {
+                if self.composer.queued_edit_position().is_some()
+                    && key_hint::plain(KeyCode::Tab).is_press(key)
+                {
+                    self.composer.finish_queued_message_edit();
+                    self.sync_composer_queue_edits(app_server);
+                } else if self.active_turn_id.is_some()
+                    && key_hint::plain(KeyCode::Tab).is_press(key)
+                {
                     self.queue_current_message(app_server);
                 } else {
                     let result = self.composer.insert_str("    ");

@@ -369,6 +369,14 @@ impl ShellState {
         if self.active_turn_id.as_deref() != Some(submitted.turn_id.as_str()) {
             return;
         }
+        if self.composer.queued_edit_position().is_some() {
+            self.push_status("save the queued message edit before retrying");
+            return;
+        }
+        if self.has_pending_queue_mutation() {
+            self.push_status("wait for queued message changes to finish before retrying");
+            return;
+        }
         if let Err(err) = app_server
             .turn_interrupt(self.thread_id, submitted.turn_id.clone())
             .await
@@ -420,9 +428,23 @@ impl ShellState {
                 return;
             }
         };
-        let composer = self.composer.clone();
+        let source_thread_id = self.thread_id;
+        let source_queued_count = self.composer.queued_count();
+        let composer = self.composer.clone_without_queue();
         self.complete_session_switch(started, app_server).await;
         self.composer = composer;
+        if source_queued_count > 0 {
+            let notice = if source_queued_count == 1 {
+                format!(
+                    "1 queued follow-up remains on the previous session {source_thread_id}. Open Sessions to return to it."
+                )
+            } else {
+                format!(
+                    "{source_queued_count} queued follow-ups remain on the previous session {source_thread_id}. Open Sessions to return to it."
+                )
+            };
+            self.push_system(notice);
+        }
 
         let mut params = submitted.params;
         params.thread_id = self.thread_id;

@@ -1,4 +1,6 @@
 use super::*;
+use codex_app_server_protocol::QueuedSubmission;
+use codex_app_server_protocol::UserInput;
 use pretty_assertions::assert_eq;
 
 #[test]
@@ -21,12 +23,12 @@ fn queued_messages_are_edited_in_place_while_traversing() {
     assert!(composer.edit_next_queued_message());
 
     assert_eq!(
-        composer.queued,
-        VecDeque::from([
+        queued_texts(&composer),
+        vec![
             "first".to_string(),
             "second updated".to_string(),
             "third updated".to_string(),
-        ])
+        ]
     );
     assert_eq!(composer.text(), "ordinary draft");
     assert_eq!(composer.queued_edit_position(), None);
@@ -46,8 +48,8 @@ fn queueing_an_edited_message_preserves_its_slot_and_restores_the_draft() {
     assert!(composer.queue_current_message());
 
     assert_eq!(
-        composer.queued,
-        VecDeque::from(["first".to_string(), "edited second".to_string()])
+        queued_texts(&composer),
+        vec!["first".to_string(), "edited second".to_string()]
     );
     assert_eq!(composer.text(), "ordinary draft");
 }
@@ -102,7 +104,7 @@ fn clearing_a_queued_edit_removes_it_and_restores_the_draft() {
 
     assert!(composer.finish_queued_message_edit());
 
-    assert_eq!(composer.queued, VecDeque::from(["first".to_string()]));
+    assert_eq!(queued_texts(&composer), vec!["first".to_string()]);
     assert_eq!(composer.text(), "ordinary draft");
     assert_eq!(composer.queued_edit_position(), None);
 }
@@ -122,19 +124,19 @@ fn deleting_queued_edits_while_traversing_keeps_adjacent_messages() {
     assert!(composer.edit_next_queued_message());
     assert_eq!(composer.text(), "third");
     assert_eq!(
-        composer.queued,
-        VecDeque::from(["first".to_string(), "third".to_string()])
+        queued_texts(&composer),
+        vec!["first".to_string(), "third".to_string()]
     );
 
     composer.clear();
     assert!(composer.edit_previous_queued_message());
     assert_eq!(composer.text(), "first");
-    assert_eq!(composer.queued, VecDeque::from(["first".to_string()]));
+    assert_eq!(queued_texts(&composer), vec!["first".to_string()]);
 
     composer.clear();
     assert!(composer.edit_next_queued_message());
     assert_eq!(composer.text(), "ordinary draft");
-    assert_eq!(composer.queued, VecDeque::new());
+    assert_eq!(queued_texts(&composer), Vec::<String>::new());
     assert_eq!(composer.queued_edit_position(), None);
 }
 
@@ -152,10 +154,10 @@ fn selecting_a_queued_message_accounts_for_a_removed_earlier_edit() {
     assert!(composer.edit_queued_message(/*index*/ 2));
 
     assert_eq!(
-        (composer.text(), &composer.queued),
+        (composer.text(), queued_texts(&composer)),
         (
             "third",
-            &VecDeque::from(["second".to_string(), "third".to_string()]),
+            vec!["second".to_string(), "third".to_string()],
         )
     );
     assert!(composer.finish_queued_message_edit());
@@ -327,4 +329,159 @@ fn queue_editing_restores_the_draft_selection() {
     assert!(composer.finish_queued_message_edit());
 
     assert_eq!(composer, before);
+}
+
+#[test]
+fn queued_hydration_deduplicates_a_committed_local_add_by_client_id() {
+    let mut composer = ComposerState::default();
+    composer.set_text("committed after response loss");
+    assert!(composer.queue_current_message_with_client_id("client-1".to_string()));
+
+    composer.replace_queued_submissions(vec![codex_app_server_protocol::QueuedSubmission {
+        id: "queue-1".to_string(),
+        input: vec![codex_app_server_protocol::UserInput::Text {
+            text: "committed after response loss".to_string(),
+            text_elements: Vec::new(),
+        }],
+        client_user_message_id: "client-1".to_string(),
+    }]);
+
+    assert_eq!(queued_texts(&composer), vec!["committed after response loss"]);
+    assert_eq!(
+        composer.queued.front().and_then(|message| message.id.as_deref()),
+        Some("queue-1")
+    );
+}
+
+#[test]
+fn reordering_a_cleared_queued_edit_only_deletes_that_message() {
+    let mut composer = ComposerState::default();
+    for message in ["first", "second"] {
+        composer.set_text(message);
+        assert!(composer.queue_current_message());
+    }
+    composer.set_text("ordinary draft");
+    assert!(composer.edit_previous_queued_message());
+    let removed_client_id = composer
+        .queued
+        .back()
+        .expect("second queued message should exist")
+        .client_user_message_id
+        .clone();
+    composer.clear();
+
+    assert!(composer.reorder_queued_message(/*offset*/ -1));
+
+    assert_eq!(queued_texts(&composer), vec!["first"]);
+    assert_eq!(composer.text(), "first");
+    assert_eq!(composer.queued_edit_position(), Some((1, 1)));
+    assert_eq!(
+        composer.drain_queue_edits().collect::<Vec<_>>(),
+        vec![QueueEdit::Delete {
+            id: None,
+            client_user_message_id: removed_client_id,
+        }]
+    );
+}
+
+#[test]
+fn failed_queued_add_restores_the_draft_without_corrupting_another_edit() {
+    let mut composer = ComposerState::default();
+    for (message, client_id) in [("first", "client-1"), ("failed", "client-2")] {
+        composer.set_text(message);
+        assert!(composer.queue_current_message_with_client_id(client_id.to_string()));
+    }
+    composer.set_text("ordinary draft");
+    assert!(composer.edit_queued_message(/*index*/ 0));
+    composer.set_text("first edited");
+
+    let _ = composer.remove_queued_submission_for_client("client-2");
+    composer.restore_failed_queued_submission("failed");
+
+    assert_eq!(composer.text(), "first edited");
+    assert_eq!(queued_texts(&composer), vec!["first"]);
+    assert!(composer.finish_queued_message_edit());
+    assert_eq!(composer.text(), "failed\n\nordinary draft");
+    assert_eq!(queued_texts(&composer), vec!["first edited"]);
+}
+
+#[test]
+fn hydrated_queued_messages_with_structured_input_are_read_only() {
+    let mut composer = ComposerState::default();
+    composer.set_text("ordinary draft");
+    composer.replace_queued_submissions(vec![QueuedSubmission {
+        id: "queue-1".to_string(),
+        input: vec![
+            UserInput::Text {
+                text: "inspect this".to_string(),
+                text_elements: Vec::new(),
+            },
+            UserInput::Image {
+                detail: None,
+                url: "https://example.test/image.png".to_string(),
+            },
+        ],
+        client_user_message_id: "client-1".to_string(),
+    }]);
+
+    assert!(!composer.edit_previous_queued_message());
+    assert_eq!(composer.text(), "ordinary draft");
+    assert_eq!(composer.queued_edit_position(), None);
+    assert_eq!(composer.drain_queue_edits().collect::<Vec<_>>(), Vec::new());
+}
+
+#[test]
+fn removing_an_edit_never_selects_a_structured_neighbor() {
+    let structured = QueuedSubmission {
+        id: "queue-structured".to_string(),
+        input: vec![UserInput::Image {
+            detail: None,
+            url: "https://example.test/image.png".to_string(),
+        }],
+        client_user_message_id: "client-structured".to_string(),
+    };
+    let plain = QueuedSubmission {
+        id: "queue-plain".to_string(),
+        input: vec![UserInput::Text {
+            text: "plain".to_string(),
+            text_elements: Vec::new(),
+        }],
+        client_user_message_id: "client-plain".to_string(),
+    };
+
+    let mut reordered = ComposerState::default();
+    reordered.replace_queued_submissions(vec![
+        plain.clone(),
+        QueuedSubmission {
+            id: "queue-removed".to_string(),
+            input: vec![UserInput::Text {
+                text: "removed".to_string(),
+                text_elements: Vec::new(),
+            }],
+            client_user_message_id: "client-removed".to_string(),
+        },
+        structured.clone(),
+    ]);
+    assert!(reordered.edit_queued_message(/*index*/ 1));
+    reordered.clear();
+    assert!(reordered.reorder_queued_message(/*offset*/ 1));
+    assert_eq!(reordered.text(), "plain");
+    assert_eq!(reordered.queued_edit_position(), Some((1, 2)));
+
+    let mut failed_add = ComposerState::default();
+    failed_add.set_text("pending");
+    assert!(failed_add.queue_current_message_with_client_id("client-pending".to_string()));
+    failed_add.set_text("ordinary draft");
+    failed_add.replace_queued_submissions(vec![plain, structured]);
+    assert!(failed_add.edit_queued_message(/*index*/ 2));
+    let _ = failed_add.remove_queued_submission_for_client("client-pending");
+    assert_eq!(failed_add.text(), "plain");
+    assert_eq!(failed_add.queued_edit_position(), Some((1, 2)));
+}
+
+fn queued_texts(composer: &ComposerState) -> Vec<String> {
+    composer
+        .queued_messages()
+        .map(|(_index, text)| text.to_string())
+        .collect()
 }

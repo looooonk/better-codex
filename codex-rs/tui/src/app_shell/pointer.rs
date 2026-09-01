@@ -237,7 +237,10 @@ impl ShellState {
                 self.settings.focused = false;
                 self.agents_focused = false;
                 self.clear_transcript_selection();
-                self.composer.edit_queued_message(index);
+                if !self.composer.edit_queued_message(index) {
+                    self.push_status("structured queued messages cannot be edited");
+                }
+                self.sync_composer_queue_edits(app_server);
                 return Ok(());
             }
             Some(super::queued_message_popup_view::QueuedMessagePopupHit::Chrome) => return Ok(()),

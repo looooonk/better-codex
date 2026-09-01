@@ -11,14 +11,14 @@ expression: "render_shell(&shell, Rect::new(0, 0, 100, 24,),)"
  ▎ SYSTEM  loaded 1 previous turns                │▎+ New session  Ctrl+N
  ▎ YOU  Earlier context                           │▎loading sessions
  ──────────────────────────────────────────────── │
- ▎ YOU  Explain the request                       │▎◆ THREAD
-                                                  │▎forked
-                                                  │▎id 01900000-0000-7000-8000-000000000202
-        Also keep this clarification              │▎resume, fork, archive, delete in session list
+ ▎ SYSTEM  2 queued follow-ups remain on the      │▎◆ THREAD
+           previous session 01900000-0000-7000-   │▎forked
+           8000-000000000001. Open Sessions to    │▎id 01900000-0000-7000-8000-000000000202
+           return to it.                          │▎resume, fork, archive, delete in session list
+ ▎ YOU  Explain the request                       │
                                                   │
                                                   │
-                                                  │
-                                                  │
+        Also keep this clarification              │
                                                   │
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  ● RUNNING  1:23                      ││

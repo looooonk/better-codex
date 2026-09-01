@@ -70,6 +70,7 @@ impl ShellState {
         self.replace_started_session(started);
         self.prepare_replaced_session_cleanup(app_server, previous_thread_ids);
         self.start_replaced_session_hydration(app_server);
+        self.request_queue_hydration(app_server);
         self.start_session_list_refresh(app_server);
     }
 

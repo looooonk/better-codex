@@ -4,6 +4,8 @@ use crate::app_server_session::ForkGoalContinuation;
 use crate::app_server_session::TurnPermissionsOverride;
 use crate::config_update::write_config_batch;
 use crate::legacy_core::config::Config;
+use super::queued_messages::QueueRpc;
+use super::queued_messages::QueueRpcResponse;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AskForApproval;
@@ -41,7 +43,7 @@ use codex_app_server_protocol::ThreadGoalSetResponse;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
-use codex_app_server_protocol::ThreadQueueAddResponse;
+use codex_app_server_protocol::QueuedSubmission;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
@@ -308,12 +310,16 @@ pub(super) trait AppShellBackend {
         params: AppShellTurnStart,
     ) -> impl std::future::Future<Output = Result<TurnStartResponse>> + Send + 'static;
 
-    fn thread_queue_add_in_background(
+    fn thread_queue_list_in_background(
         &self,
         thread_id: ThreadId,
-        input: Vec<UserInput>,
-        client_user_message_id: String,
-    ) -> impl std::future::Future<Output = Result<ThreadQueueAddResponse>> + Send + 'static;
+    ) -> impl std::future::Future<Output = Result<Vec<QueuedSubmission>>> + Send + 'static;
+
+    fn thread_queue_mutate_in_background(
+        &self,
+        thread_id: ThreadId,
+        rpc: QueueRpc,
+    ) -> impl std::future::Future<Output = Result<QueueRpcResponse>> + Send + 'static;
 
     fn thread_compact_start_in_background(
         &self,
@@ -858,17 +864,25 @@ impl AppShellBackend for AppServerSession {
         super::backend_background::start_turn(AppServerSession::request_handle(self), params)
     }
 
-    fn thread_queue_add_in_background(
+    fn thread_queue_list_in_background(
         &self,
         thread_id: ThreadId,
-        input: Vec<UserInput>,
-        client_user_message_id: String,
-    ) -> impl std::future::Future<Output = Result<ThreadQueueAddResponse>> + Send + 'static {
-        super::backend_background::queue_message(
+    ) -> impl std::future::Future<Output = Result<Vec<QueuedSubmission>>> + Send + 'static {
+        super::backend_background::list_queued_messages(
             AppServerSession::request_handle(self),
             thread_id,
-            input,
-            client_user_message_id,
+        )
+    }
+
+    fn thread_queue_mutate_in_background(
+        &self,
+        thread_id: ThreadId,
+        rpc: QueueRpc,
+    ) -> impl std::future::Future<Output = Result<QueueRpcResponse>> + Send + 'static {
+        super::backend_background::mutate_queue(
+            AppServerSession::request_handle(self),
+            thread_id,
+            rpc,
         )
     }
 

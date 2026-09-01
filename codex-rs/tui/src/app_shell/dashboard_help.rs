@@ -266,6 +266,12 @@ fn composer_shortcuts(shell: &ShellState, detail: LabelDetail) -> Vec<Shortcut> 
             detail.select("Alt+↑ / ↓", "Alt+Up / Down"),
             detail.select("Edit queue", "Edit queued messages"),
         ));
+        if editing_queue {
+            shortcuts.push(Shortcut::new(
+                detail.select("⇧Alt+↑/↓", "Shift+Alt+Up/Down"),
+                detail.select("Reorder", "Reorder queued messages"),
+            ));
+        }
     }
     shortcuts
 }

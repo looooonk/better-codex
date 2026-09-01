@@ -344,6 +344,10 @@ impl ShellState {
             "wait for the conversation branch to finish"
         } else if self.has_pending_backend_action(ActionGroup::TurnStart) {
             "wait for the turn submission to finish"
+        } else if self.composer.queued_edit_position().is_some() {
+            "finish the queued message edit before switching sessions"
+        } else if self.has_pending_queue_mutation() {
+            "wait for queued message changes to finish"
         } else if self.has_pending_backend_action(ActionGroup::Settings) {
             "wait for settings to finish saving"
         } else if self.active_turn_id.is_some() {
@@ -355,8 +359,6 @@ impl ShellState {
             || self.pending_user_input.is_some()
         {
             "resolve the pending request before switching sessions"
-        } else if self.composer.has_queued_messages() {
-            "finish queued messages before switching sessions"
         } else if !self.composer.is_empty() {
             "send or clear the message draft before switching sessions"
         } else {
@@ -443,6 +445,7 @@ impl ShellState {
         self.plan_steps.clear();
         self.record_active_goal(None);
         self.composer.reset_for_session();
+        self.queue_state.reset();
         self.slash_command_popup.reset();
         self.rewind = super::rewind::RewindState::default();
         self.pending_shell_command = None;
