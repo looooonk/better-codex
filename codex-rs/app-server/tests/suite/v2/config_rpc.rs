@@ -1083,17 +1083,29 @@ model = "gpt-old"
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn config_value_write_expected_version_is_atomic_across_processes() -> Result<()> {
     let codex_home = TempDir::new()?;
+    let first_sqlite_home = TempDir::new()?;
+    let second_sqlite_home = TempDir::new()?;
+    let first_sqlite_home_dir = first_sqlite_home.path().display().to_string();
+    let second_sqlite_home_dir = second_sqlite_home.path().display().to_string();
     write_config(&codex_home, "model = \"gpt-old\"\n")?;
     let config_path = codex_home.path().join("config.toml");
 
     let mut first = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
+        .with_env_overrides(&[(
+            "CODEX_SQLITE_HOME",
+            Some(first_sqlite_home_dir.as_str()),
+        )])
         .build()
         .await?;
     let mut second = TestAppServer::builder()
         .with_codex_home(codex_home.path())
         .without_auto_env()
+        .with_env_overrides(&[(
+            "CODEX_SQLITE_HOME",
+            Some(second_sqlite_home_dir.as_str()),
+        )])
         .build()
         .await?;
     let (first_init, second_init) = tokio::join!(first.initialize(), second.initialize());

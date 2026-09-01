@@ -136,7 +136,7 @@ fn bounded_items(items: Vec<NodeReplReviewEvidenceItem>) -> Vec<NodeReplReviewEv
                 if remaining == 0 || text.trim().is_empty() {
                     continue;
                 }
-                let mut text = truncate_text(&text, TruncationPolicy::Tokens(remaining));
+                let mut text = truncate_to_token_budget(&text, remaining);
                 text.shrink_to_fit();
                 text_tokens = text_tokens.saturating_add(approx_token_count(&text));
                 if !text.trim().is_empty() {
@@ -161,6 +161,27 @@ fn bounded_items(items: Vec<NodeReplReviewEvidenceItem>) -> Vec<NodeReplReviewEv
     }
     bounded.shrink_to_fit();
     bounded
+}
+
+fn truncate_to_token_budget(text: &str, budget_tokens: usize) -> String {
+    let mut truncation_budget = budget_tokens;
+    loop {
+        let candidate = truncate_text(text, TruncationPolicy::Tokens(truncation_budget));
+        let candidate_tokens = approx_token_count(&candidate);
+        if candidate_tokens <= budget_tokens {
+            return candidate;
+        }
+
+        let excess_tokens = candidate_tokens.saturating_sub(budget_tokens);
+        let next_budget = truncation_budget.saturating_sub(excess_tokens.max(1));
+        if next_budget == 0 {
+            let candidate = truncate_text(text, TruncationPolicy::Tokens(0));
+            return (approx_token_count(&candidate) <= budget_tokens)
+                .then_some(candidate)
+                .unwrap_or_default();
+        }
+        truncation_budget = next_budget;
+    }
 }
 
 fn encoded_image_bytes(data_url: &str) -> Option<usize> {

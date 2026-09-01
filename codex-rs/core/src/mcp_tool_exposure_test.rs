@@ -372,7 +372,8 @@ async fn empty_binding_clears_handlers_from_the_previous_catalog() {
             ),
         )
         .expect("handler should build");
-    let previous = Arc::downgrade(&previous);
+    let previous_weak = Arc::downgrade(&previous);
+    drop(previous);
 
     let empty_binding = empty_binding().await;
     assert!(
@@ -385,7 +386,7 @@ async fn empty_binding_clears_handlers_from_the_previous_catalog() {
         )
         .is_empty()
     );
-    assert!(previous.upgrade().is_none());
+    assert!(previous_weak.upgrade().is_none());
 }
 
 #[tokio::test]

@@ -514,6 +514,7 @@ async fn accepted_result_observer_runs_only_after_post_tool_use_accepts() -> any
         .await?;
     assert_eq!(accepted_results.load(Ordering::SeqCst), 1);
 
+    std::fs::create_dir_all(&turn.config.codex_home)?;
     install_blocking_post_tool_use_hook(session.as_ref(), turn.as_ref())?;
     let error = match registry
         .dispatch_any(test_invocation(

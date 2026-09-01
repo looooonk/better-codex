@@ -1556,11 +1556,19 @@ async fn external_agent_config_import_compacts_huge_session_before_first_follow_
 
     let requests = response_log.requests();
     assert_eq!(requests.len(), 2);
+    for request in &requests {
+        assert_eq!(
+            request
+                .message_input_texts("user")
+                .iter()
+                .filter(|text| text.as_str() == "follow up")
+                .count(),
+            1
+        );
+    }
     let first = requests[0].body_json().to_string();
     let second = requests[1].body_json().to_string();
     assert!(first.contains("Summarize the conversation."));
-    assert!(!first.contains("follow up"));
-    assert!(second.contains("follow up"));
     assert!(second.contains("LOCAL_SUMMARY"));
     Ok(())
 }
