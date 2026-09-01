@@ -93,6 +93,7 @@ impl ApprovalAction {
             Self::Shell {
                 environment_id,
                 command,
+                hook_command,
                 cwd,
                 sandbox_permissions,
                 additional_permissions,
@@ -100,7 +101,7 @@ impl ApprovalAction {
                 ..
             } => codex_extension_api::ApprovalReviewAction::Command {
                 source: GuardianCommandSource::Shell,
-                command: codex_shell_command::parse_command::shlex_join(command),
+                command: hook_command.clone(),
                 argv: command.clone(),
                 cwd: guardian_cwd(environment_id, cwd.clone())?,
                 sandbox_permissions: *sandbox_permissions,
@@ -111,6 +112,7 @@ impl ApprovalAction {
             Self::ExecCommand {
                 environment_id,
                 command,
+                hook_command,
                 cwd,
                 sandbox_permissions,
                 additional_permissions,
@@ -119,7 +121,7 @@ impl ApprovalAction {
                 ..
             } => codex_extension_api::ApprovalReviewAction::Command {
                 source: GuardianCommandSource::UnifiedExec,
-                command: codex_shell_command::parse_command::shlex_join(command),
+                command: hook_command.clone(),
                 argv: command.clone(),
                 cwd: guardian_cwd(environment_id, cwd.clone())?,
                 sandbox_permissions: *sandbox_permissions,

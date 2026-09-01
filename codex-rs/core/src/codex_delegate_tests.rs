@@ -766,6 +766,9 @@ async fn delegated_mcp_guardian_abort_returns_synthetic_decline_answer() {
         .approval_policy
         .set(AskForApproval::OnRequest)
         .expect("set on-request policy");
+    parent_ctx
+        .approvals_reviewer
+        .replace(ApprovalsReviewer::AutoReview);
     let parent_ctx = Arc::new(parent_ctx);
 
     let pending_mcp_invocations = Arc::new(Mutex::new(HashMap::from([(

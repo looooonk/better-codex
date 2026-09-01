@@ -2104,7 +2104,17 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
         .await?;
         wait_for_completion(&test).await;
         let request = results_mock.single_request();
-        let output = request.function_call_output(call_id);
+        let mut output = request.function_call_output(call_id);
+        let output_id = output
+            .as_object_mut()
+            .and_then(|output| output.remove("id"))
+            .expect("resumed synthetic output should have an ID");
+        assert!(
+            output_id
+                .as_str()
+                .is_some_and(|id| id.starts_with("fco_")),
+            "resumed synthetic output should have an fco_ ID, got {output_id}"
+        );
         assert_eq!(
             output,
             json!({
