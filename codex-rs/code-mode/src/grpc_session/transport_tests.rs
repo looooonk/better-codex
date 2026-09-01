@@ -16,6 +16,10 @@ fn endpoint_accepts_loopback_http_and_https() {
             .as_str(),
         "https://code-mode.example:45123/"
     );
+    assert_eq!(
+        validate_endpoint("http://[::1]:45123").unwrap().as_str(),
+        "http://[::1]:45123/"
+    );
 }
 
 #[test]

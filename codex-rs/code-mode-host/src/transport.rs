@@ -69,7 +69,12 @@ fn parse_listen_transport(listen: &str) -> Result<ListenTransport> {
     }
     let address = url
         .host_str()
-        .and_then(|host| host.parse::<IpAddr>().ok())
+        .and_then(|host| {
+            host.trim_start_matches('[')
+                .trim_end_matches(']')
+                .parse::<IpAddr>()
+                .ok()
+        })
         .zip(url.port())
         .map(|(ip, port)| SocketAddr::new(ip, port))
         .ok_or_else(|| anyhow::anyhow!("gRPC listen URL requires an IP address and port"))?;

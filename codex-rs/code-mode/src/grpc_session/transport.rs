@@ -135,7 +135,12 @@ fn validate_endpoint(endpoint: &str) -> Result<reqwest::Url, String> {
     if target.scheme() == "http"
         && !target
             .host_str()
-            .and_then(|host| host.parse::<IpAddr>().ok())
+            .and_then(|host| {
+                host.trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .parse::<IpAddr>()
+                    .ok()
+            })
             .is_some_and(|ip| ip.is_loopback())
     {
         return Err(
