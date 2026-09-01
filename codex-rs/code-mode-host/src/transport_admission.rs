@@ -6,6 +6,7 @@ use std::task::Poll;
 use std::time::Duration;
 
 use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
+use codex_code_mode_protocol::grpc::CAPABILITY_METADATA_KEY;
 use http_body_util::BodyExt;
 use http_body_util::Full;
 use tokio::sync::OwnedSemaphorePermit;
@@ -23,6 +24,7 @@ use tower::Service;
 use tower::ServiceExt;
 
 use crate::grpc::validation;
+use crate::grpc::principal::constant_time_matches;
 
 const EXECUTE_BODY_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES;
 const COMPLETION_BODY_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES;
@@ -83,6 +85,7 @@ pub(crate) struct GrpcAdmissionLayer {
     execute_responses: Arc<Semaphore>,
     normal_responses: Arc<Semaphore>,
     critical_responses: Arc<Semaphore>,
+    capability: Option<Arc<str>>,
 }
 
 #[derive(Clone)]
@@ -145,6 +148,30 @@ impl GrpcAdmissionLayer {
             execute_responses: Arc::new(Semaphore::new(MAX_EXECUTE_RESPONSES)),
             normal_responses: Arc::new(Semaphore::new(NORMAL_RESPONSE_PERMITS)),
             critical_responses: Arc::new(Semaphore::new(CRITICAL_RESPONSE_PERMITS)),
+            capability: None,
+        }
+    }
+
+    pub(crate) fn authenticated(capability: Arc<str>) -> Self {
+        Self {
+            capability: Some(capability),
+            ..Self::new()
+        }
+    }
+
+    fn authorize(&self, request: &Request<Body>) -> Result<(), AdmissionError> {
+        let Some(expected) = self.capability.as_deref() else {
+            return Ok(());
+        };
+        let actual = request
+            .headers()
+            .get(CAPABILITY_METADATA_KEY)
+            .map(HeaderValue::as_bytes)
+            .unwrap_or_default();
+        if constant_time_matches(expected.as_bytes(), actual) {
+            Ok(())
+        } else {
+            Err(AdmissionError::unauthenticated())
         }
     }
 
@@ -253,6 +280,9 @@ where
         let inner = self.inner.clone();
         let layer = self.layer.clone();
         Box::pin(async move {
+            if let Err(error) = layer.authorize(&request) {
+                return Ok(error.response());
+            }
             let (parts, body) = request.into_parts();
             let path = parts.uri.path().to_string();
             if !is_known_path(&path) {
@@ -467,6 +497,13 @@ impl AdmissionError {
         Self {
             status: "12",
             message: "unknown-code-mode-request",
+        }
+    }
+
+    fn unauthenticated() -> Self {
+        Self {
+            status: "16",
+            message: "code-mode-capability-missing-or-invalid",
         }
     }
 

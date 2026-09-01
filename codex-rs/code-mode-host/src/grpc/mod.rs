@@ -91,10 +91,11 @@ impl GrpcCodeModeHost {
         principal: RequestPrincipal,
     ) -> Result<Response<proto::CloseSessionResponse>, Status> {
         let _permit = self.state.control_permit()?;
-        self.state
-            .close_session(&request.session_id, principal.identity())
-            .await?;
+        let session = self
+            .state
+            .take_session_for_close(&request.session_id, principal.identity())?;
         principal.authorize();
+        session.shutdown().await?;
         Ok(Response::new(proto::CloseSessionResponse {}))
     }
 
@@ -366,11 +367,19 @@ pub(crate) fn authenticated_loopback_grpc_service(
 }
 
 fn loopback_service(principal_policy: PrincipalPolicy) -> LoopbackGrpcService {
+    let admission = match &principal_policy {
+        PrincipalPolicy::AuthenticatedLocalTransport(capability) => {
+            GrpcAdmissionLayer::authenticated(Arc::clone(capability))
+        }
+        PrincipalPolicy::InProcess | PrincipalPolicy::TrustedLocalTransport => {
+            GrpcAdmissionLayer::new()
+        }
+    };
     let service = CodeModeHostServer::new(GrpcCodeModeHost::loopback_tcp(principal_policy))
         .max_decoding_message_size(MAX_APPLICATION_MESSAGE_BYTES)
         .max_encoding_message_size(MAX_APPLICATION_MESSAGE_BYTES);
     LoopbackGrpcService {
-        inner: GrpcAdmissionLayer::new().layer(service),
+        inner: admission.layer(service),
     }
 }
 

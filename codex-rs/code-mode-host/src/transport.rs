@@ -49,7 +49,7 @@ const HTTP2_MAX_HEADER_BYTES: u32 = 8 * 1_024;
 const HTTP2_MAX_FRAME_BYTES: u32 = 16 * 1_024;
 const CONNECTION_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(/*secs*/ 30);
 const CONNECTION_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 10);
-const CONNECTION_FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
+pub(crate) const CONNECTION_FIRST_BYTE_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 2);
 
 pub const DEFAULT_LISTEN_URL: &str = "stdio";
 
@@ -181,7 +181,7 @@ async fn run_grpc(address: SocketAddr) -> Result<()> {
         .context("code-mode gRPC listener failed")
 }
 
-fn bounded_incoming(
+pub(crate) fn bounded_incoming(
     incoming: TcpIncoming,
 ) -> impl Stream<Item = io::Result<BoundedTcpConnection>> + Send + 'static {
     let permits = Arc::new(Semaphore::new(MAX_ACCEPTED_CONNECTIONS));

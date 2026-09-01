@@ -239,25 +239,22 @@ impl GrpcHostState {
             .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))
     }
 
-    pub(super) async fn close_session(
+    pub(super) fn take_session_for_close(
         &self,
         id: &str,
         principal: GrpcPrincipal,
-    ) -> Result<(), Status> {
+    ) -> Result<Arc<GrpcSession>, Status> {
         let session_id = validation::uuid(id, "session ID")?;
-        let session = {
-            let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
-            let session = sessions
-                .get(&session_id)
-                .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))?;
-            if session.principal != principal {
-                return Err(Status::permission_denied(
-                    "code-mode session belongs to another caller",
-                ));
-            }
-            sessions.remove(&session_id).expect("session was checked above")
-        };
-        session.shutdown().await
+        let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
+        let session = sessions
+            .get(&session_id)
+            .ok_or_else(|| Status::not_found(format!("unknown code-mode session {id}")))?;
+        if session.principal != principal {
+            return Err(Status::permission_denied(
+                "code-mode session belongs to another caller",
+            ));
+        }
+        Ok(sessions.remove(&session_id).expect("session was checked above"))
     }
 
     async fn close_lease(&self, id: Uuid, expected: &Arc<GrpcSession>) {
@@ -339,7 +336,7 @@ impl GrpcSession {
         })
     }
 
-    async fn shutdown(&self) -> Result<(), Status> {
+    pub(super) async fn shutdown(&self) -> Result<(), Status> {
         self.shutdown_with_deadline(tokio::time::Instant::now() + crate::SHUTDOWN_TIMEOUT)
             .await
     }

@@ -1,3 +1,6 @@
+use std::convert::Infallible;
+
+use codex_code_mode_protocol::grpc::CAPABILITY_METADATA_KEY;
 use futures::stream;
 use http_body::Frame;
 use http_body_util::Full;
@@ -5,8 +8,13 @@ use http_body_util::StreamBody;
 use pretty_assertions::assert_eq;
 use tonic::body::Body;
 use tonic::codegen::Bytes;
+use tonic::codegen::http::Request;
+use tonic::codegen::http::Response;
+use tower::Layer;
+use tower::ServiceExt;
 
 use super::CLOSE_PATH;
+use super::COMPLETE_TOOL_PATH;
 use super::EXECUTE_PATH;
 use super::EXECUTE_BODY_BYTES;
 use super::GrpcAdmissionLayer;
@@ -15,6 +23,9 @@ use super::preflight_message;
 use super::read_body;
 use crate::grpc::validation::MAX_TOOL_DEFINITIONS;
 use crate::grpc::validation::MAX_TOOL_FILTERS;
+
+const TEST_CAPABILITY: &str =
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[test]
 fn preflight_rejects_repeated_messages_before_prost_allocation() {
@@ -81,6 +92,51 @@ async fn slow_execute_body_does_not_block_reserved_control_admission() {
     .expect("control admission must not wait behind an execute upload");
     assert!(control.is_ok());
     slow.abort();
+}
+
+#[tokio::test]
+async fn invalid_capability_is_rejected_before_slow_body_admission() {
+    let layer = GrpcAdmissionLayer::authenticated(TEST_CAPABILITY.into());
+    let service = tower::service_fn(|_: Request<Body>| async {
+        Ok::<_, Infallible>(Response::new(Body::empty()))
+    });
+    let invalid = [EXECUTE_PATH, COMPLETE_TOOL_PATH].map(|path| {
+        let frames = stream::pending::<Result<Frame<Bytes>, tonic::Status>>();
+        let request = Request::builder()
+            .uri(path)
+            .header(CAPABILITY_METADATA_KEY, "invalid")
+            .body(Body::new(StreamBody::new(frames)))
+            .unwrap();
+        tokio::spawn(layer.clone().layer(service.clone()).oneshot(request))
+    });
+    tokio::task::yield_now().await;
+
+    let valid = Request::builder()
+        .uri(EXECUTE_PATH)
+        .header(CAPABILITY_METADATA_KEY, TEST_CAPABILITY)
+        .body(Body::new(Full::new(Bytes::from_static(&[0, 0, 0, 0, 0]))))
+        .unwrap();
+    let valid = tokio::time::timeout(
+        std::time::Duration::from_secs(/*secs*/ 1),
+        layer.layer(service).oneshot(valid),
+    )
+    .await
+    .expect("valid admission must not wait behind unauthorized uploads")
+    .unwrap();
+    assert!(valid.headers().get("grpc-status").is_none());
+
+    for response in invalid {
+        assert_eq!(
+            response
+                .await
+                .unwrap()
+                .unwrap()
+                .headers()
+                .get("grpc-status")
+                .unwrap(),
+            "16",
+        );
+    }
 }
 
 #[tokio::test]

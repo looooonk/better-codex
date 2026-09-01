@@ -103,7 +103,7 @@ impl PrincipalPolicy {
     }
 }
 
-fn constant_time_matches(expected: &[u8], actual: &[u8]) -> bool {
+pub(crate) fn constant_time_matches(expected: &[u8], actual: &[u8]) -> bool {
     let mut difference = expected.len() ^ actual.len();
     for (index, expected) in expected.iter().enumerate() {
         difference |= usize::from(*expected ^ actual.get(index).copied().unwrap_or_default());

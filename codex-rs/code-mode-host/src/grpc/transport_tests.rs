@@ -21,6 +21,7 @@ use codex_code_mode::ToolInvocationFuture;
 use codex_code_mode_protocol::grpc as proto;
 use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
 use codex_code_mode_protocol::grpc::bounded_code_mode_host_client;
+use codex_code_mode_protocol::grpc::CAPABILITY_METADATA_KEY;
 use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use pretty_assertions::assert_eq;
 use tokio::sync::mpsc;
@@ -44,7 +45,12 @@ use uuid::Uuid;
 
 use super::loopback_grpc_service;
 use super::authenticated_loopback_grpc_service;
+use super::CodeModeHostServer;
+use super::GrpcCodeModeHost;
+use super::LoopbackGrpcService;
+use super::MAX_APPLICATION_MESSAGE_BYTES;
 use super::principal::PrincipalPolicy;
+use crate::transport_admission::GrpcAdmissionLayer;
 
 const TEST_CAPABILITY: &str =
     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -242,6 +248,37 @@ async fn start_authenticated_server() -> (
     (endpoint, shutdown, server)
 }
 
+async fn start_authenticated_bounded_server_with_host() -> (
+    String,
+    GrpcCodeModeHost,
+    CancellationToken,
+    tokio::task::JoinHandle<Result<(), tonic::transport::Error>>,
+) {
+    let incoming = TcpIncoming::bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let endpoint = format!("http://{}", incoming.local_addr().unwrap());
+    let shutdown = CancellationToken::new();
+    let server_shutdown = shutdown.clone();
+    let capability: Arc<str> = TEST_CAPABILITY.into();
+    let host = GrpcCodeModeHost::loopback_tcp(PrincipalPolicy::AuthenticatedLocalTransport(
+        Arc::clone(&capability),
+    ));
+    let service = CodeModeHostServer::new(host.clone())
+        .max_decoding_message_size(MAX_APPLICATION_MESSAGE_BYTES)
+        .max_encoding_message_size(MAX_APPLICATION_MESSAGE_BYTES);
+    let service = LoopbackGrpcService {
+        inner: GrpcAdmissionLayer::authenticated(capability).layer(service),
+    };
+    let server = tokio::spawn(
+        Server::builder()
+            .add_service(service)
+            .serve_with_incoming_shutdown(
+                crate::transport::bounded_incoming(incoming),
+                server_shutdown.cancelled_owned(),
+            ),
+    );
+    (endpoint, host, shutdown, server)
+}
+
 async fn start_server_with_delayed_acknowledgement(
     committed: mpsc::Sender<()>,
     release: Arc<Notify>,
@@ -306,6 +343,15 @@ fn identified_request<T>(client_id: Uuid, message: T) -> Request<T> {
     request.metadata_mut().insert(
         CLIENT_ID_METADATA_KEY,
         client_id.to_string().parse().unwrap(),
+    );
+    request
+}
+
+fn authenticated_request<T>(client_id: Uuid, message: T) -> Request<T> {
+    let mut request = identified_request(client_id, message);
+    request.metadata_mut().insert(
+        CAPABILITY_METADATA_KEY,
+        TEST_CAPABILITY.parse().unwrap(),
     );
     request
 }
@@ -493,6 +539,57 @@ async fn sessions_are_bound_to_client_identity_across_tcp_connections() {
         .await
         .unwrap();
 
+    shutdown.cancel();
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn fresh_connection_remains_authorized_during_delayed_session_shutdown() {
+    let (endpoint, host, shutdown, server) = start_authenticated_bounded_server_with_host().await;
+    let client_id = Uuid::new_v4();
+    let mut opener = connect(&endpoint).await;
+    let mut events = opener
+        .open_session(authenticated_request(
+            client_id,
+            proto::OpenSessionRequest::default(),
+        ))
+        .await
+        .unwrap()
+        .into_inner();
+    let opened = events.message().await.unwrap().unwrap();
+    let Some(proto::session_event::Event::Opened(opened)) = opened.event else {
+        panic!("expected session opened event");
+    };
+    let session_id = opened.session_id;
+    let release_shutdown = Arc::new(Notify::new());
+    let task_release = Arc::clone(&release_shutdown);
+    assert!(host.state.session(&session_id).unwrap().spawn_task(async move {
+        task_release.notified().await;
+    }));
+
+    let mut closer = connect(&endpoint).await;
+    let close = tokio::spawn(async move {
+        closer
+            .close_session(authenticated_request(
+                client_id,
+                proto::CloseSessionRequest { session_id },
+            ))
+            .await
+    });
+    tokio::time::sleep(
+        crate::transport::CONNECTION_FIRST_BYTE_TIMEOUT
+            + Duration::from_millis(/*millis*/ 100),
+    )
+    .await;
+    release_shutdown.notify_one();
+    timeout(Duration::from_secs(/*secs*/ 2), close)
+        .await
+        .expect("authorized connection must outlive its initial deadline")
+        .unwrap()
+        .unwrap();
+
+    drop(events);
+    drop(opener);
     shutdown.cancel();
     server.await.unwrap().unwrap();
 }
