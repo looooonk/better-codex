@@ -56,23 +56,9 @@ impl ShellState {
                 if refresh_session_list {
                     self.invalidate_session_list_refresh();
                 }
-                let submit_queued_message = match &notification {
-                    ServerNotification::TurnCompleted(completed) => {
-                        completed.thread_id == self.thread_id.to_string()
-                            && self.active_turn_id.as_deref() == Some(completed.turn.id.as_str())
-                            && matches!(
-                                &completed.turn.status,
-                                TurnStatus::Completed | TurnStatus::Failed
-                            )
-                    }
-                    _ => false,
-                };
                 self.handle_notification(notification);
                 if refresh_session_list {
                     self.start_session_list_refresh(app_server);
-                }
-                if submit_queued_message {
-                    self.submit_next_queued_message(app_server);
                 }
             }
             AppServerEvent::ServerRequest(request) => {
@@ -269,6 +255,7 @@ impl ShellState {
                     self.record_active_goal(None);
                 }
             }
+            ServerNotification::ThreadQueueChanged(_) => {}
             ServerNotification::ItemStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
                     self.mark_retry_recovered(&started.turn_id);

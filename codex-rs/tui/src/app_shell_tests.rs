@@ -10927,9 +10927,25 @@ async fn tab_queues_multiple_messages_only_during_an_active_turn() {
             .expect("Tab should queue the message");
     }
 
-    assert_eq!(shell.composer.queued_count(), 2);
+    assert_eq!(shell.composer.queued_count(), 0);
     assert_eq!(shell.composer.text(), "");
-    assert_eq!(backend.calls(), Vec::new());
+    assert_eq!(backend.calls().len(), 2);
+    assert!(matches!(
+        backend.calls().as_slice(),
+        [
+            RecordedBackendCall::QueueAdd { prompt: first, .. },
+            RecordedBackendCall::QueueAdd { prompt: second, .. }
+        ] if first == "first queued" && second == "second queued"
+    ));
+    insta::assert_snapshot!(
+        "durable_queued_messages_pending",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 16,
+            ),
+        )
+    );
 
     shell.active_turn_id = None;
     shell.composer.set_text("draft");
@@ -10942,9 +10958,9 @@ async fn tab_queues_multiple_messages_only_during_an_active_turn() {
         .await
         .expect("idle Tab should indent the draft");
 
-    assert_eq!(shell.composer.queued_count(), 2);
+    assert_eq!(shell.composer.queued_count(), 0);
     assert_eq!(shell.composer.text(), "draft    ");
-    assert_eq!(backend.calls(), Vec::new());
+    assert_eq!(backend.calls().len(), 2);
 }
 
 #[tokio::test]
@@ -11074,7 +11090,7 @@ async fn deleting_the_only_queued_edit_does_not_submit_the_restored_draft() {
 }
 
 #[tokio::test]
-async fn completed_turns_submit_queued_messages_fifo_and_preserve_the_draft() {
+async fn completed_turn_does_not_dispatch_the_retired_composer_queue() {
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
     shell.active_turn_id = Some("turn-current".to_string());
@@ -11090,44 +11106,17 @@ async fn completed_turns_submit_queued_messages_fifo_and_preserve_the_draft() {
             turn_completed_event(shell.thread_id, "turn-current", TurnStatus::Completed),
         )
         .await
-        .expect("completion should submit the first queued message");
+        .expect("completion should not submit a composer-local queued message");
     complete_backend_actions(&mut shell, &backend).await;
 
-    assert_eq!(shell.composer.text(), "ordinary draft");
-    assert_eq!(shell.composer.queued_count(), 1);
-    assert_eq!(shell.active_turn_id.as_deref(), Some("turn-submit"));
-
-    shell
-        .handle_app_server_event(
-            &mut backend,
-            turn_completed_event(shell.thread_id, "turn-submit", TurnStatus::Failed),
-        )
-        .await
-        .expect("failure should submit the next queued message");
-    complete_backend_actions(&mut shell, &backend).await;
-
-    let prompts = backend
-        .calls()
-        .into_iter()
-        .filter_map(|call| match call {
-            RecordedBackendCall::TurnStart { prompt, .. } => Some(prompt),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        prompts,
-        vec![
-            "first queued".to_string(),
-            "second queued updated".to_string(),
-        ]
-    );
-    assert_eq!(shell.composer.text(), "ordinary draft");
-    assert_eq!(shell.composer.queued_count(), 0);
-    assert_eq!(shell.active_turn_id.as_deref(), Some("turn-submit"));
+    assert_eq!(shell.composer.text(), "second queued updated");
+    assert_eq!(shell.composer.queued_count(), 2);
+    assert_eq!(shell.active_turn_id, None);
+    assert_eq!(backend.calls(), Vec::new());
 }
 
 #[tokio::test]
-async fn interrupted_turn_retains_queue_until_idle_enter_resumes_it() {
+async fn idle_enter_does_not_resume_the_retired_composer_queue() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
@@ -11143,7 +11132,7 @@ async fn interrupted_turn_retains_queue_until_idle_enter_resumes_it() {
             turn_completed_event(shell.thread_id, "turn-current", TurnStatus::Interrupted),
         )
         .await
-        .expect("interruption should retain queued messages");
+        .expect("interruption should leave the retired composer queue inert");
 
     assert_eq!(backend.calls(), Vec::new());
     assert_eq!(shell.composer.queued_count(), 2);
@@ -11156,68 +11145,12 @@ async fn interrupted_turn_retains_queue_until_idle_enter_resumes_it() {
             &mut backend,
         )
         .await
-        .expect("idle Enter should save the edit and resume the queue");
+        .expect("idle Enter should only finish the retired queue edit");
     complete_backend_actions(&mut shell, &backend).await;
     assert_eq!(shell.composer.queued_edit_position(), None);
-    assert_eq!(shell.composer.queued_count(), 1);
-    shell
-        .handle_app_server_event(
-            &mut backend,
-            turn_completed_event(shell.thread_id, "turn-submit", TurnStatus::Completed),
-        )
-        .await
-        .expect("completion should continue the queue");
-    complete_backend_actions(&mut shell, &backend).await;
-
-    let prompts = backend
-        .calls()
-        .into_iter()
-        .filter_map(|call| match call {
-            RecordedBackendCall::TurnStart { prompt, .. } => Some(prompt),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(
-        prompts,
-        vec!["first queued".to_string(), "edited second".to_string()]
-    );
-    assert_eq!(shell.composer.queued_count(), 0);
-}
-
-#[tokio::test]
-async fn failed_idle_queue_resume_reports_error_and_retains_message() {
-    let config = test_config().await;
-    let mut shell = ShellState::snapshot_fixture();
-    let mut backend = RecordingBackend::default();
-    shell.composer.clear();
-    shell.composer.set_text("queued");
-    assert!(shell.composer.queue_current_message());
-    let transcript_len = shell.transcript.len();
-    backend.fail_next_turn_start("turn start failed");
-
-    shell
-        .handle_key(
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-            &config,
-            &mut backend,
-        )
-        .await
-        .expect("failed queue resume should remain in the TUI");
-    complete_backend_actions(&mut shell, &backend).await;
-
-    assert_eq!(shell.composer.queued_count(), 1);
+    assert_eq!(shell.composer.queued_count(), 2);
     assert_eq!(shell.composer.text(), "");
-    assert_eq!(shell.active_turn_id, None);
-    assert_eq!(shell.status, "action failed");
-    assert_eq!(shell.transcript.len(), transcript_len + 1);
-    assert_eq!(
-        shell.transcript.back().map(|line| line.kind),
-        Some(TranscriptKind::Error)
-    );
-    assert_eq!(
-        shell.transcript.back().map(|line| line.text.as_str()),
-        Some("failed to submit turn: turn start failed")
-    );
+    assert_eq!(backend.calls(), Vec::new());
 }
 
 #[tokio::test]
@@ -16162,6 +16095,11 @@ enum RecordedBackendCall {
         effort: Option<ReasoningEffort>,
         collaboration_mode: Option<CollaborationMode>,
     },
+    QueueAdd {
+        thread_id: codex_protocol::ThreadId,
+        prompt: String,
+        client_user_message_id: String,
+    },
     Compact(codex_protocol::ThreadId),
     Interrupt {
         thread_id: codex_protocol::ThreadId,
@@ -16997,6 +16935,32 @@ impl backend::AppShellBackend for RecordingBackend {
     {
         let mut backend = self.clone();
         async move { backend.turn_start(params).await }
+    }
+
+    fn thread_queue_add_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+        input: Vec<codex_app_server_protocol::UserInput>,
+        client_user_message_id: String,
+    ) -> impl std::future::Future<
+        Output = color_eyre::Result<codex_app_server_protocol::ThreadQueueAddResponse>,
+    > + Send
+    + 'static {
+        let prompt = format_user_inputs(&input);
+        self.push(RecordedBackendCall::QueueAdd {
+            thread_id,
+            prompt,
+            client_user_message_id: client_user_message_id.clone(),
+        });
+        async move {
+            Ok(codex_app_server_protocol::ThreadQueueAddResponse {
+                queued_submission: codex_app_server_protocol::QueuedSubmission {
+                    id: "queued-submission".to_string(),
+                    input,
+                    client_user_message_id,
+                },
+            })
+        }
     }
 
     fn thread_compact_start_in_background(
