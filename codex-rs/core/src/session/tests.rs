@@ -36,6 +36,7 @@ use core_test_support::test_codex::local_selections;
 use codex_features::Feature;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
+use codex_history::CodexHarnessMetadata;
 use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider_info::ModelProviderInfo;
@@ -1974,6 +1975,42 @@ async fn record_inter_agent_communication_preserves_item_id_in_rollout_and_resum
         resumed_item.id().map(ResponseItemId::as_str),
         Some(live_item_id.as_str())
     );
+}
+
+#[tokio::test]
+async fn client_annotation_marks_only_developer_messages_when_enabled() {
+    let (session, _turn_context, _rx) = make_session_and_context_with_auth_and_config_and_rx(
+        CodexAuth::from_api_key("Test API Key"),
+        Vec::new(),
+        |config| {
+            let _ = config
+                .features
+                .enable(Feature::RetainClientDeveloperMessages);
+        },
+    )
+    .await;
+    let developer = session.annotate_client_response_item(ResponseItem::Message {
+        id: None,
+        role: "developer".to_string(),
+        content: Vec::new(),
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    });
+    let user = session.annotate_client_response_item(ResponseItem::Message {
+        id: None,
+        role: "user".to_string(),
+        content: Vec::new(),
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    });
+
+    assert_eq!(
+        developer.metadata,
+        Some(CodexHarnessMetadata {
+            client_authored: true,
+        })
+    );
+    assert_eq!(user.metadata, None);
 }
 
 #[tokio::test]

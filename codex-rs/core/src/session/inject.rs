@@ -6,6 +6,8 @@ use crate::codex_thread::TryStartTurnIfIdleRejectionReason;
 use crate::state::ActiveTurn;
 use crate::state::TurnState;
 use crate::tasks::RegularTask;
+use codex_features::Feature;
+use codex_history::CodexHarnessMetadata;
 use codex_history::ResponseItemEnvelope;
 use codex_protocol::config_types::ModeKind;
 use codex_protocol::models::ResponseItem;
@@ -146,6 +148,45 @@ impl Session {
         {
             *active_turn_guard = None;
         }
+    }
+
+    /// Preserves trusted client provenance while items wait for an active turn.
+    #[expect(
+        clippy::await_holding_invalid_type,
+        reason = "active turn checks and turn state updates must remain atomic"
+    )]
+    pub(crate) async fn inject_client_response_items(
+        &self,
+        items: Vec<ResponseItem>,
+        turn_context: &TurnContext,
+    ) {
+        let items = items
+            .into_iter()
+            .map(|item| self.annotate_client_response_item(item))
+            .collect::<Vec<_>>();
+        let mut active = self.active_turn.lock().await;
+        if let Some(active_turn) = active.as_mut() {
+            self.input_queue
+                .extend_pending_input_and_accept_mailbox_delivery_for_turn_state(
+                    active_turn.turn_state.as_ref(),
+                    items.into_iter().map(TurnInput::ResponseItem).collect(),
+                )
+                .await;
+            return;
+        }
+        drop(active);
+        self.record_annotated_conversation_items(turn_context, items)
+            .await;
+    }
+
+    pub(crate) fn annotate_client_response_item(&self, item: ResponseItem) -> ResponseItemEnvelope {
+        let metadata = (self.enabled(Feature::RetainClientDeveloperMessages)
+            && matches!(&item, ResponseItem::Message { role, .. } if role == "developer"))
+        .then_some(CodexHarnessMetadata {
+            client_authored: true,
+        });
+
+        ResponseItemEnvelope { item, metadata }
     }
 
     pub(crate) async fn record_annotated_conversation_items(

@@ -5,7 +5,6 @@ use crate::realtime_conversation::handle_start as handle_realtime_conversation_s
 use crate::realtime_conversation::handle_text as handle_realtime_conversation_text;
 use async_channel::Receiver;
 use codex_otel::set_parent_from_w3c_trace_context;
-use codex_history::ResponseItemEnvelope;
 use codex_protocol::protocol::Submission;
 use tracing::Instrument;
 use tracing::debug_span;
@@ -260,7 +259,7 @@ pub(super) async fn user_input_or_turn_inner(
             let mut task_input = additional_context_input
                 .into_iter()
                 .map(ResponseItem::from)
-                .map(ResponseItemEnvelope::new)
+                .map(|item| sess.annotate_client_response_item(item))
                 .map(TurnInput::ResponseItem)
                 .collect::<Vec<_>>();
             if !items.is_empty() {

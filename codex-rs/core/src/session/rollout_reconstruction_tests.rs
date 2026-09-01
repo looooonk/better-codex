@@ -3,14 +3,16 @@ use super::*;
 use super::tests::build_world_state_from_turn_context;
 use super::tests::make_session_and_context;
 use super::tests::raw_history_items;
+use codex_history::CodexHarnessMetadata;
+use codex_history::CompactedItem;
+use codex_history::InitialHistory;
+use codex_history::ResponseItemEnvelope;
+use codex_history::ResumedHistory;
 use codex_protocol::AgentPath;
 use codex_protocol::ThreadId;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
-use codex_history::CompactedItem;
-use codex_history::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
-use codex_history::ResumedHistory;
 use codex_protocol::protocol::SessionContextWindow;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
@@ -49,6 +51,53 @@ fn assistant_message(text: &str) -> ResponseItem {
         phase: None,
         internal_chat_message_metadata_passthrough: None,
     }
+}
+
+#[tokio::test]
+async fn client_developer_metadata_survives_persist_resume_and_compaction() {
+    let (session, turn_context) = make_session_and_context().await;
+    let envelope = ResponseItemEnvelope {
+        item: ResponseItem::Message {
+            id: None,
+            role: "developer".to_string(),
+            content: vec![ContentItem::InputText {
+                text: "client guidance".to_string(),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        },
+        metadata: Some(CodexHarnessMetadata {
+            client_authored: true,
+        }),
+    };
+    let persisted = serde_json::to_string(&RolloutItem::ResponseItem(envelope.clone()))
+        .expect("serialize response item");
+    let RolloutItem::ResponseItem(restored) =
+        serde_json::from_str::<RolloutItem>(&persisted).expect("restore response item")
+    else {
+        panic!("expected response item");
+    };
+    let compacted = CompactedItem {
+        message: "summary".to_string(),
+        replacement_history: Some(vec![restored]),
+        window_number: None,
+        first_window_id: None,
+        previous_window_id: None,
+        window_id: None,
+    };
+    let compacted = serde_json::from_str::<CompactedItem>(
+        &serde_json::to_string(&compacted).expect("serialize compacted item"),
+    )
+    .expect("restore compacted item");
+
+    let reconstructed = session
+        .reconstruct_history_from_rollout(
+            &turn_context,
+            &[RolloutItem::Compacted(compacted)],
+        )
+        .await;
+
+    assert_eq!(reconstructed.history, vec![envelope]);
 }
 
 fn inter_agent_assistant_message(text: &str) -> ResponseItem {

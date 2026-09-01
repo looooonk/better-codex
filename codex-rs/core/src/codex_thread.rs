@@ -517,7 +517,7 @@ impl CodexThread {
         }
         self.codex
             .session
-            .inject_no_new_turn(items, Some(turn_context.as_ref()))
+            .inject_client_response_items(items, turn_context.as_ref())
             .await;
         self.codex.session.flush_rollout().await?;
         Ok(())

@@ -4285,7 +4285,7 @@ impl Session {
         let mut pending_input = additional_context_input
             .into_iter()
             .map(ResponseItem::from)
-            .map(ResponseItemEnvelope::new)
+            .map(|item| self.annotate_client_response_item(item))
             .map(TurnInput::ResponseItem)
             .collect::<Vec<_>>();
         pending_input.push(TurnInput::UserInput {
