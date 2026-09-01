@@ -385,8 +385,8 @@ mod tests {
     use crate::tools::context::ToolInvocation;
     use crate::tools::registry::CoreToolRuntime;
     use crate::tools::registry::ToolExecutor;
-    use crate::tools::registry::ToolRegistry;
     use crate::tools::registry::ToolExposure;
+    use crate::tools::registry::ToolRegistry;
     use crate::tools::registry::override_tool_exposure;
     use crate::turn_diff_tracker::TurnDiffTracker;
     use codex_extension_api::ToolCallOutcome;

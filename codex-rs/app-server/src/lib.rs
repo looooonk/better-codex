@@ -117,13 +117,14 @@ mod request_serialization;
 mod server_request_error;
 mod skills_watcher;
 mod thread_state;
+mod thread_state_pending_user_input;
 mod thread_status;
 mod transport;
 
-pub use crate::error_code::INPUT_TOO_LARGE_ERROR_CODE;
-pub use crate::error_code::INVALID_PARAMS_ERROR_CODE;
 pub use crate::code_mode_host::AppServerCodeModeHostArgs;
 pub use crate::code_mode_host::CodeModeHostTransport;
+pub use crate::error_code::INPUT_TOO_LARGE_ERROR_CODE;
+pub use crate::error_code::INVALID_PARAMS_ERROR_CODE;
 pub use crate::transport::AppServerTransport;
 pub use crate::transport::RemoteControlStartupMode;
 pub use crate::transport::app_server_control_socket_path;

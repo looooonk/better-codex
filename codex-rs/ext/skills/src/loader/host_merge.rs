@@ -15,8 +15,8 @@ use tokio::sync::OnceCell;
 use tokio::sync::Semaphore;
 
 use crate::SkillLoadOutcome;
-use crate::host_service::RequestSkillRootSnapshots;
 use crate::host_cache::config_skill_root_cache_key;
+use crate::host_service::RequestSkillRootSnapshots;
 
 use super::HostSkillRoot;
 use super::MAX_CONCURRENT_ROOT_SCANS;

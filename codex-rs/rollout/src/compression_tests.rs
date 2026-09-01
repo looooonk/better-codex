@@ -5,11 +5,11 @@ use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 use std::time::SystemTime;
 
-use codex_protocol::ThreadId;
-use codex_protocol::protocol::EventMsg;
 use codex_history::InitialHistory;
 use codex_history::RolloutItem;
 use codex_history::RolloutLine;
+use codex_protocol::ThreadId;
+use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
@@ -122,11 +122,8 @@ async fn boundary_ordinals_use_decompressed_jsonl_offsets() -> anyhow::Result<()
     compress_now(rollout_path.as_path())?;
 
     assert_eq!(
-        rollout_ordinals_at_boundary(
-            rollout_path.as_path(),
-            u64::try_from(first.len() + 1)?,
-        )
-        .await?,
+        rollout_ordinals_at_boundary(rollout_path.as_path(), u64::try_from(first.len() + 1)?,)
+            .await?,
         (0, Some(1))
     );
     assert!(!rollout_path.exists());
@@ -664,6 +661,7 @@ fn write_rollout(path: &std::path::Path, thread_id: ThreadId, message: &str) -> 
         meta: SessionMeta {
             session_id: thread_id.into(),
             id: thread_id,
+            rollout_id: None,
             forked_from_id: None,
             parent_thread_id: None,
             timestamp: "2025-01-03T12:00:00Z".to_string(),

@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
+use super::GrpcStream;
+use crate::MAX_ACTIVE_CELLS;
+use crate::MAX_PENDING_DELEGATE_CALLS;
 use codex_code_mode_protocol::grpc as proto;
 use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
-use prost::Message;
 use futures::StreamExt;
+use prost::Message;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
 use tokio::sync::TryAcquireError;
@@ -11,9 +14,6 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
-use super::GrpcStream;
-use crate::MAX_ACTIVE_CELLS;
-use crate::MAX_PENDING_DELEGATE_CALLS;
 
 const MAX_BUFFERED_CONTROL_EVENTS: usize = MAX_PENDING_DELEGATE_CALLS * 2 + MAX_ACTIVE_CELLS;
 pub(super) const MAX_SESSION_EVENT_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES;
@@ -149,9 +149,8 @@ impl EventSender {
             ))
         })();
         let (event_permit, session_byte_permit, host_byte_permit) =
-            permits.map_err(|error| {
+            permits.inspect_err(|_error| {
                 self.closed.cancel();
-                error
             })?;
         self.enqueue(
             message,
@@ -185,7 +184,9 @@ impl EventSender {
     }
 }
 
-pub(super) fn event_stream(receiver: mpsc::Receiver<BufferedEvent>) -> GrpcStream<proto::SessionEvent> {
+pub(super) fn event_stream(
+    receiver: mpsc::Receiver<BufferedEvent>,
+) -> GrpcStream<proto::SessionEvent> {
     Box::pin(ReceiverStream::new(receiver).map(|event| Ok(event.message)))
 }
 
@@ -198,7 +199,9 @@ fn try_acquire(permits: &Arc<Semaphore>, count: u32) -> Result<OwnedSemaphorePer
         })
 }
 
-fn validate_event(event: proto::session_event::Event) -> Result<(proto::SessionEvent, u32), String> {
+fn validate_event(
+    event: proto::session_event::Event,
+) -> Result<(proto::SessionEvent, u32), String> {
     let message = proto::SessionEvent { event: Some(event) };
     let encoded_len = message.encoded_len();
     if encoded_len > MAX_APPLICATION_MESSAGE_BYTES {

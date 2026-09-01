@@ -227,8 +227,7 @@ async fn session_resource_limits_are_negotiated_when_requested() {
             Some(HostToClient::Response {
                 id,
                 result: WireResult::Err {
-                    message: "maximum heap size is not supported by the code-mode host"
-                        .to_string(),
+                    message: "maximum heap size is not supported by the code-mode host".to_string(),
                 },
             })
         );

@@ -351,7 +351,12 @@ pub(super) async fn ensure_listener_task_running(
                         .await
                         .note_terminal_event_translated(&event.msg);
                     thread_queue_service
-                        .observe_event(conversation.clone(), conversation_id, &event.msg)
+                        .observe_event(
+                            conversation.clone(),
+                            conversation_id,
+                            &event.id,
+                            &event.msg,
+                        )
                         .await;
                     if matches!(event.msg, EventMsg::ShutdownComplete)
                         && let Some(completion_tx) = thread_state
@@ -778,9 +783,12 @@ pub(super) async fn handle_pending_thread_resume_request(
     outgoing
         .replay_requests_to_connection_for_thread(connection_id, conversation_id)
         .await;
-    // App-server owns resume response and snapshot ordering, so wait until
-    // replay completes before letting extensions react to the idle thread.
-    conversation.emit_thread_idle_lifecycle_if_idle().await;
+    // Resume the listener before idle contributors submit work whose admission
+    // is acknowledged through that same listener.
+    let conversation = Arc::clone(conversation);
+    tokio::spawn(async move {
+        conversation.emit_thread_idle_lifecycle_if_idle().await;
+    });
 }
 
 pub(super) async fn send_thread_goal_snapshot_notification(

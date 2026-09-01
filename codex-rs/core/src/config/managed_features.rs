@@ -219,9 +219,7 @@ fn parse_feature_requirements(
             if feature == Feature::GuardianV2 {
                 push_feature_requirement_warning(
                     &mut startup_warnings,
-                    format!(
-                        "Ignoring unavailable `features` requirement `{key}` from {source}"
-                    ),
+                    format!("Ignoring unavailable `features` requirement `{key}` from {source}"),
                 );
                 continue;
             }

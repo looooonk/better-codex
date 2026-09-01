@@ -136,10 +136,7 @@ WHERE thread_id = ?
     let next_offset = sqlite_integer(next_offset, "rollout byte offset")?;
     if expected_offset != start_offset {
         if expected_offset >= next_offset {
-            transaction
-                .rollback()
-                .await
-                .map_err(thread_history_error)?;
+            transaction.rollback().await.map_err(thread_history_error)?;
             return Ok(());
         }
         return Err(ThreadStoreError::Internal {

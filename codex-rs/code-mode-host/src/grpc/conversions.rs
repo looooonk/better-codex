@@ -7,9 +7,9 @@ use codex_code_mode_protocol::RuntimeResponse;
 use codex_code_mode_protocol::ToolDefinition;
 use codex_code_mode_protocol::WaitOutcome;
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::parse_bounded_json;
 use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use codex_code_mode_protocol::grpc::MAX_CONTENT_ITEMS;
+use codex_code_mode_protocol::parse_bounded_json;
 use codex_protocol::ToolName;
 use prost::Message;
 use serde_json::Value as JsonValue;
@@ -51,22 +51,24 @@ pub(super) fn execute_request(request: proto::ExecuteRequest) -> Result<ExecuteR
             validation::MAX_TOOL_DEFINITIONS
         )));
     }
-    let metadata_bytes = request.enabled_tools.iter().try_fold(0usize, |total, tool| {
-        let tool_name_bytes = tool
-            .tool_name
-            .as_ref()
-            .map_or(0, |name| name.name.len() + name.namespace.as_ref().map_or(0, String::len));
-        [
-            tool.name.len(),
-            tool_name_bytes,
-            tool.description.len(),
-            tool.input_schema_json.as_ref().map_or(0, Vec::len),
-            tool.output_schema_json.as_ref().map_or(0, Vec::len),
-        ]
-        .into_iter()
-        .try_fold(total, usize::checked_add)
-        .ok_or_else(|| Status::invalid_argument("tool metadata byte count overflowed"))
-    })?;
+    let metadata_bytes = request
+        .enabled_tools
+        .iter()
+        .try_fold(0usize, |total, tool| {
+            let tool_name_bytes = tool.tool_name.as_ref().map_or(0, |name| {
+                name.name.len() + name.namespace.as_ref().map_or(0, String::len)
+            });
+            [
+                tool.name.len(),
+                tool_name_bytes,
+                tool.description.len(),
+                tool.input_schema_json.as_ref().map_or(0, Vec::len),
+                tool.output_schema_json.as_ref().map_or(0, Vec::len),
+            ]
+            .into_iter()
+            .try_fold(total, usize::checked_add)
+            .ok_or_else(|| Status::invalid_argument("tool metadata byte count overflowed"))
+        })?;
     if metadata_bytes > validation::MAX_TOOL_METADATA_BYTES {
         return Err(Status::invalid_argument(format!(
             "code-mode tool metadata exceeds {} bytes",

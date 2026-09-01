@@ -246,10 +246,7 @@ async fn modern_outbound_limit_is_checked_before_executor_write() {
 
 #[test]
 fn executor_input_required_requires_modern_peer_negotiation() {
-    for (negotiated, expect_modern) in [
-        ("2026-07-28", true),
-        ("2025-06-18", false),
-    ] {
+    for (negotiated, expect_modern) in [("2026-07-28", true), ("2025-06-18", false)] {
         let process = Arc::new(RetainedReadProcess {
             process_id: ProcessId::from(format!("mcp-stdio-{negotiated}")),
             response: retained_read_response(Vec::new(), /*next_seq*/ 0),

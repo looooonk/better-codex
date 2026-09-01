@@ -1,5 +1,5 @@
-use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use codex_code_mode_protocol::grpc::CAPABILITY_METADATA_KEY;
+use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use std::sync::Arc;
 use tonic::Request;
 use tonic::Status;

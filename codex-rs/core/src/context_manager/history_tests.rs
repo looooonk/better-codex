@@ -106,6 +106,7 @@ impl WorldStateSection for TestWorldStateSection {
             crate::context::world_state::PreviousSectionState::Known(true) => return None,
             crate::context::world_state::PreviousSectionState::Unknown => "unknown",
             crate::context::world_state::PreviousSectionState::Absent
+            | crate::context::world_state::PreviousSectionState::Stale
             | crate::context::world_state::PreviousSectionState::Known(false) => "test",
         };
         Some(Box::new(UserInstructions {

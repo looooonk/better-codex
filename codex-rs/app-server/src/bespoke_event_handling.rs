@@ -986,6 +986,19 @@ pub(crate) async fn apply_bespoke_event_handling(
                             &conversation_id.to_string(),
                             &event_turn_id,
                         );
+                        if let ServerNotification::ItemStarted(ItemStartedNotification {
+                            item: item @ ThreadItem::CommandExecution { id, .. },
+                            ..
+                        }) = &notification
+                        {
+                            thread_state
+                                .lock()
+                                .await
+                                .turn_summary
+                                .pending_command_execution_items
+                                .entry(id.clone())
+                                .or_insert_with(|| item.clone());
+                        }
                         outgoing.send_server_notification(notification).await;
                     }
                     Err(err) => {
@@ -1004,25 +1017,30 @@ pub(crate) async fn apply_bespoke_event_handling(
             }
         }
         EventMsg::ItemCompleted(event) => {
-            apply_canonical_item_completed_side_effects(
+            let should_emit = apply_canonical_item_completed_side_effects(
                 &thread_manager,
                 &thread_watch_manager,
                 &thread_state,
                 &event.item,
             )
             .await;
-            match codex_rollout::redacted_event_msg_for_diagnostics(EventMsg::ItemCompleted(event))
-            {
-                Ok(event) => {
-                    let notification = item_event_to_server_notification(
-                        event,
-                        &conversation_id.to_string(),
-                        &event_turn_id,
-                    );
-                    outgoing.send_server_notification(notification).await;
-                }
-                Err(err) => {
-                    warn!("failed to redact completed item diagnostic; suppressing event: {err}");
+            if should_emit {
+                match codex_rollout::redacted_event_msg_for_diagnostics(EventMsg::ItemCompleted(
+                    event,
+                )) {
+                    Ok(event) => {
+                        let notification = item_event_to_server_notification(
+                            event,
+                            &conversation_id.to_string(),
+                            &event_turn_id,
+                        );
+                        outgoing.send_server_notification(notification).await;
+                    }
+                    Err(err) => {
+                        warn!(
+                            "failed to redact completed item diagnostic; suppressing event: {err}"
+                        );
+                    }
                 }
             }
         }
@@ -1295,14 +1313,21 @@ async fn apply_canonical_item_completed_side_effects(
     thread_watch_manager: &ThreadWatchManager,
     thread_state: &Arc<Mutex<ThreadState>>,
     item: &CoreTurnItem,
-) {
+) -> bool {
     match item {
         CoreTurnItem::CommandExecution(item) => {
-            thread_state
-                .lock()
-                .await
+            let mut state = thread_state.lock().await;
+            state
                 .turn_summary
                 .command_execution_started
+                .remove(&item.id);
+            state
+                .turn_summary
+                .pending_command_execution_items
+                .remove(&item.id);
+            return !state
+                .turn_summary
+                .command_execution_completed_early
                 .remove(&item.id);
         }
         CoreTurnItem::SubAgentActivity(activity)
@@ -1322,6 +1347,7 @@ async fn apply_canonical_item_completed_side_effects(
         }
         _ => {}
     }
+    true
 }
 
 async fn remove_missing_thread_watch(
@@ -1348,30 +1374,37 @@ async fn start_command_execution_item(
     outgoing: &ThreadScopedOutgoingMessageSender,
     thread_state: &Arc<Mutex<ThreadState>>,
 ) -> bool {
+    let item = ThreadItem::CommandExecution {
+        id: item_id.clone(),
+        command,
+        cwd,
+        process_id: None,
+        source,
+        status: CommandExecutionStatus::InProgress,
+        command_actions,
+        aggregated_output: None,
+        exit_code: None,
+        duration_ms: None,
+    };
     let first_start = {
         let mut state = thread_state.lock().await;
-        state
+        let first_start = state
             .turn_summary
             .command_execution_started
-            .insert(item_id.clone())
+            .insert(item_id.clone());
+        state
+            .turn_summary
+            .pending_command_execution_items
+            .entry(item_id)
+            .or_insert_with(|| item.clone());
+        first_start
     };
     if first_start {
         let notification = ItemStartedNotification {
             thread_id: conversation_id.to_string(),
             turn_id,
             started_at_ms: now_unix_timestamp_ms(),
-            item: ThreadItem::CommandExecution {
-                id: item_id,
-                command,
-                cwd,
-                process_id: None,
-                source,
-                status: CommandExecutionStatus::InProgress,
-                command_actions,
-                aggregated_output: None,
-                exit_code: None,
-                duration_ms: None,
-            },
+            item,
         };
         outgoing
             .send_server_notification(ServerNotification::ItemStarted(notification))
@@ -1394,12 +1427,24 @@ async fn complete_command_execution_item(
     outgoing: &ThreadScopedOutgoingMessageSender,
     thread_state: &Arc<Mutex<ThreadState>>,
 ) {
-    let should_emit = thread_state
-        .lock()
-        .await
-        .turn_summary
-        .command_execution_started
-        .remove(&item_id);
+    let should_emit = {
+        let mut state = thread_state.lock().await;
+        state
+            .turn_summary
+            .pending_command_execution_items
+            .remove(&item_id);
+        let should_emit = state
+            .turn_summary
+            .command_execution_started
+            .remove(&item_id);
+        if should_emit {
+            state
+                .turn_summary
+                .command_execution_completed_early
+                .insert(item_id.clone());
+        }
+        should_emit
+    };
     if !should_emit {
         return;
     }
@@ -2040,39 +2085,74 @@ async fn on_command_execution_request_approval_response(
         }
     };
 
-    let suppress_subcommand_completion_item = {
+    let (suppress_subcommand_completion_item, pending_parent_item) = {
         // For regular shell/unified_exec approvals, approval_id is null.
         // For zsh-fork subcommand approvals, approval_id is present and
         // item_id points to the parent command item.
         if approval_id.is_some() {
             let state = thread_state.lock().await;
-            state
+            let suppress = state
                 .turn_summary
                 .command_execution_started
-                .contains(&item_id)
+                .contains(&item_id);
+            let pending_parent_item = completion_status
+                .is_some()
+                .then(|| {
+                    state
+                        .turn_summary
+                        .pending_command_execution_items
+                        .get(&item_id)
+                        .cloned()
+                })
+                .flatten();
+            (suppress, pending_parent_item)
         } else {
-            false
+            (false, None)
         }
     };
 
-    if let Some(status) = completion_status
-        && !suppress_subcommand_completion_item
-        && let Some(completion_item) = completion_item
-    {
-        complete_command_execution_item(
-            &conversation_id,
-            event_turn_id.clone(),
-            item_id.clone(),
-            completion_item.command,
-            completion_item.cwd,
-            /*process_id*/ None,
-            CommandExecutionSource::Agent,
-            completion_item.command_actions,
-            status,
-            &outgoing,
-            &thread_state,
-        )
-        .await;
+    if let Some(status) = completion_status {
+        if suppress_subcommand_completion_item {
+            if let Some(ThreadItem::CommandExecution {
+                command,
+                cwd,
+                process_id,
+                source,
+                command_actions,
+                ..
+            }) = pending_parent_item
+            {
+                complete_command_execution_item(
+                    &conversation_id,
+                    event_turn_id.clone(),
+                    item_id.clone(),
+                    command,
+                    cwd,
+                    process_id,
+                    source,
+                    command_actions,
+                    status,
+                    &outgoing,
+                    &thread_state,
+                )
+                .await;
+            }
+        } else if let Some(completion_item) = completion_item {
+            complete_command_execution_item(
+                &conversation_id,
+                event_turn_id.clone(),
+                item_id.clone(),
+                completion_item.command,
+                completion_item.cwd,
+                /*process_id*/ None,
+                CommandExecutionSource::Agent,
+                completion_item.command_actions,
+                status,
+                &outgoing,
+                &thread_state,
+            )
+            .await;
+        }
     }
 
     if let Err(err) = conversation
@@ -2117,6 +2197,8 @@ mod tests {
     use codex_app_server_protocol::TurnPlanStepStatus;
     use codex_login::CodexAuth;
     use codex_protocol::AgentPath;
+    use codex_protocol::items::CommandExecutionItem as CoreCommandExecutionItem;
+    use codex_protocol::items::CommandExecutionStatus as CoreCommandExecutionStatus;
     use codex_protocol::items::DynamicToolCallItem;
     use codex_protocol::items::DynamicToolCallStatus as CoreDynamicToolCallStatus;
     use codex_protocol::items::SubAgentActivityItem;
@@ -2124,6 +2206,7 @@ mod tests {
     use codex_protocol::models::FileSystemPermissions as CoreFileSystemPermissions;
     use codex_protocol::models::NetworkPermissions as CoreNetworkPermissions;
     use codex_protocol::models::PermissionProfile;
+    use codex_protocol::parse_command::ParsedCommand;
     use codex_protocol::permissions::FileSystemAccessMode;
     use codex_protocol::permissions::FileSystemPath;
     use codex_protocol::permissions::FileSystemSandboxEntry;
@@ -2134,28 +2217,31 @@ mod tests {
     use codex_protocol::protocol::AskForApproval;
     use codex_protocol::protocol::CreditsSnapshot;
     use codex_protocol::protocol::EventMsg;
+    use codex_protocol::protocol::ExecCommandSource;
     use codex_protocol::protocol::GuardianAssessmentEvent;
     use codex_protocol::protocol::GuardianAssessmentStatus;
     use codex_protocol::protocol::ItemCompletedEvent;
     use codex_protocol::protocol::ItemStartedEvent;
     use codex_protocol::protocol::RateLimitSnapshot;
     use codex_protocol::protocol::RateLimitWindow;
-    use codex_rollout::RolloutItem;
     use codex_protocol::protocol::SessionSource;
     use codex_protocol::protocol::TokenUsage;
     use codex_protocol::protocol::TokenUsageInfo;
     use codex_protocol::protocol::UserMessageEvent;
+    use codex_rollout::RolloutItem;
     use codex_thread_store::StoredThread;
     use codex_thread_store::StoredThreadHistory;
     use codex_utils_absolute_path::AbsolutePathBuf;
     use codex_utils_absolute_path::test_support::PathBufExt;
     use codex_utils_absolute_path::test_support::test_path_buf;
+    use codex_utils_path_uri::PathUri;
     use core_test_support::load_default_config_for_test;
     use pretty_assertions::assert_eq;
     use serde_json::json;
     use tempfile::TempDir;
     use tokio::sync::Mutex;
     use tokio::sync::mpsc;
+    use tokio::sync::oneshot;
 
     fn new_thread_state() -> Arc<Mutex<ThreadState>> {
         Arc::new(Mutex::new(ThreadState::default()))
@@ -2651,6 +2737,185 @@ mod tests {
         assert!(
             rx.try_recv().is_err(),
             "completion should not emit after the pending item is cleared"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn canonical_parent_start_nested_decline_completes_once_without_parent_approval()
+    -> Result<()> {
+        let codex_home = TempDir::new()?;
+        let config = load_default_config_for_test(&codex_home).await;
+        let thread_manager = Arc::new(
+            codex_core::test_support::thread_manager_with_models_provider_and_home(
+                CodexAuth::create_dummy_chatgpt_auth_for_testing(),
+                config.model_provider.clone(),
+                config.codex_home.to_path_buf(),
+                Arc::new(codex_exec_server::EnvironmentManager::default_for_tests()),
+            ),
+        );
+        let codex_core::NewThread {
+            thread_id: conversation_id,
+            thread: conversation,
+            ..
+        } = thread_manager.start_thread(config).await?;
+        let (tx, mut rx) = mpsc::channel(CHANNEL_CAPACITY);
+        let outgoing = Arc::new(OutgoingMessageSender::new(
+            tx,
+            codex_analytics::AnalyticsEventsClient::disabled(),
+        ));
+        let outgoing = ThreadScopedOutgoingMessageSender::new(
+            outgoing,
+            vec![ConnectionId(1)],
+            conversation_id,
+        );
+        let thread_state = new_thread_state();
+        let thread_watch_manager = ThreadWatchManager::new();
+        let parent_item = CoreCommandExecutionItem {
+            id: "parent-command".to_string(),
+            process_id: Some("process-1".to_string()),
+            command: vec![
+                "/bin/zsh".to_string(),
+                "-lc".to_string(),
+                "/bin/rm /tmp/first".to_string(),
+            ],
+            cwd: PathUri::parse("file:///tmp")?,
+            parsed_cmd: vec![ParsedCommand::Unknown {
+                cmd: "/bin/rm /tmp/first".to_string(),
+            }],
+            source: ExecCommandSource::Agent,
+            interaction_input: None,
+            status: CoreCommandExecutionStatus::InProgress,
+            stdout: None,
+            stderr: None,
+            aggregated_output: None,
+            exit_code: None,
+            duration: None,
+            formatted_output: None,
+        };
+
+        apply_bespoke_event_handling(
+            Event {
+                id: "turn-1".to_string(),
+                msg: EventMsg::ItemStarted(ItemStartedEvent {
+                    thread_id: conversation_id,
+                    turn_id: "turn-1".to_string(),
+                    item: CoreTurnItem::CommandExecution(parent_item.clone()),
+                    started_at_ms: 42,
+                }),
+            },
+            conversation_id,
+            conversation.clone(),
+            thread_manager.clone(),
+            outgoing.clone(),
+            thread_state.clone(),
+            thread_watch_manager.clone(),
+            Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
+            "test-provider".to_string(),
+        )
+        .await;
+
+        let started = recv_broadcast_message(&mut rx).await?;
+        let OutgoingMessage::AppServerNotification(ServerNotification::ItemStarted(started)) =
+            started
+        else {
+            bail!("unexpected message: {started:?}");
+        };
+        let pending_parent = thread_state
+            .lock()
+            .await
+            .turn_summary
+            .pending_command_execution_items
+            .get("parent-command")
+            .cloned()
+            .expect("canonical parent start should be retained while running");
+        assert_eq!(started.item, pending_parent);
+
+        let (response_tx, response_rx) = oneshot::channel();
+        response_tx
+            .send(Ok(serde_json::to_value(
+                CommandExecutionRequestApprovalResponse {
+                    decision: CommandExecutionApprovalDecision::Decline,
+                },
+            )?))
+            .expect("approval response receiver should remain open");
+        let permission_guard = thread_watch_manager
+            .note_permission_requested(&conversation_id.to_string())
+            .await;
+        on_command_execution_request_approval_response(
+            "turn-1".to_string(),
+            conversation_id,
+            Some("nested-approval".to_string()),
+            "parent-command".to_string(),
+            None,
+            RequestId::Integer(1),
+            response_rx,
+            conversation.clone(),
+            outgoing.clone(),
+            thread_state.clone(),
+            permission_guard,
+        )
+        .await;
+
+        let completed = recv_broadcast_message(&mut rx).await?;
+        let OutgoingMessage::AppServerNotification(ServerNotification::ItemCompleted(completed)) =
+            completed
+        else {
+            bail!("unexpected message: {completed:?}");
+        };
+        let ThreadItem::CommandExecution {
+            id,
+            command,
+            cwd,
+            process_id,
+            source,
+            command_actions,
+            ..
+        } = pending_parent
+        else {
+            bail!("canonical parent start should map to a command execution item");
+        };
+        assert_eq!(
+            completed.item,
+            ThreadItem::CommandExecution {
+                id,
+                command,
+                cwd,
+                process_id,
+                source,
+                status: CommandExecutionStatus::Declined,
+                command_actions,
+                aggregated_output: None,
+                exit_code: None,
+                duration_ms: None,
+            }
+        );
+
+        let mut canonical_completion = parent_item;
+        canonical_completion.status = CoreCommandExecutionStatus::Declined;
+        apply_bespoke_event_handling(
+            Event {
+                id: "turn-1".to_string(),
+                msg: EventMsg::ItemCompleted(ItemCompletedEvent {
+                    thread_id: conversation_id,
+                    turn_id: "turn-1".to_string(),
+                    item: CoreTurnItem::CommandExecution(canonical_completion),
+                    completed_at_ms: 84,
+                }),
+            },
+            conversation_id,
+            conversation,
+            thread_manager,
+            outgoing,
+            thread_state,
+            thread_watch_manager,
+            Arc::new(tokio::sync::Semaphore::new(/*permits*/ 1)),
+            "test-provider".to_string(),
+        )
+        .await;
+        assert!(
+            rx.try_recv().is_err(),
+            "canonical completion should be deduplicated after nested decline"
         );
         Ok(())
     }

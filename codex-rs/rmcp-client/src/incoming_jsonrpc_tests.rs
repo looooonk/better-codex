@@ -54,7 +54,10 @@ fn input_required_discriminator_wins_over_tool_result_metadata() {
         Some(json!({"trace": "round-one"}))
     );
     assert_eq!(result.request_state.as_deref(), Some("opaque"));
-    assert_eq!(result.input_requests.map(|requests| requests.len()), Some(1));
+    assert_eq!(
+        result.input_requests.map(|requests| requests.len()),
+        Some(1)
+    );
 }
 
 #[test]

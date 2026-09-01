@@ -77,10 +77,9 @@ impl CodeModeSessionProvider for InProcessCodeModeSessionProvider {
         limits: CodeModeSessionCellExecutionLimits,
     ) -> CodeModeSessionProviderFuture<'a> {
         Box::pin(async move {
-            let session: Arc<dyn CodeModeSession> =
-                Arc::new(InProcessCodeModeSession::with_delegate_and_limits(
-                    delegate, limits,
-                ));
+            let session: Arc<dyn CodeModeSession> = Arc::new(
+                InProcessCodeModeSession::with_delegate_and_limits(delegate, limits),
+            );
             Ok(session)
         })
     }

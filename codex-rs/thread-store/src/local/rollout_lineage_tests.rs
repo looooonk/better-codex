@@ -12,9 +12,9 @@ use codex_rollout::RolloutLine;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 
-use super::RolloutLineageSegment;
 use super::super::LocalThreadStore;
 use super::super::test_support::test_config;
+use super::RolloutLineageSegment;
 
 #[tokio::test]
 async fn resolves_replacement_lineage_for_one_logical_thread() {
@@ -31,7 +31,11 @@ async fn resolves_replacement_lineage_for_one_logical_thread() {
         /*history_base*/ None,
         /*next_ordinal*/ 6,
     );
-    let root_end = history_position(root_path.as_path(), root_id, /*end_ordinal_exclusive*/ 4);
+    let root_end = history_position(
+        root_path.as_path(),
+        root_id,
+        /*end_ordinal_exclusive*/ 4,
+    );
     let middle_path = write_rollout(
         home.path(),
         thread_id,
@@ -166,11 +170,7 @@ async fn rejects_cutoffs_inside_records_and_with_mismatched_ordinals() {
 
     for (end_ordinal_exclusive, offset_adjustment, detail) in [
         (2, -1i64, "rollout boundary is inside a JSONL record"),
-        (
-            3,
-            0,
-            "cutoff byte offset disagrees with rollout ordinals",
-        ),
+        (3, 0, "cutoff byte offset disagrees with rollout ordinals"),
     ] {
         let thread_id = ThreadId::new();
         let root_path = write_rollout(
@@ -230,7 +230,89 @@ async fn rejects_ancestor_rollouts_owned_by_another_logical_thread() {
     );
     seed_selected_rollout(&store, thread_id, head_path).await;
 
-    assert_invalid_lineage(&store, thread_id, "source rollout belongs to another thread").await;
+    assert_invalid_lineage(
+        &store,
+        thread_id,
+        "source rollout belongs to another thread",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn rejects_canonical_ancestor_with_mismatched_metadata_rollout_id() {
+    let home = TempDir::new().expect("temp dir");
+    let store = test_store(home.path()).await;
+    let thread_id = ThreadId::new();
+    let ancestor_id = RolloutId::new();
+    let ancestor_path = write_rollout(
+        home.path(),
+        thread_id,
+        ancestor_id,
+        /*history_base*/ None,
+        /*next_ordinal*/ 3,
+    );
+    set_rollout_id(ancestor_path.as_path(), RolloutId::new());
+    let head_path = write_rollout(
+        home.path(),
+        thread_id,
+        RolloutId::new(),
+        Some(history_position(
+            ancestor_path.as_path(),
+            ancestor_id,
+            /*end_ordinal_exclusive*/ 2,
+        )),
+        /*next_ordinal*/ 4,
+    );
+    seed_selected_rollout(&store, thread_id, head_path).await;
+
+    assert_invalid_lineage(
+        &store,
+        thread_id,
+        "source rollout identity disagrees with requested rollout",
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn rejects_revision_ancestor_with_mismatched_metadata_rollout_id() {
+    let home = TempDir::new().expect("temp dir");
+    let store = test_store(home.path()).await;
+    let thread_id = ThreadId::new();
+    let ancestor_id = RolloutId::new();
+    let source_path = write_rollout(
+        home.path(),
+        thread_id,
+        ancestor_id,
+        /*history_base*/ None,
+        /*next_ordinal*/ 3,
+    );
+    let revision_dir = home
+        .path()
+        .join(codex_rollout::ROLLOUT_REVISIONS_SUBDIR)
+        .join(thread_id.to_string());
+    fs::create_dir_all(revision_dir.as_path()).expect("create revision directory");
+    let ancestor_path = revision_dir.join(format!("{ancestor_id}.jsonl"));
+    fs::rename(source_path, ancestor_path.as_path()).expect("move ancestor to revisions");
+    set_rollout_id(ancestor_path.as_path(), RolloutId::new());
+    let head_path = write_rollout(
+        home.path(),
+        thread_id,
+        RolloutId::new(),
+        Some(history_position(
+            ancestor_path.as_path(),
+            ancestor_id,
+            /*end_ordinal_exclusive*/ 2,
+        )),
+        /*next_ordinal*/ 4,
+    );
+    seed_selected_rollout(&store, thread_id, head_path).await;
+
+    assert_invalid_lineage(
+        &store,
+        thread_id,
+        "source rollout identity disagrees with requested rollout",
+    )
+    .await;
 }
 
 async fn assert_invalid_lineage(store: &LocalThreadStore, thread_id: ThreadId, detail: &str) {
@@ -411,4 +493,19 @@ fn set_history_base_and_ordinal(path: &Path, history_base: HistoryPosition, ordi
     }
     updated.push('\n');
     fs::write(path, updated).expect("write history base");
+}
+
+fn set_rollout_id(path: &Path, rollout_id: RolloutId) {
+    let contents = fs::read_to_string(path).expect("read rollout");
+    let mut lines = contents.lines();
+    let mut head: serde_json::Value =
+        serde_json::from_str(lines.next().expect("session metadata")).expect("parse metadata");
+    head["payload"]["rollout_id"] = serde_json::json!(rollout_id);
+    let mut updated = serde_json::to_string(&head).expect("serialize metadata");
+    for line in lines {
+        updated.push('\n');
+        updated.push_str(line);
+    }
+    updated.push('\n');
+    fs::write(path, updated).expect("write rollout id");
 }

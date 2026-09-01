@@ -9,6 +9,9 @@ pub(crate) static GOALS_MIGRATOR: Migrator = sqlx::migrate!("./goals_migrations"
 pub(crate) static MEMORIES_MIGRATOR: Migrator = sqlx::migrate!("./memory_migrations");
 pub(crate) static THREAD_HISTORY_MIGRATOR: Migrator = sqlx::migrate!("./thread_history_migrations");
 
+const LEGACY_BETTER_MIGRATION_VERSIONS: [(i64, i64); 3] =
+    [(49, 10_001), (50, 10_002), (51, 10_003)];
+
 /// Allow the runtime to open a database containing compatible migration
 /// versions that are not embedded in this binary.
 ///
@@ -88,6 +91,67 @@ WHERE version = ?
     .bind(recency_migration.version)
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+pub(crate) async fn repair_legacy_better_migration_versions(
+    pool: &SqlitePool,
+    migrator: &Migrator,
+) -> anyhow::Result<()> {
+    let migrations_table_exists = sqlx::query_scalar::<_, i64>(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = '_sqlx_migrations'",
+    )
+    .fetch_optional(pool)
+    .await?
+    .is_some();
+    if !migrations_table_exists {
+        return Ok(());
+    }
+
+    let mut transaction = pool.begin().await?;
+    for (legacy_version, reserved_version) in LEGACY_BETTER_MIGRATION_VERSIONS {
+        let Some(reserved_migration) = migrator
+            .migrations
+            .iter()
+            .find(|migration| migration.version == reserved_version)
+        else {
+            continue;
+        };
+        let legacy_checksum = sqlx::query_scalar::<_, Vec<u8>>(
+            "SELECT checksum FROM _sqlx_migrations WHERE version = ? AND success = 1",
+        )
+        .bind(legacy_version)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if legacy_checksum.as_deref() != Some(reserved_migration.checksum.as_ref()) {
+            continue;
+        }
+
+        let reserved_checksum = sqlx::query_scalar::<_, Vec<u8>>(
+            "SELECT checksum FROM _sqlx_migrations WHERE version = ? AND success = 1",
+        )
+        .bind(reserved_version)
+        .fetch_optional(&mut *transaction)
+        .await?;
+        if reserved_checksum.as_deref() == Some(reserved_migration.checksum.as_ref()) {
+            sqlx::query("DELETE FROM _sqlx_migrations WHERE version = ? AND checksum = ?")
+                .bind(legacy_version)
+                .bind(reserved_migration.checksum.as_ref())
+                .execute(&mut *transaction)
+                .await?;
+        } else if reserved_checksum.is_none() {
+            sqlx::query(
+                "UPDATE _sqlx_migrations SET version = ?, description = ? WHERE version = ? AND checksum = ?",
+            )
+            .bind(reserved_version)
+            .bind(reserved_migration.description.as_ref())
+            .bind(legacy_version)
+            .bind(reserved_migration.checksum.as_ref())
+            .execute(&mut *transaction)
+            .await?;
+        }
+    }
+    transaction.commit().await?;
     Ok(())
 }
 

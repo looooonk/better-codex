@@ -289,8 +289,8 @@ pub(crate) async fn handle_mcp_tool_call(
         let decision = resolution.decision;
         let result = match decision {
             decision @ (McpToolApprovalDecision::Accept
-                | McpToolApprovalDecision::AcceptForSession
-                | McpToolApprovalDecision::AcceptAndRemember) => {
+            | McpToolApprovalDecision::AcceptForSession
+            | McpToolApprovalDecision::AcceptAndRemember) => {
                 let Some(approval_route) = approval_route else {
                     let result = notify_mcp_tool_call_skip(
                         sess.as_ref(),
@@ -308,19 +308,12 @@ pub(crate) async fn handle_mcp_tool_call(
                             .unwrap_or_else(|| JsonValue::Object(serde_json::Map::new())),
                     };
                 };
-                let session_approval_key = session_mcp_tool_approval_key(
-                    &invocation,
-                    metadata.as_ref(),
-                    approval_route,
-                );
+                let session_approval_key =
+                    session_mcp_tool_approval_key(&invocation, metadata.as_ref(), approval_route);
                 let persistent_approval_key = if manager.is_selected_plugin_mcp_server(&server) {
                     None
                 } else {
-                    persistent_mcp_tool_approval_key(
-                        &invocation,
-                        metadata.as_ref(),
-                        approval_route,
-                    )
+                    persistent_mcp_tool_approval_key(&invocation, metadata.as_ref(), approval_route)
                 };
                 return handle_approved_mcp_tool_call(
                     sess.as_ref(),
@@ -680,22 +673,18 @@ async fn execute_mcp_tool_call(
     let result = match binding {
         Some(binding) => {
             binding
-                .call_tool_with_preparation(
-                    &invocation.server,
-                    &invocation.tool,
-                    || async move {
-                        apply_mcp_tool_approval_application(
-                            sess,
-                            turn_context,
-                            manager,
-                            invocation,
-                            metadata,
-                            approval_application,
-                        )
-                        .await?;
-                        Ok((rewritten_arguments, request_meta))
-                    },
-                )
+                .call_tool_with_preparation(&invocation.server, &invocation.tool, || async move {
+                    apply_mcp_tool_approval_application(
+                        sess,
+                        turn_context,
+                        manager,
+                        invocation,
+                        metadata,
+                        approval_application,
+                    )
+                    .await?;
+                    Ok((rewritten_arguments, request_meta))
+                })
                 .await
         }
         None => {
@@ -1384,8 +1373,7 @@ async fn maybe_request_mcp_tool_approval(
         return None;
     }
 
-    let session_approval_key =
-        session_mcp_tool_approval_key(invocation, metadata, approval_route);
+    let session_approval_key = session_mcp_tool_approval_key(invocation, metadata, approval_route);
     let persistent_approval_key = if manager.is_selected_plugin_mcp_server(&invocation.server) {
         None
     } else {
@@ -1427,10 +1415,7 @@ async fn maybe_request_mcp_tool_approval(
         .features
         .enabled(Feature::ToolCallMcpElicitation);
 
-    if routes_approval_to_guardian_with_reviewer(
-        turn_context,
-        approval_route.approvals_reviewer,
-    ) {
+    if routes_approval_to_guardian_with_reviewer(turn_context, approval_route.approvals_reviewer) {
         let review_id = new_guardian_review_id();
         let decision = review_approval_request(
             sess,
@@ -1501,8 +1486,7 @@ async fn maybe_request_mcp_tool_approval(
             .response,
             &question_id,
         );
-        let decision =
-            normalize_approval_decision_for_mode(decision, approval_route.approval_mode);
+        let decision = normalize_approval_decision_for_mode(decision, approval_route.approval_mode);
         return routed(decision);
     }
 
@@ -1603,9 +1587,11 @@ async fn mcp_tool_approval_decision_from_guardian(
         | ReviewDecision::ApprovedExecpolicyAmendment { .. }
         | ReviewDecision::NetworkPolicyAmendment { .. } => McpToolApprovalDecision::Accept,
         ReviewDecision::ApprovedForSession => McpToolApprovalDecision::AcceptForSession,
-        ReviewDecision::Denied { .. } => McpToolApprovalDecision::Decline {
-            message: Some(guardian_rejection_message(sess, review_id).await),
-        },
+        ReviewDecision::Denied | ReviewDecision::DeniedWithReason { .. } => {
+            McpToolApprovalDecision::Decline {
+                message: Some(guardian_rejection_message(sess, review_id).await),
+            }
+        }
         ReviewDecision::TimedOut => McpToolApprovalDecision::Decline {
             message: Some(guardian_timeout_message()),
         },
@@ -2143,12 +2129,7 @@ async fn apply_mcp_tool_approval_application(
         persistent_approval_key,
     } = application;
     if !approval_route
-        .is_current(
-            turn_context,
-            manager,
-            &invocation.server,
-            metadata,
-        )
+        .is_current(turn_context, manager, &invocation.server, metadata)
         .await
     {
         anyhow::bail!("MCP approval route changed before the tool call could run");
@@ -2162,12 +2143,7 @@ async fn apply_mcp_tool_approval_application(
     )
     .await;
     if !approval_route
-        .is_current(
-            turn_context,
-            manager,
-            &invocation.server,
-            metadata,
-        )
+        .is_current(turn_context, manager, &invocation.server, metadata)
         .await
     {
         anyhow::bail!("MCP approval route changed while authorizing the tool call");

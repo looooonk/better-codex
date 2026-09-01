@@ -11,9 +11,9 @@ use crate::tools::sandboxing::PermissionRequestPayload;
 use codex_protocol::approvals::ExecPolicyAmendment;
 use codex_protocol::approvals::GuardianCommandSource;
 use codex_protocol::models::AdditionalPermissionProfile;
-use codex_protocol::request_permissions::RequestPermissionProfile;
-use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::protocol::FileChange;
+use codex_protocol::protocol::TurnEnvironmentSelection;
+use codex_protocol::request_permissions::RequestPermissionProfile;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use std::collections::HashMap;
@@ -183,9 +183,7 @@ impl ApprovalAction {
                 ..
             } => PermissionRequestPayload::bash(hook_command.clone(), justification.clone()),
             #[cfg(unix)]
-            Self::Execve {
-                program, argv, ..
-            } => PermissionRequestPayload::bash(
+            Self::Execve { program, argv, .. } => PermissionRequestPayload::bash(
                 codex_shell_command::parse_command::shlex_join(
                     &std::iter::once(program.clone())
                         .chain(argv.iter().cloned())

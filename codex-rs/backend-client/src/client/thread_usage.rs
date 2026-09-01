@@ -81,8 +81,9 @@ impl Client {
                 body: String::from_utf8_lossy(&body).into_owned(),
             });
         }
-        let body = String::from_utf8(body)
-            .map_err(|error| RequestError::from(anyhow!("thread usage response is not UTF-8: {error}")))?;
+        let body = String::from_utf8(body).map_err(|error| {
+            RequestError::from(anyhow!("thread usage response is not UTF-8: {error}"))
+        })?;
         let response = self
             .decode_json::<ThreadUsageQueryResponse>(&url, &content_type, &body)
             .map_err(RequestError::from)?;
@@ -150,9 +151,7 @@ fn validate_usage(usage: &ThreadUsage) -> Result<(), RequestError> {
     Ok(())
 }
 
-async fn read_bounded_body(
-    mut response: reqwest::Response,
-) -> Result<Vec<u8>, RequestError> {
+async fn read_bounded_body(mut response: reqwest::Response) -> Result<Vec<u8>, RequestError> {
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(anyhow::Error::from)? {
         if body.len().saturating_add(chunk.len()) > MAX_THREAD_USAGE_RESPONSE_BYTES {

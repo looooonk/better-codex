@@ -10,6 +10,7 @@ mod fs;
 pub(crate) use agent_history::AgentHistorySnapshot;
 pub(crate) use agent_history::AgentHistoryTask;
 pub(crate) use agent_history::AgentHistoryUpdate;
+pub(crate) use agent_history::spawn_resumed_agent_history;
 
 use crate::legacy_core::config::Config;
 use crate::permission_compat::legacy_compatible_permission_profile;

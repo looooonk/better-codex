@@ -178,10 +178,12 @@ fn host_marketplace_aliases_use_shared_or_version_roots() {
     );
 
     let single = build_catalog_alias_plan(&[&first]).expect("single host alias should build");
-    let multiple =
-        build_catalog_alias_plan(&[&first, &second]).expect("host aliases should build");
+    let multiple = build_catalog_alias_plan(&[&first, &second]).expect("host aliases should build");
 
-    assert_eq!(vec![format!("- `h0` = `{marketplace}`")], single.root_lines());
+    assert_eq!(
+        vec![format!("- `h0` = `{marketplace}`")],
+        single.root_lines()
+    );
     assert_eq!(
         vec![format!("- `h0` = `{version_root}`")],
         multiple.root_lines()

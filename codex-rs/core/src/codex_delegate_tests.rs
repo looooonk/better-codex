@@ -64,8 +64,7 @@ impl codex_extension_api::ApprovalReviewContributor for AllowingDelegatedAuthori
             codex_extension_api::ApprovalReviewResult::Allow(
                 codex_extension_api::ApprovalReviewOutcome {
                     risk_level: codex_protocol::protocol::GuardianRiskLevel::Low,
-                    user_authorization:
-                        codex_protocol::protocol::GuardianUserAuthorization::High,
+                    user_authorization: codex_protocol::protocol::GuardianUserAuthorization::High,
                     rationale: "allowed".to_string(),
                 },
             ),
@@ -444,7 +443,11 @@ async fn delegated_shell_and_patch_use_the_exact_v2_actions() {
     )
     .await;
     assert_eq!(
-        submissions.recv().await.expect("shell approval submission").op,
+        submissions
+            .recv()
+            .await
+            .expect("shell approval submission")
+            .op,
         Op::ExecApproval {
             id: "child-shell-call".to_string(),
             turn_id: Some("child-turn".to_string()),
@@ -492,7 +495,11 @@ async fn delegated_shell_and_patch_use_the_exact_v2_actions() {
     )
     .await;
     assert_eq!(
-        submissions.recv().await.expect("patch approval submission").op,
+        submissions
+            .recv()
+            .await
+            .expect("patch approval submission")
+            .op,
         Op::PatchApproval {
             id: "child-patch-call".to_string(),
             decision: ReviewDecision::Approved,
@@ -589,7 +596,11 @@ async fn delegated_execve_attempts_keep_unique_approval_ids() {
         )
         .await;
         assert_eq!(
-            submissions.recv().await.expect("execve approval submission").op,
+            submissions
+                .recv()
+                .await
+                .expect("execve approval submission")
+                .op,
             Op::ExecApproval {
                 id: approval_id.to_string(),
                 turn_id: Some("child-turn".to_string()),

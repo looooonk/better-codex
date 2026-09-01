@@ -13,8 +13,8 @@ use crate::loader::load_and_merge_host_skill_roots;
 
 #[cfg(unix)]
 #[tokio::test]
-async fn catalog_preserves_symlinked_skill_discovery_path(
-) -> Result<(), Box<dyn std::error::Error>> {
+async fn catalog_preserves_symlinked_skill_discovery_path() -> Result<(), Box<dyn std::error::Error>>
+{
     let root = tempfile::tempdir()?;
     let source = tempfile::tempdir()?;
     let source_skill_dir = source.path().join("linked-skill");

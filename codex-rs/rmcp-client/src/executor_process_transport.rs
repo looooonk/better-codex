@@ -258,9 +258,7 @@ impl Transport<RoleClient> for ExecutorProcessTransport {
             // rmcp hands us a structured JSON-RPC message. Stdio transport on
             // the wire is JSON plus one newline delimiter.
             let mut bytes = to_vec(&item).map_err(io::Error::other)?;
-            if protocol_state.enforce_modern_bounds()
-                && bytes.len() > MAX_MCP_STDIO_LINE_BYTES
-            {
+            if protocol_state.enforce_modern_bounds() && bytes.len() > MAX_MCP_STDIO_LINE_BYTES {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("MCP stdio message exceeds {MAX_MCP_STDIO_LINE_BYTES} bytes"),

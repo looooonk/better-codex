@@ -38,7 +38,7 @@ expression: "render_shell(&shell, area)"
 │◆ QUEUED  2                                     ││
 │   1  first queued follow-up                    ││
 │   2  second queued follow-up                   ││
-│Click a message to edit   Alt+↑↓ navigate       ││
+│Click to edit   Alt+↑↓ navigate   Shift+Alt+↑↓ …││
 ╰────────────────────────────────────────────────╯│
 ╭────────────────────────────────────────────────╮│
 │◆ MESSAGE  ● RUNNING  1:1                       ││

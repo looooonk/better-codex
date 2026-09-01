@@ -219,9 +219,8 @@ impl ToolOrchestrator {
                         source: tool_ctx.source.clone(),
                         cancellation_token: tool_ctx.cancellation_token.clone(),
                     };
-                    approval_grant = Some(
-                        request_approval(&tool_ctx.session, action, approval_ctx).await?,
-                    );
+                    approval_grant =
+                        Some(request_approval(&tool_ctx.session, action, approval_ctx).await?);
                     already_approved = true;
                 } else {
                     otel.tool_decision(
@@ -253,9 +252,8 @@ impl ToolOrchestrator {
                     source: tool_ctx.source.clone(),
                     cancellation_token: tool_ctx.cancellation_token.clone(),
                 };
-                approval_grant = Some(
-                    request_approval(&tool_ctx.session, action, approval_ctx).await?,
-                );
+                approval_grant =
+                    Some(request_approval(&tool_ctx.session, action, approval_ctx).await?);
                 already_approved = true;
             }
         }
@@ -465,9 +463,8 @@ impl ToolOrchestrator {
                         source: tool_ctx.source.clone(),
                         cancellation_token: tool_ctx.cancellation_token.clone(),
                     };
-                    retry_approval_grant = Some(
-                        request_approval(&tool_ctx.session, action, approval_ctx).await?,
-                    );
+                    retry_approval_grant =
+                        Some(request_approval(&tool_ctx.session, action, approval_ctx).await?);
                 }
 
                 let retry_sandbox_requested = !unsandboxed_allowed
@@ -525,16 +522,15 @@ impl ToolOrchestrator {
 
                 // Second attempt.
                 let escalated_attempt_start = Instant::now();
-                let (retry_result, retry_deferred_network_approval) =
-                    Self::run_attempt(
-                        tool,
-                        req,
-                        tool_ctx,
-                        &retry_attempt,
-                        managed_network_active,
-                        current_approval_grant,
-                    )
-                    .await;
+                let (retry_result, retry_deferred_network_approval) = Self::run_attempt(
+                    tool,
+                    req,
+                    tool_ctx,
+                    &retry_attempt,
+                    managed_network_active,
+                    current_approval_grant,
+                )
+                .await;
                 let escalated_duration = escalated_attempt_start.elapsed();
                 match retry_result {
                     Ok(output) => {

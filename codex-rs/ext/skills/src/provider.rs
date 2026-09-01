@@ -12,6 +12,7 @@ use codex_exec_server::ResolvedSelectedCapabilityRoot;
 use codex_mcp::McpResourceClient;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
 
+use crate::HostSkillsSnapshot;
 use crate::catalog::SkillAuthority;
 use crate::catalog::SkillCatalog;
 use crate::catalog::SkillPackageId;
@@ -19,7 +20,6 @@ use crate::catalog::SkillProviderResult;
 use crate::catalog::SkillReadResult;
 use crate::catalog::SkillResourceId;
 use crate::catalog::SkillSearchResult;
-use crate::HostSkillsSnapshot;
 
 pub use executor::ExecutorSkillProvider;
 pub use host::HostSkillProvider;

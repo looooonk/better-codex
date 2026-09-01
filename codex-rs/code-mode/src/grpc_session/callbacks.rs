@@ -102,12 +102,11 @@ impl SessionInner {
             grpc::session_event::Event::Notification(notification) => {
                 self.handle_notification(notification)
             }
-            grpc::session_event::Event::NotificationCancelled(cancelled) => {
-                self.state
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .request_notification_cancellation(&cancelled.notification_id)
-            }
+            grpc::session_event::Event::NotificationCancelled(cancelled) => self
+                .state
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .request_notification_cancellation(&cancelled.notification_id),
             grpc::session_event::Event::CellClosed(closed) => {
                 let cell = self
                     .state

@@ -20,6 +20,8 @@ use crate::tools::handlers::multi_agents_v2::WaitAgentHandler as WaitAgentHandle
 use crate::turn_diff_tracker::TurnDiffTracker;
 use codex_extension_api::empty_extension_registry;
 use codex_features::Feature;
+use codex_history::InitialHistory;
+use codex_history::RolloutItem;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
 use codex_model_provider::create_model_provider;
@@ -44,11 +46,9 @@ use codex_protocol::protocol::FileSystemAccessMode;
 use codex_protocol::protocol::FileSystemPath;
 use codex_protocol::protocol::FileSystemSandboxEntry;
 use codex_protocol::protocol::FileSystemSandboxPolicy;
-use codex_history::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::NetworkSandboxPolicy;
 use codex_protocol::protocol::Op;
-use codex_history::RolloutItem;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
@@ -2756,16 +2756,18 @@ async fn resume_agent_restores_closed_agent_and_accepts_send_input() {
     let thread = manager
         .resume_thread_with_history(
             config.clone(),
-            InitialHistory::Forked(vec![RolloutItem::ResponseItem(ResponseItem::Message {
-                id: None,
-                role: "user".to_string(),
-                content: vec![ContentItem::InputText {
-                    text: "materialized".to_string(),
-                }],
-                phase: None,
-                internal_chat_message_metadata_passthrough: None,
-            }
-            .into())]),
+            InitialHistory::Forked(vec![RolloutItem::ResponseItem(
+                ResponseItem::Message {
+                    id: None,
+                    role: "user".to_string(),
+                    content: vec![ContentItem::InputText {
+                        text: "materialized".to_string(),
+                    }],
+                    phase: None,
+                    internal_chat_message_metadata_passthrough: None,
+                }
+                .into(),
+            )]),
             AuthManager::from_auth_for_testing(CodexAuth::from_api_key("dummy")),
             /*parent_trace*/ None,
             /*supports_openai_form_elicitation*/ false,
@@ -4473,7 +4475,7 @@ async fn build_agent_spawn_config_uses_turn_context_values() {
     expected.developer_instructions = turn.developer_instructions.clone();
     #[allow(deprecated)]
     {
-        expected.cwd = turn.cwd.clone();
+        expected.cwd = turn.cwd;
     }
     expected
         .permissions

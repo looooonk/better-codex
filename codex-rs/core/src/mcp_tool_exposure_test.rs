@@ -9,8 +9,8 @@ use codex_mcp::McpConnectionManager;
 use codex_mcp::ToolInfo;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
-use codex_tools::ToolExposure;
 use codex_tools::ToolExecutor;
+use codex_tools::ToolExposure;
 use codex_tools::ToolName;
 use pretty_assertions::assert_eq;
 use rmcp::model::JsonObject;
@@ -98,11 +98,13 @@ fn expected_runtimes(
 }
 
 async fn empty_binding() -> Arc<McpBinding> {
-    let manager = Arc::new(McpConnectionManager::new_uninitialized_with_permission_profile(
-        &Constrained::allow_any(AskForApproval::OnRequest),
-        &PermissionProfile::default(),
-        /*prefix_mcp_tool_names*/ true,
-    ));
+    let manager = Arc::new(
+        McpConnectionManager::new_uninitialized_with_permission_profile(
+            &Constrained::allow_any(AskForApproval::OnRequest),
+            &PermissionProfile::default(),
+            /*prefix_mcp_tool_names*/ true,
+        ),
+    );
     McpBinding::capture(manager).await
 }
 
@@ -341,7 +343,9 @@ async fn handler_cache_reuses_only_the_current_binding() {
         .get_or_build(tool.clone())
         .expect("handler should be reused");
     assert!(Arc::ptr_eq(
-        &first_weak.upgrade().expect("cache should retain the handler"),
+        &first_weak
+            .upgrade()
+            .expect("cache should retain the handler"),
         &reused,
     ));
     drop(reused);
@@ -361,16 +365,14 @@ async fn empty_binding_clears_handlers_from_the_previous_catalog() {
     let previous_binding = empty_binding().await;
     let previous = cache
         .bind(&previous_binding)
-        .get_or_build(
-            make_mcp_tool(
-                "rmcp",
-                "tool",
-                "mcp__rmcp",
-                "tool",
-                /*connector_id*/ None,
-                /*connector_name*/ None,
-            ),
-        )
+        .get_or_build(make_mcp_tool(
+            "rmcp",
+            "tool",
+            "mcp__rmcp",
+            "tool",
+            /*connector_id*/ None,
+            /*connector_name*/ None,
+        ))
         .expect("handler should build");
     let previous_weak = Arc::downgrade(&previous);
     drop(previous);

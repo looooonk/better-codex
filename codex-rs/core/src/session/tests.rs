@@ -1,6 +1,5 @@
 use super::turn_context::TurnEnvironment;
 use super::*;
-use std::collections::BTreeMap;
 use crate::agents_md_manager::AgentsMdManager;
 use crate::codex_thread::TryStartTurnIfIdleRejectionReason;
 use crate::config::ConfigBuilder;
@@ -33,11 +32,12 @@ use codex_config::types::McpServerTransportConfig;
 use codex_config::types::ToolSuggestDisabledTool;
 use codex_skills_extension::HostSkillsSnapshot;
 use core_test_support::test_codex::local_selections;
+use std::collections::BTreeMap;
 
 use codex_features::Feature;
+use codex_history::CodexHarnessMetadata;
 use codex_http_client::HttpClientFactory;
 use codex_http_client::OutboundProxyPolicy;
-use codex_history::CodexHarnessMetadata;
 use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuthPolicy;
 use codex_model_provider_info::ModelProviderInfo;
@@ -103,6 +103,10 @@ use codex_config::permissions_toml::PermissionsToml;
 use codex_execpolicy::Decision;
 use codex_execpolicy::NetworkRuleProtocol;
 use codex_execpolicy::Policy;
+use codex_history::CompactedItem;
+use codex_history::InitialHistory;
+use codex_history::ResumedHistory;
+use codex_history::RolloutItem;
 use codex_network_proxy::NetworkProxyConfig;
 use codex_otel::MetricsClient;
 use codex_otel::MetricsConfig;
@@ -122,25 +126,18 @@ use codex_protocol::models::InternalChatMessageMetadataPassthrough;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::CodexErrorInfo;
-use codex_history::CompactedItem;
 use codex_protocol::protocol::ConversationAudioParams;
 use codex_protocol::protocol::CreditsSnapshot;
 use codex_protocol::protocol::GranularApprovalConfig;
-use codex_history::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::NetworkApprovalProtocol;
-use codex_protocol::protocol::QueuedTurnStartRejectionReason;
-use codex_protocol::protocol::QueuedTurnStartReply;
-use codex_protocol::protocol::QueuedTurnStartSubmission;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::RateLimitWindow;
 use codex_protocol::protocol::RealtimeAudioFrame;
 use codex_protocol::protocol::RealtimeConversationListVoicesResponseEvent;
 use codex_protocol::protocol::RealtimeVoice;
 use codex_protocol::protocol::RealtimeVoicesList;
-use codex_history::ResumedHistory;
-use codex_history::RolloutItem;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SkillScope;
@@ -652,56 +649,6 @@ async fn interrupting_regular_turn_waiting_on_startup_prewarm_emits_turn_aborted
     assert!(started_at.is_some());
     assert!(completed_at.is_some());
     assert!(duration_ms.is_some());
-}
-
-#[tokio::test]
-async fn interrupting_queued_turn_before_persistence_replies_with_rejection() {
-    let (sess, _tc, rx) = make_session_and_context_with_rx().await;
-    let (_tx, startup_prewarm_rx) = tokio::sync::oneshot::channel::<()>();
-    let handle = tokio::spawn(async move {
-        let _ = startup_prewarm_rx.await;
-        Ok(test_model_client_session())
-    });
-    sess.set_session_startup_prewarm(
-        crate::session_startup_prewarm::SessionStartupPrewarmHandle::new(
-            handle,
-            std::time::Instant::now(),
-            crate::client::WEBSOCKET_CONNECT_TIMEOUT,
-        ),
-    )
-    .await;
-    let (reply, admission) = QueuedTurnStartReply::channel();
-
-    sess.start_queued_turn(
-        "queued-turn".to_string(),
-        vec![UserInput::Text {
-            text: "queued".to_string(),
-            text_elements: Vec::new(),
-        }],
-        "queued-client-message".to_string(),
-        reply,
-    )
-    .await;
-    let first = timeout(StdDuration::from_secs(2), rx.recv())
-        .await
-        .expect("queued turn should start")
-        .expect("event channel open");
-    assert!(matches!(
-        first.msg,
-        EventMsg::TurnStarted(TurnStartedEvent { turn_id, .. }) if turn_id == "queued-turn"
-    ));
-
-    sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
-
-    assert_eq!(
-        timeout(StdDuration::from_secs(2), admission)
-            .await
-            .expect("queued admission reply")
-            .expect("queued admission sender open"),
-        QueuedTurnStartSubmission::NotSubmitted {
-            reason: QueuedTurnStartRejectionReason::FailedBeforePersistence,
-        }
-    );
 }
 
 fn test_model_client_session() -> crate::client::ModelClientSession {
@@ -2156,7 +2103,10 @@ async fn record_inter_agent_communication_preserves_item_id_in_rollout_and_resum
     };
     let persisted_item_id = resumed.history.iter().find_map(|item| match item {
         RolloutItem::ResponseItem(item)
-            if matches!(item.item, ResponseItem::AgentMessage { .. }) => item.id(),
+            if matches!(item.item, ResponseItem::AgentMessage { .. }) =>
+        {
+            item.id()
+        }
         _ => None,
     });
     assert_eq!(
@@ -2186,7 +2136,7 @@ async fn record_inter_agent_communication_preserves_item_id_in_rollout_and_resum
 }
 
 #[tokio::test]
-async fn client_annotation_marks_only_developer_messages_when_enabled() {
+async fn client_annotation_normalizes_only_textual_developer_messages_when_enabled() {
     let (session, _turn_context, _rx) = make_session_and_context_with_auth_and_config_and_rx(
         CodexAuth::from_api_key("Test API Key"),
         Vec::new(),
@@ -2198,6 +2148,15 @@ async fn client_annotation_marks_only_developer_messages_when_enabled() {
     )
     .await;
     let developer = session.annotate_client_response_item(ResponseItem::Message {
+        id: None,
+        role: "developer".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "client guidance".to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    });
+    let textless_developer = session.annotate_client_response_item(ResponseItem::Message {
         id: None,
         role: "developer".to_string(),
         content: Vec::new(),
@@ -2218,6 +2177,7 @@ async fn client_annotation_marks_only_developer_messages_when_enabled() {
             client_authored: true,
         })
     );
+    assert_eq!(textless_developer.metadata, None);
     assert_eq!(user.metadata, None);
 }
 
@@ -2465,8 +2425,10 @@ async fn resumed_history_injects_initial_context_on_first_context_update_only() 
     expected.extend(initial_context);
     let history_after_seed = session.clone_history().await;
     assert_eq!(
-        strip_response_item_ids(&expected),
-        strip_response_item_ids(&raw_history_items(&history_after_seed))
+        strip_response_item_ids(&strip_metadata_from_items(&expected)),
+        strip_response_item_ids(&strip_metadata_from_items(&raw_history_items(
+            &history_after_seed
+        )))
     );
 
     session
@@ -3485,7 +3447,16 @@ async fn thread_rollback_drops_last_turn_from_history() {
     assert!(
         tc.extension_data
             .get::<crate::context::NodeReplReviewEvidence>()
-            .is_none()
+            .is_some(),
+        "completed-turn evidence should remain confined to its original turn"
+    );
+    let next_turn_context = sess.new_default_turn_with_sub_id("sub-2".to_string()).await;
+    assert!(
+        next_turn_context
+            .extension_data
+            .get::<crate::context::NodeReplReviewEvidence>()
+            .is_none(),
+        "a fresh turn must not inherit evidence from a rolled-back turn"
     );
 
     let InitialHistory::Resumed(resumed) = RolloutRecorder::get_rollout_history(&rollout_path)
@@ -3750,9 +3721,7 @@ async fn thread_rollback_restores_cleared_reference_context_item_after_compactio
         )),
         RolloutItem::Compacted(CompactedItem {
             message: "summary after compaction".to_string(),
-            replacement_history: Some(
-                compacted_history.iter().cloned().map(Into::into).collect(),
-            ),
+            replacement_history: Some(compacted_history.iter().cloned().map(Into::into).collect()),
             window_number: Some(7),
             first_window_id: Some(first_window_id.to_string()),
             previous_window_id: Some(previous_window_id.to_string()),
@@ -6259,11 +6228,13 @@ async fn request_permissions_call_ids_are_single_use_after_duplicate_and_cancell
         .await;
     assert_eq!(
         duplicate,
-        Some(codex_protocol::request_permissions::RequestPermissionsResponse {
-            permissions: RequestPermissionProfile::default(),
-            scope: PermissionGrantScope::Turn,
-            strict_auto_review: false,
-        })
+        Some(
+            codex_protocol::request_permissions::RequestPermissionsResponse {
+                permissions: RequestPermissionProfile::default(),
+                scope: PermissionGrantScope::Turn,
+                strict_auto_review: false,
+            }
+        )
     );
     assert!(rx.try_recv().is_err());
 
@@ -6300,11 +6271,13 @@ async fn request_permissions_call_ids_are_single_use_after_duplicate_and_cancell
         .await;
     assert_eq!(
         reused,
-        Some(codex_protocol::request_permissions::RequestPermissionsResponse {
-            permissions: RequestPermissionProfile::default(),
-            scope: PermissionGrantScope::Turn,
-            strict_auto_review: false,
-        })
+        Some(
+            codex_protocol::request_permissions::RequestPermissionsResponse {
+                permissions: RequestPermissionProfile::default(),
+                scope: PermissionGrantScope::Turn,
+                strict_auto_review: false,
+            }
+        )
     );
     assert_eq!(
         session
@@ -9290,7 +9263,6 @@ async fn build_initial_context_emits_thread_start_skill_warning_on_repeated_buil
     ));
 }
 
-
 #[tokio::test]
 async fn build_initial_context_uses_previous_turn_settings_for_realtime_end() {
     let (session, turn_context) = make_session_and_context().await;
@@ -9420,8 +9392,8 @@ async fn record_context_updates_and_set_reference_context_item_injects_full_cont
     let history = session.clone_history().await;
     let initial_context = build_initial_context(&session, &turn_context).await;
     assert_eq!(
-        strip_response_item_ids(&raw_history_items(&history)),
-        strip_response_item_ids(&initial_context)
+        strip_response_item_ids(&strip_metadata_from_items(&raw_history_items(&history))),
+        strip_response_item_ids(&strip_metadata_from_items(&initial_context))
     );
 
     let current_context = session.reference_context_item().await;
@@ -9473,8 +9445,8 @@ async fn record_context_updates_and_set_reference_context_item_reinjects_full_co
     let initial_context = build_initial_context(&session, &turn_context).await;
     expected_history.extend(initial_context);
     assert_eq!(
-        strip_response_item_ids(&raw_history_items(&history)),
-        strip_response_item_ids(&expected_history)
+        strip_response_item_ids(&strip_metadata_from_items(&raw_history_items(&history))),
+        strip_response_item_ids(&strip_metadata_from_items(&expected_history))
     );
 }
 
@@ -10471,87 +10443,6 @@ async fn try_start_turn_if_idle_rejects_pending_trigger_turn_without_injecting()
     assert_eq!(vec![item], err.into_input());
     assert!(sess.active_turn.lock().await.is_none());
     assert!(sess.input_queue.has_trigger_turn_mailbox_items().await);
-}
-
-#[tokio::test]
-async fn queued_turn_refreshes_mcp_before_honoring_new_trigger_mail() {
-    let (sess, _tc, _rx) = make_session_and_context_with_rx().await;
-    let old_runtime = sess.services.latest_mcp_runtime();
-    let refresh_guard = sess.services.mcp_projection_lock.lock().await;
-    let refresh_config = McpServerRefreshConfig {
-        mcp_servers: serde_json::to_value(HashMap::<String, McpServerConfig>::new())
-            .expect("serialize MCP servers"),
-        mcp_oauth_credentials_store_mode: serde_json::to_value(OAuthCredentialsStoreMode::Auto)
-            .expect("serialize credential store mode"),
-        auth_keyring_backend_kind: serde_json::to_value(AuthKeyringBackendKind::Secrets)
-            .expect("serialize keyring backend"),
-    };
-    *sess.pending_mcp_server_refresh_config.lock().await = Some(refresh_config);
-    let (reply, admission) = QueuedTurnStartReply::channel();
-    let start_session = Arc::clone(&sess);
-    let start = tokio::spawn(async move {
-        start_session
-            .start_queued_turn(
-                "queued-turn".to_string(),
-                vec![UserInput::Text {
-                    text: "queued".to_string(),
-                    text_elements: Vec::new(),
-                }],
-                "queued-client-message".to_string(),
-                reply,
-            )
-            .await;
-    });
-    timeout(StdDuration::from_secs(2), async {
-        loop {
-            if sess
-                .pending_mcp_server_refresh_config
-                .lock()
-                .await
-                .is_none()
-            {
-                break;
-            }
-            tokio::task::yield_now().await;
-        }
-    })
-    .await
-    .expect("queued turn should begin the MCP refresh");
-    sess.input_queue
-        .enqueue_mailbox_communication(InterAgentCommunication::new(
-            AgentPath::root(),
-            AgentPath::root(),
-            Vec::new(),
-            "pending trigger".to_string(),
-            /*trigger_turn*/ true,
-        ))
-        .await;
-    drop(refresh_guard);
-
-    start.await.expect("queued turn start task");
-    assert_eq!(
-        timeout(StdDuration::from_secs(2), admission)
-            .await
-            .expect("queued admission reply")
-            .expect("queued admission sender open"),
-        QueuedTurnStartSubmission::NotSubmitted {
-            reason: QueuedTurnStartRejectionReason::PendingTriggerTurn,
-        }
-    );
-    assert!(!Arc::ptr_eq(
-        &old_runtime,
-        &sess.services.latest_mcp_runtime()
-    ));
-    let active_turn_id = sess
-        .active_turn
-        .lock()
-        .await
-        .as_ref()
-        .and_then(|turn| turn.task.as_ref())
-        .map(|task| task.turn_context.sub_id.clone());
-    assert_ne!(active_turn_id.as_deref(), Some("queued-turn"));
-
-    sess.abort_all_tasks(TurnAbortReason::Interrupted).await;
 }
 
 #[tokio::test]

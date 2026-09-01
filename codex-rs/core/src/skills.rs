@@ -12,23 +12,23 @@ use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_plugins::PluginSkillRoot;
 use std::collections::HashSet;
 
+pub use codex_config::bundled_skills_enabled_from_stack;
 pub use codex_skills::SkillError;
 pub use codex_skills::SkillMetadata;
 pub use codex_skills::SkillPolicy;
 pub use codex_skills::build_skill_name_counts;
 pub use codex_skills::collect_explicit_skill_mentions;
 pub use codex_skills::detect_implicit_skill_invocation_for_command;
+pub use codex_skills_extension::HostSkillsLoadInput;
+pub use codex_skills_extension::HostSkillsLoadInput as SkillsLoadInput;
+pub use codex_skills_extension::HostSkillsService;
+pub use codex_skills_extension::HostSkillsService as SkillsService;
+pub use codex_skills_extension::SkillLoadOutcome;
 pub use codex_skills_extension::SkillRenderReport;
+pub use codex_skills_extension::SkillRenderSideEffects;
 pub use codex_skills_extension::build_available_skills;
 pub use codex_skills_extension::default_skill_metadata_budget;
 pub use codex_skills_extension::filter_skill_load_outcome_for_product;
-pub use codex_skills_extension::HostSkillsLoadInput;
-pub use codex_skills_extension::HostSkillsService;
-pub use codex_skills_extension::HostSkillsLoadInput as SkillsLoadInput;
-pub use codex_skills_extension::HostSkillsService as SkillsService;
-pub use codex_skills_extension::SkillLoadOutcome;
-pub use codex_skills_extension::SkillRenderSideEffects;
-pub use codex_config::bundled_skills_enabled_from_stack;
 
 pub mod model {
     pub use codex_skills::SkillDependencies;

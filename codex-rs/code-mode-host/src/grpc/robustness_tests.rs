@@ -7,13 +7,13 @@ use codex_code_mode_protocol::CodeModeNestedToolCall;
 use codex_code_mode_protocol::CodeModeSessionDelegate;
 use codex_code_mode_protocol::CodeModeToolKind;
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::grpc::code_mode_host_server::CodeModeHost;
 use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
+use codex_code_mode_protocol::grpc::code_mode_host_server::CodeModeHost;
 use codex_protocol::ToolName;
 use futures::FutureExt;
 use futures::StreamExt;
-use prost::Message;
 use pretty_assertions::assert_eq;
+use prost::Message;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_util::sync::CancellationToken;
@@ -27,6 +27,7 @@ use super::GrpcCodeModeHost;
 use super::delegate::GrpcDelegate;
 use super::events::MAX_SESSION_EVENT_BYTES;
 use super::execution_stream;
+use super::session::MAX_OPEN_GRPC_SESSIONS;
 use super::tests::execute_events;
 use super::tests::execute_request;
 use super::tests::open_session;
@@ -37,7 +38,6 @@ use super::validation::MAX_TOOL_DESCRIPTION_BYTES;
 use super::validation::MAX_TOOL_ERROR_BYTES;
 use super::validation::MAX_TOOL_FILTERS;
 use super::waits::WaitRegistration;
-use super::session::MAX_OPEN_GRPC_SESSIONS;
 use crate::MAX_ACTIVE_CELLS;
 use crate::MAX_IN_FLIGHT_REQUESTS;
 use crate::MAX_RECENT_REQUEST_IDS;
@@ -91,12 +91,10 @@ async fn rejects_values_beyond_every_grpc_metadata_cap() {
         .await,
     );
     assert_invalid(
-        host.acknowledge_notification(Request::new(
-            proto::AcknowledgeNotificationRequest {
-                session_id: session_id.clone(),
-                notification_id: "not-a-uuid".to_string(),
-            },
-        ))
+        host.acknowledge_notification(Request::new(proto::AcknowledgeNotificationRequest {
+            session_id: session_id.clone(),
+            notification_id: "not-a-uuid".to_string(),
+        }))
         .await,
     );
     assert_invalid(
@@ -162,8 +160,10 @@ async fn rejects_values_beyond_every_grpc_metadata_cap() {
         Code::NotFound
     );
     assert_invalid(
-        host.complete_tool_call(Request::new(completion("x".repeat(MAX_TOOL_ERROR_BYTES + 1))))
-            .await,
+        host.complete_tool_call(Request::new(completion(
+            "x".repeat(MAX_TOOL_ERROR_BYTES + 1),
+        )))
+        .await,
     );
     assert!(host.state.session(&session_id).is_ok());
 }
@@ -174,15 +174,13 @@ async fn unknown_notification_acknowledgements_are_rejected() {
     let (session_id, _events) = open_session(&host).await;
 
     assert_eq!(
-        host.acknowledge_notification(Request::new(
-            proto::AcknowledgeNotificationRequest {
-                session_id,
-                notification_id: Uuid::new_v4().to_string(),
-            },
-        ))
-        .await
-        .unwrap_err()
-        .code(),
+        host.acknowledge_notification(Request::new(proto::AcknowledgeNotificationRequest {
+            session_id,
+            notification_id: Uuid::new_v4().to_string(),
+        },))
+            .await
+            .unwrap_err()
+            .code(),
         Code::NotFound,
     );
 }
@@ -223,7 +221,9 @@ async fn cancelling_an_unpublished_notification_does_not_emit_a_cancellation() {
             text_bytes += MAX_SESSION_EVENT_BYTES - encoded_len;
         }
     };
-    session.send_event_now(filler, /*cell_permit*/ None).unwrap();
+    session
+        .send_event_now(filler, /*cell_permit*/ None)
+        .unwrap();
 
     let delegate = GrpcDelegate::new(Arc::downgrade(&session));
     let notify = tokio::spawn(async move {
@@ -545,14 +545,13 @@ async fn close_after_tool_reservation_does_not_commit_or_deliver() {
             host.state.cell_permit().unwrap(),
         )
         .unwrap();
-    let sender = session.state.lock().unwrap().subscriptions[0].sender.clone();
+    let sender = session.state.lock().unwrap().subscriptions[0]
+        .sender
+        .clone();
     for _ in 0..OUTGOING_CHANNEL_CAPACITY {
         let reservation = session.reserve_tool_bytes(/*bytes*/ 1).unwrap();
         sender
-            .try_send(session.buffered_tool_call(
-                proto::ToolCall::default(),
-                reservation,
-            ))
+            .try_send(session.buffered_tool_call(proto::ToolCall::default(), reservation))
             .unwrap();
     }
     let baseline_senders = sender.strong_count();
@@ -590,7 +589,13 @@ async fn close_after_tool_reservation_does_not_commit_or_deliver() {
     session.closed.cancel();
     drop(state);
 
-    assert!(dispatch.await.unwrap().unwrap_err().contains("session closed"));
+    assert!(
+        dispatch
+            .await
+            .unwrap()
+            .unwrap_err()
+            .contains("session closed")
+    );
     let state = session.state.lock().unwrap();
     assert!(state.pending_invocations.is_empty());
     assert!(
@@ -642,10 +647,12 @@ async fn terminal_outcome_precedes_cell_closed_and_permit_release() {
     assert!(events.next().now_or_never().is_none());
     assert!(matches!(
         execution.next().await.unwrap().unwrap().event,
-        Some(proto::execute_event::Event::Outcome(proto::ExecutionOutcome {
-            outcome: Some(proto::execution_outcome::Outcome::Completed(_)),
-            ..
-        }))
+        Some(proto::execute_event::Event::Outcome(
+            proto::ExecutionOutcome {
+                outcome: Some(proto::execution_outcome::Outcome::Completed(_)),
+                ..
+            }
+        ))
     ));
     assert_eq!(
         events.next().await.unwrap().unwrap(),
@@ -1017,10 +1024,7 @@ async fn missing_selected_subscription_retries_alternate_match() {
                 .reserve_tool_bytes(/*bytes*/ 1)
                 .expect("reserve subscription queue bytes");
             sender
-                .try_send(session.buffered_tool_call(
-                    proto::ToolCall::default(),
-                    reservation,
-                ))
+                .try_send(session.buffered_tool_call(proto::ToolCall::default(), reservation))
                 .expect("fill subscription queue");
         }
     }

@@ -1,8 +1,10 @@
 use crate::outgoing_message::ConnectionId;
 use crate::outgoing_message::ConnectionRequestId;
+use crate::thread_state_pending_user_input::PendingUserInputSubmissions;
 use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::ThreadGoal;
 use codex_app_server_protocol::ThreadHistoryBuilder;
+use codex_app_server_protocol::ThreadItem;
 use codex_app_server_protocol::ThreadSettings;
 use codex_app_server_protocol::Turn;
 use codex_app_server_protocol::TurnError;
@@ -125,6 +127,8 @@ pub(crate) enum ThreadListenerCommand {
 pub(crate) struct TurnSummary {
     pub(crate) started_at: Option<i64>,
     pub(crate) command_execution_started: HashSet<String>,
+    pub(crate) command_execution_completed_early: HashSet<String>,
+    pub(crate) pending_command_execution_items: HashMap<String, ThreadItem>,
     pub(crate) last_error: Option<TurnError>,
 }
 
@@ -136,6 +140,7 @@ pub(crate) struct ThreadState {
     pub(crate) last_terminal_turn_id: Option<String>,
     last_terminal_listener_generation: Option<u64>,
     translated_terminal_event: TranslatedTerminalEvent,
+    pending_user_input_submissions: PendingUserInputSubmissions,
     queued_turn_awaiting_terminal: Option<(String, u64)>,
     queued_turn_ambiguous_recovery_failed: Option<String>,
     shutdown_drain_waiter: Option<oneshot::Sender<()>>,
@@ -169,6 +174,7 @@ impl ThreadState {
         }
         self.listener_generation = self.listener_generation.wrapping_add(1);
         self.translated_terminal_event.tx.send_replace(None);
+        self.pending_user_input_submissions.clear();
         self.queued_turn_awaiting_terminal = None;
         self.last_thread_settings = Some(thread_settings_baseline);
         let (listener_command_tx, listener_command_rx) = mpsc::unbounded_channel();
@@ -187,6 +193,7 @@ impl ThreadState {
         self.current_turn_history.reset();
         self.listener_thread = None;
         self.translated_terminal_event.tx.send_replace(None);
+        self.pending_user_input_submissions.clear();
         self.queued_turn_awaiting_terminal = None;
         self.watch_registration = WatchRegistration::default();
     }
@@ -219,6 +226,8 @@ impl ThreadState {
         if let EventMsg::TurnStarted(payload) = event {
             self.turn_summary.started_at = payload.started_at;
         }
+        self.pending_user_input_submissions
+            .observe(event_turn_id, event);
         self.current_turn_history.handle_event(event);
         if matches!(event, EventMsg::TurnAborted(_) | EventMsg::TurnComplete(_))
             && !self.current_turn_history.has_active_turn()
@@ -227,6 +236,14 @@ impl ThreadState {
             self.last_terminal_listener_generation = Some(self.listener_generation);
             self.current_turn_history.reset();
         }
+    }
+
+    pub(crate) fn mark_user_input_submission_pending(&mut self, turn_id: String) {
+        self.pending_user_input_submissions.mark(turn_id);
+    }
+
+    pub(crate) fn has_pending_user_input_submission(&self) -> bool {
+        self.pending_user_input_submissions.is_pending()
     }
 
     pub(crate) fn note_terminal_event_translated(&mut self, event: &EventMsg) {

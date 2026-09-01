@@ -248,8 +248,7 @@ async fn data_url_processing_preserves_supported_source_bytes() {
 #[test]
 fn sanitized_data_url_processing_strips_source_metadata() {
     let image = ImageBuffer::from_pixel(64, 32, Rgba([10u8, 20, 30, 255]));
-    let original_bytes =
-        image_bytes_with_metadata(&image, ImageFormat::Png, TEST_RGB_ICC_PROFILE);
+    let original_bytes = image_bytes_with_metadata(&image, ImageFormat::Png, TEST_RGB_ICC_PROFILE);
     let image_url = data_url_from_bytes("image/png", &original_bytes);
 
     let processed = load_sanitized_data_url_for_prompt(
@@ -276,11 +275,8 @@ fn sanitized_data_url_processing_strips_source_metadata() {
 #[test]
 fn limited_resize_rejects_tiny_png_dimension_bombs_before_allocation() {
     let png_with_declared_dimensions = |width: u32, height: u32| {
-        let image = ImageBuffer::from_pixel(
-            /*width*/ 1,
-            /*height*/ 1,
-            Rgba([0u8, 0, 0, 255]),
-        );
+        let image =
+            ImageBuffer::from_pixel(/*width*/ 1, /*height*/ 1, Rgba([0u8, 0, 0, 255]));
         let mut bytes = image_bytes(&image, ImageFormat::Png);
         bytes[16..20].copy_from_slice(&width.to_be_bytes());
         bytes[20..24].copy_from_slice(&height.to_be_bytes());

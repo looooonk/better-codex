@@ -1,3 +1,4 @@
+use codex_history::RolloutItem;
 use codex_protocol::ThreadId;
 use codex_protocol::items::EnteredReviewModeItem;
 use codex_protocol::items::ExitedReviewModeItem;
@@ -10,7 +11,6 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExitedReviewModeEvent;
 use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ReviewTarget;
-use codex_history::RolloutItem;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
@@ -27,16 +27,18 @@ use super::measure_and_filter_rollout_items;
 use super::update_turn_measurements;
 
 fn retained_message(text: &str) -> RolloutItem {
-    RolloutItem::ResponseItem(ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![ContentItem::InputText {
-            text: text.to_string(),
-        }],
-        phase: None,
-        internal_chat_message_metadata_passthrough: None,
-    }
-    .into())
+    RolloutItem::ResponseItem(
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: text.to_string(),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        }
+        .into(),
+    )
 }
 
 fn turn_started(turn_id: &str) -> RolloutItem {

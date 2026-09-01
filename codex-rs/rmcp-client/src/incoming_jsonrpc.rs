@@ -5,8 +5,8 @@ use std::sync::atomic::AtomicU8;
 use std::sync::atomic::Ordering;
 
 use rmcp::model::DiscoverResult;
-use rmcp::model::InputRequiredResult;
 use rmcp::model::InitializeResult;
+use rmcp::model::InputRequiredResult;
 use rmcp::model::JsonRpcResponse;
 use rmcp::model::ProtocolVersion;
 use rmcp::model::ServerJsonRpcMessage;
@@ -36,22 +36,17 @@ impl StdioProtocolState {
         }
     }
 
-    pub(crate) fn deserialize(
-        &self,
-        bytes: &[u8],
-    ) -> serde_json::Result<ServerJsonRpcMessage> {
+    pub(crate) fn deserialize(&self, bytes: &[u8]) -> serde_json::Result<ServerJsonRpcMessage> {
         self.observe_negotiated_protocol(bytes);
         deserialize_incoming_jsonrpc_message(bytes, self.modern_session())
     }
 
     pub(crate) fn enforce_modern_bounds(&self) -> bool {
-        self.requested_modern
-            && self.negotiated.load(Ordering::Acquire) != STDIO_PROTOCOL_LEGACY
+        self.requested_modern && self.negotiated.load(Ordering::Acquire) != STDIO_PROTOCOL_LEGACY
     }
 
     fn modern_session(&self) -> bool {
-        self.requested_modern
-            && self.negotiated.load(Ordering::Acquire) == STDIO_PROTOCOL_MODERN
+        self.requested_modern && self.negotiated.load(Ordering::Acquire) == STDIO_PROTOCOL_MODERN
     }
 
     fn observe_negotiated_protocol(&self, bytes: &[u8]) {
@@ -145,9 +140,7 @@ pub(crate) fn normalize_sse_jsonrpc_message(
             result.insert("content".to_string(), Value::Bool(false));
             true
         });
-    changed
-        .then(|| serde_json::to_string(&message))
-        .transpose()
+    changed.then(|| serde_json::to_string(&message)).transpose()
 }
 
 fn validate_input_required_fields(message: &Value) -> serde_json::Result<()> {

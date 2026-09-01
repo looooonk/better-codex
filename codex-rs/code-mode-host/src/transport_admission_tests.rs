@@ -15,8 +15,8 @@ use tower::ServiceExt;
 
 use super::CLOSE_PATH;
 use super::COMPLETE_TOOL_PATH;
-use super::EXECUTE_PATH;
 use super::EXECUTE_BODY_BYTES;
+use super::EXECUTE_PATH;
 use super::GrpcAdmissionLayer;
 use super::SUBSCRIBE_PATH;
 use super::preflight_message;
@@ -24,17 +24,14 @@ use super::read_body;
 use crate::grpc::validation::MAX_TOOL_DEFINITIONS;
 use crate::grpc::validation::MAX_TOOL_FILTERS;
 
-const TEST_CAPABILITY: &str =
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const TEST_CAPABILITY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[test]
 fn preflight_rejects_repeated_messages_before_prost_allocation() {
-    let execute = [0x2a, 0]
-        .repeat(MAX_TOOL_DEFINITIONS + 1);
+    let execute = [0x2a, 0].repeat(MAX_TOOL_DEFINITIONS + 1);
     assert!(preflight_message(EXECUTE_PATH, &execute).is_err());
 
-    let subscribe = [0x12, 0]
-        .repeat(MAX_TOOL_FILTERS + 1);
+    let subscribe = [0x12, 0].repeat(MAX_TOOL_FILTERS + 1);
     assert!(preflight_message(SUBSCRIBE_PATH, &subscribe).is_err());
 }
 
@@ -107,7 +104,7 @@ async fn invalid_capability_is_rejected_before_slow_body_admission() {
             .header(CAPABILITY_METADATA_KEY, "invalid")
             .body(Body::new(StreamBody::new(frames)))
             .unwrap();
-        tokio::spawn(layer.clone().layer(service.clone()).oneshot(request))
+        tokio::spawn(layer.clone().layer(service).oneshot(request))
     });
     tokio::task::yield_now().await;
 
@@ -199,5 +196,8 @@ fn streaming_routes_preserve_every_control_response_slot() {
         }
         assert!(layer.response_permit(path).is_err());
     }
-    assert_eq!(permits.len(), super::MAX_STREAMING_RESPONSES + super::MAX_UNARY_RESPONSES);
+    assert_eq!(
+        permits.len(),
+        super::MAX_STREAMING_RESPONSES + super::MAX_UNARY_RESPONSES
+    );
 }

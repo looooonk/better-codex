@@ -2,8 +2,8 @@ use std::net::SocketAddr;
 
 use futures::StreamExt;
 use pretty_assertions::assert_eq;
-use tokio::io::AsyncWriteExt;
 use tokio::io::AsyncReadExt;
+use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio_util::sync::CancellationToken;
 use tonic::Request;
@@ -22,12 +22,11 @@ use crate::transport_admission::MAX_DECODED_REQUEST_BYTES;
 use crate::transport_admission::MAX_OUTBOUND_RESPONSE_BYTES;
 use crate::transport_admission::MAX_RAW_REQUEST_ALLOCATION_BYTES;
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use codex_code_mode_protocol::grpc::CAPABILITY_METADATA_KEY;
+use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use codex_code_mode_protocol::grpc::bounded_code_mode_host_client;
 
-const TEST_CAPABILITY: &str =
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const TEST_CAPABILITY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 #[test]
 fn listen_url_accepts_stdio_and_loopback_grpc() {
@@ -96,10 +95,7 @@ async fn accepted_connection_limit_releases_on_drop() {
     assert!(blocked.is_err());
     accepted.pop();
     assert!(
-        tokio::time::timeout(
-            std::time::Duration::from_secs(/*secs*/ 1),
-            bounded.next(),
-        )
+        tokio::time::timeout(std::time::Duration::from_secs(/*secs*/ 1), bounded.next(),)
             .await
             .unwrap()
             .unwrap()
@@ -187,10 +183,9 @@ async fn unauthenticated_connections_expire_before_starving_a_provider() {
         CLIENT_ID_METADATA_KEY,
         client_id.to_string().parse().unwrap(),
     );
-    request.metadata_mut().insert(
-        CAPABILITY_METADATA_KEY,
-        TEST_CAPABILITY.parse().unwrap(),
-    );
+    request
+        .metadata_mut()
+        .insert(CAPABILITY_METADATA_KEY, TEST_CAPABILITY.parse().unwrap());
     let mut events = client.open_session(request).await.unwrap().into_inner();
     assert!(matches!(
         events.message().await.unwrap().unwrap().event,
@@ -263,10 +258,9 @@ async fn invalid_capabilities_do_not_extend_connection_admission() {
         CLIENT_ID_METADATA_KEY,
         Uuid::new_v4().to_string().parse().unwrap(),
     );
-    request.metadata_mut().insert(
-        CAPABILITY_METADATA_KEY,
-        TEST_CAPABILITY.parse().unwrap(),
-    );
+    request
+        .metadata_mut()
+        .insert(CAPABILITY_METADATA_KEY, TEST_CAPABILITY.parse().unwrap());
     let mut events = client.open_session(request).await.unwrap().into_inner();
     assert!(matches!(
         events.message().await.unwrap().unwrap().event,

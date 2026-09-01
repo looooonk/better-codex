@@ -23,7 +23,9 @@ pub enum RolloutItem {
     /// Legacy delivery item reconstructed as a model-visible `agent_message`.
     InterAgentCommunication(InterAgentCommunication),
     /// Local delivery metadata that is not part of the Responses API item.
-    InterAgentCommunicationMetadata { trigger_turn: bool },
+    InterAgentCommunicationMetadata {
+        trigger_turn: bool,
+    },
     Compacted(CompactedItem),
     TurnContext(TurnContextItem),
     WorldState(WorldStateItem),

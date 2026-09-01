@@ -3,9 +3,9 @@
 use codex_config::CONFIG_TOML_FILE;
 use codex_core::NewThread;
 use codex_features::Feature;
+use codex_history::InitialHistory;
 use codex_login::CodexAuth;
 use codex_protocol::protocol::EventMsg;
-use codex_history::InitialHistory;
 use codex_protocol::protocol::WarningEvent;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use core::time::Duration;

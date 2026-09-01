@@ -22,7 +22,10 @@ pub(super) fn move_rollouts(
         if !sources.insert(source.clone()) || !destinations.insert(destination.clone()) {
             return Err(move_error(operation, "rollout move paths are not unique"));
         }
-        if !source.try_exists().map_err(|err| move_error(operation, err))? {
+        if !source
+            .try_exists()
+            .map_err(|err| move_error(operation, err))?
+        {
             return Err(move_error(
                 operation,
                 format!("rollout `{}` does not exist", source.display()),

@@ -8,11 +8,11 @@ use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use codex_code_mode_protocol::grpc::MAX_CONTENT_ITEMS;
 use tokio::sync::OwnedSemaphorePermit;
 use tokio::sync::Semaphore;
+use tonic::Status;
 use tonic::body::Body;
 use tonic::codegen::Body as HttpBody;
 use tonic::codegen::Bytes;
 use tonic::codegen::http::Response;
-use tonic::Status;
 
 const MAX_OPEN_RESPONSE_BODIES: usize = 6;
 const MAX_SUBSCRIBE_RESPONSE_BODIES: usize = 12;

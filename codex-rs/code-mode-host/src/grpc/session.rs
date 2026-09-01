@@ -10,12 +10,12 @@ use std::sync::Mutex;
 use std::sync::PoisonError;
 use std::sync::Weak;
 
+use codex_code_mode::InProcessCodeModeSession;
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::CodeModeSessionCellExecutionLimits;
 use codex_code_mode_protocol::WaitOutcome;
 use codex_code_mode_protocol::grpc as proto;
 use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
-use codex_code_mode::InProcessCodeModeSession;
 use serde_json::Value as JsonValue;
 use tokio::sync::Notify;
 use tokio::sync::OwnedSemaphorePermit;
@@ -254,7 +254,9 @@ impl GrpcHostState {
                 "code-mode session belongs to another caller",
             ));
         }
-        Ok(sessions.remove(&session_id).expect("session was checked above"))
+        Ok(sessions
+            .remove(&session_id)
+            .expect("session was checked above"))
     }
 
     async fn close_lease(&self, id: Uuid, expected: &Arc<GrpcSession>) {
@@ -382,10 +384,7 @@ impl GrpcSession {
         result
     }
 
-    pub(super) fn spawn_task(
-        &self,
-        task: impl Future<Output = ()> + Send + 'static,
-    ) -> bool {
+    pub(super) fn spawn_task(&self, task: impl Future<Output = ()> + Send + 'static) -> bool {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         if state.shutdown_started || self.closed.is_cancelled() {
             return false;
@@ -441,7 +440,7 @@ impl GrpcSession {
             return Err(Status::cancelled("code-mode execution was abandoned"));
         }
         let runtime_closed = state.pending_closures.remove(&cell_id);
-        let Entry::Vacant(entry) = state.cells.entry(cell_id.clone()) else {
+        let Entry::Vacant(entry) = state.cells.entry(cell_id) else {
             return Err(Status::internal(
                 "code-mode runtime reused an active cell ID",
             ));
@@ -573,10 +572,7 @@ impl GrpcSession {
             .map_err(|_| "code-mode host has too many pending delegate calls".to_string())
     }
 
-    pub(super) fn reserve_tool_bytes(
-        &self,
-        bytes: usize,
-    ) -> Result<ToolByteReservation, String> {
+    pub(super) fn reserve_tool_bytes(&self, bytes: usize) -> Result<ToolByteReservation, String> {
         if bytes == 0 || bytes > MAX_APPLICATION_MESSAGE_BYTES {
             return Err("invalid code-mode tool-call byte reservation".to_string());
         }
@@ -641,10 +637,7 @@ impl GrpcSession {
         Ok(())
     }
 
-    pub(super) fn acknowledge_notification(
-        &self,
-        notification_id: Uuid,
-    ) -> Result<(), Status> {
+    pub(super) fn acknowledge_notification(&self, notification_id: Uuid) -> Result<(), Status> {
         let acknowledgement = {
             let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             if self.closed.is_cancelled() {
@@ -677,11 +670,9 @@ impl GrpcSession {
             .remove(&notification_id);
         if pending.is_some() {
             let _ = self.send_event_now(
-                proto::session_event::Event::NotificationCancelled(
-                    proto::NotificationCancelled {
-                        notification_id: notification_id.to_string(),
-                    },
-                ),
+                proto::session_event::Event::NotificationCancelled(proto::NotificationCancelled {
+                    notification_id: notification_id.to_string(),
+                }),
                 /*cell_permit*/ None,
             );
         }

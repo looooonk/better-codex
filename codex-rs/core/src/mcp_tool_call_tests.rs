@@ -2582,8 +2582,14 @@ async fn remembered_mcp_approval_does_not_cross_catalog_revisions() {
     let v2_key = session_mcp_tool_approval_key(&invocation, /*metadata*/ None, v2_route)
         .expect("docs/search supports session approval");
 
-    assert_eq!(mcp_tool_approval_is_remembered(&session, &v1_key).await, true);
-    assert_eq!(mcp_tool_approval_is_remembered(&session, &v2_key).await, false);
+    assert_eq!(
+        mcp_tool_approval_is_remembered(&session, &v1_key).await,
+        true
+    );
+    assert_eq!(
+        mcp_tool_approval_is_remembered(&session, &v2_key).await,
+        false
+    );
 }
 
 #[tokio::test]
@@ -2993,13 +2999,12 @@ async fn permission_request_hook_runs_after_remembered_mcp_approval() {
         codex_apps_meta: None,
         openai_file_input_optional_fields: None,
     };
-    let remembered_key =
-        session_mcp_tool_approval_key(
-            &invocation,
-            Some(&metadata),
-            approval_route(AppToolApproval::Auto),
-        )
-        .expect("memory MCP tool should support session approval");
+    let remembered_key = session_mcp_tool_approval_key(
+        &invocation,
+        Some(&metadata),
+        approval_route(AppToolApproval::Auto),
+    )
+    .expect("memory MCP tool should support session approval");
     remember_mcp_tool_approval(&session, remembered_key).await;
 
     let session = Arc::new(session);

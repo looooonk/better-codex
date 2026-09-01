@@ -53,7 +53,7 @@ fn transcript_entry(item: &ResponseItem) -> Option<GuardianEvidenceEntry> {
                 .join("\n");
             let include = matches!(role.as_str(), "user" | "assistant")
                 || role == "developer" && text.starts_with(MANUAL_APPROVAL_DEVELOPER_PREFIX);
-            include.then(|| ("message", Some(role.as_str()), text))?
+            include.then_some(("message", Some(role.as_str()), text))?
         }
         ResponseItem::AgentMessage {
             author, content, ..

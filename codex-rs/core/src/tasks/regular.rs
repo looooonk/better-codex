@@ -9,7 +9,6 @@ use crate::session_startup_prewarm::SessionStartupPrewarmResolution;
 use crate::state::TaskKind;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::TurnStartedEvent;
-use codex_protocol::protocol::QueuedTurnStartReply;
 use tracing::Instrument;
 use tracing::trace_span;
 
@@ -18,19 +17,11 @@ use super::SessionTaskContext;
 use super::SessionTaskResult;
 
 #[derive(Default)]
-pub(crate) struct RegularTask {
-    admission_reply: Option<QueuedTurnStartReply>,
-}
+pub(crate) struct RegularTask;
 
 impl RegularTask {
     pub(crate) fn new() -> Self {
-        Self::default()
-    }
-
-    pub(crate) fn with_admission_reply(admission_reply: QueuedTurnStartReply) -> Self {
-        Self {
-            admission_reply: Some(admission_reply),
-        }
+        Self
     }
 }
 
@@ -79,14 +70,12 @@ impl SessionTask for RegularTask {
         };
         let mut next_input = input;
         let mut prewarmed_client_session = prewarmed_client_session;
-        let mut admission_reply = self.admission_reply.clone();
         loop {
             let last_agent_message = run_turn(
                 Arc::clone(&sess),
                 Arc::clone(&ctx),
                 Arc::clone(&turn_extension_data),
                 next_input,
-                admission_reply.take(),
                 prewarmed_client_session.take(),
                 cancellation_token.child_token(),
             )

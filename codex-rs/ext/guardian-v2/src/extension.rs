@@ -89,10 +89,7 @@ where
     C: Sync,
     F: for<'a> Fn(GuardianV2ThreadConfigInput<'a, C>) -> Option<LunaSamplerConfig> + Send + Sync,
 {
-    fn on_thread_start<'a>(
-        &'a self,
-        input: ThreadStartInput<'a, C>,
-    ) -> ExtensionFuture<'a, ()> {
+    fn on_thread_start<'a>(&'a self, input: ThreadStartInput<'a, C>) -> ExtensionFuture<'a, ()> {
         Box::pin(async move {
             let Some(config) = (self.config)(GuardianV2ThreadConfigInput {
                 config: input.config,

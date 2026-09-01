@@ -124,8 +124,18 @@ impl McpRequestProcessor {
         let (mcp_config, runtime_context) = match thread_id.as_deref() {
             Some(thread_id) => {
                 let (_, thread) = self.load_thread(thread_id).await?;
-                let runtime = thread.current_mcp_runtime().await;
-                (runtime.config().clone(), runtime.runtime_context().clone())
+                let thread_config = thread.config().await;
+                let config = self
+                    .config_manager
+                    .load_latest_config_for_thread(thread_config.as_ref())
+                    .await
+                    .map_err(|err| internal_error(format!("failed to reload config: {err}")))?;
+                let mcp_config = thread.runtime_mcp_config(&config).await;
+                let runtime_context = McpRuntimeContext::new(
+                    self.thread_manager.environment_manager(),
+                    config.cwd.to_path_buf(),
+                );
+                (mcp_config, runtime_context)
             }
             None => {
                 let config = self.load_latest_config(/*fallback_cwd*/ None).await?;

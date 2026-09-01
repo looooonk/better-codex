@@ -2,13 +2,13 @@
 #![allow(clippy::unwrap_used)]
 
 use anyhow::Result;
-use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
 use codex_exec_server::CreateDirectoryOptions;
 use codex_exec_server::ExecutorFileSystem;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::Op;
 use codex_protocol::user_input::UserInput;
+use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_path_uri::PathUri;
 use core_test_support::responses::ev_assistant_message;

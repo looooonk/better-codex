@@ -20,10 +20,10 @@ use crate::McpAuthStatusEntry;
 use crate::McpProtocolMode;
 use crate::codex_apps::prepare_openai_file_params_for_model;
 use crate::codex_apps_cache::CodexAppsToolsCache;
-use crate::codex_apps_cache::CodexAppsToolsCacheKey;
 use crate::codex_apps_cache::CodexAppsToolsCacheContext;
-use crate::codex_apps_cache::CodexAppsToolsFetchTicket;
+use crate::codex_apps_cache::CodexAppsToolsCacheKey;
 use crate::codex_apps_cache::CodexAppsToolsFetchSource;
+use crate::codex_apps_cache::CodexAppsToolsFetchTicket;
 use crate::codex_apps_cache::CodexAppsToolsSnapshot;
 use crate::elicitation::ElicitationRequestManager;
 use crate::elicitation::ElicitationRequestRouter;
@@ -159,9 +159,7 @@ impl PreparedMcpToolCall {
             .client
             .call_tool(self.tool.clone(), arguments, meta, self.timeout)
             .await
-            .with_context(|| {
-                format!("tool call failed for `{}/{}`", self.server, self.tool)
-            })?;
+            .with_context(|| format!("tool call failed for `{}/{}`", self.server, self.tool))?;
 
         let content = result
             .content
@@ -650,28 +648,29 @@ impl McpConnectionManager {
         let mut available_server_count = 0;
         let mut unavailable_server_count = 0;
         catalog_startup::wait_for_catalog_startup(self).await;
-        let server_results = join_all(self.clients.iter().map(|(server_name, managed_client)| async move {
-            let has_cached_tools = managed_client.has_cached_tools();
-            let startup_complete = managed_client
-                .startup_complete
-                .load(std::sync::atomic::Ordering::Acquire);
-            let catalog_override = if server_name == CODEX_APPS_MCP_SERVER_NAME {
-                self.codex_apps_tools_override()
-            } else {
-                self.shared_tool_catalog(server_name)
-            };
-            let server_tools = async {
-                if catalog_override.is_some() {
-                    managed_client.reconnect_failed_startup().await;
+        let server_results = join_all(self.clients.iter().map(
+            |(server_name, managed_client)| async move {
+                let has_cached_tools = managed_client.has_cached_tools();
+                let startup_complete = managed_client
+                    .startup_complete
+                    .load(std::sync::atomic::Ordering::Acquire);
+                let catalog_override = if server_name == CODEX_APPS_MCP_SERVER_NAME {
+                    self.codex_apps_tools_override()
+                } else {
+                    self.shared_tool_catalog(server_name)
+                };
+                let server_tools = async {
+                    if catalog_override.is_some() {
+                        managed_client.reconnect_failed_startup().await;
+                    }
+                    match catalog_override {
+                        Some(tools) => Some(
+                            managed_client
+                                .prepare_tools(filter_tools(tools, &managed_client.tool_filter)),
+                        ),
+                        None => managed_client.listed_tools_after_startup_wait().await,
+                    }
                 }
-                match catalog_override {
-                    Some(tools) => Some(managed_client.prepare_tools(filter_tools(
-                        tools,
-                        &managed_client.tool_filter,
-                    ))),
-                    None => managed_client.listed_tools_after_startup_wait().await,
-                }
-            }
                 .instrument(trace_span!(
                     "list_tools_for_server",
                     server_name = %server_name,
@@ -679,24 +678,25 @@ impl McpConnectionManager {
                     startup_complete
                 ))
                 .await;
-            match server_tools {
-                Some(server_tools) => Some(
-                    server_tools
-                        .into_iter()
-                        .map(|tool| self.with_server_metadata(tool))
-                        .collect::<Vec<_>>(),
-                ),
-                None => {
-                    trace!(
-                        server_name = %server_name,
-                        has_cached_tools,
-                        startup_complete,
-                        "MCP server tools unavailable while building tool list"
-                    );
-                    None
+                match server_tools {
+                    Some(server_tools) => Some(
+                        server_tools
+                            .into_iter()
+                            .map(|tool| self.with_server_metadata(tool))
+                            .collect::<Vec<_>>(),
+                    ),
+                    None => {
+                        trace!(
+                            server_name = %server_name,
+                            has_cached_tools,
+                            startup_complete,
+                            "MCP server tools unavailable while building tool list"
+                        );
+                        None
+                    }
                 }
-            }
-        }))
+            },
+        ))
         .await;
         for server_tools in server_results {
             match server_tools {
@@ -734,12 +734,12 @@ impl McpConnectionManager {
                 .map(|tool| self.with_server_metadata(tool)),
             self.prefix_mcp_tool_names,
         )
-            .into_iter()
-            .find(|tool_info| {
-                tool_info.server_name == server
-                    && tool_info.tool.name == tool
-                    && tool_is_model_visible(tool_info)
-            })
+        .into_iter()
+        .find(|tool_info| {
+            tool_info.server_name == server
+                && tool_info.tool.name == tool
+                && tool_is_model_visible(tool_info)
+        })
     }
 
     /// Force-refresh codex apps tools by bypassing the in-process cache.
@@ -838,8 +838,8 @@ impl McpConnectionManager {
             let Some(cache_context) = client.tool_catalog_cache_context.as_ref() else {
                 continue;
             };
-            let live = client.startup_complete.load(Ordering::Acquire)
-                && client.client().await.is_ok();
+            let live =
+                client.startup_complete.load(Ordering::Acquire) && client.client().await.is_ok();
             let snapshot = (!live).then(|| cache_context.catalog_snapshot());
             shared_updates.push((server_name.clone(), live, snapshot));
         }
@@ -903,13 +903,10 @@ impl McpConnectionManager {
             let Some(snapshot) = snapshot else {
                 continue;
             };
-            if local
-                .get(&server_name)
-                .is_some_and(|catalog| {
-                    catalog.generation == snapshot.generation
-                        && catalog.tools.is_some() == snapshot.tools.is_some()
-                })
-            {
+            if local.get(&server_name).is_some_and(|catalog| {
+                catalog.generation == snapshot.generation
+                    && catalog.tools.is_some() == snapshot.tools.is_some()
+            }) {
                 continue;
             }
             catalog_changed |= local.contains_key(&server_name) || snapshot.tools.is_some();

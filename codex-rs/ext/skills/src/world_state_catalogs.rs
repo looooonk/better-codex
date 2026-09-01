@@ -333,7 +333,11 @@ impl<'a> CatalogContext<'a> {
     fn emit_catalog_warnings(&self, catalog: &SkillCatalog) {
         for warning in &catalog.warnings {
             if self.emitted_warnings.insert(warning) {
-                emit_warning(self.event_sink.as_ref(), self.input.turn_id, warning.clone());
+                emit_warning(
+                    self.event_sink.as_ref(),
+                    self.input.turn_id,
+                    warning.clone(),
+                );
             }
         }
     }

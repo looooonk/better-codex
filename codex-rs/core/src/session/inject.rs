@@ -3,6 +3,8 @@ use super::session::Session;
 use super::turn_context::TurnContext;
 use crate::codex_thread::TryStartTurnIfIdleError;
 use crate::codex_thread::TryStartTurnIfIdleRejectionReason;
+use crate::context::ContextualUserFragment;
+use crate::context::RetainedClientDeveloperMessage;
 use crate::state::ActiveTurn;
 use crate::state::TurnState;
 use crate::tasks::RegularTask;
@@ -183,13 +185,18 @@ impl Session {
     }
 
     pub(crate) fn annotate_client_response_item(&self, item: ResponseItem) -> ResponseItemEnvelope {
-        let metadata = (self.enabled(Feature::RetainClientDeveloperMessages)
-            && matches!(&item, ResponseItem::Message { role, .. } if role == "developer"))
-        .then_some(CodexHarnessMetadata {
-            client_authored: true,
-        });
+        if self.enabled(Feature::RetainClientDeveloperMessages)
+            && let Some(fragment) = RetainedClientDeveloperMessage::from_response_item(&item)
+        {
+            return ResponseItemEnvelope {
+                item: ContextualUserFragment::into(fragment),
+                metadata: Some(CodexHarnessMetadata {
+                    client_authored: true,
+                }),
+            };
+        }
 
-        ResponseItemEnvelope { item, metadata }
+        ResponseItemEnvelope::new(item)
     }
 
     pub(crate) async fn record_annotated_conversation_items(
@@ -204,10 +211,15 @@ impl Session {
                 std::slice::from_ref(&envelope.item),
             );
             let mut metadata = envelope.metadata;
-            prepared.extend(items.into_owned().into_iter().map(|item| ResponseItemEnvelope {
-                item,
-                metadata: metadata.take(),
-            }));
+            prepared.extend(
+                items
+                    .into_owned()
+                    .into_iter()
+                    .map(|item| ResponseItemEnvelope {
+                        item,
+                        metadata: metadata.take(),
+                    }),
+            );
         }
         self.record_prepared_annotated_conversation_items(turn_context, prepared)
             .await;

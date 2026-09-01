@@ -566,18 +566,25 @@ impl TurnRequestProcessor {
             additional_context,
             thread_settings,
         };
-        let turn_id = thread
-            .submit_user_input_with_client_user_message_id(
-                turn_op,
-                self.request_trace_context(&request_id).await,
-                client_user_message_id,
-            )
-            .await
-            .map_err(|err| {
-                let error = internal_error(format!("failed to start turn: {err}"));
-                self.track_error_response(&request_id, &error, /*error_type*/ None);
-                error
-            })?;
+        let trace = self.request_trace_context(&request_id).await;
+        let thread_state = self.thread_state_manager.thread_state(thread_id).await;
+        let turn_id = {
+            let mut thread_state = thread_state.lock().await;
+            let turn_id = thread
+                .submit_user_input_with_client_user_message_id(
+                    turn_op,
+                    trace,
+                    client_user_message_id,
+                )
+                .await
+                .map_err(|err| {
+                    let error = internal_error(format!("failed to start turn: {err}"));
+                    self.track_error_response(&request_id, &error, /*error_type*/ None);
+                    error
+                })?;
+            thread_state.mark_user_input_submission_pending(turn_id.clone());
+            turn_id
+        };
 
         if turn_has_input {
             let config_snapshot = thread.config_snapshot().await;

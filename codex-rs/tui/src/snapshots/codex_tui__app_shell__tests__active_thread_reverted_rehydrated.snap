@@ -1,0 +1,41 @@
+---
+source: tui/src/app_shell_tests.rs
+assertion_line: 528
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 36,))"
+---
+
+  Dashboard  ◆ BC                       gpt-5-codex ▾   default ▾   default ▾  ◐ thinking · turn 0s
+────────────────────────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ SYSTEM  session reverted
+ ▎ SYSTEM  loaded 2 previous turns
+ ▎ YOU  retained prompt
+
+ ▎ CODEX  retained response
+
+ ▌ edited 1 files +1 -0
+ ▌          A src/retained.rs
+
+ ▌ tool exec cargo test
+
+   ▌ output authoritative command output
+   ▌        live command output survives
+ ──────────────────────────────────────────────────────────────────────────────────────────────────
+ ▎ YOU  current queued follower
+ ──────────────────────────────────────────────────────────────────────────────────────────────────
+ ▌ tool mcp progress: live mcp progress survives
+ ▎ ERROR  live retry detail survives
+
+
+╭──────────────────────────────────────────────────────────────────────╮
+│◆ QUEUED  1                                                           │
+│   1  retained queued message                                         │
+│Click to edit   Alt+↑↓ navigate   Shift+Alt+↑↓ reorder                │
+╰──────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  ● RUNNING  1:22                                                                        │
+│> unsent draft survives                                                                           │
+│                                                                                                  │
+│                                                                                                  │
+╰──────────────────────────────────────────────────────────────────────────────────────────────────╯

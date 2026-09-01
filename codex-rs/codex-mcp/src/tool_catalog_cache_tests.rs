@@ -99,11 +99,20 @@ fn cache_shares_optional_startup_deadline_until_catalog_publication() {
     let first_deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(1);
     let later_deadline = first_deadline + std::time::Duration::from_secs(5);
 
-    assert_eq!(first.optional_startup_deadline(first_deadline), first_deadline);
-    assert_eq!(second.optional_startup_deadline(later_deadline), first_deadline);
+    assert_eq!(
+        first.optional_startup_deadline(first_deadline),
+        first_deadline
+    );
+    assert_eq!(
+        second.optional_startup_deadline(later_deadline),
+        first_deadline
+    );
 
     first.publish_if_newest(first.begin_fetch(), &[tool("ready")]);
-    assert_eq!(second.optional_startup_deadline(later_deadline), later_deadline);
+    assert_eq!(
+        second.optional_startup_deadline(later_deadline),
+        later_deadline
+    );
 }
 
 #[test]

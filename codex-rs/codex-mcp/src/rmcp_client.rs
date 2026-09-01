@@ -75,8 +75,8 @@ use rmcp::model::InitializeRequestParams;
 use rmcp::model::JsonObject;
 use rmcp::model::ProtocolVersion;
 use rmcp::model::Tool as RmcpTool;
-use tokio::time::Instant as TokioInstant;
 use tokio::sync::RwLock;
+use tokio::time::Instant as TokioInstant;
 use tokio_util::sync::CancellationToken;
 use tracing::Instrument;
 use tracing::instrument;
@@ -512,11 +512,11 @@ impl AsyncManagedClient {
                     Arc::new(move || startup.start(ManagedClientStartupKind::Reconnect)),
                     Arc::clone(&catalog_revision),
                 )
-                    .with_startup_status_context(
-                        startup_submit_id,
-                        reconnect_server_name,
-                        reconnect_tx_event,
-                    ),
+                .with_startup_status_context(
+                    startup_submit_id,
+                    reconnect_server_name,
+                    reconnect_tx_event,
+                ),
             )
         });
         if codex_apps_tools_cache_context

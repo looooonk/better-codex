@@ -21,7 +21,6 @@ fn completion_size_includes_the_protobuf_envelope() {
     ));
 }
 
-
 #[test]
 fn oversized_delegate_values_are_not_materialized_as_json_buffers() {
     let completion = request_with_maximum(

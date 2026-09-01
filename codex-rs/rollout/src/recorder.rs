@@ -62,13 +62,13 @@ use crate::state_db;
 use crate::state_db::StateDbHandle;
 use codex_git_utils::collect_git_info;
 use codex_git_utils::get_git_repo_root;
-use codex_protocol::protocol::GitInfo as ProtocolGitInfo;
 use codex_history::InitialHistory;
-use codex_protocol::protocol::HistoryPosition;
-use codex_protocol::protocol::MultiAgentVersion;
 use codex_history::ResumedHistory;
 use codex_history::RolloutItem;
 use codex_history::RolloutLine;
+use codex_protocol::protocol::GitInfo as ProtocolGitInfo;
+use codex_protocol::protocol::HistoryPosition;
+use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::SessionContextWindow;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
@@ -829,11 +829,8 @@ impl RolloutRecorder {
             } => {
                 let ordinal_state =
                     RolloutOrdinalState::for_new_rollout(history_mode, history_base);
-                let log_file_info = precompute_log_file_info(
-                    config,
-                    conversation_id,
-                    rollout_id_override,
-                )?;
+                let log_file_info =
+                    precompute_log_file_info(config, conversation_id, rollout_id_override)?;
                 let path = log_file_info.path.clone();
                 let thread_id = log_file_info.conversation_id;
                 let started_at = log_file_info.timestamp;
@@ -849,6 +846,7 @@ impl RolloutRecorder {
                 let session_meta = SessionMeta {
                     session_id,
                     id: thread_id,
+                    rollout_id: rollout_id_override,
                     forked_from_id,
                     parent_thread_id,
                     timestamp,

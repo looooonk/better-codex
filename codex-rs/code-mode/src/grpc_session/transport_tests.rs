@@ -7,9 +7,9 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 use uuid::Uuid;
 
+use super::SharedTransport;
 use super::build_transport_client;
 use super::identify_request;
-use super::SharedTransport;
 use super::validate_endpoint;
 use super::validate_unix_endpoint;
 use crate::grpc_session::GrpcCodeModeHostCapability;
@@ -94,20 +94,15 @@ async fn loopback_transports_ignore_configured_proxy() {
     for scheme in ["http", "https"] {
         let destination = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let proxy = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let target = reqwest::Url::parse(&format!(
-            "{scheme}://{}",
-            destination.local_addr().unwrap()
-        ))
-        .unwrap();
+        let target =
+            reqwest::Url::parse(&format!("{scheme}://{}", destination.local_addr().unwrap()))
+                .unwrap();
         let client = build_transport_client(
             &target,
             &HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
-            reqwest::Client::builder()
-                .http2_prior_knowledge()
-                .proxy(
-                    reqwest::Proxy::all(format!("http://{}", proxy.local_addr().unwrap()))
-                        .unwrap(),
-                ),
+            reqwest::Client::builder().http2_prior_knowledge().proxy(
+                reqwest::Proxy::all(format!("http://{}", proxy.local_addr().unwrap())).unwrap(),
+            ),
         )
         .unwrap();
         let request = tokio::spawn(async move { client.get(target).send().await });

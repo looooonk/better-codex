@@ -8,6 +8,7 @@ use sqlx::migrate::Migrator;
 use sqlx::sqlite::SqlitePoolOptions;
 
 use super::STATE_MIGRATOR;
+use super::repair_legacy_better_migration_versions;
 use super::repair_legacy_recency_migration_version;
 use super::runtime_state_migrator;
 
@@ -67,7 +68,7 @@ async fn queue_block_owner_migration_preserves_existing_pause_controls() {
         .connect("sqlite::memory:")
         .await
         .expect("in-memory database should open");
-    migrator_through(/*version*/ 50)
+    migrator_through(/*version*/ 10_002)
         .run(&pool)
         .await
         .expect("thread queue schema should apply");
@@ -667,7 +668,7 @@ WHERE type = 'table' AND name IN ('agent_jobs', 'agent_job_items')
     runtime_state_migrator()
         .run(&pool)
         .await
-        .expect("runtime migration should tolerate 0042 and apply 0049");
+        .expect("runtime migration should tolerate 0042 and apply 10001");
     sqlx::query(
         r#"
 INSERT INTO agent_jobs (
@@ -726,5 +727,112 @@ WHERE jobs.id = ?
             Some(600),
             "item-restored".to_string(),
         )
+    );
+}
+
+#[tokio::test]
+async fn repairs_legacy_better_migration_versions_before_applying_upstream_collisions() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory database should open");
+    let mut legacy_migrations = STATE_MIGRATOR
+        .migrations
+        .iter()
+        .filter(|migration| migration.version <= 48)
+        .cloned()
+        .collect::<Vec<_>>();
+    for (legacy_version, reserved_version) in [(49, 10_001), (50, 10_002), (51, 10_003)] {
+        let reserved_migration = STATE_MIGRATOR
+            .migrations
+            .iter()
+            .find(|migration| migration.version == reserved_version)
+            .expect("reserved Better migration should exist");
+        legacy_migrations.push(Migration::new(
+            legacy_version,
+            reserved_migration.description.clone(),
+            reserved_migration.migration_type,
+            reserved_migration.sql.clone(),
+            reserved_migration.no_tx,
+        ));
+    }
+    Migrator::with_migrations(legacy_migrations)
+        .run(&pool)
+        .await
+        .expect("legacy Better migrations should apply at colliding versions");
+
+    repair_legacy_better_migration_versions(&pool, &STATE_MIGRATOR)
+        .await
+        .expect("legacy Better migration history should be repaired");
+    runtime_state_migrator()
+        .run(&pool)
+        .await
+        .expect("upstream and reserved Better migrations should coexist");
+
+    let applied = sqlx::query_as::<_, (i64, Vec<u8>)>(
+        "SELECT version, checksum FROM _sqlx_migrations WHERE version >= 49 ORDER BY version",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("repaired migrations should load");
+    let expected = STATE_MIGRATOR
+        .migrations
+        .iter()
+        .filter(|migration| migration.version >= 49)
+        .map(|migration| (migration.version, migration.checksum.to_vec()))
+        .collect::<Vec<_>>();
+    assert_eq!(applied, expected);
+    let tables = sqlx::query_scalar::<_, String>(
+        r#"
+SELECT name FROM sqlite_master
+WHERE type = 'table'
+  AND name IN ('projects', 'thread_artifacts', 'thread_queue_items', 'thread_queue_controls')
+ORDER BY name
+        "#,
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("upstream and Better tables should load");
+    assert_eq!(
+        tables,
+        vec![
+            "projects".to_string(),
+            "thread_artifacts".to_string(),
+            "thread_queue_controls".to_string(),
+            "thread_queue_items".to_string(),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn upstream_migrations_0049_through_0052_accept_reserved_better_migrations() {
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .expect("in-memory database should open");
+    migrator_through(/*version*/ 52)
+        .run(&pool)
+        .await
+        .expect("upstream migrations through 0052 should apply");
+
+    repair_legacy_better_migration_versions(&pool, &STATE_MIGRATOR)
+        .await
+        .expect("genuine upstream migration history should remain unchanged");
+    runtime_state_migrator()
+        .run(&pool)
+        .await
+        .expect("reserved Better migrations should apply after upstream 0052");
+
+    let applied_versions = sqlx::query_scalar::<_, i64>(
+        "SELECT version FROM _sqlx_migrations WHERE version >= 49 ORDER BY version",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("migration versions should load");
+    assert_eq!(
+        applied_versions,
+        vec![49, 50, 51, 52, 10_001, 10_002, 10_003]
     );
 }

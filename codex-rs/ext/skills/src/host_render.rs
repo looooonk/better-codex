@@ -1,25 +1,25 @@
 use crate::host_outcome::SkillLoadOutcome;
-use codex_skills::SkillMetadata;
 use codex_otel::SessionTelemetry;
 use codex_otel::THREAD_SKILLS_DESCRIPTION_TRUNCATED_CHARS_METRIC;
 use codex_otel::THREAD_SKILLS_ENABLED_TOTAL_METRIC;
 use codex_otel::THREAD_SKILLS_KEPT_TOTAL_METRIC;
 use codex_otel::THREAD_SKILLS_TRUNCATED_METRIC;
 use codex_protocol::protocol::SkillScope;
+use codex_skills::SkillMetadata;
 use codex_utils_output_truncation::approx_token_count;
 
-mod allocation;
 mod aliases;
+mod allocation;
 
-use allocation::SkillLine;
-use allocation::render_skill_lines_from_lines;
-use aliases::aliased_render_is_better;
-use aliases::build_aliased_available_skills;
 use aliases::SkillPathAliases;
+use aliases::aliased_render_is_better;
 #[cfg(test)]
 use aliases::build_alias_plan;
+use aliases::build_aliased_available_skills;
 #[cfg(test)]
 use aliases::render_skill_path_with_aliases;
+use allocation::SkillLine;
+use allocation::render_skill_lines_from_lines;
 
 const DEFAULT_SKILL_METADATA_CHAR_BUDGET: usize = 8_000;
 const SKILL_METADATA_CONTEXT_WINDOW_PERCENT: usize = 2;

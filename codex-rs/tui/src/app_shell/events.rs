@@ -33,11 +33,14 @@ impl ShellState {
         self.drain_agent_history_updates();
         match event {
             AppServerEvent::Lagged { skipped } => {
+                let refreshed_reverted_session = self.handle_reverted_thread_lag(app_server).await;
                 self.push_system(format!("skipped {skipped} best-effort backend events"));
                 self.diff_store.mark_history_truncated();
                 self.refresh_open_diff_view();
                 self.mark_workspace_status_refresh_due();
-                self.request_queue_hydration(app_server);
+                if !refreshed_reverted_session {
+                    self.request_queue_hydration(app_server);
+                }
             }
             AppServerEvent::ServerNotification(notification) => {
                 if let ServerNotification::ExternalAgentConfigImportCompleted(notification) =
@@ -63,6 +66,14 @@ impl ShellState {
                     ServerNotification::ThreadQueueChanged(changed)
                         if changed.thread_id == self.thread_id.to_string()
                 );
+                let reverted_current = matches!(
+                    &notification,
+                    ServerNotification::ThreadReverted(reverted)
+                        if reverted.thread_id == self.thread_id.to_string()
+                );
+                if reverted_current {
+                    self.handle_current_thread_reverted(app_server).await;
+                }
                 self.handle_notification(notification);
                 if refresh_session_list {
                     self.start_session_list_refresh(app_server);
@@ -132,6 +143,7 @@ impl ShellState {
             }
             ServerNotification::TurnStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
+                    self.mark_thread_revert_hydration_stale();
                     self.record_active_turn_started(started.turn.id.clone());
                     self.reset_safety_buffering_for_turn_start(&started.turn.id);
                     self.status = "thinking".to_string();
@@ -146,6 +158,7 @@ impl ShellState {
             }
             ServerNotification::TurnCompleted(completed) => {
                 if completed.thread_id == self.thread_id.to_string() {
+                    self.mark_thread_revert_hydration_stale();
                     let completed_active_turn =
                         self.active_turn_id.as_deref() == Some(completed.turn.id.as_str());
                     let turn_ended = !matches!(&completed.turn.status, TurnStatus::InProgress);
@@ -181,6 +194,9 @@ impl ShellState {
                 }
             }
             ServerNotification::ThreadStatusChanged(changed) => {
+                if changed.thread_id == self.thread_id.to_string() {
+                    self.mark_thread_revert_hydration_stale();
+                }
                 self.handle_remote_thread_status(&changed.thread_id, changed.status);
             }
             ServerNotification::ThreadStarted(started) => {
@@ -210,11 +226,13 @@ impl ShellState {
                 .handle_remote_thread_lifecycle(&closed.thread_id, RemoteThreadLifecycle::Closed),
             ServerNotification::ThreadNameUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
+                    self.mark_thread_revert_hydration_stale();
                     self.thread_name = updated.thread_name;
                 }
             }
             ServerNotification::ThreadSettingsUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
+                    self.mark_thread_revert_hydration_stale();
                     let settings = updated.thread_settings;
                     self.permission_profile =
                         codex_protocol::models::PermissionProfile::from_legacy_sandbox_policy_for_cwd(
@@ -242,6 +260,7 @@ impl ShellState {
             }
             ServerNotification::TurnDiffUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
+                    self.mark_thread_revert_hydration_stale();
                     self.record_turn_diff(&updated.turn_id, &updated.diff);
                     self.mark_workspace_status_refresh_due();
                 } else if self.is_active_agent_thread(&updated.thread_id) {
@@ -252,6 +271,7 @@ impl ShellState {
             }
             ServerNotification::TurnPlanUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
+                    self.mark_thread_revert_hydration_stale();
                     self.plan_explanation = updated.explanation;
                     self.plan_steps = updated.plan;
                 }
@@ -269,6 +289,7 @@ impl ShellState {
             ServerNotification::ThreadQueueChanged(_) => {}
             ServerNotification::ItemStarted(started) => {
                 if started.thread_id == self.thread_id.to_string() {
+                    self.mark_thread_revert_hydration_stale();
                     self.mark_retry_recovered(&started.turn_id);
                     self.mark_active_agent_threads(&started.item);
                     self.agent_activity.reduce_started(&started.item);
@@ -298,6 +319,7 @@ impl ShellState {
             }
             ServerNotification::ItemCompleted(completed) => {
                 if completed.thread_id == self.thread_id.to_string() {
+                    self.mark_thread_revert_hydration_stale();
                     self.mark_retry_recovered(&completed.turn_id);
                     self.mark_active_agent_threads(&completed.item);
                     let rewind_anchor = match &completed.item {
@@ -362,6 +384,7 @@ impl ShellState {
             }
             ServerNotification::CommandExecutionOutputDelta(delta) => {
                 if delta.thread_id == self.thread_id.to_string() {
+                    self.mark_thread_revert_hydration_stale();
                     self.push_output_delta_with_status_for_item(
                         delta.item_id,
                         delta.delta,
@@ -379,6 +402,7 @@ impl ShellState {
             }
             ServerNotification::FileChangePatchUpdated(updated) => {
                 if updated.thread_id == self.thread_id.to_string() {
+                    self.mark_thread_revert_hydration_stale();
                     self.record_file_changes(
                         &updated.turn_id,
                         &updated.item_id,
@@ -429,6 +453,7 @@ impl ShellState {
                 }
             }
             ServerNotification::CommandExecOutputDelta(delta) => {
+                self.mark_thread_revert_hydration_stale();
                 let item_id = format!("command-exec:{}", delta.process_id);
                 if let Some(output) = base64::engine::general_purpose::STANDARD
                     .decode(delta.delta_base64)
@@ -560,17 +585,21 @@ impl ShellState {
     where
         S: AppShellBackend,
     {
-        if let Some(thread_id) = request_thread_id(&request)
-            && thread_id != self.thread_id.to_string()
-            && !self.is_active_agent_thread(&thread_id)
-        {
-            self.reject_request_with_message(
-                app_server,
-                request.id().clone(),
-                format!("interactive request belongs to inactive thread {thread_id}"),
-            )
-            .await?;
-            return Ok(());
+        if let Some(thread_id) = request_thread_id(&request) {
+            if thread_id != self.thread_id.to_string() && !self.is_active_agent_thread(&thread_id) {
+                self.reject_request_with_message(
+                    app_server,
+                    request.id().clone(),
+                    format!("interactive request belongs to inactive thread {thread_id}"),
+                )
+                .await?;
+                return Ok(());
+            }
+            if thread_id == self.thread_id.to_string()
+                && !matches!(&request, ServerRequest::CurrentTimeRead { .. })
+            {
+                self.mark_thread_revert_hydration_stale();
+            }
         }
         if let ServerRequest::CurrentTimeRead { request_id, .. } = &request {
             let result = serde_json::to_value(CurrentTimeReadResponse {

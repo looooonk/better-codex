@@ -5,11 +5,11 @@ use chrono::DateTime;
 use chrono::NaiveDateTime;
 use chrono::Timelike;
 use chrono::Utc;
-use codex_protocol::ThreadId;
 use codex_history::CompactedItem;
-use codex_protocol::protocol::GitInfo;
 use codex_history::RolloutItem;
 use codex_history::RolloutLine;
+use codex_protocol::ThreadId;
+use codex_protocol::protocol::GitInfo;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
@@ -36,6 +36,7 @@ async fn extract_metadata_from_rollout_uses_session_meta() {
     let session_meta = SessionMeta {
         session_id: id.into(),
         id,
+        rollout_id: None,
         forked_from_id: None,
         parent_thread_id: None,
         timestamp: "2026-01-27T12:34:56Z".to_string(),
@@ -134,6 +135,7 @@ async fn extract_metadata_from_rollout_returns_latest_memory_mode() {
     let session_meta = SessionMeta {
         session_id: id.into(),
         id,
+        rollout_id: None,
         forked_from_id: None,
         parent_thread_id: None,
         timestamp: "2026-01-27T12:34:56Z".to_string(),
@@ -418,6 +420,7 @@ fn write_rollout_in_sessions_with_cwd(
     let session_meta = SessionMeta {
         session_id: id.into(),
         id,
+        rollout_id: None,
         forked_from_id: None,
         parent_thread_id: None,
         timestamp: event_ts.to_string(),

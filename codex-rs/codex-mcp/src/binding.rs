@@ -55,13 +55,11 @@ impl McpBinding {
     }
 
     pub fn tool(&self, server: &str, tool: &str) -> Option<&ToolInfo> {
-        self.tools
-            .iter()
-            .find(|info| {
-                info.server_name == server
-                    && info.tool.name == tool
-                    && crate::tool_is_model_visible(info)
-            })
+        self.tools.iter().find(|info| {
+            info.server_name == server
+                && info.tool.name == tool
+                && crate::tool_is_model_visible(info)
+        })
     }
 
     pub async fn wait_for_server_startup(&self, server: &str) -> bool {

@@ -2,22 +2,22 @@ use std::io;
 use std::net::IpAddr;
 use std::sync::Arc;
 
-use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
 use codex_code_mode_protocol::grpc::CAPABILITY_METADATA_KEY;
 use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
-use codex_http_client::build_reqwest_client_with_custom_ca;
+use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
 use codex_http_client::ClientRouteClass;
 use codex_http_client::HttpClientFactory;
+use codex_http_client::build_reqwest_client_with_custom_ca;
 use http_body_util::BodyExt;
+use tokio::sync::Semaphore;
 use tonic::body::Body;
+use tonic::codegen::http::HeaderValue;
 use tonic::codegen::http::Request;
 use tonic::codegen::http::Response;
-use tonic::codegen::http::HeaderValue;
 use tonic::codegen::http::Uri;
 use tonic::transport::Channel;
 use tonic::transport::Endpoint;
-use tokio::sync::Semaphore;
 use tower::ServiceExt;
 use tower::service_fn;
 use tower::util::BoxCloneSyncService;
@@ -228,10 +228,7 @@ fn identify_request<T>(
     if let Some(capability) = capability {
         let mut value: HeaderValue = capability.as_str().parse().map_err(io::Error::other)?;
         value.set_sensitive(true);
-        request.headers_mut().insert(
-            CAPABILITY_METADATA_KEY,
-            value,
-        );
+        request.headers_mut().insert(CAPABILITY_METADATA_KEY, value);
     }
     Ok(())
 }
@@ -278,8 +275,8 @@ fn validate_endpoint(endpoint: &str) -> Result<reqwest::Url, String> {
     if endpoint.len() > MAX_ENDPOINT_BYTES {
         return Err("gRPC code-mode host URL is too long".to_string());
     }
-    let target = reqwest::Url::parse(endpoint)
-        .map_err(|_| "invalid gRPC code-mode host URL".to_string())?;
+    let target =
+        reqwest::Url::parse(endpoint).map_err(|_| "invalid gRPC code-mode host URL".to_string())?;
     if !matches!(target.scheme(), "http" | "https") {
         return Err("gRPC code-mode host URL must use http or https".to_string());
     }
@@ -302,9 +299,7 @@ fn validate_endpoint(endpoint: &str) -> Result<reqwest::Url, String> {
             })
             .is_some_and(|ip| ip.is_loopback())
     {
-        return Err(
-            "plaintext gRPC code-mode hosts must use a loopback IP address".to_string(),
-        );
+        return Err("plaintext gRPC code-mode hosts must use a loopback IP address".to_string());
     }
     Ok(target)
 }

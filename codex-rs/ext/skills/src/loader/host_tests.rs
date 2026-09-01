@@ -461,11 +461,7 @@ async fn direct_child_plugin_root_rejects_skills_resolving_outside_owner() {
 async fn recursive_plugin_root_preserves_symlink_discovery_path() {
     let root = TempDir::new().expect("temp dir");
     let target = TempDir::new().expect("target temp dir");
-    let target_skill = write_skill(
-        &target,
-        "demo",
-        "name: demo\ndescription: Symlinked skill",
-    );
+    let target_skill = write_skill(&target, "demo", "name: demo\ndescription: Symlinked skill");
     fs::create_dir_all(root.path().join("skills")).expect("create skills root");
     std::os::unix::fs::symlink(target.path().join("demo"), root.path().join("skills/alias"))
         .expect("create skill symlink");

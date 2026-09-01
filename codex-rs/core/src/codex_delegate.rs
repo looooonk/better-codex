@@ -55,14 +55,14 @@ use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::tools::ApprovalAction;
 use crate::tools::ApprovalContext;
+use crate::tools::context::ToolCallSource;
 use crate::tools::ensure_approval_grant_is_current;
 use crate::tools::request_approval;
-use crate::tools::context::ToolCallSource;
 use crate::tools::sandboxing::ToolError;
+use codex_history::InitialHistory;
 use codex_login::AuthManager;
 use codex_models_manager::manager::SharedModelsManager;
 use codex_protocol::error::CodexErr;
-use codex_history::InitialHistory;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_tools::ToolName;
 
@@ -92,102 +92,105 @@ pub(crate) fn run_codex_thread_interactive(
     initial_history: Option<InitialHistory>,
 ) -> futures::future::BoxFuture<'static, Result<Codex, CodexErr>> {
     Box::pin(async move {
-    let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
-    let (tx_ops, rx_ops) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
-    let conversation_history = initial_history.unwrap_or(InitialHistory::New);
-    let forked_from_thread_id = conversation_history.forked_from_id();
-    let user_instructions = LoadedUserInstructions {
-        instructions: parent_session.user_instructions().await,
-        warnings: Vec::new(),
-    };
-    let CodexSpawnOk { codex, .. } = Box::pin(Codex::spawn(CodexSpawnArgs {
-        config,
-        allow_provider_model_fallback: false,
-        user_instructions,
-        installation_id: parent_session.installation_id.clone(),
-        auth_manager,
-        models_manager,
-        environment_manager: parent_session
-            .services
-            .turn_environments
-            .environment_manager(),
-        skills_service: Arc::clone(&parent_session.services.skills_service),
-        plugins_manager: Arc::clone(&parent_session.services.plugins_manager),
-        mcp_manager: Arc::clone(&parent_session.services.mcp_manager),
-        code_mode_session_provider: parent_session.services.code_mode_service.session_provider(),
-        extensions: Arc::clone(&parent_session.services.extensions),
-        conversation_history,
-        requested_history_mode: None,
-        session_source: SessionSource::SubAgent(subagent_source.clone()),
-        forked_from_thread_id,
-        parent_thread_id: Some(parent_session.thread_id),
-        thread_source: Some(ThreadSource::Subagent),
-        originator: parent_ctx.originator.clone(),
-        agent_control: parent_session.services.agent_control.clone(),
-        dynamic_tools: Vec::new(),
-        metrics_service_name: None,
-        user_shell_override: None,
-        inherited_environments: Some(parent_ctx.environments.clone()),
-        inherited_exec_policy: Some(Arc::clone(&parent_session.services.exec_policy)),
-        parent_rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
-        parent_trace: None,
-        environment_selections: parent_ctx.environments.to_selections(),
-        thread_extension_init: codex_extension_api::ExtensionDataInit::default(),
-        supports_openai_form_elicitation: parent_session
-            .services
-            .supports_openai_form_elicitation
-            .load(std::sync::atomic::Ordering::Relaxed),
-        analytics_events_client: Some(parent_session.services.analytics_events_client.clone()),
-        thread_store: Arc::clone(&parent_session.services.thread_store),
-        attestation_provider: parent_session.services.attestation_provider.clone(),
-        external_time_provider: Some(Arc::clone(&parent_session.services.time_provider)),
-        inherited_multi_agent_version: Some(MultiAgentVersion::Disabled),
-    }))
-    .or_cancel(&cancel_token)
-    .await??;
-    let thread_config = codex.thread_config_snapshot().await;
-    let client_metadata = parent_session.app_server_client_metadata().await;
-    emit_subagent_session_started(
-        &parent_session.services.analytics_events_client,
-        client_metadata,
-        codex.session.session_id(),
-        codex.session.thread_id,
-        Some(parent_session.thread_id),
-        thread_config,
-        subagent_source,
-    );
-    let codex = Arc::new(codex);
+        let (tx_sub, rx_sub) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
+        let (tx_ops, rx_ops) = async_channel::bounded(SUBMISSION_CHANNEL_CAPACITY);
+        let conversation_history = initial_history.unwrap_or(InitialHistory::New);
+        let forked_from_thread_id = conversation_history.forked_from_id();
+        let user_instructions = LoadedUserInstructions {
+            instructions: parent_session.user_instructions().await,
+            warnings: Vec::new(),
+        };
+        let CodexSpawnOk { codex, .. } = Box::pin(Codex::spawn(CodexSpawnArgs {
+            config,
+            allow_provider_model_fallback: false,
+            user_instructions,
+            installation_id: parent_session.installation_id.clone(),
+            auth_manager,
+            models_manager,
+            environment_manager: parent_session
+                .services
+                .turn_environments
+                .environment_manager(),
+            skills_service: Arc::clone(&parent_session.services.skills_service),
+            plugins_manager: Arc::clone(&parent_session.services.plugins_manager),
+            mcp_manager: Arc::clone(&parent_session.services.mcp_manager),
+            code_mode_session_provider: parent_session
+                .services
+                .code_mode_service
+                .session_provider(),
+            extensions: Arc::clone(&parent_session.services.extensions),
+            conversation_history,
+            requested_history_mode: None,
+            session_source: SessionSource::SubAgent(subagent_source.clone()),
+            forked_from_thread_id,
+            parent_thread_id: Some(parent_session.thread_id),
+            thread_source: Some(ThreadSource::Subagent),
+            originator: parent_ctx.originator.clone(),
+            agent_control: parent_session.services.agent_control.clone(),
+            dynamic_tools: Vec::new(),
+            metrics_service_name: None,
+            user_shell_override: None,
+            inherited_environments: Some(parent_ctx.environments.clone()),
+            inherited_exec_policy: Some(Arc::clone(&parent_session.services.exec_policy)),
+            parent_rollout_thread_trace: codex_rollout_trace::ThreadTraceContext::disabled(),
+            parent_trace: None,
+            environment_selections: parent_ctx.environments.to_selections(),
+            thread_extension_init: codex_extension_api::ExtensionDataInit::default(),
+            supports_openai_form_elicitation: parent_session
+                .services
+                .supports_openai_form_elicitation
+                .load(std::sync::atomic::Ordering::Relaxed),
+            analytics_events_client: Some(parent_session.services.analytics_events_client.clone()),
+            thread_store: Arc::clone(&parent_session.services.thread_store),
+            attestation_provider: parent_session.services.attestation_provider.clone(),
+            external_time_provider: Some(Arc::clone(&parent_session.services.time_provider)),
+            inherited_multi_agent_version: Some(MultiAgentVersion::Disabled),
+        }))
+        .or_cancel(&cancel_token)
+        .await??;
+        let thread_config = codex.thread_config_snapshot().await;
+        let client_metadata = parent_session.app_server_client_metadata().await;
+        emit_subagent_session_started(
+            &parent_session.services.analytics_events_client,
+            client_metadata,
+            codex.session.session_id(),
+            codex.session.thread_id,
+            Some(parent_session.thread_id),
+            thread_config,
+            subagent_source,
+        );
+        let codex = Arc::new(codex);
 
-    // Use a child token so parent cancel cascades but we can scope it to this task
-    let cancel_token_events = cancel_token.child_token();
-    let cancel_token_ops = cancel_token.child_token();
+        // Use a child token so parent cancel cascades but we can scope it to this task
+        let cancel_token_events = cancel_token.child_token();
+        let cancel_token_ops = cancel_token.child_token();
 
-    // Forward events from the sub-agent to the consumer, filtering approvals and
-    // routing them to the parent session for decisions.
-    let parent_session_clone = Arc::clone(&parent_session);
-    let parent_ctx_clone = Arc::clone(&parent_ctx);
-    let codex_for_events = Arc::clone(&codex);
-    // Cache the child call's MCP metadata at begin time. The later legacy
-    // RequestUserInput approval event only carries a call_id and question metadata.
-    let pending_mcp_invocations =
-        Arc::new(Mutex::new(HashMap::<String, PendingMcpInvocation>::new()));
-    tokio::spawn(async move {
-        forward_events(
-            codex_for_events,
-            tx_sub,
-            parent_session_clone,
-            parent_ctx_clone,
-            pending_mcp_invocations,
-            cancel_token_events,
-        )
-        .await;
-    });
+        // Forward events from the sub-agent to the consumer, filtering approvals and
+        // routing them to the parent session for decisions.
+        let parent_session_clone = Arc::clone(&parent_session);
+        let parent_ctx_clone = Arc::clone(&parent_ctx);
+        let codex_for_events = Arc::clone(&codex);
+        // Cache the child call's MCP metadata at begin time. The later legacy
+        // RequestUserInput approval event only carries a call_id and question metadata.
+        let pending_mcp_invocations =
+            Arc::new(Mutex::new(HashMap::<String, PendingMcpInvocation>::new()));
+        tokio::spawn(async move {
+            forward_events(
+                codex_for_events,
+                tx_sub,
+                parent_session_clone,
+                parent_ctx_clone,
+                pending_mcp_invocations,
+                cancel_token_events,
+            )
+            .await;
+        });
 
-    // Forward ops from the caller to the sub-agent.
-    let codex_for_ops = Arc::clone(&codex);
-    tokio::spawn(async move {
-        forward_ops(codex_for_ops, rx_ops, cancel_token_ops).await;
-    });
+        // Forward ops from the caller to the sub-agent.
+        let codex_for_ops = Arc::clone(&codex);
+        tokio::spawn(async move {
+            forward_ops(codex_for_ops, rx_ops, cancel_token_ops).await;
+        });
 
         Ok(Codex {
             tx_sub: tx_ops,
@@ -517,7 +520,10 @@ async fn review_pending_delegated_action(
         }
         #[cfg(unix)]
         ApprovalAction::Execve {
-            id, approval_id, source, ..
+            id,
+            approval_id,
+            source,
+            ..
         } => (
             id.clone(),
             approval_id.clone(),
@@ -564,13 +570,8 @@ async fn review_pending_delegated_action(
         Ok(grant) => grant,
         Err(error) => return Some(delegated_approval_error_decision(error)),
     };
-    if let Err(error) = ensure_approval_grant_is_current(
-        parent_session,
-        parent_ctx,
-        cancel_token,
-        &grant,
-    )
-    .await
+    if let Err(error) =
+        ensure_approval_grant_is_current(parent_session, parent_ctx, cancel_token, &grant).await
     {
         return Some(delegated_approval_error_decision(error));
     }
@@ -939,9 +940,10 @@ async fn maybe_auto_review_mcp_request_user_input(
         | ReviewDecision::ApprovedMcpPolicyAmendment
         | ReviewDecision::ApprovedExecpolicyAmendment { .. }
         | ReviewDecision::NetworkPolicyAmendment { .. } => MCP_TOOL_APPROVAL_ACCEPT.to_string(),
-        ReviewDecision::Denied { .. } | ReviewDecision::TimedOut | ReviewDecision::Abort => {
-            MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC.to_string()
-        }
+        ReviewDecision::Denied
+        | ReviewDecision::DeniedWithReason { .. }
+        | ReviewDecision::TimedOut
+        | ReviewDecision::Abort => MCP_TOOL_APPROVAL_DECLINE_SYNTHETIC.to_string(),
     };
     Some(RequestUserInputResponse {
         answers: HashMap::from([(

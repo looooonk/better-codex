@@ -63,9 +63,7 @@ pub(super) async fn acknowledge_notification<T>(
         Err(RequestError::Failed(error)) if error.code() == tonic::Code::AlreadyExists => {
             Ok(NotificationAcknowledgement::Retired)
         }
-        Err(RequestError::Failed(error)) => {
-            Err(failure("notification acknowledgement", error))
-        }
+        Err(RequestError::Failed(error)) => Err(failure("notification acknowledgement", error)),
         Err(RequestError::TimedOut(reason)) => {
             session.fail(reason.clone());
             Err(reason)

@@ -1,8 +1,8 @@
 //! Secret redaction for copies that leave the live execution/model boundary.
 
+use codex_history::RolloutItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
-use codex_history::RolloutItem;
 use codex_secrets::redact_secrets;
 use regex::Captures;
 use regex::Regex;
@@ -11,15 +11,12 @@ use std::sync::LazyLock;
 
 const MAX_NESTED_COMMAND_DEPTH: usize = 2;
 const REDACTION: &str = "[REDACTED_SECRET]";
-static AUTHORIZATION_HEADER_REGEX: LazyLock<Regex> =
-    LazyLock::new(
-        || match Regex::new(
-            r"(?im)(?P<prefix>\bauthorization[ \t]*:[ \t]*)(?P<value>[^\r\n]+)",
-        ) {
-            Ok(regex) => regex,
-            Err(err) => panic!("invalid authorization header regex: {err}"),
-        },
-    );
+static AUTHORIZATION_HEADER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    match Regex::new(r"(?im)(?P<prefix>\bauthorization[ \t]*:[ \t]*)(?P<value>[^\r\n]+)") {
+        Ok(regex) => regex,
+        Err(err) => panic!("invalid authorization header regex: {err}"),
+    }
+});
 
 /// Redacts recognizable credentials in a serialized persistence or diagnostic copy.
 ///
@@ -303,10 +300,7 @@ fn is_protected_field(field_name: &str) -> bool {
         || field_name.ends_with("Id")
         || matches!(
             field_name,
-            "encrypted_content"
-                | "encryptedContent"
-                | "user_authorization"
-                | "userAuthorization"
+            "encrypted_content" | "encryptedContent" | "user_authorization" | "userAuthorization"
         )
 }
 

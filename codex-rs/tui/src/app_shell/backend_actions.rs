@@ -5,11 +5,12 @@ use super::queued_messages::QueueMutation;
 use super::queued_messages::QueueRpcResponse;
 use super::settings::SettingsUpdate;
 use crate::app_server_session::AppServerStartedThread;
-use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::QueuedSubmission;
+use codex_app_server_protocol::RequestId;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_protocol::ThreadId;
 use color_eyre::Result;
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
 use tokio::task::JoinSet;
@@ -98,24 +99,41 @@ pub(super) enum BackendActionResult {
 
 #[derive(Debug)]
 struct CompletedAction {
-    group: Option<ActionGroup>,
+    group: Option<(ActionGroup, u64)>,
     result: BackendActionResult,
 }
 
 #[derive(Default)]
 pub(super) struct BackendActions {
     groups: HashSet<ActionGroup>,
+    group_revisions: HashMap<ActionGroup, u64>,
     tasks: JoinSet<CompletedAction>,
 }
 
 impl BackendActions {
+    pub(super) fn invalidate(&mut self, groups: impl IntoIterator<Item = ActionGroup>) {
+        for group in groups {
+            self.groups.remove(&group);
+            let revision = self.group_revisions.entry(group).or_default();
+            *revision = revision.wrapping_add(1);
+        }
+    }
+
     pub(super) fn start<F>(&mut self, group: Option<ActionGroup>, future: F) -> bool
     where
         F: Future<Output = BackendActionResult> + Send + 'static,
     {
-        if group.is_some_and(|group| !self.groups.insert(group)) {
-            return false;
-        }
+        let group = match group {
+            Some(group) if !self.groups.insert(group) => return false,
+            Some(group) => Some((
+                group,
+                self.group_revisions
+                    .get(&group)
+                    .copied()
+                    .unwrap_or_default(),
+            )),
+            None => None,
+        };
         self.tasks.spawn(async move {
             CompletedAction {
                 group,
@@ -134,16 +152,27 @@ impl BackendActions {
     }
 
     fn try_next(&mut self) -> Option<Result<BackendActionResult>> {
-        match self.tasks.try_join_next()? {
-            Ok(completed) => {
-                if let Some(group) = completed.group {
-                    self.groups.remove(&group);
+        loop {
+            match self.tasks.try_join_next()? {
+                Ok(completed) => {
+                    if let Some((group, revision)) = completed.group {
+                        if self
+                            .group_revisions
+                            .get(&group)
+                            .copied()
+                            .unwrap_or_default()
+                            != revision
+                        {
+                            continue;
+                        }
+                        self.groups.remove(&group);
+                    }
+                    return Some(Ok(completed.result));
                 }
-                Some(Ok(completed.result))
-            }
-            Err(err) => {
-                self.groups.clear();
-                Some(Err(err.into()))
+                Err(err) => {
+                    self.groups.clear();
+                    return Some(Err(err.into()));
+                }
             }
         }
     }

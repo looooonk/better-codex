@@ -8,8 +8,8 @@ use crate::event_mapping::is_contextual_dev_message_content;
 use crate::session::turn_context::TurnContext;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use codex_history::ResponseItemEnvelope;
 use codex_history::CodexHarnessMetadata;
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::FunctionCallOutputBody;
@@ -260,10 +260,8 @@ impl ContextManager {
     /// Returns true when a tool image was replaced, false otherwise.
     pub(crate) fn replace_last_turn_images(&mut self, placeholder: &str) -> bool {
         let Some(index) = self.items.iter().rposition(|envelope| {
-            matches!(
-                &envelope.item,
-                ResponseItem::FunctionCallOutput { .. }
-            ) || is_user_turn_boundary(&envelope.item)
+            matches!(&envelope.item, ResponseItem::FunctionCallOutput { .. })
+                || is_user_turn_boundary(&envelope.item)
         }) else {
             return false;
         };

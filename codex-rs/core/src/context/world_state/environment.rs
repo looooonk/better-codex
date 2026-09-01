@@ -114,7 +114,9 @@ impl WorldStateSection for EnvironmentsState {
         let empty = EnvironmentsSnapshot::default();
         let previous = match previous {
             PreviousSectionState::Known(previous) => previous,
-            PreviousSectionState::Absent | PreviousSectionState::Unknown => &empty,
+            PreviousSectionState::Absent
+            | PreviousSectionState::Unknown
+            | PreviousSectionState::Stale => &empty,
         };
         let turn_context_values_changed = current.current_date != previous.current_date
             || current.timezone != previous.timezone

@@ -77,11 +77,12 @@ pub(super) async fn read_thread(
     } else {
         thread_rollout_resolver::resolve_current(store, thread_id).await?
     };
-    let path = resolved
-        .map(|resolved| resolved.path)
-        .ok_or_else(|| ThreadStoreError::InvalidRequest {
-            message: format!("no rollout found for thread id {thread_id}"),
-        })?;
+    let path =
+        resolved
+            .map(|resolved| resolved.path)
+            .ok_or_else(|| ThreadStoreError::InvalidRequest {
+                message: format!("no rollout found for thread id {thread_id}"),
+            })?;
 
     let mut thread = read_thread_from_rollout_path(store, path).await?;
     if !params.include_archived && thread.archived_at.is_some() {

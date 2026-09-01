@@ -229,11 +229,7 @@ async fn skill_loading_and_reads_use_the_supplied_executor_file_system() {
     );
     let snapshot = service
         .snapshot_for_config(
-            &HostSkillsLoadInput::new(
-                cwd,
-                Vec::new(),
-                config_layer_stack,
-            ),
+            &HostSkillsLoadInput::new(cwd, Vec::new(), config_layer_stack),
             Some(Arc::new(SyntheticFileSystem {
                 alias_root: PathUri::from_abs_path(&alias_root),
                 canonical_root: PathUri::from_abs_path(&canonical_root),

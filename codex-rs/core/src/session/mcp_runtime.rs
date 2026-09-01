@@ -1,8 +1,8 @@
 use std::fmt;
 use std::sync::Arc;
 
-use codex_mcp::McpConfig;
 use codex_mcp::McpBinding;
+use codex_mcp::McpConfig;
 use codex_mcp::McpConnectionManager;
 use codex_mcp::McpRuntimeContext;
 use codex_protocol::capabilities::SelectedCapabilityRoot;

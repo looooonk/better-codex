@@ -35,6 +35,8 @@ trait ErasedWorldStateSection: Send + Sync {
 
     fn matches_legacy_fragment(&self, role: &str, text: &str) -> bool;
 
+    fn matches_section_fragment(&self, role: &str, text: &str) -> bool;
+
     fn has_retained_fragment_matcher(&self) -> bool;
 
     fn matches_retained_fragment(&self, role: &str, text: &str) -> bool;
@@ -73,6 +75,10 @@ impl<S: WorldStateSection> ErasedWorldStateSection for S {
         S::matches_legacy_fragment(role, text)
     }
 
+    fn matches_section_fragment(&self, role: &str, text: &str) -> bool {
+        S::matches_section_fragment(role, text)
+    }
+
     fn has_retained_fragment_matcher(&self) -> bool {
         S::has_retained_fragment_matcher()
     }
@@ -105,6 +111,7 @@ impl<S: WorldStateSection> ErasedWorldStateSection for S {
             }
             PreviousSectionState::Absent => PreviousSectionState::Absent,
             PreviousSectionState::Unknown => PreviousSectionState::Unknown,
+            PreviousSectionState::Stale => PreviousSectionState::Stale,
         };
         WorldStateSection::render_diff(self, previous)
     }
@@ -123,6 +130,10 @@ impl ErasedWorldStateSection for ExtensionWorldStateSection {
         self.0.matches_legacy_fragment(role, text)
     }
 
+    fn matches_section_fragment(&self, role: &str, text: &str) -> bool {
+        self.0.matches_section_fragment(role, text)
+    }
+
     fn has_retained_fragment_matcher(&self) -> bool {
         self.0.has_retained_fragment_matcher()
     }
@@ -138,6 +149,7 @@ impl ErasedWorldStateSection for ExtensionWorldStateSection {
         let previous = match previous {
             PreviousSectionState::Absent => PreviousWorldStateSection::Absent,
             PreviousSectionState::Unknown => PreviousWorldStateSection::Unknown,
+            PreviousSectionState::Stale => PreviousWorldStateSection::Unknown,
             PreviousSectionState::Known(previous) => PreviousWorldStateSection::Known(previous),
         };
         let fragment = self
@@ -154,6 +166,8 @@ pub(crate) enum PreviousSectionState<'a, T> {
     Absent,
     /// Retained history contains the section, but no trustworthy typed snapshot is available.
     Unknown,
+    /// The latest retained fragment belongs to this section but is not its current value.
+    Stale,
     /// The exact persisted snapshot is available.
     Known(&'a T),
 }
@@ -175,6 +189,11 @@ pub(crate) trait WorldStateSection: Send + Sync + 'static {
 
     fn matches_legacy_fragment(_role: &str, _text: &str) -> bool {
         false
+    }
+
+    /// Recognizes any model-visible fragment emitted by this section.
+    fn matches_section_fragment(role: &str, text: &str) -> bool {
+        Self::matches_legacy_fragment(role, text)
     }
 
     /// Whether retained history must still contain this section's rendered fragment.
@@ -345,13 +364,18 @@ impl WorldState {
         self.sections
             .iter()
             .filter_map(|(id, section)| {
-                if section.has_retained_fragment_matcher()
-                    && has_retained_fragment(items.clone(), section.as_ref())
-                {
+                let retention = if section.has_retained_fragment_matcher() {
+                    latest_section_fragment_retention(items.clone(), section.as_ref())
+                } else {
+                    LatestSectionFragmentRetention::None
+                };
+                if retention == LatestSectionFragmentRetention::Retained {
                     return None;
                 }
 
-                let previous = if section.has_retained_fragment_matcher()
+                let previous = if retention == LatestSectionFragmentRetention::Stale {
+                    PreviousSectionState::Stale
+                } else if section.has_retained_fragment_matcher()
                     && previous.is_some_and(|previous| previous.sections.contains_key(*id))
                     && !has_legacy_fragment(items.clone(), section.as_ref())
                 {
@@ -381,23 +405,34 @@ impl WorldState {
     }
 }
 
-fn has_retained_fragment<'a>(
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum LatestSectionFragmentRetention {
+    None,
+    Retained,
+    Stale,
+}
+
+fn latest_section_fragment_retention<'a>(
     items: impl IntoIterator<Item = &'a ResponseItem>,
     section: &dyn ErasedWorldStateSection,
-) -> bool {
-    items.into_iter().any(|item| {
-        matches!(
-            item,
-            ResponseItem::Message { role, content, .. }
-                if content.iter().any(|content| {
-                    matches!(
-                        content,
-                        ContentItem::InputText { text }
-                            if section.matches_retained_fragment(role, text)
-                    )
-                })
-        )
-    })
+) -> LatestSectionFragmentRetention {
+    let mut latest = LatestSectionFragmentRetention::None;
+    for item in items {
+        let ResponseItem::Message { role, content, .. } = item else {
+            continue;
+        };
+        for content in content {
+            let ContentItem::InputText { text } = content else {
+                continue;
+            };
+            if section.matches_retained_fragment(role, text) {
+                latest = LatestSectionFragmentRetention::Retained;
+            } else if section.matches_section_fragment(role, text) {
+                latest = LatestSectionFragmentRetention::Stale;
+            }
+        }
+    }
+    latest
 }
 
 fn has_legacy_fragment<'a>(

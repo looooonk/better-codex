@@ -11,9 +11,7 @@ pub(crate) fn serialized_size_exceeds(
     match serde_json::to_writer(&mut writer, value) {
         Ok(()) => Ok(writer.written > max_bytes),
         Err(error) => {
-            if writer.remaining == 0
-                && error.io_error_kind() == Some(io::ErrorKind::WriteZero)
-            {
+            if writer.remaining == 0 && error.io_error_kind() == Some(io::ErrorKind::WriteZero) {
                 Ok(true)
             } else {
                 Err(error)

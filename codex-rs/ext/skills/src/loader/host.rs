@@ -60,10 +60,7 @@ impl HostSkillRoot {
         }
     }
 
-    pub(crate) fn plugin(
-        root: PluginSkillRoot,
-        file_system: Arc<dyn ExecutorFileSystem>,
-    ) -> Self {
+    pub(crate) fn plugin(root: PluginSkillRoot, file_system: Arc<dyn ExecutorFileSystem>) -> Self {
         Self {
             path: root.path,
             scope: SkillScope::User,
@@ -82,9 +79,7 @@ impl HostSkillRoot {
     }
 
     pub(crate) fn plugin_namespace(&self) -> Option<&str> {
-        self.plugin
-            .as_ref()
-            .map(|plugin| plugin.namespace.as_str())
+        self.plugin.as_ref().map(|plugin| plugin.namespace.as_str())
     }
 
     pub(crate) fn plugin_root(&self) -> Option<&AbsolutePathBuf> {

@@ -4,6 +4,8 @@ use codex_config::types::McpServerTransportConfig;
 use codex_core::config::Config;
 use codex_extension_api::ExtensionRegistryBuilder;
 use codex_features::Feature;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_login::CodexAuth;
 use codex_protocol::ThreadId;
 use codex_protocol::config_types::WebSearchMode;
@@ -15,8 +17,6 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
@@ -359,6 +359,7 @@ async fn backfill_scans_existing_rollouts() -> Result<()> {
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
+                    rollout_id: None,
                     forked_from_id: None,
                     parent_thread_id: None,
                     timestamp: "2026-01-27T12:00:00Z".to_string(),

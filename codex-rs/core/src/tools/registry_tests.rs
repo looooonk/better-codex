@@ -48,12 +48,12 @@ impl ToolExecutor<ToolInvocation> for AcceptedResultTestHandler {
 
     fn handle(&self, _invocation: ToolInvocation) -> codex_tools::ToolExecutorFuture<'_> {
         Box::pin(async {
-            Ok(Box::new(
-                crate::tools::context::FunctionToolOutput::from_text(
+            Ok(
+                Box::new(crate::tools::context::FunctionToolOutput::from_text(
                     "accepted result".to_string(),
                     /*success*/ Some(true),
-                ),
-            ) as Box<dyn crate::tools::context::ToolOutput>)
+                )) as Box<dyn crate::tools::context::ToolOutput>,
+            )
         })
     }
 }

@@ -10,10 +10,7 @@ use std::collections::VecDeque;
 
 impl ComposerState {
     pub(in crate::app_shell) fn restore_failed_queued_submission(&mut self, submission: &str) {
-        let Some(draft) = self
-            .queued_index
-            .and_then(|_| self.draft_before_queue.as_mut())
-        else {
+        let Some(draft) = self.queued_index.and(self.draft_before_queue.as_mut()) else {
             self.restore_failed_submission(submission);
             return;
         };
@@ -95,9 +92,11 @@ impl ComposerState {
     }
 
     pub(in crate::app_shell) fn confirm_queued_submission(&mut self, submission: QueuedSubmission) {
-        let Some(message) = self.queued.iter_mut().find(|message| {
-            message.client_user_message_id == submission.client_user_message_id
-        }) else {
+        let Some(message) = self
+            .queued
+            .iter_mut()
+            .find(|message| message.client_user_message_id == submission.client_user_message_id)
+        else {
             return;
         };
         message.id = Some(submission.id);
@@ -106,25 +105,20 @@ impl ComposerState {
     pub(in crate::app_shell) fn remove_queued_submission_for_client(
         &mut self,
         client_id: &str,
-    ) -> Option<String> {
+    ) -> Option<(String, bool)> {
         if let Some(index) = self
             .queued
             .iter()
             .position(|message| message.client_user_message_id == client_id)
         {
-            let selected = self.queued_index == Some(index);
-            let text = if selected {
+            let was_selected = self.queued_index == Some(index);
+            let text = if self.queued_index == Some(index) {
                 self.submission_text()
             } else {
                 self.queued[index].text.clone()
             };
-            if selected {
-                self.queued.remove(index);
-                self.restore_queue_draft();
-            } else {
-                self.remove_queued_submission_at(index);
-            }
-            return (!text.trim().is_empty()).then_some(text);
+            self.remove_queued_submission_at(index);
+            return (!text.trim().is_empty()).then_some((text, was_selected));
         }
         None
     }
@@ -158,7 +152,11 @@ impl ComposerState {
     }
 
     pub(in crate::app_shell) fn edit_queued_message(&mut self, mut index: usize) -> bool {
-        if !self.queued.get(index).is_some_and(|message| message.editable) {
+        if !self
+            .queued
+            .get(index)
+            .is_some_and(|message| message.editable)
+        {
             return false;
         }
         match self.queued_index {
@@ -194,10 +192,7 @@ impl ComposerState {
             let upper = index
                 .saturating_sub(1)
                 .min(self.queued.len().saturating_sub(1));
-            let Some(index) = (0..=upper)
-                .rev()
-                .find(|index| self.queued[*index].editable)
-            else {
+            let Some(index) = (0..=upper).rev().find(|index| self.queued[*index].editable) else {
                 self.restore_queue_draft();
                 return true;
             };
@@ -359,10 +354,6 @@ impl ComposerState {
         let index = index.min(self.queued.len());
         (index..self.queued.len())
             .find(|index| self.queued[*index].editable)
-            .or_else(|| {
-                (0..index)
-                    .rev()
-                    .find(|index| self.queued[*index].editable)
-            })
+            .or_else(|| (0..index).rev().find(|index| self.queued[*index].editable))
     }
 }

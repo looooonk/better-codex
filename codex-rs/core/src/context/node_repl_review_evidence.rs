@@ -20,7 +20,10 @@ pub(crate) enum NodeReplReviewEvidenceItem {
     Image { data_url: String },
 }
 
-#[allow(dead_code, reason = "the stage 6 decision bridge consumes correlated records")]
+#[allow(
+    dead_code,
+    reason = "the stage 6 decision bridge consumes correlated records"
+)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct NodeReplReviewEvidenceRecord {
     pub(crate) sequence: u64,
@@ -54,7 +57,10 @@ impl NodeReplReviewEvidenceRecord {
     }
 }
 
-#[allow(dead_code, reason = "the stage 6 decision bridge consumes bounded snapshots")]
+#[allow(
+    dead_code,
+    reason = "the stage 6 decision bridge consumes bounded snapshots"
+)]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct NodeReplReviewEvidenceSnapshot {
     pub(crate) sequence: u64,
@@ -110,7 +116,10 @@ impl NodeReplReviewEvidence {
         state.records.push_back(record);
     }
 
-    #[allow(dead_code, reason = "the stage 6 decision bridge consumes bounded snapshots")]
+    #[allow(
+        dead_code,
+        reason = "the stage 6 decision bridge consumes bounded snapshots"
+    )]
     pub(crate) fn snapshot(&self) -> NodeReplReviewEvidenceSnapshot {
         let state = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         NodeReplReviewEvidenceSnapshot {
@@ -176,9 +185,11 @@ fn truncate_to_token_budget(text: &str, budget_tokens: usize) -> String {
         let next_budget = truncation_budget.saturating_sub(excess_tokens.max(1));
         if next_budget == 0 {
             let candidate = truncate_text(text, TruncationPolicy::Tokens(0));
-            return (approx_token_count(&candidate) <= budget_tokens)
-                .then_some(candidate)
-                .unwrap_or_default();
+            return if approx_token_count(&candidate) <= budget_tokens {
+                candidate
+            } else {
+                Default::default()
+            };
         }
         truncation_budget = next_budget;
     }

@@ -28,8 +28,12 @@ pub struct WorldStateContributionInput<'a> {
 
 /// What the harness knows about the previous value of one extension-owned section.
 pub enum PreviousWorldStateSection<'a> {
+    /// No persisted snapshot or matching fragment exists in retained history.
     Absent,
+    /// Retained history contains this section, but its current value is not authoritative.
+    /// Renderers should reassert the current value or emit a revocation when needed.
     Unknown,
+    /// The exact persisted snapshot is available.
     Known(&'a Value),
 }
 
@@ -57,7 +61,7 @@ impl RenderedWorldStateFragment {
 type RenderDiff = dyn for<'a> Fn(PreviousWorldStateSection<'a>) -> Option<RenderedWorldStateFragment>
     + Send
     + Sync;
-type LegacyFragmentMatcher = dyn Fn(&str, &str) -> bool + Send + Sync;
+type FragmentMatcher = dyn Fn(&str, &str) -> bool + Send + Sync;
 
 /// One extension-owned World State section captured for a sampling step.
 ///
@@ -68,8 +72,9 @@ pub struct WorldStateSectionContribution {
     id: &'static str,
     snapshot: Value,
     render_diff: Arc<RenderDiff>,
-    matches_legacy_fragment: Arc<LegacyFragmentMatcher>,
-    matches_retained_fragment: Option<Arc<LegacyFragmentMatcher>>,
+    matches_legacy_fragment: Arc<FragmentMatcher>,
+    matches_section_fragment: Option<Arc<FragmentMatcher>>,
+    matches_retained_fragment: Option<Arc<FragmentMatcher>>,
 }
 
 impl WorldStateSectionContribution {
@@ -88,6 +93,7 @@ impl WorldStateSectionContribution {
             snapshot,
             render_diff: Arc::new(render_diff),
             matches_legacy_fragment: Arc::new(|_, _| false),
+            matches_section_fragment: None,
             matches_retained_fragment: None,
         }
     }
@@ -97,6 +103,15 @@ impl WorldStateSectionContribution {
         matcher: impl Fn(&str, &str) -> bool + Send + Sync + 'static,
     ) -> Self {
         self.matches_legacy_fragment = Arc::new(matcher);
+        self
+    }
+
+    /// Recognizes any model-visible fragment emitted by this section.
+    pub fn with_section_fragment_matcher(
+        mut self,
+        matcher: impl Fn(&str, &str) -> bool + Send + Sync + 'static,
+    ) -> Self {
+        self.matches_section_fragment = Some(Arc::new(matcher));
         self
     }
 
@@ -126,6 +141,13 @@ impl WorldStateSectionContribution {
 
     pub fn matches_legacy_fragment(&self, role: &str, text: &str) -> bool {
         (self.matches_legacy_fragment)(role, text)
+    }
+
+    pub fn matches_section_fragment(&self, role: &str, text: &str) -> bool {
+        self.matches_section_fragment.as_ref().map_or_else(
+            || self.matches_legacy_fragment(role, text),
+            |matcher| matcher(role, text),
+        )
     }
 
     pub fn has_retained_fragment_matcher(&self) -> bool {

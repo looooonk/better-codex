@@ -64,6 +64,7 @@ use codex_extension_api::TurnContextContributionInput;
 use codex_features::FEATURES;
 use codex_features::Feature;
 use codex_features::unstable_features_warning_event;
+use codex_history::RolloutItem;
 use codex_hooks::HookOutputSpillTracker;
 use codex_hooks::Hooks;
 use codex_hooks::HooksConfig;
@@ -72,7 +73,6 @@ use codex_login::CodexAuth;
 use codex_login::auth_env_telemetry::collect_auth_env_telemetry;
 use codex_mcp::McpConnectionManager;
 use codex_mcp::McpResourceClient;
-use codex_skills_extension::HostSkillsCatalogInWorldState;
 use codex_mcp::McpRuntime;
 use codex_mcp::McpRuntimeContext;
 use codex_mcp::codex_apps_tools_cache_key;
@@ -120,7 +120,6 @@ use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
 use codex_protocol::protocol::MultiAgentVersion;
 use codex_protocol::protocol::RawResponseItemEvent;
-use codex_history::RolloutItem;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::SubAgentSource;
 use codex_protocol::protocol::ThreadHistoryMode;
@@ -146,6 +145,7 @@ use codex_rollout_trace::ThreadStartedTraceMetadata;
 use codex_rollout_trace::ThreadTraceContext;
 use codex_sandboxing::policy_transforms::intersect_permission_profiles;
 use codex_shell_command::parse_command::parse_command;
+use codex_skills_extension::HostSkillsCatalogInWorldState;
 use codex_terminal_detection::user_agent;
 use codex_thread_store::CreateThreadParams;
 use codex_thread_store::LiveThread;
@@ -215,7 +215,6 @@ pub(crate) mod multi_agents;
 mod review;
 mod rollout_budget;
 mod rollout_reconstruction;
-mod queued_turn;
 #[allow(clippy::module_inception)]
 pub(crate) mod session;
 pub(crate) mod step_context;
@@ -310,9 +309,9 @@ enum InitialContextReference {
     Reset,
 }
 
+use crate::HostSkillsService;
 #[cfg(test)]
 use crate::SkillMetadata;
-use crate::HostSkillsService;
 use crate::exec_policy::ExecPolicyUpdateError;
 use crate::guardian::GuardianReviewSessionManager;
 use crate::mcp::McpManager;
@@ -333,10 +332,10 @@ use crate::stream_events_utils::HandleOutputCtx;
 #[cfg(test)]
 use crate::stream_events_utils::handle_output_item_done;
 use crate::tasks::ReviewTask;
+use crate::tools::context::ToolCallSource;
 use crate::tools::network_approval::NetworkApprovalService;
 use crate::tools::network_approval::build_blocked_request_observer;
 use crate::tools::network_approval::build_network_policy_decider;
-use crate::tools::context::ToolCallSource;
 #[cfg(test)]
 use crate::tools::parallel::ToolCallRuntime;
 use crate::tools::sandboxing::ApprovalStore;
@@ -347,6 +346,9 @@ use crate::windows_sandbox::WindowsSandboxLevelExt;
 use codex_core_plugins::PluginsManager;
 use codex_core_plugins::RecommendedPluginCandidatesInput;
 use codex_git_utils::get_git_repo_root;
+use codex_history::CompactedItem;
+use codex_history::InitialHistory;
+use codex_history::ResponseItemEnvelope;
 use codex_mcp::McpConfig;
 use codex_mcp::compute_auth_statuses;
 use codex_mcp::effective_mcp_servers;
@@ -365,14 +367,11 @@ use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::protocol::ApplyPatchApprovalRequestEvent;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::CodexErrorInfo;
-use codex_history::CompactedItem;
-use codex_history::ResponseItemEnvelope;
 use codex_protocol::protocol::DeprecationNoticeEvent;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::ExecApprovalRequestEvent;
-use codex_history::InitialHistory;
 use codex_protocol::protocol::McpServerRefreshConfig;
 use codex_protocol::protocol::ModelRerouteEvent;
 use codex_protocol::protocol::ModelRerouteReason;
@@ -2275,12 +2274,12 @@ impl Session {
     ) -> Option<crate::tools::ApprovalAction> {
         let mut active = self.active_turn.lock().await;
         let active = active.as_mut()?;
-        let action = active
+
+        active
             .turn_state
             .lock()
             .await
-            .pending_delegated_approval_action(approval_id);
-        action
+            .pending_delegated_approval_action(approval_id)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2525,7 +2524,7 @@ impl Session {
             };
             if !grant_is_current
                 || turn_context.approval_policy.decision_snapshot().revision
-                != policy_before.revision
+                    != policy_before.revision
                 || turn_context.approvals_reviewer.snapshot() != reviewer_before
                 || self.strict_auto_review_enabled_for_turn().await != strict_before
             {
@@ -2618,7 +2617,8 @@ impl Session {
                 },
                 ReviewDecision::ApprovedMcpPolicyAmendment
                 | ReviewDecision::Abort
-                | ReviewDecision::Denied { .. }
+                | ReviewDecision::Denied
+                | ReviewDecision::DeniedWithReason { .. }
                 | ReviewDecision::TimedOut => RequestPermissionsResponse {
                     permissions: RequestPermissionProfile::default(),
                     scope: PermissionGrantScope::Turn,
@@ -2853,8 +2853,7 @@ impl Session {
         match entry {
             Some(entry) => {
                 // TODO(anp): Migrate request_permissions to support paths from foreign environments.
-                let response_matches_request =
-                    response.permissions == entry.requested_permissions;
+                let response_matches_request = response.permissions == entry.requested_permissions;
                 let response = match entry.environment.cwd.to_abs_path() {
                     Ok(native_environment_cwd) => Self::normalize_request_permissions_response(
                         entry.requested_permissions,
@@ -3131,7 +3130,11 @@ impl Session {
         let items = self.prepare_conversation_items_for_history(turn_context, items);
         self.record_prepared_annotated_conversation_items(
             turn_context,
-            items.iter().cloned().map(ResponseItemEnvelope::new).collect(),
+            items
+                .iter()
+                .cloned()
+                .map(ResponseItemEnvelope::new)
+                .collect(),
         )
         .await;
     }
@@ -3148,10 +3151,7 @@ impl Session {
         {
             let mut state = self.state.lock().await;
             state.current_time_reminder.note_recorded_items(&raw_items);
-            state.record_annotated_items(
-                &items,
-                turn_context.model_info.truncation_policy.into(),
-            );
+            state.record_annotated_items(&items, turn_context.model_info.truncation_policy.into());
         }
         self.persist_rollout_items(
             &items
@@ -3641,7 +3641,9 @@ impl Session {
                 if let Some(warning_message) = warning_message {
                     self.send_event_raw(Event {
                         id: String::new(),
-                        msg: EventMsg::Warning(WarningEvent { message: warning_message }),
+                        msg: EventMsg::Warning(WarningEvent {
+                            message: warning_message,
+                        }),
                     })
                     .await;
                 }
@@ -3880,15 +3882,8 @@ impl Session {
         let retained_client_developer_messages =
             if self.enabled(Feature::RetainClientDeveloperMessages) {
                 let history = self.clone_history().await;
-                crate::compact_remote_v2::truncate_retained_messages_for_remote_compaction(
-                    history
-                        .annotated_items()
-                        .iter()
-                        .filter(|item| {
-                            crate::compact_remote_v2::is_client_authored_developer_message(item)
-                        })
-                        .cloned()
-                        .collect(),
+                crate::compact_remote_v2::collect_retained_client_developer_messages(
+                    history.annotated_items().iter().cloned(),
                     crate::compact_remote_v2::RETAINED_MESSAGE_TOKEN_BUDGET,
                 )
             } else {

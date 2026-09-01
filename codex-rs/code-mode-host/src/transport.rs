@@ -1,5 +1,5 @@
-use std::io;
 use std::future::Future as _;
+use std::io;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::pin::Pin;
@@ -29,16 +29,16 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::grpc::authenticated_loopback_grpc_service;
-use crate::run_stdio;
-use crate::grpc::session::MAX_OPEN_GRPC_SESSIONS;
 use crate::grpc::routing::MAX_SUBSCRIPTIONS_PER_SESSION;
+use crate::grpc::session::MAX_OPEN_GRPC_SESSIONS;
+use crate::run_stdio;
 use crate::transport_admission::MAX_DECODED_REQUEST_BYTES;
+use crate::transport_admission::MAX_OPEN_RESPONSES;
 use crate::transport_admission::MAX_OUTBOUND_RESPONSE_BYTES;
 use crate::transport_admission::MAX_RAW_REQUEST_ALLOCATION_BYTES;
 use crate::transport_admission::MAX_STREAMING_RESPONSES;
-use crate::transport_admission::MAX_UNARY_RESPONSES;
-use crate::transport_admission::MAX_OPEN_RESPONSES;
 use crate::transport_admission::MAX_SUBSCRIBE_RESPONSES;
+use crate::transport_admission::MAX_UNARY_RESPONSES;
 
 const MAX_ACCEPTED_CONNECTIONS: usize = 8;
 const MAX_CONCURRENT_STREAMS_PER_CONNECTION: u32 = 32;
@@ -78,10 +78,8 @@ const _: () = assert!(
         <= MAX_CONCURRENT_STREAMS_PER_CONNECTION as usize
 );
 const _: () = assert!(MAX_OPEN_GRPC_SESSIONS <= MAX_OPEN_RESPONSES);
-const _: () = assert!(
-    MAX_OPEN_GRPC_SESSIONS * MAX_SUBSCRIPTIONS_PER_SESSION
-        <= MAX_SUBSCRIBE_RESPONSES
-);
+const _: () =
+    assert!(MAX_OPEN_GRPC_SESSIONS * MAX_SUBSCRIPTIONS_PER_SESSION <= MAX_SUBSCRIBE_RESPONSES);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum ListenTransport {
@@ -140,12 +138,8 @@ async fn run_grpc(address: SocketAddr) -> Result<()> {
     let local_address = incoming
         .local_addr()
         .context("failed to read code-mode gRPC listener address")?;
-    let capability: Arc<str> = format!(
-        "{}{}",
-        Uuid::new_v4().simple(),
-        Uuid::new_v4().simple()
-    )
-    .into();
+    let capability: Arc<str> =
+        format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple()).into();
     let mut stdout = tokio::io::stdout();
     stdout
         .write_all(format!("http://{local_address}\n").as_bytes())
@@ -191,9 +185,7 @@ pub(crate) fn bounded_incoming(
         let item = next.map(|stream| BoundedTcpConnection {
             stream,
             authenticated: Arc::new(AtomicBool::new(false)),
-            first_byte_timeout: Some(Box::pin(tokio::time::sleep(
-                CONNECTION_FIRST_BYTE_TIMEOUT,
-            ))),
+            first_byte_timeout: Some(Box::pin(tokio::time::sleep(CONNECTION_FIRST_BYTE_TIMEOUT))),
             _permit: permit,
         });
         Some((item, (incoming, permits)))

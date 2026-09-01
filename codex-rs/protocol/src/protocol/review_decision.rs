@@ -3,6 +3,8 @@ use super::NetworkPolicyAmendment;
 use super::NetworkPolicyRuleAction;
 use codex_utils_string::take_bytes_at_char_boundary;
 use schemars::JsonSchema;
+use schemars::r#gen::SchemaGenerator;
+use schemars::schema::Schema;
 use serde::Deserialize;
 use serde::Deserializer;
 use serde::Serialize;
@@ -49,8 +51,8 @@ impl<'de> Deserialize<'de> for ReviewRejection {
 }
 
 /// User's decision in response to an ExecApprovalRequest.
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Display, JsonSchema, TS)]
-#[serde(rename_all = "snake_case")]
+#[derive(Debug, Clone, PartialEq, Eq, Display, TS)]
+#[ts(as = "ReviewDecisionWire")]
 pub enum ReviewDecision {
     /// User has approved this command and the agent should execute it.
     Approved,
@@ -78,11 +80,11 @@ pub enum ReviewDecision {
 
     /// User has denied this command and the agent should not execute it, but
     /// it should continue the session and try something else.
-    Denied {
-        #[schemars(with = "Option<String>")]
-        #[ts(type = "string | null")]
-        rejection: ReviewRejection,
-    },
+    Denied,
+
+    /// User has denied this command with a client-visible explanation. The
+    /// agent should not execute it, but it should continue the session.
+    DeniedWithReason { rejection: ReviewRejection },
 
     /// Automatic approval review timed out before reaching a decision.
     TimedOut,
@@ -90,6 +92,76 @@ pub enum ReviewDecision {
     /// User has denied this command and the agent should not do anything until
     /// the user's next command.
     Abort,
+}
+
+/// JSON and TypeScript representation of an approval review decision.
+#[derive(Serialize, JsonSchema, TS)]
+#[serde(rename_all = "snake_case")]
+enum ReviewDecisionWire {
+    Approved,
+    ApprovedExecpolicyAmendment {
+        proposed_execpolicy_amendment: ExecPolicyAmendment,
+    },
+    ApprovedForSession,
+    ApprovedMcpPolicyAmendment,
+    NetworkPolicyAmendment {
+        network_policy_amendment: NetworkPolicyAmendment,
+    },
+    Denied,
+    #[serde(rename = "denied")]
+    DeniedWithReason {
+        rejection: String,
+    },
+    TimedOut,
+    Abort,
+}
+
+impl From<&ReviewDecision> for ReviewDecisionWire {
+    fn from(value: &ReviewDecision) -> Self {
+        match value {
+            ReviewDecision::Approved => Self::Approved,
+            ReviewDecision::ApprovedExecpolicyAmendment {
+                proposed_execpolicy_amendment,
+            } => Self::ApprovedExecpolicyAmendment {
+                proposed_execpolicy_amendment: proposed_execpolicy_amendment.clone(),
+            },
+            ReviewDecision::ApprovedForSession => Self::ApprovedForSession,
+            ReviewDecision::ApprovedMcpPolicyAmendment => Self::ApprovedMcpPolicyAmendment,
+            ReviewDecision::NetworkPolicyAmendment {
+                network_policy_amendment,
+            } => Self::NetworkPolicyAmendment {
+                network_policy_amendment: network_policy_amendment.clone(),
+            },
+            ReviewDecision::Denied => Self::Denied,
+            ReviewDecision::DeniedWithReason { rejection } => match rejection.reason() {
+                Some(rejection) => Self::DeniedWithReason {
+                    rejection: rejection.to_string(),
+                },
+                None => Self::Denied,
+            },
+            ReviewDecision::TimedOut => Self::TimedOut,
+            ReviewDecision::Abort => Self::Abort,
+        }
+    }
+}
+
+impl Serialize for ReviewDecision {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        ReviewDecisionWire::from(self).serialize(serializer)
+    }
+}
+
+impl JsonSchema for ReviewDecision {
+    fn schema_name() -> String {
+        "ReviewDecision".to_string()
+    }
+
+    fn json_schema(generator: &mut SchemaGenerator) -> Schema {
+        ReviewDecisionWire::json_schema(generator)
+    }
 }
 
 impl Default for ReviewDecision {
@@ -101,14 +173,12 @@ impl Default for ReviewDecision {
 impl ReviewDecision {
     /// Creates a denial without a client-visible rejection reason.
     pub fn denied() -> Self {
-        Self::Denied {
-            rejection: ReviewRejection::default(),
-        }
+        Self::Denied
     }
 
     /// Creates a denial with a UTF-8-safe, bounded rejection reason.
     pub fn denied_with_reason(reason: impl Into<String>) -> Self {
-        Self::Denied {
+        Self::DeniedWithReason {
             rejection: ReviewRejection::with_reason(reason),
         }
     }
@@ -116,12 +186,13 @@ impl ReviewDecision {
     /// Returns the bounded rejection reason for a denial decision.
     pub fn rejection_reason(&self) -> Option<&str> {
         match self {
-            Self::Denied { rejection } => rejection.reason(),
+            Self::DeniedWithReason { rejection } => rejection.reason(),
             Self::Approved
             | Self::ApprovedExecpolicyAmendment { .. }
             | Self::ApprovedForSession
             | Self::ApprovedMcpPolicyAmendment
             | Self::NetworkPolicyAmendment { .. }
+            | Self::Denied
             | Self::TimedOut
             | Self::Abort => None,
         }
@@ -141,7 +212,7 @@ impl ReviewDecision {
                 NetworkPolicyRuleAction::Allow => "approved_with_network_policy_allow",
                 NetworkPolicyRuleAction::Deny => "denied_with_network_policy_deny",
             },
-            Self::Denied { .. } => "denied",
+            Self::Denied | Self::DeniedWithReason { .. } => "denied",
             Self::TimedOut => "timed_out",
             Self::Abort => "abort",
         }
@@ -215,7 +286,10 @@ impl From<CurrentReviewDecision> for ReviewDecision {
             } => Self::NetworkPolicyAmendment {
                 network_policy_amendment,
             },
-            CurrentReviewDecision::Denied { rejection } => Self::Denied { rejection },
+            CurrentReviewDecision::Denied { rejection } => match rejection.reason() {
+                Some(_) => Self::DeniedWithReason { rejection },
+                None => Self::Denied,
+            },
             CurrentReviewDecision::TimedOut => Self::TimedOut,
             CurrentReviewDecision::Abort => Self::Abort,
         }

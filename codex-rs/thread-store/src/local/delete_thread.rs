@@ -103,11 +103,20 @@ async fn delete_threads_impl(
     }
 
     let mut projection_ids = thread_ids.to_vec();
-    projection_ids.extend(
-        rollout_paths
-            .iter()
-            .filter_map(|(path, _)| codex_rollout::rollout_id_from_path(path.as_path())),
-    );
+    for (path, thread_id) in &rollout_paths {
+        let rollout_id = match codex_rollout::read_session_meta_line(path.as_path()).await {
+            Ok(meta) if meta.meta.id == *thread_id => meta
+                .meta
+                .rollout_id
+                .or_else(|| codex_rollout::rollout_id_from_path(path.as_path()))
+                .or_else(|| rollout_revision_id_from_path(path.as_path()))
+                .unwrap_or(*thread_id),
+            Ok(_) | Err(_) => codex_rollout::rollout_id_from_path(path.as_path())
+                .or_else(|| rollout_revision_id_from_path(path.as_path()))
+                .unwrap_or(*thread_id),
+        };
+        projection_ids.push(rollout_id);
+    }
     projection_ids.sort_by_key(ToString::to_string);
     projection_ids.dedup();
     let mut staged = stage_rollouts(store, rollout_paths)?;
@@ -160,14 +169,12 @@ async fn locate_rollout_paths(
 
     for thread_id in thread_ids {
         let thread_id_str = thread_id.to_string();
-        let mut thread_paths = codex_rollout::find_thread_paths_by_id(
-            store.config.codex_home.as_path(),
-            *thread_id,
-        )
-        .await
-        .map_err(|err| ThreadStoreError::InvalidRequest {
-            message: format!("failed to locate thread id {thread_id}: {err}"),
-        })?;
+        let mut thread_paths =
+            codex_rollout::find_thread_paths_by_id(store.config.codex_home.as_path(), *thread_id)
+                .await
+                .map_err(|err| ThreadStoreError::InvalidRequest {
+                    message: format!("failed to locate thread id {thread_id}: {err}"),
+                })?;
         thread_paths.extend(
             codex_rollout::find_archived_thread_paths_by_id(
                 store.config.codex_home.as_path(),
@@ -176,6 +183,16 @@ async fn locate_rollout_paths(
             .await
             .map_err(|err| ThreadStoreError::InvalidRequest {
                 message: format!("failed to locate archived thread id {thread_id}: {err}"),
+            })?,
+        );
+        thread_paths.extend(
+            codex_rollout::find_rollout_revision_paths_by_thread(
+                store.config.codex_home.as_path(),
+                *thread_id,
+            )
+            .await
+            .map_err(|err| ThreadStoreError::InvalidRequest {
+                message: format!("failed to locate retained revisions for {thread_id}: {err}"),
             })?,
         );
         match find_thread_path_by_id_str(
@@ -285,6 +302,20 @@ fn validated_rollout_path(
     rollout_path: &Path,
     thread_id: ThreadId,
 ) -> ThreadStoreResult<PathBuf> {
+    let revision_root = store
+        .config
+        .codex_home
+        .join(codex_rollout::ROLLOUT_REVISIONS_SUBDIR)
+        .join(thread_id.to_string());
+    if rollout_path.starts_with(revision_root.as_path()) {
+        let validated = scoped_rollout_path(revision_root, rollout_path, "rollout revisions")
+            .or_else(|err| match rollout_path.try_exists() {
+                Ok(false) => Ok(rollout_path.to_path_buf()),
+                Ok(true) | Err(_) => Err(err),
+            })?;
+        validate_revision_file_name(validated.as_path())?;
+        return Ok(validated);
+    }
     let canonical_rollout_path = scoped_rollout_path(
         store.config.codex_home.join(SESSIONS_SUBDIR),
         rollout_path,
@@ -303,6 +334,35 @@ fn validated_rollout_path(
     })?;
     matching_rollout_file_name(&canonical_rollout_path, thread_id, rollout_path)?;
     Ok(canonical_rollout_path)
+}
+
+fn validate_revision_file_name(path: &Path) -> ThreadStoreResult<()> {
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| ThreadStoreError::InvalidRequest {
+            message: format!(
+                "rollout revision path `{}` missing file name",
+                path.display()
+            ),
+        })?;
+    let name = name.strip_suffix(".zst").unwrap_or(name);
+    let Some(rollout_id) = name.strip_suffix(".jsonl") else {
+        return Err(ThreadStoreError::InvalidRequest {
+            message: format!("invalid rollout revision path `{}`", path.display()),
+        });
+    };
+    codex_protocol::RolloutId::from_string(rollout_id)
+        .map(|_| ())
+        .map_err(|_| ThreadStoreError::InvalidRequest {
+            message: format!("invalid rollout revision path `{}`", path.display()),
+        })
+}
+
+fn rollout_revision_id_from_path(path: &Path) -> Option<codex_protocol::RolloutId> {
+    let name = path.file_name()?.to_str()?;
+    let name = name.strip_suffix(".zst").unwrap_or(name);
+    codex_protocol::RolloutId::from_string(name.strip_suffix(".jsonl")?).ok()
 }
 
 fn create_staging_dir(codex_home: &Path) -> ThreadStoreResult<PathBuf> {
@@ -551,8 +611,8 @@ mod tests {
         let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
         let uuid = Uuid::from_u128(306);
         let thread_id = ThreadId::from_string(&uuid.to_string()).expect("valid thread id");
-        let rollout_id = ThreadId::from_string(&Uuid::from_u128(309).to_string())
-            .expect("valid rollout id");
+        let rollout_id =
+            ThreadId::from_string(&Uuid::from_u128(309).to_string()).expect("valid rollout id");
         let ordinary_path = write_session_file_with_history_mode(
             home.path(),
             "2025-01-03T12-00-00",
@@ -564,6 +624,14 @@ mod tests {
             "rollout-2025-01-03T12-00-00-{thread_id}_{rollout_id}.jsonl"
         ));
         std::fs::copy(&ordinary_path, &rollout_path).expect("replacement rollout");
+        let revision_path = home
+            .path()
+            .join(codex_rollout::ROLLOUT_REVISIONS_SUBDIR)
+            .join(thread_id.to_string())
+            .join(format!("{rollout_id}.jsonl"));
+        std::fs::create_dir_all(revision_path.parent().expect("revision directory"))
+            .expect("create revision directory");
+        std::fs::copy(&rollout_path, &revision_path).expect("retained revision");
         let pool = codex_state::open_thread_history_db(home.path())
             .await
             .expect("open thread history db");
@@ -597,6 +665,7 @@ mod tests {
 
         assert!(!ordinary_path.exists());
         assert!(!rollout_path.exists());
+        assert!(!revision_path.exists());
 
         let counts = sqlx::query_as::<_, (i64, i64, i64)>(
             r#"

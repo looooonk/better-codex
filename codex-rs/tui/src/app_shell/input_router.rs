@@ -427,18 +427,15 @@ impl ShellState {
         }
         let edit_previous_queued = key_hint::alt(KeyCode::Up).is_press(key);
         let edit_next_queued = key_hint::alt(KeyCode::Down).is_press(key);
-        let reorder_previous_queued = key.modifiers == (KeyModifiers::ALT | KeyModifiers::SHIFT)
-            && key.code == KeyCode::Up;
-        let reorder_next_queued = key.modifiers == (KeyModifiers::ALT | KeyModifiers::SHIFT)
-            && key.code == KeyCode::Down;
+        let reorder_previous_queued =
+            key.modifiers == (KeyModifiers::ALT | KeyModifiers::SHIFT) && key.code == KeyCode::Up;
+        let reorder_next_queued =
+            key.modifiers == (KeyModifiers::ALT | KeyModifiers::SHIFT) && key.code == KeyCode::Down;
         if self.composer.queued_edit_position().is_some()
             && (reorder_previous_queued || reorder_next_queued)
         {
-            self.composer.reorder_queued_message(if reorder_previous_queued {
-                -1
-            } else {
-                1
-            });
+            self.composer
+                .reorder_queued_message(if reorder_previous_queued { -1 } else { 1 });
             self.sync_composer_queue_edits(app_server);
             return Ok(false);
         }

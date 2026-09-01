@@ -251,9 +251,8 @@ async fn orchestrator_skill_can_read_referenced_resource_without_an_executor() -
     assert!(first_request.tool_by_name("skills", "search").is_none());
 
     let developer_messages = first_request.message_input_texts("developer");
-    let catalog_line = format!(
-        "- {SKILL_NAME}: {SKILL_DESCRIPTION} (orchestrator resource: {SKILL_RESOURCE_URI})"
-    );
+    let catalog_line =
+        format!("- {SKILL_NAME}: {SKILL_DESCRIPTION} (orchestrator package: {SKILL_RESOURCE_URI})");
     assert_eq!(
         1,
         developer_messages
@@ -296,6 +295,7 @@ async fn orchestrator_skill_can_read_referenced_resource_without_an_executor() -
                 "description": SKILL_DESCRIPTION,
                 "main_resource": SKILL_MAIN_PROMPT_URI,
             }],
+            "next_cursor": null,
             "warnings": ["Orchestrator skill discovery stopped after 2 resource pages: failed to list orchestrator skill resources: resources/list failed for `codex_apps`: Mcp error: -32603: simulated later-page failure"],
         })
     );
@@ -308,6 +308,7 @@ async fn orchestrator_skill_can_read_referenced_resource_without_an_executor() -
         json!({
             "resource": SKILL_REFERENCE_URI,
             "contents": SKILL_REFERENCE_CONTENTS,
+            "next_cursor": null,
         })
     );
     let repeated_read_output = requests[3]

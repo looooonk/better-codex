@@ -1,6 +1,8 @@
 use codex_core::CodexThread;
 use codex_core::REVIEW_PROMPT;
 use codex_core::config::Config;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
@@ -14,8 +16,6 @@ use codex_protocol::protocol::ReviewLineRange;
 use codex_protocol::protocol::ReviewOutputEvent;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::ReviewTarget;
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::review_format::render_review_output_text;
 use codex_protocol::user_input::UserInput;
 use core_test_support::PathBufExt;
@@ -229,7 +229,8 @@ async fn review_op_emits_lifecycle_and_review_output() {
         if let RolloutItem::ResponseItem(codex_history::ResponseItemEnvelope {
             item: ResponseItem::Message { role, content, .. },
             ..
-        }) = rl.item {
+        }) = rl.item
+        {
             if role == "user" {
                 for c in content {
                     if let ContentItem::InputText { text } = c {

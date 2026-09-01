@@ -17,12 +17,12 @@ use tokio::sync::Semaphore;
 use tracing::info;
 use tracing::instrument;
 
-use codex_skills::install_system_skills;
 use codex_skills::LoadedSkills;
 use codex_skills::SkillLoadFuture;
 use codex_skills::SkillRootLoadRequest;
 use codex_skills::SkillRootLoader;
 use codex_skills::SkillRootSnapshots;
+use codex_skills::install_system_skills;
 
 use crate::HostSkillsSnapshot;
 use crate::SkillLoadOutcome;

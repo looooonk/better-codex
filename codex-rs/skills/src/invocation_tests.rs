@@ -72,7 +72,10 @@ fn skill_doc_read_uses_the_shared_command_parser() {
 
     let found = detect_skill_doc_read(&lookup, &tokens, &test_path_buf("/tmp").abs());
 
-    assert_eq!(found.map(|skill| skill.name), Some("test-skill".to_string()));
+    assert_eq!(
+        found.map(|skill| skill.name),
+        Some("test-skill".to_string())
+    );
 }
 
 #[test]
@@ -88,10 +91,12 @@ fn skill_script_run_resolves_relative_paths_from_workdir() {
         "scripts/fetch_comments.py".to_string(),
     ];
 
-    let found =
-        detect_skill_script_run(&lookup, &tokens, &test_path_buf("/tmp/skill-test").abs());
+    let found = detect_skill_script_run(&lookup, &tokens, &test_path_buf("/tmp/skill-test").abs());
 
-    assert_eq!(found.map(|skill| skill.name), Some("test-skill".to_string()));
+    assert_eq!(
+        found.map(|skill| skill.name),
+        Some("test-skill".to_string())
+    );
 }
 
 #[test]
@@ -111,5 +116,8 @@ fn skill_script_run_resolves_absolute_paths_from_any_workdir() {
 
     let found = detect_skill_script_run(&lookup, &tokens, &test_path_buf("/tmp/other").abs());
 
-    assert_eq!(found.map(|skill| skill.name), Some("test-skill".to_string()));
+    assert_eq!(
+        found.map(|skill| skill.name),
+        Some("test-skill".to_string())
+    );
 }

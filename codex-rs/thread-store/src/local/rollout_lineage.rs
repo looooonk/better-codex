@@ -122,6 +122,31 @@ impl LocalThreadStore {
                         rollout_path.display()
                     ),
                 })?;
+            let canonical_rollout_id = codex_rollout::rollout_id_from_path(rollout_path.as_path());
+            let revision_rollout_id = rollout_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(|name| name.strip_suffix(".zst").unwrap_or(name))
+                .and_then(|name| name.strip_suffix(".jsonl"))
+                .and_then(|name| RolloutId::from_string(name).ok());
+            let path_rollout_id = canonical_rollout_id.or(revision_rollout_id);
+            let stable_metadata_identity = canonical_rollout_id == Some(requested_thread_id)
+                && meta.meta.rollout_id == Some(rollout_id);
+            if (path_rollout_id != Some(rollout_id) && !stable_metadata_identity)
+                || meta
+                    .meta
+                    .rollout_id
+                    .is_some_and(|metadata_rollout_id| metadata_rollout_id != rollout_id)
+            {
+                return Err(malformed_lineage(
+                    requested_thread_id,
+                    format!(
+                        "source rollout identity disagrees with requested rollout {rollout_id}: {}",
+                        rollout_path.display()
+                    )
+                    .as_str(),
+                ));
+            }
             if meta.meta.id != requested_thread_id {
                 return Err(malformed_lineage(
                     requested_thread_id,
@@ -219,18 +244,17 @@ async fn validate_cutoff_bounds(
             "cutoff cannot include source session metadata",
         ));
     }
-    let (previous_ordinal, next_ordinal) = codex_rollout::rollout_ordinals_at_boundary(
-        rollout_path,
-        end.end_byte_offset,
-    )
-    .await
-    .map_err(|err| {
-        let detail = format!("invalid cutoff record boundary: {err}");
-        malformed_lineage(requested_thread_id, detail.as_str())
-    })?;
-    let expected_previous = end.end_ordinal_exclusive.checked_sub(1).ok_or_else(|| {
-        malformed_lineage(requested_thread_id, "cutoff ordinal underflow")
-    })?;
+    let (previous_ordinal, next_ordinal) =
+        codex_rollout::rollout_ordinals_at_boundary(rollout_path, end.end_byte_offset)
+            .await
+            .map_err(|err| {
+                let detail = format!("invalid cutoff record boundary: {err}");
+                malformed_lineage(requested_thread_id, detail.as_str())
+            })?;
+    let expected_previous = end
+        .end_ordinal_exclusive
+        .checked_sub(1)
+        .ok_or_else(|| malformed_lineage(requested_thread_id, "cutoff ordinal underflow"))?;
     if previous_ordinal != expected_previous
         || next_ordinal.is_some_and(|ordinal| ordinal != end.end_ordinal_exclusive)
     {

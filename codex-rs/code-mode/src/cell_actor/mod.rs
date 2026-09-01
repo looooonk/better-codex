@@ -104,10 +104,7 @@ struct Observer {
 }
 
 impl Observer {
-    fn new(
-        mode: ObserveMode,
-        response_tx: oneshot::Sender<Result<CellEvent, CellError>>,
-    ) -> Self {
+    fn new(mode: ObserveMode, response_tx: oneshot::Sender<Result<CellEvent, CellError>>) -> Self {
         let yield_deadline = match mode {
             ObserveMode::YieldAfter(duration) => Some(tokio::time::Instant::now() + duration),
             ObserveMode::PendingFrontier => None,

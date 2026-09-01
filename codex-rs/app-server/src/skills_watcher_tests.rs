@@ -21,11 +21,8 @@ fn watcher_skips_remote_and_unknown_environments_before_local() {
         selection("local"),
         selection("later-local"),
     ];
-    let environment_types = HashMap::from([
-        ("remote", true),
-        ("local", false),
-        ("later-local", false),
-    ]);
+    let environment_types =
+        HashMap::from([("remote", true), ("local", false), ("later-local", false)]);
 
     let selected = first_local_environment(
         &environments,

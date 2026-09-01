@@ -88,10 +88,7 @@ fn trace_context(temp: &TempDir) -> anyhow::Result<CodeCellTraceContext> {
         "thread-1".to_string(),
     )?);
     Ok(CodeCellTraceContext::enabled(
-        writer,
-        "thread-1",
-        "turn-1",
-        "cell-1",
+        writer, "thread-1", "turn-1", "cell-1",
     ))
 }
 

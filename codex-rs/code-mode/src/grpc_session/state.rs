@@ -239,7 +239,9 @@ impl SessionState {
         self.require_open()?;
         let notification_id = Uuid::parse_str(&notification.notification_id)
             .map_err(|_| "code-mode notification ID must be a UUID".to_string())?;
-        if self.notifications.contains_key(&notification.notification_id)
+        if self
+            .notifications
+            .contains_key(&notification.notification_id)
             || self.seen_notifications.contains(&notification_id)
         {
             return Err("code-mode notification ID was reused".to_string());
@@ -275,7 +277,11 @@ impl SessionState {
     }
 
     pub(super) fn finish_notification(&mut self, notification_id: &str) -> Option<CellId> {
-        let execution_id = self.notifications.get(notification_id)?.execution_id.clone();
+        let execution_id = self
+            .notifications
+            .get(notification_id)?
+            .execution_id
+            .clone();
         let execution = self.executions.get_mut(&execution_id)?;
         execution.notifications = execution.notifications.checked_sub(1)?;
         self.notifications.remove(notification_id);

@@ -28,14 +28,8 @@ impl Serialize for OversizedThenFlag<'_> {
 
 #[test]
 fn detects_exact_serialized_size_boundary() {
-    assert!(
-        !serialized_size_exceeds(&"abc", /*max_bytes*/ 5)
-            .expect("serialize value at limit")
-    );
-    assert!(
-        serialized_size_exceeds(&"abc", /*max_bytes*/ 4)
-            .expect("serialize value over limit")
-    );
+    assert!(!serialized_size_exceeds(&"abc", /*max_bytes*/ 5).expect("serialize value at limit"));
+    assert!(serialized_size_exceeds(&"abc", /*max_bytes*/ 4).expect("serialize value over limit"));
 }
 
 #[test]

@@ -85,7 +85,10 @@ fn multi_agent_version_uses_newest_present_session_meta_value() -> Result<()> {
         rollout_path: None,
     });
 
-    assert_eq!(history.get_multi_agent_version(), Some(MultiAgentVersion::V2));
+    assert_eq!(
+        history.get_multi_agent_version(),
+        Some(MultiAgentVersion::V2)
+    );
     Ok(())
 }
 

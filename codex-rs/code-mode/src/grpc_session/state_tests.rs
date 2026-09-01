@@ -520,19 +520,11 @@ fn notification_cancellation_is_exact_and_duplicate_safe() {
     );
     assert!(first_cancellation.is_cancelled());
     assert_eq!(state.notifications.len(), 2);
-    assert_eq!(
-        state.cancel_notification(&first.notification_id),
-        Ok(None)
-    );
+    assert_eq!(state.cancel_notification(&first.notification_id), Ok(None));
     assert!(!second_cancellation.is_cancelled());
+    assert_eq!(state.cancel_notification(&first.notification_id), Ok(None));
     assert_eq!(
-        state.cancel_notification(&first.notification_id),
-        Ok(None)
-    );
-    assert_eq!(
-        state
-            .admit_notification(&first)
-            .err(),
+        state.admit_notification(&first).err(),
         Some("code-mode notification ID was reused".to_string())
     );
     assert_eq!(state.finish_notification(&second.notification_id), None);

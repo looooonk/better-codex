@@ -1,19 +1,37 @@
 use std::path::Path;
+use std::path::PathBuf;
 
 use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
-use codex_protocol::protocol::HistoryPosition;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_rollout::RolloutConfig;
 use codex_rollout::RolloutRecorder;
 use codex_rollout::RolloutRecorderParams;
 
+use self::history::copy_history_prefix;
+use self::history::full_history_end;
+use self::history::history_end_before_turn;
+use self::publication::abandon_replacement;
+use self::publication::materialize_existing_stable_head;
+use self::publication::persist_replacement;
+use self::publication::preserve_visible_rollouts;
+use self::publication::publish_head;
+use self::publication::publish_head_without_state_db;
+use self::publication::publish_replacement;
+use self::publication::remove_failed_replacement;
+use self::publication::retire_visible_rollouts;
+use self::publication::stable_rollout_path;
+use self::publication::visible_rollout_paths;
 use super::LocalThreadStore;
 use super::rollout_lineage::RolloutLineage;
 use super::thread_rollout_resolver;
+use super::thread_rollout_resolver::RolloutLocation;
 use crate::RevertThreadParams;
 use crate::ThreadStoreError;
 use crate::ThreadStoreResult;
+
+mod history;
+mod publication;
 
 /// Revert an idle paginated thread by selecting a new immutable rollout head.
 pub(super) async fn revert(
@@ -81,7 +99,10 @@ pub(super) async fn revert(
         segment.rollout_path = codex_rollout::materialize_rollout_for_reference(path.as_path())
             .await
             .map_err(|err| ThreadStoreError::Internal {
-                message: format!("failed to materialize rollout {} for revert: {err}", path.display()),
+                message: format!(
+                    "failed to materialize rollout {} for revert: {err}",
+                    path.display()
+                ),
             })?;
         super::thread_history_materialization::materialize_to_sqlite(
             store,
@@ -90,106 +111,231 @@ pub(super) async fn revert(
         )
         .await?;
     }
-    let history_base = history_base_before_turn(store, &lineage, before_turn_id.as_str()).await?;
+    let history_end = history_end_before_turn(store, &lineage, before_turn_id.as_str()).await?;
 
     let rollout_id = RolloutId::new();
-    let recorder = create_replacement_recorder(store, source_meta, rollout_id, history_base).await?;
+    let recorder = create_replacement_recorder(store, source_meta.clone(), rollout_id).await?;
     let replacement_path = recorder.rollout_path().to_path_buf();
+    // Older readers only inspect the selected head, so keep every retained item in that file.
+    if let Err(err) = copy_history_prefix(&recorder, &lineage, history_end).await {
+        return Err(abandon_replacement(&recorder, replacement_path.as_path(), err).await);
+    }
     persist_replacement(&recorder, replacement_path.as_path()).await?;
-    publish_replacement(
-        &state_db,
-        thread_id,
-        expected_sqlite_path.as_path(),
-        replacement_path.as_path(),
-    )
-    .await
-}
-
-async fn persist_replacement(recorder: &RolloutRecorder, path: &Path) -> ThreadStoreResult<()> {
-    let persist_error = recorder.persist().await.err();
-    let shutdown_error = recorder.shutdown().await.err();
-    let Some(message) = replacement_write_error(persist_error, shutdown_error) else {
-        return Ok(());
-    };
-    match remove_failed_replacement(path).await {
-        Ok(()) => Err(ThreadStoreError::Internal { message }),
-        Err(cleanup_error) => Err(ThreadStoreError::Internal {
-            message: format!("{message}; cleanup failed: {cleanup_error}"),
-        }),
-    }
-}
-
-fn replacement_write_error(
-    persist_error: Option<std::io::Error>,
-    shutdown_error: Option<std::io::Error>,
-) -> Option<String> {
-    match (persist_error, shutdown_error) {
-        (None, None) => None,
-        (Some(persist_error), None) => Some(format!(
-            "failed to persist replacement rollout: {persist_error}"
-        )),
-        (None, Some(shutdown_error)) => Some(format!(
-            "failed to shut down replacement rollout: {shutdown_error}"
-        )),
-        (Some(persist_error), Some(shutdown_error)) => Some(format!(
-            "failed to persist replacement rollout: {persist_error}; shutdown failed: {shutdown_error}"
-        )),
-    }
-}
-
-async fn history_base_before_turn(
-    store: &LocalThreadStore,
-    lineage: &RolloutLineage,
-    turn_id: &str,
-) -> ThreadStoreResult<Option<HistoryPosition>> {
-    let pool = store.thread_history_db().await?;
-    let row = super::thread_history::find_source_turn(pool, lineage, turn_id).await?;
-    if row.rollout_end_ordinal == Some(row.rollout_ordinal) {
-        return Err(ThreadStoreError::InvalidRequest {
-            message: format!("turn {turn_id} does not have a persisted start boundary"),
-        });
-    }
-    let position = HistoryPosition {
-        thread_id: row.rollout_id,
-        end_ordinal_exclusive: u64::try_from(row.rollout_ordinal)
-            .map_err(|_| invalid_turn_position(turn_id))?,
-        end_byte_offset: u64::try_from(
-            row.rollout_byte_offset
-                .ok_or_else(|| missing_turn_position(turn_id))?,
+    let result = async {
+        let visible_paths = visible_rollout_paths(
+            store,
+            thread_id,
+            source_path.as_path(),
+            RolloutLocation::Unarchived,
         )
-        .map_err(|_| invalid_turn_position(turn_id))?,
+        .await?;
+        let stable_path = stable_rollout_path(
+            thread_id,
+            expected_sqlite_path.as_path(),
+            source_path.as_path(),
+            visible_paths.as_slice(),
+        )?;
+        materialize_existing_stable_head(stable_path.as_path()).await?;
+        let visible_paths = visible_rollout_paths(
+            store,
+            thread_id,
+            source_path.as_path(),
+            RolloutLocation::Unarchived,
+        )
+        .await?;
+        preserve_visible_rollouts(store, thread_id, visible_paths.as_slice()).await?;
+        let final_expected_path =
+            if is_composite_selection(expected_sqlite_path.as_path(), thread_id) {
+                normalize_composite_selection(
+                    store,
+                    &state_db,
+                    thread_id,
+                    source_meta,
+                    &lineage,
+                    expected_sqlite_path.as_path(),
+                    stable_path.as_path(),
+                )
+                .await?;
+                stable_path.clone()
+            } else {
+                expected_sqlite_path.clone()
+            };
+        publish_replacement(
+            store,
+            &state_db,
+            thread_id,
+            final_expected_path.as_path(),
+            replacement_path.as_path(),
+            stable_path.as_path(),
+            visible_paths.as_slice(),
+        )
+        .await
+    }
+    .await;
+    if result.is_err() {
+        remove_failed_replacement(replacement_path.as_path()).await?;
+    }
+    result
+}
+
+fn is_composite_selection(path: &Path, thread_id: ThreadId) -> bool {
+    codex_rollout::thread_id_from_rollout_path(path) == Some(thread_id)
+        && codex_rollout::rollout_id_from_path(path)
+            .is_some_and(|rollout_id| rollout_id != thread_id)
+}
+
+pub(super) async fn repair_composite_selection(
+    store: &LocalThreadStore,
+    selected: thread_rollout_resolver::ResolvedThreadRollout,
+) -> ThreadStoreResult<thread_rollout_resolver::ResolvedThreadRollout> {
+    let thread_id = selected.thread_id;
+    if !is_composite_selection(selected.path.as_path(), thread_id) {
+        return Ok(selected);
+    }
+    let source_path = super::helpers::scoped_rollout_path(
+        store.config.codex_home.clone(),
+        selected.path.as_path(),
+        "Codex home",
+    )?;
+    let source_meta = codex_rollout::read_session_meta_line(source_path.as_path())
+        .await
+        .map_err(|err| ThreadStoreError::Internal {
+            message: format!(
+                "failed to read composite rollout {}: {err}",
+                source_path.display()
+            ),
+        })?
+        .meta;
+    let mut lineage = store.resolve_rollout_lineage(thread_id).await?;
+    for segment in &mut lineage.segments {
+        let path = super::helpers::scoped_rollout_path(
+            store.config.codex_home.clone(),
+            segment.rollout_path.as_path(),
+            "Codex home",
+        )?;
+        segment.rollout_path = codex_rollout::materialize_rollout_for_reference(path.as_path())
+            .await
+            .map_err(|err| ThreadStoreError::Internal {
+                message: format!(
+                    "failed to materialize rollout {} for repair: {err}",
+                    path.display()
+                ),
+            })?;
+    }
+    let visible_paths =
+        visible_rollout_paths(store, thread_id, source_path.as_path(), selected.location).await?;
+    let stable_path = stable_rollout_path(
+        thread_id,
+        source_path.as_path(),
+        source_path.as_path(),
+        visible_paths.as_slice(),
+    )?;
+    materialize_existing_stable_head(stable_path.as_path()).await?;
+    let visible_paths =
+        visible_rollout_paths(store, thread_id, source_path.as_path(), selected.location).await?;
+    preserve_visible_rollouts(store, thread_id, visible_paths.as_slice()).await?;
+
+    let normalized_path = create_normalized_replacement(store, source_meta, &lineage).await?;
+    let state_db = store.state_db().await;
+    let expected_path = if let Some(state_db) = state_db.as_ref() {
+        match state_db.get_thread(thread_id).await {
+            Ok(Some(metadata)) => Some(metadata.rollout_path),
+            Ok(None) => None,
+            Err(err) => {
+                tracing::warn!(
+                    "failed to read state selection for composite rollout repair {thread_id}: {err}"
+                );
+                None
+            }
+        }
+    } else {
+        None
     };
-    let segment_index = lineage
-        .segments()
-        .iter()
-        .position(|segment| segment.rollout_id() == position.thread_id)
-        .ok_or_else(|| ThreadStoreError::Internal {
-            message: "revert position is outside the selected rollout lineage".to_string(),
-        })?;
-    if lineage.segments()[segment_index].end.is_some_and(|end| {
-        position.end_ordinal_exclusive > end.end_ordinal_exclusive
-            || position.end_byte_offset > end.end_byte_offset
-    }) {
-        return Err(ThreadStoreError::InvalidRequest {
-            message: "revert boundary exceeds inherited source history".to_string(),
-        });
+    let publish_result = match (state_db.as_ref(), expected_path.as_deref()) {
+        (Some(state_db), Some(expected_path)) => {
+            publish_head(
+                store,
+                state_db,
+                thread_id,
+                expected_path,
+                normalized_path.as_path(),
+                stable_path.as_path(),
+            )
+            .await
+        }
+        _ => publish_head_without_state_db(store, normalized_path.as_path(), stable_path.as_path()),
+    };
+    if publish_result.is_err() {
+        remove_failed_replacement(normalized_path.as_path()).await?;
     }
-    if position.end_ordinal_exclusive == lineage.segments()[segment_index].start_ordinal() {
-        return Ok(segment_index
-            .checked_sub(1)
-            .and_then(|index| lineage.segments()[index].end));
+    publish_result?;
+    retire_visible_rollouts(visible_paths.as_slice(), stable_path.as_path())?;
+
+    let rollout_id = thread_rollout_resolver::rollout_id_for_thread_path(
+        stable_path.as_path(),
+        thread_id,
+        ThreadHistoryMode::Paginated,
+    )
+    .await?;
+    Ok(thread_rollout_resolver::ResolvedThreadRollout {
+        thread_id,
+        rollout_id,
+        path: stable_path,
+        location: selected.location,
+    })
+}
+
+async fn normalize_composite_selection(
+    store: &LocalThreadStore,
+    state_db: &codex_rollout::StateDbHandle,
+    thread_id: ThreadId,
+    source_meta: codex_rollout::SessionMeta,
+    lineage: &RolloutLineage,
+    expected_path: &Path,
+    stable_path: &Path,
+) -> ThreadStoreResult<()> {
+    let normalized_path = create_normalized_replacement(store, source_meta, lineage).await?;
+    let result = publish_head(
+        store,
+        state_db,
+        thread_id,
+        expected_path,
+        normalized_path.as_path(),
+        stable_path,
+    )
+    .await;
+    if result.is_err() {
+        remove_failed_replacement(normalized_path.as_path()).await?;
     }
-    Ok(Some(position))
+    result
+}
+
+async fn create_normalized_replacement(
+    store: &LocalThreadStore,
+    source_meta: codex_rollout::SessionMeta,
+    lineage: &RolloutLineage,
+) -> ThreadStoreResult<PathBuf> {
+    let history_end = full_history_end(lineage).await?;
+    let recorder = create_replacement_recorder(store, source_meta, RolloutId::new()).await?;
+    let normalized_path = recorder.rollout_path().to_path_buf();
+    if let Err(err) = copy_history_prefix(&recorder, lineage, Some(history_end)).await {
+        return Err(abandon_replacement(&recorder, normalized_path.as_path(), err).await);
+    }
+    persist_replacement(&recorder, normalized_path.as_path()).await?;
+    Ok(normalized_path)
 }
 
 async fn create_replacement_recorder(
     store: &LocalThreadStore,
     source_meta: codex_rollout::SessionMeta,
     rollout_id: RolloutId,
-    history_base: Option<HistoryPosition>,
 ) -> ThreadStoreResult<RolloutRecorder> {
     let config = RolloutConfig {
-        codex_home: store.config.codex_home.clone(),
+        codex_home: store
+            .config
+            .codex_home
+            .join(codex_rollout::ROLLOUT_REVISIONS_SUBDIR)
+            .join(".staging"),
         sqlite_home: store.config.sqlite_home.clone(),
         cwd: source_meta.cwd.clone(),
         model_provider_id: source_meta
@@ -213,7 +359,6 @@ async fn create_replacement_recorder(
     .with_selected_capability_roots(source_meta.selected_capability_roots)
     .with_multi_agent_version(source_meta.multi_agent_version)
     .with_history_mode(ThreadHistoryMode::Paginated)
-    .with_history_base(history_base)
     .with_subagent_history_start_ordinal(source_meta.subagent_history_start_ordinal);
     if let Some(context_window) = source_meta.context_window {
         params = params.with_initial_window_id(context_window.window_id);
@@ -223,60 +368,6 @@ async fn create_replacement_recorder(
         .map_err(|err| ThreadStoreError::Internal {
             message: format!("failed to create reverted rollout: {err}"),
         })
-}
-
-async fn publish_replacement(
-    state_db: &codex_rollout::StateDbHandle,
-    thread_id: ThreadId,
-    expected_path: &Path,
-    replacement_path: &Path,
-) -> ThreadStoreResult<()> {
-    match state_db
-        .replace_rollout_path_if_current(thread_id, expected_path, replacement_path)
-        .await
-    {
-        Ok(true) => Ok(()),
-        Ok(false) => {
-            remove_failed_replacement(replacement_path).await?;
-            Err(ThreadStoreError::Conflict {
-                message: format!("thread {thread_id} changed while it was being reverted"),
-            })
-        }
-        Err(err) => {
-            let message = format!("failed to switch thread {thread_id} to reverted rollout: {err}");
-            match remove_failed_replacement(replacement_path).await {
-                Ok(()) => Err(ThreadStoreError::Internal { message }),
-                Err(cleanup_error) => Err(ThreadStoreError::Internal {
-                    message: format!("{message}; cleanup failed: {cleanup_error}"),
-                }),
-            }
-        }
-    }
-}
-
-async fn remove_failed_replacement(path: &Path) -> ThreadStoreResult<()> {
-    match tokio::fs::remove_file(path).await {
-        Ok(()) => Ok(()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(err) => Err(ThreadStoreError::Internal {
-            message: format!(
-                "failed to remove unpublished replacement rollout {}: {err}",
-                path.display()
-            ),
-        }),
-    }
-}
-
-fn missing_turn_position(turn_id: &str) -> ThreadStoreError {
-    ThreadStoreError::InvalidRequest {
-        message: format!("turn {turn_id} does not have persisted rollout positions"),
-    }
-}
-
-fn invalid_turn_position(turn_id: &str) -> ThreadStoreError {
-    ThreadStoreError::Internal {
-        message: format!("invalid rollout position for turn {turn_id}"),
-    }
 }
 
 #[cfg(test)]

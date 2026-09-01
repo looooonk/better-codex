@@ -105,8 +105,7 @@ where
         return Ok(());
     }
 
-    let (outgoing_tx, mut outgoing_rx) =
-        mpsc::channel::<EncodedFrame>(OUTGOING_CHANNEL_CAPACITY);
+    let (outgoing_tx, mut outgoing_rx) = mpsc::channel::<EncodedFrame>(OUTGOING_CHANNEL_CAPACITY);
     let peer = Arc::new(HostPeer::new(outgoing_tx));
     let state = Arc::new(HostState {
         sessions: Mutex::new(HashMap::new()),
@@ -248,11 +247,8 @@ where
         || client_hello
             .optional_capabilities()
             .contains(&resource_limits_capability);
-    let host_capabilities = CapabilitySet::try_new(
-        resource_limits_requested
-            .then_some(resource_limits_capability)
-            .into_iter(),
-    )?;
+    let host_capabilities =
+        CapabilitySet::try_new(resource_limits_requested.then_some(resource_limits_capability))?;
     if let Some(capability) = client_hello
         .required_capabilities()
         .iter()
@@ -474,9 +470,7 @@ impl HostState {
         cell_execution_limits: CodeModeSessionCellExecutionLimits,
     ) -> Result<(), String> {
         if cell_execution_limits.max_heap_size_bytes.is_some() {
-            return Err(
-                "maximum heap size is not supported by the code-mode host".to_string(),
-            );
+            return Err("maximum heap size is not supported by the code-mode host".to_string());
         }
         let mut sessions = self.sessions.lock().unwrap_or_else(PoisonError::into_inner);
         if sessions.contains_key(&session_id) {

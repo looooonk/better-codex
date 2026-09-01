@@ -477,9 +477,7 @@ fn local_layer_projection_preserves_blockers_and_cloud_position() {
         requirements,
     };
 
-    let only_user = layers
-        .clone()
-        .project(&[vec!["only_user".into()]], &[]);
+    let only_user = layers.clone().project(&[vec!["only_user".into()]], &[]);
     assert_eq!(
         only_user.config,
         LocalTomlLayerStack {

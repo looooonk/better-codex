@@ -1,5 +1,5 @@
-pub use codex_rmcp_client::McpProtocolMode;
 pub use binding::McpBinding;
+pub use codex_rmcp_client::McpProtocolMode;
 pub use connection_manager::McpConnectionManager;
 pub use connection_manager::tool_is_model_visible;
 pub use elicitation::ElicitationLifecycle;

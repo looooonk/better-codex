@@ -1,4 +1,5 @@
 use super::PreviousSectionState;
+use super::WorldStateHash;
 use super::WorldStateSection;
 use crate::context::CollaborationModeInstructions;
 use crate::context::ContextualUserFragment;
@@ -14,10 +15,12 @@ pub(crate) struct CollaborationModeState {
     instructions: Option<CollaborationModeInstructions>,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub(crate) struct CollaborationModeSnapshot {
     mode: ModeKind,
     instructions_visible: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    instructions_hash: Option<WorldStateHash>,
 }
 
 impl CollaborationModeState {
@@ -28,6 +31,7 @@ impl CollaborationModeState {
             snapshot: CollaborationModeSnapshot {
                 mode: collaboration_mode.mode,
                 instructions_visible: instructions.is_some(),
+                instructions_hash: instructions.as_ref().map(WorldStateHash::from_fragment),
             },
             instructions,
         }
@@ -39,7 +43,7 @@ impl WorldStateSection for CollaborationModeState {
     type Snapshot = CollaborationModeSnapshot;
 
     fn snapshot(&self) -> Self::Snapshot {
-        self.snapshot
+        self.snapshot.clone()
     }
 
     fn matches_legacy_fragment(role: &str, text: &str) -> bool {
@@ -69,7 +73,9 @@ impl WorldStateSection for CollaborationModeState {
             PreviousSectionState::Known(previous) if previous == &self.snapshot => None,
             PreviousSectionState::Absent if self.instructions.is_none() => None,
             PreviousSectionState::Unknown => None,
-            PreviousSectionState::Absent | PreviousSectionState::Known(_) => Some(Box::new(
+            PreviousSectionState::Absent
+            | PreviousSectionState::Stale
+            | PreviousSectionState::Known(_) => Some(Box::new(
                 self.instructions
                     .clone()
                     .unwrap_or_else(|| CollaborationModeInstructions::new("")),

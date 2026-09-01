@@ -4,6 +4,8 @@ use codex_core::compact::SUMMARIZATION_PROMPT;
 use codex_core::compact::SUMMARY_PREFIX;
 use codex_core::config::Config;
 use codex_features::Feature;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_login::CodexAuth;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::built_in_model_providers;
@@ -20,8 +22,6 @@ use codex_protocol::protocol::HookRunStatus;
 use codex_protocol::protocol::ItemCompletedEvent;
 use codex_protocol::protocol::ItemStartedEvent;
 use codex_protocol::protocol::Op;
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
@@ -4326,11 +4326,15 @@ async fn auto_compact_body_after_prefix_ignores_starting_window_prefix() {
 
     let first_turn = sse(vec![
         ev_assistant_message("m1", FIRST_REPLY),
-        ev_completed_with_usage("r1", /*input_tokens*/ 600, /*output_tokens*/ 50),
+        ev_completed_with_usage(
+            "r1", /*input_tokens*/ 10_000, /*output_tokens*/ 50,
+        ),
     ]);
     let second_turn = sse(vec![
         ev_assistant_message("m2", SECOND_LARGE_REPLY),
-        ev_completed_with_usage("r2", /*input_tokens*/ 700, /*output_tokens*/ 50),
+        ev_completed_with_usage(
+            "r2", /*input_tokens*/ 13_000, /*output_tokens*/ 50,
+        ),
     ]);
     let auto_compact_turn = sse(vec![
         ev_assistant_message("m3", AUTO_SUMMARY_TEXT),
@@ -4351,8 +4355,8 @@ async fn auto_compact_body_after_prefix_ignores_starting_window_prefix() {
         .with_config(move |config| {
             config.model_provider = model_provider;
             set_test_compact_prompt(config);
-            config.model_context_window = Some(1_000);
-            config.model_auto_compact_token_limit = Some(100);
+            config.model_context_window = Some(100_000);
+            config.model_auto_compact_token_limit = Some(2_000);
             config.model_auto_compact_token_limit_scope =
                 AutoCompactTokenLimitScope::BodyAfterPrefix;
         })

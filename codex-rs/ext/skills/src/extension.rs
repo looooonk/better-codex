@@ -28,30 +28,30 @@ use codex_protocol::protocol::Event;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::WarningEvent;
 
-use crate::SkillsExtensionConfig;
 use crate::ExplicitSkillPromptBudget;
 use crate::HostSkillsCatalogInWorldState;
 use crate::HostSkillsSnapshot;
 use crate::InjectedHostSkillPrompts;
+use crate::SkillsExtensionConfig;
 use crate::catalog::SkillCatalog;
 use crate::catalog::SkillCatalogEntry;
 use crate::catalog::SkillReadResult;
 use crate::catalog::SkillSourceKind;
+use crate::fragments::SkillInstructions;
+use crate::fragments::SkillResourceAccess;
 use crate::provider::HostSkillProvider;
 use crate::provider::SkillListQuery;
 use crate::provider::SkillReadRequest;
 use crate::render::render_extension_catalog;
-use crate::fragments::SkillInstructions;
-use crate::fragments::SkillResourceAccess;
 use crate::selection::collect_explicit_skill_mentions;
 use crate::sources::SkillProviders;
-use crate::state::ExecutorSkillsStepState;
 use crate::state::EmittedCatalogBudgetWarnings;
+use crate::state::ExecutorSkillsStepState;
 use crate::state::HostSkillsStepState;
 use crate::state::SkillsThreadState;
 use crate::state::SkillsTurnState;
-use crate::tools::skill_tools;
 use crate::tools::SkillToolAuthority;
+use crate::tools::skill_tools;
 use crate::world_state_catalogs::CatalogContext;
 use crate::world_state_catalogs::CatalogStatus;
 
@@ -146,7 +146,9 @@ where
             let (fragment, report) = render_extension_catalog(
                 &catalog,
                 include_usage,
-                model_info.as_deref().and_then(ModelInfo::resolved_context_window),
+                model_info
+                    .as_deref()
+                    .and_then(ModelInfo::resolved_context_window),
             );
             if let Some(warning) = report.warning_message() {
                 self.emit_warning(thread_store.level_id(), warning);
@@ -178,7 +180,6 @@ where
         })
     }
 }
-
 
 impl<C> ToolContributor for SkillsExtension<C>
 where
@@ -323,7 +324,9 @@ where
                 let (fragment, report) = render_extension_catalog(
                     &turn_catalog,
                     include_usage,
-                    model_info.as_deref().and_then(ModelInfo::resolved_context_window),
+                    model_info
+                        .as_deref()
+                        .and_then(ModelInfo::resolved_context_window),
                 );
                 if let Some(warning) = report.warning_message() {
                     if emitted_catalog_warnings.insert(&warning) {

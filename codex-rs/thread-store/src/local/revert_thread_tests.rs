@@ -1,7 +1,10 @@
 use std::path::Path;
 
+use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
 use codex_protocol::models::BaseInstructions;
+use codex_protocol::models::ContentItem;
+use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
@@ -14,8 +17,10 @@ use tempfile::TempDir;
 
 use super::super::test_support::test_config;
 use super::LocalThreadStore;
-use super::publish_replacement;
-use super::replacement_write_error;
+use super::normalize_composite_selection;
+use super::publication::publish_replacement;
+use super::publication::replacement_write_error;
+use super::repair_composite_selection;
 use crate::AppendThreadItemsParams;
 use crate::CreateThreadParams;
 use crate::ListTurnsParams;
@@ -28,7 +33,7 @@ use crate::ThreadStore;
 use crate::ThreadStoreError;
 
 #[tokio::test]
-async fn revert_keeps_thread_identity_and_hides_suffix_across_compressed_lineage() {
+async fn revert_keeps_head_context_and_hides_suffix_across_compressed_sources() {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
     let state_db = codex_state::StateRuntime::init(
@@ -45,8 +50,10 @@ async fn revert_keeps_thread_identity_and_hides_suffix_across_compressed_lineage
             thread_id,
             items: vec![
                 turn_started("turn-1"),
+                user_message("kept context"),
                 turn_completed("turn-1"),
                 turn_started("turn-2"),
+                user_message("discarded context"),
                 turn_completed("turn-2"),
             ],
         })
@@ -71,8 +78,8 @@ async fn revert_keeps_thread_identity_and_hides_suffix_across_compressed_lineage
         .await
         .expect("revert before second turn");
     let first_replacement_path = selected_path(&state_db, thread_id).await;
-    assert_ne!(first_replacement_path, original_path);
-    assert_ne!(
+    assert_eq!(first_replacement_path, original_path);
+    assert_eq!(
         codex_rollout::rollout_id_from_path(first_replacement_path.as_path()),
         Some(thread_id)
     );
@@ -81,6 +88,15 @@ async fn revert_keeps_thread_identity_and_hides_suffix_across_compressed_lineage
         .expect("read replacement metadata")
         .meta;
     assert_eq!(replacement_meta.id, thread_id);
+    let first_rollout_id = replacement_meta
+        .rollout_id
+        .expect("replacement rollout identity");
+    assert_ne!(first_rollout_id, thread_id);
+    assert_eq!(replacement_meta.history_base, None);
+    assert_eq!(
+        head_only_user_messages(first_replacement_path.as_path()).await,
+        vec!["kept context"]
+    );
     assert_eq!(turn_ids(&store, thread_id).await, vec!["turn-1"]);
 
     store
@@ -91,10 +107,44 @@ async fn revert_keeps_thread_identity_and_hides_suffix_across_compressed_lineage
         .await
         .expect("revert before first turn");
     let second_replacement_path = selected_path(&state_db, thread_id).await;
-    assert_ne!(second_replacement_path, first_replacement_path);
+    assert_eq!(second_replacement_path, first_replacement_path);
     assert!(original_path.exists());
     assert!(first_replacement_path.exists());
+    let second_meta = codex_rollout::read_session_meta_line(second_replacement_path.as_path())
+        .await
+        .expect("read second replacement metadata")
+        .meta;
+    assert_ne!(second_meta.rollout_id, Some(first_rollout_id));
+    assert_ne!(second_meta.rollout_id, Some(thread_id));
+    assert_eq!(
+        head_only_user_messages(second_replacement_path.as_path()).await,
+        Vec::<String>::new()
+    );
     assert_eq!(turn_ids(&store, thread_id).await, Vec::<String>::new());
+    assert_eq!(
+        codex_rollout::find_thread_paths_by_id(home.path(), thread_id)
+            .await
+            .expect("visible rollout paths"),
+        vec![original_path.clone()]
+    );
+    assert_eq!(
+        codex_rollout::find_thread_path_by_id_str(
+            home.path(),
+            thread_id.to_string().as_str(),
+            /*state_db_ctx*/ None,
+        )
+        .await
+        .expect("database-less fallback"),
+        Some(original_path)
+    );
+    let revisions = codex_rollout::find_rollout_revision_paths_by_thread(home.path(), thread_id)
+        .await
+        .expect("retained revisions");
+    assert!(revisions.iter().any(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(first_rollout_id.to_string().as_str()))
+    }));
 }
 
 #[tokio::test]
@@ -174,7 +224,7 @@ async fn failed_revert_keeps_compressed_selection_readable() {
 }
 
 #[tokio::test]
-async fn stale_revert_publication_removes_replacement_without_mutating_selection() {
+async fn stale_revert_publication_restores_existing_stable_representations() {
     let home = TempDir::new().expect("temp dir");
     let config = test_config(home.path());
     let state_db = codex_state::StateRuntime::init(
@@ -183,6 +233,7 @@ async fn stale_revert_publication_removes_replacement_without_mutating_selection
     )
     .await
     .expect("initialize state database");
+    let store = LocalThreadStore::new(config, Some(state_db.clone()));
     let thread_id = ThreadId::new();
     let selected = home.path().join("selected.jsonl");
     let stale = home.path().join("stale.jsonl");
@@ -190,13 +241,255 @@ async fn stale_revert_publication_removes_replacement_without_mutating_selection
     std::fs::write(replacement.as_path(), "replacement").expect("write replacement");
     seed_selected_rollout(&state_db, thread_id, selected.clone()).await;
 
-    let err = publish_replacement(&state_db, thread_id, stale.as_path(), replacement.as_path())
-        .await
-        .expect_err("stale publication should conflict");
+    let stable = home.path().join("stable.jsonl");
+    let compressed_stable = write_stable_representations(stable.as_path());
+    let err = publish_replacement(
+        &store,
+        &state_db,
+        thread_id,
+        stale.as_path(),
+        replacement.as_path(),
+        stable.as_path(),
+        &[],
+    )
+    .await
+    .expect_err("stale publication should conflict");
 
     assert!(matches!(err, ThreadStoreError::Conflict { .. }));
     assert!(!replacement.exists());
+    assert_stable_representations(stable.as_path(), compressed_stable.as_path());
     assert_eq!(selected_path(&state_db, thread_id).await, selected);
+    assert_no_revert_rollback_artifacts(home.path());
+}
+
+#[tokio::test]
+async fn database_error_during_revert_publication_restores_existing_stable_representations() {
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let state_db = codex_state::StateRuntime::init(
+        config.sqlite_home.clone(),
+        config.default_model_provider_id.clone(),
+    )
+    .await
+    .expect("initialize state database");
+    let store = LocalThreadStore::new(config.clone(), Some(state_db.clone()));
+    let thread_id = ThreadId::new();
+    let selected = home.path().join("selected.jsonl");
+    let replacement = home.path().join("replacement.jsonl");
+    std::fs::write(replacement.as_path(), "replacement").expect("write replacement");
+    seed_selected_rollout(&state_db, thread_id, selected.clone()).await;
+
+    let stable = home.path().join("stable.jsonl");
+    let compressed_stable = write_stable_representations(stable.as_path());
+    state_db.close().await;
+
+    let err = publish_replacement(
+        &store,
+        &state_db,
+        thread_id,
+        selected.as_path(),
+        replacement.as_path(),
+        stable.as_path(),
+        &[],
+    )
+    .await
+    .expect_err("closed database should fail publication");
+
+    assert!(matches!(err, ThreadStoreError::Internal { .. }));
+    assert!(!replacement.exists());
+    assert_stable_representations(stable.as_path(), compressed_stable.as_path());
+    assert_no_revert_rollback_artifacts(home.path());
+
+    let reopened_state_db =
+        codex_state::StateRuntime::init(config.sqlite_home, config.default_model_provider_id)
+            .await
+            .expect("reopen state database");
+    assert_eq!(selected_path(&reopened_state_db, thread_id).await, selected);
+}
+
+#[tokio::test]
+async fn composite_selection_normalizes_to_equivalent_stable_head_before_retirement() {
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let state_db = codex_state::StateRuntime::init(
+        config.sqlite_home.clone(),
+        config.default_model_provider_id.clone(),
+    )
+    .await
+    .expect("initialize state database");
+    let store = LocalThreadStore::new(config, Some(state_db.clone()));
+    let thread_id = ThreadId::new();
+    create_paginated_thread(&store, thread_id).await;
+    store
+        .append_items(AppendThreadItemsParams {
+            thread_id,
+            items: vec![
+                turn_started("turn-1"),
+                user_message("first context"),
+                turn_completed("turn-1"),
+                turn_started("turn-2"),
+                user_message("second context"),
+                turn_completed("turn-2"),
+            ],
+        })
+        .await
+        .expect("append turns");
+    let stable_path = store
+        .live_rollout_path(thread_id)
+        .await
+        .expect("source rollout path");
+    store
+        .shutdown_thread(thread_id)
+        .await
+        .expect("close source writer");
+    reconcile_rollout(&state_db, stable_path.as_path()).await;
+
+    let composite_rollout_id = RolloutId::new();
+    let stem = stable_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .expect("rollout stem");
+    let composite_path = stable_path.with_file_name(format!("{stem}_{composite_rollout_id}.jsonl"));
+    std::fs::rename(stable_path.as_path(), composite_path.as_path())
+        .expect("rename composite rollout");
+    assert!(
+        state_db
+            .replace_rollout_path_if_current(
+                thread_id,
+                stable_path.as_path(),
+                composite_path.as_path(),
+            )
+            .await
+            .expect("select composite rollout")
+    );
+
+    let source_meta = codex_rollout::read_session_meta_line(composite_path.as_path())
+        .await
+        .expect("read composite metadata")
+        .meta;
+    let lineage = store
+        .resolve_rollout_lineage(thread_id)
+        .await
+        .expect("resolve composite lineage");
+    normalize_composite_selection(
+        &store,
+        &state_db,
+        thread_id,
+        source_meta,
+        &lineage,
+        composite_path.as_path(),
+        stable_path.as_path(),
+    )
+    .await
+    .expect("normalize composite selection");
+
+    assert_eq!(selected_path(&state_db, thread_id).await, stable_path);
+    assert!(composite_path.exists(), "normalization keeps the old head");
+    assert_eq!(
+        head_only_user_messages(stable_path.as_path()).await,
+        head_only_user_messages(composite_path.as_path()).await
+    );
+    let normalized_meta = codex_rollout::read_session_meta_line(stable_path.as_path())
+        .await
+        .expect("read normalized metadata")
+        .meta;
+    assert_eq!(normalized_meta.history_base, None);
+    assert!(
+        normalized_meta
+            .rollout_id
+            .is_some_and(|rollout_id| rollout_id != composite_rollout_id && rollout_id != thread_id)
+    );
+}
+
+#[tokio::test]
+async fn archived_composite_repair_does_not_mutate_active_head() {
+    let home = TempDir::new().expect("temp dir");
+    let config = test_config(home.path());
+    let state_db = codex_state::StateRuntime::init(
+        config.sqlite_home.clone(),
+        config.default_model_provider_id.clone(),
+    )
+    .await
+    .expect("initialize state database");
+    let store = LocalThreadStore::new(config, Some(state_db.clone()));
+    let thread_id = ThreadId::new();
+    create_paginated_thread(&store, thread_id).await;
+    store
+        .append_items(AppendThreadItemsParams {
+            thread_id,
+            items: vec![
+                turn_started("turn-1"),
+                user_message("active context"),
+                turn_completed("turn-1"),
+            ],
+        })
+        .await
+        .expect("append active turn");
+    let active_path = store
+        .live_rollout_path(thread_id)
+        .await
+        .expect("active rollout path");
+    store
+        .shutdown_thread(thread_id)
+        .await
+        .expect("close active writer");
+    reconcile_rollout(&state_db, active_path.as_path()).await;
+    let active_bytes = std::fs::read(active_path.as_path()).expect("read active rollout");
+
+    let archived_dir = home.path().join(codex_rollout::ARCHIVED_SESSIONS_SUBDIR);
+    std::fs::create_dir_all(archived_dir.as_path()).expect("create archived directory");
+    let stem = active_path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .expect("active rollout stem");
+    let archived_composite_path = archived_dir.join(format!("{stem}_{}.jsonl", RolloutId::new()));
+    std::fs::copy(active_path.as_path(), archived_composite_path.as_path())
+        .expect("copy archived composite");
+    state_db
+        .mark_archived(
+            thread_id,
+            archived_composite_path.as_path(),
+            chrono::Utc::now(),
+        )
+        .await
+        .expect("select archived composite");
+
+    let selected = super::super::thread_rollout_resolver::resolve_current_including_archived(
+        &store, thread_id,
+    )
+    .await
+    .expect("resolve archived selection")
+    .expect("archived selection");
+    let repaired = repair_composite_selection(&store, selected)
+        .await
+        .expect("repair archived composite");
+    let archived_stable_path =
+        archived_dir.join(active_path.file_name().expect("active rollout file name"));
+    let canonical_archived_stable_path =
+        std::fs::canonicalize(archived_stable_path.as_path()).expect("canonical archived path");
+
+    assert_eq!(repaired.path, canonical_archived_stable_path);
+    assert_eq!(
+        selected_path(&state_db, thread_id).await,
+        canonical_archived_stable_path
+    );
+    assert!(!archived_composite_path.exists());
+    assert_eq!(
+        std::fs::read(active_path.as_path()).expect("read preserved active rollout"),
+        active_bytes
+    );
+    assert_eq!(
+        codex_rollout::find_thread_paths_by_id(home.path(), thread_id)
+            .await
+            .expect("active rollout inventory"),
+        vec![active_path]
+    );
+    assert_eq!(
+        codex_rollout::find_archived_thread_paths_by_id(home.path(), thread_id)
+            .await
+            .expect("archived rollout inventory"),
+        vec![archived_stable_path]
+    );
 }
 
 #[test]
@@ -364,6 +657,63 @@ async fn selected_path(
         .rollout_path
 }
 
+fn write_stable_representations(stable_path: &Path) -> std::path::PathBuf {
+    std::fs::write(stable_path, b"original plain stable").expect("write plain stable rollout");
+    let compressed_path = stable_path.with_extension("jsonl.zst");
+    std::fs::write(&compressed_path, b"original compressed stable")
+        .expect("write compressed stable rollout");
+    compressed_path
+}
+
+fn assert_stable_representations(stable_path: &Path, compressed_path: &Path) {
+    assert_eq!(
+        std::fs::read(stable_path).expect("read restored plain stable rollout"),
+        b"original plain stable"
+    );
+    assert_eq!(
+        std::fs::read(compressed_path).expect("read restored compressed stable rollout"),
+        b"original compressed stable"
+    );
+}
+
+fn assert_no_revert_rollback_artifacts(codex_home: &Path) {
+    let staging = codex_home
+        .join(codex_rollout::ROLLOUT_REVISIONS_SUBDIR)
+        .join(".staging");
+    assert!(
+        staging
+            .read_dir()
+            .expect("read revert staging directory")
+            .next()
+            .is_none()
+    );
+}
+
+async fn head_only_user_messages(path: &Path) -> Vec<String> {
+    let (items, _, parse_errors) = codex_rollout::RolloutRecorder::load_rollout_items(path)
+        .await
+        .expect("load replacement head directly");
+    assert_eq!(parse_errors, 0);
+    items
+        .into_iter()
+        .filter_map(|item| {
+            let RolloutItem::ResponseItem(envelope) = item else {
+                return None;
+            };
+            let ResponseItem::Message { role, content, .. } = envelope.item else {
+                return None;
+            };
+            if role != "user" {
+                return None;
+            }
+            content.into_iter().find_map(|content| match content {
+                ContentItem::InputText { text } => Some(text),
+                _ => None,
+            })
+        })
+        .collect()
+}
+
 fn turn_started(turn_id: &str) -> RolloutItem {
     RolloutItem::EventMsg(EventMsg::TurnStarted(TurnStartedEvent {
         turn_id: turn_id.to_string(),
@@ -384,6 +734,21 @@ fn turn_completed(turn_id: &str) -> RolloutItem {
         duration_ms: Some(10_000),
         time_to_first_token_ms: None,
     }))
+}
+
+fn user_message(message: &str) -> RolloutItem {
+    RolloutItem::ResponseItem(
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: message.to_string(),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        }
+        .into(),
+    )
 }
 
 fn compress_rollout(path: &Path) {

@@ -27,7 +27,9 @@ impl WorldStateSection for TestSection {
             PreviousSectionState::Known(previous) if self.value != previous.value => {
                 Some(Box::new(TestFragment(self.value.clone())))
             }
-            PreviousSectionState::Unknown => Some(Box::new(TestFragment("unknown".to_string()))),
+            PreviousSectionState::Unknown | PreviousSectionState::Stale => {
+                Some(Box::new(TestFragment("unknown".to_string())))
+            }
             PreviousSectionState::Absent | PreviousSectionState::Known(_) => None,
         }
     }
@@ -214,10 +216,10 @@ fn missing_retained_fragment_is_rendered_again() {
             "extension_test",
             json!({"body": "current catalog"}),
             |previous| match previous {
-                PreviousWorldStateSection::Absent => Some(RenderedWorldStateFragment::new(
-                    ExtensionTestFragment("current catalog"),
-                )),
-                PreviousWorldStateSection::Unknown | PreviousWorldStateSection::Known(_) => None,
+                PreviousWorldStateSection::Absent | PreviousWorldStateSection::Unknown => Some(
+                    RenderedWorldStateFragment::new(ExtensionTestFragment("current catalog")),
+                ),
+                PreviousWorldStateSection::Known(_) => None,
             },
         )
         .with_retained_fragment_matcher(|role, text| {
@@ -252,6 +254,118 @@ fn missing_retained_fragment_is_rendered_again() {
         world_state
             .render_history_diff(Some(&previous), &[retained])
             .is_empty()
+    );
+}
+
+#[test]
+fn latest_matching_section_fragment_controls_retention_with_legacy_matcher() {
+    let mut world_state = WorldState::default();
+    world_state.add_extension_section(
+        WorldStateSectionContribution::new(
+            "extension_test",
+            json!({"body": "current catalog"}),
+            |previous| match previous {
+                PreviousWorldStateSection::Known(previous)
+                    if previous != &json!({"body": "current catalog"}) =>
+                {
+                    Some(RenderedWorldStateFragment::new(ExtensionTestFragment(
+                        "current catalog",
+                    )))
+                }
+                PreviousWorldStateSection::Absent | PreviousWorldStateSection::Unknown => Some(
+                    RenderedWorldStateFragment::new(ExtensionTestFragment("current catalog")),
+                ),
+                PreviousWorldStateSection::Known(_) => None,
+            },
+        )
+        .with_legacy_matcher(|role, text| {
+            role == "developer"
+                && text.starts_with("<extension_test>")
+                && text.ends_with("</extension_test>")
+        })
+        .with_section_fragment_matcher(|role, text| {
+            role == "developer"
+                && text.starts_with("<extension_test>")
+                && text.ends_with("</extension_test>")
+        })
+        .with_retained_fragment_matcher(|role, text| {
+            role == "developer" && text == "<extension_test>current catalog</extension_test>"
+        }),
+    );
+    let previous = WorldStateSnapshot {
+        sections: BTreeMap::from([(
+            "extension_test".to_string(),
+            json!({"body": "current catalog"}),
+        )]),
+    };
+    let message = |text: &str| ResponseItem::Message {
+        id: None,
+        role: "developer".to_string(),
+        content: vec![ContentItem::InputText {
+            text: text.to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    };
+    let history = [
+        message("<extension_test>current catalog</extension_test>"),
+        message("<extension_test>current catalog plus extra</extension_test>"),
+        message("<extension_test>current catalog</extension_test>"),
+    ];
+
+    assert!(
+        world_state
+            .render_history_diff(Some(&previous), &history)
+            .is_empty()
+    );
+
+    assert_eq!(
+        world_state
+            .render_history_diff(Some(&previous), &history[..2])
+            .into_iter()
+            .map(|fragment| fragment.body())
+            .collect::<Vec<_>>(),
+        vec!["current catalog"]
+    );
+}
+
+#[test]
+fn stale_extension_fragment_reasserts_an_empty_current_value() {
+    let mut world_state = WorldState::default();
+    world_state.add_extension_section(
+        WorldStateSectionContribution::new("extension_test", json!({}), |previous| {
+            matches!(previous, PreviousWorldStateSection::Unknown)
+                .then(|| RenderedWorldStateFragment::new(ExtensionTestFragment("")))
+        })
+        .with_section_fragment_matcher(|role, text| {
+            role == "developer"
+                && text.starts_with("<extension_test>")
+                && text.ends_with("</extension_test>")
+        })
+        .with_retained_fragment_matcher(|role, text| {
+            role == "developer" && text == "<extension_test></extension_test>"
+        }),
+    );
+    let previous = WorldStateSnapshot {
+        sections: BTreeMap::from([("extension_test".to_string(), json!({}))]),
+    };
+    let stale_fragment = ResponseItem::Message {
+        id: None,
+        role: "developer".to_string(),
+        content: vec![ContentItem::InputText {
+            text: "<extension_test>old value</extension_test>".to_string(),
+        }],
+        phase: None,
+        internal_chat_message_metadata_passthrough: None,
+    };
+
+    assert_eq!(
+        world_state
+            .render_history_diff(Some(&previous), &[stale_fragment])
+            .into_iter()
+            .map(|fragment| fragment.body())
+            .collect::<Vec<_>>(),
+        vec![String::new()]
     );
 }
 

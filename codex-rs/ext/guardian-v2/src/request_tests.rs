@@ -49,13 +49,48 @@ fn attribution() -> SamplingAttribution {
     }
 }
 
+fn input_texts<'a>(request: &'a ResponsesApiRequest, role: &str) -> Vec<&'a str> {
+    request
+        .input
+        .iter()
+        .filter_map(|item| match item {
+            ResponseItem::Message {
+                role: message_role,
+                content,
+                ..
+            } if message_role == role => Some(content),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|item| match item {
+            ContentItem::InputText { text } => Some(text.as_str()),
+            ContentItem::InputImage { .. }
+            | ContentItem::InputAudio { .. }
+            | ContentItem::OutputText { .. } => None,
+        })
+        .collect()
+}
+
+fn user_context_bodies(request: &ResponsesApiRequest) -> Vec<Value> {
+    input_texts(request, "user")
+        .into_iter()
+        .map(|text| serde_json::from_str(text).expect("user context body"))
+        .collect()
+}
+
+fn evidence_entries(request: &ResponsesApiRequest) -> Vec<Value> {
+    user_context_bodies(request)
+        .into_iter()
+        .filter_map(|body| body.get("evidence").cloned())
+        .flat_map(|evidence| evidence.as_array().cloned().unwrap_or_default())
+        .collect()
+}
+
 #[test]
 fn oversized_action_is_rejected_before_a_sampling_request_exists() {
-    let error = build_sampling_request(
-        attribution(),
-        request(json!({"script": "x".repeat(8_000)})),
-    )
-    .expect_err("oversized action should be rejected");
+    let error =
+        build_sampling_request(attribution(), request(json!({"script": "x".repeat(8_000)})))
+            .expect_err("oversized action should be rejected");
 
     assert!(matches!(error, GuardianReviewError::ActionTooLarge));
 }
@@ -85,18 +120,12 @@ fn request_is_redacted_and_inside_both_serialized_limits() {
 
 #[test]
 fn sampling_body_carries_code_mode_binding_and_evidence_revision() {
-    let request = build_sampling_request(
-        attribution(),
-        request(json!({"script": "return 1"})),
-    )
-    .expect("bounded request");
-    let ResponseItem::Message { content, .. } = &request.input[2] else {
-        panic!("expected user message");
-    };
-    let ContentItem::InputText { text } = &content[0] else {
-        panic!("expected text review context");
-    };
-    let body: Value = serde_json::from_str(text).expect("review body");
+    let request = build_sampling_request(attribution(), request(json!({"script": "return 1"})))
+        .expect("bounded request");
+    let body = user_context_bodies(&request)
+        .into_iter()
+        .next()
+        .expect("review body");
 
     assert_eq!(
         body["binding"],
@@ -123,14 +152,7 @@ fn auxiliary_evidence_is_limited_to_its_newest_reserved_entries() {
         .collect();
 
     let request = build_sampling_request(attribution(), request).expect("bounded request");
-    let ResponseItem::Message { content, .. } = &request.input[2] else {
-        panic!("expected user message");
-    };
-    let ContentItem::InputText { text } = &content[0] else {
-        panic!("expected text review context");
-    };
-    let body: Value = serde_json::from_str(text).expect("review body");
-    let evidence = body["evidence"].as_array().expect("evidence array");
+    let evidence = evidence_entries(&request);
 
     assert_eq!(evidence.len(), MAX_AUXILIARY_EVIDENCE_ENTRIES);
     assert_eq!(evidence[0]["text"], "entry-25");
@@ -160,14 +182,7 @@ fn auxiliary_pressure_preserves_the_reserved_transcript() {
         .collect();
 
     let request = build_sampling_request(attribution(), request).expect("bounded request");
-    let ResponseItem::Message { content, .. } = &request.input[2] else {
-        panic!("expected user message");
-    };
-    let ContentItem::InputText { text } = &content[0] else {
-        panic!("expected text review context");
-    };
-    let body: Value = serde_json::from_str(text).expect("review body");
-    let evidence = body["evidence"].as_array().expect("evidence array");
+    let evidence = evidence_entries(&request);
 
     assert_eq!(
         evidence
@@ -198,12 +213,15 @@ fn image_admission_is_bounded_and_forces_low_detail() {
     ];
 
     let request = build_sampling_request(attribution(), request).expect("bounded request");
-    let ResponseItem::Message { content, .. } = &request.input[2] else {
-        panic!("expected user message");
-    };
-    let images = content
+    let images = request
+        .input
         .iter()
         .filter_map(|item| match item {
+            ResponseItem::Message { content, .. } => Some(content),
+            _ => None,
+        })
+        .flatten()
+        .filter_map(|content| match content {
             ContentItem::InputImage { image_url, detail } => Some((image_url, detail)),
             ContentItem::InputText { .. }
             | ContentItem::InputAudio { .. }
@@ -240,22 +258,53 @@ fn request_pressure_drops_images_before_text_evidence() {
     ];
 
     let request = build_sampling_request(attribution(), request).expect("bounded request");
-    let ResponseItem::Message { content, .. } = &request.input[2] else {
-        panic!("expected user message");
-    };
-    let ContentItem::InputText { text } = &content[0] else {
-        panic!("expected text review context");
-    };
-    let body: Value = serde_json::from_str(text).expect("review body");
+    let evidence = evidence_entries(&request);
 
-    assert_eq!(
-        body["evidence"].as_array().map(Vec::len),
-        Some(MAX_AUXILIARY_EVIDENCE_ENTRIES)
-    );
+    assert_eq!(evidence.len(), MAX_AUXILIARY_EVIDENCE_ENTRIES);
     assert!(
-        content
+        request
+            .input
             .iter()
+            .filter_map(|item| match item {
+                ResponseItem::Message { content, .. } => Some(content),
+                _ => None,
+            })
+            .flatten()
             .all(|item| !matches!(item, ContentItem::InputImage { .. }))
+    );
+}
+
+#[test]
+fn textual_sampling_items_are_independently_bounded() {
+    let mut request = request(json!({"script": "x".repeat(2_500)}));
+    request.evidence = (0..MAX_AUXILIARY_EVIDENCE_ENTRIES)
+        .map(|index| GuardianEvidenceEntry {
+            kind: "tool_output".to_string(),
+            provenance: Some(format!("entry-{index}")),
+            text: format!("entry-{index} {}", "e".repeat(5_000)),
+        })
+        .collect();
+
+    let request = build_sampling_request(attribution(), request).expect("bounded request");
+    let user_items = input_texts(&request, "user");
+
+    assert!(user_items.len() > 1);
+    assert!(
+        request
+            .input
+            .iter()
+            .filter_map(|item| match item {
+                ResponseItem::Message { content, .. } => Some(content),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|item| match item {
+                ContentItem::InputText { text } => Some(text),
+                ContentItem::InputImage { .. }
+                | ContentItem::InputAudio { .. }
+                | ContentItem::OutputText { .. } => None,
+            })
+            .all(|text| approx_token_count(text) <= MAX_CONTEXT_ITEM_TOKENS)
     );
 }
 

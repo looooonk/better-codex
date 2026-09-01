@@ -468,7 +468,6 @@ mod tests {
     use codex_protocol::protocol::AskForApproval;
     use codex_protocol::protocol::EventMsg;
     use codex_protocol::protocol::ItemCompletedEvent;
-    use codex_rollout::RolloutItem;
     use codex_protocol::protocol::SandboxPolicy;
     use codex_protocol::protocol::SessionSource;
     use codex_protocol::protocol::ThreadHistoryMode;
@@ -477,6 +476,7 @@ mod tests {
     use codex_protocol::protocol::TurnContextItem;
     use codex_protocol::protocol::TurnStartedEvent;
     use codex_protocol::protocol::UserMessageEvent;
+    use codex_rollout::RolloutItem;
     use tempfile::TempDir;
 
     use super::*;
@@ -655,10 +655,7 @@ mod tests {
         )
         .await
         .expect("create live thread with inherited context");
-        live_thread
-            .persist()
-            .await
-            .expect("persist thread");
+        live_thread.persist().await.expect("persist thread");
         let inherited_metadata = runtime
             .get_thread(thread_id)
             .await
@@ -733,13 +730,15 @@ mod tests {
                     phase: Some(MessagePhase::Commentary),
                     memory_citation: None,
                 })),
-                RolloutItem::ResponseItem(ResponseItem::FunctionCallOutput {
-                    id: None,
-                    call_id: "call-1".to_string(),
-                    output: FunctionCallOutputPayload::from_text("tool output".to_string()),
-                    internal_chat_message_metadata_passthrough: None,
-                }
-                .into()),
+                RolloutItem::ResponseItem(
+                    ResponseItem::FunctionCallOutput {
+                        id: None,
+                        call_id: "call-1".to_string(),
+                        output: FunctionCallOutputPayload::from_text("tool output".to_string()),
+                        internal_chat_message_metadata_passthrough: None,
+                    }
+                    .into(),
+                ),
                 RolloutItem::EventMsg(EventMsg::TokenCount(
                     codex_protocol::protocol::TokenCountEvent {
                         info: None,

@@ -4,11 +4,11 @@ use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::protocol::strip_user_message_prefix;
 use regex::Regex;
 use regex::RegexBuilder;
@@ -118,10 +118,7 @@ async fn ripgrep_rollout_paths(
     Ok(Some(matches))
 }
 
-async fn scan_rollout_matches(
-    root: &Path,
-    search_term: &str,
-) -> io::Result<RolloutSearchMatches> {
+async fn scan_rollout_matches(root: &Path, search_term: &str) -> io::Result<RolloutSearchMatches> {
     let mut matches = HashMap::new();
     let mut dirs = vec![root.to_path_buf()];
 

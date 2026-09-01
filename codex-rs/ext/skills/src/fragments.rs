@@ -7,9 +7,9 @@ use codex_protocol::protocol::SKILLS_INSTRUCTIONS_CLOSE_TAG;
 use codex_protocol::protocol::SKILLS_INSTRUCTIONS_OPEN_TAG;
 use serde::Serialize;
 
-use crate::catalog_prompt::SkillPromptKind;
 use crate::catalog_prompt::HOST_ALIAS_INSTRUCTIONS;
 use crate::catalog_prompt::RESOURCE_ALIAS_INSTRUCTIONS;
+use crate::catalog_prompt::SkillPromptKind;
 use crate::catalog_prompt::render_available_skills_body;
 use crate::host_prompt::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
 use crate::tools::SkillToolAuthority;
@@ -34,7 +34,47 @@ pub(crate) enum SkillsUsage {
     },
 }
 
-pub(crate) struct SkillsUpdate(String);
+const EXECUTOR_SKILLS_SECTION_OPEN_TAG: &str = "<skills_section source=\"executor\">";
+const ORCHESTRATOR_SKILLS_SECTION_OPEN_TAG: &str = "<skills_section source=\"orchestrator\">";
+const HOST_SKILLS_SECTION_OPEN_TAG: &str = "<skills_section source=\"host\">";
+const SKILLS_SECTION_CLOSE_TAG: &str = "</skills_section>";
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SkillsUpdateSection {
+    Executor,
+    Orchestrator,
+    Host,
+}
+
+impl SkillsUpdateSection {
+    fn open_tag(self) -> &'static str {
+        match self {
+            Self::Executor => EXECUTOR_SKILLS_SECTION_OPEN_TAG,
+            Self::Orchestrator => ORCHESTRATOR_SKILLS_SECTION_OPEN_TAG,
+            Self::Host => HOST_SKILLS_SECTION_OPEN_TAG,
+        }
+    }
+
+    pub(crate) fn from_rendered_fragment(role: &str, text: &str) -> Option<Self> {
+        if role != "developer" {
+            return None;
+        }
+        let text = text.trim();
+        let body = text
+            .strip_prefix(SKILLS_INSTRUCTIONS_OPEN_TAG)?
+            .strip_suffix(SKILLS_INSTRUCTIONS_CLOSE_TAG)?;
+        [Self::Executor, Self::Orchestrator, Self::Host]
+            .into_iter()
+            .find(|section| {
+                body.starts_with(section.open_tag()) && body.ends_with(SKILLS_SECTION_CLOSE_TAG)
+            })
+    }
+}
+
+pub(crate) struct SkillsUpdate {
+    section: SkillsUpdateSection,
+    body: String,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct SkillInstructions {
@@ -52,8 +92,18 @@ pub(crate) struct SkillResourceAccess {
 }
 
 impl SkillsUpdate {
-    pub(crate) fn new(body: impl Into<String>) -> Self {
-        Self(body.into())
+    pub(crate) fn new(section: SkillsUpdateSection, body: impl Into<String>) -> Self {
+        Self {
+            section,
+            body: body.into(),
+        }
+    }
+
+    pub(crate) fn rendered_text(section: SkillsUpdateSection, body: &str) -> String {
+        let section_open_tag = section.open_tag();
+        format!(
+            "{SKILLS_INSTRUCTIONS_OPEN_TAG}{section_open_tag}{body}{SKILLS_SECTION_CLOSE_TAG}{SKILLS_INSTRUCTIONS_CLOSE_TAG}"
+        )
     }
 }
 
@@ -155,7 +205,11 @@ impl ContextualUserFragment for SkillsUpdate {
     }
 
     fn body(&self) -> String {
-        self.0.clone()
+        self.body.clone()
+    }
+
+    fn render(&self) -> String {
+        Self::rendered_text(self.section, &self.body)
     }
 }
 

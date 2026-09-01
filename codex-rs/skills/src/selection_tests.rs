@@ -118,9 +118,7 @@ fn discovery_paths_select_canonical_skills_and_honor_disabled_state() {
         ),
         vec![linked.clone()]
     );
-    lookup
-        .disabled_paths
-        .insert(linked.path_to_skills_md.clone());
+    lookup.disabled_paths.insert(linked.path_to_skills_md);
     assert_eq!(
         collect_explicit_skill_mentions(&input, &lookup, &HashMap::new()),
         Vec::new()
@@ -149,11 +147,7 @@ fn plain_names_require_unambiguous_skill_and_connector_identity() {
         ..Default::default()
     };
     assert_eq!(
-        collect_explicit_skill_mentions(
-            &input,
-            &unique,
-            &HashMap::from([("demo".to_string(), 1)])
-        ),
+        collect_explicit_skill_mentions(&input, &unique, &HashMap::from([("demo".to_string(), 1)])),
         Vec::new()
     );
 }

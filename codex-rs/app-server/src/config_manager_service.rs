@@ -142,10 +142,9 @@ impl ConfigManager {
             origins: layers
                 .origins()
                 .into_iter()
-                .filter(|(_, metadata)| {
-                    !matches!(&metadata.name, ConfigLayerSource::PackagedDefaults { .. })
+                .filter_map(|(path, metadata)| {
+                    config_layer_metadata_to_api(metadata).map(|metadata| (path, metadata))
                 })
-                .map(|(path, metadata)| (path, config_layer_metadata_to_api(metadata)))
                 .collect(),
             layers: params.include_layers.then(|| {
                 layers
@@ -154,10 +153,7 @@ impl ConfigManager {
                         /*include_disabled*/ true,
                     )
                     .iter()
-                    .filter(|layer| {
-                        !matches!(&layer.name, ConfigLayerSource::PackagedDefaults { .. })
-                    })
-                    .map(|layer| config_layer_to_api(layer.as_layer()))
+                    .filter_map(|layer| config_layer_to_api(layer.as_layer()))
                     .collect()
             }),
         })
@@ -698,7 +694,7 @@ fn compute_override_metadata(
 
     Some(OverriddenMetadata {
         message,
-        overriding_layer: config_layer_metadata_to_api(overriding_layer),
+        overriding_layer: config_layer_metadata_to_api(overriding_layer)?,
         effective_value: effective_value
             .and_then(|value| serde_json::to_value(value).ok())
             .unwrap_or(JsonValue::Null),

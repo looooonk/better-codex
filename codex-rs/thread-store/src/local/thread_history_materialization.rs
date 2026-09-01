@@ -43,9 +43,14 @@ pub(super) async fn materialize_to_sqlite(
         let projections = lines
             .iter()
             .map(|record| {
-                let ordinal = record.line.ordinal.ok_or_else(|| ThreadStoreError::Internal {
-                    message: format!("paginated rollout line for {rollout_id} is missing an ordinal"),
-                })?;
+                let ordinal = record
+                    .line
+                    .ordinal
+                    .ok_or_else(|| ThreadStoreError::Internal {
+                        message: format!(
+                            "paginated rollout line for {rollout_id} is missing an ordinal"
+                        ),
+                    })?;
                 let created_at_ms = DateTime::parse_from_rfc3339(record.line.timestamp.as_str())
                     .map(|timestamp| timestamp.timestamp_millis())
                     .map_err(thread_history_error)?;
@@ -102,11 +107,12 @@ async fn read_complete_rollout_lines(
         }
         Err(err) => return Err(thread_store_io_error(err)),
     };
-    let remaining = file_len
-        .checked_sub(start_offset)
-        .ok_or_else(|| ThreadStoreError::Internal {
-            message: "durable rollout shrank before projection".to_string(),
-        })?;
+    let remaining =
+        file_len
+            .checked_sub(start_offset)
+            .ok_or_else(|| ThreadStoreError::Internal {
+                message: "durable rollout shrank before projection".to_string(),
+            })?;
     let byte_count = usize::try_from(remaining.min(MAX_PROJECTION_BATCH_BYTES)).map_err(|_| {
         ThreadStoreError::Internal {
             message: "projection batch exceeds addressable memory".to_string(),
@@ -155,22 +161,25 @@ async fn read_complete_rollout_lines(
     let mut line_start_offset = start_offset;
     for line in bytes[..complete_byte_count].split_inclusive(|byte| *byte == b'\n') {
         let line_end_offset = line_start_offset
-            .checked_add(u64::try_from(line.len()).map_err(|_| ThreadStoreError::Internal {
-                message: "durable rollout byte offset overflow".to_string(),
-            })?)
+            .checked_add(
+                u64::try_from(line.len()).map_err(|_| ThreadStoreError::Internal {
+                    message: "durable rollout byte offset overflow".to_string(),
+                })?,
+            )
             .ok_or_else(|| ThreadStoreError::Internal {
                 message: "durable rollout byte offset overflow".to_string(),
             })?;
-        let parsed = serde_json::from_slice::<Value>(line).and_then(|mut value| {
-            codex_rollout::redact_persisted_json(&mut value);
-            codex_rollout::decode_rollout_line(value)
-        })
-        .map_err(|err| ThreadStoreError::Internal {
-            message: format!(
-                "rollout projection contains invalid JSON at {}: {err}",
-                rollout_path.display()
-            ),
-        })?;
+        let parsed = serde_json::from_slice::<Value>(line)
+            .and_then(|mut value| {
+                codex_rollout::redact_persisted_json(&mut value);
+                codex_rollout::decode_rollout_line(value)
+            })
+            .map_err(|err| ThreadStoreError::Internal {
+                message: format!(
+                    "rollout projection contains invalid JSON at {}: {err}",
+                    rollout_path.display()
+                ),
+            })?;
         lines.push(CompleteRolloutLine {
             line: parsed,
             start_byte_offset: line_start_offset,
@@ -178,11 +187,7 @@ async fn read_complete_rollout_lines(
         });
         line_start_offset = line_end_offset;
     }
-    Ok((
-        lines,
-        next_offset,
-        remaining > MAX_PROJECTION_BATCH_BYTES,
-    ))
+    Ok((lines, next_offset, remaining > MAX_PROJECTION_BATCH_BYTES))
 }
 
 fn thread_history_error(err: impl std::fmt::Display) -> ThreadStoreError {

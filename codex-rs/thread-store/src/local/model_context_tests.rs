@@ -3,6 +3,7 @@ use std::io::Write;
 use std::path::Path;
 use std::path::PathBuf;
 
+use chrono::Utc;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::items::TurnItem;
 use codex_protocol::items::UserMessageItem;
@@ -10,18 +11,19 @@ use codex_protocol::models::AgentMessageInputContent;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::AskForApproval;
-use codex_rollout::CompactedItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::HistoryPosition;
 use codex_protocol::protocol::ItemCompletedEvent;
-use codex_rollout::RolloutItem;
-use codex_rollout::RolloutLine;
 use codex_protocol::protocol::SandboxPolicy;
+use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnContextItem;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_protocol::user_input::UserInput;
+use codex_rollout::CompactedItem;
+use codex_rollout::RolloutItem;
+use codex_rollout::RolloutLine;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -170,6 +172,20 @@ async fn returns_scanned_full_history_at_bof_without_checkpoint() {
 }
 
 #[tokio::test]
+async fn reverse_scan_accepts_stable_head_metadata_rollout_identity() {
+    let home = TempDir::new().expect("temp dir");
+    let path = write_paginated_rollout(
+        home.path(),
+        "2025-01-03T13-00-03",
+        Uuid::from_u128(/*v*/ 1004),
+        [user_message("stable head")],
+    );
+    set_rollout_id(path.as_path(), codex_protocol::RolloutId::new());
+
+    assert_reverse_scan_matches_full_history(path.as_path()).await;
+}
+
+#[tokio::test]
 async fn uses_agent_message_turn_context_without_scanning_older_turn() {
     let home = TempDir::new().expect("temp dir");
     let uuid = Uuid::from_u128(/*v*/ 1004);
@@ -270,9 +286,7 @@ async fn replays_replacement_lineage_with_canonical_head_metadata() {
         HistoryPosition {
             thread_id,
             end_ordinal_exclusive: 2,
-            end_byte_offset: std::fs::metadata(root_path)
-                .expect("root metadata")
-                .len(),
+            end_byte_offset: std::fs::metadata(root_path).expect("root metadata").len(),
         },
     );
     let head_id = codex_protocol::RolloutId::new();
@@ -293,7 +307,25 @@ async fn replays_replacement_lineage_with_canonical_head_metadata() {
                 .len(),
         },
     );
-    let store = LocalThreadStore::new(test_config(home.path()), /*state_db*/ None);
+    let config = test_config(home.path());
+    let runtime = codex_state::StateRuntime::init(
+        config.sqlite_home.clone(),
+        config.default_model_provider_id.clone(),
+    )
+    .await
+    .expect("state runtime");
+    let mut builder = codex_state::ThreadMetadataBuilder::new(
+        thread_id,
+        head_path,
+        Utc::now(),
+        SessionSource::Exec,
+    );
+    builder.history_mode = ThreadHistoryMode::Paginated;
+    runtime
+        .upsert_thread(&builder.build(config.default_model_provider_id.as_str()))
+        .await
+        .expect("seed selected replacement head");
+    let store = LocalThreadStore::new(config, Some(runtime));
 
     let context = store
         .load_latest_model_context(LoadThreadHistoryParams {
@@ -349,10 +381,7 @@ fn write_replacement_rollout<const N: usize>(
     items: [RolloutItem; N],
 ) -> PathBuf {
     let path = write_paginated_rollout(home, timestamp, uuid, items);
-    let replacement = path.with_file_name(format!(
-        "rollout-{timestamp}-{}_{rollout_id}.jsonl",
-        uuid
-    ));
+    let replacement = path.with_file_name(format!("rollout-{timestamp}-{uuid}_{rollout_id}.jsonl"));
     std::fs::rename(path, replacement.as_path()).expect("rename replacement rollout");
     replacement
 }
@@ -367,8 +396,8 @@ fn set_history_base(path: &Path, history_base: HistoryPosition) {
     lines[0]["payload"]["history_base"] =
         serde_json::to_value(history_base).expect("serialize history base");
     for (index, line) in lines.iter_mut().enumerate().skip(1) {
-        let ordinal = history_base.end_ordinal_exclusive
-            + u64::try_from(index).expect("fixture ordinal");
+        let ordinal =
+            history_base.end_ordinal_exclusive + u64::try_from(index).expect("fixture ordinal");
         line["ordinal"] = serde_json::json!(ordinal);
     }
     let updated = lines
@@ -378,6 +407,22 @@ fn set_history_base(path: &Path, history_base: HistoryPosition) {
         .join("\n")
         + "\n";
     std::fs::write(path, updated).expect("write history base");
+}
+
+fn set_rollout_id(path: &Path, rollout_id: codex_protocol::RolloutId) {
+    let contents = std::fs::read_to_string(path).expect("read rollout");
+    let mut lines = contents
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("parse rollout line"))
+        .collect::<Vec<_>>();
+    lines[0]["payload"]["rollout_id"] = serde_json::json!(rollout_id);
+    let updated = lines
+        .iter()
+        .map(|line| serde_json::to_string(line).expect("serialize rollout line"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    std::fs::write(path, updated).expect("write rollout identity");
 }
 
 async fn assert_reverse_scan_matches_full_history(path: &Path) {
@@ -439,16 +484,18 @@ fn turn_complete(turn_id: &str) -> RolloutItem {
 }
 
 fn user_message(message: &str) -> RolloutItem {
-    RolloutItem::ResponseItem(ResponseItem::Message {
-        id: None,
-        role: "user".to_string(),
-        content: vec![ContentItem::InputText {
-            text: message.to_string(),
-        }],
-        phase: None,
-        internal_chat_message_metadata_passthrough: None,
-    }
-    .into())
+    RolloutItem::ResponseItem(
+        ResponseItem::Message {
+            id: None,
+            role: "user".to_string(),
+            content: vec![ContentItem::InputText {
+                text: message.to_string(),
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        }
+        .into(),
+    )
 }
 
 fn contextual_user_message() -> RolloutItem {
@@ -473,16 +520,18 @@ fn completed_user_message(turn_id: &str, message: &str) -> RolloutItem {
 }
 
 fn agent_message(message: &str) -> RolloutItem {
-    RolloutItem::ResponseItem(ResponseItem::AgentMessage {
-        id: None,
-        author: "worker".to_string(),
-        recipient: "root".to_string(),
-        content: vec![AgentMessageInputContent::InputText {
-            text: message.to_string(),
-        }],
-        internal_chat_message_metadata_passthrough: None,
-    }
-    .into())
+    RolloutItem::ResponseItem(
+        ResponseItem::AgentMessage {
+            id: None,
+            author: "worker".to_string(),
+            recipient: "root".to_string(),
+            content: vec![AgentMessageInputContent::InputText {
+                text: message.to_string(),
+            }],
+            internal_chat_message_metadata_passthrough: None,
+        }
+        .into(),
+    )
 }
 
 fn turn_context(root: &Path, turn_id: &str) -> RolloutItem {
@@ -513,12 +562,8 @@ fn turn_context(root: &Path, turn_id: &str) -> RolloutItem {
 fn compacted(message: &str, replacement_history: Option<Vec<ResponseItem>>) -> RolloutItem {
     RolloutItem::Compacted(CompactedItem {
         message: message.to_string(),
-        replacement_history: replacement_history.map(|items| {
-            items
-                .into_iter()
-                .map(Into::into)
-                .collect()
-        }),
+        replacement_history: replacement_history
+            .map(|items| items.into_iter().map(Into::into).collect()),
         window_number: Some(1),
         first_window_id: None,
         previous_window_id: None,

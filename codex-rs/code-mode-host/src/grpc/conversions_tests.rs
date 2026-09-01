@@ -169,7 +169,13 @@ fn enforces_tool_count_and_description_bounds() {
         description: String::new(),
         ..definition.clone()
     };
-    assert!(execute_request(request(vec![count_definition.clone(); MAX_TOOL_DEFINITIONS])).is_ok());
+    assert!(
+        execute_request(request(vec![
+            count_definition.clone();
+            MAX_TOOL_DEFINITIONS
+        ]))
+        .is_ok()
+    );
     assert_eq!(
         execute_request(request(vec![count_definition; MAX_TOOL_DEFINITIONS + 1]))
             .unwrap_err()

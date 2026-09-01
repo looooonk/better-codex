@@ -59,10 +59,7 @@ impl McpHandlerCache {
 }
 
 impl BoundMcpHandlerCache<'_> {
-    fn get_or_build(
-        &mut self,
-        tool: McpToolInfo,
-    ) -> Result<Arc<McpHandler>, serde_json::Error> {
+    fn get_or_build(&mut self, tool: McpToolInfo) -> Result<Arc<McpHandler>, serde_json::Error> {
         let tool_name = tool.canonical_tool_name();
         let cached = self.cached.as_mut().expect("cache was bound");
         if let Some(handler) = cached.handlers.get(&tool_name) {

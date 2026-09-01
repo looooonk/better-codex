@@ -91,10 +91,7 @@ async fn client_developer_metadata_survives_persist_resume_and_compaction() {
     .expect("restore compacted item");
 
     let reconstructed = session
-        .reconstruct_history_from_rollout(
-            &turn_context,
-            &[RolloutItem::Compacted(compacted)],
-        )
+        .reconstruct_history_from_rollout(&turn_context, &[RolloutItem::Compacted(compacted)])
         .await;
 
     assert_eq!(reconstructed.history, vec![envelope]);

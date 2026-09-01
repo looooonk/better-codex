@@ -13,18 +13,14 @@ pub(super) fn thread_usage_line(usage: &ThreadUsage) -> Option<Line<'static>> {
             format_positive_micros(usage.estimated_usage_credits_micros)
         ));
     }
-    if let Some(cost) = usage
-        .estimated_usage_usd_micros
-        .filter(|cost| *cost > 0)
-    {
+    if let Some(cost) = usage.estimated_usage_usd_micros.filter(|cost| *cost > 0) {
         values.push(format!("~${}", format_positive_micros(cost)));
     }
     (!values.is_empty()).then(|| Line::from(values.join(" | ")))
 }
 
 fn format_positive_micros(value: i64) -> String {
-    let rounded_hundredths = value.saturating_add(MICROS_PER_HUNDREDTH / 2)
-        / MICROS_PER_HUNDREDTH;
+    let rounded_hundredths = value.saturating_add(MICROS_PER_HUNDREDTH / 2) / MICROS_PER_HUNDREDTH;
     if rounded_hundredths == 0 {
         return "<0.01".to_string();
     }

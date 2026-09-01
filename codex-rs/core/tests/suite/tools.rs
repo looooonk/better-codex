@@ -53,6 +53,25 @@ fn tool_names(body: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
+fn strip_response_item_create_times(mut value: Value) -> Value {
+    match &mut value {
+        Value::Array(items) => {
+            for item in items {
+                *item = strip_response_item_create_times(item.take());
+            }
+        }
+        Value::Object(item) => {
+            if let Some(Value::Object(metadata)) =
+                item.get_mut("internal_chat_message_metadata_passthrough")
+            {
+                metadata.remove("create_time");
+            }
+        }
+        _ => {}
+    }
+    value
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn empty_turn_environments_omits_environment_backed_tools() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -228,8 +247,12 @@ async fn namespaced_custom_tool_call_preserves_namespace_through_dispatch_and_re
         .expect("custom tool call should include turn metadata");
     assert_eq!(
         (
-            strip_response_item_ids_from_json(Value::Array(custom_tool_calls)),
-            strip_response_item_ids_from_json(request.custom_tool_call_output(call_id)),
+            strip_response_item_create_times(strip_response_item_ids_from_json(Value::Array(
+                custom_tool_calls,
+            ))),
+            strip_response_item_create_times(strip_response_item_ids_from_json(
+                request.custom_tool_call_output(call_id),
+            )),
         ),
         (
             Value::Array(vec![json!({
@@ -365,7 +388,7 @@ async fn sandbox_denied_shell_command_returns_original_output() -> Result<()> {
         "printf {sentinel:?}; printf {content:?} > {path:?}",
         sentinel = format!("{sentinel}\n"),
         content = "sandbox denied",
-        path = &target_path
+        path = target_path
     );
     let args = json!({
         "command": command,

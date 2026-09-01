@@ -159,10 +159,11 @@ async fn get_thread_usage_rejects_unbounded_inputs_without_a_request() {
 async fn get_thread_usage_rejects_an_oversized_response_body() {
     let server = MockServer::start().await;
     Mock::given(method("POST"))
-        .respond_with(
-            ResponseTemplate::new(/*s*/ 200)
-                .set_body_bytes(vec![b' '; MAX_THREAD_USAGE_RESPONSE_BYTES + 1]),
-        )
+        .respond_with(ResponseTemplate::new(/*s*/ 200).set_body_bytes(vec![
+            b' ';
+            MAX_THREAD_USAGE_RESPONSE_BYTES
+                + 1
+        ]))
         .mount(&server)
         .await;
     let client = Client::new(server.uri()).expect("construct client");

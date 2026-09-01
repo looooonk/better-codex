@@ -4005,13 +4005,9 @@ mod tests {
             "http://alice:super-secret@127.0.0.1:45123",
             "https://code-mode.example?token=super-secret",
         ] {
-            let error = MultitoolCli::try_parse_from([
-                "codex",
-                "app-server",
-                "--code-mode-host",
-                endpoint,
-            ])
-            .expect_err("invalid endpoint should fail argument parsing");
+            let error =
+                MultitoolCli::try_parse_from(["codex", "app-server", "--code-mode-host", endpoint])
+                    .expect_err("invalid endpoint should fail argument parsing");
             let rendered = error.to_string();
             assert!(!rendered.contains("alice"));
             assert!(!rendered.contains("super-secret"));

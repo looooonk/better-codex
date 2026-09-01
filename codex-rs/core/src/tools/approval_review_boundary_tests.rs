@@ -61,10 +61,7 @@ fn oversized_action_and_images_fail_before_dispatch() {
     let Err(error) = prepare_approval_review_input(input(command("x".repeat(100_000)))) else {
         panic!("oversized action should fail");
     };
-    assert_eq!(
-        error,
-        ApprovalReviewFailure::ActionTooLarge
-    );
+    assert_eq!(error, ApprovalReviewFailure::ActionTooLarge);
 
     let mut input = input(command("echo safe".to_string()));
     input.images.push(ApprovalReviewImage {

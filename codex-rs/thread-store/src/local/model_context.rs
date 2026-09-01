@@ -3,12 +3,12 @@ use std::io;
 #[cfg(test)]
 use std::path::Path;
 
-use codex_rollout::RolloutItem;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_rollout::ModelContextScan;
 use codex_rollout::ModelContextScanProgress;
 use codex_rollout::ReverseJsonlScanner;
+use codex_rollout::RolloutItem;
 use codex_rollout::ScanOutcome;
 use serde_json::Value;
 
@@ -41,11 +41,12 @@ pub(super) async fn load_latest_model_context(
     } else {
         thread_rollout_resolver::resolve_current(store, params.thread_id).await?
     };
-    let path = resolved
-        .map(|resolved| resolved.path)
-        .ok_or_else(|| ThreadStoreError::InvalidRequest {
-            message: format!("no rollout found for thread id {}", params.thread_id),
-        })?;
+    let path =
+        resolved
+            .map(|resolved| resolved.path)
+            .ok_or_else(|| ThreadStoreError::InvalidRequest {
+                message: format!("no rollout found for thread id {}", params.thread_id),
+            })?;
 
     let session_meta = codex_rollout::read_session_meta_line(path.as_path())
         .await
@@ -102,7 +103,25 @@ fn scan_model_context_from_end_blocking(
     path: &Path,
     session_meta: SessionMetaLine,
 ) -> io::Result<Vec<RolloutItem>> {
-    let rollout_id = codex_rollout::rollout_id_from_path(path).unwrap_or(session_meta.meta.id);
+    let path_rollout_id = codex_rollout::rollout_id_from_path(path);
+    if let (Some(path_rollout_id), Some(metadata_rollout_id)) =
+        (path_rollout_id, session_meta.meta.rollout_id)
+        && path_rollout_id != session_meta.meta.id
+        && path_rollout_id != metadata_rollout_id
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "rollout identity disagrees with canonical filename: {}",
+                path.display()
+            ),
+        ));
+    }
+    let rollout_id = session_meta
+        .meta
+        .rollout_id
+        .or(path_rollout_id)
+        .unwrap_or(session_meta.meta.id);
     scan_model_context_from_lineage_blocking(
         &RolloutLineage {
             segments: vec![RolloutLineageSegment {

@@ -39,9 +39,7 @@ fn elicitation() -> Elicitation {
         requested_schema: ElicitationSchema::builder()
             .required_property(
                 "runtime",
-                rmcp::model::PrimitiveSchemaDefinition::String(
-                    rmcp::model::StringSchema::new(),
-                ),
+                rmcp::model::PrimitiveSchemaDefinition::String(rmcp::model::StringSchema::new()),
             )
             .build()
             .expect("schema should build"),
@@ -127,10 +125,10 @@ async fn closed_event_channel_cleans_up_pending_elicitation() {
     let (tx_event, rx_event) = async_channel::bounded(1);
     drop(rx_event);
 
-    let error = manager
-        .make_sender("server".to_string(), tx_event)(RequestId::Number(7), elicitation())
-        .await
-        .expect_err("closed event channel must fail the elicitation");
+    let error =
+        manager.make_sender("server".to_string(), tx_event)(RequestId::Number(7), elicitation())
+            .await
+            .expect_err("closed event channel must fail the elicitation");
 
     assert_eq!(
         error.to_string(),

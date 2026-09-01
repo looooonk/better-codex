@@ -553,10 +553,12 @@ impl Session {
             return;
         }
 
-        let _guard = self.services.mcp_projection_lock.lock().await;
-        let current_runtime = self.services.latest_mcp_runtime();
+        let selected_capability_roots = self
+            .resolve_selected_capability_roots_for_step(&turn_context.environments)
+            .await;
         let ready_selected_capability_roots =
-            current_runtime.ready_selected_capability_roots().to_vec();
+            Self::ready_selected_capability_roots(&selected_capability_roots);
+        let _guard = self.services.mcp_projection_lock.lock().await;
         let executor_capability_discovery = self
             .executor_capability_discovery_for_step(
                 &refresh_config,
@@ -902,7 +904,7 @@ async fn mcp_elicitation_response_from_guardian_decision(
     decision: ReviewDecision,
 ) -> ElicitationResponse {
     let denial_message = match decision {
-        ReviewDecision::Denied { .. } => {
+        ReviewDecision::Denied | ReviewDecision::DeniedWithReason { .. } => {
             Some(crate::guardian::guardian_rejection_message(session, review_id).await)
         }
         _ => None,
@@ -924,9 +926,11 @@ fn mcp_elicitation_response_from_guardian_decision_parts(
             content: Some(serde_json::json!({})),
             meta: Some(mcp_elicitation_auto_meta()),
         },
-        ReviewDecision::Denied { .. } => mcp_elicitation_decline_with_message(
-            denial_message.unwrap_or_else(|| "Guardian denied this request.".to_string()),
-        ),
+        ReviewDecision::Denied | ReviewDecision::DeniedWithReason { .. } => {
+            mcp_elicitation_decline_with_message(
+                denial_message.unwrap_or_else(|| "Guardian denied this request.".to_string()),
+            )
+        }
         ReviewDecision::TimedOut => {
             mcp_elicitation_decline_with_message(crate::guardian::guardian_timeout_message())
         }

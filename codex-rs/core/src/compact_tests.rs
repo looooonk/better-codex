@@ -1,7 +1,7 @@
 use super::*;
+use crate::session::tests::build_world_state_from_turn_context;
 use codex_history::CodexHarnessMetadata;
 use codex_history::ResponseItemEnvelope;
-use crate::session::tests::build_world_state_from_turn_context;
 use codex_model_provider_info::ModelProviderInfo;
 use codex_model_provider_info::WireApi;
 use codex_protocol::ResponseItemId;
@@ -137,12 +137,8 @@ fn local_and_legacy_compaction_preserve_nonempty_harness_metadata() {
     }];
     let collected = collect_annotated_user_messages(&items);
 
-    let history = super::build_annotated_compacted_history_with_limit(
-        Vec::new(),
-        &collected,
-        "summary",
-        4,
-    );
+    let history =
+        super::build_annotated_compacted_history_with_limit(Vec::new(), &collected, "summary", 4);
     let truncated = truncate_text(&message, TruncationPolicy::Tokens(4));
 
     assert_eq!(

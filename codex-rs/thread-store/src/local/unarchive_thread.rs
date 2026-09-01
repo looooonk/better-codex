@@ -59,9 +59,11 @@ pub(super) async fn unarchive_thread(
     let mut restored_path = None;
     let mut moves = Vec::with_capacity(rollout_paths.len());
     for source in rollout_paths {
-        let file_name = source.file_name().ok_or_else(|| ThreadStoreError::InvalidRequest {
-            message: format!("rollout path `{}` missing file name", source.display()),
-        })?;
+        let file_name = source
+            .file_name()
+            .ok_or_else(|| ThreadStoreError::InvalidRequest {
+                message: format!("rollout path `{}` missing file name", source.display()),
+            })?;
         let Some((year, month, day)) = rollout_date_parts(file_name) else {
             return Err(ThreadStoreError::InvalidRequest {
                 message: format!(
@@ -198,8 +200,7 @@ mod tests {
         let selected_archived_path = replacement_source.with_file_name(format!(
             "rollout-2025-01-03T14-00-00-{thread_id}_{rollout_id}.jsonl"
         ));
-        std::fs::rename(replacement_source, &selected_archived_path)
-            .expect("replacement rollout");
+        std::fs::rename(replacement_source, &selected_archived_path).expect("replacement rollout");
 
         let thread = store
             .unarchive_thread(ArchiveThreadParams { thread_id })
@@ -323,8 +324,7 @@ mod tests {
             "rollout-2025-01-03T14-00-00-{thread_id}_{}.jsonl",
             Uuid::from_u128(211)
         ));
-        std::fs::rename(replacement_source, &selected_archived_path)
-            .expect("replacement rollout");
+        std::fs::rename(replacement_source, &selected_archived_path).expect("replacement rollout");
         let runtime = codex_state::StateRuntime::init(
             home.path().to_path_buf(),
             config.default_model_provider_id.clone(),

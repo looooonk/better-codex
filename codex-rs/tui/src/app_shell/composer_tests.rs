@@ -155,10 +155,7 @@ fn selecting_a_queued_message_accounts_for_a_removed_earlier_edit() {
 
     assert_eq!(
         (composer.text(), queued_texts(&composer)),
-        (
-            "third",
-            vec!["second".to_string(), "third".to_string()],
-        )
+        ("third", vec!["second".to_string(), "third".to_string()],)
     );
     assert!(composer.finish_queued_message_edit());
     assert_eq!(composer.text(), "ordinary draft");
@@ -346,9 +343,15 @@ fn queued_hydration_deduplicates_a_committed_local_add_by_client_id() {
         client_user_message_id: "client-1".to_string(),
     }]);
 
-    assert_eq!(queued_texts(&composer), vec!["committed after response loss"]);
     assert_eq!(
-        composer.queued.front().and_then(|message| message.id.as_deref()),
+        queued_texts(&composer),
+        vec!["committed after response loss"]
+    );
+    assert_eq!(
+        composer
+            .queued
+            .front()
+            .and_then(|message| message.id.as_deref()),
         Some("queue-1")
     );
 }

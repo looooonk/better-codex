@@ -107,11 +107,8 @@ impl CodeModeSessionProvider for ProcessOwnedCodeModeSessionProvider {
                 }
                 Err(error) => return Err(error.to_string()),
             }
-            let session = ProcessOwnedCodeModeSession::with_process_host(
-                delegate,
-                process_host,
-                limits,
-            );
+            let session =
+                ProcessOwnedCodeModeSession::with_process_host(delegate, process_host, limits);
             session.connection().await?;
             let session: Arc<dyn CodeModeSession> = Arc::new(session);
             Ok(session)

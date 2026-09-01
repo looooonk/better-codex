@@ -46,6 +46,52 @@ impl OrchestratorSkillProvider {
     }
 }
 
+#[derive(Default)]
+struct OrchestratorSkillDiscovery {
+    catalog: SkillCatalog,
+    visible_skills_seen: usize,
+    hidden_skills_seen: usize,
+    skipped_resources: usize,
+    truncated: bool,
+    completed_pages: usize,
+}
+
+impl OrchestratorSkillDiscovery {
+    fn has_page_capacity(&self) -> bool {
+        self.completed_pages < MAX_RESOURCE_PAGES
+    }
+
+    fn record_page(&mut self, resources: &[Resource]) {
+        debug_assert!(self.has_page_capacity());
+        self.completed_pages = self.completed_pages.saturating_add(1);
+
+        for resource in resources {
+            if resource.mime_type.as_deref() != Some(ORCHESTRATOR_SKILL_MIME_TYPE) {
+                continue;
+            }
+            match catalog_entry_from_resource(resource) {
+                Some(entry) => {
+                    if entry.prompt_visible {
+                        if self.visible_skills_seen >= MAX_ORCHESTRATOR_SKILLS {
+                            self.truncated = true;
+                            continue;
+                        }
+                        self.visible_skills_seen = self.visible_skills_seen.saturating_add(1);
+                    } else {
+                        if self.hidden_skills_seen >= MAX_HIDDEN_ORCHESTRATOR_SKILLS {
+                            self.truncated = true;
+                            continue;
+                        }
+                        self.hidden_skills_seen = self.hidden_skills_seen.saturating_add(1);
+                    }
+                    self.catalog.push_entry(entry);
+                }
+                None => self.skipped_resources = self.skipped_resources.saturating_add(1),
+            }
+        }
+    }
+}
+
 impl SkillProvider for OrchestratorSkillProvider {
     fn list(&self, query: SkillListQuery) -> SkillProviderFuture<'_, SkillCatalog> {
         Box::pin(async move {
@@ -58,16 +104,11 @@ impl SkillProvider for OrchestratorSkillProvider {
 
             let discovery_deadline =
                 tokio::time::Instant::now() + ORCHESTRATOR_SKILL_DISCOVERY_TIMEOUT;
-            let mut catalog = SkillCatalog::default();
+            let mut discovery = OrchestratorSkillDiscovery::default();
             let mut cursor = None;
             let mut seen_cursors = HashSet::new();
-            let mut visible_skills_seen = 0usize;
-            let mut hidden_skills_seen = 0usize;
-            let mut skipped_resources = 0usize;
-            let mut truncated = false;
-            let mut completed_pages = 0usize;
 
-            for _ in 0..MAX_RESOURCE_PAGES {
+            while discovery.has_page_capacity() {
                 let page = match tokio::time::timeout_at(
                     discovery_deadline,
                     client.list_resources(CODEX_APPS_MCP_SERVER_NAME, cursor.clone()),
@@ -85,54 +126,30 @@ impl SkillProvider for OrchestratorSkillProvider {
                 };
                 let result = match page {
                     Ok(result) => result,
-                    Err(err) if completed_pages == 0 => return Err(err),
+                    Err(err) if discovery.completed_pages == 0 => return Err(err),
                     Err(err) => {
-                        let page_word = if completed_pages == 1 {
+                        let page_word = if discovery.completed_pages == 1 {
                             "page"
                         } else {
                             "pages"
                         };
-                        catalog.warnings.push(format!(
-                            "Orchestrator skill discovery stopped after {completed_pages} resource {page_word}: {}",
+                        discovery.catalog.warnings.push(format!(
+                            "Orchestrator skill discovery stopped after {} resource {page_word}: {}",
+                            discovery.completed_pages,
                             err.message
                         ));
                         cursor = None;
                         break;
                     }
                 };
-                completed_pages = completed_pages.saturating_add(1);
-
-                for resource in &result.resources {
-                    if resource.mime_type.as_deref() != Some(ORCHESTRATOR_SKILL_MIME_TYPE) {
-                        continue;
-                    }
-                    match catalog_entry_from_resource(resource) {
-                        Some(entry) => {
-                            if entry.prompt_visible {
-                                if visible_skills_seen >= MAX_ORCHESTRATOR_SKILLS {
-                                    truncated = true;
-                                    continue;
-                                }
-                                visible_skills_seen = visible_skills_seen.saturating_add(1);
-                            } else {
-                                if hidden_skills_seen >= MAX_HIDDEN_ORCHESTRATOR_SKILLS {
-                                    truncated = true;
-                                    continue;
-                                }
-                                hidden_skills_seen = hidden_skills_seen.saturating_add(1);
-                            }
-                            catalog.push_entry(entry);
-                        }
-                        None => skipped_resources = skipped_resources.saturating_add(1),
-                    }
-                }
+                discovery.record_page(&result.resources);
 
                 let Some(next_cursor) = result.next_cursor else {
                     cursor = None;
                     break;
                 };
                 if !seen_cursors.insert(next_cursor.clone()) {
-                    catalog.warnings.push(
+                    discovery.catalog.warnings.push(
                         "Orchestrator skill resource pagination returned a duplicate cursor."
                             .to_string(),
                     );
@@ -142,18 +159,19 @@ impl SkillProvider for OrchestratorSkillProvider {
                 cursor = Some(next_cursor);
             }
 
-            if cursor.is_some() || truncated {
-                catalog.warnings.push(format!(
+            if cursor.is_some() || discovery.truncated {
+                discovery.catalog.warnings.push(format!(
                     "Orchestrator skill discovery was truncated at {MAX_ORCHESTRATOR_SKILLS} visible skills, {MAX_HIDDEN_ORCHESTRATOR_SKILLS} hidden skills, or {MAX_RESOURCE_PAGES} resource pages."
                 ));
             }
-            if skipped_resources > 0 {
-                catalog.warnings.push(format!(
-                    "Skipped {skipped_resources} malformed orchestrator skill resources."
+            if discovery.skipped_resources > 0 {
+                discovery.catalog.warnings.push(format!(
+                    "Skipped {} malformed orchestrator skill resources.",
+                    discovery.skipped_resources
                 ));
             }
 
-            Ok(catalog)
+            Ok(discovery.catalog)
         })
     }
 

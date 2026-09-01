@@ -85,4 +85,8 @@ impl RolloutFileName {
     pub(crate) fn rollout_id(&self) -> RolloutId {
         self.rollout_id
     }
+
+    pub(crate) fn is_legacy_compatible(&self) -> bool {
+        self.thread_id == self.rollout_id
+    }
 }

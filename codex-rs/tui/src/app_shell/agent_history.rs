@@ -94,6 +94,12 @@ impl ShellState {
                     .chain(&task_thread_ids)
                     .filter_map(|thread_id| ThreadId::from_string(thread_id).ok()),
             )
+            .chain(
+                self.session_hydration
+                    .thread_revert_cleanup_thread_ids
+                    .iter()
+                    .copied(),
+            )
             .chain(self.deferred_unsubscribe_thread_ids.iter().copied())
             .filter(|thread_id| seen.insert(thread_id.to_string()))
             .collect()

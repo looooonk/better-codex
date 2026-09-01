@@ -48,7 +48,7 @@ const MAX_AGENT_HISTORY_UPDATE_QUEUE: usize = 32;
 const AGENT_HISTORY_LOAD_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 5);
 const AGENT_THREAD_REQUEST_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 3);
 
-pub(super) fn spawn_resumed_agent_history(
+pub(crate) fn spawn_resumed_agent_history(
     request_handle: AppServerRequestHandle,
     root_thread_id: ThreadId,
     session_id: String,

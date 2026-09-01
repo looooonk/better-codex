@@ -5,11 +5,6 @@ use std::sync::Mutex;
 use std::sync::atomic::AtomicUsize;
 use std::sync::atomic::Ordering;
 
-use codex_skills_extension::HostSkillsCatalogInWorldState;
-use codex_skills_extension::HostSkillsSnapshot;
-use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
-use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
-use codex_skills_extension::SkillLoadOutcome;
 use codex_exec_server::EnvironmentManager;
 use codex_exec_server::FileSystemSandboxContext;
 use codex_extension_api::ConversationHistory;
@@ -25,6 +20,10 @@ use codex_extension_api::ToolCall;
 use codex_extension_api::ToolPayload;
 use codex_extension_api::TurnInputContext;
 use codex_extension_api::WorldStateContributionInput;
+use codex_otel::THREAD_SKILLS_DESCRIPTION_TRUNCATED_CHARS_METRIC;
+use codex_otel::THREAD_SKILLS_ENABLED_TOTAL_METRIC;
+use codex_otel::THREAD_SKILLS_KEPT_TOTAL_METRIC;
+use codex_otel::THREAD_SKILLS_TRUNCATED_METRIC;
 use codex_protocol::capabilities::CapabilityRootLocation;
 use codex_protocol::capabilities::SelectedCapabilityRoot;
 use codex_protocol::protocol::Event;
@@ -36,11 +35,12 @@ use codex_protocol::protocol::SkillScope;
 use codex_protocol::protocol::TruncationPolicy;
 use codex_protocol::protocol::TurnEnvironmentSelection;
 use codex_protocol::user_input::UserInput;
-use codex_otel::THREAD_SKILLS_DESCRIPTION_TRUNCATED_CHARS_METRIC;
-use codex_otel::THREAD_SKILLS_ENABLED_TOTAL_METRIC;
-use codex_otel::THREAD_SKILLS_KEPT_TOTAL_METRIC;
-use codex_otel::THREAD_SKILLS_TRUNCATED_METRIC;
 use codex_skills::SkillMetadata;
+use codex_skills_extension::HostSkillsCatalogInWorldState;
+use codex_skills_extension::HostSkillsSnapshot;
+use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPT_BYTES;
+use codex_skills_extension::MAX_EXPLICIT_SKILL_PROMPTS_TOTAL_BYTES;
+use codex_skills_extension::SkillLoadOutcome;
 use codex_skills_extension::SkillProviders;
 use codex_skills_extension::SkillsExtensionConfig;
 use codex_skills_extension::catalog::SkillAuthority;
@@ -156,9 +156,9 @@ async fn installed_extension_uses_host_service_snapshot() -> TestResult {
     let rendered_host_catalog = host_catalog.into_context_fragment().render();
     assert!(rendered_host_catalog.starts_with(SKILLS_INSTRUCTIONS_OPEN_TAG));
     assert!(rendered_host_catalog.contains("## Skills"));
-    assert!(rendered_host_catalog.contains(&format!(
-        "- demo: Demo skill. (file: {skill_prompt_path})"
-    )));
+    assert!(
+        rendered_host_catalog.contains(&format!("- demo: Demo skill. (file: {skill_prompt_path})"))
+    );
     assert!(rendered_host_catalog.ends_with(SKILLS_INSTRUCTIONS_CLOSE_TAG));
     assert_eq!(1, fragments.len());
     assert_eq!("user", fragments[0].role());
@@ -230,18 +230,18 @@ async fn host_world_state_records_metrics_only_on_publish_and_change() -> TestRe
         .await;
 
     let skill = |name: &str| SkillMetadata {
-            name: name.to_string(),
-            description: format!("{name} skill."),
-            short_description: None,
-            interface: None,
-            dependencies: None,
-            policy: None,
-            path_to_skills_md: AbsolutePathBuf::try_from(
-                test_codex_home().join(format!("skills/{name}/SKILL.md")),
-            )
-            .expect("test skill path should be absolute"),
-            scope: SkillScope::User,
-            plugin_id: None,
+        name: name.to_string(),
+        description: format!("{name} skill."),
+        short_description: None,
+        interface: None,
+        dependencies: None,
+        policy: None,
+        path_to_skills_md: AbsolutePathBuf::try_from(
+            test_codex_home().join(format!("skills/{name}/SKILL.md")),
+        )
+        .expect("test skill path should be absolute"),
+        scope: SkillScope::User,
+        plugin_id: None,
     };
     let mut outcome = SkillLoadOutcome::default();
     outcome.skills.push(skill("demo"));
@@ -615,6 +615,166 @@ async fn selected_executor_catalog_follows_step_availability_and_reuses_its_cach
 }
 
 #[tokio::test]
+async fn world_state_sections_keep_explicit_identity_and_revoke_empty_catalog() -> TestResult {
+    let mut executor_entry = test_entry(
+        SkillSourceKind::Executor,
+        "env-1",
+        "executor/lint-fix",
+        "lint-fix/SKILL.md",
+    );
+    executor_entry.description = "Reads host metadata (file: /tmp/host/demo/SKILL.md).".to_string();
+    let mut host_entry = test_entry(SkillSourceKind::Host, "host", "host/demo", "demo/SKILL.md");
+    host_entry.description = "Mirrors metadata (executor package: executor/lint-fix).".to_string();
+
+    let providers = SkillProviders::new()
+        .with_executor_provider(Arc::new(StaticSkillProvider {
+            catalog: SkillCatalog {
+                entries: vec![executor_entry],
+                warnings: Vec::new(),
+            },
+            read_requests: Arc::new(Mutex::new(Vec::new())),
+            list_calls: None,
+            fail_first_list: false,
+            read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
+        }))
+        .with_host_provider(Arc::new(StaticSkillProvider {
+            catalog: SkillCatalog {
+                entries: vec![host_entry],
+                warnings: Vec::new(),
+            },
+            read_requests: Arc::new(Mutex::new(Vec::new())),
+            list_calls: None,
+            fail_first_list: false,
+            read_contents: DEFAULT_PROVIDER_SKILL_CONTENTS.to_string(),
+        }));
+    let mut builder = ExtensionRegistryBuilder::new();
+    install_with_providers(&mut builder, providers, skills_extension_config);
+    let registry = builder.build();
+    let session_store = ExtensionData::new("session");
+    let thread_store = ExtensionData::new("thread");
+    let config = default_config();
+    registry.thread_lifecycle_contributors()[0]
+        .on_thread_start(ThreadStartInput {
+            config: &config,
+            session_source: &SessionSource::Cli,
+            originator: "test",
+            persistent_thread_state_available: true,
+            environments: &[],
+            session_store: &session_store,
+            thread_store: &thread_store,
+        })
+        .await;
+
+    let selected_roots = vec![SelectedCapabilityRoot {
+        id: "lint-fix".to_string(),
+        location: CapabilityRootLocation::Environment {
+            environment_id: "env-1".to_string(),
+            path: PathUri::parse("file:///skills/lint-fix").expect("skill root URI"),
+        },
+    }];
+    let turn_environment = TurnEnvironmentSelection {
+        environment_id: "turn-env".to_string(),
+        cwd: PathUri::parse("file:///workspace").expect("cwd URI"),
+        workspace_roots: Vec::new(),
+    };
+    let active_turn_store = ExtensionData::new("turn-active");
+    active_turn_store.insert(HostSkillsSnapshot::new(Arc::new(
+        SkillLoadOutcome::default(),
+    )));
+    let active_sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-active",
+            environments: std::slice::from_ref(&turn_environment),
+            ready_selected_capability_roots: &selected_roots,
+            executor_capability_discovery: None,
+            extension_metrics: None,
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &active_turn_store,
+        })
+        .await;
+    let executor_section = active_sections
+        .iter()
+        .find(|section| section.id() == "skills")
+        .ok_or("executor section")?;
+    let host_section = active_sections
+        .iter()
+        .find(|section| section.id() == "host_skills")
+        .ok_or("host section")?;
+    let executor_fragment = executor_section
+        .render_diff(PreviousWorldStateSection::Absent)
+        .ok_or("executor catalog should render")?
+        .into_context_fragment()
+        .render();
+    let host_fragment = host_section
+        .render_diff(PreviousWorldStateSection::Absent)
+        .ok_or("host catalog should render")?
+        .into_context_fragment()
+        .render();
+
+    assert!(executor_fragment.contains("<skills_section source=\"executor\">"));
+    assert!(host_fragment.contains("<skills_section source=\"host\">"));
+    assert!(executor_fragment.contains("(file: /tmp/host/demo/SKILL.md)"));
+    assert!(host_fragment.contains("(executor package: executor/lint-fix)"));
+    assert_eq!(
+        (
+            executor_section.matches_section_fragment("developer", &executor_fragment),
+            executor_section.matches_section_fragment("developer", &host_fragment),
+            host_section.matches_section_fragment("developer", &executor_fragment),
+            host_section.matches_section_fragment("developer", &host_fragment),
+            executor_section.matches_retained_fragment("developer", &executor_fragment),
+            executor_section.matches_retained_fragment("developer", &host_fragment),
+            host_section.matches_retained_fragment("developer", &executor_fragment),
+            host_section.matches_retained_fragment("developer", &host_fragment),
+        ),
+        (true, false, false, true, true, false, false, true)
+    );
+
+    let empty_turn_store = ExtensionData::new("turn-empty");
+    let empty_sections = registry.context_contributors()[0]
+        .contribute_world_state(WorldStateContributionInput {
+            thread_id: codex_protocol::ThreadId::new(),
+            turn_id: "turn-empty",
+            environments: &[],
+            ready_selected_capability_roots: &[],
+            executor_capability_discovery: None,
+            extension_metrics: None,
+            session_store: &session_store,
+            thread_store: &thread_store,
+            turn_store: &empty_turn_store,
+        })
+        .await;
+    let empty_executor_section = empty_sections
+        .iter()
+        .find(|section| section.id() == "skills")
+        .ok_or("empty executor section")?;
+    assert!(
+        empty_executor_section
+            .render_diff(PreviousWorldStateSection::Absent)
+            .is_none()
+    );
+    let revocation_fragment = empty_executor_section
+        .render_diff(PreviousWorldStateSection::Unknown)
+        .ok_or("stale executor catalog should be revoked")?
+        .into_context_fragment()
+        .render();
+    assert!(revocation_fragment.contains("No selected-environment skills"));
+    assert!(revocation_fragment.contains("<skills_section source=\"executor\">"));
+    assert_eq!(
+        (
+            empty_executor_section.matches_section_fragment("developer", &executor_fragment),
+            empty_executor_section.matches_retained_fragment("developer", &executor_fragment),
+            empty_executor_section.matches_section_fragment("developer", &revocation_fragment),
+            empty_executor_section.matches_retained_fragment("developer", &revocation_fragment),
+        ),
+        (true, false, true, true)
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn default_context_truncates_catalog_descriptions() -> TestResult {
     let description = "x".repeat(1_025);
     let mut entry = test_entry(
@@ -838,11 +998,8 @@ async fn step_tools_list_and_read_exact_executor_authority() -> TestResult {
         .await;
     let step_store = ExtensionData::new("turn-1");
     step_store.insert(resolved);
-    let tools = registry.tool_contributors()[0].tools_for_step(
-        &session_store,
-        &thread_store,
-        &step_store,
-    );
+    let tools =
+        registry.tool_contributors()[0].tools_for_step(&session_store, &thread_store, &step_store);
     let list_tool = tools
         .iter()
         .find(|tool| tool.tool_name().name == "list")
@@ -989,12 +1146,7 @@ async fn step_tools_list_and_read_exact_executor_authority() -> TestResult {
 async fn skills_read_rejects_ambiguous_cross_provider_packages() -> TestResult {
     let package = "skill://shared/demo";
     let entry_for = |source, authority: &str| {
-        test_entry(
-            source,
-            authority,
-            package,
-            "skill://shared/demo/SKILL.md",
-        )
+        test_entry(source, authority, package, "skill://shared/demo/SKILL.md")
     };
     let provider = |entry| {
         Arc::new(StaticSkillProvider {
@@ -1454,7 +1606,10 @@ impl ExtensionMetrics for RecordingMetrics {
 }
 
 fn expected_catalog_samples(count: i64) -> Vec<(String, i64, Vec<(String, String)>)> {
-    let tags = vec![("catalog_surface".to_string(), "host_world_state".to_string())];
+    let tags = vec![(
+        "catalog_surface".to_string(),
+        "host_world_state".to_string(),
+    )];
     vec![
         (
             THREAD_SKILLS_ENABLED_TOTAL_METRIC.to_string(),

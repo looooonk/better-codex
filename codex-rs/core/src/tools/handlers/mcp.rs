@@ -8,8 +8,8 @@ use crate::mcp_tool_call::handle_mcp_tool_call;
 use crate::original_image_detail::can_request_original_image_detail;
 use crate::session::session::Session;
 use crate::tools::context::McpToolOutput;
-use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolCallSource;
+use crate::tools::context::ToolInvocation;
 use crate::tools::context::ToolPayload;
 use crate::tools::context::boxed_tool_output;
 use crate::tools::flat_tool_name;
@@ -19,9 +19,9 @@ use crate::tools::registry::PostToolUsePayload;
 use crate::tools::registry::PreToolUsePayload;
 use crate::tools::registry::ToolExecutor;
 use crate::tools::registry::ToolTelemetryTags;
+use codex_features::Feature;
 use codex_mcp::McpBinding;
 use codex_mcp::ToolInfo;
-use codex_features::Feature;
 use codex_tools::ResponsesApiNamespace;
 use codex_tools::ResponsesApiNamespaceTool;
 use codex_tools::ToolName;
@@ -29,10 +29,10 @@ use codex_tools::ToolSearchInfo;
 use codex_tools::ToolSearchSourceInfo;
 use codex_tools::ToolSpec;
 use codex_tools::mcp_tool_to_responses_api_tool;
-use futures::future::BoxFuture;
 use codex_utils_image::PromptImageMode;
 use codex_utils_image::PromptImageResizeLimits;
 use codex_utils_image::load_sanitized_data_url_for_prompt;
+use futures::future::BoxFuture;
 use serde_json::Map;
 use serde_json::Value;
 
@@ -276,11 +276,7 @@ impl CoreToolRuntime for McpHandler {
         };
         if self.tool_info.server_name != "node_repl"
             || self.tool_info.tool.name.as_ref() != "js"
-            || !invocation
-                .turn
-                .config
-                .features
-                .enabled(Feature::GuardianV2)
+            || !invocation.turn.config.features.enabled(Feature::GuardianV2)
             || !result.success_for_logging()
         {
             return;

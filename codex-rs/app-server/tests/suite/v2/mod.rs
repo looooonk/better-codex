@@ -5,8 +5,8 @@ mod app_list;
 mod attestation;
 mod auto_env;
 mod client_metadata;
-mod collaboration_mode_list;
 mod code_mode_host;
+mod collaboration_mode_list;
 #[cfg(unix)]
 mod command_exec;
 mod compaction;
@@ -80,6 +80,7 @@ mod thread_memory_mode_set;
 mod thread_metadata_update;
 mod thread_name_websocket;
 mod thread_queue;
+mod thread_queue_admission;
 mod thread_queue_recovery;
 mod thread_read;
 mod thread_resume;

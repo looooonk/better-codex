@@ -61,9 +61,7 @@ pub(super) fn sanitize_approval_review_result(
         ApprovalReviewResult::Deny(outcome) => {
             ApprovalReviewResult::Deny(sanitize_outcome(outcome))
         }
-        ApprovalReviewResult::ManualReview(failure) => {
-            ApprovalReviewResult::ManualReview(failure)
-        }
+        ApprovalReviewResult::ManualReview(failure) => ApprovalReviewResult::ManualReview(failure),
         ApprovalReviewResult::Cancelled => ApprovalReviewResult::Cancelled,
     }
 }
@@ -164,11 +162,7 @@ pub(super) fn prepare_approval_review_action(
                 additional_permissions,
             }
         }
-        ApprovalReviewAction::ApplyPatch {
-            cwd,
-            files,
-            patch,
-        } => {
+        ApprovalReviewAction::ApplyPatch { cwd, files, patch } => {
             reject_secret_in_structured(&cwd)?;
             reject_secret_in_structured(&files)?;
             ApprovalReviewAction::ApplyPatch {
@@ -191,7 +185,8 @@ pub(super) fn prepare_approval_review_action(
 }
 
 fn reject_secret_in_structured(value: &impl Serialize) -> Result<(), ApprovalReviewFailure> {
-    let serialized = serde_json::to_string(value).map_err(|_| ApprovalReviewFailure::InvalidInput)?;
+    let serialized =
+        serde_json::to_string(value).map_err(|_| ApprovalReviewFailure::InvalidInput)?;
     if redact_secrets(serialized.clone()) == serialized {
         Ok(())
     } else {

@@ -195,7 +195,8 @@ async fn append_project_layers(
             continue;
         };
         let root_config =
-            load_root_checkout_project_config(fs, &hooks_config_folder, /*is_trusted*/ true).await?;
+            load_root_checkout_project_config(fs, &hooks_config_folder, /*is_trusted*/ true)
+                .await?;
         let Some(hooks) = root_config.get("hooks") else {
             continue;
         };

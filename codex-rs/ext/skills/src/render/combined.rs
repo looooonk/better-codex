@@ -257,12 +257,7 @@ fn build_aliased_combined_catalog(
         .into_iter()
         .filter(|catalog| !catalog.root_lines.is_empty())
         .map(|catalog| {
-            aliased_metadata_overhead_cost(
-                budget,
-                catalog.prompt_kind,
-                &catalog.root_lines,
-                false,
-            )
+            aliased_metadata_overhead_cost(budget, catalog.prompt_kind, &catalog.root_lines, false)
         })
         .fold(0usize, usize::saturating_add)
         .saturating_add(combined_alias_instruction_cost(
@@ -337,34 +332,32 @@ fn combined_available_skills_cost(
     let resource_aliases = !rendered.executor.skill_root_lines.is_empty()
         || !rendered.orchestrator.skill_root_lines.is_empty();
     let host_aliases = !rendered.host.skill_root_lines.is_empty();
-    catalogs
-        .into_iter()
-        .fold(
-            combined_alias_instruction_cost(
-                budget,
-                include_skills_usage_instructions,
-                resource_aliases,
-                host_aliases,
-            ),
-            |used, catalog| {
-                let root_cost = if !catalog.skill_root_lines.is_empty() {
-                    aliased_metadata_overhead_cost(
-                        budget,
-                        catalog.prompt_kind,
-                        &catalog.skill_root_lines,
-                        false,
-                    )
-                } else {
-                    Default::default()
-                };
-                catalog
-                    .skill_lines
-                    .iter()
-                    .fold(used.saturating_add(root_cost), |used, line| {
-                        used.saturating_add(metadata_line_cost(budget, line))
-                    })
-            },
-        )
+    catalogs.into_iter().fold(
+        combined_alias_instruction_cost(
+            budget,
+            include_skills_usage_instructions,
+            resource_aliases,
+            host_aliases,
+        ),
+        |used, catalog| {
+            let root_cost = if !catalog.skill_root_lines.is_empty() {
+                aliased_metadata_overhead_cost(
+                    budget,
+                    catalog.prompt_kind,
+                    &catalog.skill_root_lines,
+                    false,
+                )
+            } else {
+                Default::default()
+            };
+            catalog
+                .skill_lines
+                .iter()
+                .fold(used.saturating_add(root_cost), |used, line| {
+                    used.saturating_add(metadata_line_cost(budget, line))
+                })
+        },
+    )
 }
 
 fn assign_combined_usage(
@@ -402,12 +395,16 @@ fn combined_alias_instruction_cost(
         return 0;
     }
 
-    let resource_cost = resource_aliases
-        .then(|| metadata_line_cost(budget, RESOURCE_ALIAS_INSTRUCTIONS))
-        .unwrap_or_default();
-    let host_cost = host_aliases
-        .then(|| metadata_line_cost(budget, HOST_ALIAS_INSTRUCTIONS))
-        .unwrap_or_default();
+    let resource_cost = if resource_aliases {
+        metadata_line_cost(budget, RESOURCE_ALIAS_INSTRUCTIONS)
+    } else {
+        Default::default()
+    };
+    let host_cost = if host_aliases {
+        metadata_line_cost(budget, HOST_ALIAS_INSTRUCTIONS)
+    } else {
+        Default::default()
+    };
     resource_cost.saturating_add(host_cost)
 }
 

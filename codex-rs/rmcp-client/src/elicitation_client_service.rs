@@ -112,11 +112,7 @@ impl Service<RoleClient> for ElicitationClientService {
                     .peer_info()
                     .is_some_and(|info| info.protocol_version >= ProtocolVersion::V_2026_07_28);
                 let response = self
-                    .create_elicitation(
-                        Elicitation::Mcp(request.params),
-                        context,
-                        modern_session,
-                    )
+                    .create_elicitation(Elicitation::Mcp(request.params), context, modern_session)
                     .await?;
                 if modern_session {
                     Ok(ClientResult::ElicitResult(typed_elicitation_result(
@@ -136,11 +132,7 @@ impl Service<RoleClient> for ElicitationClientService {
                     .peer_info()
                     .is_some_and(|info| info.protocol_version >= ProtocolVersion::V_2026_07_28);
                 let response = self
-                    .create_elicitation(
-                        custom_mcp_elicitation(request)?,
-                        context,
-                        modern_session,
-                    )
+                    .create_elicitation(custom_mcp_elicitation(request)?, context, modern_session)
                     .await?;
                 if modern_session {
                     Ok(ClientResult::ElicitResult(typed_elicitation_result(
@@ -322,9 +314,7 @@ fn validate_serialized_field_size(
         .map_err(|error| rmcp::ErrorData::invalid_params(error.to_string(), None))?
     {
         return Err(rmcp::ErrorData::invalid_params(
-            format!(
-                "MCP {field} exceeds {MAX_MCP_MRTR_ELICITATION_FIELD_BYTES} bytes"
-            ),
+            format!("MCP {field} exceeds {MAX_MCP_MRTR_ELICITATION_FIELD_BYTES} bytes"),
             None,
         ));
     }
@@ -447,18 +437,14 @@ mod tests {
     fn modern_elicitation_response_fields_are_bounded() {
         validate_elicitation_response_bounds(&ElicitationResponse {
             action: ElicitationAction::Accept,
-            content: Some(json!(
-                "x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 2)
-            )),
+            content: Some(json!("x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 2))),
             meta: Some(json!({})),
         })
         .expect("content at the serialized limit must be accepted");
 
         let error = validate_elicitation_response_bounds(&ElicitationResponse {
             action: ElicitationAction::Accept,
-            content: Some(json!(
-                "x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 1)
-            )),
+            content: Some(json!("x".repeat(MAX_MCP_MRTR_ELICITATION_FIELD_BYTES - 1))),
             meta: Some(json!({})),
         })
         .expect_err("oversized content must be rejected");

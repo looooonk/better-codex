@@ -3,9 +3,9 @@ use std::borrow::Cow;
 use crate::catalog::SkillCatalogEntry;
 use crate::catalog::SkillSourceKind;
 
+use super::MAX_CATALOG_SKILL_DESCRIPTION_CHARS;
 use super::SkillCatalogRenderPolicy;
 use super::SkillMetadataBudget;
-use super::MAX_CATALOG_SKILL_DESCRIPTION_CHARS;
 use super::TRUNCATED_SKILL_DESCRIPTION_SUFFIX;
 use super::metadata_line_cost;
 

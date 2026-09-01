@@ -41,8 +41,8 @@ use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::session::turn_context::TurnEnvironment;
 use crate::shell::ShellType;
-use crate::tools::network_approval::DeferredNetworkApproval;
 use crate::tools::context::ToolCallSource;
+use crate::tools::network_approval::DeferredNetworkApproval;
 use tokio_util::sync::CancellationToken;
 
 mod async_watcher;

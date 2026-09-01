@@ -16,6 +16,7 @@ use strum_macros::EnumIter;
 
 use crate::AgentPath;
 use crate::ResponseItemId;
+use crate::RolloutId;
 use crate::SessionId;
 use crate::ThreadId;
 use crate::approvals::ElicitationRequestEvent;
@@ -185,77 +186,6 @@ pub struct Submission {
     pub client_user_message_id: Option<String>,
     /// Optional W3C trace carrier propagated across async submission handoffs.
     pub trace: Option<W3cTraceContext>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum QueuedTurnStartRejectionReason {
-    PendingTriggerTurn,
-    Busy,
-    RejectedByHook,
-    FailedBeforePersistence,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum QueuedTurnStartSubmission {
-    Persisted,
-    NotSubmitted {
-        reason: QueuedTurnStartRejectionReason,
-    },
-}
-
-#[derive(Clone)]
-pub struct QueuedTurnStartReply {
-    sender: std::sync::Arc<
-        std::sync::Mutex<Option<tokio::sync::oneshot::Sender<QueuedTurnStartSubmission>>>,
-    >,
-}
-
-impl QueuedTurnStartReply {
-    pub fn channel() -> (
-        Self,
-        tokio::sync::oneshot::Receiver<QueuedTurnStartSubmission>,
-    ) {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        (
-            Self {
-                sender: std::sync::Arc::new(std::sync::Mutex::new(Some(sender))),
-            },
-            receiver,
-        )
-    }
-
-    pub fn send(&self, submission: QueuedTurnStartSubmission) {
-        let sender = self
-            .sender
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .take();
-        if let Some(sender) = sender {
-            let _ = sender.send(submission);
-        }
-    }
-}
-
-impl fmt::Debug for QueuedTurnStartReply {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.debug_struct("QueuedTurnStartReply").finish()
-    }
-}
-
-impl PartialEq for QueuedTurnStartReply {
-    fn eq(&self, other: &Self) -> bool {
-        std::sync::Arc::ptr_eq(&self.sender, &other.sender)
-    }
-}
-
-impl Drop for QueuedTurnStartReply {
-    fn drop(&mut self) {
-        if std::sync::Arc::strong_count(&self.sender) == 1 {
-            self.send(QueuedTurnStartSubmission::NotSubmitted {
-                reason: QueuedTurnStartRejectionReason::FailedBeforePersistence,
-            });
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, JsonSchema, TS)]
@@ -642,12 +572,6 @@ pub enum Op {
         thread_settings: ThreadSettingsOverrides,
     },
 
-    /// Starts durable queued user input only if the thread is idle.
-    StartQueuedTurn {
-        items: Vec<UserInput>,
-        reply: QueuedTurnStartReply,
-    },
-
     /// Apply persistent thread-settings overrides without starting a turn.
     ///
     /// This uses the same submission queue as turn starts so app-server can
@@ -953,7 +877,6 @@ impl Op {
             Self::RealtimeConversationClose => "realtime_conversation_close",
             Self::RealtimeConversationListVoices => "realtime_conversation_list_voices",
             Self::UserInput { .. } => "user_input",
-            Self::StartQueuedTurn { .. } => "start_queued_turn",
             Self::ThreadSettings { .. } => "thread_settings",
             Self::InterAgentCommunication { .. } => "inter_agent_communication",
             Self::ExecApproval { .. } => "exec_approval",
@@ -2888,6 +2811,12 @@ pub struct HistoryPosition {
 pub struct SessionMeta {
     pub session_id: SessionId,
     pub id: ThreadId,
+    /// Immutable identity of this rollout when it differs from the logical thread ID.
+    ///
+    /// Replacement heads retain the legacy thread-based filename for downgrade compatibility and
+    /// carry their distinct storage identity here instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rollout_id: Option<RolloutId>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forked_from_id: Option<ThreadId>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2950,6 +2879,7 @@ impl Default for SessionMeta {
         SessionMeta {
             session_id: id.into(),
             id,
+            rollout_id: None,
             forked_from_id: None,
             parent_thread_id: None,
             timestamp: String::new(),
@@ -4159,26 +4089,6 @@ mod tests {
     use tempfile::NamedTempFile;
     use tempfile::TempDir;
 
-    #[tokio::test]
-    async fn queued_turn_start_reply_rejects_when_last_sender_drops() {
-        let (reply, mut receiver) = QueuedTurnStartReply::channel();
-        let last_reply = reply.clone();
-        drop(reply);
-        assert!(matches!(
-            receiver.try_recv(),
-            Err(tokio::sync::oneshot::error::TryRecvError::Empty)
-        ));
-
-        drop(last_reply);
-
-        assert_eq!(
-            receiver.await.expect("fallback admission reply"),
-            QueuedTurnStartSubmission::NotSubmitted {
-                reason: QueuedTurnStartRejectionReason::FailedBeforePersistence,
-            }
-        );
-    }
-
     #[test]
     fn world_state_items_require_object_state() -> Result<()> {
         let value = json!({
@@ -4189,8 +4099,7 @@ mod tests {
 
         assert_eq!(serde_json::to_value(item)?, value);
         assert!(
-            serde_json::from_value::<WorldStateItem>(json!({"full": false, "state": []}))
-                .is_err()
+            serde_json::from_value::<WorldStateItem>(json!({"full": false, "state": []})).is_err()
         );
         Ok(())
     }

@@ -53,9 +53,11 @@ pub(super) async fn archive_thread(
     let mut archived_path = None;
     let mut moves = Vec::with_capacity(rollout_paths.len());
     for source in rollout_paths {
-        let file_name = source.file_name().ok_or_else(|| ThreadStoreError::InvalidRequest {
-            message: format!("rollout path `{}` missing file name", source.display()),
-        })?;
+        let file_name = source
+            .file_name()
+            .ok_or_else(|| ThreadStoreError::InvalidRequest {
+                message: format!("rollout path `{}` missing file name", source.display()),
+            })?;
         let destination = archive_folder.join(file_name);
         if source == canonical_rollout_path {
             archived_path = Some(destination.clone());
@@ -67,13 +69,12 @@ pub(super) async fn archive_thread(
     })?;
     let pending_moves = move_rollouts(moves, "archive")?;
 
-    if let Some(ctx) = state_db_ctx {
-        if let Err(err) = ctx
+    if let Some(ctx) = state_db_ctx
+        && let Err(err) = ctx
             .mark_archived(thread_id, archived_path.as_path(), Utc::now())
             .await
-        {
-            return Err(pending_moves.fail(format!("failed to archive thread: {err}")));
-        }
+    {
+        return Err(pending_moves.fail(format!("failed to archive thread: {err}")));
     }
     pending_moves.commit();
     Ok(())
@@ -149,7 +150,7 @@ mod tests {
             .expect("archived listing");
         assert_eq!(archived.items.len(), 1);
         assert_eq!(archived.items[0].thread_id, thread_id);
-        assert_eq!(archived.items[0].rollout_path, Some(archived_path));
+        assert_eq!(archived.items[0].rollout_path, Some(archived_original_path));
         assert_eq!(
             archived.items[0].archived_at,
             Some(archived.items[0].updated_at)

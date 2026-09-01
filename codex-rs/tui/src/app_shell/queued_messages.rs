@@ -306,11 +306,9 @@ impl ShellState {
                         self.status = "message queued".to_string();
                     } else {
                         self.cancel_pending_queue_mutations();
-                        if let Some(submission) = self
+                        if let Some((submission, _)) = self
                             .composer
-                            .remove_queued_submission_for_client(
-                                &recovery.client_user_message_id,
-                            )
+                            .remove_queued_submission_for_client(&recovery.client_user_message_id)
                         {
                             self.composer.restore_failed_queued_submission(&submission);
                         }
@@ -372,8 +370,7 @@ impl ShellState {
         match result {
             Ok(response) => {
                 match response {
-                    QueueRpcResponse::Added(submission)
-                    | QueueRpcResponse::Updated(submission) => {
+                    QueueRpcResponse::Added(submission) | QueueRpcResponse::Updated(submission) => {
                         self.queue_state.record(&submission);
                         self.composer.confirm_queued_submission(submission);
                     }
@@ -519,11 +516,14 @@ impl ShellState {
             })
             .collect::<Vec<_>>();
         for client_user_message_id in failed_adds.into_iter().rev() {
-            if let Some(submission) = self
+            if let Some((submission, was_selected)) = self
                 .composer
                 .remove_queued_submission_for_client(&client_user_message_id)
             {
                 self.composer.restore_failed_queued_submission(&submission);
+                if was_selected {
+                    self.composer.finish_queued_message_edit();
+                }
             }
         }
         self.queue_state.start_pending = false;
@@ -531,10 +531,7 @@ impl ShellState {
 }
 
 fn queue_target(id: Option<String>, client_user_message_id: String) -> QueueTarget {
-    id.map_or(
-        QueueTarget::Client(client_user_message_id),
-        QueueTarget::Id,
-    )
+    id.map_or(QueueTarget::Client(client_user_message_id), QueueTarget::Id)
 }
 
 fn text_input(text: String) -> Vec<UserInput> {

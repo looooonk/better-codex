@@ -1279,6 +1279,17 @@
       },
       "type": "object"
     },
+    "GetAccountThreadUsageParams": {
+      "properties": {
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
+    },
     "HookMigration": {
       "properties": {
         "name": {
@@ -6658,6 +6669,30 @@
         "method"
       ],
       "title": "Account/usage/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "account/threadUsage/read"
+          ],
+          "title": "Account/threadUsage/readRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/GetAccountThreadUsageParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Account/threadUsage/readRequest",
       "type": "object"
     },
     {

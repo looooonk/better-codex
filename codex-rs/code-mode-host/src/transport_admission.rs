@@ -5,8 +5,8 @@ use std::task::Context;
 use std::task::Poll;
 use std::time::Duration;
 
-use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use codex_code_mode_protocol::grpc::CAPABILITY_METADATA_KEY;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use http_body_util::BodyExt;
 use http_body_util::Full;
 use tokio::sync::OwnedSemaphorePermit;
@@ -23,8 +23,8 @@ use tower::Layer;
 use tower::Service;
 use tower::ServiceExt;
 
-use crate::grpc::validation;
 use crate::grpc::principal::constant_time_matches;
+use crate::grpc::validation;
 
 const EXECUTE_BODY_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES;
 const COMPLETION_BODY_BYTES: usize = MAX_APPLICATION_MESSAGE_BYTES;
@@ -48,8 +48,7 @@ pub(crate) const MAX_STREAMING_RESPONSES: usize =
     MAX_OPEN_RESPONSES + MAX_SUBSCRIBE_RESPONSES + MAX_EXECUTE_RESPONSES;
 const NORMAL_RESPONSE_PERMITS: usize = 4;
 const CRITICAL_RESPONSE_PERMITS: usize = 4;
-pub(crate) const MAX_UNARY_RESPONSES: usize =
-    NORMAL_RESPONSE_PERMITS + CRITICAL_RESPONSE_PERMITS;
+pub(crate) const MAX_UNARY_RESPONSES: usize = NORMAL_RESPONSE_PERMITS + CRITICAL_RESPONSE_PERMITS;
 
 const OPEN_PATH: &str = "/codex.code_mode.v1.CodeModeHost/OpenSession";
 const CLOSE_PATH: &str = "/codex.code_mode.v1.CodeModeHost/CloseSession";
@@ -66,13 +65,10 @@ pub(crate) const MAX_RAW_REQUEST_BYTES: usize = EXECUTE_BODY_BYTES * EXECUTE_REA
     + NORMAL_BODY_BYTES * NORMAL_READERS
     + CRITICAL_BODY_BYTES * CRITICAL_READERS;
 pub(crate) const MAX_RAW_REQUEST_ALLOCATION_BYTES: usize = MAX_RAW_REQUEST_BYTES * 2;
-pub(crate) const MAX_DECODED_REQUEST_BYTES: usize = EXECUTE_DECODE_BYTES
-    + COMPLETION_DECODE_BYTES
-    + NORMAL_DECODE_BYTES
-    + CRITICAL_DECODE_BYTES;
-pub(crate) const MAX_OUTBOUND_RESPONSE_BYTES: usize = (MAX_STREAMING_RESPONSES
-    + MAX_UNARY_RESPONSES)
-    * MAX_APPLICATION_MESSAGE_BYTES;
+pub(crate) const MAX_DECODED_REQUEST_BYTES: usize =
+    EXECUTE_DECODE_BYTES + COMPLETION_DECODE_BYTES + NORMAL_DECODE_BYTES + CRITICAL_DECODE_BYTES;
+pub(crate) const MAX_OUTBOUND_RESPONSE_BYTES: usize =
+    (MAX_STREAMING_RESPONSES + MAX_UNARY_RESPONSES) * MAX_APPLICATION_MESSAGE_BYTES;
 
 #[derive(Clone)]
 pub(crate) struct GrpcAdmissionLayer {
@@ -106,9 +102,7 @@ impl AdmissionPool {
     ) -> Self {
         Self {
             readers: Arc::new(Semaphore::new(readers)),
-            decoded: Arc::new(Semaphore::new(
-                maximum_decoded_bytes / BUDGET_UNIT_BYTES,
-            )),
+            decoded: Arc::new(Semaphore::new(maximum_decoded_bytes / BUDGET_UNIT_BYTES)),
             maximum_body_bytes,
             maximum_decoded_bytes,
             multiplier,
@@ -189,12 +183,13 @@ impl GrpcAdmissionLayer {
 
     async fn admit(&self, path: &str, body: Body) -> Result<AdmittedBody, AdmissionError> {
         let pool = self.pool(path);
-        let reader = Arc::clone(&pool.readers)
-            .try_acquire_owned()
-            .map_err(|error| match error {
-                TryAcquireError::NoPermits => AdmissionError::exhausted(),
-                TryAcquireError::Closed => AdmissionError::internal(),
-            })?;
+        let reader =
+            Arc::clone(&pool.readers)
+                .try_acquire_owned()
+                .map_err(|error| match error {
+                    TryAcquireError::NoPermits => AdmissionError::exhausted(),
+                    TryAcquireError::Closed => AdmissionError::internal(),
+                })?;
         let body = tokio::time::timeout(
             BODY_ADMISSION_TIMEOUT,
             read_body(body, pool.maximum_body_bytes),
@@ -334,7 +329,11 @@ fn grpc_message(body: &[u8], maximum_message_bytes: usize) -> Result<&[u8], Admi
     if body.len() < GRPC_PREFIX_BYTES || body[0] != 0 {
         return Err(AdmissionError::invalid());
     }
-    let declared = u32::from_be_bytes(body[1..5].try_into().map_err(|_| AdmissionError::invalid())?);
+    let declared = u32::from_be_bytes(
+        body[1..5]
+            .try_into()
+            .map_err(|_| AdmissionError::invalid())?,
+    );
     let declared = usize::try_from(declared).map_err(|_| AdmissionError::exhausted())?;
     if declared > maximum_message_bytes || body.len() != declared + GRPC_PREFIX_BYTES {
         return Err(AdmissionError::exhausted());
@@ -366,18 +365,22 @@ fn is_known_path(path: &str) -> bool {
 
 pub(crate) fn preflight_message(path: &str, message: &[u8]) -> Result<(), AdmissionError> {
     if path == EXECUTE_PATH {
-        count_field(message, /*field_number*/ 5, validation::MAX_TOOL_DEFINITIONS)?;
+        count_field(
+            message,
+            /*field_number*/ 5,
+            validation::MAX_TOOL_DEFINITIONS,
+        )?;
     } else if path == SUBSCRIBE_PATH {
-        count_field(message, /*field_number*/ 2, validation::MAX_TOOL_FILTERS)?;
+        count_field(
+            message,
+            /*field_number*/ 2,
+            validation::MAX_TOOL_FILTERS,
+        )?;
     }
     Ok(())
 }
 
-fn count_field(
-    message: &[u8],
-    target_field: u64,
-    maximum: usize,
-) -> Result<(), AdmissionError> {
+fn count_field(message: &[u8], target_field: u64, maximum: usize) -> Result<(), AdmissionError> {
     let mut cursor = 0usize;
     let mut count = 0usize;
     while cursor < message.len() {

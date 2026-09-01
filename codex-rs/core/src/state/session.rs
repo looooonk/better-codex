@@ -1,8 +1,8 @@
 //! Session-wide mutable state.
 
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::models::AdditionalPermissionProfile;
 use codex_protocol::models::ResponseItem;
-use codex_history::ResponseItemEnvelope;
 use codex_sandboxing::policy_transforms::merge_permission_profiles;
 use std::collections::HashMap;
 use std::collections::HashSet;

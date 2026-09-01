@@ -10,11 +10,9 @@ fn forked_history_excludes_security_risk_scores() {
     );
 
     assert!(!keep_forked_rollout_item(
-        &item,
-        /*preserve_reference_context_item*/ false
+        &item, /*preserve_reference_context_item*/ false
     ));
     assert!(!keep_forked_rollout_item(
-        &item,
-        /*preserve_reference_context_item*/ true
+        &item, /*preserve_reference_context_item*/ true
     ));
 }

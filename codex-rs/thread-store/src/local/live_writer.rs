@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
-use codex_rollout::RolloutItem;
 use codex_protocol::protocol::ThreadHistoryMode;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_rollout::RolloutConfig;
+use codex_rollout::RolloutItem;
 use codex_rollout::RolloutRecorder;
 use codex_rollout::RolloutRecorderParams;
 use codex_rollout::persisted_rollout_items;
@@ -97,13 +97,14 @@ pub(super) async fn resume_thread(
         } else {
             super::thread_rollout_resolver::resolve_current(store, params.thread_id).await?
         };
-        rollout_path = selected
-            .ok_or_else(|| ThreadStoreError::InvalidRequest {
-                message: format!(
-                    "no selected paginated rollout found for thread {}",
-                    params.thread_id
-                ),
-            })?
+        let selected = selected.ok_or_else(|| ThreadStoreError::InvalidRequest {
+            message: format!(
+                "no selected paginated rollout found for thread {}",
+                params.thread_id
+            ),
+        })?;
+        rollout_path = super::revert_thread::repair_composite_selection(store, selected)
+            .await?
             .path;
     }
     let cwd = params

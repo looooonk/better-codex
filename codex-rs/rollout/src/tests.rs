@@ -31,12 +31,12 @@ use crate::list::get_threads;
 use crate::list::read_head_for_summary;
 use crate::rollout_date_parts;
 use anyhow::Result;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::ThreadId;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
@@ -200,12 +200,7 @@ async fn filesystem_lookup_distinguishes_thread_and_rollout_ids() {
     let archived_replacement_path = home.join(format!(
         "archived_sessions/2025/01/04/rollout-{replacement_ts}-{thread_uuid}_{replacement_uuid}.jsonl"
     ));
-    fs::create_dir_all(
-        archived_replacement_path
-            .parent()
-            .expect("archive parent"),
-    )
-    .unwrap();
+    fs::create_dir_all(archived_replacement_path.parent().expect("archive parent")).unwrap();
     fs::copy(
         replacement_path.as_path(),
         archived_replacement_path.as_path(),
@@ -245,6 +240,110 @@ async fn filesystem_lookup_distinguishes_thread_and_rollout_ids() {
 }
 
 #[tokio::test]
+async fn filesystem_lookup_prefers_same_second_composite_over_stable_head() -> Result<()> {
+    let temp = TempDir::new()?;
+    let home = temp.path();
+    let thread_uuid = Uuid::from_u128(422);
+    let rollout_uuid = Uuid::from_u128(421);
+    let timestamp = "2025-01-03T13-00-00";
+    write_session_file(
+        home,
+        timestamp,
+        thread_uuid,
+        /*num_records*/ 1,
+        Some(SessionSource::Cli),
+    )?;
+    let stable_path = home.join(format!(
+        "sessions/2025/01/03/rollout-{timestamp}-{thread_uuid}.jsonl"
+    ));
+    let composite_path = stable_path.with_file_name(format!(
+        "rollout-{timestamp}-{thread_uuid}_{rollout_uuid}.jsonl"
+    ));
+    fs::copy(stable_path.as_path(), composite_path.as_path())?;
+    let base = PrimitiveDateTime::parse(
+        timestamp,
+        format_description!("[year]-[month]-[day]T[hour]-[minute]-[second]"),
+    )?
+    .assume_utc();
+    set_modified_time(composite_path.as_path(), base + Duration::milliseconds(100))?;
+    set_modified_time(stable_path.as_path(), base + Duration::milliseconds(900))?;
+
+    assert_eq!(
+        find_thread_path_by_id_str(home, &thread_uuid.to_string(), /*state_db_ctx*/ None).await?,
+        Some(composite_path)
+    );
+    let listed = get_threads(
+        home,
+        /*page_size*/ 10,
+        /*cursor*/ None,
+        ThreadSortKey::CreatedAt,
+        NO_SOURCE_FILTER,
+        /*model_providers*/ None,
+        /*cwd_filters*/ None,
+        TEST_PROVIDER,
+    )
+    .await?;
+    assert_eq!(
+        listed
+            .items
+            .into_iter()
+            .map(|item| item.path)
+            .collect::<Vec<_>>(),
+        vec![stable_path]
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn filesystem_lookup_uses_composite_mtime_before_id_for_same_second_heads() -> Result<()> {
+    let temp = TempDir::new()?;
+    let home = temp.path();
+    let thread_uuid = Uuid::from_u128(431);
+    let older_rollout_uuid = Uuid::from_u128(433);
+    let newer_rollout_uuid = Uuid::from_u128(432);
+    let timestamp = "2025-01-03T13-00-00";
+    write_session_file(
+        home,
+        timestamp,
+        thread_uuid,
+        /*num_records*/ 1,
+        Some(SessionSource::Cli),
+    )?;
+    let stable_path = home.join(format!(
+        "sessions/2025/01/03/rollout-{timestamp}-{thread_uuid}.jsonl"
+    ));
+    let older_plain_path = stable_path.with_file_name(format!(
+        "rollout-{timestamp}-{thread_uuid}_{older_rollout_uuid}.jsonl"
+    ));
+    let newer_path = stable_path.with_file_name(format!(
+        "rollout-{timestamp}-{thread_uuid}_{newer_rollout_uuid}.jsonl"
+    ));
+    fs::copy(stable_path.as_path(), older_plain_path.as_path())?;
+    fs::copy(stable_path.as_path(), newer_path.as_path())?;
+    let older_compressed_path = compress_test_rollout(older_plain_path.as_path())?;
+    let base = PrimitiveDateTime::parse(
+        timestamp,
+        format_description!("[year]-[month]-[day]T[hour]-[minute]-[second]"),
+    )?
+    .assume_utc();
+    set_modified_time(
+        older_compressed_path.as_path(),
+        base + Duration::milliseconds(100),
+    )?;
+    set_modified_time(newer_path.as_path(), base + Duration::milliseconds(900))?;
+    assert_eq!(
+        crate::materialize_rollout_for_reference(older_compressed_path.as_path()).await?,
+        older_plain_path
+    );
+
+    assert_eq!(
+        find_thread_path_by_id_str(home, &thread_uuid.to_string(), /*state_db_ctx*/ None).await?,
+        Some(newer_path)
+    );
+    Ok(())
+}
+
+#[tokio::test]
 async fn filesystem_listing_deduplicates_rollout_lineage_across_pages() -> Result<()> {
     let temp = TempDir::new().expect("temp dir");
     let home = temp.path();
@@ -271,6 +370,12 @@ async fn filesystem_listing_deduplicates_rollout_lineage_across_pages() -> Resul
         "rollout-2025-01-05T13-00-00-{thread_uuid}_{replacement_uuid}.jsonl"
     ));
     fs::rename(replacement_source, replacement_path.as_path())?;
+    let original_path = home.join(format!(
+        "sessions/2025/01/03/rollout-2025-01-03T13-00-00-{thread_uuid}.jsonl"
+    ));
+    let other_path = home.join(format!(
+        "sessions/2025/01/04/rollout-2025-01-04T13-00-00-{other_uuid}.jsonl"
+    ));
 
     let first = get_threads(
         home,
@@ -284,7 +389,7 @@ async fn filesystem_listing_deduplicates_rollout_lineage_across_pages() -> Resul
     )
     .await?;
     assert_eq!(first.items.len(), 1);
-    assert_eq!(first.items[0].path, replacement_path);
+    assert_eq!(first.items[0].path, other_path);
     let second = get_threads(
         home,
         /*page_size*/ 1,
@@ -302,10 +407,27 @@ async fn filesystem_listing_deduplicates_rollout_lineage_across_pages() -> Resul
             .iter()
             .filter_map(|item| item.thread_id)
             .collect::<Vec<_>>(),
-        vec![thread_id_from_uuid(other_uuid)]
+        vec![thread_id_from_uuid(thread_uuid)]
     );
+    assert_eq!(second.items[0].path, original_path);
     assert_eq!(second.next_cursor, None);
     Ok(())
+}
+
+fn set_modified_time(path: &Path, modified: OffsetDateTime) -> std::io::Result<()> {
+    let file = std::fs::OpenOptions::new().write(true).open(path)?;
+    file.set_times(FileTimes::new().set_modified(modified.into()))
+}
+
+fn compress_test_rollout(path: &Path) -> Result<std::path::PathBuf> {
+    let compressed_path = path.with_extension("jsonl.zst");
+    let input = File::open(path)?;
+    let output = File::create(compressed_path.as_path())?;
+    let mut encoder = zstd::stream::write::Encoder::new(output, 3)?;
+    std::io::copy(&mut std::io::BufReader::new(input), &mut encoder)?;
+    encoder.finish()?;
+    fs::remove_file(path)?;
+    Ok(compressed_path)
 }
 
 #[tokio::test]
@@ -1556,6 +1678,7 @@ async fn test_updated_at_uses_file_mtime() -> Result<()> {
             meta: SessionMeta {
                 session_id: conversation_id.into(),
                 id: conversation_id,
+                rollout_id: None,
                 forked_from_id: None,
                 parent_thread_id: None,
                 timestamp: ts.to_string(),
@@ -1602,16 +1725,18 @@ async fn test_updated_at_uses_file_mtime() -> Result<()> {
         let response_line = RolloutLine {
             timestamp: format!("{ts}-{idx:02}"),
             ordinal: None,
-            item: RolloutItem::ResponseItem(ResponseItem::Message {
-                id: None,
-                role: "assistant".into(),
-                content: vec![ContentItem::OutputText {
-                    text: format!("reply-{idx}"),
-                }],
-                phase: None,
-                internal_chat_message_metadata_passthrough: None,
-            }
-            .into()),
+            item: RolloutItem::ResponseItem(
+                ResponseItem::Message {
+                    id: None,
+                    role: "assistant".into(),
+                    content: vec![ContentItem::OutputText {
+                        text: format!("reply-{idx}"),
+                    }],
+                    phase: None,
+                    internal_chat_message_metadata_passthrough: None,
+                }
+                .into(),
+            ),
         };
         writeln!(file, "{}", serde_json::to_string(&response_line)?)?;
     }

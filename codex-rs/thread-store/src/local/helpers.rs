@@ -402,9 +402,7 @@ mod tests {
     fn replacement_rollout_file_name_matches_logical_thread() {
         let thread_id = ThreadId::new();
         let rollout_id = ThreadId::new();
-        let file_name = format!(
-            "rollout-2026-08-11T18-42-07-{thread_id}_{rollout_id}.jsonl.zst"
-        );
+        let file_name = format!("rollout-2026-08-11T18-42-07-{thread_id}_{rollout_id}.jsonl.zst");
         let path = PathBuf::from(file_name.as_str());
 
         assert_eq!(

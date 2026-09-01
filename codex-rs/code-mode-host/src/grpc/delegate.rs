@@ -40,8 +40,7 @@ impl CodeModeSessionDelegate for GrpcDelegate {
             let execution_id = session
                 .execution_id(invocation.cell_id.as_str(), &cancellation)
                 .await?;
-            let byte_reservation =
-                session.reserve_tool_bytes(MAX_APPLICATION_MESSAGE_BYTES)?;
+            let byte_reservation = session.reserve_tool_bytes(MAX_APPLICATION_MESSAGE_BYTES)?;
             let input_json = invocation
                 .input
                 .as_ref()

@@ -132,8 +132,8 @@ impl AuthGeneration {
     fn current(&self) -> Option<u64> {
         self.manager.as_ref().map(|manager| {
             let changes = manager.auth_change_receiver();
-            let revision = *changes.borrow();
-            revision
+
+            *changes.borrow()
         })
     }
 
@@ -153,9 +153,7 @@ struct AuthGenerationWatch {
 
 impl AuthGenerationWatch {
     fn current(&self) -> Option<u64> {
-        self.changes
-            .as_ref()
-            .map(|changes| *changes.borrow())
+        self.changes.as_ref().map(|changes| *changes.borrow())
     }
 
     async fn changed(&mut self) {
@@ -337,11 +335,7 @@ impl LunaSampler {
     }
 
     pub(crate) fn client_metadata(&self, turn_id: &str) -> HashMap<String, String> {
-        request_metadata(
-            &self.config.session_id,
-            &self.config.thread_id,
-            turn_id,
-        )
+        request_metadata(&self.config.session_id, &self.config.thread_id, turn_id)
     }
 
     pub(crate) fn service_tier(&self) -> Option<String> {

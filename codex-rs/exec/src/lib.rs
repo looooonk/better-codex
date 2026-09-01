@@ -73,6 +73,8 @@ use codex_core::format_exec_policy_error_with_source;
 use codex_core::path_utils;
 use codex_feedback::CodexFeedback;
 use codex_git_utils::get_git_repo_root;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_login::default_client::set_default_client_residency_requirement;
 use codex_login::default_client::set_default_originator;
 use codex_login::enforce_login_restrictions;
@@ -89,8 +91,6 @@ use codex_protocol::models::PermissionProfile;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::ReviewTarget;
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::protocol::SessionConfiguredEvent;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::user_input::UserInput;
@@ -1856,7 +1856,9 @@ fn decode_utf16(
     }
 
     let units: Vec<u16> = input
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|chunk| decode_unit([chunk[0], chunk[1]]))
         .collect();
 

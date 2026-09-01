@@ -1,11 +1,13 @@
+use super::queued_messages::QueueRpc;
+use super::queued_messages::QueueRpcResponse;
+use crate::app_server_session::AgentHistoryTask;
 use crate::app_server_session::AppServerSession;
 use crate::app_server_session::AppServerStartedThread;
 use crate::app_server_session::ForkGoalContinuation;
 use crate::app_server_session::TurnPermissionsOverride;
+use crate::app_server_session::spawn_resumed_agent_history;
 use crate::config_update::write_config_batch;
 use crate::legacy_core::config::Config;
-use super::queued_messages::QueueRpc;
-use super::queued_messages::QueueRpcResponse;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AskForApproval;
@@ -17,8 +19,8 @@ use codex_app_server_protocol::ExternalAgentConfigDetectParams;
 use codex_app_server_protocol::ExternalAgentConfigDetectResponse;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
-use codex_app_server_protocol::GetAccountTokenUsageParams;
-use codex_app_server_protocol::GetAccountTokenUsageResponse;
+use codex_app_server_protocol::GetAccountThreadUsageParams;
+use codex_app_server_protocol::GetAccountThreadUsageResponse;
 use codex_app_server_protocol::ListMcpServerStatusParams;
 use codex_app_server_protocol::ListMcpServerStatusResponse;
 use codex_app_server_protocol::LoginAccountParams;
@@ -33,7 +35,9 @@ use codex_app_server_protocol::PluginListParams;
 use codex_app_server_protocol::PluginListResponse;
 use codex_app_server_protocol::PluginUninstallParams;
 use codex_app_server_protocol::PluginUninstallResponse;
+use codex_app_server_protocol::QueuedSubmission;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::SortDirection;
 use codex_app_server_protocol::Thread;
 use codex_app_server_protocol::ThreadGoalClearResponse;
 use codex_app_server_protocol::ThreadGoalGetParams;
@@ -43,11 +47,13 @@ use codex_app_server_protocol::ThreadGoalSetResponse;
 use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
-use codex_app_server_protocol::QueuedSubmission;
 use codex_app_server_protocol::ThreadReadParams;
 use codex_app_server_protocol::ThreadReadResponse;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadStartSource;
+use codex_app_server_protocol::ThreadTurnsListParams;
+use codex_app_server_protocol::ThreadTurnsListResponse;
+use codex_app_server_protocol::TurnItemsView;
 use codex_app_server_protocol::TurnStartResponse;
 use codex_app_server_protocol::TurnSteerResponse;
 use codex_app_server_protocol::UserInput;
@@ -60,9 +66,20 @@ use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use color_eyre::Result;
+use color_eyre::eyre::WrapErr;
 use std::path::PathBuf;
+use std::time::Duration;
 use tokio::task::JoinHandle;
+use tokio::time::timeout;
 use uuid::Uuid;
+
+const THREAD_REHYDRATE_REQUEST_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 30);
+
+#[derive(Debug)]
+pub(super) struct ThreadRehydration {
+    pub(super) thread: Thread,
+    pub(super) agent_history_task: Option<AgentHistoryTask>,
+}
 
 /// Backend operations the app shell drives through the app-server boundary.
 ///
@@ -129,6 +146,12 @@ pub(super) trait AppShellBackend {
         thread_id: ThreadId,
     ) -> impl std::future::Future<Output = Result<Thread>> + Send + 'static;
 
+    /// Reads metadata and a complete paginated transcript for shell rehydration.
+    fn thread_rehydrate_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<ThreadRehydration>> + Send + 'static;
+
     /// Starts an account rate-limit lookup without borrowing the event-loop-owned backend.
     fn account_rate_limits_in_background(
         &self,
@@ -138,7 +161,7 @@ pub(super) trait AppShellBackend {
     fn thread_usage_in_background(
         &self,
         thread_id: ThreadId,
-    ) -> impl std::future::Future<Output = Result<GetAccountTokenUsageResponse>> + Send + 'static;
+    ) -> impl std::future::Future<Output = Result<GetAccountThreadUsageResponse>> + Send + 'static;
 
     fn login_account(
         &mut self,
@@ -514,6 +537,68 @@ impl AppShellBackend for AppServerSession {
         }
     }
 
+    fn thread_rehydrate_in_background(
+        &self,
+        thread_id: ThreadId,
+    ) -> impl std::future::Future<Output = Result<ThreadRehydration>> + Send + 'static {
+        let request_handle = AppServerSession::request_handle(self);
+        async move {
+            let mut thread = timeout(
+                THREAD_REHYDRATE_REQUEST_TIMEOUT,
+                request_handle.request_typed::<ThreadReadResponse>(ClientRequest::ThreadRead {
+                    request_id: app_shell_request_id("app-shell-thread-rehydrate"),
+                    params: ThreadReadParams {
+                        thread_id: thread_id.to_string(),
+                        include_turns: false,
+                    },
+                }),
+            )
+            .await
+            .wrap_err("reverted thread read timed out")??
+            .thread;
+            let mut cursor = None;
+            loop {
+                let response = timeout(
+                    THREAD_REHYDRATE_REQUEST_TIMEOUT,
+                    request_handle.request_typed::<ThreadTurnsListResponse>(
+                        ClientRequest::ThreadTurnsList {
+                            request_id: app_shell_request_id("app-shell-thread-rehydrate-turns"),
+                            params: ThreadTurnsListParams {
+                                thread_id: thread_id.to_string(),
+                                cursor: cursor.clone(),
+                                limit: Some(100),
+                                sort_direction: Some(SortDirection::Asc),
+                                items_view: Some(TurnItemsView::Full),
+                            },
+                        },
+                    ),
+                )
+                .await
+                .wrap_err("reverted thread turns page timed out")??;
+                thread.turns.extend(response.data);
+                let Some(next_cursor) = response.next_cursor else {
+                    break;
+                };
+                if cursor.as_ref() == Some(&next_cursor) {
+                    return Err(color_eyre::eyre::eyre!(
+                        "thread {thread_id} returned a repeated turns cursor"
+                    ));
+                }
+                cursor = Some(next_cursor);
+            }
+            let agent_history_task = spawn_resumed_agent_history(
+                request_handle,
+                thread_id,
+                thread.session_id.clone(),
+                &thread.turns,
+            );
+            Ok(ThreadRehydration {
+                thread,
+                agent_history_task,
+            })
+        }
+    }
+
     fn account_rate_limits_in_background(
         &self,
     ) -> impl std::future::Future<Output = Result<GetAccountRateLimitsResponse>> + Send + 'static
@@ -533,16 +618,16 @@ impl AppShellBackend for AppServerSession {
     fn thread_usage_in_background(
         &self,
         thread_id: ThreadId,
-    ) -> impl std::future::Future<Output = Result<GetAccountTokenUsageResponse>> + Send + 'static
+    ) -> impl std::future::Future<Output = Result<GetAccountThreadUsageResponse>> + Send + 'static
     {
         let request_handle = AppServerSession::request_handle(self);
         async move {
             request_handle
-                .request_typed(ClientRequest::GetAccountTokenUsage {
+                .request_typed(ClientRequest::GetAccountThreadUsage {
                     request_id: app_shell_request_id("app-shell-thread-usage"),
-                    params: Some(GetAccountTokenUsageParams {
-                        thread_id: Some(thread_id.to_string()),
-                    }),
+                    params: GetAccountThreadUsageParams {
+                        thread_id: thread_id.to_string(),
+                    },
                 })
                 .await
                 .map_err(Into::into)

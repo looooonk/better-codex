@@ -9,6 +9,8 @@ use codex_core::resolve_installation_id;
 use codex_core::thread_store_from_config;
 use codex_extension_api::empty_extension_registry;
 use codex_features::Feature;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_login::AuthKeyringBackendKind;
 use codex_login::AuthManager;
 use codex_login::CodexAuth;
@@ -46,8 +48,6 @@ use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
@@ -500,15 +500,17 @@ async fn synthetic_call_output_id_is_stable_across_resumes() -> anyhow::Result<(
         RolloutLine {
             timestamp: "2024-01-01T00:00:01.000Z".to_string(),
             ordinal: None,
-            item: RolloutItem::ResponseItem(ResponseItem::FunctionCall {
-                id: Some(ResponseItemId::with_suffix("fc", "existing")),
-                name: "do_it".to_string(),
-                namespace: None,
-                arguments: "{}".to_string(),
-                call_id: function_call_id.to_string(),
-                internal_chat_message_metadata_passthrough: None,
-            }
-            .into()),
+            item: RolloutItem::ResponseItem(
+                ResponseItem::FunctionCall {
+                    id: Some(ResponseItemId::with_suffix("fc", "existing")),
+                    name: "do_it".to_string(),
+                    namespace: None,
+                    arguments: "{}".to_string(),
+                    call_id: function_call_id.to_string(),
+                    internal_chat_message_metadata_passthrough: None,
+                }
+                .into(),
+            ),
         },
     ];
     let tmpdir = TempDir::new()?;
@@ -1027,29 +1029,35 @@ async fn resume_replays_legacy_js_repl_image_rollout_shapes() {
         RolloutLine {
             timestamp: "2024-01-01T00:00:02.000Z".to_string(),
             ordinal: None,
-            item: RolloutItem::ResponseItem(ResponseItem::CustomToolCallOutput {
-                id: None,
-                call_id: "legacy-js-call".to_string(),
-                name: None,
-                output: FunctionCallOutputPayload::from_text("legacy js_repl stdout".to_string()),
-                internal_chat_message_metadata_passthrough: None,
-            }
-            .into()),
+            item: RolloutItem::ResponseItem(
+                ResponseItem::CustomToolCallOutput {
+                    id: None,
+                    call_id: "legacy-js-call".to_string(),
+                    name: None,
+                    output: FunctionCallOutputPayload::from_text(
+                        "legacy js_repl stdout".to_string(),
+                    ),
+                    internal_chat_message_metadata_passthrough: None,
+                }
+                .into(),
+            ),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:03.000Z".to_string(),
             ordinal: None,
-            item: RolloutItem::ResponseItem(ResponseItem::Message {
-                id: None,
-                role: "user".to_string(),
-                content: vec![ContentItem::InputImage {
-                    image_url: legacy_image_url.to_string(),
-                    detail: Some(DEFAULT_IMAGE_DETAIL),
-                }],
-                phase: None,
-                internal_chat_message_metadata_passthrough: None,
-            }
-            .into()),
+            item: RolloutItem::ResponseItem(
+                ResponseItem::Message {
+                    id: None,
+                    role: "user".to_string(),
+                    content: vec![ContentItem::InputImage {
+                        image_url: legacy_image_url.to_string(),
+                        detail: Some(DEFAULT_IMAGE_DETAIL),
+                    }],
+                    phase: None,
+                    internal_chat_message_metadata_passthrough: None,
+                }
+                .into(),
+            ),
         },
     ];
 
@@ -1164,62 +1172,70 @@ async fn resume_replays_image_tool_outputs_with_detail() {
         RolloutLine {
             timestamp: "2024-01-01T00:00:01.000Z".to_string(),
             ordinal: None,
-            item: RolloutItem::ResponseItem(ResponseItem::FunctionCall {
-                id: None,
-                name: "view_image".to_string(),
-                namespace: None,
-                arguments: "{\"path\":\"/tmp/example.png\"}".to_string(),
-                call_id: function_call_id.to_string(),
-                internal_chat_message_metadata_passthrough: None,
-            }
-            .into()),
+            item: RolloutItem::ResponseItem(
+                ResponseItem::FunctionCall {
+                    id: None,
+                    name: "view_image".to_string(),
+                    namespace: None,
+                    arguments: "{\"path\":\"/tmp/example.png\"}".to_string(),
+                    call_id: function_call_id.to_string(),
+                    internal_chat_message_metadata_passthrough: None,
+                }
+                .into(),
+            ),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:01.500Z".to_string(),
             ordinal: None,
-            item: RolloutItem::ResponseItem(ResponseItem::FunctionCallOutput {
-                id: None,
-                call_id: function_call_id.to_string(),
-                output: FunctionCallOutputPayload::from_content_items(vec![
-                    FunctionCallOutputContentItem::InputImage {
-                        image_url: image_url.to_string(),
-                        detail: Some(ImageDetail::Original),
-                    },
-                ]),
-                internal_chat_message_metadata_passthrough: None,
-            }
-            .into()),
+            item: RolloutItem::ResponseItem(
+                ResponseItem::FunctionCallOutput {
+                    id: None,
+                    call_id: function_call_id.to_string(),
+                    output: FunctionCallOutputPayload::from_content_items(vec![
+                        FunctionCallOutputContentItem::InputImage {
+                            image_url: image_url.to_string(),
+                            detail: Some(ImageDetail::Original),
+                        },
+                    ]),
+                    internal_chat_message_metadata_passthrough: None,
+                }
+                .into(),
+            ),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:02.000Z".to_string(),
             ordinal: None,
-            item: RolloutItem::ResponseItem(ResponseItem::CustomToolCall {
-                id: None,
-                status: Some("completed".to_string()),
-                call_id: custom_call_id.to_string(),
-                name: "js_repl".to_string(),
-                namespace: None,
-                input: "console.log('image flow')".to_string(),
-                internal_chat_message_metadata_passthrough: None,
-            }
-            .into()),
+            item: RolloutItem::ResponseItem(
+                ResponseItem::CustomToolCall {
+                    id: None,
+                    status: Some("completed".to_string()),
+                    call_id: custom_call_id.to_string(),
+                    name: "js_repl".to_string(),
+                    namespace: None,
+                    input: "console.log('image flow')".to_string(),
+                    internal_chat_message_metadata_passthrough: None,
+                }
+                .into(),
+            ),
         },
         RolloutLine {
             timestamp: "2024-01-01T00:00:02.500Z".to_string(),
             ordinal: None,
-            item: RolloutItem::ResponseItem(ResponseItem::CustomToolCallOutput {
-                id: None,
-                call_id: custom_call_id.to_string(),
-                name: None,
-                output: FunctionCallOutputPayload::from_content_items(vec![
-                    FunctionCallOutputContentItem::InputImage {
-                        image_url: image_url.to_string(),
-                        detail: Some(ImageDetail::Original),
-                    },
-                ]),
-                internal_chat_message_metadata_passthrough: None,
-            }
-            .into()),
+            item: RolloutItem::ResponseItem(
+                ResponseItem::CustomToolCallOutput {
+                    id: None,
+                    call_id: custom_call_id.to_string(),
+                    name: None,
+                    output: FunctionCallOutputPayload::from_content_items(vec![
+                        FunctionCallOutputContentItem::InputImage {
+                            image_url: image_url.to_string(),
+                            detail: Some(ImageDetail::Original),
+                        },
+                    ]),
+                    internal_chat_message_metadata_passthrough: None,
+                }
+                .into(),
+            ),
         },
     ];
 

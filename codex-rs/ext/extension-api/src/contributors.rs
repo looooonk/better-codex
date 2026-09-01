@@ -8,9 +8,9 @@ use codex_protocol::protocol::TokenUsageInfo;
 use codex_tools::ToolCall;
 use codex_tools::ToolExecutor;
 
-use crate::ExtensionData;
 use crate::ApprovalReviewInput;
 use crate::ApprovalReviewResult;
+use crate::ExtensionData;
 
 mod context;
 mod mcp;

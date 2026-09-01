@@ -1911,6 +1911,30 @@
             },
             "method": {
               "enum": [
+                "account/threadUsage/read"
+              ],
+              "title": "Account/threadUsage/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/GetAccountThreadUsageParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Account/threadUsage/readRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/v2/RequestId"
+            },
+            "method": {
+              "enum": [
                 "account/workspaceMessages/read"
               ],
               "title": "Account/workspaceMessages/readRequestMethod",
@@ -4017,18 +4041,20 @@
       "title": "RequestId"
     },
     "ReviewDecision": {
-      "description": "User's decision in response to an ExecApprovalRequest.",
-      "oneOf": [
+      "anyOf": [
         {
-          "description": "User has approved this command and the agent should execute it.",
           "enum": [
-            "approved"
+            "approved",
+            "approved_for_session",
+            "approved_mcp_policy_amendment",
+            "denied",
+            "timed_out",
+            "abort"
           ],
           "type": "string"
         },
         {
           "additionalProperties": false,
-          "description": "User has approved this command and wants to apply the proposed execpolicy amendment so future matching commands are permitted.",
           "properties": {
             "approved_execpolicy_amendment": {
               "properties": {
@@ -4052,22 +4078,7 @@
           "type": "object"
         },
         {
-          "description": "User has approved this request and wants future prompts in the same session-scoped approval cache to be automatically approved for the remainder of the session.",
-          "enum": [
-            "approved_for_session"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "User has approved this MCP tool call and wants matching future calls to be automatically approved across sessions.",
-          "enum": [
-            "approved_mcp_policy_amendment"
-          ],
-          "type": "string"
-        },
-        {
           "additionalProperties": false,
-          "description": "User chose to persist a network policy rule (allow/deny) for future requests to the same host.",
           "properties": {
             "network_policy_amendment": {
               "properties": {
@@ -4089,17 +4100,16 @@
         },
         {
           "additionalProperties": false,
-          "description": "User has denied this command and the agent should not execute it, but it should continue the session and try something else.",
           "properties": {
             "denied": {
               "properties": {
                 "rejection": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
+                  "type": "string"
                 }
               },
+              "required": [
+                "rejection"
+              ],
               "type": "object"
             }
           },
@@ -4108,22 +4118,9 @@
           ],
           "title": "DeniedReviewDecision",
           "type": "object"
-        },
-        {
-          "description": "Automatic approval review timed out before reaching a decision.",
-          "enum": [
-            "timed_out"
-          ],
-          "type": "string"
-        },
-        {
-          "description": "User has denied this command and the agent should not do anything until the user's next command.",
-          "enum": [
-            "abort"
-          ],
-          "type": "string"
         }
-      ]
+      ],
+      "description": "JSON and TypeScript representation of an approval review decision."
     },
     "ServerNotification": {
       "$schema": "http://json-schema.org/draft-07/schema#",
@@ -4274,6 +4271,26 @@
           "properties": {
             "method": {
               "enum": [
+                "thread/reverted"
+              ],
+              "title": "Thread/revertedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ThreadRevertedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/revertedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
                 "skills/changed"
               ],
               "title": "Skills/changedNotificationMethod",
@@ -4348,6 +4365,26 @@
             "params"
           ],
           "title": "Thread/goal/clearedNotification",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "method": {
+              "enum": [
+                "thread/queue/changed"
+              ],
+              "title": "Thread/queue/changedNotificationMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/v2/ThreadQueueChangedNotification"
+            }
+          },
+          "required": [
+            "method",
+            "params"
+          ],
+          "title": "Thread/queue/changedNotification",
           "type": "object"
         },
         {
@@ -10469,6 +10506,36 @@
         "title": "GetAccountResponse",
         "type": "object"
       },
+      "GetAccountThreadUsageParams": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "title": "GetAccountThreadUsageParams",
+        "type": "object"
+      },
+      "GetAccountThreadUsageResponse": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "threadUsage": {
+            "anyOf": [
+              {
+                "$ref": "#/definitions/v2/ThreadUsage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "GetAccountThreadUsageResponse",
+        "type": "object"
+      },
       "GetAccountTokenUsageResponse": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "properties": {
@@ -14788,6 +14855,28 @@
         "required": [
           "cols",
           "rows"
+        ],
+        "type": "object"
+      },
+      "QueuedSubmission": {
+        "properties": {
+          "clientUserMessageId": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "input": {
+            "items": {
+              "$ref": "#/definitions/v2/UserInput"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "clientUserMessageId",
+          "id",
+          "input"
         ],
         "type": "object"
       },
@@ -19219,6 +19308,19 @@
         "title": "ThreadNameUpdatedNotification",
         "type": "object"
       },
+      "ThreadQueueChangedNotification": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "title": "ThreadQueueChangedNotification",
+        "type": "object"
+      },
       "ThreadReadParams": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "properties": {
@@ -19693,6 +19795,19 @@
           "thread"
         ],
         "title": "ThreadResumeResponse",
+        "type": "object"
+      },
+      "ThreadRevertedNotification": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "properties": {
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "threadId"
+        ],
+        "title": "ThreadRevertedNotification",
         "type": "object"
       },
       "ThreadRollbackParams": {
@@ -20341,6 +20456,101 @@
           "unsubscribed"
         ],
         "type": "string"
+      },
+      "ThreadUsage": {
+        "properties": {
+          "estimatedUsageCreditsMicros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "estimatedUsageUsdMicros": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "groups": {
+            "items": {
+              "$ref": "#/definitions/v2/ThreadUsageBreakdownGroup"
+            },
+            "type": "array"
+          },
+          "threadId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "estimatedUsageCreditsMicros",
+          "groups",
+          "threadId"
+        ],
+        "type": "object"
+      },
+      "ThreadUsageBreakdownGroup": {
+        "properties": {
+          "cachedInputTokens": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "estimatedUsageCreditsMicros": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "inputTokens": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "model": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "netNewInputTokens": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "outputTokens": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "reasoningEffort": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "speed": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "totalTokens": {
+            "format": "int64",
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "estimatedUsageCreditsMicros"
+        ],
+        "type": "object"
       },
       "TokenUsageBreakdown": {
         "properties": {

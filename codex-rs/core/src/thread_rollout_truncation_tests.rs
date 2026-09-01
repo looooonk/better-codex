@@ -351,17 +351,9 @@ fn truncates_rollout_to_last_n_fork_turns_counts_trigger_turn_messages() {
     let rollout = vec![
         RolloutItem::ResponseItem(user_msg("u1").into()),
         RolloutItem::ResponseItem(assistant_msg("a1").into()),
-        RolloutItem::ResponseItem(inter_agent_msg(
-            "queued message",
-            /*trigger_turn*/ false,
-        )
-        .into()),
+        RolloutItem::ResponseItem(inter_agent_msg("queued message", /*trigger_turn*/ false).into()),
         RolloutItem::ResponseItem(assistant_msg("a2").into()),
-        RolloutItem::ResponseItem(inter_agent_msg(
-            "triggered task",
-            /*trigger_turn*/ true,
-        )
-        .into()),
+        RolloutItem::ResponseItem(inter_agent_msg("triggered task", /*trigger_turn*/ true).into()),
         RolloutItem::ResponseItem(assistant_msg("a3").into()),
         RolloutItem::ResponseItem(user_msg("u2").into()),
         RolloutItem::ResponseItem(assistant_msg("a4").into()),
@@ -452,11 +444,7 @@ fn truncates_rollout_to_last_n_fork_turns_applies_thread_rollback_markers() {
     let rollout = vec![
         RolloutItem::ResponseItem(user_msg("u1").into()),
         RolloutItem::ResponseItem(assistant_msg("a1").into()),
-        RolloutItem::ResponseItem(inter_agent_msg(
-            "triggered task",
-            /*trigger_turn*/ true,
-        )
-        .into()),
+        RolloutItem::ResponseItem(inter_agent_msg("triggered task", /*trigger_turn*/ true).into()),
         RolloutItem::ResponseItem(assistant_msg("a2").into()),
         RolloutItem::EventMsg(EventMsg::ThreadRolledBack(ThreadRolledBackEvent {
             num_turns: 1,
@@ -477,11 +465,7 @@ fn truncates_rollout_to_last_n_fork_turns_applies_thread_rollback_markers() {
 fn fork_turn_positions_ignore_zero_turn_rollback_markers() {
     let rollout = vec![
         RolloutItem::ResponseItem(user_msg("u1").into()),
-        RolloutItem::ResponseItem(inter_agent_msg(
-            "triggered task",
-            /*trigger_turn*/ true,
-        )
-        .into()),
+        RolloutItem::ResponseItem(inter_agent_msg("triggered task", /*trigger_turn*/ true).into()),
         RolloutItem::EventMsg(EventMsg::ThreadRolledBack(ThreadRolledBackEvent {
             num_turns: 0,
         })),
@@ -496,11 +480,7 @@ fn truncates_rollout_to_last_n_fork_turns_discards_trigger_boundaries_in_rolled_
     let rollout = vec![
         RolloutItem::ResponseItem(user_msg("u1").into()),
         RolloutItem::ResponseItem(user_msg("u2").into()),
-        RolloutItem::ResponseItem(inter_agent_msg(
-            "triggered task",
-            /*trigger_turn*/ true,
-        )
-        .into()),
+        RolloutItem::ResponseItem(inter_agent_msg("triggered task", /*trigger_turn*/ true).into()),
         RolloutItem::ResponseItem(assistant_msg("a1").into()),
         RolloutItem::EventMsg(EventMsg::ThreadRolledBack(ThreadRolledBackEvent {
             num_turns: 1,
@@ -524,20 +504,16 @@ fn truncates_rollout_to_last_n_fork_turns_discards_rolled_back_assistant_instruc
     let rollout = vec![
         RolloutItem::ResponseItem(user_msg("u1").into()),
         RolloutItem::ResponseItem(assistant_msg("a1").into()),
-        RolloutItem::ResponseItem(inter_agent_msg(
-            "triggered task 1",
-            /*trigger_turn*/ true,
-        )
-        .into()),
+        RolloutItem::ResponseItem(
+            inter_agent_msg("triggered task 1", /*trigger_turn*/ true).into(),
+        ),
         RolloutItem::ResponseItem(assistant_msg("a2").into()),
         RolloutItem::EventMsg(EventMsg::ThreadRolledBack(ThreadRolledBackEvent {
             num_turns: 1,
         })),
-        RolloutItem::ResponseItem(inter_agent_msg(
-            "triggered task 2",
-            /*trigger_turn*/ true,
-        )
-        .into()),
+        RolloutItem::ResponseItem(
+            inter_agent_msg("triggered task 2", /*trigger_turn*/ true).into(),
+        ),
         RolloutItem::ResponseItem(assistant_msg("a3").into()),
     ];
 
@@ -555,11 +531,7 @@ fn truncates_rollout_to_last_n_fork_turns_keeps_full_rollout_when_n_is_large() {
     let rollout = vec![
         RolloutItem::ResponseItem(user_msg("u1").into()),
         RolloutItem::ResponseItem(assistant_msg("a1").into()),
-        RolloutItem::ResponseItem(inter_agent_msg(
-            "triggered task",
-            /*trigger_turn*/ true,
-        )
-        .into()),
+        RolloutItem::ResponseItem(inter_agent_msg("triggered task", /*trigger_turn*/ true).into()),
         RolloutItem::ResponseItem(assistant_msg("a2").into()),
     ];
 

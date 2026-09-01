@@ -398,7 +398,7 @@ async fn permissions_message_omitted_when_disabled() -> Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn resume_preserves_permissions_messages_without_duplication() -> Result<()> {
+async fn resume_reasserts_current_permissions_after_intervening_update() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
     let server = start_mock_server().await;
@@ -486,7 +486,8 @@ async fn resume_preserves_permissions_messages_without_duplication() -> Result<(
     wait_for_event(&resumed.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
 
     let permissions = permissions_texts(&req3.single_request());
-    assert_eq!(permissions.len(), 2);
+    assert_eq!(permissions.len(), 3);
+    assert_eq!(permissions.first(), permissions.last());
     let unique = permissions.into_iter().collect::<HashSet<String>>();
     assert_eq!(unique.len(), 2);
 

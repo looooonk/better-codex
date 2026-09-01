@@ -11,34 +11,38 @@ use tempfile::TempDir;
 const SECRET: &str = "example_synthetic_bearer_token_123456";
 
 fn function_call() -> RolloutItem {
-    RolloutItem::ResponseItem(ResponseItem::FunctionCall {
-        id: None,
-        name: "exec_command".to_string(),
-        namespace: None,
-        arguments: format!(r#"{{"authorization":"Bearer {SECRET}"}}"#),
-        call_id: "call-function".to_string(),
-        internal_chat_message_metadata_passthrough: None,
-    }
-    .into())
+    RolloutItem::ResponseItem(
+        ResponseItem::FunctionCall {
+            id: None,
+            name: "exec_command".to_string(),
+            namespace: None,
+            arguments: format!(r#"{{"authorization":"Bearer {SECRET}"}}"#),
+            call_id: "call-function".to_string(),
+            internal_chat_message_metadata_passthrough: None,
+        }
+        .into(),
+    )
 }
 
 fn curl_user_call() -> RolloutItem {
-    RolloutItem::ResponseItem(ResponseItem::LocalShellCall {
-        id: None,
-        call_id: Some("call-curl-user".to_string()),
-        status: LocalShellStatus::Completed,
-        action: LocalShellAction::Exec(LocalShellExecAction {
-            command: ["curl", "-u", "alice:hunter2", "https://example.test"]
-                .map(str::to_string)
-                .to_vec(),
-            timeout_ms: None,
-            working_directory: None,
-            env: None,
-            user: None,
-        }),
-        internal_chat_message_metadata_passthrough: None,
-    }
-    .into())
+    RolloutItem::ResponseItem(
+        ResponseItem::LocalShellCall {
+            id: None,
+            call_id: Some("call-curl-user".to_string()),
+            status: LocalShellStatus::Completed,
+            action: LocalShellAction::Exec(LocalShellExecAction {
+                command: ["curl", "-u", "alice:hunter2", "https://example.test"]
+                    .map(str::to_string)
+                    .to_vec(),
+                timeout_ms: None,
+                working_directory: None,
+                env: None,
+                user: None,
+            }),
+            internal_chat_message_metadata_passthrough: None,
+        }
+        .into(),
+    )
 }
 
 #[tokio::test]
@@ -48,38 +52,42 @@ async fn jsonl_writer_redacts_copies_without_mutating_live_items() -> std::io::R
     let file = tokio::fs::File::create(&path).await?;
     let mut writer = JsonlWriter { file };
     let items = vec![
-        RolloutItem::ResponseItem(ResponseItem::LocalShellCall {
-            id: None,
-            call_id: Some("call-shell".to_string()),
-            status: LocalShellStatus::Completed,
-            action: LocalShellAction::Exec(LocalShellExecAction {
-                command: vec![
-                    "curl".to_string(),
-                    "-H".to_string(),
-                    format!("Authorization: Bearer {SECRET}"),
-                ],
-                timeout_ms: None,
-                working_directory: None,
-                env: Some(HashMap::from([(
-                    "ACCESS_TOKEN".to_string(),
-                    SECRET.to_string(),
-                )])),
-                user: None,
-            }),
-            internal_chat_message_metadata_passthrough: None,
-        }
-        .into()),
+        RolloutItem::ResponseItem(
+            ResponseItem::LocalShellCall {
+                id: None,
+                call_id: Some("call-shell".to_string()),
+                status: LocalShellStatus::Completed,
+                action: LocalShellAction::Exec(LocalShellExecAction {
+                    command: vec![
+                        "curl".to_string(),
+                        "-H".to_string(),
+                        format!("Authorization: Bearer {SECRET}"),
+                    ],
+                    timeout_ms: None,
+                    working_directory: None,
+                    env: Some(HashMap::from([(
+                        "ACCESS_TOKEN".to_string(),
+                        SECRET.to_string(),
+                    )])),
+                    user: None,
+                }),
+                internal_chat_message_metadata_passthrough: None,
+            }
+            .into(),
+        ),
         function_call(),
-        RolloutItem::ResponseItem(ResponseItem::CustomToolCall {
-            id: None,
-            status: Some("completed".to_string()),
-            call_id: "call-custom".to_string(),
-            name: "exec".to_string(),
-            namespace: None,
-            input: format!(r#"{{"apiKey":"{SECRET}"}}"#),
-            internal_chat_message_metadata_passthrough: None,
-        }
-        .into()),
+        RolloutItem::ResponseItem(
+            ResponseItem::CustomToolCall {
+                id: None,
+                status: Some("completed".to_string()),
+                call_id: "call-custom".to_string(),
+                name: "exec".to_string(),
+                namespace: None,
+                input: format!(r#"{{"apiKey":"{SECRET}"}}"#),
+                internal_chat_message_metadata_passthrough: None,
+            }
+            .into(),
+        ),
     ];
 
     for item in &items {
@@ -103,20 +111,22 @@ async fn old_unsanitized_rollout_replays_redacted_and_preserves_encrypted_conten
     let temp = TempDir::new()?;
     let path = temp.path().join("old-rollout.jsonl");
     let encrypted = "gAAAAABopaque-ciphertext".to_string();
-    let output = RolloutItem::ResponseItem(ResponseItem::FunctionCallOutput {
-        id: None,
-        call_id: "call-output".to_string(),
-        output: FunctionCallOutputPayload::from_content_items(vec![
-            FunctionCallOutputContentItem::EncryptedContent {
-                encrypted_content: encrypted.clone(),
-            },
-            FunctionCallOutputContentItem::InputText {
-                text: "Authorization: Basic short-secret".to_string(),
-            },
-        ]),
-        internal_chat_message_metadata_passthrough: None,
-    }
-    .into());
+    let output = RolloutItem::ResponseItem(
+        ResponseItem::FunctionCallOutput {
+            id: None,
+            call_id: "call-output".to_string(),
+            output: FunctionCallOutputPayload::from_content_items(vec![
+                FunctionCallOutputContentItem::EncryptedContent {
+                    encrypted_content: encrypted.clone(),
+                },
+                FunctionCallOutputContentItem::InputText {
+                    text: "Authorization: Basic short-secret".to_string(),
+                },
+            ]),
+            internal_chat_message_metadata_passthrough: None,
+        }
+        .into(),
+    );
     let lines = [function_call(), curl_user_call(), output]
         .into_iter()
         .map(|item| {

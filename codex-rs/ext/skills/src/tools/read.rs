@@ -8,8 +8,8 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::catalog::SkillResourceId;
 use crate::aliases::build_catalog_alias_plan;
+use crate::catalog::SkillResourceId;
 use crate::provider::SkillReadRequest;
 
 use super::MAX_HANDLE_BYTES;
@@ -86,22 +86,28 @@ impl ToolExecutor<ToolCall> for ReadTool {
                     .filter(|entry| entry.is_model_visible())
                     .collect::<Vec<_>>();
                 let alias_plan = build_catalog_alias_plan(&visible_entries);
-                candidates.extend(catalog.entries.into_iter().filter(|entry| {
-                    let package_matches = entry.id.0 == args.package
-                        || alias_plan
-                            .as_ref()
-                            .and_then(|plan| plan.shorten(&entry.id.0))
-                            .is_some_and(|alias| alias == args.package);
-                    let authority_matches = args
-                        .authority
-                        .as_ref()
-                        .is_none_or(|authority| authority.matches(&entry.authority));
-                    entry.enabled
-                        && package_matches
-                        && authority_matches
-                        && SkillToolAuthority::from_authority(&entry.authority)
-                            .is_some_and(|authority| authority.selector() == selector)
-                }).map(|entry| (entry, selector)));
+                candidates.extend(
+                    catalog
+                        .entries
+                        .into_iter()
+                        .filter(|entry| {
+                            let package_matches = entry.id.0 == args.package
+                                || alias_plan
+                                    .as_ref()
+                                    .and_then(|plan| plan.shorten(&entry.id.0))
+                                    .is_some_and(|alias| alias == args.package);
+                            let authority_matches = args
+                                .authority
+                                .as_ref()
+                                .is_none_or(|authority| authority.matches(&entry.authority));
+                            entry.enabled
+                                && package_matches
+                                && authority_matches
+                                && SkillToolAuthority::from_authority(&entry.authority)
+                                    .is_some_and(|authority| authority.selector() == selector)
+                        })
+                        .map(|entry| (entry, selector)),
+                );
             }
             let Some((skill_entry, output_authority)) = candidates.pop() else {
                 return Err(FunctionCallError::RespondToModel(

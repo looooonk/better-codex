@@ -870,9 +870,9 @@ async fn cached_catalog_is_superseded_only_after_live_startup_revision_publishes
             Duration::from_millis(10),
             manager.model_visible_tool_info(CODEX_APPS_MCP_SERVER_NAME, "cached_search"),
         )
-            .await
-            .expect("dispatch lookup must not wait for startup publication")
-            .is_none()
+        .await
+        .expect("dispatch lookup must not wait for startup publication")
+        .is_none()
     );
     drop(old_revision);
 
@@ -882,12 +882,7 @@ async fn cached_catalog_is_superseded_only_after_live_startup_revision_publishes
             .await
     );
     assert_eq!(manager.catalog_revision().await, 2);
-    assert!(
-        manager
-            .lock_catalog_revision(/*expected*/ 1)
-            .await
-            .is_err()
-    );
+    assert!(manager.lock_catalog_revision(/*expected*/ 1).await.is_err());
     assert!(!cached_binding.is_current().await);
     assert!(
         cached_binding
@@ -1014,12 +1009,7 @@ async fn hard_refresh_publication_bumps_only_for_the_accepted_cache_generation()
     let published = publication.await.expect("catalog publication");
     assert_eq!(published[0].callable_name, "newer");
     assert_eq!(manager.catalog_revision().await, 1);
-    assert!(
-        manager
-            .lock_catalog_revision(/*expected*/ 0)
-            .await
-            .is_err()
-    );
+    assert!(manager.lock_catalog_revision(/*expected*/ 0).await.is_err());
 
     let stale = manager
         .publish_codex_apps_catalog(
@@ -1093,10 +1083,8 @@ async fn losing_shared_refresh_adopts_the_newer_catalog_locally() {
         Some("shared-refresh-account"),
         Some("shared-refresh-user"),
     );
-    let losing_shared_ticket =
-        cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
-    let winning_shared_ticket =
-        cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
+    let losing_shared_ticket = cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
+    let winning_shared_ticket = cache_context.begin_fetch(CodexAppsToolsFetchSource::HardRefresh);
     cache_context.publish_if_newest_accepted(
         winning_shared_ticket,
         &create_test_server_info("Codex Apps"),
@@ -1171,10 +1159,7 @@ async fn shared_catalog_generation_invalidates_another_managers_binding() {
             Some(&cache_context),
             Some(shared_ticket),
             &create_test_server_info("Codex Apps"),
-            vec![create_test_tool(
-                CODEX_APPS_MCP_SERVER_NAME,
-                "v1_tool",
-            )],
+            vec![create_test_tool(CODEX_APPS_MCP_SERVER_NAME, "v1_tool")],
         )
         .await;
 
@@ -1295,8 +1280,7 @@ async fn first_shared_stdio_catalog_adoption_advances_local_revision() {
 
 #[tokio::test(start_paused = true)]
 async fn optional_catalogs_share_one_grace_and_publish_live_revision_later() {
-    let first_client =
-        create_test_managed_client(vec![create_test_tool("first", "search")]).await;
+    let first_client = create_test_managed_client(vec![create_test_tool("first", "search")]).await;
     let second_client =
         create_test_managed_client(vec![create_test_tool("second", "lookup")]).await;
     let approval_policy = Constrained::allow_any(AskForApproval::OnRequest);
@@ -2072,12 +2056,7 @@ async fn model_catalog_uses_live_tools_instead_of_shared_cached_tools() {
             .list_all_tools()
             .await
             .into_iter()
-            .map(|tool| {
-                (
-                    tool.tool.name.to_string(),
-                    tool_is_model_visible(&tool),
-                )
-            })
+            .map(|tool| { (tool.tool.name.to_string(), tool_is_model_visible(&tool),) })
             .collect::<Vec<_>>(),
         vec![("search".to_string(), false)]
     );

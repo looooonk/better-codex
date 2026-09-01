@@ -59,6 +59,7 @@ pub fn decode_rollout_line(value: Value) -> serde_json::Result<RolloutLine> {
 
 pub const SESSIONS_SUBDIR: &str = "sessions";
 pub const ARCHIVED_SESSIONS_SUBDIR: &str = "archived_sessions";
+pub const ROLLOUT_REVISIONS_SUBDIR: &str = "rollout_revisions";
 pub static INTERACTIVE_SESSION_SOURCES: LazyLock<Vec<SessionSource>> = LazyLock::new(|| {
     vec![
         SessionSource::Cli,
@@ -102,10 +103,11 @@ pub use list::ThreadsPage;
 pub use list::find_archived_thread_path_by_id_str;
 pub use list::find_archived_thread_paths_by_id;
 pub use list::find_rollout_path_by_rollout_id;
+pub use list::find_rollout_revision_paths_by_thread;
 pub use list::find_thread_path_by_id_str;
-pub use list::find_thread_paths_by_id;
 #[deprecated(note = "use find_thread_path_by_id_str")]
 pub use list::find_thread_path_by_id_str as find_conversation_path_by_id_str;
+pub use list::find_thread_paths_by_id;
 pub use list::get_threads;
 pub use list::get_threads_in_root;
 pub use list::parse_cursor;
@@ -143,6 +145,23 @@ pub use session_index::find_thread_names_by_ids;
 pub use session_index::remove_thread_name_entries;
 pub use state_db::StateDbHandle;
 pub use state_db::sqlite_telemetry_recorder;
+
+/// Returns the downgrade-compatible plain rollout path for a canonical thread rollout.
+pub fn stable_rollout_path(
+    rollout_path: &std::path::Path,
+    thread_id: codex_protocol::ThreadId,
+) -> Option<std::path::PathBuf> {
+    let file_name = rollout_path.file_name()?.to_str()?;
+    let parsed = rollout_file_name::RolloutFileName::parse(file_name)?;
+    if parsed.thread_id() != thread_id {
+        return None;
+    }
+    let stable_name =
+        rollout_file_name::RolloutFileName::new(parsed.timestamp(), thread_id, thread_id)
+            .render()
+            .ok()?;
+    Some(plain_rollout_path(rollout_path).with_file_name(stable_name))
+}
 
 #[cfg(test)]
 mod tests;

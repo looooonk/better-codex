@@ -126,8 +126,7 @@ async fn create_client(
                 let elicitations = Arc::clone(&elicitations);
                 async move {
                     let Elicitation::Mcp(ElicitRequestParams::FormElicitationParams {
-                        meta,
-                        ..
+                        meta, ..
                     }) = request
                     else {
                         anyhow::bail!("expected a standard form elicitation");

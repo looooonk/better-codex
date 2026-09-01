@@ -24,6 +24,7 @@ use codex_analytics::CompactionPhase;
 use codex_analytics::CompactionReason;
 use codex_analytics::CompactionTrigger;
 use codex_features::Feature;
+use codex_history::CompactedItem;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
@@ -32,7 +33,6 @@ use codex_protocol::models::BaseInstructions;
 use codex_protocol::models::FunctionCallOutputBody;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseItem;
-use codex_history::CompactedItem;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::TurnStartedEvent;
 use codex_rollout_trace::CompactionCheckpointTracePayload;
@@ -289,26 +289,23 @@ async fn run_remote_compact_task_inner_impl(
         input_history: &trace_input_history,
         replacement_history: &new_history,
     });
-    let retained_client_developer_messages =
-        if sess.enabled(Feature::RetainClientDeveloperMessages) {
-            let history = sess.clone_history().await;
-            crate::compact_remote_v2::truncate_retained_messages_for_remote_compaction(
-                history
-                    .annotated_items()
-                    .iter()
-                    .filter(|item| {
-                        crate::compact_remote_v2::is_client_authored_developer_message(item)
-                    })
-                    .cloned()
-                    .collect(),
-                crate::compact_remote_v2::RETAINED_MESSAGE_TOKEN_BUDGET,
-            )
-        } else {
-            Vec::new()
-        };
+    let retained_client_developer_messages = if sess.enabled(Feature::RetainClientDeveloperMessages)
+    {
+        let history = sess.clone_history().await;
+        crate::compact_remote_v2::collect_retained_client_developer_messages(
+            history.annotated_items().iter().cloned(),
+            crate::compact_remote_v2::RETAINED_MESSAGE_TOKEN_BUDGET,
+        )
+    } else {
+        Vec::new()
+    };
     let new_history = retained_client_developer_messages
         .into_iter()
-        .chain(new_history.into_iter().map(codex_history::ResponseItemEnvelope::new))
+        .chain(
+            new_history
+                .into_iter()
+                .map(codex_history::ResponseItemEnvelope::new),
+        )
         .collect();
     sess.replace_annotated_compacted_history(
         new_history,

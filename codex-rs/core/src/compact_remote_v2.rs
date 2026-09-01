@@ -13,6 +13,8 @@ use crate::compact::place_annotated_compaction_context;
 use crate::compact_model_fallback::record_model_fallback;
 use crate::compact_model_fallback::should_retry_with_current_model;
 use crate::compact_remote::should_keep_compacted_history_item;
+use crate::context::ContextualUserFragment;
+use crate::context::RetainedClientDeveloperMessage;
 use crate::hook_runtime::PostCompactHookOutcome;
 use crate::hook_runtime::PreCompactHookOutcome;
 use crate::hook_runtime::run_post_compact_hooks;
@@ -30,14 +32,14 @@ use codex_analytics::CompactionReason;
 use codex_analytics::CompactionTrigger;
 use codex_features::Feature;
 use codex_history::CodexHarnessMetadata;
+use codex_history::CompactedItem;
+use codex_history::ResponseItemEnvelope;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::ContextCompactionItem;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseItem;
-use codex_history::CompactedItem;
-use codex_history::ResponseItemEnvelope;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::TokenUsage;
 use codex_protocol::protocol::TruncationPolicy;
@@ -470,10 +472,14 @@ fn build_v2_compacted_history(
         .map(|(item, metadata)| ResponseItemEnvelope { item, metadata });
     let retained = prompt_input
         .filter(|item| is_retained_for_remote_compaction_v2(&item.item))
-        .filter(|item| {
-            should_keep_compacted_history_item(&item.item)
-                || (retain_client_developer_messages
-                    && is_client_authored_developer_message(item))
+        .filter_map(|item| {
+            if should_keep_compacted_history_item(&item.item) {
+                Some(item)
+            } else if retain_client_developer_messages {
+                normalize_retained_client_developer_message(item)
+            } else {
+                None
+            }
         })
         .collect::<Vec<_>>();
     let mut retained =
@@ -491,6 +497,29 @@ pub(crate) fn is_client_authored_developer_message(item: &ResponseItemEnvelope) 
         .as_ref()
         .is_some_and(|metadata| metadata.client_authored)
         && matches!(&item.item, ResponseItem::Message { role, .. } if role == "developer")
+}
+
+pub(crate) fn collect_retained_client_developer_messages(
+    items: impl IntoIterator<Item = ResponseItemEnvelope>,
+    max_tokens: usize,
+) -> Vec<ResponseItemEnvelope> {
+    let retained = items
+        .into_iter()
+        .filter_map(normalize_retained_client_developer_message)
+        .collect();
+    truncate_retained_messages_for_remote_compaction(retained, max_tokens)
+}
+
+fn normalize_retained_client_developer_message(
+    mut envelope: ResponseItemEnvelope,
+) -> Option<ResponseItemEnvelope> {
+    if !is_client_authored_developer_message(&envelope) {
+        return None;
+    }
+
+    let fragment = RetainedClientDeveloperMessage::from_response_item(&envelope.item)?;
+    envelope.item = ContextualUserFragment::into(fragment);
+    Some(envelope)
 }
 
 fn is_retained_for_remote_compaction_v2(item: &ResponseItem) -> bool {
@@ -702,6 +731,66 @@ mod tests {
     }
 
     #[test]
+    fn build_v2_compacted_history_normalizes_retained_client_developer_messages() {
+        let developer = ResponseItem::Message {
+            id: None,
+            role: "developer".to_string(),
+            content: vec![
+                ContentItem::InputText {
+                    text: format!("start-{}-end", "x".repeat(50_000)),
+                },
+                ContentItem::InputImage {
+                    image_url: "data:image/png;base64,aA==".to_string(),
+                    detail: None,
+                },
+            ],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        };
+        let textless_developer = ResponseItem::Message {
+            id: None,
+            role: "developer".to_string(),
+            content: vec![ContentItem::InputImage {
+                image_url: "data:image/png;base64,aA==".to_string(),
+                detail: None,
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        };
+        let output = ResponseItem::Compaction {
+            id: None,
+            encrypted_content: "new".to_string(),
+            internal_chat_message_metadata_passthrough: None,
+        };
+        let client_metadata = Some(CodexHarnessMetadata {
+            client_authored: true,
+        });
+        let expected_developer = ContextualUserFragment::into(
+            RetainedClientDeveloperMessage::from_response_item(&developer)
+                .expect("textual developer message should be retained"),
+        );
+
+        let (history, retained_images) = build_v2_compacted_history(
+            vec![developer, textless_developer],
+            vec![client_metadata.clone(), client_metadata.clone()],
+            output.clone(),
+            true,
+        );
+
+        assert_eq!(
+            history,
+            vec![
+                ResponseItemEnvelope {
+                    item: expected_developer,
+                    metadata: client_metadata,
+                },
+                ResponseItemEnvelope::new(output),
+            ]
+        );
+        assert_eq!(retained_images, 0);
+    }
+
+    #[test]
     fn build_v2_compacted_history_discards_messages_before_truncating() {
         let old = message("user", "old", /*phase*/ None);
         let new = message("user", "new", /*phase*/ None);
@@ -769,11 +858,10 @@ mod tests {
             new.clone(),
         ];
 
-        let truncated =
-            truncate_retained_messages_for_remote_compaction(
-                annotated(retained),
-                /*max_tokens*/ 3,
-            );
+        let truncated = truncate_retained_messages_for_remote_compaction(
+            annotated(retained),
+            /*max_tokens*/ 3,
+        );
 
         assert_eq!(
             raw(truncated),
@@ -805,11 +893,10 @@ mod tests {
             internal_chat_message_metadata_passthrough: None,
         };
 
-        let truncated =
-            truncate_retained_messages_for_remote_compaction(
-                annotated(vec![item]),
-                /*max_tokens*/ 3,
-            );
+        let truncated = truncate_retained_messages_for_remote_compaction(
+            annotated(vec![item]),
+            /*max_tokens*/ 3,
+        );
 
         assert_eq!(
             raw(truncated),
@@ -853,11 +940,10 @@ mod tests {
             newest.clone(),
         ];
 
-        let truncated =
-            truncate_retained_messages_for_remote_compaction(
-                annotated(retained),
-                /*max_tokens*/ 2,
-            );
+        let truncated = truncate_retained_messages_for_remote_compaction(
+            annotated(retained),
+            /*max_tokens*/ 2,
+        );
 
         assert_eq!(raw(truncated), vec![image_only_message, newest]);
     }
@@ -877,11 +963,10 @@ mod tests {
         let newest = message("user", "new", /*phase*/ None);
         let retained = vec![image_only_message, newest.clone()];
 
-        let truncated =
-            truncate_retained_messages_for_remote_compaction(
-                annotated(retained),
-                /*max_tokens*/ 1,
-            );
+        let truncated = truncate_retained_messages_for_remote_compaction(
+            annotated(retained),
+            /*max_tokens*/ 1,
+        );
 
         assert_eq!(raw(truncated), vec![newest]);
     }

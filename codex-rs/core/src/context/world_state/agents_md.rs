@@ -60,7 +60,7 @@ impl WorldStateSection for AgentsMdState {
 
         let previous_may_contain_instructions = match previous {
             PreviousSectionState::Known(previous) => previous.text.is_some(),
-            PreviousSectionState::Unknown => true,
+            PreviousSectionState::Unknown | PreviousSectionState::Stale => true,
             PreviousSectionState::Absent => false,
         };
         let instructions = match (&self.instructions, previous_may_contain_instructions) {

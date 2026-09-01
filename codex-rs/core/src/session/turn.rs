@@ -98,9 +98,6 @@ use codex_protocol::protocol::AgentReasoningSectionBreakEvent;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::ErrorEvent;
 use codex_protocol::protocol::EventMsg;
-use codex_protocol::protocol::QueuedTurnStartRejectionReason;
-use codex_protocol::protocol::QueuedTurnStartReply;
-use codex_protocol::protocol::QueuedTurnStartSubmission;
 use codex_protocol::protocol::PlanDeltaEvent;
 use codex_protocol::protocol::RawResponseCompletedEvent;
 use codex_protocol::protocol::ReasoningContentDeltaEvent;
@@ -115,9 +112,9 @@ use codex_skills::tool_kind_for_path;
 use codex_skills_extension::ExplicitSkillPromptBudget;
 use codex_skills_extension::HostSkillPrompts;
 use codex_skills_extension::InjectedHostSkillPrompts;
+use codex_thread_store::PersistContext;
 use codex_tools::ToolName;
 use codex_tools::filter_request_plugin_install_discoverable_tools_for_client;
-use codex_thread_store::PersistContext;
 use codex_utils_stream_parser::AssistantTextChunk;
 use codex_utils_stream_parser::AssistantTextStreamParser;
 use codex_utils_stream_parser::ProposedPlanSegment;
@@ -155,7 +152,6 @@ pub(crate) async fn run_turn(
     turn_context: Arc<TurnContext>,
     turn_extension_data: Arc<codex_extension_api::ExtensionData>,
     input: Vec<TurnInput>,
-    admission_reply: Option<QueuedTurnStartReply>,
     prewarmed_client_session: Option<ModelClientSession>,
     cancellation_token: CancellationToken,
 ) -> CodexResult<Option<String>> {
@@ -192,24 +188,11 @@ pub(crate) async fn run_turn(
     };
 
     if run_pending_session_start_hooks(&sess, &turn_context).await {
-        if let Some(reply) = admission_reply {
-            reply.send(QueuedTurnStartSubmission::NotSubmitted {
-                reason: QueuedTurnStartRejectionReason::RejectedByHook,
-            });
-        }
         return Ok(None);
     }
     let mut can_drain_pending_input = input.is_empty();
     if run_hooks_and_record_inputs(&sess, &turn_context, &input, PersistContext::TurnStart).await? {
-        if let Some(reply) = admission_reply {
-            reply.send(QueuedTurnStartSubmission::NotSubmitted {
-                reason: QueuedTurnStartRejectionReason::RejectedByHook,
-            });
-        }
         return Ok(None);
-    }
-    if let Some(reply) = admission_reply {
-        reply.send(QueuedTurnStartSubmission::Persisted);
     }
 
     sess.merge_connector_selection(explicitly_enabled_connectors.clone())
@@ -684,11 +667,8 @@ async fn build_skills_and_plugins(
             .await?;
     let skill_name_counts_lower =
         build_skill_name_counts(&skills_outcome.skills, &skills_outcome.disabled_paths).1;
-    let mentioned_skills = collect_explicit_skill_mentions(
-        &user_input,
-        skills_outcome,
-        &connector_slug_counts,
-    );
+    let mentioned_skills =
+        collect_explicit_skill_mentions(&user_input, skills_outcome, &connector_slug_counts);
     maybe_prompt_and_install_mcp_dependencies(
         sess,
         turn_context,
@@ -727,9 +707,11 @@ async fn build_skills_and_plugins(
         .into_iter()
         .zip(injected_host_skills.iter())
         .filter_map(|(fragment, skill)| {
-            let already_injected = injected_host_skill_prompts.as_ref().is_some_and(|injected| {
-                injected.contains_path(&skill.path_to_skills_md.to_string_lossy())
-            });
+            let already_injected = injected_host_skill_prompts
+                .as_ref()
+                .is_some_and(|injected| {
+                    injected.contains_path(&skill.path_to_skills_md.to_string_lossy())
+                });
             (!already_injected).then(|| {
                 let rendered_bytes = fragment.render().len();
                 (skill, fragment.into_boxed_response_item(), rendered_bytes)
@@ -1482,10 +1464,7 @@ pub(crate) async fn built_tools(
         ToolRouterParams {
             tool_runtimes: mcp_tool_runtimes,
             tool_suggest_candidates,
-            extension_tool_executors: extension_tool_executors(
-                sess,
-                &step_context.extension_data,
-            ),
+            extension_tool_executors: extension_tool_executors(sess, &step_context.extension_data),
             dynamic_tools: turn_context.dynamic_tools.as_slice(),
         },
         &sess.services.tool_search_handler_cache,

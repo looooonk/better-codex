@@ -1,25 +1,25 @@
 //! Session-scoped approval routing for effectful actions.
 
+use crate::context::NodeReplReviewEvidence;
+use crate::context::NodeReplReviewEvidenceItem;
 use crate::guardian::guardian_rejection_message;
 use crate::guardian::guardian_timeout_message;
 use crate::guardian::new_guardian_review_id;
 use crate::guardian::review_approval_request;
-use crate::context::NodeReplReviewEvidence;
-use crate::context::NodeReplReviewEvidenceItem;
 use crate::hook_runtime::run_permission_request_hooks;
 use crate::session::live_approval_policy::LiveApprovalPolicySnapshot;
 use crate::session::session::Session;
 use crate::session::turn_context::TurnContext;
 use crate::state::RequestPermissionsResponseConstraint;
+use crate::tools::approval_review_boundary::prepare_approval_review_action;
+use crate::tools::approval_review_boundary::prepare_approval_review_input;
+use crate::tools::approval_review_boundary::sanitize_approval_review_result;
+use crate::tools::approval_review_lifecycle::ApprovalReviewLifecycle;
 use crate::tools::approvals::ApprovalAction;
 use crate::tools::approvals::ApprovalCacheKey;
 use crate::tools::approvals::guardian_cwd;
-use crate::tools::approval_review_boundary::prepare_approval_review_input;
-use crate::tools::approval_review_boundary::prepare_approval_review_action;
-use crate::tools::approval_review_boundary::sanitize_approval_review_result;
-use crate::tools::approval_review_lifecycle::ApprovalReviewLifecycle;
-use crate::tools::flat_tool_name;
 use crate::tools::context::ToolCallSource;
+use crate::tools::flat_tool_name;
 use crate::tools::sandboxing::ToolError;
 use codex_config::types::ApprovalsReviewer;
 use codex_extension_api::ApprovalReviewCancellation;
@@ -386,9 +386,11 @@ async fn request_guardian_approval(
     )
     .await;
     let decision = match decision {
-        ReviewDecision::Denied { .. } => ReviewDecision::denied_with_reason(
-            guardian_rejection_message(session.as_ref(), &review_id).await,
-        ),
+        ReviewDecision::Denied | ReviewDecision::DeniedWithReason { .. } => {
+            ReviewDecision::denied_with_reason(
+                guardian_rejection_message(session.as_ref(), &review_id).await,
+            )
+        }
         ReviewDecision::Abort => {
             let _ = guardian_rejection_message(session.as_ref(), &review_id).await;
             ReviewDecision::Abort
@@ -463,17 +465,13 @@ async fn request_guardian_v2_approval_loop(
     ctx: &ApprovalContext,
     deadline: Instant,
 ) -> ApprovalReviewResult {
-    let history: Vec<ResponseItem> = session
-        .clone_history()
-        .await
-        .raw_items()
-        .cloned()
-        .collect();
+    let history: Vec<ResponseItem> = session.clone_history().await.raw_items().cloned().collect();
     for _ in 0..MAX_REVIEWER_REROUTES {
         if ctx.cancellation_token.is_cancelled() {
             return ApprovalReviewResult::Cancelled;
         }
-        let (evidence_revision, evidence, images) = approval_review_evidence(&ctx.turn, &ctx.source);
+        let (evidence_revision, evidence, images) =
+            approval_review_evidence(&ctx.turn, &ctx.source);
         let input = ApprovalReviewInput {
             binding: codex_extension_api::ApprovalReviewBinding {
                 thread_id: session.thread_id.to_string(),
@@ -496,14 +494,11 @@ async fn request_guardian_v2_approval_loop(
             Ok(input) => input,
             Err(failure) => return ApprovalReviewResult::ManualReview(failure),
         };
-        let review = session
-            .services
-            .extensions
-            .approval_review(
-                &session.services.session_extension_data,
-                &session.services.thread_extension_data,
-                input,
-            );
+        let review = session.services.extensions.approval_review(
+            &session.services.session_extension_data,
+            &session.services.thread_extension_data,
+            input,
+        );
         let result = tokio::select! {
             biased;
             _ = ctx.cancellation_token.cancelled() => ApprovalReviewResult::Cancelled,
@@ -767,9 +762,7 @@ async fn request_user_approval(
                 )
                 .await;
             let decision = match response {
-                Some(response) if !response.permissions.is_empty() => {
-                    ReviewDecision::Approved
-                }
+                Some(response) if !response.permissions.is_empty() => ReviewDecision::Approved,
                 Some(_) => ReviewDecision::denied(),
                 None => ReviewDecision::Abort,
             };
@@ -797,10 +790,7 @@ async fn register_delegated_approval_action(
 ) {
     if ctx.turn.session_source.is_non_root_agent() {
         session
-            .register_pending_delegated_approval_action(
-                approval_id.to_string(),
-                action.clone(),
-            )
+            .register_pending_delegated_approval_action(approval_id.to_string(), action.clone())
             .await;
     }
 }
@@ -889,7 +879,8 @@ fn decision_grants_action(decision: &ReviewDecision) -> bool {
             network_policy_amendment,
         } => network_policy_amendment.action == NetworkPolicyRuleAction::Allow,
         ReviewDecision::ApprovedMcpPolicyAmendment
-        | ReviewDecision::Denied { .. }
+        | ReviewDecision::Denied
+        | ReviewDecision::DeniedWithReason { .. }
         | ReviewDecision::TimedOut
         | ReviewDecision::Abort => false,
     }
@@ -962,7 +953,9 @@ fn normalize_decision(
         } if network_policy_amendment.action == NetworkPolicyRuleAction::Deny => {
             Err(ToolError::Rejected(rejection))
         }
-        ReviewDecision::Denied { .. } => Err(ToolError::Rejected(rejection)),
+        ReviewDecision::Denied | ReviewDecision::DeniedWithReason { .. } => {
+            Err(ToolError::Rejected(rejection))
+        }
         ReviewDecision::TimedOut => Err(ToolError::Rejected(match source {
             ApprovalResolutionSource::Guardian => guardian_timeout_message(),
             ApprovalResolutionSource::Hook | ApprovalResolutionSource::User => {

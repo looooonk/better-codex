@@ -31,16 +31,22 @@ fn record_redacts_and_bounds_text_before_retention() {
     };
     assert!(text.contains("[REDACTED_SECRET]"));
     assert!(approx_token_count(text) <= MAX_TEXT_TOKENS);
-    assert!(!snapshot.records[0]
-        .provenance
-        .contains("sk-abcdefghijklmnopqrstuvwxyz012345"));
+    assert!(
+        !snapshot.records[0]
+            .provenance
+            .contains("sk-abcdefghijklmnopqrstuvwxyz012345")
+    );
 }
 
 #[test]
 fn records_keep_sequence_order_and_evict_after_forty() {
     let evidence = NodeReplReviewEvidence::default();
     for index in 0..45 {
-        evidence.record("cell", &format!("call-{index}"), vec![text(index.to_string())]);
+        evidence.record(
+            "cell",
+            &format!("call-{index}"),
+            vec![text(index.to_string())],
+        );
     }
 
     let snapshot = evidence.snapshot();

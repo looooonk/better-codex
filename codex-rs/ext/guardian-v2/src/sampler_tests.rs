@@ -257,7 +257,10 @@ async fn account_switch_discards_authenticated_idle_connections() -> Result<()> 
 
     assert_eq!(output, VALID_OUTCOME);
     assert_eq!(
-        first_idle.single_handshake().header("authorization").as_deref(),
+        first_idle
+            .single_handshake()
+            .header("authorization")
+            .as_deref(),
         Some("Bearer account-a")
     );
     assert_eq!(
@@ -268,7 +271,10 @@ async fn account_switch_discards_authenticated_idle_connections() -> Result<()> 
         Some("Bearer account-a")
     );
     assert_eq!(
-        switched.single_handshake().header("authorization").as_deref(),
+        switched
+            .single_handshake()
+            .header("authorization")
+            .as_deref(),
         Some("Bearer account-b")
     );
     Ok(())
@@ -310,7 +316,10 @@ async fn logout_fails_closed_and_later_auth_recovers() -> Result<()> {
 
     assert_eq!(output, VALID_OUTCOME);
     assert_eq!(
-        recovered.single_handshake().header("authorization").as_deref(),
+        recovered
+            .single_handshake()
+            .header("authorization")
+            .as_deref(),
         Some("Bearer account-c")
     );
     Ok(())
@@ -364,7 +373,10 @@ async fn valid_json_prefix_with_trailing_data_requires_manual_review() -> Result
         .await
         .expect_err("trailing data must invalidate the complete response");
 
-    assert!(matches!(error, crate::request::GuardianReviewError::InvalidOutput));
+    assert!(matches!(
+        error,
+        crate::request::GuardianReviewError::InvalidOutput
+    ));
     assert!(error.requires_manual_review());
     Ok(())
 }
@@ -433,14 +445,12 @@ async fn retryable_stream_error_retries_only_once_on_another_connection() -> Res
 async fn retryable_stream_error_does_not_reset_the_deadline() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let stalled = responses::start_websocket_server_with_headers(vec![
-        WebSocketConnectionConfig {
-            requests: vec![Vec::new()],
-            response_headers: Vec::new(),
-            accept_delay: None,
-            close_after_requests: false,
-        },
-    ])
+    let stalled = responses::start_websocket_server_with_headers(vec![WebSocketConnectionConfig {
+        requests: vec![Vec::new()],
+        response_headers: Vec::new(),
+        accept_delay: None,
+        close_after_requests: false,
+    }])
     .await;
     let expired = responses::start_websocket_server(vec![vec![vec![json!({
         "type": "error",

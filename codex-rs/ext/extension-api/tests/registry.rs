@@ -3,10 +3,10 @@
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use codex_extension_api::ApprovalReviewContributor;
 use codex_extension_api::ApprovalReviewAction;
 use codex_extension_api::ApprovalReviewBinding;
 use codex_extension_api::ApprovalReviewCancellation;
+use codex_extension_api::ApprovalReviewContributor;
 use codex_extension_api::ApprovalReviewFailure;
 use codex_extension_api::ApprovalReviewInput;
 use codex_extension_api::ApprovalReviewOutcome;

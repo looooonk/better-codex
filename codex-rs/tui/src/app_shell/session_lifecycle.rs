@@ -87,6 +87,10 @@ impl ShellState {
     }
 
     pub(super) fn reject_unavailable_session_action(&mut self) -> bool {
+        if self.is_thread_revert_hydrating() {
+            self.push_status("wait for the reverted session to refresh");
+            return true;
+        }
         let Some(reason) = self.session_unavailable_reason else {
             return false;
         };

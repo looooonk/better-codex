@@ -1,8 +1,8 @@
 # Upstream reconciliation record
 
 This engineering record accompanies `TASK.md`. It freezes the upstream comparison,
-records intentional Better Codex boundaries, and gives each implementation commit a
-stable reference. It is not a request to restore the upstream CLI or TUI.
+records intentional Better Codex boundaries, and preserves the semantic references
+used by the implementation. It is not a request to restore the upstream CLI or TUI.
 
 ## Frozen comparison
 
@@ -15,6 +15,25 @@ stable reference. It is not a request to restore the upstream CLI or TUI.
 
 `678157aca` is an ancestor of the frozen target. The target is one commit beyond
 the previously recorded `636e505c5cd809bdce37314f77130ffb4e45c46b`.
+
+## Consolidation outcome
+
+The selected semantic ports and Better-specific adaptations are integrated into a
+single consolidation history. The history includes the independent indexed-copy
+feature and every implementation stream that had been split across the five
+upstream-checkpoint branches. The old branches are recovery landmarks only until
+their guarded deletion; they are not work that must be resumed.
+
+The integrated families are managed authentication and redaction; live approval
+and Guardian hardening; bounded MCP 2026 negotiation, runtime, plugins, and unified
+skills; durable response/history/persistence, usage, revert, and queues; Better TUI
+queue adaptation; and bounded Code Mode protocol, host, transport, and app-server
+routing. The detailed classifications below remain the design and compatibility
+record for those choices.
+
+The upstream target remains a frozen semantic checkpoint. Better's standalone app
+shell, backend boundaries, bounded context, fail-closed safety rules, and agent
+harness boundary remain authoritative.
 
 ## Inventory boundaries
 
@@ -79,7 +98,7 @@ main, and is excluded in favor of main's #37055 implementation. Upstream trust,
 cyber-default, and approval TUI code is excluded; Better's existing scrollable
 approval and trust surfaces remain behind backend adapters.
 
-Guardian V2 lands as a focused experimental extension: scaffold (`fe614a63`
+Guardian V2 is retained as a focused experimental extension: scaffold (`fe614a63`
 #38336), risk persistence (`72fa74fb` #38363), Luna sampling/pooling
 (`a7b8c074` #38368, `91101249` #38383, `66919805` #38406), parent-permission
 confinement (`a7e9fb54` #38377), classification/action correlation (`d167a360`
@@ -91,7 +110,7 @@ manual review, redacts every evidence form, and bounds image count/bytes. The fr
 V2 sampler discards its result, so it remains non-authoritative until a synchronous,
 action-correlated, fail-closed decision bridge is implemented and tested.
 
-The shared backend decision representation is introduced compatibly: legacy
+The shared backend decision representation was introduced compatibly: legacy
 `"denied"` still deserializes while the new bounded rejection-reason shape is emitted.
 The active approval policy is read at decision time, never cached in a binding or
 startup snapshot. Raw executable material exists only at the execution boundary;
@@ -125,12 +144,12 @@ OAuth/transport hardening (`b2543af0` #38040, `6dc3ac87` #38052,
 **Adapt:** the upstream connection-set architecture into focused private
 `codex-mcp` modules, retaining Better's encrypted-content precedence, cached
 executor capability roots, bounded `request_user_input`, branding, and live
-approval-policy lookup. Hosted plugin event consumption waits for stream 3, while
-the generic bounded event transport lands here. Upstream TUI, release, and blanket
-core rewrites are excluded.
+approval-policy lookup. Hosted plugin event consumption and the generic bounded
+event transport are integrated through that runtime boundary. Upstream TUI,
+release, and blanket core rewrites are excluded.
 
-The current fork is hard-pinned to rmcp 1.8 and MCP 2025-06-18. The first stage
-keeps legacy wire behavior while updating APIs and both lockfiles. Modern mode is
+The fork began hard-pinned to rmcp 1.8 and MCP 2025-06-18. The consolidation keeps
+legacy wire behavior while updating the APIs and both lockfiles. Modern mode is
 opt-in/negotiated and enforces at most 100 pages, 2,048 ordinary catalog items,
 8,192 app tools, 64 KiB cursors, repeated-cursor rejection, total timeouts, and
 message-size limits (`3e3ae088` #36039 and `58256999` #36534). Stable bindings
@@ -173,11 +192,11 @@ machinery, and unrelated CLI UI are excluded.
 
 `codex-plugin` remains the focused authority/provider model; `codex-core-plugins`
 keeps legacy manifests, installed metadata, atomic replacement, and existing archive
-bounds while portable root manifests, data roots, `mcp.json`, symlink skipping, and
-duplicate-entry rejection are added. Shared models, parsing, selection, annotations,
-and explicit prompt budgets move to `codex-skills`; provider/runtime ownership moves
-to `codex-skills-extension`. `codex-core-skills` is removed only after every consumer
-migrates.
+bounds while adding portable root manifests, data roots, `mcp.json`, symlink
+skipping, and duplicate-entry rejection. Shared models, parsing, selection,
+annotations, and explicit prompt budgets moved to `codex-skills`; provider/runtime
+ownership moved to `codex-skills-extension`. `codex-core-skills` was removed after
+every consumer migrated.
 
 Better's 3,600-byte per explicit skill and 32,000-byte aggregate turn limits,
 validation, and visible omission/truncation warnings apply to every provider.
@@ -206,19 +225,22 @@ hardening (`720c9d68` #36967), explicit-only orchestrator skills (`1b90b1d1`
 (`a1286d12` #36036 and `8bfa49e3`/`3b8d22ec`/`dbcd837c`/`449f099f`
 #36948-#36951). Their backend semantics are adapted to the app shell.
 
-The authoritative queue will be independent of composer widgets and will retain
-upstream's 100-item and 1 MiB input bounds. Upstream still has a crash window
-between starting a turn and deleting its queue row, so Better will add explicit
-pending/inflight/terminal state or an equivalent idempotent CAS. Durable revert
-requires rollout IDs distinct from thread IDs, immutable replacement rollouts,
-lineage materialization, a SQLite compare-and-swap, runtime reload, and subscription
-preservation. Usage remains separate from context pressure and rate-limit displays.
+The authoritative queue is independent of composer widgets and retains upstream's
+100-item and 1 MiB input bounds. Better closes the start/delete crash window with
+explicit durable lifecycle state, compare-and-swap ownership, and idempotent
+recovery. Durable revert keeps rollout IDs distinct from thread IDs, uses immutable
+replacement rollouts and transactional lineage materialization, reloads runtime
+state, and preserves subscriptions. Usage remains separate from context pressure
+and rate-limit displays.
 
-State migration `0042` is a compatibility gate: upstream uses it to remove legacy
-agent-job tables (`687f05cb` #34413), while Better still consumes them. The stage
-must either migrate those consumers first or preserve compatibility at a later
-version without reusing an upstream migration number/checksum. Tests must open both
-Better-at-0041 and upstream-advanced databases. Other prerequisites are item IDs
+State migration `0042` remains an upstream compatibility gate because upstream
+uses it to remove legacy agent-job tables (`687f05cb` #34413) while Better still
+has consumers. Upstream migrations `0049` through `0052` are preserved exactly,
+while Better restores compatibility and adds durable queue state in the reserved
+`10001` through `10003` range. A checksum-gated startup repair remaps databases
+created by the pre-consolidation `0049` through `0051` drafts without altering
+genuine upstream histories. Migration tests cover Better-at-0041, the historical
+draft numbering, and upstream-advanced databases. Other retained prerequisites are item IDs
 (`4a443994` #34645), single-writer ownership (`5c94796d` #34986), and the frozen
 target's lineage/migration fixes (`6bb6e904`, `aac9f842`, `4bb7ee34`, `3a6f747d`,
 and `2bd8727a`).
@@ -240,29 +262,31 @@ readiness, primary selection, uploads, and inheritance (`462ed19a` #35652,
 `b43de776` #38067, `f4936d7a` #38086, `c30a3e49` #38356,
 `4f703217` #38416, `781445f7` #38423, `535795f7` #38461).
 
-**Adapt:** all transports remain additive. Better currently has in-process and
+**Adapt:** all transports remain additive. Better has in-process and
 length-prefixed stdio Code Mode, but contrary to the task's initial premise it has
-no Code Mode WebSocket transport. New host transports therefore start behind a
-capability-negotiated abstraction. Dispatch becomes bounded and every cell/callback
-is keyed by its owning turn. Plain HTTP/2 is loopback-only; non-loopback TCP requires
+no Code Mode WebSocket transport. The new host transport therefore sits behind a
+capability-negotiated abstraction. Dispatch is bounded and every cell/callback is
+keyed by its owning turn. Plain HTTP/2 is loopback-only; non-loopback TCP requires
 authentication and TLS. gRPC uses the configured HTTP client, proxy, custom CA,
 environment authentication, redaction, timeouts, and diagnostic bounds. The final
 environment selection/config model is merged with Better's approval-policy hot swap,
 strict `PathUri`, world-state bounds, concurrent exec reads, and fail-closed network
 guard.
 
-**Defer/exclude:** defer the mechanical `codex-code-mode-runtime` extraction
-(`97576b17` #36217) unless dependency isolation needs it, and retain the embedded
-fallback. Exclude old TUI, Windows-only transport/sandbox branches, release/CI, and
-telemetry-only work. Port the shared V8 sandbox invariant from `2e32d958` #36374.
+**Defer/exclude:** the mechanical `codex-code-mode-runtime` extraction
+(`97576b17` #36217) remains deferred unless dependency isolation needs it, and the
+embedded fallback is retained. Old TUI, Windows-only transport/sandbox branches,
+release/CI, and telemetry-only work remain excluded. The shared V8 sandbox
+invariant from `2e32d958` #36374 is retained.
 
 The existing 64 MiB frames and bounded request/cell/session caches are retained.
 The v1 gRPC `max_heap_size_bytes` field remains reserved for wire compatibility
 but is deprecated and rejected before session creation until the embedded runtime
 can enforce it. Better does not yet ship a generated gRPC client that could
 preflight this unsupported limit.
-Prerequisites add per-session limits (`9d00bb01` #37114), stalled-request invalidation
-(`8e3b5d3e` #36830), default yields (`d0c8f422` #37352), executor-local config and
+Retained prerequisites include per-session limits (`9d00bb01` #37114),
+stalled-request invalidation (`8e3b5d3e` #36830), default yields (`d0c8f422`
+#37352), executor-local config and
 capability negotiation (`95c7265e` #37408, `646f7c0a` #37654), and deterministic
 yield tests (`e0de12a1` #38321). Proto generation is isolated because Better's Bazel
 Rust rules predate upstream's prost support; Cargo/Bazel source availability and
@@ -270,16 +294,16 @@ both lockfiles must agree without importing unrelated toolchain changes.
 
 ### Prerequisites and intentionally excluded work
 
-`86b1123ff` (#38499) is classified as a harness/model-configuration prerequisite.
-It will be reviewed for parity but not used to justify Better-specific harness
-behavior. Mechanical prerequisite refactors are taken only when a selected stream
-requires them. All other commits in the frozen range are excluded when they affect
-only the product surfaces and repository machinery listed above.
+`86b1123ff` (#38499) was classified and reviewed as a harness/model-configuration
+prerequisite, but was not used to justify Better-specific harness changes.
+Mechanical prerequisite refactors were taken only when a selected stream required
+them. All other commits in the frozen range remain excluded when they affect only
+the product surfaces and repository machinery listed above.
 
 ## Breaking and migration audit
 
-The following surfaces require explicit compatibility checks before their owning
-stage can be complete.
+The following surfaces remain explicit post-consolidation compatibility
+requirements.
 
 | Surface | Compatibility requirement |
 | --- | --- |
@@ -292,45 +316,75 @@ stage can be complete.
 | tools and namespaces | Canonical names and collisions are strict without invalidating saved encrypted MCP output or stable bindings |
 | remote paths and permissions | Foreign paths never silently become host paths; active-step permissions constrain Guardian, MCP, Code Mode, uploads, patches, and streaming |
 
-## Staged delivery plan
+## Integrated delivery record
 
-Each numbered stage is independently compiled, tested, fixed, formatted, committed,
-and pushed. Non-mechanical stages stay below 800 changed lines, and complex logic
-stages stay below 500 lines; a numbered stage may therefore land as multiple
-lettered commits.
+The numbered stages were implementation boundaries, not permanent branches. They
+were integrated in dependency order and then reconciled across stream boundaries.
 
-0. Freeze and classify the upstream delta (this record; no production changes).
-1. Reconcile shared review decisions, redaction, project trust, and managed auth.
-2. Add Guardian V2 as a focused extension and persist bounded risk evidence.
-3. Upgrade rmcp and negotiate MCP 2026-07-28 with bounded discovery.
-4. Stabilize MCP runtimes, bindings, names, events, OAuth, and app-server status.
-5. Add portable Agent Plugin package models and secure installation/search.
-6. Move skill ownership into the skills extension and remove obsolete ownership.
-7. Add persistence primitives, ID/envelope migrations, sections, usage, and reverts.
-8. Add durable submission queues and adapt the Better app shell.
-9. Add bounded gRPC Code Mode protocol, service, TCP transport, and app-server route.
-10. Centralize active-step environment and permission routing across remote work.
-11. Run migration, cross-workstream, remote-platform, boundedness, and performance validation.
+| Family | Integrated result | Retained boundary |
+| --- | --- | --- |
+| Foundation and auth | Response identity/metadata, copy ordinals, redaction, trust, managed auth, and live command/apply-patch decisions | Existing wire forms remain readable; raw commands stay at execution boundaries; remote app-server owns remote credentials |
+| Guardian | Bounded risk evidence, cancellation-safe sampling, and approval-pipeline integration | Guardian V2 stays gated and non-authoritative where the complete shared decision path is unavailable |
+| MCP | rmcp 3 bridge, negotiated 2026 discovery, bounded transports/catalogs, stable bindings, OAuth hardening, elicitation, app-server status, and recovery | 2025-06-18 remains compatible; modern behavior requires both request and negotiation; delayed decisions re-read live policy |
+| Plugins and skills | Portable manifests and roots, secure archives, bounded remote search, package reads, aliases, and unified skill ownership | Better plugin authority and explicit skill/context budgets remain authoritative; obsolete `codex-core-skills` ownership is removed |
+| Persistence and usage | Stable IDs, history envelopes, fractional timestamps, sections, usage, rollout lineage, migration compatibility, and durable revert | Writes remain failure-atomic; legacy histories and advanced databases remain readable; usage is distinct from context pressure |
+| Durable queue and app shell | Persisted admission, lifecycle ownership, recovery, revert ordering, and TUI queue management | Queue state is backend-owned, bounded to 100 items and 1 MiB, and presented through Better's app shell |
+| Code Mode | Bounded gRPC protocol/session/host transport and app-server/CLI routing | Existing transports remain additive; unsupported heap limits fail before session creation; non-loopback access requires configured protections |
 
-## Validation ledger
+Cross-stream consolidation repaired envelope compatibility, persistence fixtures,
+authorization/redaction semantics, skill aliases, queue ownership, history
+projection idempotency, legacy composite-rollout recovery, retained World State
+revocation and identity, exactly-once nested command completion, and Code Mode
+routing without restoring excluded upstream product surfaces.
 
-| Stage | Upstream references | Compatibility impact | Scoped validation | Status |
-| --- | --- | --- | --- | --- |
-| 0 | `678157aca..86b1123ff` | None; documentation only | ancestry, commit count, overlap audit | Complete |
-| 1B | `bab7c2dc` (#36908) | More complete bearer redaction; no wire/config change | `just test -p codex-secrets` (8 passed), `just fmt` | Complete |
-| 1I | `17801b42` (#36960), `683716ce` (#38390) | Automatic trust now follows effective managed permissions; existing explicit trust remains compatible | two focused `codex-app-server` v2 tests, `just fmt` | Complete |
-| 1A | `3834c47c` (#36037), `63fe5a6b` (#35267), `020f6c96` (#38256) | A failed allow amendment denies/cancels the owning call and cannot approve the host for the session | `just test -p codex-core network_approval` (25 passed; Linux regression compiled/ignored on macOS), `just fmt` | Complete |
-| 1C | `9558d830` (#37882) | Typed `response.metadata` safety-buffering events are accepted while a present legacy top-level value remains authoritative | `just test -p codex-api`, focused `codex-core` safety-buffering integration tests (2 passed), scoped fix, `just fmt` | Complete |
-| 1D | `e52c35b0` (#34400), `67afc796` (#38081) | Legacy `"denied"` decisions still load; new writes carry an optional UTF-8-safe 4 KiB reason, and MCP-only amendments fail closed outside MCP paths | `just test -p codex-protocol` (267 passed), `just test -p codex-app-server-protocol` (263 passed), focused core approval tests (42 passed), scoped fixes, `just fmt` | Shared type complete; MCP routing pending |
-| 1E | `6a828ca2` (#36912), `778b8698` (#37128), `66225461` (#37368) | Command and apply-patch approvals revalidate live policy, reviewer, strict mode, and cache route at every handoff; Never epochs prevent ABA grants; abort and resume stay balanced. No MCP, network, or execve authority expansion | `just test -p codex-tools` (87 passed), focused `codex-core` approval tests (18 passed), full `codex-core` (2,989 passed; 54 clean-target helper-binary failures and 1 unrelated collaboration-instructions failure; 18 skipped), scoped fixes, `just fmt` | Command and apply-patch complete; cross-action parity pending |
-| 1G | `fcf636a4` (#36893) | Live, declined/completed, and replayed command items use one redacted presentation; approval/execution retain raw commands | `just test -p codex-app-server-protocol` (262 passed), two focused public v2 app-server tests, scoped fixes, `just fmt` | Complete |
-| 1H | `fcf636a4` (#36893), `bab7c2dc` (#36908), Better adaptation | Rollout writes, legacy replay, thread-store projections, raw app-server diagnostics, rollout traces, and feedback copies redact labeled credentials and contextual command secrets while preserving IDs and opaque encrypted content; feedback rollout attachments are capped at 4 MiB | focused `codex-rollout` sanitizer/replay tests, `codex-rollout-trace` writer test, app-server feedback and raw-response tests, Bazel lock refresh, scoped fixes, `just fmt` | Complete |
-| 1J | `2994f545` (#37132) | Local login-method and ChatGPT-workspace restrictions reject unverifiable PATs before network access, validate refreshed identity before cache/storage, gate realtime and proxy startup before credential or I/O reads, and keep remote cloud-config ownership on app-server | `just test -p codex-config` (212 passed), `just test -p codex-login` (161 passed), `just test -p codex-cli` (329 passed), `just test -p codex-tui` (1,441 passed; 2 snapshots reviewed), focused `codex-core` realtime policy test (1 passed); full core run compiled and reached 2,618 passed before baseline helper/timeouts (`test_stdio_server` missing; 35 failed, 25 timed out, 18 skipped, 354 not run after interrupt), scoped fixes, `just fmt` | Complete |
-| 2A | `bb24b67d` (#35049), `fe614a63` (#38336) | Adds only a disabled under-development feature and empty focused extension crate; no decision authority, sampler, or TUI coupling | `just test -p codex-features` (56 passed), crate check, Bazel target build, lock/schema regeneration, scoped fixes, `just fmt` | Scaffold complete; authoritative bounded review path pending |
-| 3 | `61de0d8f` (#35720), `a05bcda3` (#36001), `be2e4afc` (#35724), `f2bee854` (#35725), `3e3ae088` (#36039), `58256999` (#36534), OAuth/transport hardening through `1da59ad2` (#38448) | rmcp 3 defaults to the legacy 2025-06-18 path; MCP 2026-07-28 is opt-in and negotiated. Modern discovery enforces exact response IDs, bounded/redacted HTTP, SSE, and stdio messages, redirect policy, and bounded catalogs; legacy single-page tool behavior remains unchanged. Typed and legacy elicitation metadata round-trips, future actions fail closed, present OAuth issuers match canonically, and transient refresh failures preserve credentials. | `codex-rmcp-client` (130 passed, 5 skipped), `codex-mcp` (124 passed), `codex-app-server-protocol` (263 passed), `codex-mcp-server` (15 passed), focused app-server MCP tests (17 passed), focused core MCP tests (101 passed plus 3 helper-binary reruns), config-flow test, schema and Bazel lock regeneration, scoped fixes, `just fmt`. Full app-server: 973 passed, 1 flaky retry passed, 10 unrelated failures, 1 unrelated timeout, 1 skipped. | Stage 3 complete; Stage 4 runtime assembly, stable bindings/names, generic events, and app-server status remain pending |
-| 3R | `f2bee854` (#35725), Better review hardening | Multi-round tool/resource dispatch now requires both requested and negotiated 2026-07-28. Executor replay fails closed and clears partial output on sequence gaps, accounts for terminal events, and applies the modern 8 MiB outbound cap before remote writes without changing legacy writes. Diagnostic bodies are redacted before UTF-8-safe truncation; live discovery correlation, fallback, redirect, body/SSE bounds, session recovery, and finish-time OAuth issuer checks fail closed. | Focused executor recovery (13 passed), negotiated MRTR (2 passed), live HTTP safety (6 passed), outbound stdio matrix (1 passed), and OAuth callback (1 passed). Full `codex-rmcp-client`: 146 passed before one missing `codex` helper; after building that exact helper, the remaining remote case passed on retry (1 flaky), for effective 147/147 with 5 skipped; scoped fix and `just fmt`. | Stage 3 independent-review findings complete; Stage 4 remains pending |
-| 4A | `b293412c` (#36119), `9a46fd33` (#36120), `385fe95c` (#36360), `e20616d2` (#38035) | Negotiated modern tool and resource calls preserve bounded input-required metadata across SSE, local stdio, and executor transports; requested-modern sessions negotiated down to legacy cannot reinterpret modern results. Multi-round input stays capped at 4 KiB per field and delivery failure cancels fail closed without granting legacy servers modern behavior. | Source tests authored; Rust execution, scoped fix, and final formatting pending the shared validation slot. | Source complete; validation pending |
-| 4B | `3bbf1fe7` (#35590), `d9e1c9cd` (#35742), `84ccb293` (#35777), `fbf666fa` (#35937), `85c082cc` (#36011), `45c9c74e` (#38493), `952e87d3` (#37101), `e1831db7` (#37273), `1151b23f` (#37261), `7093e8c4` (#38217) | Catalogs start concurrently with bounded optional-server grace; stable handlers execute only the revision-bound catalog exposed to the model. Empty, superseded, unstable, reconnecting, and process-shared cache generations invalidate or rebind locally. Remembered MCP grants are catalog/route scoped, and delayed approvals revalidate live policy and reviewer before and after application without holding the catalog lock across persistence or network calls. | Source tests authored for concurrency, supersession, handler reuse, cross-manager generations, lock release, route-scoped grants, and live approval races; Rust execution, scoped fix, and final formatting pending the shared validation slot. | Source complete; validation pending |
-| 5 | `a28374e0` (#35105), `32329b28` (#35254), `12b961d4` (#35837), `64b2a300` (#36402), `a850875a` (#36409), `2b5bdcf6` (#36544), `bd12b3a9` (#36796), `d75f94a9` (#36919) | Portable Agent Plugin roots and manifests share strict identity validation, direct-child skill discovery, bounded data roots, and portable `mcp.json` loading. Bundle packing and extraction reject traversal, links, aliases, duplicate/file-directory collisions, more than 10,000 entries, paths deeper than 64 components, and oversized payloads while ordinary nested symlinks and special entries are skipped. Remote search is auth-routed, response-bounded, eligibility-aware, local-first-page merged, deduplicated, and capped at 100 results; installed state and the active local package version survive remote deduplication. Existing Better plugin authority, managed auth, and MCP bounds remain authoritative. | `codex-plugin` + `codex-utils-plugins` + `codex-core-skills` + `codex-core-plugins` (478 passed); `codex-mcp` + `codex-rmcp-client` (279 passed, 5 skipped, after building the required `codex` helper); `codex-app-server-protocol` (264 passed); public v2 plugin install/list/read/search/share/uninstall (121 passed); focused TUI plugin management (2 passed, no pending snapshots); stable and experimental app-server schema regeneration with a second stable no-op; Bazel lock update with no diff; scoped fixes and `just fmt`. | Stage 5 complete; Stage 6 skill-ownership migration remains pending |
-| 7A | `4a443994` (#34645) | Client-created response items receive stable IDs before durable history insertion; persisted/resumed, forked, compacted, and streamed items preserve those IDs while unprefixed server IDs remain request-local. The removed `item_ids` flag remains an accepted compatibility no-op. | `just test -p codex-features` (57 passed), focused `codex-core` item-ID tests (6 passed), scoped fix, `just fmt` | Complete |
-| 7B | `361fe2d2` (#38272) | Locally authored user, developer, agent, and tool-output items receive fractional Unix creation times at the durable history boundary; supplied timestamps remain authoritative and the metadata stays outside the public app-server schema. | focused `codex-protocol` and `codex-core` history tests (4 passed), scoped fixes, `just fmt` | Complete |
+## Validation record
+
+Validation was intentionally focused by owning crate and integration surface:
+
+- Auth and safety validation covered config, login, CLI, TUI, realtime, proxy,
+  app-server, redaction, approval races, and Guardian fail-closed behavior.
+- MCP and extension validation covered legacy/modern negotiation, response
+  correlation, transport and OAuth recovery, bounded discovery, runtime bindings,
+  plugin APIs and archives, search, and unified skill loading/rendering.
+- Persistence validation covered protocol/history compatibility, old and advanced
+  migrations, lineage and revert, thread-store projection, request serialization,
+  durable queue state and recovery, and Better TUI queue behavior.
+- The final Code Mode gate covers `codex-code-mode-protocol`, `codex-code-mode`,
+  `codex-code-mode-host`, app-server routing and queue coexistence, and CLI routing,
+  including yield timing, subscription backpressure, and provider termination.
+- User-visible TUI changes used snapshot coverage and pending snapshots were
+  reviewed before acceptance.
+
+The recorded final gates include 1,478 `codex-tui` tests, 80
+`codex-code-mode-host` tests, the selected Code Mode, Guardian, state, and protocol
+suites, a combined core/extension/rollout/thread-store package gate, and 1,354
+app-server/protocol/client tests. Focused final regressions cover retained A-to-B
+and A-to-B-to-A state, current-empty revocation, collision-free skills catalog
+identity, canonical nested command decline, durable revert, legacy rollout
+normalization, and queue admission/recovery. The app-server gate had one transient
+zsh subprocess initialization timeout under parallel load; its configured retry
+passed, and the exact case passed alone. There were no final test failures.
+
+The final generated-artifact pass regenerates the config schema and stable and
+experimental app-server schemas, verifies the Bazel lock, and confirms that no
+Cargo dependency change requires lock regeneration before the workspace fix pass
+and `just fmt`.
+
+The complete workspace `just test` was not run. `AGENTS.md` requires explicit
+user approval for that suite, and approval was not given. Focused suites are the
+recorded acceptance basis; this document does not claim a green full-workspace run.
+
+## Recovery and branch cleanup
+
+The complete pre-consolidation ref snapshot is preserved at
+`/Users/loooonk/Projects/better-codex-pre-consolidation-2026-09-01.bundle` with
+SHA-256
+`2d8f245449adc6d7782de048a7293c1510b0e7f5087f367d485d14b7e19e9240`.
+The bundle was verified with all nine pre-consolidation refs and is retained after
+branch cleanup.
+
+Once focused validation, generated artifacts, formatting, ancestry, and remote-tip
+guards pass, the candidate fast-forwards `main`. Deleting the six exact non-`main`
+GitHub branches, removing the clean auxiliary worktrees, and deleting the exact
+local non-`main` branches is the final operational step. No old branch is needed to
+continue the implementation after that point.

@@ -39,13 +39,16 @@ async fn complete_permission_review(
                 .await
         }
     });
-    let event = tokio::time::timeout(std::time::Duration::from_secs(1), events.recv())
-        .await
-        .expect("manual fallback event timed out")
-        .expect("manual fallback event");
-    let codex_protocol::protocol::EventMsg::RequestPermissions(request) = event.msg else {
-        panic!("expected request_permissions event")
-    };
+    let request = tokio::time::timeout(std::time::Duration::from_secs(1), async {
+        loop {
+            let event = events.recv().await.expect("manual fallback event");
+            if let codex_protocol::protocol::EventMsg::RequestPermissions(request) = event.msg {
+                break request;
+            }
+        }
+    })
+    .await
+    .expect("manual fallback event timed out");
     assert_eq!(request.call_id, call_id);
     session
         .notify_request_permissions_response(call_id, response)
@@ -147,8 +150,7 @@ impl codex_extension_api::ApprovalReviewContributor for RecordingApprovalAuthori
             codex_extension_api::ApprovalReviewResult::Allow(
                 codex_extension_api::ApprovalReviewOutcome {
                     risk_level: codex_protocol::protocol::GuardianRiskLevel::Low,
-                    user_authorization:
-                        codex_protocol::protocol::GuardianUserAuthorization::High,
+                    user_authorization: codex_protocol::protocol::GuardianUserAuthorization::High,
                     rationale: "allowed".to_string(),
                 },
             ),
@@ -169,6 +171,12 @@ struct StaleEvidenceApprovalAuthority {
 
 struct GuardianV2DenialCircuitTask {
     action: ApprovalAction,
+}
+
+struct GuardianV2OneShotReviewTask {
+    action: ApprovalAction,
+    context: ApprovalContext,
+    result_tx: StdMutex<Option<tokio::sync::oneshot::Sender<ApprovalReviewResult>>>,
 }
 
 #[derive(Debug)]
@@ -207,22 +215,20 @@ impl codex_extension_api::ApprovalReviewContributor for HostileApprovalAuthority
             .collect::<String>();
         let action = serde_json::to_string(&input.action.request_payload())
             .expect("serialize review action");
-        *self.observation.lock().expect("observation lock") =
-            Some(HostileApprovalObservation {
-                history_items: input.history.len(),
-                history_bytes: history.len(),
-                evidence_bytes: evidence.len(),
-                action_bytes: action.len(),
-                contains_secret: history.contains(&self.secret)
-                    || evidence.contains(&self.secret)
-                    || action.contains(&self.secret),
-            });
+        *self.observation.lock().expect("observation lock") = Some(HostileApprovalObservation {
+            history_items: input.history.len(),
+            history_bytes: history.len(),
+            evidence_bytes: evidence.len(),
+            action_bytes: action.len(),
+            contains_secret: history.contains(&self.secret)
+                || evidence.contains(&self.secret)
+                || action.contains(&self.secret),
+        });
         let rationale = format!("{} {}", self.secret, "r".repeat(100_000));
         Box::pin(std::future::ready(ApprovalReviewResult::Deny(
             codex_extension_api::ApprovalReviewOutcome {
                 risk_level: codex_protocol::protocol::GuardianRiskLevel::High,
-                user_authorization:
-                    codex_protocol::protocol::GuardianUserAuthorization::Low,
+                user_authorization: codex_protocol::protocol::GuardianUserAuthorization::Low,
                 rationale,
             },
         )))
@@ -256,8 +262,7 @@ impl codex_extension_api::ApprovalReviewContributor for DenyingApprovalAuthority
         Box::pin(std::future::ready(ApprovalReviewResult::Deny(
             codex_extension_api::ApprovalReviewOutcome {
                 risk_level: codex_protocol::protocol::GuardianRiskLevel::High,
-                user_authorization:
-                    codex_protocol::protocol::GuardianUserAuthorization::Low,
+                user_authorization: codex_protocol::protocol::GuardianUserAuthorization::Low,
                 rationale: "blocked by the V2 authority".to_string(),
             },
         )))
@@ -349,6 +354,40 @@ impl crate::tasks::SessionTask for GuardianV2DenialCircuitTask {
     }
 }
 
+impl crate::tasks::SessionTask for GuardianV2OneShotReviewTask {
+    fn kind(&self) -> crate::state::TaskKind {
+        crate::state::TaskKind::Regular
+    }
+
+    fn span_name(&self) -> &'static str {
+        "session_task.guardian_v2_one_shot_review"
+    }
+
+    async fn run(
+        self: Arc<Self>,
+        session: Arc<crate::tasks::SessionTaskContext>,
+        turn: Arc<TurnContext>,
+        _input: Vec<crate::session::TurnInput>,
+        cancellation_token: CancellationToken,
+    ) -> crate::tasks::SessionTaskResult {
+        let mut context = self.context.clone();
+        context.turn = turn;
+        context.cancellation_token = cancellation_token;
+        let session = session.clone_session();
+        let result = request_guardian_v2_approval_until(
+            &session,
+            &self.action,
+            &context,
+            Instant::now() + Duration::from_secs(1),
+        )
+        .await;
+        if let Some(result_tx) = self.result_tx.lock().expect("result lock").take() {
+            let _ = result_tx.send(result);
+        }
+        Ok(None)
+    }
+}
+
 async fn guardian_review_test_fixture(
     authority: Arc<dyn codex_extension_api::ApprovalReviewContributor>,
     cancellation_token: CancellationToken,
@@ -370,7 +409,10 @@ async fn guardian_review_test_fixture(
         panic!("single turn context reference")
     };
     let mut config = turn.config.as_ref().clone();
-    config.features.enable(Feature::GuardianV2);
+    config
+        .features
+        .enable(Feature::GuardianV2)
+        .expect("test setup should allow enabling Guardian V2");
     turn.config = Arc::new(config);
     let mut extensions = codex_extension_api::ExtensionRegistryBuilder::new();
     extensions.approval_review_contributor(authority);
@@ -626,11 +668,9 @@ async fn guardian_v2_denial_emits_one_persisted_lifecycle_and_preserves_context(
     use codex_protocol::protocol::EventMsg;
     use codex_protocol::protocol::GuardianAssessmentStatus;
 
-    let (session, action, context, events) = guardian_review_test_fixture(
-        Arc::new(DenyingApprovalAuthority),
-        CancellationToken::new(),
-    )
-    .await;
+    let (session, action, context, events) =
+        guardian_review_test_fixture(Arc::new(DenyingApprovalAuthority), CancellationToken::new())
+            .await;
     context
         .turn
         .approval_policy
@@ -688,11 +728,9 @@ async fn guardian_v2_repeated_denials_interrupt_the_active_turn() {
     use codex_protocol::protocol::GuardianAssessmentStatus;
     use codex_protocol::protocol::TurnAbortReason;
 
-    let (session, action, context, events) = guardian_review_test_fixture(
-        Arc::new(DenyingApprovalAuthority),
-        CancellationToken::new(),
-    )
-    .await;
+    let (session, action, context, events) =
+        guardian_review_test_fixture(Arc::new(DenyingApprovalAuthority), CancellationToken::new())
+            .await;
     context
         .turn
         .approval_policy
@@ -792,7 +830,10 @@ async fn guardian_v2_allow_is_bound_to_the_exact_action_attempt() {
 
     let (mut session, mut turn) = make_session_and_context().await;
     let mut config = turn.config.as_ref().clone();
-    config.features.enable(Feature::GuardianV2);
+    config
+        .features
+        .enable(Feature::GuardianV2)
+        .expect("test setup should allow enabling Guardian V2");
     turn.config = Arc::new(config);
     turn.approval_policy
         .replace(Constrained::allow_any(AskForApproval::OnRequest));
@@ -877,7 +918,9 @@ async fn code_mode_review_evidence_is_correlated_by_sequence() {
         .record(
             "cell-1",
             "runtime-1",
-            vec![NodeReplReviewEvidenceItem::Text("accepted output".to_string())],
+            vec![NodeReplReviewEvidenceItem::Text(
+                "accepted output".to_string(),
+            )],
         );
     let source = ToolCallSource::CodeMode {
         cell_id: "cell-1".to_string(),
@@ -891,9 +934,7 @@ async fn code_mode_review_evidence_is_correlated_by_sequence() {
         evidence,
         vec![ApprovalReviewEvidence {
             kind: "node_repl_output".to_string(),
-            provenance: Some(
-                "tool=node_repl/js cell=cell-1 call=runtime-1".to_string(),
-            ),
+            provenance: Some("tool=node_repl/js cell=cell-1 call=runtime-1".to_string(),),
             text: "accepted output".to_string(),
         }]
     );
@@ -917,14 +958,19 @@ async fn code_mode_allow_is_retried_when_evidence_revision_changes() {
         runtime_tool_call_id: "runtime-action".to_string(),
     };
     *turn_slot.lock().expect("turn lock") = Some(Arc::clone(&context.turn));
-
-    let result = request_guardian_v2_approval_until(
-        &session,
-        &action,
-        &context,
-        Instant::now() + Duration::from_secs(1),
-    )
-    .await;
+    let (result_tx, result_rx) = tokio::sync::oneshot::channel();
+    session
+        .spawn_task(
+            Arc::clone(&context.turn),
+            Vec::new(),
+            GuardianV2OneShotReviewTask {
+                action,
+                context,
+                result_tx: StdMutex::new(Some(result_tx)),
+            },
+        )
+        .await;
+    let result = result_rx.await.expect("one-shot review result");
 
     let ApprovalReviewResult::Deny(outcome) = result else {
         panic!("stale allow should not authorize the action: {result:?}")
@@ -945,10 +991,9 @@ async fn execve_manual_review_preserves_program_and_custom_argv_zero() {
     *session.active_turn.lock().await = Some(ActiveTurn::default());
     let program = "/usr/bin/printf".to_string();
     let argv = vec!["custom-zero".to_string(), "%s".to_string()];
-    let cwd = AbsolutePathBuf::from_absolute_path(
-        std::env::current_dir().expect("current directory"),
-    )
-    .expect("absolute current directory");
+    let cwd =
+        AbsolutePathBuf::from_absolute_path(std::env::current_dir().expect("current directory"))
+            .expect("absolute current directory");
     let action = ApprovalAction::Execve {
         id: "parent-call".to_string(),
         approval_id: "execve-attempt".to_string(),
@@ -994,9 +1039,7 @@ async fn execve_manual_review_preserves_program_and_custom_argv_zero() {
     };
     assert_eq!(
         event.command,
-        std::iter::once(program)
-            .chain(argv)
-            .collect::<Vec<_>>()
+        std::iter::once(program).chain(argv).collect::<Vec<_>>()
     );
     session
         .notify_approval("execve-attempt", ReviewDecision::Approved)
@@ -1025,7 +1068,10 @@ async fn request_permissions_manual_fallback_is_one_shot_and_exact() {
     let (session, mut turn, events) = make_session_and_context_with_rx().await;
     *session.active_turn.lock().await = Some(ActiveTurn::default());
     let mut config = turn.config.as_ref().clone();
-    config.features.enable(Feature::GuardianV2);
+    config
+        .features
+        .enable(Feature::GuardianV2)
+        .expect("test setup should allow enabling Guardian V2");
     Arc::get_mut(&mut turn).expect("unique turn context").config = Arc::new(config);
     turn.approval_policy
         .replace(Constrained::allow_any(AskForApproval::OnRequest));

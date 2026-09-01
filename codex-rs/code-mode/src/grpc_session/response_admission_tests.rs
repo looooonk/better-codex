@@ -2,8 +2,8 @@ use codex_code_mode_protocol::grpc::MAX_CONTENT_ITEMS;
 use pretty_assertions::assert_eq;
 use tonic::Code;
 
-use super::ResponseShape;
 use super::ResponseAdmission;
+use super::ResponseShape;
 use super::preflight_response;
 
 fn length_delimited(field: u8, value: &[u8]) -> Vec<u8> {

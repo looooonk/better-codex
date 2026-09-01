@@ -205,11 +205,7 @@ fn code_cell_response_payload(
                 response_type: runtime_response_type(response),
                 truncated: true,
             };
-            write_json_payload_best_effort(
-                &context.writer,
-                RawPayloadKind::ToolResult,
-                &payload,
-            )
+            write_json_payload_best_effort(&context.writer, RawPayloadKind::ToolResult, &payload)
         }
     }
 }

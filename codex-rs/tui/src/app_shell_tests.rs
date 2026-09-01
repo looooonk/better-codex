@@ -8,7 +8,6 @@ use base64::Engine;
 use codex_app_server_client::AppServerEvent;
 use codex_app_server_client::TypedRequestError;
 use codex_app_server_protocol::AccountRateLimitsUpdatedNotification;
-use codex_app_server_protocol::AccountTokenUsageSummary;
 use codex_app_server_protocol::AdditionalNetworkPermissions;
 use codex_app_server_protocol::AppSummary;
 use codex_app_server_protocol::CollabAgentState;
@@ -36,7 +35,7 @@ use codex_app_server_protocol::ExternalAgentConfigMigrationItem;
 use codex_app_server_protocol::ExternalAgentConfigMigrationItemType;
 use codex_app_server_protocol::FileChangePatchUpdatedNotification;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
-use codex_app_server_protocol::GetAccountTokenUsageResponse;
+use codex_app_server_protocol::GetAccountThreadUsageResponse;
 use codex_app_server_protocol::ImageGenerationItem;
 use codex_app_server_protocol::ItemCompletedNotification;
 use codex_app_server_protocol::ItemStartedNotification;
@@ -53,6 +52,7 @@ use codex_app_server_protocol::McpServerOauthLoginResponse;
 use codex_app_server_protocol::McpServerRefreshResponse;
 use codex_app_server_protocol::McpServerStatus;
 use codex_app_server_protocol::McpServerStatusDetail;
+use codex_app_server_protocol::McpToolCallProgressNotification;
 use codex_app_server_protocol::MergeStrategy;
 use codex_app_server_protocol::MigrationDetails;
 use codex_app_server_protocol::ModelSafetyBufferingUpdatedNotification;
@@ -92,6 +92,7 @@ use codex_app_server_protocol::ThreadGoalStatus;
 use codex_app_server_protocol::ThreadGoalUpdatedNotification;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
+use codex_app_server_protocol::ThreadRevertedNotification;
 use codex_app_server_protocol::ThreadSettingsUpdateParams;
 use codex_app_server_protocol::ThreadSettingsUpdatedNotification;
 use codex_app_server_protocol::ThreadStartSource;
@@ -283,6 +284,310 @@ async fn terminal_thread_status_waits_for_the_authoritative_turn_completion() {
         assert!(shell.workspace_status_refresh_due);
         assert!(shell.has_pending_session_hydration());
     }
+}
+
+#[tokio::test]
+async fn active_thread_revert_rehydrates_the_retained_projection_snapshot() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.dashboard_visible = false;
+    shell.transcript.clear();
+    shell.clear_streaming_transcript();
+    shell.push_user("reverted-away prompt");
+    shell.push_assistant("reverted-away response");
+    shell.streaming_assistant = "reverted-away stream".to_string();
+    shell.active_turn_id = Some("reverted-away-turn".to_string());
+    shell.diff_store.clear();
+    shell.diff_store.upsert_turn_diff(
+        "reverted-away-turn",
+        "diff --git a/stale.rs b/stale.rs\n--- /dev/null\n+++ b/stale.rs\n@@ -0,0 +1 @@\n+stale\n",
+    );
+    shell.latest_diff = Some(DiffSummary {
+        files: 1,
+        additions: 1,
+        removals: 0,
+    });
+    shell.composer.clear();
+    queue_messages(&mut shell.composer, &["reverted-away queued message"]);
+    shell.composer.set_text("unsent draft survives");
+
+    let thread_id = shell.thread_id;
+    let mut retained_turn = prompt_turn("retained-turn", "retained prompt");
+    retained_turn.items.extend([
+        ThreadItem::AgentMessage {
+            id: "retained-response".to_string(),
+            text: "retained response".to_string(),
+            phase: None,
+            memory_citation: None,
+        },
+        ThreadItem::FileChange {
+            id: "retained-file".to_string(),
+            changes: vec![FileUpdateChange {
+                path: "src/retained.rs".to_string(),
+                kind: PatchChangeKind::Add,
+                diff: "retained\n".to_string(),
+            }],
+            status: codex_app_server_protocol::PatchApplyStatus::Completed,
+        },
+        ThreadItem::CommandExecution {
+            id: "current-command".to_string(),
+            command: "cargo test".to_string(),
+            cwd: LegacyAppPathString::from_abs_path(&test_absolute_path("workspace/better-codex")),
+            process_id: None,
+            source: CommandExecutionSource::Agent,
+            status: CommandExecutionStatus::InProgress,
+            command_actions: Vec::new(),
+            aggregated_output: Some("authoritative command output\n".to_string()),
+            exit_code: None,
+            duration_ms: None,
+        },
+    ]);
+    let mut retained_thread = thread_fixture(thread_id, Some("retained session"), "retained");
+    retained_thread.history_mode = codex_app_server_protocol::ThreadHistoryMode::Paginated;
+    retained_thread.status = ThreadStatus::Idle;
+    retained_thread.turns = vec![retained_turn];
+    let rehydrate_gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let queue_gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let mut backend = RecordingBackend {
+        threads: Arc::new(Mutex::new(vec![retained_thread])),
+        thread_rehydrate_gate: Some(Arc::clone(&rehydrate_gate)),
+        queue_list_gate: Some(Arc::clone(&queue_gate)),
+        ..RecordingBackend::default()
+    };
+    backend.extend_queued_submissions(
+        thread_id,
+        [queued_submission(
+            "stale-queue",
+            "stale-client",
+            "reverted-away server queue",
+        )],
+    );
+    shell.request_queue_hydration(&backend);
+    backend
+        .queued_submissions
+        .lock()
+        .expect("queued submissions should lock")
+        .insert(
+            thread_id,
+            vec![queued_submission(
+                "retained-queue",
+                "retained-client",
+                "retained queued message",
+            )],
+        );
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerNotification(ServerNotification::ThreadReverted(
+                ThreadRevertedNotification {
+                    thread_id: thread_id.to_string(),
+                },
+            )),
+        )
+        .await
+        .expect("revert notification should be handled");
+
+    assert!(shell.transcript.is_empty());
+    assert_eq!(queued_message_texts(&shell), Vec::<String>::new());
+    assert!(!shell.diff_store.has_session_edits());
+    assert_eq!(shell.latest_diff, None);
+    assert_eq!(shell.active_turn_id, None);
+    assert_eq!(shell.composer.text(), "unsent draft survives");
+    assert!(shell.is_thread_revert_hydrating());
+
+    let mut active_turn = test_turn("current-turn", TurnStatus::InProgress);
+    active_turn.items.push(ThreadItem::UserMessage {
+        id: "current-prompt".to_string(),
+        client_id: Some("current-client".to_string()),
+        content: vec![ApiUserInput::Text {
+            text: "current queued follower".to_string(),
+            text_elements: Vec::new(),
+        }],
+    });
+    {
+        let mut threads = backend.threads.lock().expect("threads should lock");
+        threads[0].status = ThreadStatus::Active {
+            active_flags: Vec::new(),
+        };
+        threads[0].turns.push(active_turn.clone());
+    }
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerNotification(ServerNotification::TurnStarted(
+                codex_app_server_protocol::TurnStartedNotification {
+                    thread_id: thread_id.to_string(),
+                    turn: active_turn,
+                },
+            )),
+        )
+        .await
+        .expect("queued follower should start");
+    shell.handle_notification(ServerNotification::CommandExecutionOutputDelta(
+        CommandExecutionOutputDeltaNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "current-turn".to_string(),
+            item_id: "current-command".to_string(),
+            delta: "live command output survives".to_string(),
+        },
+    ));
+    {
+        let mut threads = backend.threads.lock().expect("threads should lock");
+        let command = threads[0].turns[0]
+            .items
+            .iter_mut()
+            .find(|item| item.id() == "current-command")
+            .expect("retained command should remain in history");
+        let ThreadItem::CommandExecution {
+            aggregated_output, ..
+        } = command
+        else {
+            panic!("retained command should remain in history");
+        };
+        *aggregated_output =
+            Some("authoritative command output\nlive command output survives".to_string());
+    }
+    shell.handle_notification(ServerNotification::McpToolCallProgress(
+        McpToolCallProgressNotification {
+            thread_id: thread_id.to_string(),
+            turn_id: "current-turn".to_string(),
+            item_id: "current-mcp".to_string(),
+            message: "live mcp progress survives".to_string(),
+        },
+    ));
+    shell.handle_notification(ServerNotification::Error(ErrorNotification {
+        error: TurnError {
+            message: "live retry detail survives".to_string(),
+            codex_error_info: None,
+            additional_details: None,
+        },
+        will_retry: true,
+        thread_id: thread_id.to_string(),
+        turn_id: "current-turn".to_string(),
+    }));
+    rehydrate_gate.add_permits(/*n*/ 2);
+    queue_gate.add_permits(/*n*/ 2);
+
+    finish_session_hydration(&mut shell, &backend).await;
+    complete_backend_actions(&mut shell, &backend).await;
+
+    let transcript = shell
+        .transcript
+        .iter()
+        .map(|line| line.text.as_str())
+        .collect::<Vec<_>>();
+    assert!(transcript.contains(&"retained prompt"));
+    assert!(transcript.contains(&"retained response"));
+    assert!(transcript.contains(&"mcp progress: live mcp progress survives"));
+    assert!(transcript.contains(&"live retry detail survives"));
+    let command_output = shell
+        .transcript
+        .iter()
+        .find(|line| {
+            line.kind == TranscriptKind::Output
+                && line.item_id.as_deref() == Some("current-command")
+        })
+        .expect("authoritative command output should survive");
+    assert_eq!(
+        command_output.full_text.as_deref(),
+        Some("authoritative command output\nlive command output survives")
+    );
+    assert!(!transcript.iter().any(|line| line.contains("reverted-away")));
+    assert_eq!(
+        queued_message_texts(&shell),
+        vec!["retained queued message"]
+    );
+    assert_eq!(
+        shell.diff_store.session_stats(),
+        super::diff_view::DiffStats {
+            files: 1,
+            additions: 1,
+            removals: 0,
+        }
+    );
+    assert_eq!(shell.active_turn_id.as_deref(), Some("current-turn"));
+    assert_eq!(shell.composer.text(), "unsent draft survives");
+    assert_eq!(
+        backend
+            .calls()
+            .iter()
+            .filter(|call| {
+                matches!(call, RecordedBackendCall::ThreadRehydrate(id) if *id == thread_id)
+            })
+            .count(),
+        2
+    );
+    assert_eq!(
+        backend
+            .calls()
+            .iter()
+            .filter(|call| matches!(call, RecordedBackendCall::QueueList(id) if *id == thread_id))
+            .count(),
+        2
+    );
+    insta::assert_snapshot!(
+        "active_thread_reverted_rehydrated",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 36,
+            )
+        )
+    );
+}
+
+#[tokio::test]
+async fn active_thread_revert_lag_recovery_preserves_pending_user_input() {
+    let mut shell = ShellState::snapshot_fixture();
+    let thread_id = shell.thread_id;
+    let mut thread = thread_fixture(thread_id, Some("retained session"), "retained");
+    thread.history_mode = codex_app_server_protocol::ThreadHistoryMode::Paginated;
+    thread.status = ThreadStatus::Active {
+        active_flags: Vec::new(),
+    };
+    thread.turns = vec![test_turn("current-turn", TurnStatus::InProgress)];
+    let rehydrate_gate = Arc::new(tokio::sync::Semaphore::new(/*permits*/ 0));
+    let mut backend = RecordingBackend {
+        threads: Arc::new(Mutex::new(vec![thread])),
+        thread_rehydrate_gate: Some(Arc::clone(&rehydrate_gate)),
+        ..RecordingBackend::default()
+    };
+
+    shell
+        .handle_app_server_event(
+            &mut backend,
+            AppServerEvent::ServerNotification(ServerNotification::ThreadReverted(
+                ThreadRevertedNotification {
+                    thread_id: thread_id.to_string(),
+                },
+            )),
+        )
+        .await
+        .expect("revert notification should be handled");
+    rehydrate_gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell, &backend).await;
+    complete_backend_actions(&mut shell, &backend).await;
+
+    let child_thread_id = "019d1234-5678-7abc-8def-0123456789ab";
+    shell
+        .active_agent_thread_ids
+        .insert(child_thread_id.to_string());
+    shell.agent_activity.ensure_thread(child_thread_id);
+    shell.pending_user_input = PendingUserInput::from_request(&tool_user_input_request());
+    shell
+        .handle_app_server_event(&mut backend, AppServerEvent::Lagged { skipped: 1 })
+        .await
+        .expect("lag should trigger fail-safe rehydration");
+    assert!(shell.pending_user_input.is_some());
+    assert!(shell.is_active_agent_thread(child_thread_id));
+
+    rehydrate_gate.add_permits(/*n*/ 1);
+    finish_session_hydration(&mut shell, &backend).await;
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(shell.pending_user_input.is_some());
+    assert!(shell.is_active_agent_thread(child_thread_id));
+    assert_eq!(shell.active_turn_id.as_deref(), Some("current-turn"));
 }
 
 #[tokio::test]
@@ -11116,10 +11421,7 @@ async fn ambiguous_queued_add_retries_with_the_same_client_message_id() {
         panic!("expected an add and one idempotent retry");
     };
     assert_eq!(first, second);
-    assert_eq!(
-        backend.queued_submissions_for(shell.thread_id).len(),
-        1
-    );
+    assert_eq!(backend.queued_submissions_for(shell.thread_id).len(), 1);
     assert_eq!(shell.composer.queued_count(), 1);
 }
 
@@ -11892,7 +12194,10 @@ async fn queued_message_popup_edits_deletes_and_reorders_through_durable_rpcs() 
     shell.composer.clear();
     let alt_up = KeyEvent::new(KeyCode::Up, KeyModifiers::ALT);
 
-    shell.handle_key(alt_up, &config, &mut backend).await.unwrap();
+    shell
+        .handle_key(alt_up, &config, &mut backend)
+        .await
+        .unwrap();
     shell.composer.set_text("third updated");
     shell
         .handle_key(
@@ -11904,8 +12209,14 @@ async fn queued_message_popup_edits_deletes_and_reorders_through_durable_rpcs() 
         .unwrap();
     complete_backend_actions(&mut shell, &backend).await;
 
-    shell.handle_key(alt_up, &config, &mut backend).await.unwrap();
-    shell.handle_key(alt_up, &config, &mut backend).await.unwrap();
+    shell
+        .handle_key(alt_up, &config, &mut backend)
+        .await
+        .unwrap();
+    shell
+        .handle_key(alt_up, &config, &mut backend)
+        .await
+        .unwrap();
     shell.composer.clear();
     shell
         .handle_key(
@@ -11917,13 +12228,13 @@ async fn queued_message_popup_edits_deletes_and_reorders_through_durable_rpcs() 
         .unwrap();
     complete_backend_actions(&mut shell, &backend).await;
 
-    shell.handle_key(alt_up, &config, &mut backend).await.unwrap();
+    shell
+        .handle_key(alt_up, &config, &mut backend)
+        .await
+        .unwrap();
     shell
         .handle_key(
-            KeyEvent::new(
-                KeyCode::Up,
-                KeyModifiers::SHIFT | KeyModifiers::ALT,
-            ),
+            KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT | KeyModifiers::ALT),
             &config,
             &mut backend,
         )
@@ -13321,11 +13632,7 @@ async fn complete_backend_actions(shell: &mut ShellState, backend: &RecordingBac
     .expect("background action should complete");
 }
 
-async fn wait_for_backend_calls(
-    shell: &mut ShellState,
-    backend: &RecordingBackend,
-    count: usize,
-) {
+async fn wait_for_backend_calls(shell: &mut ShellState, backend: &RecordingBackend, count: usize) {
     tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
         while backend.calls().len() < count {
             tokio::task::yield_now().await;
@@ -14505,6 +14812,8 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
                 thread_id: resume_id,
             },
             RecordedBackendCall::RateLimits,
+            RecordedBackendCall::ThreadUsage(resume_id),
+            RecordedBackendCall::QueueList(resume_id),
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
@@ -14520,6 +14829,8 @@ async fn native_session_list_resume_and_fork_switch_shell_thread() {
             RecordedBackendCall::GoalGet {
                 thread_id: forked_id,
             },
+            RecordedBackendCall::ThreadUsage(forked_id),
+            RecordedBackendCall::QueueList(forked_id),
             RecordedBackendCall::ThreadList {
                 archived: Some(false),
                 search_term: None,
@@ -16757,6 +17068,7 @@ struct RecordingBackend {
     external_agent_import_in_progress: Arc<Mutex<bool>>,
     active_goal: Arc<Mutex<Option<ThreadGoal>>>,
     thread_list_gate: Option<Arc<tokio::sync::Semaphore>>,
+    thread_rehydrate_gate: Option<Arc<tokio::sync::Semaphore>>,
     rate_limits_gate: Option<Arc<tokio::sync::Semaphore>>,
     rate_limits_used_percent: Arc<Mutex<i32>>,
     thread_usage: Arc<Mutex<Option<ThreadUsage>>>,
@@ -16771,12 +17083,7 @@ struct RecordingBackend {
     queue_update_errors: Arc<Mutex<VecDeque<String>>>,
     queue_delete_errors: Arc<Mutex<VecDeque<String>>>,
     queued_submissions: Arc<
-        Mutex<
-            HashMap<
-                codex_protocol::ThreadId,
-                Vec<codex_app_server_protocol::QueuedSubmission>,
-            >,
-        >,
+        Mutex<HashMap<codex_protocol::ThreadId, Vec<codex_app_server_protocol::QueuedSubmission>>>,
     >,
     action_error: Arc<Mutex<Option<String>>>,
     thread_settings_error: Arc<Mutex<Option<String>>>,
@@ -16804,6 +17111,7 @@ impl Default for RecordingBackend {
             external_agent_import_in_progress: Arc::new(Mutex::new(false)),
             active_goal: Arc::new(Mutex::new(None)),
             thread_list_gate: None,
+            thread_rehydrate_gate: None,
             rate_limits_gate: None,
             rate_limits_used_percent: Arc::new(Mutex::new(73)),
             thread_usage: Arc::new(Mutex::new(None)),
@@ -17013,6 +17321,7 @@ enum RecordedBackendCall {
         cursor: Option<String>,
     },
     ThreadReadFull(codex_protocol::ThreadId),
+    ThreadRehydrate(codex_protocol::ThreadId),
     RateLimits,
     ThreadUsage(codex_protocol::ThreadId),
     Login(LoginAccountParams),
@@ -17354,6 +17663,36 @@ impl backend::AppShellBackend for RecordingBackend {
         async move { thread.ok_or_else(|| color_eyre::eyre::eyre!("thread {thread_id} was not found")) }
     }
 
+    fn thread_rehydrate_in_background(
+        &self,
+        thread_id: codex_protocol::ThreadId,
+    ) -> impl std::future::Future<Output = color_eyre::Result<backend::ThreadRehydration>> + Send + 'static
+    {
+        self.push(RecordedBackendCall::ThreadRehydrate(thread_id));
+        let thread = self
+            .threads
+            .lock()
+            .expect("threads should lock")
+            .iter()
+            .find(|thread| thread.id == thread_id.to_string())
+            .cloned();
+        let gate = self.thread_rehydrate_gate.clone();
+        async move {
+            if let Some(gate) = gate {
+                gate.acquire_owned()
+                    .await
+                    .expect("thread rehydrate gate should remain open")
+                    .forget();
+            }
+            let thread = thread
+                .ok_or_else(|| color_eyre::eyre::eyre!("thread {thread_id} was not found"))?;
+            Ok(backend::ThreadRehydration {
+                thread,
+                agent_history_task: None,
+            })
+        }
+    }
+
     fn account_rate_limits_in_background(
         &self,
     ) -> impl std::future::Future<Output = color_eyre::Result<GetAccountRateLimitsResponse>>
@@ -17396,7 +17735,7 @@ impl backend::AppShellBackend for RecordingBackend {
     fn thread_usage_in_background(
         &self,
         thread_id: codex_protocol::ThreadId,
-    ) -> impl std::future::Future<Output = color_eyre::Result<GetAccountTokenUsageResponse>>
+    ) -> impl std::future::Future<Output = color_eyre::Result<GetAccountThreadUsageResponse>>
     + Send
     + 'static {
         self.push(RecordedBackendCall::ThreadUsage(thread_id));
@@ -17405,19 +17744,7 @@ impl backend::AppShellBackend for RecordingBackend {
             .lock()
             .expect("thread usage should lock")
             .clone();
-        async move {
-            Ok(GetAccountTokenUsageResponse {
-                summary: AccountTokenUsageSummary {
-                    lifetime_tokens: None,
-                    peak_daily_tokens: None,
-                    longest_running_turn_sec: None,
-                    current_streak_days: None,
-                    longest_streak_days: None,
-                },
-                daily_usage_buckets: None,
-                thread_usage,
-            })
-        }
+        async move { Ok(GetAccountThreadUsageResponse { thread_usage }) }
     }
 
     async fn login_account(
@@ -18008,9 +18335,8 @@ impl backend::AppShellBackend for RecordingBackend {
         &self,
         thread_id: codex_protocol::ThreadId,
         rpc: queued_messages::QueueRpc,
-    ) -> impl std::future::Future<
-        Output = color_eyre::Result<queued_messages::QueueRpcResponse>,
-    > + Send
+    ) -> impl std::future::Future<Output = color_eyre::Result<queued_messages::QueueRpcResponse>>
+    + Send
     + 'static {
         let backend = self.clone();
         async move {

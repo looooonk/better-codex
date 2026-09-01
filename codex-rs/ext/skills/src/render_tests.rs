@@ -11,8 +11,8 @@ use crate::catalog_prompt::HOST_ALIAS_INSTRUCTIONS;
 use crate::catalog_prompt::RESOURCE_ALIAS_INSTRUCTIONS;
 use crate::catalog_prompt::SkillPromptKind;
 
-use super::SkillLine;
 use super::SkillCatalogRenderPolicy;
+use super::SkillLine;
 use super::SkillMetadataBudget;
 use super::aliased_metadata_overhead_cost;
 use super::available_skills_fragment;
@@ -218,13 +218,8 @@ fn combined_catalogs_emit_one_bounded_usage_block() {
     let budget = SkillMetadataBudget::Characters(900);
 
     for orchestrator in [&empty_orchestrator, &orchestrator] {
-        let rendered = render_combined_available_skills(
-            &executor,
-            orchestrator,
-            &host,
-            budget,
-            true,
-        );
+        let rendered =
+            render_combined_available_skills(&executor, orchestrator, &host, budget, true);
         let catalogs = [
             rendered.executor.as_ref(),
             rendered.orchestrator.as_ref(),
@@ -234,8 +229,7 @@ fn combined_catalogs_emit_one_bounded_usage_block() {
             .iter()
             .flatten()
             .any(|catalog| !catalog.skill_root_lines.is_empty());
-        let host_aliases = catalogs[2]
-            .is_some_and(|catalog| !catalog.skill_root_lines.is_empty());
+        let host_aliases = catalogs[2].is_some_and(|catalog| !catalog.skill_root_lines.is_empty());
         if !orchestrator.entries.is_empty() {
             assert!(resource_aliases);
             assert!(host_aliases);
@@ -249,25 +243,28 @@ fn combined_catalogs_emit_one_bounded_usage_block() {
                     .then(|| metadata_line_cost(budget, HOST_ALIAS_INSTRUCTIONS))
                     .unwrap_or_default(),
             );
-        let metadata_cost = catalogs
-            .into_iter()
-            .flatten()
-            .fold(alias_instruction_cost, |used, catalog| {
-                let root_cost = (!catalog.skill_root_lines.is_empty())
-                    .then(|| {
-                        aliased_metadata_overhead_cost(
-                            budget,
-                            catalog.prompt_kind,
-                            &catalog.skill_root_lines,
-                            false,
-                        )
-                    })
-                    .unwrap_or_default();
-                catalog.skill_lines.iter().fold(
-                    used.saturating_add(root_cost),
-                    |used, line| used.saturating_add(metadata_line_cost(budget, line)),
-                )
-            });
+        let metadata_cost =
+            catalogs
+                .into_iter()
+                .flatten()
+                .fold(alias_instruction_cost, |used, catalog| {
+                    let root_cost = (!catalog.skill_root_lines.is_empty())
+                        .then(|| {
+                            aliased_metadata_overhead_cost(
+                                budget,
+                                catalog.prompt_kind,
+                                &catalog.skill_root_lines,
+                                false,
+                            )
+                        })
+                        .unwrap_or_default();
+                    catalog
+                        .skill_lines
+                        .iter()
+                        .fold(used.saturating_add(root_cost), |used, line| {
+                            used.saturating_add(metadata_line_cost(budget, line))
+                        })
+                });
         assert!(metadata_cost <= budget.limit());
 
         let body = [rendered.executor, rendered.orchestrator, rendered.host]

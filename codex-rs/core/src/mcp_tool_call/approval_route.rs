@@ -29,22 +29,8 @@ impl McpApprovalRouteSnapshot {
         approval_mode: AppToolApproval,
     ) -> Option<Self> {
         for _ in 0..MAX_ROUTE_SNAPSHOT_ATTEMPTS {
-            let before = Self::sample(
-                turn_context,
-                manager,
-                server,
-                metadata,
-                approval_mode,
-            )
-            .await;
-            let after = Self::sample(
-                turn_context,
-                manager,
-                server,
-                metadata,
-                approval_mode,
-            )
-            .await;
+            let before = Self::sample(turn_context, manager, server, metadata, approval_mode).await;
+            let after = Self::sample(turn_context, manager, server, metadata, approval_mode).await;
             if before == after {
                 return Some(after);
             }
@@ -59,15 +45,8 @@ impl McpApprovalRouteSnapshot {
         server: &str,
         metadata: Option<&McpToolApprovalMetadata>,
     ) -> bool {
-        Self::capture(
-            turn_context,
-            manager,
-            server,
-            metadata,
-            self.approval_mode,
-        )
-        .await
-        == Some(self)
+        Self::capture(turn_context, manager, server, metadata, self.approval_mode).await
+            == Some(self)
     }
 
     async fn sample(

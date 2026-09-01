@@ -1,0 +1,20 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,),)"
+---
+  Dashboard  ◆ BC     gpt-5-codex ▾   default ▾   default ▾  ◐ queueing message
+────────────────────────────────────────────────────────────────────────────────
+                              │
+ ◆ CONVERSATION               │   Status   │  Agents   │  Sessions   │  Help
+╭──────────────────────────────────────────────────────────────────────╮───────
+│◆ QUEUED  2                                                           │
+│   1  first queued                                                    │
+│   2  second queued                                                   │
+│Click to edit   Alt+↑↓ navigate   Shift+Alt+↑↓ reorder                │
+╰──────────────────────────────────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  ● RUNNING  1:1                                                     │
+│> Type a message, Shift+Enter for newline                                     │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

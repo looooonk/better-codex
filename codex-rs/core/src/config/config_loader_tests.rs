@@ -605,10 +605,17 @@ async fn returns_empty_when_all_layers_missing() {
 
     let binding = layers.effective_config();
     let base_table = binding.as_table().expect("base table expected");
-    assert!(
-        base_table.is_empty(),
-        "expected empty base layer when configs missing"
+    assert_eq!(
+        base_table.get("include_environment_context"),
+        Some(&TomlValue::Boolean(true)),
+        "embedded packaged defaults should remain when file-backed configs are missing"
     );
+    let num_packaged_default_layers = layers
+        .layers_high_to_low()
+        .iter()
+        .filter(|layer| matches!(layer.name, ConfigLayerSource::PackagedDefaults { .. }))
+        .count();
+    assert_eq!(num_packaged_default_layers, 1);
     let num_system_layers = layers
         .layers_high_to_low()
         .iter()
@@ -618,16 +625,6 @@ async fn returns_empty_when_all_layers_missing() {
         num_system_layers, 1,
         "system layer should always be present"
     );
-
-    #[cfg(not(target_os = "macos"))]
-    {
-        let effective = layers.effective_config();
-        let table = effective.as_table().expect("top-level table expected");
-        assert!(
-            table.is_empty(),
-            "expected empty table when configs missing"
-        );
-    }
 }
 
 #[tokio::test]
@@ -714,6 +711,7 @@ async fn includes_thread_config_layers_in_stack() -> anyhow::Result<()> {
             .as_ref()
             .expect("test overrides should include a system config path"),
     )?;
+    let expected_packaged_defaults = AbsolutePathBuf::from_absolute_path(std::env::current_exe()?)?;
     let layers = load_config_layers_state(
         LOCAL_FS.as_ref(),
         tmp.path(),
@@ -743,6 +741,9 @@ async fn includes_thread_config_layers_in_stack() -> anyhow::Result<()> {
             },
             ConfigLayerSource::System {
                 file: expected_system_config,
+            },
+            ConfigLayerSource::PackagedDefaults {
+                file: expected_packaged_defaults,
             },
         ]
     );
@@ -1926,6 +1927,7 @@ review_model = "system-review"
     overrides.system_config_path = Some(system_config_path.clone());
 
     let cwd = AbsolutePathBuf::from_absolute_path(tmp.path())?;
+    let expected_packaged_defaults = AbsolutePathBuf::from_absolute_path(std::env::current_exe()?)?;
     let layers = load_config_layers_state(
         LOCAL_FS.as_ref(),
         &codex_home,
@@ -1965,6 +1967,9 @@ model_provider = "cloud-provider"
             .map(|layer| layer.name.clone())
             .collect::<Vec<_>>(),
         vec![
+            ConfigLayerSource::PackagedDefaults {
+                file: expected_packaged_defaults,
+            },
             ConfigLayerSource::System {
                 file: AbsolutePathBuf::from_absolute_path(&system_config_path)?,
             },

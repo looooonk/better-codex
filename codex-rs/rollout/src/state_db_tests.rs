@@ -6,8 +6,8 @@ use chrono::DateTime;
 use chrono::NaiveDateTime;
 use chrono::Timelike;
 use chrono::Utc;
-use codex_protocol::protocol::EventMsg;
 use codex_history::RolloutLine;
+use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::UserMessageEvent;
@@ -156,11 +156,9 @@ async fn filesystem_repair_preserves_selected_rollout_path() -> anyhow::Result<(
     ));
     std::fs::rename(initial_path, old_path.as_path())?;
     let selected_path = write_rollout_with_user_message(home.path(), thread_id, "Current")?;
-    let runtime = codex_state::StateRuntime::init(
-        home.path().to_path_buf(),
-        "test-provider".to_string(),
-    )
-    .await?;
+    let runtime =
+        codex_state::StateRuntime::init(home.path().to_path_buf(), "test-provider".to_string())
+            .await?;
     let selected_metadata =
         metadata::extract_metadata_from_rollout(selected_path.as_path(), "test-provider")
             .await?
@@ -193,7 +191,10 @@ async fn filesystem_repair_preserves_selected_rollout_path() -> anyhow::Result<(
         /*new_thread_memory_mode*/ None,
     )
     .await;
-    assert_eq!(runtime.get_thread(thread_id).await?, Some(selected_metadata));
+    assert_eq!(
+        runtime.get_thread(thread_id).await?,
+        Some(selected_metadata)
+    );
     Ok(())
 }
 
@@ -213,6 +214,7 @@ fn write_rollout_with_user_message(
                 meta: SessionMeta {
                     session_id: thread_id.into(),
                     id: thread_id,
+                    rollout_id: None,
                     forked_from_id: None,
                     parent_thread_id: None,
                     timestamp: "2026-06-01T14:26:25Z".to_string(),

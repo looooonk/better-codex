@@ -4,6 +4,8 @@ use std::fs;
 use anyhow::Result;
 use codex_core::compact::SUMMARY_PREFIX;
 use codex_features::Feature;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_login::CodexAuth;
 use codex_login::auth::AgentIdentityAuth;
 use codex_login::auth::AgentIdentityAuthRecord;
@@ -24,8 +26,6 @@ use codex_protocol::protocol::Op;
 use codex_protocol::protocol::RealtimeConversationRealtimeEvent;
 use codex_protocol::protocol::RealtimeEvent;
 use codex_protocol::protocol::RealtimeOutputModality;
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::user_input::UserInput;
 use core_test_support::PathBufExt;
 use core_test_support::apps_test_server::configure_search_capable_model;
@@ -1014,6 +1014,113 @@ async fn remote_compact_v2_reuses_compaction_trigger_for_followups() -> Result<(
         follow_up_body.contains("hello remote compact"),
         "expected v2 follow-up request to preserve retained original user messages"
     );
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn retained_client_developer_message_stays_bounded_across_remote_v2_compaction() -> Result<()>
+{
+    skip_if_no_network!(Ok(()));
+
+    let harness = TestCodexHarness::with_builder(
+        test_codex()
+            .with_auth(CodexAuth::create_dummy_chatgpt_auth_for_testing())
+            .with_config(|config| {
+                let _ = config.features.enable(Feature::RemoteCompactionV2);
+                let _ = config
+                    .features
+                    .enable(Feature::RetainClientDeveloperMessages);
+            }),
+    )
+    .await?;
+    let codex = harness.test().codex.clone();
+    let responses_mock = responses::mount_sse_sequence(
+        harness.server(),
+        vec![
+            responses::sse(vec![
+                responses::ev_assistant_message("m1", "BEFORE_COMPACT_REPLY"),
+                responses::ev_completed("resp-1"),
+            ]),
+            responses::sse(vec![
+                json!({
+                    "type": "response.output_item.done",
+                    "item": {
+                        "type": "compaction",
+                        "encrypted_content": "ENCRYPTED_CONTEXT_COMPACTION_SUMMARY",
+                    }
+                }),
+                responses::ev_completed("resp-compact"),
+            ]),
+            responses::sse(vec![
+                responses::ev_assistant_message("m2", "AFTER_COMPACT_REPLY"),
+                responses::ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+    let developer_text = format!(
+        "CLIENT_RETAIN_START:{}:CLIENT_RETAIN_END",
+        "x".repeat(50_000)
+    );
+    codex
+        .inject_response_items(vec![ResponseItem::Message {
+            id: None,
+            role: "developer".to_string(),
+            content: vec![ContentItem::InputText {
+                text: developer_text,
+            }],
+            phase: None,
+            internal_chat_message_metadata_passthrough: None,
+        }])
+        .await?;
+
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "before compact".to_string(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await?;
+    wait_for_turn_complete(&codex).await;
+    codex.submit(Op::Compact).await?;
+    wait_for_turn_complete(&codex).await;
+    codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "after compact".to_string(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            responsesapi_client_metadata: None,
+            additional_context: Default::default(),
+            thread_settings: Default::default(),
+        })
+        .await?;
+    wait_for_turn_complete(&codex).await;
+
+    let requests = responses_mock.requests();
+    assert_eq!(requests.len(), 3);
+    let retained_texts = requests
+        .iter()
+        .map(|request| {
+            request
+                .message_input_texts("developer")
+                .into_iter()
+                .find(|text| text.starts_with("CLIENT_RETAIN_START:"))
+                .expect("request should include retained client developer context")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(retained_texts[0], retained_texts[1]);
+    assert_eq!(retained_texts[1], retained_texts[2]);
+    assert!(retained_texts[0].ends_with(":CLIENT_RETAIN_END"));
+    assert!(retained_texts[0].contains("tokens truncated"));
+    assert!(approx_token_count(&retained_texts[0]) <= 1_000);
 
     Ok(())
 }

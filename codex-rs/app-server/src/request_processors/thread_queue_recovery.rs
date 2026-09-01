@@ -46,8 +46,12 @@ impl ThreadQueueService {
         &self,
         thread: Arc<CodexThread>,
         thread_id: ThreadId,
+        event_turn_id: &str,
         event: &EventMsg,
     ) {
+        self.admission_tracker
+            .observe(thread.as_ref(), thread_id, event_turn_id, event)
+            .await;
         let Some(terminal_event) = ThreadTerminalEvent::from_event(event) else {
             return;
         };
@@ -359,7 +363,7 @@ impl ThreadQueueService {
                 )
             }
             ThreadHistoryMode::Paginated => {
-                self.paginated_recovery_outcome(thread_id, turn_id, &record)
+                self.paginated_recovery_outcome(thread_id, turn_id, record)
                     .await?
             }
         };

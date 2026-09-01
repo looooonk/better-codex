@@ -580,16 +580,16 @@ impl CoreShellActionProvider {
                         ReviewDecision::NetworkPolicyAmendment { .. } => EscalationDecision::deny(
                             Some("Invalid network policy amendment for shell approval".to_string()),
                         ),
-                        ReviewDecision::Denied { .. } => {
+                        ReviewDecision::Denied | ReviewDecision::DeniedWithReason { .. } => {
                             let message = prompt_decision
                                 .rejection_message
                                 .clone()
                                 .unwrap_or_else(|| "User denied execution".to_string());
                             EscalationDecision::deny(Some(message))
                         }
-                        ReviewDecision::TimedOut => EscalationDecision::deny(Some(
-                            "Approval request timed out".to_string(),
-                        )),
+                        ReviewDecision::TimedOut => {
+                            EscalationDecision::deny(Some("Approval request timed out".to_string()))
+                        }
                         ReviewDecision::ApprovedMcpPolicyAmendment => EscalationDecision::deny(
                             Some("Invalid MCP policy amendment for shell approval".to_string()),
                         ),

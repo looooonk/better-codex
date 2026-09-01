@@ -1,20 +1,22 @@
 use super::DashboardRoute;
 use super::ShellState;
 use super::backend::AppShellBackend;
+use super::backend::ThreadRehydration;
 use super::workspace;
 use super::workspace::WorkspaceGitStatusProbe;
 use crate::app_server_session::app_server_rate_limit_snapshots;
 use codex_app_server_protocol::GetAccountRateLimitsResponse;
 use codex_app_server_protocol::ThreadGoal;
-use codex_app_server_protocol::ThreadUsage;
 use codex_app_server_protocol::ThreadListParams;
 use codex_app_server_protocol::ThreadListResponse;
+use codex_app_server_protocol::ThreadUsage;
 use codex_protocol::ThreadId;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 const SESSION_HYDRATION_LOOKUP_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 5);
+const THREAD_REVERT_RETRY_DELAY: Duration = Duration::from_secs(/*secs*/ 1);
 type LookupResult<T> = std::result::Result<T, String>;
 type LookupTask<T> = Option<JoinHandle<SessionLookup<LookupResult<T>>>>;
 
@@ -41,12 +43,16 @@ pub(super) struct SessionHydrationState {
     thread_usage_revision: u64,
     thread_usage_loaded: bool,
     thread_usage_refresh_due: bool,
+    thread_revert_enabled: bool,
+    thread_revert_revision: u64,
+    pub(super) thread_revert_cleanup_thread_ids: Vec<ThreadId>,
     goal_task: LookupTask<Option<ThreadGoal>>,
     workspace_task: LookupTask<WorkspaceGitStatusProbe>,
     session_list_params: Option<ThreadListParams>,
     session_list_task: Option<JoinHandle<SessionLookup<SessionListPage>>>,
     rate_limits_task: LookupTask<GetAccountRateLimitsResponse>,
     thread_usage_task: LookupTask<Option<ThreadUsage>>,
+    thread_revert_task: LookupTask<ThreadRehydration>,
 }
 
 struct SessionLookup<T> {
@@ -62,6 +68,10 @@ impl ShellState {
             || self.session_hydration.rate_limits_task.is_some();
         self.session_hydration.generation = self.session_hydration.generation.wrapping_add(1);
         self.cancel_session_hydration();
+        self.session_hydration.thread_revert_enabled = false;
+        self.session_hydration
+            .thread_revert_cleanup_thread_ids
+            .clear();
         self.session_hydration.rate_limits_refresh_due = rate_limits_refresh_due;
         self.session_hydration.thread_usage_loaded = false;
         self.session_hydration.thread_usage_refresh_due = true;
@@ -75,6 +85,74 @@ impl ShellState {
         self.start_workspace_hydration();
         self.start_rate_limits_hydration(app_server);
         self.start_thread_usage_hydration(app_server);
+    }
+
+    pub(super) fn begin_thread_revert_hydration<S>(
+        &mut self,
+        app_server: &S,
+        cleanup_thread_ids: Vec<ThreadId>,
+    ) where
+        S: AppShellBackend,
+    {
+        self.session_hydration.thread_revert_enabled = true;
+        self.session_hydration.thread_revert_cleanup_thread_ids = cleanup_thread_ids;
+        self.restart_thread_revert_hydration(app_server);
+    }
+
+    fn restart_thread_revert_hydration<S>(&mut self, app_server: &S)
+    where
+        S: AppShellBackend,
+    {
+        self.spawn_thread_revert_hydration(app_server, Duration::ZERO);
+    }
+
+    fn retry_thread_revert_hydration<S>(&mut self, app_server: &S)
+    where
+        S: AppShellBackend,
+    {
+        self.spawn_thread_revert_hydration(app_server, THREAD_REVERT_RETRY_DELAY);
+    }
+
+    fn spawn_thread_revert_hydration<S>(&mut self, app_server: &S, retry_delay: Duration)
+    where
+        S: AppShellBackend,
+    {
+        if let Some(task) = self.session_hydration.thread_revert_task.take() {
+            task.abort();
+        }
+        let generation = self.session_hydration.generation;
+        let thread_id = self.thread_id;
+        let revision = self.session_hydration.thread_revert_revision;
+        let lookup = app_server.thread_rehydrate_in_background(thread_id);
+        self.session_hydration.thread_revert_task = Some(tokio::spawn(async move {
+            if !retry_delay.is_zero() {
+                tokio::time::sleep(retry_delay).await;
+            }
+            let value = lookup.await.map_err(|err| err.to_string());
+            SessionLookup {
+                generation,
+                thread_id,
+                revision,
+                value,
+            }
+        }));
+    }
+
+    pub(super) fn mark_thread_revert_hydration_stale(&mut self) {
+        if self.session_hydration.thread_revert_task.is_some() {
+            self.session_hydration.thread_revert_revision = self
+                .session_hydration
+                .thread_revert_revision
+                .wrapping_add(1);
+        }
+    }
+
+    pub(super) fn reverted_thread_refresh_enabled(&self) -> bool {
+        self.session_hydration.thread_revert_enabled
+    }
+
+    pub(super) fn is_thread_revert_hydrating(&self) -> bool {
+        self.session_hydration.thread_revert_task.is_some()
     }
 
     pub(super) fn start_initial_dashboard_hydration<S>(&mut self, app_server: &S)
@@ -284,6 +362,7 @@ impl ShellState {
             || self.session_hydration.rate_limits_refresh_due
             || self.session_hydration.thread_usage_task.is_some()
             || self.session_hydration.thread_usage_refresh_due
+            || self.session_hydration.thread_revert_task.is_some()
             || self.has_pending_goal_rate_limit_recovery()
     }
 
@@ -292,6 +371,44 @@ impl ShellState {
         S: AppShellBackend,
     {
         let mut changed = false;
+        if self
+            .session_hydration
+            .thread_revert_task
+            .as_ref()
+            .is_some_and(JoinHandle::is_finished)
+            && let Some(task) = self.session_hydration.thread_revert_task.take()
+        {
+            match task.await {
+                Ok(lookup)
+                    if lookup.generation == self.session_hydration.generation
+                        && lookup.thread_id == self.thread_id =>
+                {
+                    if lookup.revision != self.session_hydration.thread_revert_revision {
+                        self.restart_thread_revert_hydration(app_server);
+                    } else {
+                        match lookup.value {
+                            Ok(rehydration) => self.apply_reverted_thread(app_server, rehydration),
+                            Err(err) => {
+                                tracing::warn!(%err, "failed to hydrate reverted session");
+                                self.status = "retrying reverted session refresh".to_string();
+                                self.retry_thread_revert_hydration(app_server);
+                            }
+                        }
+                    }
+                    changed = true;
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    if !err.is_cancelled() {
+                        tracing::warn!(%err, "reverted session lookup task failed");
+                        self.status = "retrying reverted session refresh".to_string();
+                        self.retry_thread_revert_hydration(app_server);
+                        changed = true;
+                    }
+                }
+            }
+        }
+
         if self
             .session_hydration
             .goal_task
@@ -490,6 +607,9 @@ impl ShellState {
         if let Some(task) = self.session_hydration.thread_usage_task.take() {
             task.abort();
         }
+        if let Some(task) = self.session_hydration.thread_revert_task.take() {
+            task.abort();
+        }
         self.cancel_goal_rate_limit_recovery();
     }
 
@@ -601,11 +721,12 @@ impl ShellState {
             let transient_zero_credits = current.estimated_usage_credits_micros == 0
                 && previous.estimated_usage_credits_micros > 0;
             if transient_zero_credits {
-                current.estimated_usage_credits_micros =
-                    previous.estimated_usage_credits_micros;
+                current.estimated_usage_credits_micros = previous.estimated_usage_credits_micros;
             }
             let transient_zero_cost = current.estimated_usage_usd_micros == Some(0)
-                && previous.estimated_usage_usd_micros.is_some_and(|value| value > 0);
+                && previous
+                    .estimated_usage_usd_micros
+                    .is_some_and(|value| value > 0);
             if transient_zero_cost {
                 current.estimated_usage_usd_micros = previous.estimated_usage_usd_micros;
             }

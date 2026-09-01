@@ -5,8 +5,8 @@ use std::net::IpAddr;
 use clap::Args;
 use clap::builder::TypedValueParser;
 use clap::error::ErrorKind;
-use url::Url;
 use codex_code_mode::GrpcCodeModeHostCapability;
+use url::Url;
 
 const MAX_HOST_URL_BYTES: usize = 2_048;
 
@@ -58,15 +58,15 @@ impl AppServerCodeModeHostArgs {
     ) -> Result<CodeModeHostTransport, String> {
         match (self.code_mode_host, self.code_mode_host_token_env) {
             (None, None) => Ok(CodeModeHostTransport::Local),
-            (None, Some(_)) => Err(
-                "code-mode host capability environment requires --code-mode-host".to_string(),
-            ),
+            (None, Some(_)) => {
+                Err("code-mode host capability environment requires --code-mode-host".to_string())
+            }
             (Some(url), None) if matches!(url.scheme(), "unix" | "https") => {
                 Ok(CodeModeHostTransport::Grpc(url))
             }
-            (Some(_), None) => Err(
-                "plaintext HTTP code-mode hosts require --code-mode-host-token-env".to_string(),
-            ),
+            (Some(_), None) => {
+                Err("plaintext HTTP code-mode hosts require --code-mode-host-token-env".to_string())
+            }
             (Some(url), Some(environment)) => {
                 let value = lookup(&environment).ok_or_else(|| {
                     format!("code-mode host capability environment {environment} is not set")
@@ -106,10 +106,9 @@ impl CodeModeHostTransport {
 
 fn parse_env_name(value: &str) -> Result<String, String> {
     let valid = value.len() <= 256
-        && value
-            .bytes()
-            .enumerate()
-            .all(|(index, byte)| byte == b'_' || byte.is_ascii_alphanumeric() && (index > 0 || !byte.is_ascii_digit()));
+        && value.bytes().enumerate().all(|(index, byte)| {
+            byte == b'_' || byte.is_ascii_alphanumeric() && (index > 0 || !byte.is_ascii_digit())
+        });
     if !valid || value.is_empty() {
         return Err("code-mode host capability environment name is invalid".to_string());
     }
@@ -166,9 +165,7 @@ fn parse_host_url(value: &str) -> Result<Url, String> {
         return Err("code-mode host URL must not contain credentials".to_string());
     }
     if url.path() != "/" || url.query().is_some() || url.fragment().is_some() {
-        return Err(
-            "code-mode host URL must not contain a path, query, or fragment".to_string(),
-        );
+        return Err("code-mode host URL must not contain a path, query, or fragment".to_string());
     }
     if url.scheme() == "http"
         && !url
@@ -181,9 +178,7 @@ fn parse_host_url(value: &str) -> Result<Url, String> {
             })
             .is_some_and(|ip| ip.is_loopback())
     {
-        return Err(
-            "plaintext code-mode hosts must use a loopback IP address".to_string(),
-        );
+        return Err("plaintext code-mode hosts must use a loopback IP address".to_string());
     }
     Ok(url)
 }

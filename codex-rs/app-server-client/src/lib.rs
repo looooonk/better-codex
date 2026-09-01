@@ -125,11 +125,12 @@ fn event_requires_delivery(event: &InProcessServerEvent) -> bool {
 /// Returns `true` for notifications that must survive backpressure.
 ///
 /// Transcript events (`AgentMessageDelta`, `PlanDelta`, reasoning deltas) and
-/// the authoritative `ItemCompleted` / `TurnCompleted` form the lossless tier
-/// of the event stream. Dropping any of these corrupts the visible assistant
-/// output or leaves surfaces waiting for a completion signal that already
-/// fired. Everything else (`CommandExecutionOutputDelta`, progress, etc.) is
-/// best-effort and may be dropped with only cosmetic impact.
+/// the authoritative `ItemCompleted` / `TurnCompleted`, thread reverts, and
+/// request resolutions form the lossless tier of the event stream. Dropping
+/// any of these corrupts the visible assistant output or leaves local state
+/// waiting for a transition that already fired. Everything else
+/// (`CommandExecutionOutputDelta`, progress, etc.) is best-effort and may be
+/// dropped with only cosmetic impact.
 ///
 /// Both the in-process and remote transports delegate to this function so the
 /// classification stays in sync.
@@ -137,9 +138,11 @@ pub(crate) fn server_notification_requires_delivery(notification: &ServerNotific
     matches!(
         notification,
         ServerNotification::TurnCompleted(_)
+            | ServerNotification::ThreadReverted(_)
             | ServerNotification::ThreadSettingsUpdated(_)
             | ServerNotification::ThreadQueueChanged(_)
             | ServerNotification::ItemCompleted(_)
+            | ServerNotification::ServerRequestResolved(_)
             | ServerNotification::ExternalAgentConfigImportCompleted(_)
             | ServerNotification::AgentMessageDelta(_)
             | ServerNotification::PlanDelta(_)
@@ -2340,6 +2343,25 @@ mod tests {
                     codex_app_server_protocol::ExternalAgentConfigImportCompletedNotification {
                         import_id: "import".to_string(),
                         item_type_results: Vec::new(),
+                    },
+                )
+            )
+        ));
+        assert!(event_requires_delivery(
+            &InProcessServerEvent::ServerNotification(
+                codex_app_server_protocol::ServerNotification::ThreadReverted(
+                    codex_app_server_protocol::ThreadRevertedNotification {
+                        thread_id: "thread".to_string(),
+                    },
+                )
+            )
+        ));
+        assert!(event_requires_delivery(
+            &InProcessServerEvent::ServerNotification(
+                codex_app_server_protocol::ServerNotification::ServerRequestResolved(
+                    codex_app_server_protocol::ServerRequestResolvedNotification {
+                        thread_id: "thread".to_string(),
+                        request_id: codex_app_server_protocol::RequestId::Integer(1),
                     },
                 )
             )

@@ -55,7 +55,10 @@ impl WriterLockCoordinator {
             .truncate(false)
             .open(&path)
             .map_err(|err| ThreadStoreError::Internal {
-                message: format!("failed to open thread writer lock {}: {err}", path.display()),
+                message: format!(
+                    "failed to open thread writer lock {}: {err}",
+                    path.display()
+                ),
             })?;
 
         match file.try_lock() {

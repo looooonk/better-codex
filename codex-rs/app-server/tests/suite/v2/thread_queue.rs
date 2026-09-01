@@ -63,6 +63,7 @@ use codex_protocol::user_input::UserInput as CoreUserInput;
 use codex_rollout::RolloutItem;
 use codex_rollout::append_rollout_item_to_path;
 use codex_state::QueueClaimResult;
+use codex_state::QueuedSubmissionState;
 use codex_state::StateRuntime;
 use core_test_support::responses;
 use pretty_assertions::assert_eq;
@@ -391,8 +392,22 @@ async fn cold_recovery_keeps_consumed_indeterminate_work_visible_until_delete() 
 
 #[tokio::test]
 async fn idle_thread_dispatches_a_durable_queued_submission() -> Result<()> {
-    let server = create_mock_responses_server_repeating_assistant("Done").await;
     let codex_home = TempDir::new()?;
+    let release_path = codex_home.path().join("release-queued-turn");
+    let release_command = format!(
+        "while [ ! -f '{}' ]; do sleep 0.01; done",
+        release_path.display()
+    );
+    let server = create_mock_responses_server_sequence(vec![
+        create_shell_command_sse_response(
+            vec!["sh".to_string(), "-c".to_string(), release_command],
+            Some(codex_home.path()),
+            Some(30_000),
+            "hold-queued-turn",
+        )?,
+        create_final_assistant_message_sse_response("Done")?,
+    ])
+    .await;
     write_config(codex_home.path(), &server.uri())?;
     let mut app = TestAppServer::builder()
         .with_codex_home(codex_home.path())
@@ -420,6 +435,20 @@ async fn idle_thread_dispatches_a_durable_queued_submission() -> Result<()> {
         app.read_stream_until_notification_message("thread/queue/changed"),
     )
     .await??;
+
+    let thread_id = ThreadId::from_string(&started.thread.id)?;
+    let state =
+        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".to_string()).await?;
+    let active = state
+        .active_queued_submission(thread_id)
+        .await?
+        .expect("admitted queued submission should remain active");
+    assert_eq!(active.state, QueuedSubmissionState::Inflight);
+    assert_eq!(active.client_user_message_id, "client-idle");
+    state.close().await;
+
+    wait_for_command_start(&mut app).await?;
+    std::fs::write(release_path, "release")?;
     timeout(
         DEFAULT_TIMEOUT,
         turn_completed_before_queue_changed(&mut app),
@@ -438,6 +467,112 @@ async fn idle_thread_dispatches_a_durable_queued_submission() -> Result<()> {
         .await?;
     let listed: ThreadQueueListResponse = response(&mut app, list_id).await?;
     assert_eq!(listed.data, Vec::new());
+    Ok(())
+}
+
+#[tokio::test]
+async fn queue_start_immediately_after_turn_start_preserves_pending_submission() -> Result<()> {
+    let codex_home = TempDir::new()?;
+    let release_path = codex_home.path().join("release-direct-turn");
+    let release_command = format!(
+        "while [ ! -f '{}' ]; do sleep 0.01; done",
+        release_path.display()
+    );
+    let server = create_mock_responses_server_sequence(vec![
+        create_shell_command_sse_response(
+            vec!["sh".to_string(), "-c".to_string(), release_command],
+            Some(codex_home.path()),
+            Some(30_000),
+            "hold-direct-turn",
+        )?,
+        create_final_assistant_message_sse_response("Done")?,
+    ])
+    .await;
+    write_config(codex_home.path(), &server.uri())?;
+    let mut app = TestAppServer::builder()
+        .with_codex_home(codex_home.path())
+        .build()
+        .await?;
+    timeout(Duration::from_secs(/*secs*/ 30), app.initialize()).await??;
+    let start_id = app
+        .send_thread_start_request_with_auto_env(ThreadStartParams {
+            model: Some("mock-model".to_string()),
+            ..Default::default()
+        })
+        .await?;
+    let started: ThreadStartResponse = response(&mut app, start_id).await?;
+    let thread_id = ThreadId::from_string(&started.thread.id)?;
+    let queued_payload = serde_json::to_string(&vec![CoreUserInput::Text {
+        text: "queued must remain pending".to_string(),
+        text_elements: Vec::new(),
+    }])?;
+    let state =
+        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".to_string()).await?;
+    let queued = state
+        .enqueue_queued_submission(thread_id, &queued_payload, "client-race")
+        .await?;
+    state.close().await;
+
+    let direct_id = app
+        .send_turn_start_request(TurnStartParams {
+            thread_id: started.thread.id.clone(),
+            input: text_input("direct turn"),
+            ..Default::default()
+        })
+        .await?;
+    let queue_id = app
+        .send_raw_request(
+            "thread/queue/start",
+            Some(serde_json::to_value(ThreadQueueStartParams {
+                thread_id: started.thread.id.clone(),
+                queued_submission_id: Some(queued.id.clone()),
+            })?),
+        )
+        .await?;
+    let _: TurnStartResponse = response(&mut app, direct_id).await?;
+    let queue_error: JSONRPCError = timeout(
+        DEFAULT_TIMEOUT,
+        app.read_stream_until_error_message(RequestId::Integer(queue_id)),
+    )
+    .await??;
+    assert_eq!(queue_error.error.code, INVALID_REQUEST_ERROR_CODE);
+    assert_eq!(
+        queue_error.error.message,
+        "thread already has an active or pending turn"
+    );
+
+    let state =
+        StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".to_string()).await?;
+    assert_eq!(
+        state.queued_submission(thread_id, &queued.id).await?,
+        Some(queued.clone())
+    );
+    state.close().await;
+
+    let delete_id = app
+        .send_raw_request(
+            "thread/queue/delete",
+            Some(serde_json::to_value(ThreadQueueDeleteParams {
+                thread_id: started.thread.id,
+                queued_submission_id: queued.id,
+            })?),
+        )
+        .await?;
+    let deleted: ThreadQueueDeleteResponse = response(&mut app, delete_id).await?;
+    assert!(deleted.deleted);
+    wait_for_command_start(&mut app).await?;
+    std::fs::write(release_path, "release")?;
+    timeout(
+        DEFAULT_TIMEOUT,
+        app.read_stream_until_notification_message("turn/completed"),
+    )
+    .await??;
+
+    let requests = server.received_requests().await.expect("response requests");
+    assert_eq!(requests.len(), 2);
+    assert!(requests.iter().all(|request| {
+        !String::from_utf8_lossy(&request.body).contains("queued must remain pending")
+    }));
     Ok(())
 }
 

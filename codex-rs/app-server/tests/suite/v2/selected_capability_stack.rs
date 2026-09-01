@@ -157,7 +157,10 @@ async fn selected_capability_stack_tracks_environment_availability_and_resume() 
     run_turn(
         &mut app_server,
         &thread_id,
-        "Inspect the current capabilities",
+        vec![UserInput::Text {
+            text: "Inspect the current capabilities".to_string(),
+            text_elements: Vec::new(),
+        }],
         fixture.environment_cwd.clone(),
     )
     .await?;
@@ -172,7 +175,7 @@ async fn selected_capability_stack_tracks_environment_availability_and_resume() 
     run_turn(
         &mut app_server,
         &thread_id,
-        &format!("Use ${SKILL_NAME} and call its selected executor MCP"),
+        selected_skill_input(&fixture, "Use the selected executor skill and call its MCP"),
         fixture.environment_cwd.clone(),
     )
     .await?;
@@ -181,7 +184,10 @@ async fn selected_capability_stack_tracks_environment_availability_and_resume() 
     run_turn(
         &mut app_server,
         &thread_id,
-        "Continue with the same selected capabilities",
+        vec![UserInput::Text {
+            text: "Continue with the same selected capabilities".to_string(),
+            text_elements: Vec::new(),
+        }],
         fixture.environment_cwd.clone(),
     )
     .await?;
@@ -215,7 +221,10 @@ async fn selected_capability_stack_tracks_environment_availability_and_resume() 
     run_turn(
         &mut app_server,
         &thread_id,
-        "Inspect capabilities while the selected executor is unavailable",
+        vec![UserInput::Text {
+            text: "Inspect capabilities while the selected executor is unavailable".to_string(),
+            text_elements: Vec::new(),
+        }],
         fixture.environment_cwd.clone(),
     )
     .await?;
@@ -234,7 +243,10 @@ async fn selected_capability_stack_tracks_environment_availability_and_resume() 
     run_turn(
         &mut app_server,
         &thread_id,
-        &format!("Use ${SKILL_NAME} after reattaching the selected executor"),
+        selected_skill_input(
+            &fixture,
+            "Use the selected executor skill after reattaching its environment",
+        ),
         fixture.environment_cwd,
     )
     .await?;
@@ -605,10 +617,14 @@ fn assert_selected_skill_is_injected(request: &ResponsesRequest, expected_count:
 }
 
 fn assert_selected_skill_catalog_available(request: &ResponsesRequest) {
+    let developer_messages = request.message_input_texts("developer");
     let catalog_fragment = latest_selected_skill_update(request)
         .expect("selected skill catalog update should be model-visible");
-    assert!(catalog_fragment.contains(SKILL_DESCRIPTION));
-    assert!(catalog_fragment.contains("environment resource:"));
+    assert!(
+        catalog_fragment.contains(SKILL_DESCRIPTION),
+        "unexpected selected skill updates: {developer_messages:#?}"
+    );
+    assert!(catalog_fragment.contains(&format!("(executor package: skill://{PLUGIN_ID}/")));
 }
 
 fn latest_selected_skill_update(request: &ResponsesRequest) -> Option<String> {
@@ -663,16 +679,13 @@ async fn start_thread(
 async fn run_turn(
     app_server: &mut TestAppServer,
     thread_id: &str,
-    text: &str,
+    input: Vec<UserInput>,
     environment_cwd: AbsolutePathBuf,
 ) -> Result<()> {
     let request_id = app_server
         .send_turn_start_request(TurnStartParams {
             thread_id: thread_id.to_string(),
-            input: vec![UserInput::Text {
-                text: text.to_string(),
-                text_elements: Vec::new(),
-            }],
+            input,
             environments: Some(vec![TurnEnvironmentParams {
                 environment_id: LOCAL_ENVIRONMENT_ID.to_string(),
                 cwd: environment_cwd.into(),
@@ -692,6 +705,22 @@ async fn run_turn(
     )
     .await??;
     Ok(())
+}
+
+fn selected_skill_input(fixture: &SelectedCapabilityFixture, text: &str) -> Vec<UserInput> {
+    vec![
+        UserInput::Text {
+            text: text.to_string(),
+            text_elements: Vec::new(),
+        },
+        UserInput::Mention {
+            name: SKILL_NAME.to_string(),
+            path: format!(
+                "skill://{PLUGIN_ID}{}/skills/deploy/SKILL.md",
+                fixture._plugin.path().display()
+            ),
+        },
+    ]
 }
 
 async fn add_environment(app_server: &mut TestAppServer, exec_server_url: &str) -> Result<()> {

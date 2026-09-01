@@ -94,13 +94,9 @@ impl ApprovalReviewLifecycle {
                 )),
                 false,
             ),
-            ApprovalReviewResult::Cancelled => (
-                GuardianAssessmentStatus::Aborted,
-                None,
-                None,
-                None,
-                false,
-            ),
+            ApprovalReviewResult::Cancelled => {
+                (GuardianAssessmentStatus::Aborted, None, None, None, false)
+            }
         };
         if let Some(rationale) = rationale.as_ref() {
             session

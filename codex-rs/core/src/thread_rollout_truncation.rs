@@ -7,14 +7,14 @@ use crate::context_manager::is_user_turn_boundary;
 use crate::event_mapping;
 use codex_app_server_protocol::TurnStatus;
 use codex_app_server_protocol::build_turns_from_rollout_items;
+use codex_history::InitialHistory;
+use codex_history::RolloutItem;
 use codex_protocol::error::CodexErr;
 use codex_protocol::error::Result as CodexResult;
 use codex_protocol::items::TurnItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
-use codex_history::InitialHistory;
 use codex_protocol::protocol::InterAgentCommunication;
-use codex_history::RolloutItem;
 
 pub(crate) fn initial_history_has_prior_user_turns(conversation_history: &InitialHistory) -> bool {
     conversation_history.scan_rollout_items(rollout_item_is_user_turn_boundary)
@@ -43,9 +43,9 @@ pub(crate) fn user_message_positions_in_rollout(items: &[RolloutItem]) -> Vec<us
             RolloutItem::ResponseItem(envelope)
                 if matches!(envelope.item, ResponseItem::Message { .. })
                     && matches!(
-                    event_mapping::parse_turn_item(&envelope.item),
-                    Some(TurnItem::UserMessage(_))
-                ) =>
+                        event_mapping::parse_turn_item(&envelope.item),
+                        Some(TurnItem::UserMessage(_))
+                    ) =>
             {
                 user_positions.push(idx);
             }
@@ -87,8 +87,7 @@ pub(crate) fn fork_turn_positions_in_rollout(items: &[RolloutItem]) -> Vec<usize
                 if is_user_turn_boundary(&item.item) && !has_delivery_metadata {
                     rollback_turn_positions.push(idx);
                 }
-                if is_real_user_message_boundary(&item.item)
-                    || is_trigger_turn_boundary(&item.item)
+                if is_real_user_message_boundary(&item.item) || is_trigger_turn_boundary(&item.item)
                 {
                     fork_turn_positions.push(idx);
                 }

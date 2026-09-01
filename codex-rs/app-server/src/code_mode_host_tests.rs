@@ -1,7 +1,7 @@
+use codex_code_mode::GrpcCodeModeHostCapability;
 use pretty_assertions::assert_eq;
 use std::ffi::OsString;
 use url::Url;
-use codex_code_mode::GrpcCodeModeHostCapability;
 
 use super::AppServerCodeModeHostArgs;
 use super::CodeModeHostTransport;
@@ -81,13 +81,13 @@ fn explicit_host_selects_capability_authenticated_grpc_transport() {
     let raw_capability = "a1".repeat(32);
     let capability = GrpcCodeModeHostCapability::new(raw_capability.clone()).unwrap();
     let transport = AppServerCodeModeHostArgs {
-            code_mode_host: Some(url.clone()),
-            code_mode_host_token_env: Some("CODE_MODE_TOKEN".to_string()),
-        }
-        .resolve_with(|name| {
-            assert_eq!(name, "CODE_MODE_TOKEN");
-            Some(OsString::from(raw_capability.clone()))
-        });
+        code_mode_host: Some(url.clone()),
+        code_mode_host_token_env: Some("CODE_MODE_TOKEN".to_string()),
+    }
+    .resolve_with(|name| {
+        assert_eq!(name, "CODE_MODE_TOKEN");
+        Some(OsString::from(raw_capability.clone()))
+    });
     assert_eq!(
         transport,
         Ok(CodeModeHostTransport::AuthenticatedGrpc { url, capability })

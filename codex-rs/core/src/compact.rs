@@ -419,21 +419,15 @@ async fn run_compact_task_inner_impl(
         get_last_assistant_message_from_turn(history_snapshot.raw_items()).unwrap_or_default();
     let summary_text = format!("{SUMMARY_PREFIX}\n{summary_suffix}");
     let user_messages = collect_annotated_user_messages(history_items);
-    let retained_client_developer_messages =
-        if sess.enabled(Feature::RetainClientDeveloperMessages) {
-            crate::compact_remote_v2::truncate_retained_messages_for_remote_compaction(
-                history_items
-                    .iter()
-                    .filter(|item| {
-                        crate::compact_remote_v2::is_client_authored_developer_message(item)
-                    })
-                    .cloned()
-                    .collect(),
-                crate::compact_remote_v2::RETAINED_MESSAGE_TOKEN_BUDGET,
-            )
-        } else {
-            Vec::new()
-        };
+    let retained_client_developer_messages = if sess.enabled(Feature::RetainClientDeveloperMessages)
+    {
+        crate::compact_remote_v2::collect_retained_client_developer_messages(
+            history_items.iter().cloned(),
+            crate::compact_remote_v2::RETAINED_MESSAGE_TOKEN_BUDGET,
+        )
+    } else {
+        Vec::new()
+    };
 
     let mut new_history = build_annotated_compacted_history(
         retained_client_developer_messages,
@@ -708,17 +702,18 @@ fn insert_annotated_initial_context_before_last_real_user_or_summary(
             break;
         }
     }
-    let last_compaction_index = compacted_history
-        .iter()
-        .enumerate()
-        .rev()
-        .find_map(|(index, envelope)| {
-            matches!(
-                &envelope.item,
-                ResponseItem::Compaction { .. } | ResponseItem::ContextCompaction { .. }
-            )
-            .then_some(index)
-        });
+    let last_compaction_index =
+        compacted_history
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, envelope)| {
+                matches!(
+                    &envelope.item,
+                    ResponseItem::Compaction { .. } | ResponseItem::ContextCompaction { .. }
+                )
+                .then_some(index)
+            });
     let insertion_index = last_real_user_index
         .or(last_user_or_summary_index)
         .or(last_compaction_index);

@@ -1,5 +1,6 @@
 use std::ffi::OsStr;
 use std::fs::File;
+use std::fs::FileTimes;
 use std::fs::Permissions;
 use std::io;
 use std::io::Read;
@@ -135,13 +136,18 @@ fn materialize_rollout_blocking(path: &Path, mode: MaterializeMode) -> io::Resul
         std::fs::create_dir_all(parent)?;
     }
     let result: io::Result<()> = (|| {
-        let permissions = std::fs::metadata(compressed_path.as_path())?.permissions();
+        let metadata = std::fs::metadata(compressed_path.as_path())?;
+        let permissions = metadata.permissions();
+        let modified = metadata.modified().ok();
         {
             let input = File::open(compressed_path.as_path())?;
             let mut decoder = zstd::stream::read::Decoder::new(input)?;
             let mut output = create_file_with_permissions(temp_path.as_path(), &permissions)?;
             io::copy(&mut decoder, &mut output)?;
             output.flush()?;
+            if let Some(modified) = modified {
+                output.set_times(FileTimes::new().set_modified(modified))?;
+            }
             output.sync_all()?;
         }
         match std::fs::hard_link(temp_path.as_path(), plain_path.as_path()) {
@@ -1025,9 +1031,9 @@ mod reader {
     use std::io::Read;
     use std::path::Path;
 
+    use super::MAX_BOUNDARY_RECORD_BYTES;
     use super::RolloutLineReader;
     use super::RolloutLineReaderInner;
-    use super::MAX_BOUNDARY_RECORD_BYTES;
     use super::path;
     use tokio::io::AsyncBufReadExt;
 
@@ -1131,14 +1137,20 @@ mod reader {
             .map_err(|err| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("failed to parse rollout record at {}: {err}", path.display()),
+                    format!(
+                        "failed to parse rollout record at {}: {err}",
+                        path.display()
+                    ),
                 )
             })?
             .ordinal
             .ok_or_else(|| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,
-                    format!("paginated rollout record at {} has no ordinal", path.display()),
+                    format!(
+                        "paginated rollout record at {} has no ordinal",
+                        path.display()
+                    ),
                 )
             })
     }

@@ -80,9 +80,7 @@ impl StepContext {
     }
 
     pub(crate) async fn mcp_binding(&self) -> &Arc<McpBinding> {
-        self.mcp_binding
-            .get_or_init(|| self.mcp.binding())
-            .await
+        self.mcp_binding.get_or_init(|| self.mcp.binding()).await
     }
 
     pub(crate) async fn mcp_tools(&self) -> &[codex_mcp::ToolInfo] {

@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use codex_code_mode_protocol::grpc as proto;
 use futures::StreamExt;
-use prost::Message;
 use pretty_assertions::assert_eq;
+use prost::Message;
 use tokio::sync::Semaphore;
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -64,9 +64,7 @@ async fn shared_host_budget_rejects_another_buffered_session() {
         Arc::new(Semaphore::new(bytes)),
         Arc::clone(&host_bytes),
     );
-    first
-        .send_now(event.clone(), /*cell_permit*/ None)
-        .unwrap();
+    first.send_now(event.clone(), /*cell_permit*/ None).unwrap();
     while host_bytes.available_permits() != 0 {
         tokio::task::yield_now().await;
     }

@@ -150,9 +150,7 @@ impl Transport<RoleClient> for LocalStdioTransport {
         let protocol_state = self.protocol_state.clone();
         async move {
             let mut message = serde_json::to_vec(&item).map_err(io::Error::other)?;
-            if protocol_state.enforce_modern_bounds()
-                && message.len() > MAX_MCP_STDIO_LINE_BYTES
-            {
+            if protocol_state.enforce_modern_bounds() && message.len() > MAX_MCP_STDIO_LINE_BYTES {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     format!("MCP stdio message exceeds {MAX_MCP_STDIO_LINE_BYTES} bytes"),

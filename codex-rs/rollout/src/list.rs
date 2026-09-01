@@ -17,17 +17,18 @@ use time::macros::format_description;
 use uuid::Uuid;
 
 use super::ARCHIVED_SESSIONS_SUBDIR;
+use super::ROLLOUT_REVISIONS_SUBDIR;
 use super::SESSIONS_SUBDIR;
 use super::compression;
 use super::rollout_file_name::RolloutFileName;
 use crate::protocol::EventMsg;
 use crate::state_db;
 use codex_file_search as file_search;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::RolloutId;
 use codex_protocol::ThreadId;
 use codex_protocol::items::TurnItem;
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::protocol::SessionMetaLine;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
@@ -983,6 +984,9 @@ async fn collect_rollout_day_files(
 
 pub(crate) fn parse_timestamp_uuid_from_filename(name: &str) -> Option<(OffsetDateTime, Uuid)> {
     let file_name = RolloutFileName::parse(name)?;
+    if !file_name.is_legacy_compatible() {
+        return None;
+    }
     let thread_id = Uuid::parse_str(&file_name.thread_id().to_string()).ok()?;
     Some((file_name.timestamp(), thread_id))
 }
@@ -1507,29 +1511,38 @@ async fn find_thread_path_by_id_from_filenames(
     let Ok(target) = ThreadId::from_string(id_str) else {
         return Ok(None);
     };
-    let mut newest: Option<(OffsetDateTime, Uuid, PathBuf)> = None;
+    let mut matching = Vec::new();
     let _ = visit_rollout_filenames::<()>(root, |file_name, path| {
-        if file_name.thread_id() != target {
-            return ControlFlow::Continue(());
-        }
-        let Ok(rollout_id) = Uuid::parse_str(&file_name.rollout_id().to_string()) else {
-            return ControlFlow::Continue(());
-        };
-        let candidate = (file_name.timestamp(), rollout_id, path);
-        let replace = newest.as_ref().is_none_or(|(timestamp, id, path)| {
-            candidate.0 > *timestamp
-                || (candidate.0 == *timestamp
-                    && (candidate.1 > *id
-                        || (candidate.1 == *id
-                            && candidate.2.as_path() > path.as_path())))
-        });
-        if replace {
-            newest = Some(candidate);
+        if file_name.thread_id() == target {
+            matching.push((file_name, path));
         }
         ControlFlow::Continue(())
     })
     .await?;
-    Ok(newest.map(|(_timestamp, _id, path)| path))
+
+    let mut newest: Option<(OffsetDateTime, bool, Option<OffsetDateTime>, Uuid, PathBuf)> = None;
+    for (file_name, path) in matching {
+        let Ok(rollout_id) = Uuid::parse_str(&file_name.rollout_id().to_string()) else {
+            continue;
+        };
+        let is_composite = !file_name.is_legacy_compatible();
+        let modified_at = if is_composite {
+            compression::file_modified_time(path.as_path()).await?
+        } else {
+            None
+        };
+        let candidate = (
+            file_name.timestamp(),
+            is_composite,
+            modified_at,
+            rollout_id,
+            path,
+        );
+        if newest.as_ref().is_none_or(|newest| &candidate > newest) {
+            newest = Some(candidate);
+        }
+    }
+    Ok(newest.map(|(_timestamp, _is_composite, _modified_at, _id, path)| path))
 }
 
 async fn find_thread_paths_by_id_from_filenames(
@@ -1606,6 +1619,28 @@ async fn find_rollout_path_by_rollout_id_from_filenames(
     Ok(newest.map(|(_timestamp, path)| path))
 }
 
+async fn find_rollout_revision_path_by_rollout_id(
+    codex_home: &Path,
+    rollout_id: RolloutId,
+) -> io::Result<Option<PathBuf>> {
+    let root = codex_home.join(ROLLOUT_REVISIONS_SUBDIR);
+    let mut dirs = match tokio::fs::read_dir(root).await {
+        Ok(dirs) => dirs,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(err) => return Err(err),
+    };
+    while let Some(entry) = dirs.next_entry().await? {
+        if !entry.file_type().await?.is_dir() {
+            continue;
+        }
+        let plain_path = entry.path().join(format!("{rollout_id}.jsonl"));
+        if let Some(path) = compression::existing_rollout_path(plain_path.as_path()).await {
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
 /// Locates the newest active rollout owned by a thread ID.
 ///
 /// SQLite remains authoritative when it has a verified selected path. Filesystem fallback chooses
@@ -1633,11 +1668,8 @@ pub async fn find_thread_paths_by_id(
     codex_home: &Path,
     thread_id: ThreadId,
 ) -> io::Result<Vec<PathBuf>> {
-    find_thread_paths_by_id_from_filenames(
-        codex_home.join(SESSIONS_SUBDIR).as_path(),
-        thread_id,
-    )
-    .await
+    find_thread_paths_by_id_from_filenames(codex_home.join(SESSIONS_SUBDIR).as_path(), thread_id)
+        .await
 }
 
 /// Locates every canonical archived rollout owned by a logical thread ID.
@@ -1650,6 +1682,41 @@ pub async fn find_archived_thread_paths_by_id(
         thread_id,
     )
     .await
+}
+
+/// Locates every retained immutable revision for a logical thread ID.
+pub async fn find_rollout_revision_paths_by_thread(
+    codex_home: &Path,
+    thread_id: ThreadId,
+) -> io::Result<Vec<PathBuf>> {
+    let root = codex_home
+        .join(ROLLOUT_REVISIONS_SUBDIR)
+        .join(thread_id.to_string());
+    let mut entries = match tokio::fs::read_dir(root).await {
+        Ok(entries) => entries,
+        Err(err) if err.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(err) => return Err(err),
+    };
+    let mut paths = Vec::new();
+    while let Some(entry) = entries.next_entry().await? {
+        if !entry.file_type().await?.is_file() {
+            continue;
+        }
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let name = name.strip_suffix(".zst").unwrap_or(name);
+        let Some(stem) = name.strip_suffix(".jsonl") else {
+            continue;
+        };
+        if RolloutId::from_string(stem).is_ok() {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths.dedup();
+    Ok(paths)
 }
 
 /// Locates one immutable rollout by its exact rollout ID.
@@ -1669,7 +1736,7 @@ pub async fn find_rollout_path_by_rollout_id(
             return Ok(path);
         }
     }
-    Ok(None)
+    find_rollout_revision_path_by_rollout_id(codex_home, rollout_id).await
 }
 
 /// Extract the `YYYY/MM/DD` directory components from a rollout filename.

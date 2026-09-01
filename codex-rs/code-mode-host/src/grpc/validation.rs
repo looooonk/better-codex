@@ -2,8 +2,8 @@ use codex_code_mode_protocol::grpc as proto;
 use tonic::Status;
 use uuid::Uuid;
 
-pub(super) use codex_code_mode_protocol::grpc::MAX_IDENTIFIER_BYTES;
 pub(super) use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
+pub(super) use codex_code_mode_protocol::grpc::MAX_IDENTIFIER_BYTES;
 pub(super) use codex_code_mode_protocol::grpc::MAX_TOOL_ERROR_BYTES;
 pub(crate) const MAX_TOOL_FILTERS: usize = 64;
 pub(crate) const MAX_TOOL_DEFINITIONS: usize = 256;

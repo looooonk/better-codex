@@ -141,10 +141,7 @@ impl TurnState {
         self.pending_delegated_approval_actions.insert(key, action)
     }
 
-    pub(crate) fn pending_delegated_approval_action(
-        &self,
-        key: &str,
-    ) -> Option<ApprovalAction> {
+    pub(crate) fn pending_delegated_approval_action(&self, key: &str) -> Option<ApprovalAction> {
         self.pending_delegated_approval_actions.get(key).cloned()
     }
 

@@ -469,16 +469,6 @@ macro_rules! client_response_payload_from_impl {
     ($variant:ident, $response:ty, manual) => {};
 }
 
-/// Preserves the explicit `undefined` accepted by the original usage request.
-#[allow(dead_code)]
-#[derive(TS)]
-#[ts(untagged)]
-enum GetAccountTokenUsageParamsTypeScript {
-    Params(v2::GetAccountTokenUsageParams),
-    #[ts(type = "undefined")]
-    Undefined,
-}
-
 client_request_definitions! {
     Initialize {
         params: v1::InitializeParams,
@@ -881,7 +871,7 @@ client_request_definitions! {
     },
     TurnInterrupt => "turn/interrupt" {
         params: v2::TurnInterruptParams,
-        serialization: thread_id(params.thread_id),
+        serialization: None,
         response: v2::TurnInterruptResponse,
     },
     #[experimental("thread/realtime/start")]
@@ -1095,9 +1085,15 @@ client_request_definitions! {
     },
 
     GetAccountTokenUsage => "account/usage/read" {
-        params: #[ts(optional, as = "Option<GetAccountTokenUsageParamsTypeScript>", inline)] #[serde(default, skip_serializing_if = "Option::is_none")] v2::NullableGetAccountTokenUsageParams,
+        params: #[ts(type = "undefined")] #[serde(skip_serializing_if = "Option::is_none")] Option<()>,
         serialization: None,
         response: v2::GetAccountTokenUsageResponse,
+    },
+
+    GetAccountThreadUsage => "account/threadUsage/read" {
+        params: v2::GetAccountThreadUsageParams,
+        serialization: None,
+        response: v2::GetAccountThreadUsageResponse,
     },
 
     GetWorkspaceMessages => "account/workspaceMessages/read" {
@@ -2134,6 +2130,15 @@ mod tests {
         };
         assert_eq!(thread_start.serialization_scope(), None);
 
+        let turn_interrupt = ClientRequest::TurnInterrupt {
+            request_id: request_id(),
+            params: v2::TurnInterruptParams {
+                thread_id: "thread-1".to_string(),
+                turn_id: "turn-1".to_string(),
+            },
+        };
+        assert_eq!(turn_interrupt.serialization_scope(), None);
+
         let command_exec = ClientRequest::OneOffCommandExec {
             request_id: request_id(),
             params: v2::CommandExecParams {
@@ -2633,16 +2638,38 @@ mod tests {
     }
 
     #[test]
-    fn serialize_get_account_thread_usage() -> Result<()> {
-        let request = ClientRequest::GetAccountTokenUsage {
+    fn deserialize_get_account_token_usage_with_legacy_params_shapes() -> Result<()> {
+        let expected = ClientRequest::GetAccountTokenUsage {
             request_id: RequestId::Integer(1),
-            params: Some(v2::GetAccountTokenUsageParams {
-                thread_id: Some("thread-123".to_string()),
+            params: None,
+        };
+        for request in [
+            json!({
+                "method": "account/usage/read",
+                "id": 1,
             }),
+            json!({
+                "method": "account/usage/read",
+                "id": 1,
+                "params": null,
+            }),
+        ] {
+            assert_eq!(serde_json::from_value::<ClientRequest>(request)?, expected);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn serialize_get_account_thread_usage() -> Result<()> {
+        let request = ClientRequest::GetAccountThreadUsage {
+            request_id: RequestId::Integer(1),
+            params: v2::GetAccountThreadUsageParams {
+                thread_id: "thread-123".to_string(),
+            },
         };
         assert_eq!(
             json!({
-                "method": "account/usage/read",
+                "method": "account/threadUsage/read",
                 "id": 1,
                 "params": { "threadId": "thread-123" },
             }),
@@ -2652,8 +2679,8 @@ mod tests {
     }
 
     #[test]
-    fn deserialize_legacy_get_account_token_usage_response() -> Result<()> {
-        let response: v2::GetAccountTokenUsageResponse = serde_json::from_value(json!({
+    fn round_trip_legacy_get_account_token_usage_response() -> Result<()> {
+        let expected = json!({
             "summary": {
                 "lifetimeTokens": null,
                 "peakDailyTokens": null,
@@ -2662,7 +2689,8 @@ mod tests {
                 "longestStreakDays": null,
             },
             "dailyUsageBuckets": null,
-        }))?;
+        });
+        let response: v2::GetAccountTokenUsageResponse = serde_json::from_value(expected.clone())?;
 
         assert_eq!(
             response,
@@ -2675,10 +2703,9 @@ mod tests {
                     longest_streak_days: None,
                 },
                 daily_usage_buckets: None,
-                thread_usage: None,
             },
         );
-        assert_eq!(serde_json::to_value(response)?["threadUsage"], json!(null));
+        assert_eq!(serde_json::to_value(response)?, expected);
         Ok(())
     }
 

@@ -16,13 +16,13 @@ use crate::session::session::Session;
 use crate::session::session::SessionSettingsUpdate;
 
 use crate::config::Config;
-use crate::context::NodeReplReviewEvidence;
 use crate::review_prompts::resolve_review_request;
 use crate::session::spawn_review_thread;
 use crate::tasks::CompactTask;
 use crate::tasks::UserShellCommandMode;
 use crate::tasks::UserShellCommandTask;
 use crate::tasks::execute_user_shell_command;
+use codex_history::RolloutItem;
 use codex_protocol::models::ContentItem;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
@@ -39,7 +39,6 @@ use codex_protocol::protocol::RealtimeConversationListVoicesResponseEvent;
 use codex_protocol::protocol::RealtimeVoicesList;
 use codex_protocol::protocol::ReviewDecision;
 use codex_protocol::protocol::ReviewRequest;
-use codex_history::RolloutItem;
 use codex_protocol::protocol::ThreadMemoryMode;
 use codex_protocol::protocol::ThreadRolledBackEvent;
 use codex_protocol::protocol::ThreadSettingsAppliedEvent;
@@ -538,9 +537,6 @@ pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32
         .collect::<Vec<_>>();
     sess.apply_rollout_reconstruction(turn_context.as_ref(), replay_items.as_slice())
         .await;
-    turn_context
-        .extension_data
-        .remove::<NodeReplReviewEvidence>();
     sess.services
         .agent_control
         .rollout_budget()
@@ -771,16 +767,6 @@ pub(super) async fn submission_loop(
                 Op::UserInput { .. } => {
                     user_input_or_turn(&sess, sub.id.clone(), sub.op, sub.client_user_message_id)
                         .await;
-                    false
-                }
-                Op::StartQueuedTurn { items, reply } => {
-                    sess.start_queued_turn(
-                        sub.id.clone(),
-                        items,
-                        sub.client_user_message_id.unwrap_or_else(|| sub.id.clone()),
-                        reply,
-                    )
-                    .await;
                     false
                 }
                 Op::ThreadSettings { thread_settings } => {

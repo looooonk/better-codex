@@ -66,5 +66,9 @@ fn all_review_failures_require_manual_review() {
         GuardianReviewError::InvalidOutput,
     ];
 
-    assert!(errors.iter().all(GuardianReviewError::requires_manual_review));
+    assert!(
+        errors
+            .iter()
+            .all(GuardianReviewError::requires_manual_review)
+    );
 }

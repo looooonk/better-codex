@@ -12,23 +12,23 @@ use codex_code_mode::CodeModeSessionDelegate;
 use codex_code_mode::CodeModeSessionProvider;
 use codex_code_mode::ExecuteRequest;
 use codex_code_mode::FunctionCallOutputContentItem;
-use codex_code_mode::GrpcCodeModeSessionProvider;
 use codex_code_mode::GrpcCodeModeHostCapability;
-use codex_code_mode::NotificationFuture;
+use codex_code_mode::GrpcCodeModeSessionProvider;
 use codex_code_mode::NoopCodeModeSessionDelegate;
+use codex_code_mode::NotificationFuture;
 use codex_code_mode::RuntimeResponse;
 use codex_code_mode::ToolInvocationFuture;
 use codex_code_mode_protocol::grpc as proto;
-use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
-use codex_code_mode_protocol::grpc::bounded_code_mode_host_client;
 use codex_code_mode_protocol::grpc::CAPABILITY_METADATA_KEY;
 use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
+use codex_code_mode_protocol::grpc::bounded_code_mode_host_client;
+use codex_code_mode_protocol::grpc::code_mode_host_client::CodeModeHostClient;
 use pretty_assertions::assert_eq;
-use tokio::sync::mpsc;
-use tokio::sync::Notify;
-use tokio::time::timeout;
 #[cfg(unix)]
 use tokio::net::UnixListener;
+use tokio::sync::Notify;
+use tokio::sync::mpsc;
+use tokio::time::timeout;
 #[cfg(unix)]
 use tokio_stream::wrappers::UnixListenerStream;
 use tokio_util::sync::CancellationToken;
@@ -43,17 +43,16 @@ use tower::Layer;
 use tower::Service;
 use uuid::Uuid;
 
-use super::loopback_grpc_service;
-use super::authenticated_loopback_grpc_service;
 use super::CodeModeHostServer;
 use super::GrpcCodeModeHost;
 use super::LoopbackGrpcService;
 use super::MAX_APPLICATION_MESSAGE_BYTES;
+use super::authenticated_loopback_grpc_service;
+use super::loopback_grpc_service;
 use super::principal::PrincipalPolicy;
 use crate::transport_admission::GrpcAdmissionLayer;
 
-const TEST_CAPABILITY: &str =
-    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const TEST_CAPABILITY: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 fn capability() -> GrpcCodeModeHostCapability {
     GrpcCodeModeHostCapability::new(TEST_CAPABILITY).unwrap()
@@ -114,10 +113,8 @@ struct OversizedHeader<S> {
 
 impl<S, B, R> Service<tonic::codegen::http::Request<B>> for OversizedHeader<S>
 where
-    S: Service<
-            tonic::codegen::http::Request<B>,
-            Response = tonic::codegen::http::Response<R>,
-        > + Send
+    S: Service<tonic::codegen::http::Request<B>, Response = tonic::codegen::http::Response<R>>
+        + Send
         + 'static,
     S::Future: Send + 'static,
     S::Error: Send + 'static,
@@ -349,10 +346,9 @@ fn identified_request<T>(client_id: Uuid, message: T) -> Request<T> {
 
 fn authenticated_request<T>(client_id: Uuid, message: T) -> Request<T> {
     let mut request = identified_request(client_id, message);
-    request.metadata_mut().insert(
-        CAPABILITY_METADATA_KEY,
-        TEST_CAPABILITY.parse().unwrap(),
-    );
+    request
+        .metadata_mut()
+        .insert(CAPABILITY_METADATA_KEY, TEST_CAPABILITY.parse().unwrap());
     request
 }
 
@@ -435,30 +431,36 @@ async fn canonical_transport_applies_the_application_cap_above_tonic_default() {
     let oversized_json = serde_json::to_vec(&"x".repeat(5 * 1_024 * 1_024)).unwrap();
 
     let error = client
-        .complete_tool_call(identified_request(client_id, proto::CompleteToolCallRequest {
-            session_id: session_id.clone(),
-            invocation_id: Uuid::new_v4().to_string(),
-            outcome: Some(proto::complete_tool_call_request::Outcome::Succeeded(
-                proto::ToolCallSucceeded {
-                    output_json: oversized_json,
-                },
-            )),
-        }))
+        .complete_tool_call(identified_request(
+            client_id,
+            proto::CompleteToolCallRequest {
+                session_id: session_id.clone(),
+                invocation_id: Uuid::new_v4().to_string(),
+                outcome: Some(proto::complete_tool_call_request::Outcome::Succeeded(
+                    proto::ToolCallSucceeded {
+                        output_json: oversized_json,
+                    },
+                )),
+            },
+        ))
         .await
         .unwrap_err();
     assert_eq!(error.code(), Code::ResourceExhausted);
     assert_eq!(error.message(), "code-mode-request-exhausted");
 
     let mut execution = client
-        .execute(identified_request(client_id, proto::ExecuteRequest {
-            session_id: session_id.clone(),
-            execution_id: "bounded-notification".to_string(),
-            tool_call_id: "outer-call".to_string(),
-            source: r#"notify("bounded"); text("done");"#.to_string(),
-            enabled_tools: Vec::new(),
-            yield_time_ms: Some(60_000),
-            max_output_tokens: None,
-        }))
+        .execute(identified_request(
+            client_id,
+            proto::ExecuteRequest {
+                session_id: session_id.clone(),
+                execution_id: "bounded-notification".to_string(),
+                tool_call_id: "outer-call".to_string(),
+                source: r#"notify("bounded"); text("done");"#.to_string(),
+                enabled_tools: Vec::new(),
+                yield_time_ms: Some(60_000),
+                max_output_tokens: None,
+            },
+        ))
         .await
         .unwrap()
         .into_inner();
@@ -473,10 +475,13 @@ async fn canonical_transport_applies_the_application_cap_above_tonic_default() {
     assert_eq!(notification.text, "bounded");
 
     client
-        .acknowledge_notification(identified_request(client_id, proto::AcknowledgeNotificationRequest {
-            session_id: session_id.clone(),
-            notification_id: notification.notification_id,
-        }))
+        .acknowledge_notification(identified_request(
+            client_id,
+            proto::AcknowledgeNotificationRequest {
+                session_id: session_id.clone(),
+                notification_id: notification.notification_id,
+            },
+        ))
         .await
         .unwrap();
     assert!(matches!(
@@ -493,7 +498,10 @@ async fn canonical_transport_applies_the_application_cap_above_tonic_default() {
         Some(proto::session_event::Event::CellClosed(_))
     ));
     client
-        .close_session(identified_request(client_id, proto::CloseSessionRequest { session_id }))
+        .close_session(identified_request(
+            client_id,
+            proto::CloseSessionRequest { session_id },
+        ))
         .await
         .unwrap();
     shutdown.cancel();
@@ -528,14 +536,20 @@ async fn sessions_are_bound_to_client_identity_across_tcp_connections() {
     let (session_id, _events) = open_session(&mut owner, owner_id).await;
 
     let error = other
-        .close_session(identified_request(other_id, proto::CloseSessionRequest {
-            session_id: session_id.clone(),
-        }))
+        .close_session(identified_request(
+            other_id,
+            proto::CloseSessionRequest {
+                session_id: session_id.clone(),
+            },
+        ))
         .await
         .unwrap_err();
     assert_eq!(error.code(), Code::PermissionDenied);
     reconnected_owner
-        .close_session(identified_request(owner_id, proto::CloseSessionRequest { session_id }))
+        .close_session(identified_request(
+            owner_id,
+            proto::CloseSessionRequest { session_id },
+        ))
         .await
         .unwrap();
 
@@ -563,9 +577,14 @@ async fn fresh_connection_remains_authorized_during_delayed_session_shutdown() {
     let session_id = opened.session_id;
     let release_shutdown = Arc::new(Notify::new());
     let task_release = Arc::clone(&release_shutdown);
-    assert!(host.state.session(&session_id).unwrap().spawn_task(async move {
-        task_release.notified().await;
-    }));
+    assert!(
+        host.state
+            .session(&session_id)
+            .unwrap()
+            .spawn_task(async move {
+                task_release.notified().await;
+            })
+    );
 
     let mut closer = connect(&endpoint).await;
     let close = tokio::spawn(async move {

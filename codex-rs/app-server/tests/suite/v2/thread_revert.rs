@@ -152,30 +152,10 @@ async fn thread_revert_replaces_paginated_history_before_turn() -> Result<()> {
         .build()
         .await?;
     timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
-    let stale_resume_id = mcp
-        .send_thread_resume_request(ThreadResumeParams {
-            thread_id: thread.id.clone(),
-            path: Some(stale_rollout_path),
-            ..Default::default()
-        })
-        .await?;
-    let stale_resume_error: JSONRPCError = timeout(
-        DEFAULT_READ_TIMEOUT,
-        mcp.read_stream_until_error_message(RequestId::Integer(stale_resume_id)),
-    )
-    .await??;
-    assert!(
-        stale_resume_error.error.message.contains("stale path")
-            && stale_resume_error
-                .error
-                .message
-                .contains("omit path and resume by thread id"),
-        "unexpected resume error: {}",
-        stale_resume_error.error.message,
-    );
     let resume_id = mcp
         .send_thread_resume_request(ThreadResumeParams {
             thread_id: thread.id.clone(),
+            path: Some(stale_rollout_path.clone()),
             ..Default::default()
         })
         .await?;
@@ -184,7 +164,23 @@ async fn thread_revert_replaces_paginated_history_before_turn() -> Result<()> {
         mcp.read_stream_until_response_message(RequestId::Integer(resume_id)),
     )
     .await??;
-    let _: ThreadResumeResponse = to_response(resume_response)?;
+    let ThreadResumeResponse {
+        thread: resumed_thread,
+        turns_backwards_cursor,
+        ..
+    } = to_response(resume_response)?;
+    assert_eq!(resumed_thread.id, thread.id);
+    assert_eq!(resumed_thread.path, Some(stale_rollout_path));
+    assert_eq!(
+        turn_ids_from_cursor(
+            &mut mcp,
+            thread.id.as_str(),
+            turns_backwards_cursor,
+            /*sort_direction*/ None,
+        )
+        .await?,
+        turn_ids[..1]
+    );
 
     let invalid_revert_id = mcp
         .send_thread_revert_request(ThreadRevertParams {

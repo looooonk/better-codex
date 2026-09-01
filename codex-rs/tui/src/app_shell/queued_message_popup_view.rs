@@ -126,8 +126,7 @@ pub(super) fn render(shell: &ShellState, transcript: Rect, input: Rect, buf: &mu
             }),
     );
     lines.push(truncate_line_with_ellipsis_if_overflow(
-        Line::from("Click to edit   Alt+↑↓ navigate   Shift+Alt+↑↓ reorder")
-            .fg(palette::muted()),
+        Line::from("Click to edit   Alt+↑↓ navigate   Shift+Alt+↑↓ reorder").fg(palette::muted()),
         usize::from(layout.content.width),
     ));
     Paragraph::new(lines)

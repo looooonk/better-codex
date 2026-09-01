@@ -2110,9 +2110,7 @@ async fn run_scenario(scenario: &ScenarioSpec) -> Result<()> {
             .and_then(|output| output.remove("id"))
             .expect("resumed synthetic output should have an ID");
         assert!(
-            output_id
-                .as_str()
-                .is_some_and(|id| id.starts_with("fco_")),
+            output_id.as_str().is_some_and(|id| id.starts_with("fco_")),
             "resumed synthetic output should have an fco_ ID, got {output_id}"
         );
         assert_eq!(

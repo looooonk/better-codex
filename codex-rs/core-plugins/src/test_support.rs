@@ -44,11 +44,10 @@ pub(crate) fn test_plugins_manager_with_options(
 pub(crate) fn test_skill_root_loader(
     codex_home: &Path,
 ) -> Arc<dyn SkillRootLoader<PluginSkillRoot>> {
-    let codex_home = AbsolutePathBuf::try_from(codex_home)
-        .expect("test CODEX_HOME should be an absolute path");
+    let codex_home =
+        AbsolutePathBuf::try_from(codex_home).expect("test CODEX_HOME should be an absolute path");
     Arc::new(HostSkillsService::new(
-        codex_home,
-        /*bundled_skills_enabled*/ false,
+        codex_home, /*bundled_skills_enabled*/ false,
     ))
 }
 

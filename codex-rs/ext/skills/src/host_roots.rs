@@ -65,11 +65,7 @@ async fn resolve_skill_roots_with_home_dir(
             .into_iter()
             .map(|path| local_root(path, SkillScope::User)),
     );
-    roots.extend(
-        repo_agents_skill_roots(repository_file_system, config_layer_stack, cwd)
-            .await
-            .into_iter(),
-    );
+    roots.extend(repo_agents_skill_roots(repository_file_system, config_layer_stack, cwd).await);
     dedupe_skill_roots_by_path(&mut roots);
     roots
 }

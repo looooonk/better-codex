@@ -7,8 +7,8 @@ pub(crate) mod session;
 pub(crate) mod validation;
 mod waits;
 
-use std::future::Future;
 use std::convert::Infallible;
+use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context;
@@ -17,9 +17,9 @@ use std::task::Poll;
 use codex_code_mode_protocol::CellId;
 use codex_code_mode_protocol::WaitRequest;
 use codex_code_mode_protocol::grpc as proto;
+use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use codex_code_mode_protocol::grpc::code_mode_host_server::CodeModeHost;
 use codex_code_mode_protocol::grpc::code_mode_host_server::CodeModeHostServer;
-use codex_code_mode_protocol::grpc::MAX_APPLICATION_MESSAGE_BYTES;
 use futures::Stream;
 use futures::StreamExt;
 use tokio::sync::mpsc;
@@ -34,11 +34,11 @@ use tonic::server::NamedService;
 use tower::Layer;
 use tower::Service;
 
+use self::principal::PrincipalPolicy;
+use self::principal::RequestPrincipal;
 use self::session::GrpcHostState;
 use self::session::GrpcSession;
 use self::waits::WaitRegistration;
-use self::principal::PrincipalPolicy;
-use self::principal::RequestPrincipal;
 use crate::transport_admission::GrpcAdmission;
 use crate::transport_admission::GrpcAdmissionLayer;
 
@@ -126,9 +126,13 @@ impl GrpcCodeModeHost {
         let invocation_id = validation::uuid(&request.invocation_id, "tool invocation ID")?;
         let result = match request.outcome {
             Some(proto::complete_tool_call_request::Outcome::Succeeded(result)) => Ok(
-                codex_code_mode_protocol::parse_bounded_json(&result.output_json).map_err(|error| {
-                    Status::invalid_argument(format!("invalid code-mode tool output JSON: {error}"))
-                })?,
+                codex_code_mode_protocol::parse_bounded_json(&result.output_json).map_err(
+                    |error| {
+                        Status::invalid_argument(format!(
+                            "invalid code-mode tool output JSON: {error}"
+                        ))
+                    },
+                )?,
             ),
             Some(proto::complete_tool_call_request::Outcome::Failed(error)) => {
                 validation::bounded(
@@ -348,8 +352,7 @@ impl Service<HttpRequest<Body>> for LoopbackGrpcService {
 }
 
 impl NamedService for LoopbackGrpcService {
-    const NAME: &'static str =
-        <CodeModeHostServer<GrpcCodeModeHost> as NamedService>::NAME;
+    const NAME: &'static str = <CodeModeHostServer<GrpcCodeModeHost> as NamedService>::NAME;
 }
 
 /// Builds a bounded local service for a transport with its own trusted caller boundary.
@@ -360,9 +363,7 @@ pub fn loopback_grpc_service() -> LoopbackGrpcService {
     loopback_service(PrincipalPolicy::TrustedLocalTransport)
 }
 
-pub(crate) fn authenticated_loopback_grpc_service(
-    capability: Arc<str>,
-) -> LoopbackGrpcService {
+pub(crate) fn authenticated_loopback_grpc_service(capability: Arc<str>) -> LoopbackGrpcService {
     loopback_service(PrincipalPolicy::AuthenticatedLocalTransport(capability))
 }
 

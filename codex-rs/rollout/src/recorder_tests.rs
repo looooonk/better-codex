@@ -3,6 +3,8 @@
 use super::*;
 use crate::config::RolloutConfig;
 use chrono::TimeZone;
+use codex_history::RolloutItem;
+use codex_history::RolloutLine;
 use codex_protocol::SessionId;
 use codex_protocol::ThreadId;
 use codex_protocol::models::ResponseItem;
@@ -10,8 +12,6 @@ use codex_protocol::protocol::AgentMessageEvent;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::HistoryPosition;
-use codex_history::RolloutItem;
-use codex_history::RolloutLine;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionMeta;
 use codex_protocol::protocol::SessionMetaLine;
@@ -163,6 +163,7 @@ async fn state_db_init_backfills_before_returning() -> anyhow::Result<()> {
         meta: SessionMeta {
             session_id: thread_id.into(),
             id: thread_id,
+            rollout_id: None,
             forked_from_id: None,
             parent_thread_id: None,
             timestamp: "2026-01-27T12:34:56Z".to_string(),
@@ -773,6 +774,7 @@ async fn replacement_rollout_path_preserves_thread_identity() -> std::io::Result
         panic!("first rollout item should be session metadata");
     };
     assert_eq!(meta.meta.id, thread_id);
+    assert_eq!(meta.meta.rollout_id, Some(rollout_id));
 
     recorder.shutdown().await
 }
