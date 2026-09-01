@@ -356,17 +356,24 @@ fn write_replacement_rollout<const N: usize>(
 
 fn set_history_base(path: &Path, history_base: HistoryPosition) {
     let contents = std::fs::read_to_string(path).expect("read rollout");
-    let mut lines = contents.lines();
-    let mut head: serde_json::Value =
-        serde_json::from_str(lines.next().expect("session metadata")).expect("parse metadata");
-    head["payload"]["history_base"] =
+    let mut lines = contents
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("parse rollout line"))
+        .collect::<Vec<_>>();
+    lines[0]["ordinal"] = serde_json::json!(history_base.end_ordinal_exclusive);
+    lines[0]["payload"]["history_base"] =
         serde_json::to_value(history_base).expect("serialize history base");
-    let mut updated = serde_json::to_string(&head).expect("serialize metadata");
-    for line in lines {
-        updated.push('\n');
-        updated.push_str(line);
+    for (index, line) in lines.iter_mut().enumerate().skip(1) {
+        let ordinal = history_base.end_ordinal_exclusive
+            + u64::try_from(index).expect("fixture ordinal");
+        line["ordinal"] = serde_json::json!(ordinal);
     }
-    updated.push('\n');
+    let updated = lines
+        .iter()
+        .map(|line| serde_json::to_string(line).expect("serialize rollout line"))
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
     std::fs::write(path, updated).expect("write history base");
 }
 
@@ -391,10 +398,10 @@ fn append_items<const N: usize>(path: &Path, items: [RolloutItem; N]) {
         .append(true)
         .open(path)
         .expect("open session file");
-    for item in items {
+    for (ordinal, item) in (1..).zip(items) {
         let line = RolloutLine {
             timestamp: "2025-01-03T13:00:01Z".to_string(),
-            ordinal: None,
+            ordinal: Some(ordinal),
             item,
         };
         writeln!(

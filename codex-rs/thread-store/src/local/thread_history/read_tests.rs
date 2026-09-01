@@ -1,9 +1,15 @@
+use std::fs::OpenOptions;
+use std::io::Write;
+
 use chrono::Utc;
 use codex_app_server_protocol::CodexErrorInfo;
 use codex_protocol::ThreadId;
+use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::HistoryPosition;
 use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::ThreadHistoryMode;
+use codex_rollout::RolloutItem;
+use codex_rollout::RolloutLine;
 use pretty_assertions::assert_eq;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -336,6 +342,7 @@ async fn list_history_pages_across_selected_rollout_lineage() {
         .expect("read metadata")
         .expect("thread metadata")
         .rollout_path;
+    append_shutdown_lines(root_path.as_path(), 1..15);
     let rollout_id = ThreadId::new();
     let uuid = Uuid::parse_str(&thread_id.to_string()).expect("thread UUID");
     let temporary_path = write_session_file_with_history_mode(
@@ -641,6 +648,26 @@ fn set_history_base(path: &std::path::Path, history_base: HistoryPosition) {
     }
     updated.push('\n');
     std::fs::write(path, updated).expect("write history base");
+}
+
+fn append_shutdown_lines(path: &std::path::Path, ordinals: std::ops::Range<u64>) {
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(path)
+        .expect("open rollout");
+    for ordinal in ordinals {
+        let line = RolloutLine {
+            timestamp: "2025-01-03T12:00:00Z".to_string(),
+            ordinal: Some(ordinal),
+            item: RolloutItem::EventMsg(EventMsg::ShutdownComplete),
+        };
+        writeln!(
+            file,
+            "{}",
+            serde_json::to_string(&line).expect("serialize rollout line")
+        )
+        .expect("append rollout line");
+    }
 }
 
 fn expected_item(turn_id: &str, item_id: &str, rollout_ordinal: u64) -> StoredThreadItem {

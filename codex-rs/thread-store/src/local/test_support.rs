@@ -89,14 +89,18 @@ pub(super) fn write_session_file_with_fork(
     fs::create_dir_all(&day_dir)?;
     let path = day_dir.join(format!("rollout-{ts}-{uuid}.jsonl"));
     let mut file = fs::File::create(&path)?;
+    let record_timestamp = ts.split_once('T').map_or_else(
+        || ts.to_string(),
+        |(date, time)| format!("{date}T{}Z", time.replace('-', ":")),
+    );
     let mut meta = serde_json::json!({
-        "timestamp": ts,
+        "timestamp": record_timestamp.as_str(),
         "type": "session_meta",
         "payload": {
             "session_id": uuid,
             "id": uuid,
             "forked_from_id": forked_from_id,
-            "timestamp": ts,
+            "timestamp": record_timestamp.as_str(),
             "cwd": root,
             "originator": "test_originator",
             "cli_version": "test_version",
@@ -116,7 +120,7 @@ pub(super) fn write_session_file_with_fork(
     writeln!(file, "{meta}")?;
     if matches!(history_mode, ThreadHistoryMode::Legacy) {
         let user_event = serde_json::json!({
-            "timestamp": ts,
+            "timestamp": record_timestamp.as_str(),
             "type": "event_msg",
             "payload": {
                 "type": "user_message",
