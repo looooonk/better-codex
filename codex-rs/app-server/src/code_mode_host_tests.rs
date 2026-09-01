@@ -11,6 +11,8 @@ fn grpc_host_accepts_local_plaintext_and_secure_endpoints() {
         "http://127.0.0.1:8765",
         "http://[::1]:8765",
         "https://example.test",
+        "unix:/tmp/code-mode.sock",
+        "unix:///tmp/code-mode.sock",
     ] {
         assert_eq!(
             parse_host_url(endpoint),
@@ -40,6 +42,8 @@ fn grpc_host_rejects_components_without_disclosing_them() {
         "https://example.test/super-secret",
         "https://example.test?token=super-secret",
         "https://example.test#super-secret",
+        "unix:/tmp/code-mode.sock?token=super-secret",
+        "unix://alice@host/super-secret",
         "not-a-url-super-secret",
     ] {
         let error = parse_host_url(endpoint).expect_err("endpoint should be rejected");

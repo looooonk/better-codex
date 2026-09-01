@@ -77,9 +77,21 @@ fn parse_host_url(value: &str) -> Result<Url, String> {
         return Err("code-mode host URL is too long".to_string());
     }
     let url = Url::parse(value).map_err(|_| "invalid code-mode host URL".to_string())?;
+    if url.scheme() == "unix" {
+        if url.host_str().is_some()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || !url.path().starts_with('/')
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return Err("code-mode Unix socket URL requires an absolute path".to_string());
+        }
+        return Ok(url);
+    }
     if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
         return Err(
-            "code-mode host URL must use http:// or https:// with a host".to_string(),
+            "code-mode host URL must use http://, https://, or unix: transport".to_string(),
         );
     }
     if !url.username().is_empty() || url.password().is_some() {

@@ -53,7 +53,7 @@ impl GrpcCodeModeHost {
     fn loopback_tcp() -> Self {
         Self {
             state: Arc::new(GrpcHostState::new()),
-            principal_policy: PrincipalPolicy::LoopbackTcp,
+            principal_policy: PrincipalPolicy::LocalTransport,
         }
     }
 

@@ -38,8 +38,9 @@ Websocket transport is currently experimental and unsupported. Do not rely on it
 
 Pass `--code-mode-host URL` to share one gRPC code-mode host across every thread in the
 app-server process instead of starting the local process host. Plaintext `http://` endpoints must
-use a literal loopback IP address; authenticated `https://` endpoints may be remote. The URL must
-not include credentials, a path, a query, or a fragment. Remote host selection requires the
+use a literal loopback IP address; authenticated `https://` endpoints may be remote, and `unix:`
+endpoints must name an absolute local socket path. HTTP URLs must not include credentials, a path,
+a query, or a fragment. Remote host selection requires the
 `code_mode_host` feature and is independent of the app-server `--listen` transport.
 
 The unix socket transport is intended for local app-server control-plane clients. `better-codex app-server proxy`

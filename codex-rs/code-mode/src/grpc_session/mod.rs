@@ -26,6 +26,7 @@ use codex_http_client::OutboundProxyPolicy;
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+use tonic::transport::Channel;
 
 use self::operations::WaitSlot;
 use self::state::SessionState;
@@ -55,7 +56,7 @@ pub struct GrpcCodeModeSessionProvider {
 }
 
 impl GrpcCodeModeSessionProvider {
-    /// Connects lazily to a loopback `http://` or authenticated `https://` gRPC endpoint.
+    /// Connects lazily to a loopback `http://`, authenticated `https://`, or local `unix:` endpoint.
     pub fn new(endpoint: impl Into<String>) -> Self {
         Self::with_http_client_factory(
             endpoint,
@@ -69,6 +70,11 @@ impl GrpcCodeModeSessionProvider {
         http_client_factory: HttpClientFactory,
     ) -> Self {
         Self::from_transport(SharedTransport::new(endpoint.into(), http_client_factory))
+    }
+
+    /// Uses an existing channel, including channels backed by custom transports.
+    pub fn with_channel(channel: Channel) -> Self {
+        Self::from_transport(SharedTransport::with_channel(channel))
     }
 
     fn from_transport(transport: SharedTransport) -> Self {

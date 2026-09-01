@@ -1,6 +1,14 @@
-use pretty_assertions::assert_eq;
+use std::time::Duration;
 
+use codex_http_client::HttpClientFactory;
+use codex_http_client::OutboundProxyPolicy;
+use pretty_assertions::assert_eq;
+use tokio::net::TcpListener;
+use tokio::time::timeout;
+
+use super::build_transport_client;
 use super::validate_endpoint;
+use super::validate_unix_endpoint;
 
 #[test]
 fn endpoint_accepts_loopback_http_and_https() {
@@ -49,4 +57,57 @@ fn endpoint_rejects_components_without_echoing_secrets() {
         let error = validate_endpoint(endpoint).unwrap_err();
         assert!(!error.contains("super-secret"));
     }
+}
+
+#[test]
+fn unix_endpoints_require_bounded_absolute_paths() {
+    for endpoint in ["unix:/tmp/code-mode.sock", "unix:///tmp/code-mode.sock"] {
+        assert_eq!(validate_unix_endpoint(endpoint), Ok(()));
+    }
+    for endpoint in [
+        "unix:relative.sock",
+        "unix://relative.sock",
+        "unix:/tmp/code-mode.sock?token=super-secret",
+        "unix:/tmp/code-mode.sock#super-secret",
+    ] {
+        let error = validate_unix_endpoint(endpoint).unwrap_err();
+        assert!(!error.contains("super-secret"));
+    }
+}
+
+#[tokio::test]
+async fn plaintext_loopback_transport_ignores_configured_proxy() {
+    let destination = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target = reqwest::Url::parse(&format!("http://{}", destination.local_addr().unwrap()))
+        .unwrap();
+    let client = build_transport_client(
+        &target,
+        &HttpClientFactory::new(OutboundProxyPolicy::ReqwestDefault),
+        reqwest::Client::builder()
+            .http2_prior_knowledge()
+            .proxy(reqwest::Proxy::all(format!(
+                "http://{}",
+                proxy.local_addr().unwrap()
+            )).unwrap()),
+    )
+    .unwrap();
+    let request = tokio::spawn(async move { client.get(target).send().await });
+
+    let accepted_directly = timeout(Duration::from_secs(/*secs*/ 1), async {
+        tokio::select! {
+            result = destination.accept() => {
+                result.unwrap();
+                true
+            }
+            result = proxy.accept() => {
+                result.unwrap();
+                false
+            }
+        }
+    })
+    .await
+    .unwrap();
+    assert!(accepted_directly);
+    request.abort();
 }

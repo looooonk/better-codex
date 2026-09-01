@@ -10,6 +10,7 @@ use codex_code_mode::ExecuteRequest;
 use codex_code_mode::FunctionCallOutputContentItem;
 use codex_code_mode::GrpcCodeModeSessionProvider;
 use codex_code_mode::NotificationFuture;
+use codex_code_mode::NoopCodeModeSessionDelegate;
 use codex_code_mode::RuntimeResponse;
 use codex_code_mode::ToolInvocationFuture;
 use codex_code_mode_protocol::grpc as proto;
@@ -19,6 +20,10 @@ use codex_code_mode_protocol::grpc::CLIENT_ID_METADATA_KEY;
 use pretty_assertions::assert_eq;
 use tokio::sync::mpsc;
 use tokio::time::timeout;
+#[cfg(unix)]
+use tokio::net::UnixListener;
+#[cfg(unix)]
+use tokio_stream::wrappers::UnixListenerStream;
 use tokio_util::sync::CancellationToken;
 use tonic::Code;
 use tonic::Request;
@@ -137,6 +142,37 @@ async fn open_session(
     (opened.session_id, events)
 }
 
+async fn assert_provider_executes(provider: GrpcCodeModeSessionProvider) {
+    let session = provider
+        .create_session(Arc::new(NoopCodeModeSessionDelegate))
+        .await
+        .unwrap();
+    let started = session
+        .execute(ExecuteRequest {
+            tool_call_id: "outer-call".to_string(),
+            enabled_tools: Vec::new(),
+            source: r#"text("connected");"#.to_string(),
+            yield_time_ms: Some(1_000),
+            max_output_tokens: None,
+        })
+        .await
+        .unwrap();
+    let cell_id = started.cell_id.clone();
+    assert_eq!(
+        timeout(Duration::from_secs(/*secs*/ 5), started.initial_response())
+            .await
+            .unwrap(),
+        Ok(RuntimeResponse::Result {
+            cell_id,
+            content_items: vec![FunctionCallOutputContentItem::InputText {
+                text: "connected".to_string(),
+            }],
+            error_text: None,
+        })
+    );
+    session.shutdown().await.unwrap();
+}
+
 #[tokio::test]
 async fn canonical_transport_accepts_messages_above_tonic_default() {
     let (endpoint, shutdown, server) = start_server().await;
@@ -231,6 +267,49 @@ async fn sessions_are_bound_to_client_identity_across_tcp_connections() {
         .close_session(identified_request(owner_id, proto::CloseSessionRequest { session_id }))
         .await
         .unwrap();
+
+    shutdown.cancel();
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn existing_channels_support_grpc_code_mode_sessions() {
+    let (endpoint, shutdown, server) = start_server().await;
+    let channel = Endpoint::from_shared(endpoint)
+        .unwrap()
+        .connect()
+        .await
+        .unwrap();
+
+    assert_provider_executes(GrpcCodeModeSessionProvider::with_channel(channel)).await;
+
+    shutdown.cancel();
+    server.await.unwrap().unwrap();
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn unix_socket_endpoints_support_grpc_code_mode_sessions() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket_path = directory.path().join("grpc.sock");
+    let listener = UnixListener::bind(&socket_path).unwrap();
+    let shutdown = CancellationToken::new();
+    let server_shutdown = shutdown.clone();
+    let server = tokio::spawn(
+        Server::builder()
+            .add_service(loopback_grpc_service())
+            .serve_with_incoming_shutdown(
+                UnixListenerStream::new(listener),
+                server_shutdown.cancelled_owned(),
+            ),
+    );
+
+    for endpoint in [
+        format!("unix://{}", socket_path.display()),
+        format!("unix:{}", socket_path.display()),
+    ] {
+        assert_provider_executes(GrpcCodeModeSessionProvider::new(endpoint)).await;
+    }
 
     shutdown.cancel();
     server.await.unwrap().unwrap();
@@ -351,7 +430,7 @@ fn loopback_policy_rejects_non_loopback_peers() {
     });
 
     assert_eq!(
-        PrincipalPolicy::LoopbackTcp
+        PrincipalPolicy::LocalTransport
             .principal(&request)
             .unwrap_err()
             .code(),
@@ -368,7 +447,7 @@ fn loopback_policy_rejects_missing_client_identity() {
     });
 
     assert_eq!(
-        PrincipalPolicy::LoopbackTcp
+        PrincipalPolicy::LocalTransport
             .principal(&request)
             .unwrap_err()
             .code(),
