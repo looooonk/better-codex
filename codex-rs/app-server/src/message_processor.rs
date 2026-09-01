@@ -37,6 +37,7 @@ use crate::request_processors::ProcessExecRequestProcessor;
 use crate::request_processors::RemoteControlRequestProcessor;
 use crate::request_processors::SearchRequestProcessor;
 use crate::request_processors::ThreadGoalRequestProcessor;
+use crate::request_processors::ThreadQueueRequestProcessor;
 use crate::request_processors::ThreadQueueService;
 use crate::request_processors::ThreadRequestProcessor;
 use crate::request_processors::TurnRequestProcessor;
@@ -122,6 +123,7 @@ pub(crate) struct MessageProcessor {
     remote_control_processor: RemoteControlRequestProcessor,
     search_processor: SearchRequestProcessor,
     thread_goal_processor: ThreadGoalRequestProcessor,
+    thread_queue_processor: ThreadQueueRequestProcessor,
     thread_processor: ThreadRequestProcessor,
     turn_processor: TurnRequestProcessor,
     windows_sandbox_processor: WindowsSandboxRequestProcessor,
@@ -427,6 +429,8 @@ impl MessageProcessor {
             state_db.clone(),
             Arc::clone(&goal_service),
         );
+        let thread_queue_processor =
+            ThreadQueueRequestProcessor::new(Arc::clone(&thread_queue_service));
         let thread_processor = ThreadRequestProcessor::new(
             auth_manager.clone(),
             Arc::clone(&thread_manager),
@@ -519,6 +523,7 @@ impl MessageProcessor {
             remote_control_processor,
             search_processor,
             thread_goal_processor,
+            thread_queue_processor,
             thread_processor,
             turn_processor,
             windows_sandbox_processor,
@@ -1114,6 +1119,36 @@ impl MessageProcessor {
                     .thread_goal_clear(request_id.clone(), params)
                     .await
             }
+            ClientRequest::ThreadQueueAdd { params, .. } => self
+                .thread_queue_processor
+                .add(request_id.clone(), params)
+                .await
+                .map(|()| None),
+            ClientRequest::ThreadQueueList { params, .. } => self
+                .thread_queue_processor
+                .list(params)
+                .await
+                .map(|response| Some(response.into())),
+            ClientRequest::ThreadQueueUpdate { params, .. } => self
+                .thread_queue_processor
+                .update(request_id.clone(), params)
+                .await
+                .map(|()| None),
+            ClientRequest::ThreadQueueDelete { params, .. } => self
+                .thread_queue_processor
+                .delete(request_id.clone(), params)
+                .await
+                .map(|()| None),
+            ClientRequest::ThreadQueueReorder { params, .. } => self
+                .thread_queue_processor
+                .reorder(request_id.clone(), params)
+                .await
+                .map(|()| None),
+            ClientRequest::ThreadQueueStart { params, .. } => self
+                .thread_queue_processor
+                .start(request_id.clone(), params)
+                .await
+                .map(|()| None),
             ClientRequest::ThreadMetadataUpdate { params, .. } => {
                 self.thread_processor.thread_metadata_update(params).await
             }

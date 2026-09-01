@@ -157,6 +157,13 @@ Example with notification opt-out:
 - `thread/goal/clear` — clear the current persisted goal for a materialized thread; returns whether a goal was removed and emits `thread/goal/cleared` when state changes.
 - `thread/goal/updated` — notification emitted whenever a thread goal changes; includes the full current goal.
 - `thread/goal/cleared` — notification emitted whenever a thread goal is removed.
+- `thread/queue/add` — experimental; durably append user input with a required idempotent `clientUserMessageId`. Reusing that id with identical input returns the existing submission; reusing it with different input is rejected.
+- `thread/queue/list` — experimental; page pending submissions in dispatch order with `cursor` and `limit`.
+- `thread/queue/update` — experimental; replace the input of a pending submission.
+- `thread/queue/delete` — experimental; delete a pending submission and return whether it was removed.
+- `thread/queue/reorder` — experimental; replace the complete pending order. The request must include every pending submission exactly once.
+- `thread/queue/start` — experimental; explicitly start the next or selected submission on a loaded thread. This also resumes a queue paused by an interruption or token-budget abort.
+- `thread/queue/changed` — experimental notification emitted in the subscribed thread event order after a queue mutation or recovered terminal transition. Automatic dispatch occurs only from the thread's idle lifecycle. Interrupted and budget-limited queued turns durably pause further dispatch; other terminal outcomes continue the queue.
 - `thread/settings/updated` — experimental notification emitted to subscribed clients when a loaded thread’s effective next-turn settings change; includes `threadId` and the full `threadSettings`.
 - `thread/status/changed` — notification emitted when a loaded thread’s status changes (`threadId` + new `status`).
 - `thread/archive` — move a thread’s rollout file into the archived directory and attempt to move any spawned descendant thread rollout files; returns `{}` on success and emits `thread/archived` for each archived thread.
