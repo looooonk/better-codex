@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use sqlx::Row;
+use sqlx::SqlStr;
 use sqlx::SqlitePool;
 use sqlx::migrate::Migration;
 use sqlx::migrate::Migrator;
@@ -505,7 +506,9 @@ async fn runtime_migration_restores_agent_jobs_after_upstream_0042() {
         42,
         Cow::Borrowed("drop agent jobs"),
         migration_type,
-        Cow::Borrowed("DROP TABLE IF EXISTS agent_job_items;\nDROP TABLE IF EXISTS agent_jobs;\n"),
+        SqlStr::from_static(
+            "DROP TABLE IF EXISTS agent_job_items;\nDROP TABLE IF EXISTS agent_jobs;\n",
+        ),
         no_tx,
     ));
     upstream_migrations.sort_by_key(|migration| migration.version);

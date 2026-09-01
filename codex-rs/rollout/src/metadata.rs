@@ -1,5 +1,6 @@
 use crate::ARCHIVED_SESSIONS_SUBDIR;
 use crate::SESSIONS_SUBDIR;
+use crate::compression;
 use crate::recorder::RolloutRecorder;
 use crate::rollout_file_name::RolloutFileName;
 use crate::state_db::normalize_cwd_for_state_db;

@@ -2809,8 +2809,8 @@ dependencies = [
  "codex-exec-server",
  "codex-extension-api",
  "codex-features",
- "codex-home",
  "codex-history",
+ "codex-home",
  "codex-image-generation-extension",
  "codex-login",
  "codex-model-provider-info",
@@ -4183,6 +4183,7 @@ dependencies = [
  "tokio",
  "tracing",
  "uuid",
+ "zstd 0.13.3",
 ]
 
 [[package]]
