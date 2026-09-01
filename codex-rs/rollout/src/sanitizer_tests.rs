@@ -148,6 +148,88 @@ fn redacts_non_bearer_authorization_headers_in_arbitrary_text() {
 }
 
 #[test]
+fn preserves_bearer_scheme_in_structured_authorization_headers() {
+    let mut value = json!({
+        "command": [
+            "curl",
+            "-H",
+            format!("Authorization: Bearer {SECRET}"),
+            "-H",
+            "Authorization: Basic short-secret",
+        ],
+    });
+
+    redact_persisted_json(&mut value);
+
+    assert_eq!(
+        value,
+        json!({
+            "command": [
+                "curl",
+                "-H",
+                "Authorization: Bearer [REDACTED_SECRET]",
+                "-H",
+                "Authorization: [REDACTED_SECRET]",
+            ],
+        })
+    );
+}
+
+#[test]
+fn preserves_bearer_scheme_in_plain_text_authorization_headers() {
+    let mut value = json!({
+        "output": format!(
+            "request failed\nAuthorization: Bearer {SECRET}\nAuthorization: Basic short-secret"
+        ),
+    });
+
+    redact_persisted_json(&mut value);
+
+    assert_eq!(
+        value,
+        json!({
+            "output": concat!(
+                "request failed\n",
+                "Authorization: Bearer [REDACTED_SECRET]\n",
+                "Authorization: [REDACTED_SECRET]"
+            ),
+        })
+    );
+}
+
+#[test]
+fn preserves_guardian_authorization_fields_while_redacting_nested_secrets() {
+    let mut value = json!({
+        "user_authorization": "high",
+        "review": {
+            "userAuthorization": "low",
+            "action": {
+                "command": ["curl", "-H", format!("Authorization: Bearer {SECRET}")],
+            },
+        },
+    });
+
+    redact_persisted_json(&mut value);
+
+    assert_eq!(
+        value,
+        json!({
+            "user_authorization": "high",
+            "review": {
+                "userAuthorization": "low",
+                "action": {
+                    "command": [
+                        "curl",
+                        "-H",
+                        "Authorization: Bearer [REDACTED_SECRET]",
+                    ],
+                },
+            },
+        })
+    );
+}
+
+#[test]
 fn redacts_standard_aws_secret_access_key_fields() {
     let mut value = json!({
         "AWS_SECRET_ACCESS_KEY": "synthetic-short-secret",

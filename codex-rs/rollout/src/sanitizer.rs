@@ -4,6 +4,7 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::EventMsg;
 use codex_history::RolloutItem;
 use codex_secrets::redact_secrets;
+use regex::Captures;
 use regex::Regex;
 use serde_json::Value;
 use std::sync::LazyLock;
@@ -12,7 +13,9 @@ const MAX_NESTED_COMMAND_DEPTH: usize = 2;
 const REDACTION: &str = "[REDACTED_SECRET]";
 static AUTHORIZATION_HEADER_REGEX: LazyLock<Regex> =
     LazyLock::new(
-        || match Regex::new(r"(?im)(?P<prefix>\bauthorization[ \t]*:[ \t]*)[^\r\n]+") {
+        || match Regex::new(
+            r"(?im)(?P<prefix>\bauthorization[ \t]*:[ \t]*)(?P<value>[^\r\n]+)",
+        ) {
             Ok(regex) => regex,
             Err(err) => panic!("invalid authorization header regex: {err}"),
         },
@@ -212,10 +215,30 @@ fn redact_argv(argv: &mut [String], depth: usize) -> bool {
 }
 
 fn redact_authorization_header(header: &str) -> Option<String> {
-    let (name, _) = header.split_once(':')?;
+    let (name, value) = header.split_once(':')?;
     name.trim()
         .eq_ignore_ascii_case("authorization")
-        .then(|| format!("{name}: {REDACTION}"))
+        .then(|| format!("{name}: {}", redacted_authorization_value(value)))
+}
+
+fn redacted_authorization_value(value: &str) -> &'static str {
+    if value
+        .split_ascii_whitespace()
+        .next()
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("bearer"))
+    {
+        "Bearer [REDACTED_SECRET]"
+    } else {
+        REDACTION
+    }
+}
+
+fn redact_authorization_header_match(captures: &Captures<'_>) -> String {
+    format!(
+        "{}{}",
+        &captures["prefix"],
+        redacted_authorization_value(&captures["value"])
+    )
 }
 
 fn is_command_array_field(field_name: &str) -> bool {
@@ -270,7 +293,7 @@ fn redact_string(text: &mut String, field_name: Option<&str>) -> bool {
 fn redact_plain_text(text: String) -> String {
     let redacted = redact_secrets(text);
     AUTHORIZATION_HEADER_REGEX
-        .replace_all(&redacted, "${prefix}[REDACTED_SECRET]")
+        .replace_all(&redacted, redact_authorization_header_match)
         .into_owned()
 }
 
@@ -278,7 +301,13 @@ fn is_protected_field(field_name: &str) -> bool {
     field_name == "id"
         || field_name.ends_with("_id")
         || field_name.ends_with("Id")
-        || matches!(field_name, "encrypted_content" | "encryptedContent")
+        || matches!(
+            field_name,
+            "encrypted_content"
+                | "encryptedContent"
+                | "user_authorization"
+                | "userAuthorization"
+        )
 }
 
 fn is_credential_field(field_name: &str) -> bool {
