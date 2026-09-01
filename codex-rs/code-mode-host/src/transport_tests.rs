@@ -61,11 +61,18 @@ async fn accepted_connection_limit_releases_on_drop() {
     }
 
     clients.push(TcpStream::connect(address).await.unwrap());
-    let blocked = tokio::time::timeout(std::time::Duration::from_millis(20), bounded.next()).await;
+    let blocked = tokio::time::timeout(
+        std::time::Duration::from_millis(/*millis*/ 20),
+        bounded.next(),
+    )
+    .await;
     assert!(blocked.is_err());
     accepted.pop();
     assert!(
-        tokio::time::timeout(std::time::Duration::from_secs(1), bounded.next())
+        tokio::time::timeout(
+            std::time::Duration::from_secs(/*secs*/ 1),
+            bounded.next(),
+        )
             .await
             .unwrap()
             .unwrap()

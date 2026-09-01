@@ -5,6 +5,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
+use std::time::Duration;
 
 use anyhow::Context as _;
 use anyhow::Result;
@@ -32,6 +33,12 @@ const MAX_CONCURRENT_STREAMS_PER_CONNECTION: u32 = 64;
 const MAX_CONCURRENT_REQUESTS_PER_CONNECTION: usize = 4;
 const MAX_GLOBAL_DECODING_REQUESTS: usize = 4;
 const MAX_AGGREGATE_DECODING_BYTES: usize = 256 * 1_024 * 1_024;
+const HTTP2_STREAM_WINDOW_BYTES: u32 = 64 * 1_024;
+const HTTP2_CONNECTION_WINDOW_BYTES: u32 = 1_024 * 1_024;
+const HTTP2_MAX_HEADER_BYTES: u32 = 16 * 1_024;
+const HTTP2_MAX_FRAME_BYTES: u32 = 16 * 1_024;
+const CONNECTION_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(/*secs*/ 30);
+const CONNECTION_KEEPALIVE_TIMEOUT: Duration = Duration::from_secs(/*secs*/ 10);
 
 const _: () = assert!(MAX_GLOBAL_DECODING_REQUESTS * MAX_FRAME_BYTES <= MAX_AGGREGATE_DECODING_BYTES);
 
@@ -87,7 +94,8 @@ fn parse_listen_transport(listen: &str) -> Result<ListenTransport> {
 async fn run_grpc(address: SocketAddr) -> Result<()> {
     let incoming = TcpIncoming::bind(address)
         .context("failed to bind code-mode gRPC listener")?
-        .with_nodelay(Some(true));
+        .with_nodelay(/*nodelay*/ Some(true))
+        .with_keepalive(Some(CONNECTION_KEEPALIVE_INTERVAL));
     let local_address = incoming
         .local_addr()
         .context("failed to read code-mode gRPC listener address")?;
@@ -106,8 +114,17 @@ async fn run_grpc(address: SocketAddr) -> Result<()> {
             MAX_GLOBAL_DECODING_REQUESTS,
         ))
         .concurrency_limit_per_connection(MAX_CONCURRENT_REQUESTS_PER_CONNECTION)
-        .load_shed(true)
+        .load_shed(/*enabled*/ true)
         .max_concurrent_streams(Some(MAX_CONCURRENT_STREAMS_PER_CONNECTION))
+        .initial_stream_window_size(Some(HTTP2_STREAM_WINDOW_BYTES))
+        .initial_connection_window_size(Some(HTTP2_CONNECTION_WINDOW_BYTES))
+        .http2_adaptive_window(/*enabled*/ Some(false))
+        .http2_keepalive_interval(Some(CONNECTION_KEEPALIVE_INTERVAL))
+        .http2_keepalive_timeout(Some(CONNECTION_KEEPALIVE_TIMEOUT))
+        .http2_max_pending_accept_reset_streams(/*max*/ Some(16))
+        .http2_max_local_error_reset_streams(/*max*/ Some(16))
+        .http2_max_header_list_size(Some(HTTP2_MAX_HEADER_BYTES))
+        .max_frame_size(Some(HTTP2_MAX_FRAME_BYTES))
         .add_service(loopback_grpc_service())
         .serve_with_incoming(bounded_incoming(incoming))
         .await
