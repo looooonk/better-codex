@@ -305,6 +305,7 @@ impl ShellState {
                 self.open_approval_selector();
             }
             CommandPaletteAction::ResumeThread => {
+                self.dashboard_visible = true;
                 self.set_dashboard_route(DashboardRoute::Sessions);
                 self.dashboard_scroll.set(0);
                 self.settings.focused = false;
@@ -313,6 +314,7 @@ impl ShellState {
                 self.push_status("press r to resume selected session");
             }
             CommandPaletteAction::ForkThread => {
+                self.dashboard_visible = true;
                 self.set_dashboard_route(DashboardRoute::Sessions);
                 self.dashboard_scroll.set(0);
                 self.settings.focused = false;

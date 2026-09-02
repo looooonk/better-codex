@@ -8,8 +8,8 @@ expression: rendered
 
 
   ╭─────────────────────────────────╮
-  │◆ TERMINAL TOO NARROW            │
+  │◆ TERMINAL TOO SMALL             │
   │Use a larger terminal window.    │
-  │Minimum width: 40 columns.       │
+  │Minimum: 40 columns x 11 rows.   │
   │                                 │
   ╰─────────────────────────────────╯

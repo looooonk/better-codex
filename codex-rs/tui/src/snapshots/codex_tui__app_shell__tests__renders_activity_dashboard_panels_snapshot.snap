@@ -12,7 +12,7 @@ expression: "render_shell(&shell, area)"
                                                                       │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
  ▎ CODEX  Started a fullscreen app shell backed by app-server turns.  │                       │  Alt+M       Model
  ▎ PLAN  1. Build shell                                               │◆ DASHBOARD            │  Alt+E       Effort
-         2. Wire transcript                                           │ ^1 … ^4     Open tab  │  ↵           Steer turn
+         2. Wire transcript                                           │ F1 … F4     Open tab  │  ↵           Steer turn
          3. Render dashboard                                          │ Alt+← / →   Prev/next │  Tab         Queue next
                                                                       │ Pg↑ / Pg↓   Scroll he…│
  ▌ tool exec just test -p codex-tui                                   │ ⇧Alt+←/→    Resize    │ ◆ APP

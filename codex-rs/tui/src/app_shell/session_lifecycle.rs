@@ -1,6 +1,8 @@
 use super::DashboardRoute;
 use super::ShellState;
 use codex_app_server_protocol::ThreadStatus;
+use codex_app_server_protocol::Turn;
+use codex_app_server_protocol::TurnStatus;
 use codex_protocol::ThreadId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,6 +34,19 @@ impl RemoteThreadLifecycle {
 }
 
 impl ShellState {
+    pub(super) fn restore_thread_lifecycle(&mut self, status: ThreadStatus, turns: &[Turn]) {
+        if matches!(&status, ThreadStatus::Active { .. })
+            && let Some(turn) = turns
+                .iter()
+                .rev()
+                .find(|turn| turn.status == TurnStatus::InProgress)
+        {
+            self.record_active_turn_started(turn.id.clone());
+        }
+        let thread_id = self.thread_id.to_string();
+        self.handle_remote_thread_status(&thread_id, status);
+    }
+
     pub(super) fn handle_remote_thread_status(&mut self, thread_id: &str, status: ThreadStatus) {
         if thread_id != self.thread_id.to_string() || self.session_unavailable_reason.is_some() {
             return;

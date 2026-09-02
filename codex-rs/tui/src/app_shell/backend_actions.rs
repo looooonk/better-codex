@@ -237,7 +237,6 @@ impl ShellState {
             BackendActionResult::SessionResume { result } => match result {
                 Ok(started) => {
                     self.complete_session_switch(started, app_server).await;
-                    self.status = "ready".to_string();
                 }
                 Err(err) => self.report_action_error("failed to resume session", err),
             },
@@ -264,10 +263,20 @@ impl ShellState {
                     if let Some(edit_prompt) = edit_prompt {
                         self.seed_composer_with_edit_prompt(edit_prompt);
                     }
-                    self.status = "ready".to_string();
                     if removal == super::InteractiveRequestRemoval::Active {
                         self.activate_next_interactive_request();
                     }
+                    self.status = if self.pending_approval.is_some()
+                        || self.pending_elicitation.is_some()
+                        || self.pending_user_input.is_some()
+                    {
+                        "waiting"
+                    } else if self.active_turn_id.is_some() {
+                        "thinking"
+                    } else {
+                        "ready"
+                    }
+                    .to_string();
                 }
                 Err(err) => self.report_action_error(
                     "failed to resolve app-server approval request",

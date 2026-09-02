@@ -404,6 +404,7 @@ pub(super) fn app_shell_request_id(prefix: &str) -> RequestId {
 #[derive(Debug, Clone)]
 pub(super) struct AppShellTurnStart {
     pub(super) thread_id: ThreadId,
+    pub(super) client_user_message_id: String,
     pub(super) items: Vec<UserInput>,
     pub(super) cwd: PathBuf,
     pub(super) approval_policy: AskForApproval,
@@ -925,6 +926,7 @@ impl AppShellBackend for AppServerSession {
         AppServerSession::turn_start(
             self,
             params.thread_id,
+            params.client_user_message_id,
             params.items,
             params.cwd,
             params.approval_policy,

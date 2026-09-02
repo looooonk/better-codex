@@ -66,6 +66,13 @@ impl TranscriptRenderCache {
                 CachedSource {
                     transcript_index: Some(index),
                     revision: item.render_revision,
+                    anchor_source: item.item_id.as_ref().map_or(
+                        TranscriptAnchorSource::Revision(item.render_revision),
+                        |item_id| TranscriptAnchorSource::Item {
+                            kind: item.kind,
+                            item_id: item_id.clone(),
+                        },
+                    ),
                     kind: item.kind,
                     text: &item.text,
                     tool_status: item.tool_status,
@@ -88,6 +95,13 @@ impl TranscriptRenderCache {
                 CachedSource {
                     transcript_index: None,
                     revision: shell.streaming_plan_revision,
+                    anchor_source: shell.streaming_plan_item_id.as_ref().map_or(
+                        TranscriptAnchorSource::StreamingPlan,
+                        |item_id| TranscriptAnchorSource::Item {
+                            kind: TranscriptKind::Plan,
+                            item_id: item_id.clone(),
+                        },
+                    ),
                     kind: TranscriptKind::Plan,
                     text: &shell.streaming_plan,
                     tool_status: None,
@@ -109,6 +123,13 @@ impl TranscriptRenderCache {
                 CachedSource {
                     transcript_index: None,
                     revision: shell.streaming_assistant_revision,
+                    anchor_source: shell.streaming_assistant_item_id.as_ref().map_or(
+                        TranscriptAnchorSource::StreamingAssistant,
+                        |item_id| TranscriptAnchorSource::Item {
+                            kind: TranscriptKind::Assistant,
+                            item_id: item_id.clone(),
+                        },
+                    ),
                     kind: TranscriptKind::Assistant,
                     text: &shell.streaming_assistant,
                     tool_status: None,
@@ -177,6 +198,7 @@ fn render_revisions(shell: &ShellState) -> impl Iterator<Item = u64> + '_ {
 struct CachedSource<'a> {
     transcript_index: Option<usize>,
     revision: u64,
+    anchor_source: TranscriptAnchorSource,
     kind: TranscriptKind,
     text: &'a str,
     tool_status: Option<ToolBlockStatus>,
@@ -210,6 +232,7 @@ fn push_cached_chunk(
     chunks.push(TranscriptChunk {
         transcript_index: source.transcript_index,
         revision: source.revision,
+        anchor_source: source.anchor_source.clone(),
         separator_before,
         lines,
     });
@@ -306,8 +329,27 @@ struct TranscriptChunk {
     transcript_index: Option<usize>,
     #[cfg_attr(not(test), allow(dead_code))]
     revision: u64,
+    anchor_source: TranscriptAnchorSource,
     separator_before: bool,
     lines: Arc<[HyperlinkLine]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum TranscriptAnchorSource {
+    Item {
+        kind: TranscriptKind,
+        item_id: String,
+    },
+    Revision(u64),
+    StreamingPlan,
+    StreamingAssistant,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct TranscriptViewportAnchor {
+    source: TranscriptAnchorSource,
+    line_offset: usize,
+    pub(super) width: u16,
 }
 
 pub(super) struct TranscriptLayout {
@@ -445,6 +487,55 @@ impl TranscriptLayout {
             let chunk_end = logical_row.saturating_add(chunk.lines.len());
             if chunk.transcript_index == Some(transcript_index) {
                 return Some(logical_row..chunk_end);
+            }
+            logical_row = chunk_end;
+        }
+        None
+    }
+
+    pub(super) fn viewport_anchor_at_or_after(
+        &self,
+        row: usize,
+        width: u16,
+    ) -> Option<TranscriptViewportAnchor> {
+        let mut logical_row = 0usize;
+        for chunk in &self.chunks {
+            let chunk_start = logical_row;
+            let chunk_end = chunk_start
+                .saturating_add(usize::from(chunk.separator_before))
+                .saturating_add(chunk.lines.len());
+            if chunk_end > row {
+                return Some(TranscriptViewportAnchor {
+                    source: chunk.anchor_source.clone(),
+                    line_offset: row
+                        .saturating_sub(chunk_start)
+                        .min(chunk_end.saturating_sub(chunk_start).saturating_sub(1)),
+                    width,
+                });
+            }
+            logical_row = chunk_end;
+        }
+        None
+    }
+
+    pub(super) fn row_for_viewport_anchor(
+        &self,
+        anchor: &TranscriptViewportAnchor,
+    ) -> Option<usize> {
+        let mut logical_row = 0usize;
+        for chunk in &self.chunks {
+            let chunk_start = logical_row;
+            let chunk_end = chunk_start
+                .saturating_add(usize::from(chunk.separator_before))
+                .saturating_add(chunk.lines.len());
+            if chunk.anchor_source == anchor.source {
+                return Some(
+                    chunk_start.saturating_add(
+                        anchor
+                            .line_offset
+                            .min(chunk_end.saturating_sub(chunk_start).saturating_sub(1)),
+                    ),
+                );
             }
             logical_row = chunk_end;
         }

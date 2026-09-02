@@ -92,10 +92,7 @@ fn help_columns(
         &mut left,
         "DASHBOARD",
         &[
-            Shortcut::new(
-                detail.select("^1 … ^4", "Ctrl+1 … Ctrl+4"),
-                detail.select("Open tab", "Open a tab"),
-            ),
+            Shortcut::new("F1 … F4", detail.select("Open tab", "Open a tab")),
             Shortcut::new(
                 detail.select("Alt+← / →", "Alt+Left / Right"),
                 detail.select("Prev/next", "Previous / next tab"),

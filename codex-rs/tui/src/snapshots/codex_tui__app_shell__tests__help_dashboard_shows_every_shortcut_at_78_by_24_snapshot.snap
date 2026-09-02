@@ -13,7 +13,7 @@ expression: rendered
  ▎ PLAN  1. Build shell     │ e           Branch    │  ⌥/^ + ←→    Move word
          2. Wire transcript │ ^O/⌥1-9     Copy reply│  S/A + ↵     Newline
          3. Render dashboard│◆ DASHBOARD            │  Alt+M       Model
-                            │ ^1 … ^4     Open tab  │  Alt+E       Effort
+                            │ F1 … F4     Open tab  │  Alt+E       Effort
  ▌ tool exec just test -p co│ Alt+← / →   Prev/next │ ◆ APP
                             │ Pg↑ / Pg↓   Scroll he…│  ^P          Commands
  ▌ edited 3 files +128 -24  │ ⇧Alt+←/→    Resize    │  ^D          Show/hide

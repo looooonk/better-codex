@@ -83,6 +83,43 @@ fn keep_forked_rollout_item(item: &RolloutItem, preserve_reference_context_item:
     }
 }
 
+fn parent_delegation_prompt_index(
+    items: &[RolloutItem],
+    parent_spawn_call_id: &str,
+) -> Option<usize> {
+    let spawn_call_index = items.iter().position(|item| {
+        matches!(
+            item,
+            RolloutItem::ResponseItem(envelope)
+                if matches!(
+                    &envelope.item,
+                    ResponseItem::FunctionCall { call_id, .. }
+                        if call_id == parent_spawn_call_id
+                )
+        )
+    })?;
+    let user_event_index = items[..spawn_call_index].iter().rposition(|item| {
+        matches!(
+            item,
+            RolloutItem::EventMsg(EventMsg::UserMessage(_))
+                | RolloutItem::EventMsg(EventMsg::ItemCompleted(
+                    codex_protocol::protocol::ItemCompletedEvent {
+                        item: codex_protocol::items::TurnItem::UserMessage(_),
+                        ..
+                    }
+                ))
+        )
+    })?;
+
+    items[..user_event_index].iter().rposition(|item| {
+        matches!(
+            item,
+            RolloutItem::ResponseItem(envelope)
+                if matches!(&envelope.item, ResponseItem::Message { role, .. } if role == "user")
+        )
+    })
+}
+
 fn is_multi_agent_v2_usage_hint_message(item: &ResponseItem, usage_hint_texts: &[String]) -> bool {
     let ResponseItem::Message { role, content, .. } = item else {
         return false;
@@ -588,11 +625,11 @@ impl AgentControl {
             environments: inherited_environments,
             exec_policy: inherited_exec_policy,
         } = inheritance;
-        if options.fork_parent_spawn_call_id.is_none() {
+        let Some(parent_spawn_call_id) = options.fork_parent_spawn_call_id.as_deref() else {
             return Err(CodexErr::Fatal(
                 "spawn_agent fork requires a parent spawn call id".to_string(),
             ));
-        }
+        };
         let Some(fork_mode) = options.fork_mode.as_ref() else {
             return Err(CodexErr::Fatal(
                 "spawn_agent fork requires a fork mode".to_string(),
@@ -648,6 +685,11 @@ impl AgentControl {
         if let SpawnAgentForkMode::LastNTurns(last_n_turns) = fork_mode {
             forked_rollout_items =
                 truncate_rollout_to_last_n_fork_turns(&forked_rollout_items, *last_n_turns);
+        }
+        if let Some(index) =
+            parent_delegation_prompt_index(&forked_rollout_items, parent_spawn_call_id)
+        {
+            forked_rollout_items.remove(index);
         }
         let multi_agent_v2_usage_hint_texts_to_filter: Vec<String> =
             if let Some(parent_thread) = parent_thread.as_ref() {

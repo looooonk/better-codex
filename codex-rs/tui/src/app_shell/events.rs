@@ -437,6 +437,14 @@ impl ShellState {
                             super::ToolBlockStatus::Running,
                         );
                     }
+                } else if self.prepare_active_agent_thread(&progress.thread_id) {
+                    self.agent_activity.record_child_progress(
+                        &progress.thread_id,
+                        &progress.item_id,
+                        AgentChildEvent::Mcp,
+                        &progress.message,
+                    );
+                    self.agent_activity.mark_live_thread(&progress.thread_id);
                 }
             }
             ServerNotification::ServerRequestResolved(resolved) => {

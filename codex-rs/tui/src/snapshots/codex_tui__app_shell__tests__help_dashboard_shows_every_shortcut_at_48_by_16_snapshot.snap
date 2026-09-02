@@ -12,7 +12,7 @@ expression: rendered
 │ e           Branch   │  ⌥/^ + ←→    Move word
 │ ^O/⌥1-9     Copy rep…│  S/A + ↵     Newline
 │◆ DASHBOARD           │  Alt+M       Model
-│ ^1 … ^4     Open tab │  Alt+E       Effort
+│ F1 … F4     Open tab │  Alt+E       Effort
 │
 ╭──────────────────────────────────────────────╮
 │◆ MESSAGE  1:37                               │

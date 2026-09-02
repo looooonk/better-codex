@@ -1,0 +1,20 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 80, 16,))"
+---
+  Dashboard  ◆ BC                gpt-5-codex ▾   default ▾   default ▾  ● ready
+────────────────────────────────────────────────────────────────────────────────
+
+ ◆ CONVERSATION
+ ▎ SYSTEM  switched session
+ ▎ SYSTEM  loaded 1 previous turns
+ ▎ YOU  Keep this interrupted prompt
+ ▎ STATUS  turn interrupted
+ ──────────────────────────────────────────────────────────────────────────────
+
+╭──────────────────────────────────────────────────────────────────────────────╮
+│◆ MESSAGE  1:1                                                                │
+│> Type a message, Shift+Enter for newline                                     │
+│                                                                              │
+│                                                                              │
+╰──────────────────────────────────────────────────────────────────────────────╯

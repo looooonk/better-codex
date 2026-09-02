@@ -101,6 +101,7 @@ use codex_app_server_protocol::ThreadSource;
 use codex_app_server_protocol::ThreadStartParams;
 use codex_app_server_protocol::ThreadStartResponse;
 use codex_app_server_protocol::ThreadStartSource;
+use codex_app_server_protocol::ThreadStatus;
 use codex_app_server_protocol::ThreadUnarchiveParams;
 use codex_app_server_protocol::ThreadUnarchiveResponse;
 use codex_app_server_protocol::ThreadUnsubscribeParams;
@@ -204,6 +205,7 @@ impl ThreadParamsMode {
 #[derive(Debug)]
 pub(crate) struct AppServerStartedThread {
     pub(crate) session: ThreadSessionState,
+    pub(crate) thread_status: ThreadStatus,
     pub(crate) turns: Vec<Turn>,
     pub(crate) agent_threads: Vec<Thread>,
     pub(crate) agent_history_task: Option<AgentHistoryTask>,
@@ -756,6 +758,7 @@ impl AppServerSession {
     pub(crate) async fn turn_start(
         &mut self,
         thread_id: ThreadId,
+        client_user_message_id: String,
         items: Vec<UserInput>,
         cwd: PathBuf,
         approval_policy: AskForApproval,
@@ -778,7 +781,7 @@ impl AppServerSession {
                 request_id,
                 params: TurnStartParams {
                     thread_id: thread_id.to_string(),
-                    client_user_message_id: None,
+                    client_user_message_id: Some(client_user_message_id),
                     input: items,
                     responsesapi_client_metadata: None,
                     additional_context: None,
@@ -1480,6 +1483,7 @@ async fn started_thread_from_start_response(
             .map_err(color_eyre::eyre::Report::msg)?;
     Ok(AppServerStartedThread {
         session,
+        thread_status: response.thread.status,
         turns: response.thread.turns,
         agent_threads: Vec::new(),
         agent_history_task: None,
@@ -1497,6 +1501,7 @@ async fn started_thread_from_resume_response(
             .map_err(color_eyre::eyre::Report::msg)?;
     Ok(AppServerStartedThread {
         session,
+        thread_status: response.thread.status,
         turns: response.thread.turns,
         agent_threads: Vec::new(),
         agent_history_task: None,
@@ -1514,6 +1519,7 @@ async fn started_thread_from_fork_response(
             .map_err(color_eyre::eyre::Report::msg)?;
     Ok(AppServerStartedThread {
         session,
+        thread_status: response.thread.status,
         turns: response.thread.turns,
         agent_threads: Vec::new(),
         agent_history_task: None,
@@ -2335,7 +2341,9 @@ mod tests {
                 created_at: 1,
                 updated_at: 2,
                 recency_at: Some(2),
-                status: ThreadStatus::Idle,
+                status: ThreadStatus::Active {
+                    active_flags: Vec::new(),
+                },
                 path: None,
                 cwd: test_path_buf("/tmp/project").abs(),
                 cli_version: "0.0.0".to_string(),
@@ -2364,7 +2372,7 @@ mod tests {
                             memory_citation: None,
                         },
                     ],
-                    status: TurnStatus::Completed,
+                    status: TurnStatus::InProgress,
                     error: None,
                     started_at: None,
                     completed_at: None,
@@ -2413,6 +2421,7 @@ mod tests {
             response.instruction_source_path_uris()
         );
         assert_eq!(started.session.permission_profile, read_only_profile);
+        assert_eq!(started.thread_status, response.thread.status);
         assert_eq!(started.turns.len(), 1);
         assert_eq!(started.turns[0], response.thread.turns[0]);
 

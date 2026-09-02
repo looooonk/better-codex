@@ -4316,6 +4316,14 @@ impl Session {
         info!("interrupt received: abort current task, if any");
         let had_active_turn = self.active_turn.lock().await.is_some();
         self.abort_all_tasks(TurnAbortReason::Interrupted).await;
+        if let Err(err) = self
+            .services
+            .agent_control
+            .interrupt_agent_children(self.thread_id())
+            .await
+        {
+            warn!("failed to interrupt descendant agents: {err}");
+        }
         if !had_active_turn {
             self.cancel_mcp_startup().await;
         }

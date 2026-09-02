@@ -234,6 +234,28 @@ impl AgentControl {
         .await
     }
 
+    pub(crate) async fn interrupt_agent_children(
+        &self,
+        parent_thread_id: ThreadId,
+    ) -> CodexResult<()> {
+        let mut children_by_parent = self.live_thread_spawn_children().await?;
+        let mut first_error = None;
+        for (thread_id, _) in children_by_parent
+            .remove(&parent_thread_id)
+            .unwrap_or_default()
+        {
+            if let Err(err) = self.interrupt_agent(thread_id).await
+                && !matches!(
+                    &err,
+                    CodexErr::ThreadNotFound(_) | CodexErr::InternalAgentDied
+                )
+            {
+                first_error.get_or_insert(err);
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    }
+
     async fn handle_thread_request_result(
         &self,
         agent_id: ThreadId,

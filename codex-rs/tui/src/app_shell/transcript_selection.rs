@@ -8,6 +8,8 @@ impl ShellState {
             .transcript
             .iter()
             .rposition(|line| line.kind == TranscriptKind::User);
+        self.transcript_selection_needs_reveal
+            .set(self.transcript_selection.is_some());
         self.scroll_transcript_to_bottom();
     }
 
@@ -17,11 +19,14 @@ impl ShellState {
             .transcript
             .iter()
             .position(|line| line.kind == TranscriptKind::User);
+        self.transcript_selection_needs_reveal
+            .set(self.transcript_selection.is_some());
         self.scroll_transcript_to_top();
     }
 
     pub(super) fn clear_transcript_selection(&mut self) {
         self.transcript_selection = None;
+        self.transcript_selection_needs_reveal.set(false);
     }
 
     pub(super) fn move_transcript_selection_up(&mut self, rows: usize) {
@@ -52,6 +57,7 @@ impl ShellState {
         };
         self.transcript_selection = Some(next);
         self.scroll_transcript_up(selected.saturating_sub(next));
+        self.transcript_selection_needs_reveal.set(true);
     }
 
     pub(super) fn move_transcript_selection_down(&mut self, rows: usize) {
@@ -81,6 +87,7 @@ impl ShellState {
         };
         self.transcript_selection = Some(next);
         self.scroll_transcript_down(next.saturating_sub(selected));
+        self.transcript_selection_needs_reveal.set(true);
     }
 }
 

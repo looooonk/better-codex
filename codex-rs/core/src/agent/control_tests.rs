@@ -40,6 +40,7 @@ use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnAbortedEvent;
 use codex_protocol::protocol::TurnCompleteEvent;
 use codex_protocol::protocol::TurnStartedEvent;
+use codex_protocol::protocol::UserMessageEvent;
 use codex_thread_store::ArchiveThreadParams;
 use codex_thread_store::InMemoryThreadStore;
 use codex_thread_store::LocalThreadStore;
@@ -1042,6 +1043,32 @@ async fn spawn_agent_can_fork_parent_thread_history_with_sanitized_items() {
         .expect("parent seed should be recorded");
     let turn_context = parent_thread.codex.session.new_default_turn().await;
     let parent_spawn_call_id = "spawn-call-history".to_string();
+    parent_thread
+        .codex
+        .session
+        .record_conversation_items(
+            turn_context.as_ref(),
+            &[ResponseItem::Message {
+                id: None,
+                role: "user".to_string(),
+                content: vec![ContentItem::InputText {
+                    text: "delegate the parent task".to_string(),
+                }],
+                phase: None,
+                internal_chat_message_metadata_passthrough: None,
+            }],
+        )
+        .await;
+    parent_thread
+        .codex
+        .session
+        .persist_rollout_items(&[RolloutItem::EventMsg(EventMsg::UserMessage(
+            UserMessageEvent {
+                message: "delegate the parent task".to_string(),
+                ..Default::default()
+            },
+        ))])
+        .await;
     let trigger_message = InterAgentCommunication::new(
         AgentPath::root(),
         AgentPath::try_from("/root/worker").expect("agent path"),
@@ -2931,6 +2958,71 @@ async fn list_agent_subtree_thread_ids_finds_live_descendants_of_unloaded_root()
     expected_subtree_thread_ids.sort_by_key(ToString::to_string);
 
     assert_eq!(subtree_thread_ids, expected_subtree_thread_ids);
+}
+
+#[tokio::test]
+async fn interrupting_parent_cascades_once_through_child_tree() {
+    let harness = AgentControlHarness::new().await;
+    let (parent_thread_id, parent_thread) = harness.start_thread().await;
+    let child_thread_id = harness
+        .control
+        .spawn_agent(
+            harness.config.clone(),
+            text_input("hello child"),
+            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id,
+                depth: 1,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: Some("explorer".to_string()),
+            })),
+        )
+        .await
+        .expect("child spawn should succeed");
+    let grandchild_thread_id = harness
+        .control
+        .spawn_agent(
+            harness.config.clone(),
+            text_input("hello grandchild"),
+            Some(SessionSource::SubAgent(SubAgentSource::ThreadSpawn {
+                parent_thread_id: child_thread_id,
+                depth: 2,
+                agent_path: None,
+                agent_nickname: None,
+                agent_role: Some("worker".to_string()),
+            })),
+        )
+        .await
+        .expect("grandchild spawn should succeed");
+    wait_for_live_thread_spawn_children(&harness.control, parent_thread_id, &[child_thread_id])
+        .await;
+    wait_for_live_thread_spawn_children(&harness.control, child_thread_id, &[grandchild_thread_id])
+        .await;
+
+    parent_thread
+        .submit(Op::Interrupt)
+        .await
+        .expect("parent interrupt should submit");
+
+    let interrupt_ids = timeout(Duration::from_secs(5), async {
+        loop {
+            let interrupt_ids = harness
+                .manager
+                .captured_ops()
+                .into_iter()
+                .filter_map(|(thread_id, op)| matches!(op, Op::Interrupt).then_some(thread_id))
+                .collect::<Vec<_>>();
+            if interrupt_ids.contains(&child_thread_id)
+                && interrupt_ids.contains(&grandchild_thread_id)
+            {
+                break interrupt_ids;
+            }
+            sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("interrupt should reach the child tree");
+    assert_eq!(interrupt_ids, vec![child_thread_id, grandchild_thread_id]);
 }
 
 #[tokio::test]
