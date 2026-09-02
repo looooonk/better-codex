@@ -244,6 +244,99 @@ fn remote_thread_status_updates_the_active_shell() {
     assert_eq!(observed, ["ready", "error", "thinking", "waiting"]);
 }
 
+#[test]
+fn replacing_with_an_active_session_restores_its_turn_lifecycle() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript_scroll = 1;
+    let _ = render_shell(
+        &shell,
+        Rect::new(
+            /*x*/ 0, /*y*/ 0, /*width*/ 60, /*height*/ 12,
+        ),
+    );
+    shell.transcript_selection_needs_reveal.set(true);
+    assert!(shell.transcript_viewport_anchor.borrow().is_some());
+    let thread_id = test_thread_id("01900000-0000-7000-8000-000000000109");
+    let mut started = started_thread("active", thread_id, /*forked_from_id*/ None);
+    started.thread_status = ThreadStatus::Active {
+        active_flags: Vec::new(),
+    };
+    started.turns = vec![
+        prompt_turn("completed-turn", "Completed prompt"),
+        prompt_turn("active-turn", "Active prompt"),
+    ];
+    started.turns[1].status = TurnStatus::InProgress;
+
+    shell.replace_started_session(started);
+
+    assert_eq!(shell.thread_id, thread_id);
+    assert_eq!(shell.active_turn_id.as_deref(), Some("active-turn"));
+    assert_eq!(shell.status, "thinking");
+    assert!(shell.turn_started_at.is_some());
+    assert!(shell.terminal_clear_requested.get());
+    assert_eq!(
+        (
+            shell.transcript_effective_scroll.get(),
+            shell.transcript_viewport_anchor.borrow().clone(),
+            shell.transcript_selection_needs_reveal.get(),
+        ),
+        (None, None, false)
+    );
+    assert_eq!(
+        shell
+            .transcript
+            .back()
+            .map(|line| (&line.kind, line.text.as_str())),
+        Some((&TranscriptKind::User, "Active prompt"))
+    );
+
+    shell.handle_notification(ServerNotification::TurnCompleted(
+        codex_app_server_protocol::TurnCompletedNotification {
+            thread_id: thread_id.to_string(),
+            turn: test_turn("active-turn", TurnStatus::Completed),
+        },
+    ));
+
+    assert_eq!(shell.active_turn_id, None);
+    assert_eq!(shell.status, "ready");
+    assert_eq!(
+        shell.transcript.back().map(|line| line.kind),
+        Some(TranscriptKind::Separator)
+    );
+}
+
+#[test]
+fn interrupted_turn_history_keeps_the_prompt_and_marks_the_interruption() {
+    let mut shell = ShellState::snapshot_fixture();
+    let thread_id = test_thread_id("01900000-0000-7000-8000-000000000110");
+    let mut started = started_thread("interrupted", thread_id, /*forked_from_id*/ None);
+    let mut turn = prompt_turn("interrupted-turn", "Keep this interrupted prompt");
+    turn.status = TurnStatus::Interrupted;
+    started.turns = vec![turn];
+
+    shell.replace_started_session(started);
+
+    assert!(shell.transcript.iter().any(|line| {
+        line.kind == TranscriptKind::User && line.text == "Keep this interrupted prompt"
+    }));
+    assert!(
+        shell
+            .transcript
+            .iter()
+            .any(|line| { line.kind == TranscriptKind::Status && line.text == "turn interrupted" })
+    );
+    shell.dashboard_visible = false;
+    insta::assert_snapshot!(
+        "interrupted_turn_history",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 80, /*height*/ 16,
+            )
+        )
+    );
+}
+
 #[tokio::test]
 async fn terminal_thread_status_waits_for_the_authoritative_turn_completion() {
     for (remote_status, turn_status, expected_status) in [
@@ -1155,10 +1248,11 @@ fn renders_scrolled_transcript_snapshot() {
     shell.push_status("second checkpoint");
     shell.push_status("third checkpoint");
     shell.push_status("fourth checkpoint");
-    shell.scroll_transcript_up(/*rows*/ 4);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 16,
     );
+    let _tail = render_shell(&shell, area);
+    shell.scroll_transcript_up(/*rows*/ 4);
 
     insta::assert_snapshot!(render_shell(&shell, area));
 }
@@ -1402,6 +1496,29 @@ fn renders_short_shell_snapshot() {
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 12,
     );
 
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_terminal_too_short_snapshot() {
+    let shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 10,
+    );
+
+    insta::assert_snapshot!(render_shell(&shell, area));
+}
+
+#[test]
+fn renders_minimum_terminal_size_snapshot() {
+    let shell = ShellState::snapshot_fixture();
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 11,
+    );
+    let view = ShellView { shell: &shell };
+
+    assert_eq!(view.input_area(area).height, 6);
+    assert!(view.cursor_position(area).is_some());
     insta::assert_snapshot!(render_shell(&shell, area));
 }
 
@@ -3288,6 +3405,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
     )]);
 
     shell.dashboard_route = DashboardRoute::Sessions;
+    shell.dashboard_visible = false;
     shell.dashboard_scroll.set(8);
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::ResumeThread);
@@ -3298,6 +3416,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
     finish_session_hydration(&mut shell, &backend).await;
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
+    assert!(shell.dashboard_visible);
     assert_eq!(shell.dashboard_scroll.get(), 0);
     assert!(shell.session_list.focused);
     assert!(!shell.settings.focused);
@@ -3309,6 +3428,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
         "resume action should leave a keyboard hint"
     );
 
+    shell.dashboard_visible = false;
     shell.dashboard_scroll.set(8);
     shell.open_command_palette();
     select_command_palette_action(&mut shell, CommandPaletteAction::ForkThread);
@@ -3319,6 +3439,7 @@ async fn command_palette_opens_native_session_list_for_resume_and_fork() {
     finish_session_hydration(&mut shell, &backend).await;
 
     assert_eq!(shell.dashboard_route, DashboardRoute::Sessions);
+    assert!(shell.dashboard_visible);
     assert_eq!(shell.dashboard_scroll.get(), 0);
     assert!(shell.session_list.focused);
     assert!(
@@ -3592,6 +3713,7 @@ async fn concurrent_interactive_requests_wait_and_resolve_in_order() {
     complete_backend_actions(&mut shell, &backend).await;
     assert!(shell.pending_user_input.is_some());
     assert_eq!(shell.queued_interactive_requests.len(), 1);
+    assert_eq!(shell.status, "waiting");
 
     shell.composer.set_text("2");
     shell
@@ -4659,13 +4781,13 @@ async fn goal_slash_command_pauses_resumes_and_clears_thread_goal() {
 }
 
 #[test]
-fn dashboard_route_key_mapping_covers_native_routes() {
+fn dashboard_route_key_mapping_uses_terminal_safe_shortcuts() {
     assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL)),
+        dashboard_route_from_key(KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)),
         Some(DashboardRoute::Status)
     );
     assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('2'), KeyModifiers::CONTROL)),
+        dashboard_route_from_key(KeyEvent::new(KeyCode::F(2), KeyModifiers::NONE)),
         Some(DashboardRoute::Agents)
     );
     assert_eq!(
@@ -4673,15 +4795,19 @@ fn dashboard_route_key_mapping_covers_native_routes() {
         Some(DashboardRoute::Agents)
     );
     assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL)),
+        dashboard_route_from_key(KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE)),
         Some(DashboardRoute::Sessions)
     );
     assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('4'), KeyModifiers::CONTROL)),
+        dashboard_route_from_key(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE)),
         Some(DashboardRoute::Help)
     );
     assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('5'), KeyModifiers::CONTROL)),
+        dashboard_route_from_key(KeyEvent::new(KeyCode::F(5), KeyModifiers::NONE)),
+        None
+    );
+    assert_eq!(
+        dashboard_route_from_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL)),
         None
     );
     assert_eq!(
@@ -4689,16 +4815,12 @@ fn dashboard_route_key_mapping_covers_native_routes() {
         Some(DashboardRoute::Agents)
     );
     assert_eq!(
-        dashboard_route_from_key(KeyEvent::new(KeyCode::Null, KeyModifiers::NONE)),
-        Some(DashboardRoute::Agents)
-    );
-    assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Char('\u{001b}'), KeyModifiers::NONE)),
-        Some(DashboardRoute::Sessions)
+        None
     );
     assert_eq!(
         dashboard_route_from_key(KeyEvent::new(KeyCode::Esc, KeyModifiers::CONTROL)),
-        Some(DashboardRoute::Sessions)
+        None
     );
     assert_eq!(dashboard_route_from_key(key_char('1')), None);
     assert_eq!(
@@ -6431,6 +6553,23 @@ async fn safety_buffering_retry_preserves_steered_input_and_notices_queued_follo
             "Explain the request\n\n\nAlso keep this clarification",
         ]
     );
+    let retry_line = shell
+        .transcript
+        .iter()
+        .find(|line| line.text == "Explain the request\n\n\nAlso keep this clarification")
+        .expect("retried prompt should be rendered");
+    assert!(
+        retry_line
+            .item_id
+            .as_deref()
+            .is_some_and(|item_id| item_id.starts_with("better-codex-turn-"))
+    );
+    assert_eq!(
+        retry_line.rewind_anchor,
+        Some(rewind::RewindAnchor {
+            before_turn_id: "turn-submit".to_string(),
+        })
+    );
     assert_eq!(shell.active_turn_id.as_deref(), Some("turn-submit"));
     assert_eq!(shell.composer, composer_before_retry);
     assert!(shell.transcript.iter().any(|line| {
@@ -6809,20 +6948,20 @@ async fn dashboard_header_button_toggles_in_sidebar_and_overlay_layouts() {
 }
 
 #[tokio::test]
-async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
+async fn function_key_tabs_focus_only_after_selecting_route_snapshot() {
     let config = test_config().await;
     let mut shell = ShellState::snapshot_fixture();
     let mut backend = RecordingBackend::default();
-    let ctrl_status = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
-    let ctrl_sessions = KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL);
+    let f1_status = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
+    let f3_sessions = KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE);
     let area = Rect::new(
         /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
     );
 
     shell
-        .handle_key(ctrl_status, &config, &mut backend)
+        .handle_key(f1_status, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should select status");
+        .expect("F1 should select status");
 
     assert_eq!(
         (
@@ -6836,9 +6975,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     insta::assert_snapshot!(render_shell(&shell, area));
 
     shell
-        .handle_key(ctrl_status, &config, &mut backend)
+        .handle_key(f1_status, &config, &mut backend)
         .await
-        .expect("Ctrl+1 should focus selected status settings");
+        .expect("F1 should focus selected status settings");
 
     assert_eq!(
         (
@@ -6851,9 +6990,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     assert_eq!(ShellView { shell: &shell }.cursor_position(area), None);
 
     shell
-        .handle_key(ctrl_sessions, &config, &mut backend)
+        .handle_key(f3_sessions, &config, &mut backend)
         .await
-        .expect("Ctrl+3 should select sessions");
+        .expect("F3 should select sessions");
 
     assert_eq!(
         (
@@ -6866,9 +7005,9 @@ async fn ctrl_number_tabs_focus_only_after_selecting_route_snapshot() {
     assert!(ShellView { shell: &shell }.cursor_position(area).is_some());
 
     shell
-        .handle_key(ctrl_sessions, &config, &mut backend)
+        .handle_key(f3_sessions, &config, &mut backend)
         .await
-        .expect("Ctrl+3 should focus selected sessions");
+        .expect("F3 should focus selected sessions");
 
     assert_eq!(
         (
@@ -6897,20 +7036,20 @@ async fn blocked_session_list_refresh_does_not_block_dashboard_input() {
     };
     let mut shell = ShellState::snapshot_fixture();
     shell.dashboard_route = DashboardRoute::Status;
-    let ctrl_sessions = KeyEvent::new(KeyCode::Char('3'), KeyModifiers::CONTROL);
-    let ctrl_status = KeyEvent::new(KeyCode::Char('1'), KeyModifiers::CONTROL);
+    let f3_sessions = KeyEvent::new(KeyCode::F(3), KeyModifiers::NONE);
+    let f1_status = KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE);
 
     tokio::time::timeout(Duration::from_secs(/*secs*/ 1), async {
         shell
-            .handle_key(ctrl_sessions, &config, &mut backend)
+            .handle_key(f3_sessions, &config, &mut backend)
             .await
-            .expect("Ctrl+3 should start loading sessions");
+            .expect("F3 should start loading sessions");
         shell
-            .handle_key(ctrl_sessions, &config, &mut backend)
+            .handle_key(f3_sessions, &config, &mut backend)
             .await
-            .expect("repeated Ctrl+3 should coalesce with the pending load");
+            .expect("repeated F3 should coalesce with the pending load");
         shell
-            .handle_key(ctrl_status, &config, &mut backend)
+            .handle_key(f1_status, &config, &mut backend)
             .await
             .expect("other dashboard input should stay responsive");
     })
@@ -9078,6 +9217,21 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
             delta: "tests pass".to_string(),
         },
     ));
+    shell.handle_notification(ServerNotification::McpToolCallProgress(
+        McpToolCallProgressNotification {
+            thread_id: child_thread_id.clone(),
+            turn_id: "child-turn".to_string(),
+            item_id: "mcp-1".to_string(),
+            message: "indexed 42 files".to_string(),
+        },
+    ));
+    assert_eq!(
+        shell
+            .agent_activity
+            .agent(&child_thread_id)
+            .and_then(|agent| agent.latest_message.as_deref()),
+        Some("indexed 42 files")
+    );
     shell.handle_notification(ServerNotification::ItemCompleted(
         ItemCompletedNotification {
             thread_id: child_thread_id.clone(),
@@ -9109,7 +9263,20 @@ fn child_thread_events_update_the_agent_inspector_without_touching_the_transcrip
             "message completed: Review complete.".to_string(),
             "reasoning: checking constraints".to_string(),
             "command output: tests pass".to_string(),
+            "mcp progress: indexed 42 files".to_string(),
         ]
+    );
+    shell.dashboard_route = DashboardRoute::Agents;
+    shell.agents_focused = true;
+    shell.agent_activity.select_thread(&child_thread_id);
+    insta::assert_snapshot!(
+        "child_mcp_progress_in_agent_inspector",
+        render_shell(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 28,
+            )
+        )
     );
 
     shell.handle_notification(ServerNotification::TurnCompleted(
@@ -10870,6 +11037,10 @@ fn dashboard_compacts_token_counts_and_groups_other_large_numbers() {
 #[test]
 fn transcript_scroll_clamps_to_last_rendered_range() {
     let mut shell = ShellState::snapshot_fixture();
+
+    shell.scroll_transcript_up(TRANSCRIPT_PAGE_SCROLL_STEP);
+    assert_eq!(shell.transcript_scroll, 0);
+
     shell.transcript_scroll_max.set(10);
 
     shell.scroll_transcript_up(TRANSCRIPT_PAGE_SCROLL_STEP);
@@ -11151,13 +11322,18 @@ async fn turn_submission_and_history_preserve_boundary_whitespace() {
             collaboration_mode: None,
         }]
     );
+    let client_user_message_id = shell
+        .transcript
+        .front()
+        .and_then(|line| line.item_id.clone())
+        .expect("submitted user message should have a client id");
     assert_eq!(
         shell.transcript,
-        VecDeque::from([
-            TranscriptLine::new(TranscriptKind::User, prompt).rewind_anchor(rewind::RewindAnchor {
+        VecDeque::from([TranscriptLine::new(TranscriptKind::User, prompt)
+            .rewind_anchor(rewind::RewindAnchor {
                 before_turn_id: "turn-submit".to_string(),
-            },),
-        ])
+            })
+            .item_id(client_user_message_id),])
     );
     shell.composer.move_up_or_recall_history();
     assert_eq!(shell.composer.text(), prompt);
@@ -11188,9 +11364,18 @@ async fn live_opening_user_message_is_rendered_once_with_rewind_anchor() {
         )
         .await
         .expect("opening turn should submit");
+    complete_backend_actions(&mut shell, &backend).await;
+    let client_user_message_id = shell
+        .transcript
+        .iter()
+        .find(|line| line.kind == TranscriptKind::User)
+        .and_then(|line| line.item_id.clone())
+        .expect("optimistic user message should have a client id");
+    assert!(client_user_message_id.starts_with("better-codex-turn-"));
+    shell.push_status("skills budget loaded");
     let opening_item = ThreadItem::UserMessage {
         id: "opening-user".to_string(),
-        client_id: None,
+        client_id: Some(client_user_message_id.clone()),
         content: vec![ApiUserInput::Text {
             text: prompt.to_string(),
             text_elements: Vec::new(),
@@ -11207,16 +11392,22 @@ async fn live_opening_user_message_is_rendered_once_with_rewind_anchor() {
     };
 
     shell.handle_notification(opening_notification(opening_item.clone()));
-    complete_backend_actions(&mut shell, &backend).await;
     shell.handle_notification(opening_notification(opening_item));
 
     assert_eq!(
-        shell.transcript,
-        VecDeque::from([
-            TranscriptLine::new(TranscriptKind::User, prompt).rewind_anchor(rewind::RewindAnchor {
-                before_turn_id: "turn-submit".to_string(),
-            }),
-        ])
+        shell
+            .transcript
+            .iter()
+            .filter(|line| line.kind == TranscriptKind::User)
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![
+            TranscriptLine::new(TranscriptKind::User, prompt)
+                .rewind_anchor(rewind::RewindAnchor {
+                    before_turn_id: "turn-submit".to_string(),
+                })
+                .item_id(client_user_message_id)
+        ]
     );
 }
 
@@ -12405,6 +12596,29 @@ async fn failed_approval_response_keeps_modal_open() {
 
     assert!(shell.pending_approval.is_some());
     assert_eq!(shell.status, "action failed");
+}
+
+#[tokio::test]
+async fn completed_approval_keeps_an_active_turn_running() {
+    let mut shell = ShellState::snapshot_fixture();
+    let backend = RecordingBackend::default();
+    shell.active_turn_id = Some("turn-1".to_string());
+    shell
+        .handle_app_server_event(
+            &mut backend.clone(),
+            AppServerEvent::ServerRequest(command_approval_request()),
+        )
+        .await
+        .expect("approval request should open");
+
+    shell
+        .resolve_pending_approval(&backend, /*option_index*/ 0, None)
+        .expect("approval response should start");
+    complete_backend_actions(&mut shell, &backend).await;
+
+    assert!(shell.pending_approval.is_none());
+    assert_eq!(shell.active_turn_id.as_deref(), Some("turn-1"));
+    assert_eq!(shell.status, "thinking");
 }
 
 #[tokio::test]
@@ -18813,6 +19027,7 @@ fn started_thread(
             network_proxy: None,
             rollout_path: None,
         },
+        thread_status: ThreadStatus::Idle,
         turns: Vec::new(),
         agent_threads: Vec::new(),
         agent_history_task: None,

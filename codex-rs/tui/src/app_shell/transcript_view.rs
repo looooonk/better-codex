@@ -361,6 +361,15 @@ struct TranscriptViewport {
 }
 
 fn transcript_viewport(shell: &ShellState, area: Rect) -> TranscriptViewport {
+    let previous_anchor = shell.transcript_viewport_anchor.borrow().clone();
+    let previous_scroll = if shell.transcript_scroll == 0 {
+        0
+    } else {
+        shell
+            .transcript_effective_scroll
+            .get()
+            .unwrap_or(shell.transcript_scroll)
+    };
     let content = pane_content_rect(area);
     let body = body_rect_after_title(content);
     let cwd = std::path::Path::new(&shell.cwd);
@@ -380,10 +389,42 @@ fn transcript_viewport(shell: &ShellState, area: Rect) -> TranscriptViewport {
         max_scroll = layout.total_lines.saturating_sub(visible_count);
     }
     shell.transcript_scroll_max.set(max_scroll);
-    let scroll = shell.transcript_scroll.min(max_scroll);
-    let visible_from = layout
+    let scroll = previous_scroll.min(max_scroll);
+    let mut visible_from = layout
         .total_lines
         .saturating_sub(visible_count.saturating_add(scroll));
+    if previous_scroll > 0
+        && let Some(anchor) = &previous_anchor
+        && let Some(anchor_row) = layout.row_for_viewport_anchor(anchor)
+    {
+        visible_from = anchor_row.min(max_scroll);
+    }
+    let resized = previous_anchor
+        .as_ref()
+        .is_some_and(|anchor| anchor.width != text_body.width);
+    if (resized || shell.transcript_selection_needs_reveal.replace(false))
+        && visible_count > 0
+        && let Some(selected) = shell.transcript_selection
+        && let Some(rows) = layout.transcript_row_range(selected)
+    {
+        let visible_end = visible_from.saturating_add(visible_count);
+        if rows.end <= visible_from {
+            visible_from = rows.start.min(max_scroll);
+        } else if rows.start >= visible_end {
+            visible_from = rows
+                .start
+                .saturating_add(1)
+                .saturating_sub(visible_count)
+                .min(max_scroll);
+        }
+    }
+    let effective_scroll = max_scroll.saturating_sub(visible_from);
+    shell
+        .transcript_effective_scroll
+        .set(Some(effective_scroll));
+    *shell.transcript_viewport_anchor.borrow_mut() = (effective_scroll > 0)
+        .then(|| layout.viewport_anchor_at_or_after(visible_from, text_body.width))
+        .flatten();
     let scrollbar = transcript_scrollbar_metrics(
         layout.total_lines,
         body.height,

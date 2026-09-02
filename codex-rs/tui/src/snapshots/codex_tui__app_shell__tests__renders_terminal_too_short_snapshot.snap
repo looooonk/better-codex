@@ -1,0 +1,12 @@
+---
+source: tui/src/app_shell_tests.rs
+expression: "render_shell(&shell, area)"
+---
+
+
+  ╭──────────────────────────────────╮
+  │◆ TERMINAL TOO SMALL              │
+  │Use a larger terminal window.     │
+  │Minimum: 40 columns x 11 rows.    │
+  │                                  │
+  ╰──────────────────────────────────╯

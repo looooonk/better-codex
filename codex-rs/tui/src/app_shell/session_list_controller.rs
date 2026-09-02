@@ -407,12 +407,14 @@ impl ShellState {
     }
 
     pub(super) fn replace_started_session(&mut self, started: AppServerStartedThread) {
+        self.terminal_clear_requested.set(true);
         self.invalidate_session_hydration();
         self.close_agent_log();
         self.close_tool_output();
         self.close_diff_view();
         let AppServerStartedThread {
             session,
+            thread_status,
             turns,
             agent_threads,
             agent_history_task,
@@ -437,6 +439,9 @@ impl ShellState {
         self.transcript.clear();
         self.transcript_scroll = 0;
         self.transcript_scroll_max.set(0);
+        self.transcript_effective_scroll.set(None);
+        self.transcript_viewport_anchor.get_mut().take();
+        self.transcript_selection_needs_reveal.set(false);
         self.dashboard_scroll.set(0);
         self.transcript_selection = None;
         self.transcript_render_cache.get_mut().clear();
@@ -479,8 +484,8 @@ impl ShellState {
         self.pending_session_delete = None;
         self.selector = None;
         self.safety_buffering.clear();
-        self.status = "ready".to_string();
         self.push_system("switched session");
+        self.restore_thread_lifecycle(thread_status, &turns);
         self.ingest_turn_history(turns);
         self.install_agent_history(agent_threads, agent_history_task);
     }

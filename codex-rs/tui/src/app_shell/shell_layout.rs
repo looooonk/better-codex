@@ -31,6 +31,8 @@ const PANE_CHROME_HEIGHT: u16 = 3;
 const TRANSCRIPT_MIN_HEIGHT: u16 = 5;
 
 pub(super) const MIN_TERMINAL_WIDTH: u16 = 40;
+pub(super) const MIN_TERMINAL_HEIGHT: u16 =
+    COMPACT_HEADER_HEIGHT + PANE_CHROME_HEIGHT + INPUT_PANEL_MIN_HEIGHT;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum DashboardPlacement {
@@ -64,8 +66,12 @@ pub(super) fn terminal_width_supported(width: u16) -> bool {
     width >= MIN_TERMINAL_WIDTH
 }
 
+pub(super) fn terminal_size_supported(width: u16, height: u16) -> bool {
+    terminal_width_supported(width) && height >= MIN_TERMINAL_HEIGHT
+}
+
 pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
-    if !terminal_width_supported(area.width) {
+    if !terminal_size_supported(area.width, area.height) {
         return None;
     }
 
@@ -87,7 +93,7 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
             .direction(Direction::Vertical)
             .constraints([
                 Constraint::Length(header_height),
-                Constraint::Min(transcript_min_height(shell)),
+                Constraint::Min(transcript_min_height(shell, area.height)),
                 Constraint::Length(input_height),
             ])
             .split(area);
@@ -126,7 +132,7 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(header_height),
-            Constraint::Min(transcript_min_height(shell)),
+            Constraint::Min(transcript_min_height(shell, area.height)),
             Constraint::Length(input_height),
         ])
         .split(horizontal[0]);
@@ -138,8 +144,8 @@ pub(super) fn calculate(shell: &ShellState, area: Rect) -> Option<ShellLayout> {
     })
 }
 
-fn transcript_min_height(shell: &ShellState) -> u16 {
-    if shell.pending_approval.is_some() {
+fn transcript_min_height(shell: &ShellState, terminal_height: u16) -> u16 {
+    if terminal_height == MIN_TERMINAL_HEIGHT || shell.pending_approval.is_some() {
         0
     } else {
         TRANSCRIPT_MIN_HEIGHT

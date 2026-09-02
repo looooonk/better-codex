@@ -2,18 +2,31 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
-fn responsive_layout_uses_sidebar_overlay_and_minimum_width_boundaries() {
+fn responsive_layout_uses_sidebar_overlay_and_minimum_size_boundaries() {
     let shell = ShellState::snapshot_fixture();
 
     assert_eq!(
-        (terminal_width_supported(39), terminal_width_supported(40)),
-        (false, true)
+        (
+            terminal_size_supported(39, 24),
+            terminal_size_supported(40, 10),
+            terminal_size_supported(40, 11),
+        ),
+        (false, false, true)
     );
     assert_eq!(
         calculate(
             &shell,
             Rect::new(
                 /*x*/ 0, /*y*/ 0, /*width*/ 39, /*height*/ 24,
+            ),
+        ),
+        None
+    );
+    assert_eq!(
+        calculate(
+            &shell,
+            Rect::new(
+                /*x*/ 0, /*y*/ 0, /*width*/ 40, /*height*/ 10,
             ),
         ),
         None

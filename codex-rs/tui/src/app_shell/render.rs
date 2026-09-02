@@ -24,6 +24,7 @@ use super::modal_view::modal_body_width;
 use super::modal_view::render_modal;
 use super::navigation::DashboardRoute;
 use super::shell_layout;
+use super::shell_layout::MIN_TERMINAL_HEIGHT;
 use super::shell_layout::MIN_TERMINAL_WIDTH;
 use super::shell_layout::ShellLayout;
 use super::transcript_view::render_transcript;
@@ -47,6 +48,10 @@ use ratatui::widgets::Wrap;
 use unicode_width::UnicodeWidthStr;
 
 pub(super) fn draw_shell(tui: &mut tui::Tui, shell: &ShellState) -> std::io::Result<()> {
+    if shell.terminal_clear_requested.get() {
+        tui.terminal.clear()?;
+        shell.terminal_clear_requested.set(false);
+    }
     let height = tui.terminal.size()?.height;
     tui.draw(height, |frame| {
         let view = ShellView { shell };
@@ -76,7 +81,7 @@ impl ShellView<'_> {
         let _active_theme = crate::app_theme::activate(self.shell.app_theme);
         fill_rect(buf, area, palette::base());
         let Some(layout) = self.layout(area) else {
-            self.render_terminal_too_narrow(area, buf);
+            self.render_terminal_too_small(area, buf);
             return;
         };
         self.render_header(layout.header, buf);
@@ -526,13 +531,16 @@ impl ShellView<'_> {
         (!blocked).then_some(self.shell.pointer_position).flatten()
     }
 
-    fn render_terminal_too_narrow(&self, area: Rect, buf: &mut Buffer) {
+    fn render_terminal_too_small(&self, area: Rect, buf: &mut Buffer) {
         render_modal(
             area,
-            "Terminal too narrow",
+            "Terminal too small",
             vec![
                 "Use a larger terminal window.".into(),
-                Line::from(format!("Minimum width: {MIN_TERMINAL_WIDTH} columns.").dim()),
+                Line::from(
+                    format!("Minimum: {MIN_TERMINAL_WIDTH} columns x {MIN_TERMINAL_HEIGHT} rows.")
+                        .dim(),
+                ),
             ],
             buf,
         );

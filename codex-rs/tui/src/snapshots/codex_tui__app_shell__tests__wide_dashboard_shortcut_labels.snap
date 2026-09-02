@@ -9,7 +9,7 @@ expression: rendered(80)
  Ctrl+O / Alt+1-9  Copy response       │  Shift/Alt + Enter  Insert newline
                                        │  Alt+M            Select model
 ◆ DASHBOARD                            │  Alt+E            Select effort
- Ctrl+1 … Ctrl+4  Open a tab           │
+ F1 … F4          Open a tab           │
  Alt+Left / Right  Previous / next tab │ ◆ APP
  Page Up / Page Down  Scroll this guide│  Ctrl+P           Command palette
  Shift+Alt+← / →  Resize dashboard     │  Ctrl+D           Toggle dashboard

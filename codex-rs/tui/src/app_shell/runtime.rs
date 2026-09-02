@@ -11,7 +11,7 @@ use super::backend_actions::TurnSubmission;
 use super::local_app_theme;
 use super::reasoning_ripple;
 use super::render::draw_shell;
-use super::shell_layout::terminal_width_supported;
+use super::shell_layout::terminal_size_supported;
 use super::startup_availability_nux;
 use super::startup_model_migration;
 use super::vim_input;
@@ -102,6 +102,7 @@ pub(crate) async fn run(
     let started = start_selected_session(&mut app_server, &config, session_selection).await?;
     let AppServerStartedThread {
         session,
+        thread_status,
         turns,
         agent_threads,
         agent_history_task,
@@ -123,6 +124,7 @@ pub(crate) async fn run(
         config.multi_agent_v2.max_concurrent_threads_per_session,
     );
     shell.workspace_command_runner = Some(workspace_command_runner.clone());
+    shell.restore_thread_lifecycle(thread_status, &turns);
     shell.ingest_turn_history(turns);
     shell.install_agent_history(agent_threads, agent_history_task);
     for error in tui.take_startup_errors() {
@@ -169,7 +171,8 @@ pub(crate) async fn run(
         );
         turn_timer_refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         let exit_reason = 'event_loop: loop {
-            if terminal_width_supported(tui.terminal.size()?.width)
+            let terminal_size = tui.terminal.size()?;
+            if terminal_size_supported(terminal_size.width, terminal_size.height)
                 && let Some(prompt) = pending_initial_prompt.take()
             {
                 shell.start_turn(&app_server, prompt, TurnSubmission::Initial);
@@ -183,7 +186,7 @@ pub(crate) async fn run(
                         break ExitReason::UserRequested;
                     };
                     let size = tui.terminal.size()?;
-                    let accepts_interaction = terminal_width_supported(size.width);
+                    let accepts_interaction = terminal_size_supported(size.width, size.height);
                     match event {
                         TuiEvent::Key(key) => {
                             if !accepts_interaction {

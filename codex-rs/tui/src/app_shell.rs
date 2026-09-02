@@ -409,9 +409,13 @@ struct ShellState {
     transcript: VecDeque<TranscriptLine>,
     transcript_scroll: usize,
     transcript_scroll_max: Cell<usize>,
+    transcript_effective_scroll: Cell<Option<usize>>,
+    transcript_viewport_anchor: RefCell<Option<transcript_render::TranscriptViewportAnchor>>,
     transcript_selection: Option<usize>,
+    transcript_selection_needs_reveal: Cell<bool>,
     text_selection: TextSelectionState,
     transcript_render_cache: RefCell<TranscriptRenderCache>,
+    terminal_clear_requested: Cell<bool>,
     session_list: SessionListState,
     settings: SettingsState,
     mcp_inventory: McpInventorySummary,
@@ -550,9 +554,13 @@ impl ShellState {
             transcript: VecDeque::new(),
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
+            transcript_effective_scroll: Cell::new(None),
+            transcript_viewport_anchor: RefCell::new(None),
             transcript_selection: None,
+            transcript_selection_needs_reveal: Cell::new(false),
             text_selection: TextSelectionState::default(),
             transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
+            terminal_clear_requested: Cell::new(false),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
@@ -679,7 +687,12 @@ impl ShellState {
             if let Some(error) = turn.error {
                 self.push_error(error.message);
             }
-            self.push_turn_separator();
+            if turn.status == TurnStatus::Interrupted {
+                self.push_status("turn interrupted");
+            }
+            if turn.status != TurnStatus::InProgress {
+                self.push_turn_separator();
+            }
         }
     }
 
@@ -898,32 +911,43 @@ impl ShellState {
     }
 
     fn scroll_transcript_up(&mut self, rows: usize) {
-        let scroll = self.transcript_scroll.saturating_add(rows);
+        let scroll = self.effective_transcript_scroll().saturating_add(rows);
         self.transcript_scroll = self.clamp_transcript_scroll(scroll);
+        self.clear_transcript_viewport_anchor();
     }
 
     fn scroll_transcript_down(&mut self, rows: usize) {
-        self.transcript_scroll = self
-            .transcript_scroll
-            .min(self.transcript_scroll_max.get())
-            .saturating_sub(rows);
+        self.transcript_scroll = self.effective_transcript_scroll().saturating_sub(rows);
+        self.clear_transcript_viewport_anchor();
     }
 
     fn scroll_transcript_to_top(&mut self) {
         self.transcript_scroll = self.transcript_scroll_max.get();
+        self.clear_transcript_viewport_anchor();
     }
 
     fn scroll_transcript_to_bottom(&mut self) {
         self.transcript_scroll = 0;
+        self.clear_transcript_viewport_anchor();
     }
 
     fn clamp_transcript_scroll(&self, scroll: usize) -> usize {
-        let max_scroll = self.transcript_scroll_max.get();
-        if max_scroll == 0 {
-            scroll
-        } else {
-            scroll.min(max_scroll)
+        scroll.min(self.transcript_scroll_max.get())
+    }
+
+    fn effective_transcript_scroll(&self) -> usize {
+        if self.transcript_scroll == 0 {
+            return 0;
         }
+        self.transcript_effective_scroll
+            .get()
+            .unwrap_or(self.transcript_scroll)
+            .min(self.transcript_scroll_max.get())
+    }
+
+    fn clear_transcript_viewport_anchor(&mut self) {
+        self.transcript_effective_scroll.set(None);
+        self.transcript_viewport_anchor.get_mut().take();
     }
 
     fn clear_visible_transcript(&mut self) {
@@ -932,6 +956,7 @@ impl ShellState {
         self.transcript_render_cache.get_mut().clear();
         self.clear_streaming_transcript();
         self.transcript_scroll = 0;
+        self.clear_transcript_viewport_anchor();
         self.transcript_selection = None;
         self.push_system("visible transcript cleared");
     }
@@ -1145,8 +1170,10 @@ impl ShellState {
             return;
         }
 
+        let client_user_message_id = format!("better-codex-turn-{}", uuid::Uuid::new_v4());
         let params = AppShellTurnStart {
             thread_id: self.thread_id,
+            client_user_message_id,
             items: vec![UserInput::Text {
                 text: prompt.clone(),
                 text_elements: Vec::new(),
@@ -1197,12 +1224,12 @@ impl ShellState {
             }
         };
         self.scroll_transcript_to_bottom();
-        self.push_line(
-            TranscriptLine::new(TranscriptKind::User, prompt.clone()).rewind_anchor(
-                rewind::RewindAnchor {
+        self.upsert_line(
+            TranscriptLine::new(TranscriptKind::User, prompt.clone())
+                .rewind_anchor(rewind::RewindAnchor {
                     before_turn_id: response.turn.id.clone(),
-                },
-            ),
+                })
+                .item_id(params.client_user_message_id.clone()),
         );
         self.status = "thinking".to_string();
         self.clear_streaming_transcript();
@@ -1620,6 +1647,18 @@ impl ShellState {
                 let text = format_user_inputs(&content);
                 if !text.is_empty() {
                     let mut line = TranscriptLine::new(TranscriptKind::User, text);
+                    let rewind_anchor = rewind_anchor.or_else(|| {
+                        client_id.as_deref().and_then(|client_id| {
+                            self.transcript
+                                .iter()
+                                .rev()
+                                .find(|existing| {
+                                    existing.kind == TranscriptKind::User
+                                        && existing.item_id.as_deref() == Some(client_id)
+                                })
+                                .and_then(|existing| existing.rewind_anchor.clone())
+                        })
+                    });
                     if let Some(anchor) = rewind_anchor {
                         line = line.rewind_anchor(anchor);
                     }
@@ -2069,7 +2108,10 @@ impl ShellState {
         while self.transcript.len() > MAX_TRANSCRIPT_LINES {
             self.transcript.pop_front();
             if let Some(selected) = self.transcript_selection {
-                self.transcript_selection = Some(selected.saturating_sub(1));
+                self.transcript_selection = selected.checked_sub(1);
+                if self.transcript_selection.is_none() {
+                    self.transcript_selection_needs_reveal.set(false);
+                }
             }
         }
     }
@@ -2169,9 +2211,13 @@ impl ShellState {
             transcript: VecDeque::new(),
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
+            transcript_effective_scroll: Cell::new(None),
+            transcript_viewport_anchor: RefCell::new(None),
             transcript_selection: None,
+            transcript_selection_needs_reveal: Cell::new(false),
             text_selection: TextSelectionState::default(),
             transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
+            terminal_clear_requested: Cell::new(false),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
@@ -2449,9 +2495,13 @@ pub mod bench_support {
             transcript: VecDeque::new(),
             transcript_scroll: 0,
             transcript_scroll_max: Cell::new(0),
+            transcript_effective_scroll: Cell::new(None),
+            transcript_viewport_anchor: RefCell::new(None),
             transcript_selection: None,
+            transcript_selection_needs_reveal: Cell::new(false),
             text_selection: TextSelectionState::default(),
             transcript_render_cache: RefCell::new(TranscriptRenderCache::default()),
+            terminal_clear_requested: Cell::new(false),
             session_list: SessionListState::default(),
             settings: SettingsState::default(),
             mcp_inventory: McpInventorySummary::default(),
@@ -2837,42 +2887,23 @@ fn dashboard_route_from_key(key: KeyEvent) -> Option<DashboardRoute> {
         return None;
     }
 
-    if key_hint::ctrl(KeyCode::Char('1')).is_press(key) {
+    if key_hint::plain(KeyCode::F(1)).is_press(key) {
         return Some(DashboardRoute::Status);
     }
-    if key_hint::ctrl(KeyCode::Char('2')).is_press(key) {
+    if key_hint::plain(KeyCode::F(2)).is_press(key) {
         return Some(DashboardRoute::Agents);
     }
     if key_hint::ctrl(KeyCode::Char(' ')).is_press(key) {
         return Some(DashboardRoute::Agents);
     }
-    if key_hint::ctrl(KeyCode::Char('3')).is_press(key) {
+    if key_hint::plain(KeyCode::F(3)).is_press(key) {
         return Some(DashboardRoute::Sessions);
     }
-    if key_hint::ctrl(KeyCode::Char('4')).is_press(key) {
+    if key_hint::plain(KeyCode::F(4)).is_press(key) {
         return Some(DashboardRoute::Help);
     }
 
-    match key {
-        KeyEvent {
-            code: KeyCode::Char('\u{0000}') | KeyCode::Null,
-            modifiers,
-            ..
-        } if modifiers.is_empty() || modifiers.contains(KeyModifiers::CONTROL) => {
-            Some(DashboardRoute::Agents)
-        }
-        KeyEvent {
-            code: KeyCode::Char('\u{001b}'),
-            modifiers,
-            ..
-        } if modifiers.is_empty() => Some(DashboardRoute::Sessions),
-        KeyEvent {
-            code: KeyCode::Esc,
-            modifiers,
-            ..
-        } if modifiers.contains(KeyModifiers::CONTROL) => Some(DashboardRoute::Sessions),
-        _ => None,
-    }
+    None
 }
 
 fn is_unmodified_action_key(key: KeyEvent) -> bool {

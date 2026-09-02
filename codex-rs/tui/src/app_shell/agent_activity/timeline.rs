@@ -20,6 +20,7 @@ pub(in crate::app_shell) enum AgentChildEvent {
     Reasoning,
     Command,
     Output,
+    Mcp,
     Activity,
 }
 
@@ -109,6 +110,7 @@ impl AgentTimelineEvent {
             Self::ChildProgress(AgentChildEvent::Message) => "message",
             Self::ChildProgress(AgentChildEvent::Reasoning) => "reasoning",
             Self::ChildProgress(AgentChildEvent::Output) => "command output",
+            Self::ChildProgress(AgentChildEvent::Mcp) => "mcp progress",
             Self::ChildProgress(AgentChildEvent::Command | AgentChildEvent::Activity) => "activity",
             Self::Lifecycle { retrying: true, .. } => "agent retrying",
             Self::Lifecycle {
@@ -197,11 +199,13 @@ fn child_item_label(event: AgentChildEvent, phase: AgentItemPhase) -> &'static s
         (AgentChildEvent::Reasoning, AgentItemPhase::Completed) => "reasoning completed",
         (AgentChildEvent::Command, AgentItemPhase::Started) => "running command",
         (AgentChildEvent::Command, AgentItemPhase::Completed) => "command completed",
-        (AgentChildEvent::Output | AgentChildEvent::Activity, AgentItemPhase::Started) => {
-            "activity started"
-        }
-        (AgentChildEvent::Output | AgentChildEvent::Activity, AgentItemPhase::Completed) => {
-            "activity completed"
-        }
+        (
+            AgentChildEvent::Output | AgentChildEvent::Mcp | AgentChildEvent::Activity,
+            AgentItemPhase::Started,
+        ) => "activity started",
+        (
+            AgentChildEvent::Output | AgentChildEvent::Mcp | AgentChildEvent::Activity,
+            AgentItemPhase::Completed,
+        ) => "activity completed",
     }
 }

@@ -11,7 +11,7 @@ expression: "render_shell(&shell, area)"
  ▎ YOU  Create a divergent standalone TUI.        │ ^O/⌥1-9     Copy reply│  ⌥/^ + ←→    Move word
                                                   │                       │  S/A + ↵     Newline
  ▎ CODEX  Started a fullscreen app shell backed   │◆ DASHBOARD            │  Alt+M       Model
-          by app-server turns.                    │ ^1 … ^4     Open tab  │  Alt+E       Effort
+          by app-server turns.                    │ F1 … F4     Open tab  │  Alt+E       Effort
  ▎ PLAN  1. Build shell                           │ Alt+← / →   Prev/next │  Alt+↑ / ↓   Edit queue
          2. Wire transcript                       │ Pg↑ / Pg↓   Scroll he…│
          3. Render dashboard                      │ ⇧Alt+←/→    Resize    │ ◆ APP

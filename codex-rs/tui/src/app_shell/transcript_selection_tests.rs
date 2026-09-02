@@ -1,4 +1,5 @@
 use super::*;
+use crate::app_shell::MAX_TRANSCRIPT_LINES;
 use pretty_assertions::assert_eq;
 
 fn selected_message(shell: &ShellState) -> Option<(TranscriptKind, String)> {
@@ -74,4 +75,19 @@ fn selection_remains_empty_without_user_messages() {
     shell.select_latest_transcript_item();
 
     assert_eq!(shell.transcript_selection, None);
+}
+
+#[test]
+fn evicting_the_selected_item_clears_selection() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.push_user("selected message");
+    shell.transcript_selection = Some(0);
+
+    for index in 0..MAX_TRANSCRIPT_LINES {
+        shell.push_status(format!("later status {index}"));
+    }
+
+    assert_eq!(shell.transcript_selection, None);
+    assert_eq!(selected_message(&shell), None);
 }

@@ -448,6 +448,7 @@ impl ShellState {
 
         let mut params = submitted.params;
         params.thread_id = self.thread_id;
+        params.client_user_message_id = format!("better-codex-turn-{}", uuid::Uuid::new_v4());
         params.model = faster_model.clone();
         params.effort = Some(ReasoningEffort::Low);
         params.collaboration_mode = params.collaboration_mode.map(|mode| {
@@ -459,11 +460,18 @@ impl ShellState {
         });
 
         let retry_display = format_user_inputs(&params.items);
-        self.push_user(retry_display);
+        self.push_user_with_client_id(retry_display.clone(), params.client_user_message_id.clone());
         self.status = "thinking".to_string();
 
         match app_server.turn_start(params.clone()).await {
             Ok(response) => {
+                self.upsert_line(
+                    TranscriptLine::new(TranscriptKind::User, retry_display)
+                        .rewind_anchor(super::rewind::RewindAnchor {
+                            before_turn_id: response.turn.id.clone(),
+                        })
+                        .item_id(params.client_user_message_id.clone()),
+                );
                 self.record_active_turn_started(response.turn.id.clone());
                 self.record_safety_buffering_turn(response.turn.id, params);
             }

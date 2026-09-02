@@ -91,6 +91,87 @@ fn output_hit_testing_tracks_the_scrolled_render_viewport() {
 }
 
 #[test]
+fn streaming_output_preserves_a_scrolled_viewport_anchor() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_transcript();
+    shell.push_user("stream a long response");
+    let initial_lines = (0..24)
+        .map(|index| format!("streamed line {index}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    shell.push_streaming_assistant_delta("assistant-stream", &initial_lines);
+    let area = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 60, /*height*/ 10,
+    );
+
+    let _tail = transcript_viewport(&shell, area);
+    shell.scroll_transcript_up(/*rows*/ 4);
+    let before = transcript_viewport(&shell, area);
+    let visible_from = before.visible_from;
+    let first_row = before
+        .layout
+        .row_at(visible_from)
+        .and_then(TranscriptLayoutRow::line)
+        .map(rendered_line_text);
+
+    shell.push_streaming_assistant_delta(
+        "assistant-stream",
+        "\nstreamed line 24\nstreamed line 25\nstreamed line 26",
+    );
+    let after = transcript_viewport(&shell, area);
+
+    assert_eq!(after.visible_from, visible_from);
+    assert_eq!(
+        after
+            .layout
+            .row_at(after.visible_from)
+            .and_then(TranscriptLayoutRow::line)
+            .map(rendered_line_text),
+        first_row
+    );
+}
+
+#[test]
+fn resizing_keeps_the_selected_transcript_item_visible() {
+    let mut shell = ShellState::snapshot_fixture();
+    shell.transcript.clear();
+    shell.clear_streaming_transcript();
+    shell.push_system((0..40).map(|_| "context").collect::<Vec<_>>().join(" "));
+    shell.push_user("selected prompt");
+    for index in 0..12 {
+        shell.push_assistant(format!("assistant response {index}"));
+    }
+    let wide = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 100, /*height*/ 10,
+    );
+    let narrow = Rect::new(
+        /*x*/ 0, /*y*/ 0, /*width*/ 36, /*height*/ 10,
+    );
+
+    let _tail = transcript_viewport(&shell, wide);
+    shell.select_first_transcript_item();
+    let before = transcript_viewport(&shell, wide);
+    let after = transcript_viewport(&shell, narrow);
+    let selected = shell
+        .transcript_selection
+        .expect("the user message should remain selected");
+
+    for viewport in [&before, &after] {
+        let selected_rows = viewport
+            .layout
+            .transcript_row_range(selected)
+            .expect("the selected item should be laid out");
+        let visible_rows =
+            viewport.visible_from..viewport.visible_from.saturating_add(viewport.visible_count);
+        assert!(
+            selected_rows.start < visible_rows.end && selected_rows.end > visible_rows.start,
+            "selected rows {selected_rows:?} should intersect viewport {visible_rows:?}"
+        );
+    }
+}
+
+#[test]
 fn diff_hit_testing_tracks_the_scrolled_render_viewport_and_full_width() {
     let mut shell = ShellState::snapshot_fixture();
     shell.transcript.clear();

@@ -128,7 +128,7 @@ pub(super) async fn start_turn(
             request_id: app_shell_request_id("app-shell-turn-start"),
             params: TurnStartParams {
                 thread_id: params.thread_id.to_string(),
-                client_user_message_id: None,
+                client_user_message_id: Some(params.client_user_message_id),
                 input: params.items,
                 responsesapi_client_metadata: None,
                 additional_context: None,
