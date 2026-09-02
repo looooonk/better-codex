@@ -10,6 +10,7 @@ use codex_protocol::ThreadId;
 use codex_protocol::config_types::ReasoningSummary;
 use codex_protocol::models::PermissionProfile;
 use codex_protocol::openai_models::ReasoningEffort;
+use codex_protocol::protocol::AgentStatus;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
@@ -885,6 +886,38 @@ async fn subagent_notification_is_included_without_wait() -> Result<()> {
     Ok(())
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn interrupting_parent_interrupts_running_child() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let (test, spawned_id) =
+        setup_turn_one_with_spawned_child(&server, Some(Duration::from_secs(10))).await?;
+    let child = test
+        .thread_manager
+        .get_thread(ThreadId::from_string(&spawned_id)?)
+        .await?;
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while child.agent_status().await != AgentStatus::Running {
+        if Instant::now() >= deadline {
+            anyhow::bail!("timed out waiting for child to start");
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+
+    test.codex.submit(Op::Interrupt).await?;
+
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while child.agent_status().await != AgentStatus::Interrupted {
+        if Instant::now() >= deadline {
+            anyhow::bail!("timed out waiting for child interruption");
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+
+    Ok(())
+}
+
 #[test_case(ThreadHistoryMode::Legacy; "legacy")]
 #[test_case(ThreadHistoryMode::Paginated; "paginated")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -962,7 +995,7 @@ async fn spawned_child_receives_forked_parent_context(
             config.agent_default_subagent_model = Some(REQUESTED_MODEL.to_string());
             config.agent_default_subagent_reasoning_effort = Some(REQUESTED_REASONING_EFFORT);
         });
-    let test = builder.build(&server).await?;
+    let test = builder.build_with_auto_env(&server).await?;
 
     test.submit_turn(TURN_0_FORK_PROMPT).await?;
     let _ = seed_turn.single_request();
@@ -972,6 +1005,7 @@ async fn spawned_child_receives_forked_parent_context(
 
     let child_request = wait_for_request_with_model(&child_request_log, REQUESTED_MODEL).await?;
     assert!(child_request.body_contains_text(TURN_0_FORK_PROMPT));
+    assert!(!child_request.body_contains_text(TURN_1_PROMPT));
     let child_body = child_request.body_json();
     assert_eq!(
         (
@@ -1085,7 +1119,7 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
         config.agent_default_subagent_model = Some(V2_DEFAULT_MODEL.to_string());
         config.agent_default_subagent_reasoning_effort = Some(V2_DEFAULT_REASONING_EFFORT);
     });
-    let test = builder.build(&server).await?;
+    let test = builder.build_with_auto_env(&server).await?;
 
     test.submit_turn(TURN_0_FORK_PROMPT).await?;
     let _ = seed_turn.single_request();
@@ -1094,6 +1128,7 @@ async fn spawned_full_history_v2_child_uses_model_precedence_without_dropping_co
 
     let child_request = wait_for_request_with_model(&child_request_log, expected_model).await?;
     assert!(child_request.body_contains_text(TURN_0_FORK_PROMPT));
+    assert!(!child_request.body_contains_text(TURN_1_PROMPT));
     let child_body = child_request.body_json();
     assert_eq!(
         (
