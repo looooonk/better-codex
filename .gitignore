@@ -39,6 +39,7 @@ AGENTS.override.md
 .nyc_output/
 .jest/
 *.tsbuildinfo
+/tmp/
 
 # logs
 *.log
