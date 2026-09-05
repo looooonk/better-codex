@@ -1,6 +1,12 @@
 <div align="center">
 
-# Better Codex
+<img src=".github/assets/better-codex-logo.png" alt="Better Codex" width="400">
+
+<br>
+
+---
+
+<br>
 
 **A full-screen terminal workspace for Codex.**
 
