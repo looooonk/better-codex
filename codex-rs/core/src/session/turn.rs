@@ -327,11 +327,14 @@ pub(crate) async fn run_turn(
             .instrument(trace_span!("run_turn.prepare_sampling_request_input"))
             .await;
 
-            let responses_metadata = turn_context.turn_metadata_state.to_responses_metadata(
-                sess.installation_id.clone(),
-                window_id,
-                CodexResponsesRequestKind::Turn,
-            );
+            let responses_metadata = turn_context
+                .turn_metadata_state
+                .to_responses_metadata(
+                    sess.installation_id.clone(),
+                    window_id,
+                    CodexResponsesRequestKind::Turn,
+                )
+                .with_model_info(&turn_context.model_info);
             run_sampling_request(
                 Arc::clone(&sess),
                 Arc::clone(&step_context),

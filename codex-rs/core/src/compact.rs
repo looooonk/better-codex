@@ -345,11 +345,14 @@ async fn run_compact_task_inner_impl(
     // request tracking)
     // survives retries within this compact turn.
     let window_id = sess.current_window_id().await;
-    let responses_metadata = turn_context.turn_metadata_state.to_responses_metadata(
-        sess.installation_id.clone(),
-        window_id,
-        CodexResponsesRequestKind::Compaction(compaction_metadata),
-    );
+    let responses_metadata = turn_context
+        .turn_metadata_state
+        .to_responses_metadata(
+            sess.installation_id.clone(),
+            window_id,
+            CodexResponsesRequestKind::Compaction(compaction_metadata),
+        )
+        .with_model_info(&turn_context.model_info);
 
     loop {
         // Clone is required because of the loop

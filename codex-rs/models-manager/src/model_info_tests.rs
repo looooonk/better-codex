@@ -6,6 +6,36 @@ use codex_protocol::openai_models::AutoReviewMessages;
 use codex_protocol::openai_models::PermissionMessages;
 use pretty_assertions::assert_eq;
 
+#[test]
+fn ultra_uses_valid_model_override_and_preserves_legacy_default() {
+    use ReasoningEffort::High;
+    use ReasoningEffort::Max;
+    use ReasoningEffort::Medium;
+    use ReasoningEffort::Ultra;
+    use ReasoningEffort::XHigh;
+    for (supported, configured, expected) in [
+        (vec![Medium, XHigh, Max, Ultra], Some(XHigh), XHigh),
+        (vec![Medium, XHigh, Max, Ultra], None, Max),
+        (vec![Medium, XHigh, Ultra], Some(Max), Max),
+        (vec![Medium, XHigh, Ultra], Some(Ultra), Max),
+        (vec![Ultra], None, Max),
+    ] {
+        let mut model = model_info_from_slug("test-model");
+        model.supported_reasoning_levels = supported
+            .into_iter()
+            .map(
+                |effort| codex_protocol::openai_models::ReasoningEffortPreset {
+                    effort,
+                    description: String::new(),
+                },
+            )
+            .collect();
+        model.multi_agent_reasoning_effort = configured;
+        assert_eq!(reasoning_effort_for_request(&model, Ultra), expected);
+        assert_eq!(reasoning_effort_for_request(&model, High), High);
+    }
+}
+
 fn config_with_personality(personality: Option<Personality>) -> ModelsManagerConfig {
     ModelsManagerConfig {
         personality_enabled: true,

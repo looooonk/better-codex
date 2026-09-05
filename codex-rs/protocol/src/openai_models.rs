@@ -405,6 +405,12 @@ pub struct ModelInfo {
     pub truncation_policy: TruncationPolicyConfig,
     #[serde(default = "default_true")]
     pub supports_parallel_tool_calls: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multi_agent_reasoning_effort: Option<ReasoningEffort>,
+    #[serde(default)]
+    pub node_repl_auto_review_required: bool,
+    #[serde(default)]
+    pub node_repl_disabled: bool,
     #[serde(default)]
     pub supports_image_detail_original: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -727,6 +733,9 @@ mod tests {
             web_search_tool_type: WebSearchToolType::Text,
             truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
             supports_parallel_tool_calls: false,
+            multi_agent_reasoning_effort: None,
+            node_repl_auto_review_required: false,
+            node_repl_disabled: false,
             supports_image_detail_original: false,
             context_window: None,
             max_context_window: None,

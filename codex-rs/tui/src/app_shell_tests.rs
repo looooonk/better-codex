@@ -2,6 +2,9 @@ use super::render::ShellView;
 use super::transcript_view::TranscriptCardHit;
 use super::transcript_view::TranscriptScrollbarMetrics;
 use super::*;
+
+#[path = "app_shell/astra_tests.rs"]
+mod astra;
 use crate::app_server_session::ForkGoalContinuation;
 use crate::test_support::buffer_style_grid;
 use base64::Engine;

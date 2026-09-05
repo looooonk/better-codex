@@ -5,6 +5,7 @@ use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelInstructionsVariables;
 use codex_protocol::openai_models::ModelMessages;
 use codex_protocol::openai_models::ModelVisibility;
+use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::TruncationMode;
 use codex_protocol::openai_models::TruncationPolicyConfig;
 use codex_protocol::openai_models::WebSearchToolType;
@@ -21,6 +22,25 @@ const LOCAL_FRIENDLY_TEMPLATE: &str =
 const LOCAL_PRAGMATIC_TEMPLATE: &str = "You are a deeply pragmatic, effective software engineer.";
 const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
 const PERSONALITY_SECTION_HEADER: &str = "# Personality";
+
+/// Resolve the wire effort while keeping Ultra as the local delegation setting.
+pub fn reasoning_effort_for_request(model: &ModelInfo, effort: ReasoningEffort) -> ReasoningEffort {
+    if effort != ReasoningEffort::Ultra {
+        return effort;
+    }
+    model
+        .multi_agent_reasoning_effort
+        .as_ref()
+        .filter(|effort| {
+            **effort != ReasoningEffort::Ultra
+                && model
+                    .supported_reasoning_levels
+                    .iter()
+                    .any(|preset| &preset.effort == *effort)
+        })
+        .cloned()
+        .unwrap_or(ReasoningEffort::Max)
+}
 
 pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
     if model.base_instructions.is_empty() {
@@ -153,6 +173,9 @@ pub fn model_info_from_slug(slug: &str) -> ModelInfo {
         web_search_tool_type: WebSearchToolType::Text,
         truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
         supports_parallel_tool_calls: false,
+        multi_agent_reasoning_effort: None,
+        node_repl_auto_review_required: false,
+        node_repl_disabled: false,
         supports_image_detail_original: false,
         context_window: Some(272_000),
         max_context_window: Some(272_000),

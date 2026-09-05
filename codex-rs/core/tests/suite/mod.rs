@@ -37,6 +37,8 @@ mod agents_md;
 mod apply_patch_cli;
 #[cfg(not(target_os = "windows"))]
 mod approvals;
+#[path = "astra_tests.rs"]
+mod astra;
 mod auto_review;
 mod catalog_permission_messages;
 mod cli_stream;

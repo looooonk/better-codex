@@ -27,6 +27,8 @@ use tokio::process::Command;
 fn test_mcp_turn_metadata_context() -> McpTurnMetadataContext<'static> {
     McpTurnMetadataContext {
         model: "gpt-5.4",
+        node_repl_auto_review_required: false,
+        node_repl_disabled: false,
         reasoning_effort: Some(ReasoningEffortConfig::High),
     }
 }
@@ -439,6 +441,8 @@ fn turn_metadata_state_includes_model_and_reasoning_effort_only_in_request_meta(
     let meta_without_reasoning_effort = state
         .current_meta_value_for_mcp_request(McpTurnMetadataContext {
             model: "gpt-5.4",
+            node_repl_auto_review_required: false,
+            node_repl_disabled: false,
             reasoning_effort: None,
         })
         .expect("turn metadata should be present");

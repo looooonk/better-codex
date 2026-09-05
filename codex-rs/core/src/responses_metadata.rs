@@ -61,6 +61,8 @@ const RESERVED_METADATA_KEYS: &[&str] = &[
     THREAD_SOURCE_KEY,
     SANDBOX_KEY,
     WORKSPACES_KEY,
+    "node_repl_auto_review_required",
+    "node_repl_disabled",
 ];
 
 /// Metadata attached to model requests whose purpose is conversation compaction.
@@ -166,6 +168,8 @@ pub struct CodexResponsesMetadata {
     pub(crate) sandbox: Option<String>,
     pub(crate) workspaces: BTreeMap<String, TurnMetadataWorkspace>,
     pub(crate) turn_started_at_unix_ms: Option<i64>,
+    pub(crate) node_repl_auto_review_required: Option<bool>,
+    pub(crate) node_repl_disabled: Option<bool>,
     pub(crate) extra: BTreeMap<String, String>,
 }
 
@@ -191,8 +195,19 @@ impl CodexResponsesMetadata {
             sandbox: None,
             workspaces: BTreeMap::new(),
             turn_started_at_unix_ms: None,
+            node_repl_auto_review_required: None,
+            node_repl_disabled: None,
             extra: BTreeMap::new(),
         }
+    }
+
+    pub(crate) fn with_model_info(
+        mut self,
+        model: &codex_protocol::openai_models::ModelInfo,
+    ) -> Self {
+        self.node_repl_auto_review_required = Some(model.node_repl_auto_review_required);
+        self.node_repl_disabled = Some(model.node_repl_disabled);
+        self
     }
 
     pub(crate) fn has_turn_metadata(&self) -> bool {
@@ -294,6 +309,8 @@ impl CodexResponsesMetadata {
             workspaces: non_empty_workspaces(&self.workspaces),
             turn_started_at_unix_ms: self.turn_started_at_unix_ms,
             compaction,
+            node_repl_auto_review_required: self.node_repl_auto_review_required,
+            node_repl_disabled: self.node_repl_disabled,
             // responsesapi_client_metadata enriches the Codex turn metadata blob, not literal
             // top-level Responses client_metadata. Reserved Codex-owned keys are filtered when
             // these extras enter turn state.
@@ -385,6 +402,10 @@ struct CodexTurnMetadataPayload<'a> {
     turn_started_at_unix_ms: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     compaction: Option<CompactionTurnMetadata>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    node_repl_auto_review_required: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    node_repl_disabled: Option<bool>,
     #[serde(flatten)]
     extra: &'a BTreeMap<String, String>,
 }
