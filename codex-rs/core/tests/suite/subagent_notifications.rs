@@ -54,6 +54,9 @@ use tracing::Level;
 use tracing_test::internal::MockWriter;
 use wiremock::MockServer;
 
+#[path = "subagent_plaintext_messages.rs"]
+mod plaintext_messages;
+
 const SPAWN_CALL_ID: &str = "spawn-call-1";
 const MULTI_AGENT_V1_NAMESPACE: &str = "multi_agent_v1";
 const MULTI_AGENT_V2_NAMESPACE: &str = "agents";
@@ -1464,8 +1467,10 @@ async fn oversized_multi_agent_v2_task_name_is_bounded_in_history() -> Result<()
     Ok(())
 }
 
+#[test_case(false; "encrypted")]
+#[test_case(true; "plaintext")]
 #[tokio::test]
-async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result<()> {
+async fn multi_agent_v2_spawn_sends_agent_message_to_child(plaintext: bool) -> Result<()> {
     let output: &'static Mutex<Vec<u8>> = Box::leak(Box::new(Mutex::new(Vec::new())));
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
@@ -1475,22 +1480,30 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
     let _guard = tracing::subscriber::set_default(subscriber);
 
     let server = start_mock_server().await;
-    let encrypted_message = "opaque-encrypted-message";
+    let message = if plaintext {
+        "plaintext delegated task"
+    } else {
+        "opaque-encrypted-message"
+    };
     let spawn_args = serde_json::to_string(&json!({
-        "message": encrypted_message,
+        "message": message,
         "task_name": "worker",
     }))?;
+    let mut spawn_event = ev_function_call_with_namespace(
+        SPAWN_CALL_ID,
+        MULTI_AGENT_V2_NAMESPACE,
+        "spawn_agent",
+        &spawn_args,
+    );
+    if plaintext {
+        spawn_event["item"]["encrypted_function_args"] = json!([]);
+    }
     mount_sse_once_match(
         &server,
         |req: &wiremock::Request| body_contains(req, TURN_1_PROMPT),
         sse(vec![
             ev_response_created("resp-parent-1"),
-            ev_function_call_with_namespace(
-                SPAWN_CALL_ID,
-                MULTI_AGENT_V2_NAMESPACE,
-                "spawn_agent",
-                &spawn_args,
-            ),
+            spawn_event,
             ev_completed("resp-parent-1"),
         ]),
     )
@@ -1504,7 +1517,7 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
         ]),
     )
     .await;
-    mount_sse_once_match(
+    let parent_request_log = mount_sse_once_match(
         &server,
         |req: &wiremock::Request| {
             body_contains(req, SPAWN_CALL_ID) && !request_has_input_type(req, "agent_message")
@@ -1527,7 +1540,7 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
             .enable(Feature::MultiAgentV2)
             .expect("test config should allow feature update");
     });
-    let test = builder.build(&server).await?;
+    let test = builder.build_with_auto_env(&server).await?;
     let root_thread_id = test.session_configured.thread_id;
 
     test.submit_turn(TURN_1_PROMPT).await?;
@@ -1548,6 +1561,25 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
         }
         sleep(Duration::from_millis(10)).await;
     };
+    let content = if plaintext {
+        vec![json!({
+            "type": "input_text",
+            "text": format!(
+                "Message Type: NEW_TASK\nTask name: /root/worker\nSender: /root\nPayload:\n{message}"
+            ),
+        })]
+    } else {
+        vec![
+            json!({
+                "type": "input_text",
+                "text": "Message Type: NEW_TASK\nTask name: /root/worker\nSender: /root\nPayload:\n",
+            }),
+            json!({
+                "type": "encrypted_content",
+                "encrypted_content": message,
+            }),
+        ]
+    };
     assert_eq!(
         strip_response_item_ids_from_json(strip_metadata_from_json(Value::Array(
             child_request.inputs_of_type("agent_message"),
@@ -1556,18 +1588,20 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
             "type": "agent_message",
             "author": "/root",
             "recipient": "/root/worker",
-            "content": [
-                {
-                    "type": "input_text",
-                    "text": "Message Type: NEW_TASK\nTask name: /root/worker\nSender: /root\nPayload:\n",
-                },
-                {
-                    "type": "encrypted_content",
-                    "encrypted_content": encrypted_message,
-                },
-            ],
+            "content": content,
         })])
     );
+    if plaintext {
+        assert!(
+            parent_request_log.requests().into_iter().any(|request| {
+                request.input().iter().any(|item| {
+                    item["call_id"].as_str() == Some(SPAWN_CALL_ID)
+                        && item["encrypted_function_args"] == json!([])
+                })
+            }),
+            "plaintext function-call metadata should survive replay"
+        );
+    }
 
     let child_thread_id = test
         .thread_manager
@@ -1594,7 +1628,8 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
         .expect("spawn send event");
     assert!(send.contains(&format!("sender_thread_id={root_thread_id}")));
     assert!(send.contains(&format!("receiver_thread_id={child_thread_id}")));
-    assert!(send.contains(&format!("content=\"{encrypted_message}\"")));
+    let logged_message = if plaintext { "[plaintext]" } else { message };
+    assert!(send.contains(&format!("content=\"{logged_message}\"")));
 
     let communication_id = log_field(send, "communication_id").expect("communication ID");
     logs.lines()
@@ -1603,6 +1638,10 @@ async fn encrypted_multi_agent_v2_spawn_sends_agent_message_to_child() -> Result
                 && log_field(line, "communication_id") == Some(communication_id)
         })
         .expect("correlated receive event");
+
+    if plaintext {
+        plaintext_messages::verify_message_delivery(&test, &server, child_thread_id).await?;
+    }
 
     Ok(())
 }

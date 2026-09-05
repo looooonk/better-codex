@@ -18,6 +18,7 @@ use codex_tools::ToolCall as ExtensionToolCall;
 use codex_tools::ToolExecutor;
 use codex_tools::ToolName;
 use codex_tools::ToolSpec;
+use std::borrow::Cow;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use tokio_util::sync::CancellationToken;
@@ -30,6 +31,36 @@ pub struct ToolCall {
     pub tool_name: ToolName,
     pub call_id: String,
     pub payload: ToolPayload,
+    pub encrypted_function_args: Option<Vec<String>>,
+}
+
+impl ToolCall {
+    pub(crate) fn direct_source(&self, collaboration_namespace: Option<&str>) -> ToolCallSource {
+        if self.tool_name.namespace.as_deref() == collaboration_namespace
+            && matches!(
+                self.tool_name.name.as_str(),
+                "spawn_agent" | "send_message" | "followup_task"
+            )
+            && self
+                .encrypted_function_args
+                .as_ref()
+                .is_some_and(Vec::is_empty)
+        {
+            ToolCallSource::DirectPlaintextMessage
+        } else {
+            ToolCallSource::Direct
+        }
+    }
+}
+
+pub(crate) fn tool_log_payload<'a>(
+    payload: &'a ToolPayload,
+    source: &ToolCallSource,
+) -> Cow<'a, str> {
+    if matches!(source, ToolCallSource::DirectPlaintextMessage) {
+        return Cow::Borrowed("[plaintext arguments]");
+    }
+    payload.log_payload()
 }
 
 pub struct ToolRouter {
@@ -119,6 +150,7 @@ impl ToolRouter {
                 name,
                 namespace,
                 arguments,
+                encrypted_function_args,
                 call_id,
                 ..
             } => {
@@ -127,6 +159,7 @@ impl ToolRouter {
                     tool_name,
                     call_id,
                     payload: ToolPayload::Function { arguments },
+                    encrypted_function_args,
                 }))
             }
             ResponseItem::ToolSearchCall {
@@ -145,6 +178,7 @@ impl ToolRouter {
                     tool_name: ToolName::plain("tool_search"),
                     call_id,
                     payload: ToolPayload::ToolSearch { arguments },
+                    encrypted_function_args: None,
                 }))
             }
             ResponseItem::ToolSearchCall { .. } => Ok(None),
@@ -158,6 +192,7 @@ impl ToolRouter {
                 tool_name: ToolName::new(namespace, name),
                 call_id,
                 payload: ToolPayload::Custom { input },
+                encrypted_function_args: None,
             })),
             _ => Ok(None),
         }
@@ -225,6 +260,7 @@ impl ToolRouter {
             tool_name,
             call_id,
             payload,
+            ..
         } = call;
 
         // Keep the legacy ToolInvocation.turn field tied to the same request state until handlers migrate.

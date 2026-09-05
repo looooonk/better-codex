@@ -96,8 +96,15 @@ impl ToolCallRuntime {
         turn_cancellation_token: Option<CancellationToken>,
     ) -> impl std::future::Future<Output = Result<ResponseInputItem, CodexErr>> {
         let error_call = call.clone();
-        let future =
-            self.handle_tool_call_with_source(call, ToolCallSource::Direct, cancellation_token);
+        let turn = &self.step_context.turn;
+        let namespace = turn
+            .provider
+            .capabilities()
+            .namespace_tools
+            .then_some(turn.config.multi_agent_v2.tool_namespace.as_deref())
+            .flatten();
+        let source = call.direct_source(namespace);
+        let future = self.handle_tool_call_with_source(call, source, cancellation_token);
         async move {
             match future.await {
                 Ok(response) => Ok(response.into_response()),
@@ -304,7 +311,11 @@ impl ToolCallTimingGuard {
         // Code-mode calls are nested within a direct code-mode tool call whose
         // timing already includes them. Suppress nested guards so consumers do
         // not mistake overlapping events for independent tool-call latency.
-        if !matches!(source, ToolCallSource::Direct) || !tracing::enabled!(tracing::Level::INFO) {
+        if !matches!(
+            source,
+            ToolCallSource::Direct | ToolCallSource::DirectPlaintextMessage
+        ) || !tracing::enabled!(tracing::Level::INFO)
+        {
             return None;
         }
 
@@ -409,6 +420,7 @@ mod tests {
                 payload: ToolPayload::Function {
                     arguments: "{}".to_string(),
                 },
+                encrypted_function_args: None,
             };
             let direct_guard = ToolCallTimingGuard::capture(
                 Instant::now(),
@@ -485,6 +497,7 @@ mod tests {
             payload: ToolPayload::Function {
                 arguments: "{}".to_string(),
             },
+            encrypted_function_args: None,
         };
         let response_task =
             tokio::spawn(runtime.handle_tool_call(call, cancellation_token.clone()));
@@ -646,6 +659,7 @@ mod tests {
             payload: ToolPayload::Function {
                 arguments: "{}".to_string(),
             },
+            encrypted_function_args: None,
         };
 
         let response = tokio::spawn(runtime.handle_tool_call(call, CancellationToken::new()));
@@ -811,6 +825,7 @@ mod tests {
             payload: ToolPayload::Function {
                 arguments: "{}".to_string(),
             },
+            encrypted_function_args: None,
         };
 
         let response_task =
@@ -884,6 +899,7 @@ mod tests {
             payload: ToolPayload::Function {
                 arguments: "{}".to_string(),
             },
+            encrypted_function_args: None,
         };
 
         let response_task =

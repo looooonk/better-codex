@@ -581,7 +581,9 @@ fn approval_review_evidence_revision(turn: &TurnContext, source: &ToolCallSource
 
 fn extension_tool_call_source(source: ToolCallSource) -> ExtensionToolCallSource {
     match source {
-        ToolCallSource::Direct => ExtensionToolCallSource::Direct,
+        ToolCallSource::Direct | ToolCallSource::DirectPlaintextMessage => {
+            ExtensionToolCallSource::Direct
+        }
         ToolCallSource::CodeMode {
             cell_id,
             runtime_tool_call_id,
