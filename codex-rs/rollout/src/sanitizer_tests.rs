@@ -39,8 +39,8 @@ fn redacts_credentials_inside_serialized_tool_arguments() {
     redact_persisted_json(&mut value);
 
     assert_eq!(
-        value["arguments"],
-        format!(r#"{{"call_id":"{SECRET}","token":"{REDACTION}"}}"#)
+        serde_json::from_str::<Value>(value["arguments"].as_str().unwrap()).unwrap(),
+        json!({"call_id": SECRET, "token": REDACTION})
     );
     assert_eq!(
         value["input"],

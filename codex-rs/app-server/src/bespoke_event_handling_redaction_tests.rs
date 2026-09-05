@@ -29,6 +29,7 @@ async fn raw_response_item_diagnostic_redacts_arguments_and_preserves_call_id() 
             namespace: None,
             arguments: format!(r#"{{"authorization":"Bearer {secret}"}}"#),
             call_id: "call-1".to_string(),
+            encrypted_function_args: None,
             internal_chat_message_metadata_passthrough: None,
         },
         &outgoing,
