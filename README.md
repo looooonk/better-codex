@@ -6,8 +6,6 @@
 
 ---
 
-<br>
-
 **A full-screen terminal workspace for Codex.**
 
 Run agents, inspect tools, review edits, and manage every coding session without
