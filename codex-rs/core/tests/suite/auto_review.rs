@@ -42,16 +42,29 @@ use wiremock::MockServer;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn remote_model_override_uses_catalog_model_for_strict_auto_review() -> Result<()> {
+    strict_auto_review_for_model("remote-auto-review-parent").await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn astra_strict_auto_review_preserves_policy_with_responses_lite() -> Result<()> {
+    strict_auto_review_for_model("gpt-6-astra").await
+}
+
+async fn strict_auto_review_for_model(model: &str) -> Result<()> {
     skip_if_no_network!(Ok(()));
     skip_if_sandbox!(Ok(()));
 
     let server = MockServer::start().await;
-    let model = "remote-auto-review-parent";
     let review_model = "remote-auto-review-reviewer";
+    let mut parent = remote_model_with_auto_review_override(model, review_model);
+    let mut reviewer = remote_model_with_auto_review_override(review_model, review_model);
+    parent.node_repl_auto_review_required = model == "gpt-6-astra";
+    parent.use_responses_lite = model == "gpt-6-astra";
+    reviewer.use_responses_lite = model == "gpt-6-astra";
     mount_models_once(
         &server,
         ModelsResponse {
-            models: vec![remote_model_with_auto_review_override(model, review_model)],
+            models: vec![parent, reviewer],
         },
     )
     .await;
@@ -127,7 +140,7 @@ async fn remote_model_override_uses_catalog_model_for_strict_auto_review() -> Re
         config,
         thread_manager,
         ..
-    } = builder.build(&server).await?;
+    } = builder.build_with_auto_env(&server).await?;
 
     let models_manager = thread_manager.get_models_manager();
     models_manager
@@ -204,14 +217,30 @@ async fn remote_model_override_uses_catalog_model_for_strict_auto_review() -> Re
         .into_iter()
         .find(|request| {
             request.body_contains_text("auto-review-model-override.txt")
-                && request
-                    .instructions_text()
-                    .starts_with("You are judging one planned coding-agent action.")
+                && request.body_json()["model"] == review_model
         })
         .expect("expected Guardian request for apply_patch");
     assert_eq!(
         guardian_request.body_json()["model"].as_str(),
         Some(review_model)
+    );
+    if model == "gpt-6-astra" {
+        assert!(guardian_request.input().iter().any(|item| {
+            item["role"] == "developer"
+                && item
+                    .to_string()
+                    .contains("You are judging one planned coding-agent action.")
+        }));
+    } else {
+        assert!(
+            guardian_request
+                .instructions_text()
+                .starts_with("You are judging one planned coding-agent action.")
+        );
+    }
+    assert_eq!(
+        std::fs::read_to_string(cwd.path().join("auto-review-model-override.txt"))?,
+        "exercise Guardian model selection\n"
     );
 
     Ok(())
@@ -254,6 +283,9 @@ fn remote_model_with_auto_review_override(slug: &str, review_model: &str) -> Mod
         web_search_tool_type: Default::default(),
         truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
         supports_parallel_tool_calls: false,
+        multi_agent_reasoning_effort: None,
+        node_repl_auto_review_required: false,
+        node_repl_disabled: false,
         supports_image_detail_original: false,
         context_window: Some(272_000),
         max_context_window: None,

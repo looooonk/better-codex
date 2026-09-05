@@ -471,6 +471,49 @@ async fn get_model_info_rejects_multi_segment_namespace_suffix_matching() {
 }
 
 #[tokio::test]
+async fn refresh_loads_template_only_model_cache_without_network() {
+    let codex_home = tempdir().expect("temp dir");
+    let mut expected = remote_model("gpt-6-astra", "Astra", /*priority*/ 0);
+    expected.base_instructions.clear();
+    expected.supports_parallel_tool_calls = true;
+    expected.model_messages = Some(
+        serde_json::from_value(json!({
+            "instructions_template": "Astra instructions",
+            "instructions_variables": null
+        }))
+        .expect("model messages"),
+    );
+    let mut value = serde_json::to_value(&expected).expect("serialize model");
+    let object = value.as_object_mut().expect("model object");
+    object.remove("base_instructions");
+    object.remove("supports_parallel_tool_calls");
+    let cache = json!({
+        "fetched_at": Utc::now(),
+        "client_version": crate::client_version_to_whole(),
+        "models": [value]
+    });
+    std::fs::write(codex_home.path().join(MODEL_CACHE_FILE), cache.to_string())
+        .expect("write cache");
+    let endpoint = TestModelsEndpoint::new(Vec::new());
+    let manager = openai_manager_for_tests(codex_home.path().to_path_buf(), endpoint.clone());
+
+    let catalog = manager
+        .raw_model_catalog(
+            RefreshStrategy::OnlineIfUncached,
+            DEFAULT_HTTP_CLIENT_FACTORY,
+        )
+        .await;
+
+    assert_eq!(
+        catalog,
+        ModelsResponse {
+            models: vec![expected]
+        }
+    );
+    assert_eq!(endpoint.fetch_count(), 0);
+}
+
+#[tokio::test]
 async fn refresh_available_models_sorts_by_priority() {
     let remote_models = vec![
         remote_model("priority-low", "Low", /*priority*/ 1),
@@ -493,7 +536,7 @@ async fn refresh_available_models_sorts_by_priority() {
     );
     assert_eq!(
         endpoint.observed_client_versions(),
-        vec![codex_build_info::CODEX_BACKEND_COMPAT_VERSION.to_string()]
+        vec![codex_build_info::CODEX_MODEL_CATALOG_VERSION.to_string()]
     );
     let high_idx = available
         .iter()

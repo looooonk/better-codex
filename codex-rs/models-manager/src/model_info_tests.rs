@@ -6,11 +6,65 @@ use codex_protocol::openai_models::AutoReviewMessages;
 use codex_protocol::openai_models::PermissionMessages;
 use pretty_assertions::assert_eq;
 
+#[test]
+fn ultra_uses_valid_model_override_and_preserves_legacy_default() {
+    use ReasoningEffort::High;
+    use ReasoningEffort::Max;
+    use ReasoningEffort::Medium;
+    use ReasoningEffort::Ultra;
+    use ReasoningEffort::XHigh;
+    for (supported, configured, expected) in [
+        (vec![Medium, XHigh, Max, Ultra], Some(XHigh), XHigh),
+        (vec![Medium, XHigh, Max, Ultra], None, Max),
+        (vec![Medium, XHigh, Ultra], Some(Max), Max),
+        (vec![Medium, XHigh, Ultra], Some(Ultra), Max),
+        (vec![Ultra], None, Max),
+    ] {
+        let mut model = model_info_from_slug("test-model");
+        model.supported_reasoning_levels = supported
+            .into_iter()
+            .map(
+                |effort| codex_protocol::openai_models::ReasoningEffortPreset {
+                    effort,
+                    description: String::new(),
+                },
+            )
+            .collect();
+        model.multi_agent_reasoning_effort = configured;
+        assert_eq!(reasoning_effort_for_request(&model, Ultra), expected);
+        assert_eq!(reasoning_effort_for_request(&model, High), High);
+    }
+}
+
 fn config_with_personality(personality: Option<Personality>) -> ModelsManagerConfig {
     ModelsManagerConfig {
         personality_enabled: true,
         personality,
         ..Default::default()
+    }
+}
+
+#[test]
+fn template_only_instructions_survive_disabled_personality_and_config_overrides() {
+    let mut model = model_info_from_slug("template-only");
+    model.base_instructions.clear();
+    model.model_messages = Some(ModelMessages {
+        instructions_template: Some("Model instructions".to_string()),
+        instructions_variables: None,
+        approvals: None,
+        auto_review: None,
+        permissions: None,
+    });
+    for base_instructions in [None, Some("User override".to_string())] {
+        let config = ModelsManagerConfig {
+            base_instructions: base_instructions.clone(),
+            ..Default::default()
+        };
+        let mut expected = model.clone();
+        expected.base_instructions = base_instructions.unwrap_or("Model instructions".to_string());
+        expected.model_messages = None;
+
+        assert_eq!(with_config_overrides(model.clone(), &config), expected);
     }
 }
 

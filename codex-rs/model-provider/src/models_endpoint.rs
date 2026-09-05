@@ -357,9 +357,17 @@ mod tests {
     #[tokio::test]
     async fn model_request_uses_request_time_proxy_policy_and_exact_url() {
         let server = MockServer::start().await;
+        let catalog_version = codex_models_manager::client_version_to_whole();
+        let provider_info = ModelProviderInfo::create_openai_provider(Some(server.uri()));
+        let wire_version = provider_info
+            .http_headers
+            .as_ref()
+            .and_then(|headers| headers.get("version"))
+            .expect("backend compatibility header");
         Mock::given(method("GET"))
             .and(path("/models"))
-            .and(query_param("client_version", "0.0.0"))
+            .and(query_param("client_version", catalog_version.as_str()))
+            .and(wiremock::matchers::header("version", wire_version.as_str()))
             .respond_with(
                 ResponseTemplate::new(200).set_body_json(ModelsResponse { models: Vec::new() }),
             )
@@ -369,7 +377,7 @@ mod tests {
 
         let observed_request = Arc::new(Mutex::new(None));
         let endpoint = OpenAiModelsEndpoint {
-            provider_info: ModelProviderInfo::create_openai_provider(Some(server.uri())),
+            provider_info,
             auth_manager: None,
             transport_builder: Arc::new(RecordingTransportBuilder {
                 observed_request: Arc::clone(&observed_request),
@@ -378,7 +386,7 @@ mod tests {
 
         endpoint
             .list_models(
-                "0.0.0",
+                &catalog_version,
                 HttpClientFactory::new(OutboundProxyPolicy::RespectSystemProxy),
             )
             .await
@@ -390,7 +398,7 @@ mod tests {
                 .expect("observed request lock should not be poisoned"),
             Some((
                 OutboundProxyPolicy::RespectSystemProxy,
-                format!("{}/models?client_version=0.0.0", server.uri()),
+                format!("{}/models?client_version={catalog_version}", server.uri()),
             ))
         );
     }

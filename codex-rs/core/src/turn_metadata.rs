@@ -35,6 +35,8 @@ const WORKSPACE_KIND_KEY: &str = "workspace_kind";
 
 pub(crate) struct McpTurnMetadataContext<'a> {
     pub(crate) model: &'a str,
+    pub(crate) node_repl_auto_review_required: bool,
+    pub(crate) node_repl_disabled: bool,
     pub(crate) reasoning_effort: Option<ReasoningEffortConfig>,
 }
 
@@ -158,6 +160,14 @@ impl TurnMetadataState {
         metadata.insert(
             MODEL_KEY.to_string(),
             Value::String(context.model.to_string()),
+        );
+        metadata.insert(
+            "node_repl_auto_review_required".to_string(),
+            Value::Bool(context.node_repl_auto_review_required),
+        );
+        metadata.insert(
+            "node_repl_disabled".to_string(),
+            Value::Bool(context.node_repl_disabled),
         );
         match context.reasoning_effort {
             Some(reasoning_effort) => {

@@ -91,11 +91,14 @@ pub(super) async fn run_remote_compact_v2_attempt(
     };
 
     let window_id = sess.current_window_id().await;
-    let responses_metadata = turn_context.turn_metadata_state.to_responses_metadata(
-        sess.installation_id.clone(),
-        window_id,
-        CodexResponsesRequestKind::Compaction(compaction_metadata),
-    );
+    let responses_metadata = turn_context
+        .turn_metadata_state
+        .to_responses_metadata(
+            sess.installation_id.clone(),
+            window_id,
+            CodexResponsesRequestKind::Compaction(compaction_metadata),
+        )
+        .with_model_info(&turn_context.model_info);
     let trace_attempt = compaction_trace.start_attempt(&serde_json::json!({
         "model": turn_context.model_info.slug.as_str(),
         "instructions": prompt.base_instructions.text.as_str(),

@@ -1,0 +1,34 @@
+---
+source: tui/src/app_shell/astra_tests.rs
+expression: "render_shell(&shell, Rect::new(0, 0, 100, 30))"
+---
+                                                  │
+  Dashboard  ◆ BC        gpt-6-astra ▾   ultra ▾  │   Status   │  Agents   │  Sessions   │  Help
+──────────────────────────────────────────────────│─────────────────────────━━━━━━━━━━━━━──────────
+                                                  │
+ ◆ CONVERSATION                                   │▎◆ SESSIONS
+ ▎ SYSTEM  Better Codex app shell                 │▎○ CLICK TO FOCUS  ACTIVE  0 sessions
+ ▎ YOU  Create a╭ Select reasoning effort ─────────────────────────────────────────╮
+                │   1 ○ Default                                                    │
+ ▎ CODEX  Starte│       Use the model's default reasoning effort.                  │
+          by app│   2 ○ Low                                                        │
+ ▎ PLAN  1. Buil│       Fast responses with lighter reasoning                      │
+         2. Wire│   3 ○ Medium                                                     │0000001
+         3. Rend│       Balances speed and reasoning depth for everyday tasks      │ session list
+                │   4 ○ High                                                       │
+ ▌ tool exec jus│       Greater reasoning depth for complex problems               │
+                │   5 ○ Extra high                                                 │
+ ▌ edited 3 file│       Extra high reasoning depth for complex problems            │
+                │   6 ○ Max                                                        │
+ ▎ CODEX  The ne│       Maximum reasoning depth for the hardest problems           │
+          surfac│ › 7 ● Ultra  current                                             │
+                │       Maximum reasoning with automatic task delegation           │
+                │  wheel / j k  Enter select  Esc cancel  7/7                      │
+                ╰──────────────────────────────────────────────────────────────────╯
+                                                  │
+╭────────────────────────────────────────────────╮│
+│◆ MESSAGE  1:37                                 ││
+│> Summarize the new shell architecture          ││
+│                                                ││
+│                                                ││
+╰────────────────────────────────────────────────╯│

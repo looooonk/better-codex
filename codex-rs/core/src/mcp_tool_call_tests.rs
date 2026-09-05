@@ -96,6 +96,8 @@ fn approval_metadata(
 fn mcp_turn_metadata_context(turn_context: &TurnContext) -> McpTurnMetadataContext<'_> {
     McpTurnMetadataContext {
         model: turn_context.model_info.slug.as_str(),
+        node_repl_auto_review_required: turn_context.model_info.node_repl_auto_review_required,
+        node_repl_disabled: turn_context.model_info.node_repl_disabled,
         reasoning_effort: turn_context.effective_reasoning_effort(),
     }
 }
@@ -3324,5 +3326,34 @@ async fn approve_mode_skips_guardian_in_every_permission_mode() {
         .await;
 
         assert_eq!(approval_decision(decision), None);
+    }
+}
+
+#[tokio::test]
+async fn mcp_model_review_settings_override_client_metadata_and_follow_model_switches() {
+    let (_, mut turn) = make_session_and_context().await;
+    turn.turn_metadata_state
+        .set_responsesapi_client_metadata(std::collections::HashMap::from([
+            (
+                "node_repl_auto_review_required".to_string(),
+                "false".to_string(),
+            ),
+            ("node_repl_disabled".to_string(), "true".to_string()),
+        ]));
+    for (review_required, disabled) in [(true, false), (false, true)] {
+        turn.model_info.node_repl_auto_review_required = review_required;
+        turn.model_info.node_repl_disabled = disabled;
+        let meta = build_mcp_tool_call_request_meta(&turn, "node_repl", "call-1", None).unwrap();
+        let meta = &meta[crate::X_CODEX_TURN_METADATA_HEADER];
+        assert_eq!(
+            (
+                &meta["node_repl_auto_review_required"],
+                &meta["node_repl_disabled"]
+            ),
+            (
+                &serde_json::json!(review_required),
+                &serde_json::json!(disabled)
+            ),
+        );
     }
 }
