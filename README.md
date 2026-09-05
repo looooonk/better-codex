@@ -65,7 +65,7 @@ features. Native Windows and WSL are not currently supported.
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/looooonk/better-codex/main/scripts/install.sh \
-  | sh -s -- --version 0.1.0-alpha.14
+  | sh -s -- --version 0.1.0-alpha.15
 ```
 
 Browse every published build on the

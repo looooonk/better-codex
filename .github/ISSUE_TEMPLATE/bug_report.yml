@@ -11,7 +11,7 @@ body:
     attributes:
       label: Better Codex version
       description: Run `better-codex --version` to find this.
-      placeholder: 0.1.0-alpha.14
+      placeholder: 0.1.0-alpha.15
     validations:
       required: true
   - type: dropdown
