@@ -3,11 +3,14 @@ use codex_model_provider_info::AMAZON_BEDROCK_GPT_5_5_MODEL_ID;
 use codex_model_provider_info::AMAZON_BEDROCK_GPT_5_6_LUNA_MODEL_ID;
 use codex_model_provider_info::AMAZON_BEDROCK_GPT_5_6_SOL_MODEL_ID;
 use codex_model_provider_info::AMAZON_BEDROCK_GPT_5_6_TERRA_MODEL_ID;
+use codex_model_provider_info::AMAZON_BEDROCK_GPT_6_ASTRA_MODEL_ID;
 use codex_models_manager::bundled_models_response;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelsResponse;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::openai_models::ReasoningEffortPreset;
+use codex_protocol::openai_models::WebSearchToolType;
+use codex_protocol::protocol::MultiAgentVersion;
 
 const GPT_5_BEDROCK_CONTEXT_WINDOW: i64 = 272_000;
 const GPT_5_6_SOL_OPENAI_MODEL_ID: &str = "gpt-5.6-sol";
@@ -49,6 +52,14 @@ pub(crate) fn static_model_catalog() -> ModelsResponse {
                 "GPT-5.4",
                 /*priority*/ 4,
             ),
+            {
+                let mut model = bundled_openai_model("gpt-6-astra");
+                model.slug = AMAZON_BEDROCK_GPT_6_ASTRA_MODEL_ID.to_string();
+                model.priority = 5;
+                model.availability_nux = None;
+                model.upgrade = None;
+                model
+            },
         ],
     })
 }
@@ -59,6 +70,19 @@ pub(crate) fn with_default_only_service_tier(mut catalog: ModelsResponse) -> Mod
         model.additional_speed_tiers.clear();
         model.service_tiers.clear();
         model.default_service_tier = None;
+        if matches!(
+            model.slug.as_str(),
+            "gpt-6-astra" | AMAZON_BEDROCK_GPT_6_ASTRA_MODEL_ID
+        ) {
+            // Bedrock does not accept Responses Lite or multi-agent V2 response items.
+            model.use_responses_lite = false;
+            model.tool_mode = None;
+            model.multi_agent_version = Some(MultiAgentVersion::V1);
+            model.web_search_tool_type = WebSearchToolType::Text;
+            model
+                .supported_reasoning_levels
+                .retain(|level| level.effort != ReasoningEffort::Ultra);
+        }
     }
     catalog
 }
@@ -136,6 +160,7 @@ mod tests {
                 AMAZON_BEDROCK_GPT_5_6_LUNA_MODEL_ID,
                 AMAZON_BEDROCK_GPT_5_5_MODEL_ID,
                 AMAZON_BEDROCK_GPT_5_4_MODEL_ID,
+                AMAZON_BEDROCK_GPT_6_ASTRA_MODEL_ID,
             ]
         );
     }
@@ -144,7 +169,11 @@ mod tests {
     fn gpt_5_bedrock_models_use_bedrock_context_window() {
         let catalog = static_model_catalog();
 
-        for model in catalog.models {
+        for model in catalog
+            .models
+            .into_iter()
+            .filter(|model| model.slug != AMAZON_BEDROCK_GPT_6_ASTRA_MODEL_ID)
+        {
             assert_eq!(
                 (model.context_window, model.max_context_window),
                 (

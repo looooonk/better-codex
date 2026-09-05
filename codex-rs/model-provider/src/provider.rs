@@ -25,6 +25,10 @@ use crate::auth::resolve_provider_auth;
 use crate::auth::resolve_provider_auth_for_scope;
 use crate::models_endpoint::OpenAiModelsEndpoint;
 
+#[cfg(test)]
+#[path = "provider_astra_tests.rs"]
+mod astra_tests;
+
 /// Optional provider-backed features that Codex may expose at runtime.
 ///
 /// These capabilities are a provider-owned upper bound. Callers can disable
@@ -677,6 +681,7 @@ mod tests {
                 ("openai.gpt-5.6-luna", "GPT-5.6 Luna"),
                 ("openai.gpt-5.5", "GPT-5.5"),
                 ("openai.gpt-5.4", "GPT-5.4"),
+                ("openai.gpt-6-astra", "GPT-6-Astra"),
             ]
         );
 
@@ -697,6 +702,7 @@ mod tests {
                 "openai.gpt-5.6-luna",
                 "openai.gpt-5.5",
                 "openai.gpt-5.4",
+                "openai.gpt-6-astra",
             ]
         );
 

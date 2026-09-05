@@ -106,8 +106,9 @@ tools, test commands, and logging.
 | **Practical controls**     | Change models, permissions, appearance, authentication, and service tier without leaving the TUI.               |
 | **Extensible backend**     | Use MCP servers, plugins, skills, goals, and connected app-server or exec-server deployments.                   |
 
-GPT-6 Astra is available through the model picker, with reasoning from Low to
-Ultra and Fast service when supported by your account. Astra can ask questions
+GPT-6 Astra is available through the model picker for OpenAI and Amazon Bedrock.
+Reasoning levels and service tiers follow the provider's capabilities, including
+Ultra and Fast service for supported OpenAI accounts. Astra can ask questions
 in the conversation while continuing its work; reply through the normal message
 composer, using a suggested answer or your own text.
 
