@@ -15,6 +15,30 @@ fn config_with_personality(personality: Option<Personality>) -> ModelsManagerCon
 }
 
 #[test]
+fn template_only_instructions_survive_disabled_personality_and_config_overrides() {
+    let mut model = model_info_from_slug("template-only");
+    model.base_instructions.clear();
+    model.model_messages = Some(ModelMessages {
+        instructions_template: Some("Model instructions".to_string()),
+        instructions_variables: None,
+        approvals: None,
+        auto_review: None,
+        permissions: None,
+    });
+    for base_instructions in [None, Some("User override".to_string())] {
+        let config = ModelsManagerConfig {
+            base_instructions: base_instructions.clone(),
+            ..Default::default()
+        };
+        let mut expected = model.clone();
+        expected.base_instructions = base_instructions.unwrap_or("Model instructions".to_string());
+        expected.model_messages = None;
+
+        assert_eq!(with_config_overrides(model.clone(), &config), expected);
+    }
+}
+
+#[test]
 fn base_instruction_override_preserves_catalog_approval_messages() {
     let mut model = model_info_from_slug("unknown-model");
     let approvals = ApprovalMessages {

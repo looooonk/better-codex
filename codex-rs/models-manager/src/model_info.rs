@@ -23,6 +23,9 @@ const PERSONALITY_PLACEHOLDER: &str = "{{ personality }}";
 const PERSONALITY_SECTION_HEADER: &str = "# Personality";
 
 pub fn with_config_overrides(mut model: ModelInfo, config: &ModelsManagerConfig) -> ModelInfo {
+    if model.base_instructions.is_empty() {
+        model.base_instructions = model.get_model_instructions(Some(Personality::None));
+    }
     if let Some(context_window) = config.model_context_window {
         model.context_window = Some(
             model

@@ -386,6 +386,7 @@ pub struct ModelInfo {
     pub default_service_tier: Option<String>,
     pub availability_nux: Option<ModelAvailabilityNux>,
     pub upgrade: Option<ModelInfoUpgrade>,
+    #[serde(default)]
     pub base_instructions: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model_messages: Option<ModelMessages>,
@@ -402,6 +403,7 @@ pub struct ModelInfo {
     #[serde(default)]
     pub web_search_tool_type: WebSearchToolType,
     pub truncation_policy: TruncationPolicyConfig,
+    #[serde(default = "default_true")]
     pub supports_parallel_tool_calls: bool,
     #[serde(default)]
     pub supports_image_detail_original: bool,
@@ -479,7 +481,9 @@ impl ModelInfo {
         if let Some(model_messages) = &self.model_messages
             && let Some(template) = &model_messages.instructions_template
         {
-            // if we have a template, always use it
+            if model_messages.instructions_variables.is_none() {
+                return template.clone();
+            }
             let personality_message = model_messages
                 .get_personality_message(personality)
                 .unwrap_or_default();
@@ -1122,6 +1126,31 @@ mod tests {
         assert_eq!(model.comp_hash, None);
         assert_eq!(model.auto_review_model_override, None);
         assert_eq!(model.tool_mode, None);
+    }
+
+    #[test]
+    fn model_info_accepts_template_only_catalogs() {
+        let mut expected = test_model(Some(ModelMessages {
+            instructions_template: Some("Literal {{ personality }} instructions".to_string()),
+            instructions_variables: None,
+            approvals: None,
+            auto_review: None,
+            permissions: None,
+        }));
+        expected.base_instructions.clear();
+        expected.supports_parallel_tool_calls = true;
+        let mut value = serde_json::to_value(&expected).expect("serialize model");
+        let object = value.as_object_mut().expect("model object");
+        object.remove("base_instructions");
+        object.remove("supports_parallel_tool_calls");
+
+        let model: ModelInfo = serde_json::from_value(value).expect("decode modern catalog");
+
+        assert_eq!(model, expected);
+        assert_eq!(
+            model.get_model_instructions(Some(Personality::Pragmatic)),
+            "Literal {{ personality }} instructions"
+        );
     }
 
     #[test]
