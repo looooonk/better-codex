@@ -106,6 +106,11 @@ tools, test commands, and logging.
 | **Practical controls**     | Change models, permissions, appearance, authentication, and service tier without leaving the TUI.               |
 | **Extensible backend**     | Use MCP servers, plugins, skills, goals, and connected app-server or exec-server deployments.                   |
 
+GPT-6 Astra is available through the model picker, with reasoning from Low to
+Ultra and Fast service when supported by your account. Astra can ask questions
+in the conversation while continuing its work; reply through the normal message
+composer, using a suggested answer or your own text.
+
 <table>
   <tr>
     <td width="50%">

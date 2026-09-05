@@ -22,6 +22,7 @@ use crate::tools::handlers::PlanHandler;
 use crate::tools::handlers::ReadMcpResourceHandler;
 use crate::tools::handlers::RequestPermissionsHandler;
 use crate::tools::handlers::RequestPluginInstallHandler;
+use crate::tools::handlers::RequestUserInputAsyncHandler;
 use crate::tools::handlers::RequestUserInputHandler;
 use crate::tools::handlers::ShellCommandHandler;
 use crate::tools::handlers::ShellCommandHandlerOptions;
@@ -708,6 +709,19 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut
 
     planned_tools.add(PlanHandler);
 
+    let model_tools = &turn_context.model_info.experimental_supported_tools;
+    if !turn_context.session_source.is_non_root_agent()
+        && model_tools.iter().any(|tool| {
+            matches!(
+                tool.as_str(),
+                "request_user_input_async" | "send_user_message_async"
+            )
+        })
+    {
+        planned_tools
+            .add_with_exposure(RequestUserInputAsyncHandler, ToolExposure::DirectModelOnly);
+    }
+
     if features.enabled(Feature::DeferredExecutor) {
         planned_tools.add(WaitForEnvironmentHandler);
     }
@@ -730,13 +744,15 @@ fn add_core_utility_tools(context: &CoreToolPlanContext<'_>, planned_tools: &mut
         planned_tools.add(GetContextRemainingHandler);
     }
 
-    if features.enabled(Feature::CurrentTimeReminder) {
+    let model_has_clock = model_tools.iter().any(|tool| tool == "clock");
+    if model_has_clock || features.enabled(Feature::CurrentTimeReminder) {
         planned_tools.add(CurrentTimeHandler);
-        if turn_context
-            .config
-            .current_time_reminder
-            .as_ref()
-            .is_some_and(|config| config.sleep_tool)
+        if model_has_clock
+            || turn_context
+                .config
+                .current_time_reminder
+                .as_ref()
+                .is_some_and(|config| config.sleep_tool)
         {
             planned_tools.add(SleepHandler);
         }

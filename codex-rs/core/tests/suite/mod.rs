@@ -39,6 +39,8 @@ mod apply_patch_cli;
 mod approvals;
 #[path = "astra_tests.rs"]
 mod astra;
+#[path = "async_user_input_tests.rs"]
+mod async_user_input;
 mod auto_review;
 mod catalog_permission_messages;
 mod cli_stream;
